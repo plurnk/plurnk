@@ -24,12 +24,12 @@
         "build": "npm run build:dist",
         "prepare": "npm run build"
     },
-    "dependencies": {
-        "@plurnk/plurnk-service": "github:plurnk/plurnk-service",
-        "@plurnk/plurnk-providers-openai": "github:plurnk/plurnk-providers-openai"
-    },
     "devDependencies": {
         "@types/node": "^25.8.0",
+        "@types/ws": "^8.18.1",
         "typescript": "^6.0.3"
+    },
+    "dependencies": {
+        "ws": "^8.20.1"
     }
 }

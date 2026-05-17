@@ -1,0 +1,35 @@
+{
+    "name": "@plurnk/plurnk",
+    "version": "0.1.0",
+    "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
+    "type": "module",
+    "license": "MIT",
+    "publishConfig": {
+        "access": "public"
+    },
+    "engines": {
+        "node": ">=25"
+    },
+    "bin": {
+        "plurnk": "./bin/plurnk.js"
+    },
+    "files": [
+        "bin/plurnk.js",
+        "dist/**/*",
+        "README.md"
+    ],
+    "scripts": {
+        "test:lint": "tsc --noEmit",
+        "build:dist": "tsc -p tsconfig.build.json",
+        "build": "npm run build:dist",
+        "prepare": "npm run build"
+    },
+    "dependencies": {
+        "@plurnk/plurnk-service": "github:plurnk/plurnk-service",
+        "@plurnk/plurnk-providers-openai": "github:plurnk/plurnk-providers-openai"
+    },
+    "devDependencies": {
+        "@types/node": "^25.8.0",
+        "typescript": "^6.0.3"
+    }
+}

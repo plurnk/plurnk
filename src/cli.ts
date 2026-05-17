@@ -1,23 +1,21 @@
+// plurnk client entrypoint. Dispatches to one-shot CLI mode (positional args)
+// or TUI REPL mode (no positionals). Per TUI.md §2 and §3.
+
 import { parseArgs } from "node:util";
-import { run } from "./run.ts";
+import Rpc from "./rpc.ts";
+import { runOneShot } from "./oneshot.ts";
+import { runTui } from "./tui.ts";
 
-const USAGE = `usage: plurnk <prompt...>
+const USAGE = `usage: plurnk [prompt...]
 
-Run a single plurnk loop against the configured provider.
-The prompt is everything after the program name; quoting is optional.
+Connects to the plurnk-service daemon. Run a single prompt one-shot
+(positional args) or enter the interactive REPL (no args).
 
-env (all required):
-  PLURNK_DB_PATH        sqlite file path
-  PLURNK_MAX_TURNS      loop safety cap
-  OPENAI_BASE_URL       provider endpoint
-  OPENAI_API_KEY        provider auth (empty for local)
-  OPENAI_MODEL          model id
-  OPENAI_CONTEXT_SIZE   provider context window in tokens
-  OPENAI_FETCH_TIMEOUT_MS  request timeout in ms
-  OPENAI_THINK          1 to enable provider reasoning toggle, else 0
+env:
+  PLURNK_URL   daemon WebSocket URL (default ws://127.0.0.1:3044)
 
 options:
-  -h, --help            print this message and exit
+  -h, --help   print this message and exit
 `;
 
 const die = (code: number, message: string): never => {
@@ -35,20 +33,31 @@ export const main = async (argv: string[]): Promise<void> => {
     });
 
     if (values.help) { process.stdout.write(USAGE); process.exit(0); }
-    if (positionals.length === 0) die(64, USAGE);
 
-    const prompt = positionals.join(" ");
+    const url = process.env.PLURNK_URL ?? "ws://127.0.0.1:3044";
+    const rpc = new Rpc({ url });
 
     try {
-        const result = await run(prompt);
-        if (result.finalStatus === 200) process.exit(0);
-        if (result.hitMaxTurns) process.exit(2);
-        process.exit(3);
+        await rpc.connect();
+    } catch (cause) {
+        die(1, `plurnk: cannot connect to daemon at ${url}\n  ${cause instanceof Error ? cause.message : String(cause)}\n\nIs the daemon running? Start it from plurnk-service with:\n  node bin/plurnk-service.js start`);
+    }
+
+    try {
+        if (positionals.length === 0) {
+            await runTui(rpc);
+            process.exit(0);
+        }
+        const prompt = positionals.join(" ");
+        const exitCode = await runOneShot(rpc, prompt);
+        process.exit(exitCode);
     } catch (cause) {
         process.stderr.write(`plurnk: ${cause instanceof Error ? cause.message : String(cause)}\n`);
-        if (cause instanceof Error && cause.cause) {
+        if (cause instanceof Error && cause.cause !== undefined) {
             process.stderr.write(`  cause: ${cause.cause instanceof Error ? cause.cause.message : String(cause.cause)}\n`);
         }
         process.exit(1);
+    } finally {
+        await rpc.close();
     }
 };

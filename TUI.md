@@ -50,27 +50,46 @@ No retry logic. No queue. Connection lost = client tells user, exits cleanly. Re
 
 ```
 plurnk "what is the capital of france"
-plurnk what is the capital of france        # quotes optional
+plurnk what is the capital of france             # quotes optional
+git diff | plurnk "summarize this"               # positional + piped stdin (concatenated)
+cat question.md | plurnk                         # piped stdin alone
 plurnk -h
 plurnk --help
 ```
 
+Prompt assembly: positional args first, then piped stdin (separated by a blank line). Either source alone is fine; if neither is present and stdin is a TTY, TUI mode triggers instead.
+
 No flair. No glyphs in CLI mode. No progress bars. Plain text, suitable for piping.
 
-### §2.2 Flow
+### §2.2 Output channels
+
+Standard Unix discipline: stdout is the program's product, stderr is its narration.
+
+- **stdout** — the body of the *terminal* broadcast SEND (status 200 or 499). One value per invocation. Intermediate broadcasts (SEND[102] etc.) are protocol mechanics, not the answer.
+- **stderr** — session/prompt header, per-action trace lines (including intermediate broadcasts), summary block, errors.
+
+This is what makes `plurnk "X" > answer.txt` capture just the answer. A TTY user sees both interleaved because the terminal merges streams.
+
+`--json` flips the stdout format: terminal broadcast emitted as exactly one JSON value (`JSON.stringify(json)` if the body parsed as JSON, else `JSON.stringify(raw)` to wrap the prose as a JSON string literal). No double-wrap, no envelope key naming — `jq` works either way.
+
+SPEC.md §2.1 / §5.4 are the canonical contracts.
+
+### §2.3 Flow
 
 ```
 1. Parse argv; assemble prompt from positionals.
 2. Construct Rpc({ url: PLURNK_URL || ws://127.0.0.1:3044 }).
 3. Connect.
-4. Subscribe to `log/entry` notification — print each turn's assistant content
-   when an entry's op == SEND broadcast (or batch and print at terminal).
-5. Call `loop.run({ prompt, maxTurns? })`. Wait for response.
-6. Print summary block (final status, turn count, wall time, entries written).
-7. Disconnect. Exit with code matching the final status.
+4. Resolve session: session.create (default) or session.attach when
+   --session/PLURNK_SESSION is set. See SPEC.md §1.1.
+5. Subscribe to `log/entry` notification — trace each action to stderr;
+   for the terminal broadcast SEND, also write the body content to stdout.
+6. Call `loop.run({ prompt, maxTurns?, alias? })`. `alias` from `--model`/`PLURNK_MODEL` (see SPEC.md §1.2). Wait for response.
+7. Write summary block (final status, turn count, wall time) to stderr.
+8. Disconnect. Exit with code matching the final status.
 ```
 
-### §2.3 Exit codes
+### §2.4 Exit codes
 
 | Code | Meaning                                  |
 |------|------------------------------------------|
@@ -79,9 +98,9 @@ No flair. No glyphs in CLI mode. No progress bars. Plain text, suitable for pipi
 | 2    | Loop hit maxTurns cap                    |
 | 3    | Loop terminated with another status      |
 
-### §2.4 What CLI mode does NOT do
+### §2.5 What CLI mode does NOT do
 
-- Multiple prompts (use TUI for that — re-invoking from shell loses the session).
+- Multiple prompts in one invocation (use TUI for that — but re-invoking with `--session=<name>` resumes daemon state across calls).
 - Live glyph rendering (TUI's job).
 - Session attachment (each invocation gets an auto-created session per §13.7).
 - JSON output mode (future, if scripting needs it).
@@ -115,15 +134,18 @@ plurnk v0.1.0 · daemon ws://127.0.0.1:3044 · session 47 · ctrl-c to quit
 
 > what is the capital of france
   🤖 ✏️  201  known://france/capital  "Paris"
-  🤖 ✉️ ✅ 200  (terminal)
-  done · 1 turn · 0.4s · 142 tokens
 
-> <<EDIT(known://animals/cat):a small carnivorous mammal:EDIT
-  👤 ✏️  201  known://animals/cat  "a small carnivorous mammal"
+  🤖 ✉️ ✅ 200
+     The capital of France is Paris.
+
+  done · 1 turn · 0.4s · 142 tokens
 
 > show me what's in the index
   🤖 🔍  200  known://**  → 2 results
-  🤖 ✉️ ✅ 200  (terminal)
+
+  🤖 ✉️ ✅ 200
+     I found 2 entries: known://france/capital and known://animals/cat.
+
   done · 1 turn · 0.3s · 89 tokens
 
 > ^C
@@ -155,9 +177,51 @@ EXTRA examples per op:
 - **COPY/MOVE**: `→ <destination URI>`, or `(deleted)` for null-body MOVE
 - **FIND**: `→ N results`
 - **SHOW/HIDE**: nothing (state change is the message)
-- **SEND** (broadcast): `(terminal)` or `(continuing)` based on status range
+- **SEND** (broadcast): does NOT use this one-line format — see §3.4.1
 - **SEND** (directed): `→ <recipient>` and the action implied by SUB
 - **EXEC**: first ~40 chars of command, ellipsis if longer
+
+### §3.4.1 Broadcast SEND (model → user)
+
+A SEND with no target URI is the model's reply to the user. It is the only op whose payload IS content rather than telemetry, and the only op a human reader consumes as conversation rather than as a trace. It deliberately breaks the one-op-one-line discipline of the waterfall.
+
+Format:
+
+```
+<blank line>
+  ORIGIN OP SUB STATUS
+     <body line 1>
+     <body line 2>
+     …
+<blank line>
+```
+
+Differences from the trace line:
+
+- **Same 2-space INDENT as trace lines.** Origin glyphs column-align across waterfall and broadcast so the reader's eye tracks the speaker continuously.
+- **No PATH.** Broadcast is pathless by definition.
+- **No ellipsis on the body.** Full content rendered verbatim; terminal handles soft-wrap.
+- **Body indented 5 spaces** (3 more than the header) under the speaker glyph, no dim. It's content; styling it like metadata would be wrong.
+- **Surrounding blank lines.** One above, one below. Breathing room separates conversation from telemetry.
+
+Example:
+
+```
+  🤖 ✏️  201  known://france/capital  "Paris"
+
+  🤖 ✉️ ✅ 200
+     The capital of France is Paris.
+
+  done · 1 turn · 0.4s · 142 tokens
+```
+
+The body source is `entry.tx.body`, a `SendBody` object (`{ raw, json }` per `plurnk-grammar/schema/SendBody.json`), not a plain string. The TUI dispatches by content type — this is a TUI convenience and does NOT apply to CLI mode, which emits `raw` verbatim:
+
+- If `tx.body.json !== null` → pretty-printed JSON (`JSON.stringify(json, null, 2)`).
+- Else if `raw` carries markdown markers (`#`, `**…**`, `- `, ` ``` `, links) → minimal vanilla-ANSI transform (bold, italic, dim inline code, `• ` bullets).
+- Else → `raw` verbatim.
+
+Anything not detected as JSON or markdown falls through to plain. Empty body or null body is legal and renders as just the header. See SPEC.md §5.4 for the canonical contract.
 
 ### §3.5 Summary line (per `loop.run`)
 
@@ -202,7 +266,7 @@ Respect `NO_COLOR=1` (Unix convention) — when set, all styling is skipped; onl
 
 ### §3.8 What is NOT shown in v0
 
-- Per-channel content (body, preview). Available via `<<READ(log://<L>/<T>/<A>)>>` for log forensics, or via `entry.read` RPC for entries.
+- Per-channel content for non-broadcast ops (e.g. full READ payloads). Broadcast SEND body IS rendered per §3.4.1 — that's the conversation, not telemetry. Full bodies for other ops remain accessible via `<<READ(log://<L>/<T>/<A>)>>` or the `entry.read` RPC.
 - Index/visibility state. Future inspector pane.
 - Token cost breakdown. Future `--verbose` summary.
 - Reasoning/thinking content. Future toggle.

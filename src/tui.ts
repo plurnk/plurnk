@@ -5,6 +5,8 @@ import readline from "node:readline";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
+import { reviewProposal } from "./proposal.ts";
+import type { ProposalParams } from "./proposal.ts";
 
 interface LoopRunResult {
     loopId: number;
@@ -15,23 +17,41 @@ interface LoopRunResult {
 
 interface SessionResult { id: number; name: string }
 
-const BANNER = "plurnk v0.1.0 · type a prompt, hit enter · ctrl-c to quit · type <<OP...:OP for raw DSL\n\n";
-
-export const runTui = async (rpc: Rpc): Promise<void> => {
-    const session = await rpc.call("session.create") as SessionResult;
-
+export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlias?: string; persona?: string; yolo: boolean }): Promise<void> => {
     // Subscribe to log/entry notifications — render each as a waterfall line.
+    // `\r\x1b[2K` wipes any readline-redrawn prompt sitting on the current line
+    // before our output, otherwise the first trace line lands beside `> `.
     rpc.onNotification("log/entry", (params) => {
         const p = params as { entry: LogEntryWire };
-        process.stdout.write(`${renderLogEntry(p.entry)}\n`);
+        process.stdout.write(`\r\x1b[2K${renderLogEntry(p.entry)}\n`);
     });
 
-    process.stdout.write(`\x1b[2m${BANNER}session: ${session.name} (id=${session.id})\n\x1b[0m`);
+    process.stdout.write(`\x1b[2mplurnk v0.1.0 · ctrl-c to quit · session: ${session.name}\x1b[0m\n\n`);
 
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
         prompt: "\x1b[1m> \x1b[0m",
+    });
+
+    // Proposal lifecycle: --yolo auto-accepts locally; otherwise pause readline,
+    // review, resolve, resume.
+    rpc.onNotification("loop/proposal", (params) => {
+        const p = params as ProposalParams;
+        void (async () => {
+            if (opts.yolo) {
+                await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" });
+                return;
+            }
+            rl.pause();
+            try {
+                const resolution = await reviewProposal(p);
+                await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
+            } finally {
+                rl.resume();
+                rl.prompt(true);
+            }
+        })();
     });
 
     rl.prompt();
@@ -66,7 +86,10 @@ export const runTui = async (rpc: Rpc): Promise<void> => {
                     finalStatus = result.results[result.results.length - 1]?.status ?? 0;
                 } else {
                     // Prompt: send to loop.run
-                    const result = await rpc.call("loop.run", { prompt: trimmed }) as LoopRunResult;
+                    const loopParams: { prompt: string; alias?: string; persona?: string } = { prompt: trimmed };
+                    if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
+                    if (opts.persona !== undefined) loopParams.persona = opts.persona;
+                    const result = await rpc.call("loop.run", loopParams) as LoopRunResult;
                     finalStatus = result.finalStatus;
                     hitMaxTurns = result.hitMaxTurns;
                     turnCount = result.turnIds.length;

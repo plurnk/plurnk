@@ -22,43 +22,126 @@ Specifies what the `plurnk` CLI/TUI client does. Wire protocol is defined upstre
 ## §1 Invocation
 
 ```
-plurnk [options] [prompt...]
-plurnk [options]            # TUI mode (no prompt)
+plurnk [options] [prompt...]                # one-shot from positionals
+<piped stdin> | plurnk [options] [prompt...] # one-shot from stdin (and/or positionals)
+plurnk [options]                             # TUI mode (no positionals, TTY stdin)
 ```
+
+The prompt is assembled from positional args + piped stdin. If both are present, positionals come first followed by a blank line, then stdin. If only positionals → those. If only piped stdin → that. If neither and stdin is a TTY → TUI mode. The `--json` flag requires a non-empty prompt (errors with exit 64 if neither source provides one).
 
 Options:
 
 | Flag | Type | Meaning |
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
+| `--json` | flag | CLI mode only. Format the terminal broadcast body as a JSON value on stdout. See §5.4. |
+| `--session <name>` | string | Resume the named session. See §1.1. Overrides `PLURNK_SESSION`. |
+| `--run <name>` | string | Resume (or create) the named run within the session. Requires `--session`. Overrides `PLURNK_RUN`. See §1.1. |
+| `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
+| `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_PROJECT_ROOT`. |
+| `--persona <path>` | string | Path to a persona file; contents passed on every `loop.run`. See §1.3. Overrides `PLURNK_PERSONA`. |
+| `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
 
 Env:
 
 | Var | Default | Meaning |
 |---|---|---|
 | `PLURNK_URL` | `ws://127.0.0.1:3044` | Daemon WebSocket URL |
+| `PLURNK_SESSION` | _unset_ | Session name to resume. Equivalent to `--session`. |
+| `PLURNK_RUN` | _unset_ | Run name to resume/create. Equivalent to `--run`. Requires `PLURNK_SESSION`. |
+| `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
+| `PLURNK_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
+| `PLURNK_PERSONA` | _unset_ | Path to a persona file; contents sent on every `loop.run`. Equivalent to `--persona`. See §1.3. |
+| `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
 `.env` is auto-loaded if present; explicit shell exports override.
+
+### §1.1 Sessions and runs
+
+Sessions and runs are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env.
+
+Resolution at startup (applies to both CLI and TUI modes):
+
+1. **Neither `--session` nor `PLURNK_SESSION` set** → client calls `session.create`. Daemon mints a fresh auto-named session with a fresh auto-named run. This is the default.
+2. **`--session <name>` (or `PLURNK_SESSION`) set, `--run` unset** → client calls `session.list`, filters by name, and `session.attach({id})`. Daemon resumes the session with a new auto-named run.
+3. **Both set** → as above, but `session.attach({id, runName})`. Daemon resumes the run with that name, or creates it if absent (per `plurnk-service` SPEC §13.5).
+4. **`--run` set without `--session`** → usage error (exit 64). Run names are scoped to a session; there's no session to scope into.
+
+Resolution errors:
+
+- **Session name not found** → exit 1 with a clear message. The client never silently creates a session whose name didn't already exist — if you wanted to create one, run without `--session` first.
+- **Multiple sessions share the name** → exit 1. The daemon does not enforce session-name uniqueness today; the client refuses to guess. Pick a unique name.
+
+CLI flag takes precedence over env when both are set.
+
+### §1.2 Model selection
+
+The daemon registers model aliases via `PLURNK_MODEL_<alias>=<provider>/<model>` env entries at boot, and resolves an active alias for its own provider via `PLURNK_MODEL=<alias>` (also at boot). The client can override on a per-call basis by passing `alias` on `loop.run`.
+
+Resolution at the client:
+
+- `--model <alias>` set → pass `alias` on every `loop.run` from this invocation.
+- `--model` unset, `PLURNK_MODEL` set → pass `PLURNK_MODEL` on every `loop.run`.
+- Neither set → omit `alias`; daemon falls back to its own boot-time provider.
+
+`PLURNK_MODEL` is shared with the daemon process; env vars represent user-level preferences, not per-process namespaces. Both processes reading the same name for the same intent is the point.
+
+Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via `providers.list` (RPC; not currently surfaced as a client subcommand).
+
+### §1.3 Project root and persona
+
+**Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that session. Stored on `sessions.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "session has no project_root").
+
+Client behavior:
+
+- Default: `process.cwd()` — the user's current directory.
+- Override: `--project-root <abs-path>` or `PLURNK_PROJECT_ROOT`.
+- Explicit headless: set to empty string (`--project-root=`) → wire as `null`.
+- Sent on `session.create` only. On `--session` attach, the daemon preserves the stored value and the client's flag is silently ignored (no surprise overwrites of a session you're resuming). To change a live session's root, call `session.set_root` directly — not yet surfaced as a client command.
+
+**Persona** is the text/markdown identity prompt the daemon plumbs into `packet.system.persona`. Set per-call on `loop.run({persona})`.
+
+Client behavior:
+
+- Default: omitted; daemon uses its own `persona.md` baseline.
+- Override: `--persona <path>` or `PLURNK_PERSONA`, both pointing to a file. Contents are read once at startup and passed on every `loop.run` for the invocation.
+- File-only (no literal-text mode): personas are typically long markdown; quoting them on the command line is hostile. If you need a quick literal, write a one-line `.md` file.
+- A missing/unreadable file is a fatal startup error (exit 1) — better to fail loudly than to silently drop the persona.
 
 ---
 
 ## §2 One-shot mode
 
-Triggered when `argv` includes a positional prompt.
+Triggered when a prompt is present from positionals, piped stdin, or both.
 
-### §2.1 Flow
+### §2.1 Output channels
+
+Standard Unix discipline: **stdout is the program's product, stderr is its narration.**
+
+- **stdout** — the body of the *terminal* broadcast SEND (status 200 or 499), per §5.4. Exactly one value per invocation (none if the loop hit maxTurns and never terminated). Intermediate broadcasts (SEND[102] etc.) are protocol mechanics, not the answer, and do NOT appear on stdout.
+- **stderr** — session/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
+
+Consequence:
+
+- `plurnk "X" > answer.txt` captures just the terminal answer.
+- `plurnk "X" 2>/dev/null` suppresses the trace.
+- A TTY user sees both interleaved as before (the terminal merges streams).
+- `plurnk "X" | tool` pipes only the answer.
+- `plurnk --json "X" | jq` pipes the answer as a valid JSON value.
+
+### §2.2 Flow
 
 1. Open WebSocket to `PLURNK_URL`.
-2. `rpc.call("session.create")` → receive `{id, name}`.
-3. Subscribe to `log/entry` notifications; print each via `renderLogEntry` (one ANSI line per action).
+2. Resolve session per §1.1 (`session.create` or `session.attach`); write `session:` and `prompt:` lines to stderr.
+3. Subscribe to `log/entry` notifications; per-action trace lines go to stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
 4. `rpc.call("loop.run", { prompt })` → receive `{loopId, turnIds, finalStatus, hitMaxTurns}`.
-5. Print summary line (turns count, wall time, final status, token usage if available).
+5. Write summary line (turns count, wall time, final status, token usage if available) to stderr.
 6. Close WebSocket.
 7. Exit with the appropriate code (§4).
 
-### §2.2 What one-shot mode does NOT do
+### §2.3 What one-shot mode does NOT do
 
-- No interactive prompts. Stdin is not read.
+- No interactive prompts during the loop (proposal review prompts are separate; see §6).
 - No `op.parse` (raw DSL) — that's TUI-only.
 - No reconnect on dropped connection. Connection drop = exit with error.
 
@@ -70,7 +153,7 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.1 Flow
 
-1. Open WebSocket; `session.create`; subscribe to `log/entry`.
+1. Open WebSocket; resolve session per §1.1 (`session.create` or `session.attach`); subscribe to `log/entry`.
 2. Print banner; enter readline loop with `> ` prompt.
 3. Each line entered is dispatched:
     - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
@@ -110,6 +193,8 @@ One line per dispatched op. Format (vanilla ANSI, no framework):
 
 Width-tolerant; no fixed column widths. The status code drives color. Op glyphs and origin glyphs are defined in `TUI.md §4`.
 
+**Exception:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line.
+
 ### §5.2 Summary line (per `loop.run`)
 
 ```
@@ -121,27 +206,125 @@ Width-tolerant; no fixed column widths. The status code drives color. Op glyphs 
 ### §5.3 What is NOT rendered
 
 - The full packet (`turn.packet`). The client never displays the rendered index, log section, or telemetry — those are the model's view, not the user's.
+- Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `<<READ(log://...)>>`.
 - Raw RPC frames. Set `DEBUG=plurnk:rpc` (future) to enable.
 - Stream events between turn boundaries (`stream/event` notifications). Future feature; not in v0.
 
+### §5.4 Broadcast SEND rendering
+
+A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's reply to the user. It is content, not telemetry, and the client MUST render the full body verbatim.
+
+TUI mode contract (see TUI.md §3.4.1 for design rationale):
+
+- Header line: `  <origin-glyph> ✉️  <sub-glyph> <status>` — 2-space INDENT matching the trace lines, no PATH. Origin glyph column-aligns across waterfall and broadcast.
+- Body: split on `\n`, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
+- Surrounded by one blank line above and one blank line below.
+- Empty body is legal and renders as just the header.
+
+CLI/one-shot mode contract: trace line emits as usual per §5.1, immediately followed by the body content as plain unprefixed lines. This makes the assistant's reply present in stdout for the standard Unix-tool posture (§2).
+
+The body source is `entry.tx.body`, a `SendBody` object (`{ raw: string, json: any }` per `plurnk-grammar/schema/SendBody.json`), NOT a plain string.
+
+A broadcast is **terminal** when `entry.signal` is `200` or `499` — those are the only statuses that end a loop (per `plurnk-service` Engine). Only the terminal broadcast contributes to stdout in CLI mode.
+
+**CLI default** emits `tx.body.raw` of the terminal broadcast verbatim on stdout — no transformation. Pretty-printing is a TUI convenience; piped consumers receive exactly what the model emitted.
+
+**CLI `--json`** emits the terminal broadcast as exactly one JSON value on stdout:
+
+- If `tx.body.json !== null` (the grammar parsed `raw` as JSON), emit `JSON.stringify(json)` — compact, validated, no double-wrap.
+- Otherwise emit `JSON.stringify(raw)` — the reply wrapped as a JSON string literal.
+
+This makes `plurnk --json "X" | jq` always valid regardless of whether the model emitted JSON or prose.
+
+**TUI mode** (no `--json`; the flag is CLI-only) renders *every* broadcast (terminal and intermediate alike) as a block per §3.4.1, dispatching by content type:
+
+- **JSON** — `tx.body.json !== null`. Render `JSON.stringify(json, null, 2)`.
+- **Markdown** — `raw` matches structural markdown markers (heading `# `, bold `**…**`, list `- `, fenced code ` ``` `, or `[text](url)` link). Minimal vanilla-ANSI transform: bold, italic, dim inline code, `• ` bullets, header text bolded.
+- **Plain (or anything else)** — emit `raw` verbatim.
+
+If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is treated as empty (stdout receives nothing for that broadcast).
+
 ---
 
-## §6 Conformance
+## §6 Proposal review
+
+Side-effecting operations (file writes, exec) emit a `loop/proposal` notification when the daemon pauses dispatch awaiting human resolution (per plurnk-service SPEC §13). The client receives the notification, presents the proposal to the user, and sends back `loop.resolve({logEntryId, decision, body?, outcome?})`.
+
+### §6.1 Notification shape
+
+```ts
+loop/proposal {
+    logEntryId: number,           // pending log_entries row
+    loopId, turnId: number,
+    op: "EDIT" | "EXEC" | ...,
+    target: { scheme: string | null, pathname: string | null },
+    body: string,                 // udiff for EDIT; command summary for EXEC
+    attrs: object,                // scheme-specific payload (opaque to client)
+}
+```
+
+### §6.2 Review menu (interactive)
+
+When a TTY is present and `--yolo` is not set, the client renders the proposal to stderr and prompts:
+
+```
+── proposal EDIT file:///path/to/file ──
+<colored udiff>
+[a]ccept · [e]dit · [r]eject · [c]ancel
+```
+
+Single-keypress menu (raw stdin):
+
+| Key | Action |
+|---|---|
+| `a` | `loop.resolve({decision: "accept"})` — apply body as-is. |
+| `e` | Spawn `$VISUAL` / `$EDITOR` / `vi` on a tmpfile holding `body`. On save: `loop.resolve({decision: "accept", body: <edited>})`. Empty buffer ⇒ `cancel` with outcome `"empty_editor_buffer"` (git-commit convention). |
+| `r` | `loop.resolve({decision: "reject"})`. |
+| `c` | `loop.resolve({decision: "cancel"})`. |
+| any other | `cancel` with outcome `"unknown_key"`. Safe default; includes ctrl-c. |
+
+Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. EXEC bodies render plain.
+
+### §6.3 `--yolo` / `PLURNK_YOLO`
+
+Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
+
+This is distinct from **server-side YOLO** (a future plurnk-service capability — see [plurnk-service#147](https://github.com/plurnk/plurnk-service/issues/147)), where the daemon auto-applies side effects without client involvement. Server YOLO needs a wire path that doesn't exist yet; client YOLO needs none.
+
+### §6.4 Fail-closed (non-TTY, no yolo)
+
+When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. To avoid stalling on the daemon's 5-minute resolution timeout, the handler immediately sends:
+
+```
+loop.resolve({decision: "reject", outcome: "no_tty_review"})
+```
+
+Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`. The model sees the reject in the next turn's telemetry and can adapt or terminate.
+
+### §6.5 What proposal review does NOT do
+
+- Concurrent proposals. The daemon pauses one dispatch per proposal; at most one proposal is pending per loop at any time. Client handles them sequentially as they arrive.
+- Patch validation. The client does not parse the udiff. `body` is treated as opaque text for display and (when edited) re-submission.
+- Persisting decisions. Each proposal is reviewed in isolation; no "always accept this scheme" memory.
+
+---
+
+## §7 Conformance
 
 A conforming `plurnk` client:
 
 1. Speaks JSON-RPC 2.0 over WebSocket per plurnk-service SPEC §13.
 2. Connects to the URL in `PLURNK_URL` (or its default).
-3. Calls `session.create` at boot of each invocation; uses the returned session for all subsequent RPCs until disconnect.
+3. Resolves the session per §1.1 (`session.create` by default, or `session.attach` when `--session`/`PLURNK_SESSION` is set); uses the returned session for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
-5. Maps `loop.run` results to exit codes per §4.
-6. Surfaces RPC errors verbatim to stderr; does not swallow.
+5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6.
+6. Maps `loop.run` results to exit codes per §4.
+7. Surfaces RPC errors verbatim to stderr; does not swallow.
 
 ---
 
-## §7 Out of scope
+## §8 Out of scope
 
-- Persistent sessions across invocations. Each run gets a fresh session; persistence is a future feature.
 - Multi-daemon connections. One client, one daemon.
 - Authentication / TLS. Local-loopback only; auth is a plurnk-service concern with its own design pass.
 - Direct provider access. The client never talks to OpenAI/Anthropic/etc.; the daemon owns provider integration.

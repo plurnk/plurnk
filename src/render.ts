@@ -82,10 +82,8 @@ const buildExtra = (entry: LogEntryWire): string => {
             return content.length > 0 ? `${DIM}"${ellipsize(content.replace(/\n/g, " "), 40)}"${RESET}` : "";
         }
         case "SEND": {
-            if (entry.target_scheme === null) {
-                return `${DIM}(broadcast)${RESET}`;
-            }
-            return `${DIM}→ ${entry.target_scheme}://${entry.target_pathname ?? ""}${RESET}`;
+            // Broadcast (scheme === null) is handled by renderBroadcast — not reached here.
+            return `${DIM}→ ${entry.scheme}://${entry.pathname ?? ""}${RESET}`;
         }
         case "EXEC": {
             const body = typeof tx.body === "string" ? tx.body : "";
@@ -102,18 +100,90 @@ export interface LogEntryWire {
     suffix: string;
     origin: string;
     signal: unknown;
-    target_scheme: string | null;
-    target_pathname: string | null;
-    target_hostname: string | null;
-    target_fragment: string | null;
+    scheme: string | null;
+    pathname: string | null;
+    hostname: string | null;
+    fragment: string | null;
     status_rx: number;
     tx: unknown;
     rx: unknown;
 }
 
+const BOLD = code("1");
+const ITALIC = code("3");
+
+// Heuristic: body looks like markdown if it carries any of the structural markers.
+// False positives on plain text containing isolated `*` or `_` are avoided by requiring
+// paired markers or line-anchored constructs.
+const looksLikeMarkdown = (s: string): boolean =>
+    /(^|\n)#{1,6}\s/.test(s) ||
+    /\*\*[^*\n]+\*\*/.test(s) ||
+    /(^|\n)[-*+]\s/.test(s) ||
+    /```/.test(s) ||
+    /\[[^\]]+\]\([^)]+\)/.test(s);
+
+// Minimal vanilla-ANSI markdown: enough to make a reply readable, not a full parser.
+const renderMarkdown = (s: string): string => {
+    let out = s;
+    out = out.replace(/^(#{1,6})\s+(.*)$/gm, (_m, _h, text) => `${BOLD}${text}${RESET}`);
+    out = out.replace(/\*\*([^*\n]+)\*\*/g, (_m, t) => `${BOLD}${t}${RESET}`);
+    out = out.replace(/(^|[^*_])[*_]([^*_\n]+)[*_](?!\*)/g, (_m, pre, t) => `${pre}${ITALIC}${t}${RESET}`);
+    out = out.replace(/`([^`\n]+)`/g, (_m, t) => `${DIM}${t}${RESET}`);
+    out = out.replace(/^[-*+]\s/gm, "• ");
+    return out;
+};
+
+// Read a SEND body off a log_entry.tx, dispatching by content type.
+// Per plurnk-grammar/schema/SendBody.json: tx.body is { raw, json } | null.
+//
+// prettify=true (TUI): json → pretty-print, markdown → ANSI, else raw.
+// prettify=false (CLI): always raw verbatim — pretty-printing is a TUI convenience,
+// not something a downstream pipe consumer should have to undo.
+export const extractSendBody = (txUnknown: unknown, prettify: boolean): string => {
+    const tx = txUnknown as { body?: { raw?: unknown; json?: unknown } | null } | null;
+    if (tx === null || tx === undefined) return "";
+    const sendBody = tx.body;
+    if (sendBody === null || sendBody === undefined) return "";
+    const { raw, json } = sendBody;
+    if (!prettify) return typeof raw === "string" ? raw : "";
+    if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
+    if (typeof raw !== "string") return "";
+    if (looksLikeMarkdown(raw)) return renderMarkdown(raw);
+    return raw;
+};
+
+// Broadcast SEND (model → user) — multi-line block, content not telemetry.
+// Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
+// body indents further (5 spaces) so it visually nests under the speaker.
+const renderBroadcast = (entry: LogEntryWire): string => {
+    const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
+    const opGlyph = OP_GLYPHS.SEND;
+    const subGlyph = typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "";
+    const statusColor = colorForStatus(entry.status_rx);
+    const statusText = `${statusColor}${entry.status_rx}${RESET}`;
+
+    const headerParts = [origin, opGlyph];
+    if (subGlyph.length > 0) headerParts.push(subGlyph);
+    headerParts.push(statusText);
+    const header = headerParts.join(" ");
+
+    const body = extractSendBody(entry.tx, /* prettify */ true);
+    const bodyBlock = body.length > 0
+        ? "\n" + body.split("\n").map((line) => `     ${line}`).join("\n")
+        : "";
+
+    return `\n  ${header}${bodyBlock}\n`;
+};
+
 // Render a log entry as one waterfall line.
-// Returns the full ANSI-formatted line WITHOUT trailing newline.
+// Returns the full ANSI-formatted line WITHOUT trailing newline,
+// EXCEPT for broadcast SEND which returns a multi-line block with its own surrounding blank lines.
 export const renderLogEntry = (entry: LogEntryWire): string => {
+    // Broadcast SEND has no path at all (both scheme AND pathname null).
+    // A SEND directed at file:// would have scheme=null but pathname set —
+    // not a broadcast.
+    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry);
+
     const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
     const opGlyph = OP_GLYPHS[entry.op] ?? "?";
     const subGlyph = entry.op === "SEND" && typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "";
@@ -121,9 +191,14 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     const statusColor = colorForStatus(entry.status_rx);
     const statusText = `${statusColor}${entry.status_rx}${RESET}`;
 
+    // Render whatever target the daemon supplied — no synthesis. If scheme
+    // is null but pathname is set, that's the daemon's choice (e.g. file://
+    // shortcut) and we render the bare path.
     let pathText = "";
-    if (entry.target_scheme !== null) {
-        const path = `${entry.target_scheme}://${entry.target_hostname ?? ""}${entry.target_pathname ?? ""}${entry.target_fragment !== null ? `#${entry.target_fragment}` : ""}`;
+    if (entry.pathname !== null) {
+        const path = entry.scheme !== null
+            ? `${entry.scheme}://${entry.hostname ?? ""}${entry.pathname}${entry.fragment !== null ? `#${entry.fragment}` : ""}`
+            : entry.pathname;
         pathText = `${CYAN}${path}${RESET}`;
     }
 

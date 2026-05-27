@@ -8,6 +8,8 @@ import { isAbsolute, resolve } from "node:path";
 import Rpc from "./rpc.ts";
 import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
+import { runModels, runSessionList, runLogRead } from "./subcommands.ts";
+import type { LogReadFilters } from "./subcommands.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive session because we gate on isTTY upstream.
@@ -37,11 +39,16 @@ export const resolveProjectRoot = (raw: string | undefined): string | null => {
 
 const USAGE = `usage: plurnk [--json] [--session <name>] [--run <name>] [--model <alias>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
+       plurnk models [--json]
+       plurnk session list [--json]
+       plurnk log read --session <name> [--run <name>]
+                       [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
 
 Connects to the plurnk-service daemon. Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
-enters the interactive REPL.
+enters the interactive REPL. Read-only subcommands (models / session list /
+log read) inspect daemon state without running a loop.
 
 env:
   PLURNK_URL            daemon WebSocket URL (default ws://127.0.0.1:3044)
@@ -79,6 +86,15 @@ options:
                           passed on every loop.run. Overrides PLURNK_PERSONA.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_YOLO.
+      --loop <id>         (log read) filter to a single loop id
+      --turn <id>         (log read) filter to a single turn id
+      --since <id>        (log read) return entries with id > <id>
+      --limit <n>         (log read) max entries to return (default 100)
+
+subcommands:
+  models                  list configured model aliases (providers.list)
+  session list            list sessions on the daemon (session.list)
+  log read --session ...  read log entries from the named session's run
 `;
 
 const die = (code: number, message: string): never => {
@@ -111,6 +127,71 @@ const attachOrCreateSession = async (
     return await rpc.call("session.attach", attachParams) as SessionResult;
 };
 
+// Parse a string-valued integer flag, throwing if non-numeric. Used for
+// log.read filter flags (--loop / --turn / --since / --limit) since
+// parseArgs stores their raw string values regardless of intent.
+const parseIntFlag = (raw: string | undefined, name: string): number | undefined => {
+    if (raw === undefined) return undefined;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer, got ${JSON.stringify(raw)}`);
+    return n;
+};
+
+interface SubcommandOpts {
+    json: boolean;
+    sessionName?: string;
+    runName?: string;
+    projectRoot: string | null;
+    values: Record<string, string | boolean | undefined>;
+}
+
+// Dispatch a positional-driven subcommand. Caller has already connected the
+// Rpc. Returns the exit code the dispatcher should propagate.
+const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOpts): Promise<number> => {
+    const verb = positionals[0];
+    const sub = positionals[1];
+
+    if (verb === "models") {
+        if (positionals.length > 1) die(64, `plurnk models: unexpected arguments after 'models': ${positionals.slice(1).join(" ")}`);
+        return await runModels(rpc, { json: opts.json });
+    }
+
+    if (verb === "session") {
+        if (sub === "list") {
+            if (positionals.length > 2) die(64, `plurnk session list: unexpected arguments: ${positionals.slice(2).join(" ")}`);
+            return await runSessionList(rpc, { json: opts.json });
+        }
+        die(64, `plurnk session: unknown subcommand '${sub ?? "(missing)"}'. Available: list`);
+    }
+
+    if (verb === "log") {
+        if (sub !== "read") {
+            die(64, `plurnk log: unknown subcommand '${sub ?? "(missing)"}'. Available: read`);
+        }
+        if (opts.sessionName === undefined) {
+            die(64, "plurnk log read: requires --session / PLURNK_SESSION (the log lives on a specific session's run)");
+        }
+        // log.read requires an attached session — same resolution as the loop flows.
+        await attachOrCreateSession(rpc, {
+            sessionName: opts.sessionName,
+            runName: opts.runName,
+            projectRoot: opts.projectRoot,
+        });
+        const filters: LogReadFilters = {};
+        const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
+        const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
+        const sinceId = parseIntFlag(opts.values.since as string | undefined, "--since");
+        const limit = parseIntFlag(opts.values.limit as string | undefined, "--limit");
+        if (loopId !== undefined) filters.loopId = loopId;
+        if (turnId !== undefined) filters.turnId = turnId;
+        if (sinceId !== undefined) filters.sinceId = sinceId;
+        if (limit !== undefined) filters.limit = limit;
+        return await runLogRead(rpc, { json: opts.json, filters });
+    }
+
+    return die(64, `plurnk: unknown subcommand '${verb ?? "(missing)"}'`);
+};
+
 export const main = async (argv: string[]): Promise<void> => {
     try { process.loadEnvFile(".env"); } catch { /* .env is optional */ }
 
@@ -126,22 +207,34 @@ export const main = async (argv: string[]): Promise<void> => {
             "project-root": { type: "string" },
             persona: { type: "string" },
             yolo: { type: "boolean" },
+            // log read filters
+            loop: { type: "string" },
+            turn: { type: "string" },
+            since: { type: "string" },
+            limit: { type: "string" },
         },
     });
 
     if (values.help) { process.stdout.write(USAGE); process.exit(0); }
 
-    // Assemble the prompt: positionals first, then piped stdin (if any),
-    // separated by a blank line. Either source alone is fine; neither
-    // present + TTY stdin → TUI mode. The --json flag requires a prompt.
-    const positionalPrompt = positionals.join(" ");
-    const stdinPrompt = process.stdin.isTTY === true ? "" : (await readStdin()).trim();
-    const prompt = positionalPrompt.length > 0 && stdinPrompt.length > 0
-        ? `${positionalPrompt}\n\n${stdinPrompt}`
-        : positionalPrompt || stdinPrompt;
+    // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
+    // a known read-only subcommand (models / session / log), we skip stdin
+    // reading and prompt construction entirely.
+    const SUBCOMMANDS = ["models", "session", "log"] as const;
+    const subcommand = positionals[0];
+    const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
-    if (values.json === true && prompt.length === 0) {
-        die(64, "plurnk: --json requires a prompt (CLI mode only)");
+    // Assemble the prompt only if we're NOT running a subcommand.
+    let prompt = "";
+    if (!isSubcommand) {
+        const positionalPrompt = positionals.join(" ");
+        const stdinPrompt = process.stdin.isTTY === true ? "" : (await readStdin()).trim();
+        prompt = positionalPrompt.length > 0 && stdinPrompt.length > 0
+            ? `${positionalPrompt}\n\n${stdinPrompt}`
+            : positionalPrompt || stdinPrompt;
+        if (values.json === true && prompt.length === 0) {
+            die(64, "plurnk: --json requires a prompt (CLI mode only)");
+        }
     }
 
     // CLI flag overrides env; env overrides nothing.
@@ -173,12 +266,21 @@ export const main = async (argv: string[]): Promise<void> => {
     }
 
     try {
+        const json = values.json === true;
+
+        if (isSubcommand) {
+            const exitCode = await runSubcommand(rpc, positionals, {
+                json, sessionName, runName, projectRoot, values,
+            });
+            process.exit(exitCode);
+        }
+
         const session = await attachOrCreateSession(rpc, { sessionName, runName, projectRoot });
         if (prompt.length === 0) {
             await runTui(rpc, session, { modelAlias, persona, yolo });
             process.exit(0);
         }
-        const exitCode = await runCli(rpc, prompt, session, { json: values.json === true, modelAlias, persona, yolo });
+        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, persona, yolo });
         process.exit(exitCode);
     } catch (cause) {
         process.stderr.write(`plurnk: ${cause instanceof Error ? cause.message : String(cause)}\n`);

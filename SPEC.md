@@ -309,7 +309,50 @@ Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripte
 
 ---
 
-## §7 Conformance
+## §7 Subcommands
+
+Read-only subcommands inspect daemon state without running a loop. They share the same connection and session-resolution machinery as the prompt-driven flow, but skip `loop.run` entirely. All support `--json` for machine-readable output (stdout product per §2.1; trace and errors stay on stderr).
+
+When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
+
+### §7.1 `plurnk models`
+
+Lists registered provider/model aliases via the daemon's `providers.list` RPC. No session is attached (no `requiresInit`).
+
+Default output: a column-aligned table of `alias / provider / model / active`. The `active` column carries a `*` for the alias the daemon resolved as its boot-time `PLURNK_MODEL`. With `--json`: emits `aliases` array verbatim as compact JSON.
+
+### §7.2 `plurnk session list`
+
+Lists sessions on the daemon via `session.list`. No prior attach required.
+
+Default output: a column-aligned table of `name / project_root / created / cost`. Null `project_root` renders as `(headless)`. Cost is formatted from pico-USD to human-readable.
+
+With `--json`: emits `sessions` array verbatim.
+
+### §7.3 `plurnk log read`
+
+Reads log entries from an attached session's run via `log.read`. **Requires `--session <name>`** (exit `64` if unset) — the log is a per-run artifact and the client must know which to read. `--run <name>` selects a specific run within the session (defaults to a fresh auto-named run on attach, which is usually not what you want — pass `--run` when reading historic logs).
+
+Filter flags (all numeric, all optional):
+
+| Flag | Maps to | Meaning |
+|---|---|---|
+| `--loop <id>` | `loopId` | Limit to one loop |
+| `--turn <id>` | `turnId` | Limit to one turn |
+| `--since <id>` | `sinceId` | Entries with id > sinceId (incremental fetch) |
+| `--limit <n>` | `limit` | Cap entries (daemon default 100, max 1000) |
+
+Default output: one trace line per entry, same format as CLI-mode trace (`[<status>] <origin> <op>[<sub>] <path>`). With `--json`: emits `entries` array verbatim.
+
+### §7.4 What subcommands do NOT do
+
+- Send prompts. They never call `loop.run`.
+- Mutate state (yet). Future write subcommands (e.g. `plurnk session rename`) would be a separate addition.
+- Honor flags that only matter to loop runs (`--model`, `--persona`, `--yolo`) — those parse without error but have no effect in subcommand mode.
+
+---
+
+## §8 Conformance
 
 A conforming `plurnk` client:
 
@@ -323,7 +366,7 @@ A conforming `plurnk` client:
 
 ---
 
-## §8 Out of scope
+## §9 Out of scope
 
 - Multi-daemon connections. One client, one daemon.
 - Authentication / TLS. Local-loopback only; auth is a plurnk-service concern with its own design pass.

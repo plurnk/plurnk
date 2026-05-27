@@ -329,7 +329,15 @@ Default output: a column-aligned table of `name / project_root / created / cost`
 
 With `--json`: emits `sessions` array verbatim.
 
-### §7.3 `plurnk log read`
+### §7.3 `plurnk session runs <name>`
+
+Lists runs within a named session via `session.runs`. Resolves `<name>` to a session id via a `session.list` filter; no attach required. Exits `1` if the name is unknown or ambiguous.
+
+Default output: a column-aligned table of `name / created / cost`. With `--json`: emits `runs` array verbatim.
+
+Typical use: discover a run name to pass as `--run` on `plurnk log read`.
+
+### §7.4 `plurnk log read`
 
 Reads log entries from an attached session's run via `log.read`. **Requires `--session <name>`** (exit `64` if unset) — the log is a per-run artifact and the client must know which to read. `--run <name>` selects a specific run within the session (defaults to a fresh auto-named run on attach, which is usually not what you want — pass `--run` when reading historic logs).
 
@@ -344,7 +352,7 @@ Filter flags (all numeric, all optional):
 
 Default output: one trace line per entry, same format as CLI-mode trace (`[<status>] <origin> <op>[<sub>] <path>`). With `--json`: emits `entries` array verbatim.
 
-### §7.4 What subcommands do NOT do
+### §7.5 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
 - Mutate state (yet). Future write subcommands (e.g. `plurnk session rename`) would be a separate addition.

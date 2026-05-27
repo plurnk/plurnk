@@ -84,6 +84,46 @@ export const runSessionList = async (rpc: Rpc, opts: { json: boolean }): Promise
     return 0;
 };
 
+// ─── plurnk session runs <name> ───────────────────────────────────────
+
+interface RunRow {
+    id: number;
+    name: string;
+    created_at: string;
+    cost_pico: number;
+}
+
+export const runSessionRuns = async (
+    rpc: Rpc,
+    sessionName: string,
+    opts: { json: boolean },
+): Promise<number> => {
+    // Look up the session id by name without attaching — session.runs accepts
+    // an explicit id, so we don't need to spend an attach on a read-only call.
+    const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
+    const matches = sessions.filter((s) => s.name === sessionName);
+    if (matches.length === 0) {
+        process.stderr.write(`plurnk session runs: no session named ${JSON.stringify(sessionName)}\n`);
+        return 1;
+    }
+    if (matches.length > 1) {
+        process.stderr.write(`plurnk session runs: ${matches.length} sessions named ${JSON.stringify(sessionName)}; pick a unique name\n`);
+        return 1;
+    }
+    const { runs } = await rpc.call("session.runs", { id: matches[0].id }) as { runs: RunRow[] };
+    if (opts.json) {
+        process.stdout.write(`${JSON.stringify(runs)}\n`);
+        return 0;
+    }
+    if (runs.length === 0) {
+        process.stdout.write(`(session ${JSON.stringify(sessionName)} has no runs)\n`);
+        return 0;
+    }
+    const rows = runs.map((r) => [r.name, r.created_at, formatCost(r.cost_pico)]);
+    process.stdout.write(`${renderTable(["name", "created", "cost"], rows)}\n`);
+    return 0;
+};
+
 // ─── plurnk log read ──────────────────────────────────────────────────
 
 // Caller has already attached the session via attachOrCreateSession; we just

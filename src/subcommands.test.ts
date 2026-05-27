@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { runModels, runSessionList, runLogRead } from "./subcommands.ts";
+import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 import type Rpc from "./rpc.ts";
 
 interface RecordedCall { method: string; params: unknown }
@@ -112,6 +112,83 @@ test("runSessionList: empty list → friendly message in table mode", async () =
     const { rpc } = fakeRpc({ "session.list": { sessions: [] } });
     const out = await captureStdout(() => runSessionList(rpc, { json: false }));
     assert.match(out, /no sessions/);
+});
+
+// ─── runSessionRuns ───────────────────────────────────────────────────
+
+test("runSessionRuns: looks up session by name then calls session.runs with id", async () => {
+    const { rpc, calls } = fakeRpc({
+        "session.list": {
+            sessions: [
+                { id: 1, name: "alpha", project_root: null, created_at: "t", cost_pico: 0 },
+                { id: 2, name: "beta", project_root: null, created_at: "t", cost_pico: 0 },
+            ],
+        },
+        "session.runs": {
+            runs: [
+                { id: 10, name: "run-1", created_at: "t1", cost_pico: 0 },
+                { id: 11, name: "run-2", created_at: "t2", cost_pico: 500_000_000_000 },
+            ],
+        },
+    });
+    const out = await captureStdout(() => runSessionRuns(rpc, "beta", { json: false }));
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].method, "session.list");
+    assert.equal(calls[1].method, "session.runs");
+    assert.deepEqual(calls[1].params, { id: 2 });
+    assert.match(out, /run-1/);
+    assert.match(out, /run-2/);
+});
+
+test("runSessionRuns: --json emits runs array", async () => {
+    const runs = [{ id: 10, name: "r", created_at: "t", cost_pico: 0 }];
+    const { rpc } = fakeRpc({
+        "session.list": { sessions: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
+        "session.runs": { runs },
+    });
+    const out = await captureStdout(() => runSessionRuns(rpc, "x", { json: true }));
+    assert.deepEqual(JSON.parse(out.trim()), runs);
+});
+
+test("runSessionRuns: unknown session name → exit 1, error on stderr", async () => {
+    const { rpc } = fakeRpc({ "session.list": { sessions: [] } });
+    const errs: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((c: string | Uint8Array): boolean => {
+        errs.push(typeof c === "string" ? c : Buffer.from(c).toString("utf8"));
+        return true;
+    }) as typeof process.stderr.write;
+    try {
+        const code = await runSessionRuns(rpc, "nonexistent", { json: false });
+        assert.equal(code, 1);
+    } finally { process.stderr.write = original; }
+    assert.match(errs.join(""), /no session named "nonexistent"/);
+});
+
+test("runSessionRuns: ambiguous name → exit 1", async () => {
+    const { rpc } = fakeRpc({
+        "session.list": {
+            sessions: [
+                { id: 1, name: "dup", project_root: null, created_at: "t", cost_pico: 0 },
+                { id: 2, name: "dup", project_root: null, created_at: "t", cost_pico: 0 },
+            ],
+        },
+    });
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (() => true) as typeof process.stderr.write;
+    try {
+        const code = await runSessionRuns(rpc, "dup", { json: false });
+        assert.equal(code, 1);
+    } finally { process.stderr.write = original; }
+});
+
+test("runSessionRuns: session has no runs → friendly message in table mode", async () => {
+    const { rpc } = fakeRpc({
+        "session.list": { sessions: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
+        "session.runs": { runs: [] },
+    });
+    const out = await captureStdout(() => runSessionRuns(rpc, "x", { json: false }));
+    assert.match(out, /no runs/);
 });
 
 // ─── runLogRead ───────────────────────────────────────────────────────

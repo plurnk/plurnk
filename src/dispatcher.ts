@@ -8,7 +8,7 @@ import { isAbsolute, resolve } from "node:path";
 import Rpc from "./rpc.ts";
 import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
-import { runModels, runSessionList, runLogRead } from "./subcommands.ts";
+import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
@@ -41,6 +41,7 @@ const USAGE = `usage: plurnk [--json] [--session <name>] [--run <name>] [--model
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [--json]
        plurnk session list [--json]
+       plurnk session runs <name> [--json]
        plurnk log read --session <name> [--run <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
 
@@ -94,6 +95,7 @@ options:
 subcommands:
   models                  list configured model aliases (providers.list)
   session list            list sessions on the daemon (session.list)
+  session runs <name>     list runs in the named session (session.runs)
   log read --session ...  read log entries from the named session's run
 `;
 
@@ -161,7 +163,13 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             if (positionals.length > 2) die(64, `plurnk session list: unexpected arguments: ${positionals.slice(2).join(" ")}`);
             return await runSessionList(rpc, { json: opts.json });
         }
-        die(64, `plurnk session: unknown subcommand '${sub ?? "(missing)"}'. Available: list`);
+        if (sub === "runs") {
+            const name = positionals[2];
+            if (name === undefined) die(64, "plurnk session runs: missing session name. Usage: plurnk session runs <name>");
+            if (positionals.length > 3) die(64, `plurnk session runs: unexpected arguments: ${positionals.slice(3).join(" ")}`);
+            return await runSessionRuns(rpc, name, { json: opts.json });
+        }
+        die(64, `plurnk session: unknown subcommand '${sub ?? "(missing)"}'. Available: list, runs`);
     }
 
     if (verb === "log") {

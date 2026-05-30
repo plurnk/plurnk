@@ -8,6 +8,8 @@ import type { LogEntryWire } from "./render.ts";
 import { extractSendBody } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
+import { report, clientProposalNoTtyReview } from "./telemetry.ts";
+import type { TelemetryEvent } from "./telemetry.ts";
 
 interface LoopRunResult {
     loopId: number;
@@ -65,6 +67,13 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         if (out.length > 0) process.stdout.write(`${out}\n`);
     });
 
+    // telemetry/event — parse errors, engine rail signals, scheme/provider
+    // failures. Routed through the unified renderer per SPEC.md §8.
+    rpc.onNotification("telemetry/event", (params) => {
+        const p = params as { loopId: number; event: TelemetryEvent };
+        report(p.event);
+    });
+
     // Proposal lifecycle (plurnk-service #42): pause-and-review for side-effecting
     // ops. Three paths:
     // - --yolo: auto-accept locally without prompting (server still sends the notification).
@@ -78,6 +87,7 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
                 return;
             }
             if (process.stdin.isTTY !== true) {
+                report(clientProposalNoTtyReview(p.logEntryId));
                 await rpc.call("loop.resolve", {
                     logEntryId: p.logEntryId,
                     decision: "reject",

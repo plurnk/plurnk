@@ -6,6 +6,7 @@
 import type Rpc from "./rpc.ts";
 import { formatPlain } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
+import { report, clientSubcommandSessionNotFound, clientSubcommandSessionAmbiguous } from "./telemetry.ts";
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
@@ -103,11 +104,11 @@ export const runSessionRuns = async (
     const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
     const matches = sessions.filter((s) => s.name === sessionName);
     if (matches.length === 0) {
-        process.stderr.write(`plurnk session runs: no session named ${JSON.stringify(sessionName)}\n`);
+        report(clientSubcommandSessionNotFound(sessionName));
         return 1;
     }
     if (matches.length > 1) {
-        process.stderr.write(`plurnk session runs: ${matches.length} sessions named ${JSON.stringify(sessionName)}; pick a unique name\n`);
+        report(clientSubcommandSessionAmbiguous(sessionName, matches.length));
         return 1;
     }
     const { runs } = await rpc.call("session.runs", { id: matches[0].id }) as { runs: RunRow[] };

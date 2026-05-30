@@ -10,6 +10,20 @@ import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
+import {
+    TelemetryError,
+    report,
+    clientConnectionRefused,
+    clientFlagInvalid,
+    clientFlagMissingDependency,
+    clientIoPersonaReadFailed,
+    clientRuntimeError,
+    clientSubcommandMissingArgument,
+    clientSubcommandSessionNotFound,
+    clientSubcommandSessionAmbiguous,
+    clientSubcommandUnknownVerb,
+} from "./telemetry.ts";
+import type { TelemetryEvent } from "./telemetry.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive session because we gate on isTTY upstream.
@@ -33,7 +47,7 @@ export const resolvePersona = async (raw: string | undefined): Promise<string | 
 export const resolveProjectRoot = (raw: string | undefined): string | null => {
     if (raw === undefined) return process.cwd();
     if (raw.length === 0) return null;
-    if (!isAbsolute(raw)) throw new Error(`plurnk: --project-root must be an absolute path (got ${JSON.stringify(raw)})`);
+    if (!isAbsolute(raw)) throw new TelemetryError(clientFlagInvalid("--project-root", raw, "must be an absolute path"));
     return raw;
 };
 
@@ -99,8 +113,10 @@ subcommands:
   log read --session ...  read log entries from the named session's run
 `;
 
-const die = (code: number, message: string): never => {
-    process.stderr.write(`${message}\n`);
+// Render a telemetry event to stderr and exit. Single egress point so every
+// fatal client signal uses the unified shape from telemetry.ts.
+const dieWith = (code: number, event: TelemetryEvent): never => {
+    report(event);
     process.exit(code);
 };
 
@@ -119,10 +135,12 @@ const attachOrCreateSession = async (
     const { sessions } = await rpc.call("session.list") as { sessions: SessionResult[] };
     const matches = sessions.filter((s) => s.name === opts.sessionName);
     if (matches.length === 0) {
-        throw new Error(`no session named ${JSON.stringify(opts.sessionName)}; run without --session to create one`);
+        const ev = clientSubcommandSessionNotFound(opts.sessionName);
+        ev.hints = ["run without --session to create a fresh session"];
+        throw new TelemetryError(ev);
     }
     if (matches.length > 1) {
-        throw new Error(`${matches.length} sessions named ${JSON.stringify(opts.sessionName)}; pick a unique name`);
+        throw new TelemetryError(clientSubcommandSessionAmbiguous(opts.sessionName, matches.length));
     }
     const attachParams: { id: number; runName?: string } = { id: matches[0].id };
     if (opts.runName !== undefined) attachParams.runName = opts.runName;
@@ -135,7 +153,7 @@ const attachOrCreateSession = async (
 const parseIntFlag = (raw: string | undefined, name: string): number | undefined => {
     if (raw === undefined) return undefined;
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer, got ${JSON.stringify(raw)}`);
+    if (!Number.isInteger(n) || n < 0) throw new TelemetryError(clientFlagInvalid(name, raw, "must be a non-negative integer"));
     return n;
 };
 
@@ -154,30 +172,38 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
     const sub = positionals[1];
 
     if (verb === "models") {
-        if (positionals.length > 1) die(64, `plurnk models: unexpected arguments after 'models': ${positionals.slice(1).join(" ")}`);
+        if (positionals.length > 1) {
+            throw new TelemetryError(clientSubcommandUnknownVerb(`models ${positionals.slice(1).join(" ")}`));
+        }
         return await runModels(rpc, { json: opts.json });
     }
 
     if (verb === "session") {
         if (sub === "list") {
-            if (positionals.length > 2) die(64, `plurnk session list: unexpected arguments: ${positionals.slice(2).join(" ")}`);
+            if (positionals.length > 2) {
+                throw new TelemetryError(clientSubcommandUnknownVerb(`session list ${positionals.slice(2).join(" ")}`));
+            }
             return await runSessionList(rpc, { json: opts.json });
         }
         if (sub === "runs") {
             const name = positionals[2];
-            if (name === undefined) die(64, "plurnk session runs: missing session name. Usage: plurnk session runs <name>");
-            if (positionals.length > 3) die(64, `plurnk session runs: unexpected arguments: ${positionals.slice(3).join(" ")}`);
+            if (name === undefined) {
+                throw new TelemetryError(clientSubcommandMissingArgument("plurnk session runs", "<name>"));
+            }
+            if (positionals.length > 3) {
+                throw new TelemetryError(clientSubcommandUnknownVerb(`session runs ${positionals.slice(3).join(" ")}`));
+            }
             return await runSessionRuns(rpc, name, { json: opts.json });
         }
-        die(64, `plurnk session: unknown subcommand '${sub ?? "(missing)"}'. Available: list, runs`);
+        throw new TelemetryError(clientSubcommandUnknownVerb(`session ${sub ?? "(missing)"}`, ["list", "runs"]));
     }
 
     if (verb === "log") {
         if (sub !== "read") {
-            die(64, `plurnk log: unknown subcommand '${sub ?? "(missing)"}'. Available: read`);
+            throw new TelemetryError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
         }
         if (opts.sessionName === undefined) {
-            die(64, "plurnk log read: requires --session / PLURNK_SESSION (the log lives on a specific session's run)");
+            throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--session (or PLURNK_SESSION)"));
         }
         // log.read requires an attached session — same resolution as the loop flows.
         await attachOrCreateSession(rpc, {
@@ -197,7 +223,7 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
         return await runLogRead(rpc, { json: opts.json, filters });
     }
 
-    return die(64, `plurnk: unknown subcommand '${verb ?? "(missing)"}'`);
+    throw new TelemetryError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
 };
 
 export const main = async (argv: string[]): Promise<void> => {
@@ -241,7 +267,7 @@ export const main = async (argv: string[]): Promise<void> => {
             ? `${positionalPrompt}\n\n${stdinPrompt}`
             : positionalPrompt || stdinPrompt;
         if (values.json === true && prompt.length === 0) {
-            die(64, "plurnk: --json requires a prompt (CLI mode only)");
+            dieWith(64, clientFlagMissingDependency("--json", "a prompt (CLI mode only)"));
         }
     }
 
@@ -251,17 +277,23 @@ export const main = async (argv: string[]): Promise<void> => {
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_YOLO ?? "").toLowerCase());
     if (runName !== undefined && sessionName === undefined) {
-        die(64, "plurnk: --run / PLURNK_RUN requires --session / PLURNK_SESSION");
+        dieWith(64, clientFlagMissingDependency("--run (or PLURNK_RUN)", "--session (or PLURNK_SESSION)"));
     }
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_PROJECT_ROOT;
     const projectRoot: string | null = (() => {
         try { return resolveProjectRoot(projectRootRaw); }
-        catch (cause) { return die(64, cause instanceof Error ? cause.message : String(cause)); }
+        catch (cause) {
+            if (cause instanceof TelemetryError) return dieWith(cause.exitCode, cause.event);
+            return dieWith(64, clientRuntimeError(cause));
+        }
     })();
     const persona: string | undefined = await (async () => {
         try { return await resolvePersona(values.persona ?? process.env.PLURNK_PERSONA); }
-        catch (cause) { return die(1, `plurnk: cannot read persona file: ${cause instanceof Error ? cause.message : String(cause)}`); }
+        catch (cause) {
+            const personaPath = values.persona ?? process.env.PLURNK_PERSONA ?? "(unknown)";
+            return dieWith(1, clientIoPersonaReadFailed(personaPath, cause));
+        }
     })();
 
     const url = process.env.PLURNK_URL ?? "ws://127.0.0.1:3044";
@@ -270,7 +302,7 @@ export const main = async (argv: string[]): Promise<void> => {
     try {
         await rpc.connect();
     } catch (cause) {
-        die(1, `plurnk: cannot connect to daemon at ${url}\n  ${cause instanceof Error ? cause.message : String(cause)}\n\nIs the daemon running? Start it from plurnk-service with:\n  node bin/plurnk-service.js start`);
+        dieWith(1, clientConnectionRefused(url, cause));
     }
 
     try {
@@ -291,12 +323,23 @@ export const main = async (argv: string[]): Promise<void> => {
         const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, persona, yolo });
         process.exit(exitCode);
     } catch (cause) {
-        process.stderr.write(`plurnk: ${cause instanceof Error ? cause.message : String(cause)}\n`);
-        if (cause instanceof Error && cause.cause !== undefined) {
-            process.stderr.write(`  cause: ${cause.cause instanceof Error ? cause.cause.message : String(cause.cause)}\n`);
+        if (cause instanceof TelemetryError) {
+            report(cause.event);
+            await rpc.close();
+            process.exit(cause.exitCode);
         }
+        // RPC errors arrive as Error("rpc error N: msg") from rpc.ts; the
+        // method that failed is unknown at this catch boundary, so we tag it
+        // with the synthetic "rpc.call" — daemon already supplied the
+        // specific code/message via cause.message, which is what users care
+        // about.
+        report(clientRuntimeError(cause));
+        await rpc.close();
         process.exit(1);
     } finally {
+        // Idempotent close — the catch paths already closed; this finally
+        // covers the success paths where we returned via process.exit() but
+        // the await on the runX call already completed.
         await rpc.close();
     }
 };

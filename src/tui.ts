@@ -7,6 +7,8 @@ import { renderLogEntry, renderSummary } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
+import { renderTelemetryEvent } from "./telemetry.ts";
+import type { TelemetryEvent } from "./telemetry.ts";
 
 interface LoopRunResult {
     loopId: number;
@@ -24,6 +26,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
     rpc.onNotification("log/entry", (params) => {
         const p = params as { entry: LogEntryWire };
         process.stdout.write(`\r\x1b[2K${renderLogEntry(p.entry)}\n`);
+    });
+
+    // telemetry/event — interleaved with the trace waterfall. Same line-wipe
+    // dance as log/entry so the rendered event doesn't collide with the
+    // readline prompt.
+    rpc.onNotification("telemetry/event", (params) => {
+        const p = params as { loopId: number; event: TelemetryEvent };
+        process.stdout.write(`\r\x1b[2K${renderTelemetryEvent(p.event)}\n`);
     });
 
     process.stdout.write(`\x1b[2mplurnk v0.1.0 · ctrl-c to quit · session: ${session.name}\x1b[0m\n\n`);

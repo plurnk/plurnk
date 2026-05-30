@@ -23,6 +23,7 @@
         "test:unit": "node --test 'src/**/*.test.ts'",
         "test:intg": "node --test --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
         "test": "npm run test:lint && npm run test:unit",
+        "test:all": "npm run test:lint && npm run test:unit && npm run test:intg",
         "build:dist": "tsc -p tsconfig.build.json",
         "build": "npm run build:dist",
         "prepare": "npm run build"

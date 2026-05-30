@@ -360,7 +360,94 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 
 ---
 
-## §8 Conformance
+## §8 Errors and telemetry
+
+Every user-visible error — client-side flag validation, RPC failures, daemon-pushed runtime signals — uses the same shape: the `TelemetryEvent` envelope from `@plurnk/plurnk-grammar` 0.17.0 (`schema/TelemetryEvent.json`). The client is one speaker among many (grammar, engine rails, schemes, providers); it isn't a passive renderer of *their* errors, it emits its own in the same vocabulary.
+
+### §8.1 Shape
+
+```ts
+interface TelemetryEvent {
+    source: string;           // lowercase, optionally colon-namespaced
+    kind: string;             // discriminator within source
+    message?: string | null;  // optional terse string
+    position?: ContentOffset | LogCoordinate | null;
+    hints?: string[];         // client-side convention; rendered as continuation lines
+    [key: string]: unknown;   // open at the kind-specific field layer
+}
+```
+
+`source` follows the pattern `^[a-z]+(:[a-z][a-z0-9-]*)?$`. Daemon producers: `grammar`, `engine:rail`, `scheme:<name>`, `provider:<vendor>`. Client producers: `client:connection`, `client:flag`, `client:subcommand`, `client:proposal`, `client:io`, `client:rpc`, `client:runtime`.
+
+### §8.2 Rendering
+
+`renderTelemetryEvent(event)` produces a single multi-line string with:
+
+```
+  📡 <source>:<kind> [<position>] ["<message>"]
+       <snippet lines, if any>
+       <hint lines, if any>
+```
+
+- **2-space indent** matches the trace-line waterfall (§5.1).
+- **📡 glyph** is the universal telemetry marker; it sits in the same column as the op-glyph slot on trace lines.
+- **Position** renders inline as `L<line> col<column>` for `ContentOffset`, `<coordinate>` (with `(op)` suffix when present) for `LogCoordinate`.
+- **Message** appears in quotes after the discriminator/position.
+- **Snippet** (`event.snippet`, used by grammar:parse_error) renders as a 5-space-indented block; the `N:\t`-prefixed content from the daemon is preserved verbatim.
+- **Hints** are a client-side convention (not in the grammar schema) for actionable nudges — e.g. "Is the daemon running?" on connection refused. They render as dim 5-space-indented continuation lines below the headline.
+
+### §8.3 Channel posture
+
+- **CLI mode**: stderr. Same channel as the log/entry trace per §2.1.
+- **TUI mode**: inline in the waterfall on stdout, with the `\r\x1b[2K` line-wipe prefix so the readline prompt doesn't collide with the rendered event.
+
+In both modes events interleave with `log/entry` trace lines and proposal-review prompts; the glyph is the visual cue that an event is telemetry rather than an action trace.
+
+### §8.4 Client-source events
+
+Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow through the same shape via `src/telemetry.ts` helpers:
+
+| Source | Kind(s) | When |
+|---|---|---|
+| `client:connection` | `refused`, `closed` | WebSocket couldn't open / dropped mid-call |
+| `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
+| `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
+| `client:proposal` | `no_tty_review` | Fail-closed reject in CLI without `--yolo` |
+| `client:io` | `persona_read_failed` | `--persona` file unreadable |
+| `client:rpc` | `error` | Daemon-returned RPC error surfaced verbatim |
+| `client:runtime` | `error` | Generic fallback for unstructured throws |
+
+Each helper (e.g. `clientConnectionRefused(url, cause)`) builds a well-formed event with kind-specific fields populated. Callers don't hand-shape JSON.
+
+### §8.5 `TelemetryError` for control flow
+
+A `TelemetryError extends Error` class carries an event through normal async error propagation. Deep throws (`attachOrCreateSession`, `resolveProjectRoot`, `parseIntFlag`) wrap a built event; the global catch in `dispatcher.ts` unwraps, renders, and exits with the carried `exitCode` (default 64 for usage errors; override per call). Non-`TelemetryError` throws collapse to a generic `client:runtime:error`.
+
+### §8.6 Daemon `telemetry/event` notification
+
+The client subscribes to `telemetry/event` in both modes and routes received events through the same renderer. Notification shape per plurnk-service SPEC §15.1:
+
+```
+telemetry/event { loopId: number, event: TelemetryEvent }
+```
+
+Daemon-side producers as of plurnk-service 0.5.0:
+- `grammar:parse_error` — model emitted invalid DSL; `position: ContentOffset`, `snippet: string` with offending content.
+- `engine:rail:strike` / `cycle` / `sudden_death` / `no_ops` / `max_commands_exceeded` — engine-rail signals during loop.run; structured fields only, no human-readable message.
+- `engine:rail:action_failure` — `position: LogCoordinate`, optional scheme-emitted error.
+
+Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt the protocol.
+
+### §8.7 What this is NOT
+
+- **Severity filtering** — the kind discriminator IS the signal. No `--verbose` / `--quiet-telemetry` flag in v0.4.0; add when volume bites.
+- **Categorization or interpretation** — per the dumb-client principle, the client doesn't decide that `engine:rail:strike` means "your model is in trouble" or rewrite messages for readability. Producer-side intelligence stands.
+- **Replacement for exit codes** — SPEC §4 exit codes remain orthogonal. The event renders; the exit code propagates.
+- **Telemetry transport** — events render to the user; they do NOT get re-shipped anywhere else. The daemon-side `packet.user.telemetry.events[]` (what the model sees) is separate from the client-side notification stream.
+
+---
+
+## §9 Conformance
 
 A conforming `plurnk` client:
 
@@ -369,12 +456,13 @@ A conforming `plurnk` client:
 3. Resolves the session per §1.1 (`session.create` by default, or `session.attach` when `--session`/`PLURNK_SESSION` is set); uses the returned session for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6.
-6. Maps `loop.run` results to exit codes per §4.
-7. Surfaces RPC errors verbatim to stderr; does not swallow.
+6. Subscribes to `telemetry/event` notifications and renders each through the unified telemetry shape per §8.
+7. Maps `loop.run` results to exit codes per §4.
+8. Emits its own user-visible errors as `TelemetryEvent` (source `client:*`) routed through the same renderer per §8.
 
 ---
 
-## §9 Out of scope
+## §10 Out of scope
 
 - Multi-daemon connections. One client, one daemon.
 - Authentication / TLS. Local-loopback only; auth is a plurnk-service concern with its own design pass.

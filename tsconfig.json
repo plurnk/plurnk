@@ -14,6 +14,6 @@
         "types": ["node"],
         "lib": ["ES2024"]
     },
-    "include": ["src/**/*.ts"],
+    "include": ["src/**/*.ts", "test/**/*.ts"],
     "exclude": ["node_modules", "dist"]
 }

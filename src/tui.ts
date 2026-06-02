@@ -9,6 +9,8 @@ import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { renderTelemetryEvent } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
+import { renderStreamEvent, renderStreamConcluded } from "./stream.ts";
+import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
 interface LoopRunResult {
     loopId: number;
@@ -34,6 +36,15 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
     rpc.onNotification("telemetry/event", (params) => {
         const p = params as { loopId: number; event: TelemetryEvent };
         process.stdout.write(`\r\x1b[2K${renderTelemetryEvent(p.event)}\n`);
+    });
+
+    // stream/event + stream/concluded — daemon-pushed channel-growth and
+    // closure metadata. Inline in the waterfall with the same prompt-wipe.
+    rpc.onNotification("stream/event", (params) => {
+        process.stdout.write(`\r\x1b[2K${renderStreamEvent(params as StreamEventPayload)}\n`);
+    });
+    rpc.onNotification("stream/concluded", (params) => {
+        process.stdout.write(`\r\x1b[2K${renderStreamConcluded(params as StreamConcludedPayload)}\n`);
     });
 
     process.stdout.write(`\x1b[2mplurnk v0.1.0 · ctrl-c to quit · session: ${session.name}\x1b[0m\n\n`);

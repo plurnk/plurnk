@@ -10,6 +10,8 @@ import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalNoTtyReview } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
+import { renderStreamEvent, renderStreamConcluded, reportStream } from "./stream.ts";
+import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
 interface LoopRunResult {
     loopId: number;
@@ -72,6 +74,17 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     rpc.onNotification("telemetry/event", (params) => {
         const p = params as { loopId: number; event: TelemetryEvent };
         report(p.event);
+    });
+
+    // stream/event + stream/concluded — daemon-pushed channel-growth and
+    // closure metadata per plurnk-service SPEC §13.6. Rendered as a one-
+    // line trace on stderr; content fetching is not done here (CLI is a
+    // trace viewer; plurnk.nvim does in-buffer content rendering).
+    rpc.onNotification("stream/event", (params) => {
+        reportStream(renderStreamEvent(params as StreamEventPayload));
+    });
+    rpc.onNotification("stream/concluded", (params) => {
+        reportStream(renderStreamConcluded(params as StreamConcludedPayload));
     });
 
     // Proposal lifecycle (plurnk-service #42): pause-and-review for side-effecting

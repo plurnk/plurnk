@@ -208,7 +208,7 @@ Width-tolerant; no fixed column widths. The status code drives color. Op glyphs 
 - The full packet (`turn.packet`). The client never displays the rendered index, log section, or telemetry — those are the model's view, not the user's.
 - Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `<<READ(log://...)>>`.
 - Raw RPC frames. Set `DEBUG=plurnk:rpc` (future) to enable.
-- Stream events between turn boundaries (`stream/event` notifications). Future feature; not in v0.
+- Content fetching from streaming channels. Client renders `stream/event` and `stream/concluded` notifications as one-line metadata traces (`📡 stream/event entry=N channel=stdout state=active len=1234`) on stderr (CLI) / waterfall (TUI); fetching the actual channel content via `entry.read` is the consumer's job. See §8.7.
 
 ### §5.4 Broadcast SEND rendering
 
@@ -438,7 +438,25 @@ Daemon-side producers as of plurnk-service 0.5.0:
 
 Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt the protocol.
 
-### §8.7 What this is NOT
+### §8.7 `stream/event` and `stream/concluded`
+
+The daemon also broadcasts streaming-channel metadata as `stream/event` and `stream/concluded` notifications (per plurnk-service SPEC §7.1 / §13.6). These are NOT `TelemetryEvent`-shaped — they're plain content-growth signals — but the client uses the same `📡` glyph and rendering channel so the user gets one visual cue for "daemon pushed something."
+
+```
+stream/event     { entryId, channel, state, contentLength }
+stream/concluded { entryId, subscriptionId, scheme, closeStatus, summary, wakeAction, wakeLoopId? }
+```
+
+Both render as one-line traces:
+
+```
+  📡 stream/event entry=42 channel=stdout state=active len=1234
+  📡 stream/concluded entry=42 scheme=exec status=200 wake=opened-loop "ls -la done"
+```
+
+CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt-wipe prefix. **The client does not fetch the actual streamed content** — that's not the CLI's job. Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.
+
+### §8.8 What this is NOT
 
 - **Severity filtering** — the kind discriminator IS the signal. No `--verbose` / `--quiet-telemetry` flag in v0.4.0; add when volume bites.
 - **Categorization or interpretation** — per the dumb-client principle, the client doesn't decide that `engine:rail:strike` means "your model is in trouble" or rewrite messages for readability. Producer-side intelligence stands.

@@ -117,7 +117,9 @@ test("plurnk session runs without name → exit 64", async (t) => {
     if (guard(t)) return;
     const r = await runPlurnk(["session", "runs"]);
     assert.equal(r.code, 64);
-    assert.match(r.stderr, /missing session name/);
+    // v0.4.0 unified errors onto the TelemetryEvent shape (SPEC §8.4).
+    assert.match(r.stderr, /client:subcommand:missing_argument/);
+    assert.match(r.stderr, /missing <name>/);
 });
 
 // ─── plurnk log read ──────────────────────────────────────────────────

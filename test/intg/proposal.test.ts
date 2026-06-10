@@ -106,7 +106,7 @@ test("proposal accept with body override writes the override, not the original",
 
 // ─── Wire shape: the loop/proposal notification carries the fields the client reads ──
 
-test("loop/proposal notification carries logEntryId, op, target, body, attrs", async (t) => {
+test("loop/proposal notification carries logEntryId, op, target, body, attrs, flags", async (t) => {
     if (guard(t)) return;
     const target = join(daemon!.workspace, "shape.txt");
     const rpc = new Rpc({ url: daemon!.url });
@@ -135,6 +135,9 @@ test("loop/proposal notification carries logEntryId, op, target, body, attrs", a
         assert.equal(typeof c.body, "string");
         assert.ok((c.body as string).includes("shape probe") || (c.body as string).includes("+shape"));
         assert.ok(typeof c.attrs === "object");
+        // flags is the loop's persisted flag set (yolo/noProposals/...) —
+        // the client suppresses review UI on it (SPEC §6.1).
+        assert.ok(c.flags !== null && typeof c.flags === "object");
     } finally { await rpc.close(); }
 });
 

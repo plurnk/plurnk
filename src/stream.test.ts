@@ -10,13 +10,14 @@ const { renderStreamEvent, renderStreamConcluded } = await import("./stream.ts")
 test("renderStreamEvent: 📡 stream/event with all metadata fields", () => {
     const out = renderStreamEvent({
         entryId: 42,
+        target: "exec://ls -la",
         channel: "stdout",
         state: "active",
         contentLength: 1234,
     });
     assert.match(out, /📡/);
     assert.match(out, /stream\/event/);
-    assert.match(out, /entry=42/);
+    assert.match(out, /exec:\/\/ls -la/);
     assert.match(out, /channel=stdout/);
     assert.match(out, /state=active/);
     assert.match(out, /len=1234/);
@@ -25,14 +26,15 @@ test("renderStreamEvent: 📡 stream/event with all metadata fields", () => {
 
 test("renderStreamEvent: state transitions render verbatim", () => {
     for (const state of ["static", "active", "closed", "errored"]) {
-        const out = renderStreamEvent({ entryId: 1, channel: "c", state, contentLength: 0 });
+        const out = renderStreamEvent({ entryId: 1, target: "exec://c", channel: "c", state, contentLength: 0 });
         assert.match(out, new RegExp(`state=${state}`));
     }
 });
 
-test("renderStreamConcluded: full payload", () => {
+test("renderStreamConcluded: full payload renders target URI", () => {
     const out = renderStreamConcluded({
         entryId: 42,
+        target: "exec://ls -la",
         subscriptionId: 1,
         scheme: "exec",
         closeStatus: 200,
@@ -42,8 +44,7 @@ test("renderStreamConcluded: full payload", () => {
     });
     assert.match(out, /📡/);
     assert.match(out, /stream\/concluded/);
-    assert.match(out, /entry=42/);
-    assert.match(out, /scheme=exec/);
+    assert.match(out, /exec:\/\/ls -la/);
     assert.match(out, /status=200/);
     assert.match(out, /wake=opened-loop/);
     assert.match(out, /"ls -la done"/);
@@ -52,6 +53,7 @@ test("renderStreamConcluded: full payload", () => {
 test("renderStreamConcluded: empty summary omits the quoted block", () => {
     const out = renderStreamConcluded({
         entryId: 1,
+        target: "exec://c",
         subscriptionId: 1,
         scheme: "exec",
         closeStatus: 200,

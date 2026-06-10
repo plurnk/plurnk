@@ -8,7 +8,34 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget } = await import("./proposal.ts");
+const { renderBody, formatTarget, isServerResolved } = await import("./proposal.ts");
+
+const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
+    logEntryId: 1,
+    loopId: 1,
+    turnId: 1,
+    op: "EDIT",
+    target: { scheme: "file", pathname: "/tmp/x" },
+    body: "",
+    attrs: {},
+    flags,
+});
+
+// ─── isServerResolved ────────────────────────────────────────────────
+
+test("isServerResolved: flags.yolo → true (server YOLO auto-accepts in-process)", () => {
+    assert.equal(isServerResolved(proposal({ yolo: true })), true);
+});
+
+test("isServerResolved: flags.noProposals → true (server auto-rejects in-process)", () => {
+    assert.equal(isServerResolved(proposal({ noProposals: true })), true);
+});
+
+test("isServerResolved: plain flags → false (client review proceeds)", () => {
+    assert.equal(isServerResolved(proposal({})), false);
+    assert.equal(isServerResolved(proposal({ yolo: false, noProposals: false })), false);
+    assert.equal(isServerResolved(proposal({ noWeb: true, noInteraction: true })), false);
+});
 
 // ─── renderBody ──────────────────────────────────────────────────────
 

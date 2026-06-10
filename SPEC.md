@@ -161,9 +161,11 @@ Triggered when `argv` has no positional prompt.
 4. While a dispatch is in flight, additional input is rejected with a "busy" notice.
 5. `Ctrl-C` or `EOF` exits cleanly.
 
-### §3.2 Future: cancellation
+### §3.2 Cancellation
 
-`Ctrl-C` during an in-flight loop.run should send `SEND[499]` to the loop's URI to request cancellation. Not implemented in v0; current `Ctrl-C` just closes the readline interface.
+`Ctrl-C` during an in-flight dispatch calls `loop.cancel` (plurnk-service SPEC §13.5) — the daemon aborts the run's active drain, the pending `loop.run` resolves with `finalStatus: 499`, and the REPL continues. A second `Ctrl-C` (or `Ctrl-C` while idle) closes the readline interface — the escape hatch for dispatches a drain-cancel can't unblock (`op.parse`).
+
+CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 
 ---
 
@@ -208,7 +210,7 @@ Width-tolerant; no fixed column widths. The status code drives color. Op glyphs 
 - The full packet (`turn.packet`). The client never displays the rendered index, log section, or telemetry — those are the model's view, not the user's.
 - Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `<<READ(log://...)>>`.
 - Raw RPC frames. Set `DEBUG=plurnk:rpc` (future) to enable.
-- Content fetching from streaming channels. Client renders `stream/event` and `stream/concluded` notifications as one-line metadata traces (`📡 stream/event entry=N channel=stdout state=active len=1234`) on stderr (CLI) / waterfall (TUI); fetching the actual channel content via `entry.read` is the consumer's job. See §8.7.
+- Content fetching from streaming channels. Client renders `stream/event` and `stream/concluded` notifications as one-line metadata traces (`📡 stream/event exec://ls channel=stdout state=active len=1234`) on stderr (CLI) / waterfall (TUI); fetching the actual channel content via `entry.read` is the consumer's job. See §8.7.
 
 ### §5.4 Broadcast SEND rendering
 
@@ -260,12 +262,15 @@ loop/proposal {
     target: { scheme: string | null, pathname: string | null },
     body: string,                 // udiff for EDIT; command summary for EXEC
     attrs: object,                // scheme-specific payload (opaque to client)
+    flags: object,                // loop's persisted flags ({yolo, noProposals, ...})
 }
 ```
 
+**Server-resolved proposals.** When `flags.yolo` (server-side YOLO auto-accept) or `flags.noProposals` (server-side auto-reject) is set, the daemon settles the entry in-process before any human can react — the notification is informational. The client skips review UI entirely and sends no `loop.resolve` (which would race the already-settled proposal). The proposed-then-resolved lifecycle still shows in the `log/entry` waterfall.
+
 ### §6.2 Review menu (interactive)
 
-When a TTY is present and `--yolo` is not set, the client renders the proposal to stderr and prompts:
+When the proposal is not server-resolved (§6.1), a TTY is present, and `--yolo` is not set, the client renders the proposal to stderr and prompts:
 
 ```
 ── proposal EDIT file:///path/to/file ──
@@ -289,7 +294,7 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 
 Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
 
-This is distinct from **server-side YOLO** (a future plurnk-service capability — see [plurnk-service#147](https://github.com/plurnk/plurnk-service/issues/147)), where the daemon auto-applies side effects without client involvement. Server YOLO needs a wire path that doesn't exist yet; client YOLO needs none.
+This is distinct from **server-side YOLO** (`loop.run({flags: {yolo: true}})`, plurnk-service §13.5), where the daemon auto-accepts proposals in-process without client involvement — intended for benchmarks and automation, not routine client UX. The client does not expose a flag for it; its only obligation is the §6.1 suppression: a proposal carrying `flags.yolo` gets no review UI and no `loop.resolve`.
 
 ### §6.4 Fail-closed (non-TTY, no yolo)
 
@@ -431,10 +436,11 @@ The client subscribes to `telemetry/event` in both modes and routes received eve
 telemetry/event { loopId: number, event: TelemetryEvent }
 ```
 
-Daemon-side producers as of plurnk-service 0.5.0:
+Daemon-side producers as of plurnk-service 0.11.0:
 - `grammar:parse_error` — model emitted invalid DSL; `position: ContentOffset`, `snippet: string` with offending content.
 - `engine:rail:strike` / `cycle` / `sudden_death` / `no_ops` / `max_commands_exceeded` — engine-rail signals during loop.run; structured fields only, no human-readable message.
 - `engine:rail:action_failure` — `position: LogCoordinate`, optional scheme-emitted error.
+- `engine:rail:budget_overflow` — assembled packet exceeded the budget ceiling; `hidden: [{scheme, count}]` lists the entries the grinder moved out of the window (plurnk-service §14.4).
 
 Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt the protocol.
 
@@ -443,15 +449,15 @@ Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt t
 The daemon also broadcasts streaming-channel metadata as `stream/event` and `stream/concluded` notifications (per plurnk-service SPEC §7.1 / §13.6). These are NOT `TelemetryEvent`-shaped — they're plain content-growth signals — but the client uses the same `📡` glyph and rendering channel so the user gets one visual cue for "daemon pushed something."
 
 ```
-stream/event     { entryId, channel, state, contentLength }
-stream/concluded { entryId, subscriptionId, scheme, closeStatus, summary, wakeAction, wakeLoopId? }
+stream/event     { entryId, target, channel, state, contentLength }
+stream/concluded { entryId, target, subscriptionId, scheme, closeStatus, summary, wakeAction, wakeLoopId? }
 ```
 
-Both render as one-line traces:
+`target` is the entry's URI (`scheme://pathname`, plurnk-service #179) — clients route on it without an entryId→URI lookup. Both render as one-line traces:
 
 ```
-  📡 stream/event entry=42 channel=stdout state=active len=1234
-  📡 stream/concluded entry=42 scheme=exec status=200 wake=opened-loop "ls -la done"
+  📡 stream/event exec://ls -la channel=stdout state=active len=1234
+  📡 stream/concluded exec://ls -la status=200 wake=opened-loop "ls -la done"
 ```
 
 CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt-wipe prefix. **The client does not fetch the actual streamed content** — that's not the CLI's job. Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.
@@ -473,7 +479,7 @@ A conforming `plurnk` client:
 2. Connects to the URL in `PLURNK_URL` (or its default).
 3. Resolves the session per §1.1 (`session.create` by default, or `session.attach` when `--session`/`PLURNK_SESSION` is set); uses the returned session for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
-5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6.
+5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping server-resolved proposals (`flags.yolo` / `flags.noProposals`) entirely.
 6. Subscribes to `telemetry/event` notifications and renders each through the unified telemetry shape per §8.
 7. Maps `loop.run` results to exit codes per §4.
 8. Emits its own user-visible errors as `TelemetryEvent` (source `client:*`) routed through the same renderer per §8.

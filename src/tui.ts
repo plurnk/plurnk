@@ -5,7 +5,7 @@ import readline from "node:readline";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { reviewProposal } from "./proposal.ts";
+import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { renderTelemetryEvent } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -55,11 +55,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
         prompt: "\x1b[1m> \x1b[0m",
     });
 
-    // Proposal lifecycle: --yolo auto-accepts locally; otherwise pause readline,
-    // review, resolve, resume.
+    // Proposal lifecycle: server-resolved proposals (flags.yolo/noProposals)
+    // settle in-process — skip; --yolo auto-accepts locally; otherwise pause
+    // readline, review, resolve, resume.
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
         void (async () => {
+            if (isServerResolved(p)) return;
             if (opts.yolo) {
                 await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" });
                 return;
@@ -79,6 +81,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
 
     return new Promise<void>((resolve) => {
         let inFlight = false;
+        let cancelRequested = false;
 
         rl.on("line", async (line) => {
             const trimmed = line.trim();
@@ -123,6 +126,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
                 process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);
             } finally {
                 inFlight = false;
+                cancelRequested = false;
                 rl.prompt();
             }
         });
@@ -133,7 +137,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
         });
 
         rl.on("SIGINT", () => {
-            // Ctrl-C: exit cleanly. Future: cancel in-flight run via SEND[499].
+            // First Ctrl-C with a dispatch in flight: cancel the run's active
+            // drain via loop.cancel (plurnk-service §13.5); the pending
+            // loop.run resolves with finalStatus 499 and the REPL continues.
+            // Second Ctrl-C (or idle Ctrl-C) exits — escape hatch for
+            // dispatches a drain-cancel can't unblock (op.parse).
+            if (inFlight && !cancelRequested) {
+                cancelRequested = true;
+                process.stdout.write("\r\x1b[2K  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m\n");
+                void rpc.call("loop.cancel", { reason: "user_sigint" });
+                return;
+            }
             rl.close();
         });
     });

@@ -13,6 +13,14 @@ import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+export interface ProposalFlags {
+    yolo?: boolean;
+    mode?: string;
+    noWeb?: boolean;
+    noInteraction?: boolean;
+    noProposals?: boolean;
+}
+
 export interface ProposalParams {
     logEntryId: number;
     loopId: number;
@@ -21,7 +29,15 @@ export interface ProposalParams {
     target: { scheme: string | null; pathname: string | null };
     body: string;
     attrs: unknown;
+    flags: ProposalFlags;
 }
+
+// Server-resolved proposals: when the loop carries flags.yolo (server-side
+// YOLO auto-accept) or flags.noProposals (server-side auto-reject), the
+// daemon resolves the entry in-process before any human can react. Review UI
+// and a client loop.resolve would race an already-settled proposal.
+export const isServerResolved = ({ flags }: ProposalParams): boolean =>
+    flags?.yolo === true || flags?.noProposals === true;
 
 export interface Resolution {
     decision: "accept" | "reject" | "cancel";

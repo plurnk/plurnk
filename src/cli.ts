@@ -6,7 +6,7 @@
 import type Rpc from "./rpc.ts";
 import type { LogEntryWire } from "./render.ts";
 import { extractSendBody } from "./render.ts";
-import { reviewProposal } from "./proposal.ts";
+import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalNoTtyReview } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -88,13 +88,16 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     });
 
     // Proposal lifecycle (plurnk-service #42): pause-and-review for side-effecting
-    // ops. Three paths:
+    // ops. Four paths:
+    // - server-resolved (flags.yolo / flags.noProposals): the daemon settles the
+    //   entry in-process; a client loop.resolve would race it. Skip entirely.
     // - --yolo: auto-accept locally without prompting (server still sends the notification).
     // - TTY: interactive review.
     // - no TTY, no yolo: fail closed (reject) so the daemon doesn't hang for 5 minutes.
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
         void (async () => {
+            if (isServerResolved(p)) return;
             if (opts.yolo) {
                 await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" });
                 return;
@@ -117,7 +120,26 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     const loopParams: { prompt: string; alias?: string; persona?: string } = { prompt };
     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
     if (opts.persona !== undefined) loopParams.persona = opts.persona;
-    const result = await rpc.call("loop.run", loopParams) as LoopRunResult;
+
+    // First Ctrl-C cancels the run's active drain via loop.cancel
+    // (plurnk-service §13.5) — the pending loop.run resolves with
+    // finalStatus 499 and the normal exit-code path (3) applies. A second
+    // Ctrl-C force-exits in case the daemon never comes back.
+    let cancelRequested = false;
+    const onSigint = (): void => {
+        if (cancelRequested) process.exit(3);
+        cancelRequested = true;
+        process.stderr.write("cancelling… (ctrl-c again to force quit)\n");
+        void rpc.call("loop.cancel", { reason: "user_sigint" });
+    };
+    process.on("SIGINT", onSigint);
+
+    let result: LoopRunResult;
+    try {
+        result = await rpc.call("loop.run", loopParams) as LoopRunResult;
+    } finally {
+        process.removeListener("SIGINT", onSigint);
+    }
     const wallMs = Date.now() - start;
 
     process.stderr.write(`\nfinal status: ${result.finalStatus}${result.hitMaxTurns ? " (maxTurns reached)" : ""}\n`);

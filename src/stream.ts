@@ -19,6 +19,7 @@ const STREAM_GLYPH = "📡";
 
 export interface StreamEventPayload {
     entryId: number;
+    target: string;         // entry URI (scheme://pathname) — plurnk-service #179
     channel: string;
     state: string;          // static | active | closed | errored
     contentLength: number;
@@ -26,6 +27,7 @@ export interface StreamEventPayload {
 
 export interface StreamConcludedPayload {
     entryId: number;
+    target: string;         // entry URI (scheme://pathname) — plurnk-service #179
     subscriptionId: number;
     scheme: string;
     closeStatus: number;
@@ -38,7 +40,7 @@ export const renderStreamEvent = (ev: StreamEventPayload): string => {
     const parts = [
         STREAM_GLYPH,
         "stream/event",
-        `entry=${ev.entryId}`,
+        ev.target,
         `channel=${ev.channel}`,
         `state=${ev.state}`,
         `len=${ev.contentLength}`,
@@ -50,8 +52,7 @@ export const renderStreamConcluded = (ev: StreamConcludedPayload): string => {
     const parts = [
         STREAM_GLYPH,
         "stream/concluded",
-        `entry=${ev.entryId}`,
-        `scheme=${ev.scheme}`,
+        ev.target,
         `status=${ev.closeStatus}`,
         `wake=${ev.wakeAction}`,
     ];

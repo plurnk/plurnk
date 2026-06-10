@@ -22,8 +22,11 @@ export const locateDaemon = async (): Promise<string | null> => {
     if (envPath !== undefined && envPath.length > 0) {
         try { await access(envPath, fsConstants.X_OK); return envPath; } catch { /* fall through */ }
     }
-    const sibling = resolve(__dirname, "../../../plurnk-service/bin/plurnk-service.js");
-    try { await access(sibling, fsConstants.R_OK); return sibling; } catch { /* not present */ }
+    // The service's bin migrated .js → .ts (plurnk-service #183); probe both.
+    for (const name of ["plurnk-service.ts", "plurnk-service.js"]) {
+        const sibling = resolve(__dirname, `../../../plurnk-service/bin/${name}`);
+        try { await access(sibling, fsConstants.R_OK); return sibling; } catch { /* not present */ }
+    }
     return null;
 };
 
@@ -71,6 +74,9 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
 
     const child: ChildProcess = spawn("node", args, {
         env,
+        // Plugin discovery resolves node_modules/@plurnk/* relative to cwd —
+        // run from the service repo so its installed executors register.
+        cwd: resolve(dirname(binPath), ".."),
         stdio: ["ignore", "pipe", "pipe"],
     });
 

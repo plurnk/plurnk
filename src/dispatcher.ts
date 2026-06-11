@@ -15,6 +15,7 @@ import {
     TelemetryError,
     report,
     clientConnectionRefused,
+    clientDaemonStale,
     clientFlagInvalid,
     clientFlagMissingDependency,
     clientIoPersonaReadFailed,
@@ -41,6 +42,31 @@ export const resolvePersona = async (raw: string | undefined): Promise<string | 
     if (raw === undefined) return undefined;
     const abs = isAbsolute(raw) ? raw : resolve(process.cwd(), raw);
     return await readFile(abs, "utf8");
+};
+
+// LoopFlags resolution: --flags takes raw JSON (the generic passthrough —
+// any flag the daemon wires lands without a client release); --ask is sugar
+// for {mode:"ask"}. A mode conflict between the two is an error, not a
+// silent winner.
+export const resolveLoopFlags = (rawJson: string | undefined, ask: boolean): Record<string, unknown> | undefined => {
+    let flags: Record<string, unknown> | undefined;
+    if (rawJson !== undefined) {
+        let parsed: unknown;
+        try { parsed = JSON.parse(rawJson); } catch {
+            throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
+        }
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
+        }
+        flags = parsed as Record<string, unknown>;
+    }
+    if (ask) {
+        if (flags?.mode !== undefined && flags.mode !== "ask") {
+            throw new TelemetryError(clientFlagInvalid("--ask", String(flags.mode), "conflicts with --flags mode"));
+        }
+        flags = { ...(flags ?? {}), mode: "ask" };
+    }
+    return flags;
 };
 
 // projectRoot resolution: empty string = explicit headless (null on wire);
@@ -102,6 +128,14 @@ options:
                           passed on every loop.run. Overrides PLURNK_PERSONA.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_YOLO.
+      --ask               read-only loop: flags.mode="ask" — the daemon 403s
+                          schemes excluded in ask (file edits, exec).
+      --flags <json>      raw LoopFlags JSON passthrough on every loop.run
+                          (e.g. '{"yolo":true}' for server-side YOLO in
+                          benchmark/automation runs).
+      --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
+      --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
+                          seconds; exits 3 with "timedOut":true in the result.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -248,6 +282,10 @@ export const main = async (argv: string[]): Promise<void> => {
             "project-root": { type: "string" },
             persona: { type: "string" },
             yolo: { type: "boolean" },
+            ask: { type: "boolean" },
+            flags: { type: "string" },
+            "max-turns": { type: "string" },
+            timeout: { type: "string" },
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -287,6 +325,20 @@ export const main = async (argv: string[]): Promise<void> => {
         dieWith(64, clientFlagMissingDependency("--run (or PLURNK_RUN)", "--session (or PLURNK_SESSION)"));
     }
 
+    // Loop knobs (benchmark surface): --flags JSON passthrough, --ask sugar,
+    // --max-turns, --timeout. All validated up front, usage errors exit 64.
+    let loopFlags: Record<string, unknown> | undefined;
+    let maxTurns: number | undefined;
+    let timeoutSec: number | undefined;
+    try {
+        loopFlags = resolveLoopFlags(values.flags, values.ask === true);
+        maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
+        timeoutSec = parseIntFlag(values.timeout, "--timeout");
+    } catch (cause) {
+        if (cause instanceof TelemetryError) dieWith(cause.exitCode, cause.event);
+        dieWith(64, clientRuntimeError(cause));
+    }
+
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_PROJECT_ROOT;
     const projectRoot: string | null = (() => {
         try { return resolveProjectRoot(projectRootRaw); }
@@ -312,6 +364,19 @@ export const main = async (argv: string[]): Promise<void> => {
         dieWith(1, clientConnectionRefused(url, cause));
     }
 
+    // Daemon staleness check (clients track HEAD, service SPEC §13.9): probe
+    // discover for wire markers this client depends on; warn bluntly when
+    // missing. One local round-trip; never fatal.
+    try {
+        const catalog = await rpc.call("discover") as { methods?: Record<string, unknown>; notifications?: Record<string, unknown> };
+        const missing: string[] = [];
+        for (const m of ["loop.cancel", "op.exec"]) {
+            if (catalog.methods?.[m] === undefined) missing.push(m);
+        }
+        if (catalog.notifications?.["stream/concluded"] === undefined) missing.push("stream/concluded");
+        if (missing.length > 0) report(clientDaemonStale(missing));
+    } catch { /* discover failing will surface on the real call anyway */ }
+
     try {
         const json = values.json === true;
 
@@ -324,10 +389,10 @@ export const main = async (argv: string[]): Promise<void> => {
 
         const session = await attachOrCreateSession(rpc, { sessionName, runName, projectRoot });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, persona, yolo });
+            await runTui(rpc, session, { modelAlias, persona, yolo, loopFlags, maxTurns });
             process.exit(0);
         }
-        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, persona, yolo });
+        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, persona, yolo, loopFlags, maxTurns, timeoutSec });
         process.exit(exitCode);
     } catch (cause) {
         if (cause instanceof TelemetryError) {

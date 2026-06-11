@@ -21,7 +21,10 @@ interface LoopRunResult {
 
 interface SessionResult { id: number; name: string }
 
-export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlias?: string; persona?: string; yolo: boolean }): Promise<void> => {
+export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
+    modelAlias?: string; persona?: string; yolo: boolean;
+    loopFlags?: Record<string, unknown>; maxTurns?: number;
+}): Promise<void> => {
     // Tokens for the summary line: summed from each dispatch's log/entry
     // rows (log_entries.tokens). Reset per dispatch in the line handler.
     let dispatchTokens = 0;
@@ -113,11 +116,26 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
                     // Raw DSL: send to op.parse
                     const result = await rpc.call("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
                     finalStatus = result.results[result.results.length - 1]?.status ?? 0;
+                } else if (trimmed.startsWith("!")) {
+                    // `! cmd` — exec via the daemon (proposal-gated like any
+                    // side effect; output streams as stream/event traces).
+                    const command = trimmed.replace(/^!+\s*/, "");
+                    const result = await rpc.call("op.exec", { command }) as { status: number };
+                    finalStatus = result.status;
                 } else {
-                    // Prompt: send to loop.run
-                    const loopParams: { prompt: string; alias?: string; persona?: string } = { prompt: trimmed };
+                    // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
+                    // `: ` = act. Per-line prefix overrides a global --ask.
+                    let lineFlags = opts.loopFlags;
+                    const prefix = trimmed[0];
+                    if (prefix === "?" || prefix === ":") {
+                        lineFlags = { ...(opts.loopFlags ?? {}), mode: prefix === "?" ? "ask" : "act" };
+                    }
+                    const promptText = trimmed.replace(/^[?:]+\s*/, "");
+                    const loopParams: { prompt: string; alias?: string; persona?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt: promptText };
                     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
                     if (opts.persona !== undefined) loopParams.persona = opts.persona;
+                    if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
+                    if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const result = await rpc.call("loop.run", loopParams) as LoopRunResult;
                     finalStatus = result.finalStatus;
                     hitMaxTurns = result.hitMaxTurns;

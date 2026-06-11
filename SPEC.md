@@ -41,6 +41,10 @@ Options:
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_PROJECT_ROOT`. |
 | `--persona <path>` | string | Path to a persona file; contents passed on every `loop.run`. See §1.3. Overrides `PLURNK_PERSONA`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
+| `--ask` | flag | Read-only loop: sends `flags.mode="ask"` on every `loop.run` — the daemon 403s schemes excluded in ask (file edits, exec). |
+| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode conflict with `--ask` is a usage error. |
+| `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
+| `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
 
 Env:
 
@@ -135,7 +139,7 @@ Consequence:
 2. Resolve session per §1.1 (`session.create` or `session.attach`); write `session:` and `prompt:` lines to stderr.
 3. Subscribe to `log/entry` notifications; per-action trace lines go to stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
 4. `rpc.call("loop.run", { prompt })` → receive `{loopId, turnIds, finalStatus, hitMaxTurns}`.
-5. Write summary line (turns count, wall time, final status, token usage if available) to stderr.
+5. Write summary lines to stderr, ending with the machine-readable result envelope — one line `result: {"loopId","finalStatus","turns","wallMs","tokens","hitMaxTurns","timedOut","reason"?}` (compact JSON; harnesses grep `^result: `). stdout stays the pure answer.
 6. Close WebSocket.
 7. Exit with the appropriate code (§4).
 
@@ -157,6 +161,8 @@ Triggered when `argv` has no positional prompt.
 2. Print banner; enter readline loop with `> ` prompt.
 3. Each line entered is dispatched:
     - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
+    - Lines starting with `!` → `rpc.call("op.exec", { command })`. Daemon-owned shell; proposal-gated like any side effect.
+    - Lines starting with `? ` → `loop.run` with `flags.mode="ask"` (read-only loop); `: ` forces act. Per-line prefix overrides a global `--ask`.
     - Anything else → `rpc.call("loop.run", { prompt })`. Standard prompt-driven loop.
 4. While a dispatch is in flight, additional input is rejected with a "busy" notice.
 5. `Ctrl-C` or `EOF` exits cleanly.
@@ -176,7 +182,8 @@ CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 
 | `0` | Loop terminated successfully (`finalStatus === 200`) |
 | `1` | Runtime error (WebSocket failure, RPC error, daemon crash, etc.) |
 | `2` | Loop hit `maxTurns` safety cap (`hitMaxTurns === true`) |
-| `3` | Loop terminated with cancellation (`finalStatus === 499`) |
+| `3` | Loop terminated with cancellation (`finalStatus === 499`, including `--timeout`) |
+| `4` | Loop FAILED (4xx/5xx terminal status other than 499) — failure ≠ cancel, so benchmark stats stay honest |
 | `64` | Usage error (missing required env var, unrecognized flag) |
 
 TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the summary line, not the exit code.
@@ -421,7 +428,7 @@ Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow
 
 | Source | Kind(s) | When |
 |---|---|---|
-| `client:connection` | `refused`, `closed` | WebSocket couldn't open / dropped mid-call |
+| `client:connection` | `refused`, `closed`, `daemon_stale` | WebSocket couldn't open / dropped mid-call / `discover` is missing wire markers this client depends on (daemon older than client) |
 | `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
 | `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
 | `client:proposal` | `no_tty_review` | Fail-closed reject in CLI without `--yolo` |

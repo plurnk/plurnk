@@ -54,7 +54,7 @@ Env:
 | `PLURNK_PERSONA` | _unset_ | Path to a persona file; contents sent on every `loop.run`. Equivalent to `--persona`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
-`.env` is auto-loaded if present; explicit shell exports override.
+**Cascading env.** Three layers, highest precedence first: explicit shell exports → project `./.env` → user-level `$XDG_CONFIG_HOME/plurnk/env` (fallback `~/.config/plurnk/env`). Both files are optional. The user file is where per-machine defaults live (`PLURNK_URL`, `PLURNK_MODEL`); the project `.env` overrides per-repo; the shell wins ad hoc.
 
 ### §1.1 Sessions and runs
 

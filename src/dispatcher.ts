@@ -4,7 +4,8 @@
 
 import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import Rpc from "./rpc.ts";
 import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
@@ -227,7 +228,13 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
 };
 
 export const main = async (argv: string[]): Promise<void> => {
-    try { process.loadEnvFile(".env"); } catch { /* .env is optional */ }
+    // Cascading env. loadEnvFile never overrides variables that are
+    // already set, so load order produces the precedence:
+    //   shell exports  >  project ./.env  >  $XDG_CONFIG_HOME/plurnk/env
+    // (user-level file falls back to ~/.config/plurnk/env). Both optional.
+    try { process.loadEnvFile(".env"); } catch { /* optional */ }
+    const userEnvDir = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+    try { process.loadEnvFile(join(userEnvDir, "plurnk", "env")); } catch { /* optional */ }
 
     const { positionals, values } = parseArgs({
         args: argv.slice(2),

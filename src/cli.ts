@@ -80,6 +80,30 @@ export const formatJsonReply = (txUnknown: unknown): string => {
     return JSON.stringify(raw);
 };
 
+// One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
+// conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus.
+const runCliExec = async (rpc: Rpc, command: string): Promise<number> => {
+    const concluded = new Promise<StreamConcludedPayload>((res) => {
+        rpc.onNotification("stream/concluded", (p) => res(p as StreamConcludedPayload));
+    });
+    const result = await rpc.call("op.exec", { command }) as { status: number };
+    if (result.status >= 400) {
+        process.stderr.write(`exec rejected: ${result.status}\n`);
+        return 4;
+    }
+    const fin = await concluded;
+    const read = await rpc.call("entry.read", { target: fin.target }) as {
+        entry?: { channels?: Record<string, { content?: string }> } | null;
+    };
+    const channels = read.entry?.channels ?? {};
+    const out = channels.stdout?.content;
+    const err = channels.stderr?.content;
+    if (typeof out === "string" && out.length > 0) process.stdout.write(out);
+    if (typeof err === "string" && err.length > 0) process.stderr.write(err);
+    process.stderr.write(`exec: ${fin.closeStatus}\n`);
+    return fin.closeStatus === 200 ? 0 : fin.closeStatus === 499 ? 3 : 4;
+};
+
 export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, opts: {
     json: boolean; modelAlias?: string; persona?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number;
@@ -150,11 +174,29 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         })();
     });
 
+    // Prompt prefixes — the same habits as nvim and the TUI: `! cmd` execs,
+    // `? text` asks (read-only loop), `: text` acts. Prefix wins over a
+    // --flags mode.
+    if (prompt.startsWith("!")) {
+        const command = prompt.replace(/^!+\s*/, "");
+        if (command.length === 0) {
+            process.stderr.write("usage: plurnk \"! <command>\"\n");
+            return 64;
+        }
+        return await runCliExec(rpc, command);
+    }
+    let effectiveFlags = opts.loopFlags;
+    const p0 = prompt[0];
+    if (p0 === "?" || p0 === ":") {
+        effectiveFlags = { ...(opts.loopFlags ?? {}), mode: p0 === "?" ? "ask" : "act" };
+        prompt = prompt.replace(/^[?:]+\s*/, "");
+    }
+
     const start = Date.now();
     const loopParams: { prompt: string; alias?: string; persona?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt };
     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
     if (opts.persona !== undefined) loopParams.persona = opts.persona;
-    if (opts.loopFlags !== undefined) loopParams.flags = opts.loopFlags;
+    if (effectiveFlags !== undefined && Object.keys(effectiveFlags).length > 0) loopParams.flags = effectiveFlags;
     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
 
     // First Ctrl-C cancels the run's active drain via loop.cancel

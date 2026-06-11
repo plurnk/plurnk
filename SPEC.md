@@ -41,8 +41,7 @@ Options:
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_PROJECT_ROOT`. |
 | `--persona <path>` | string | Path to a persona file; contents passed on every `loop.run`. See §1.3. Overrides `PLURNK_PERSONA`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
-| `--ask` | flag | Read-only loop: sends `flags.mode="ask"` on every `loop.run` — the daemon 403s schemes excluded in ask (file edits, exec). |
-| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode conflict with `--ask` is a usage error. |
+| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
 
@@ -118,6 +117,10 @@ Client behavior:
 
 Triggered when a prompt is present from positionals, piped stdin, or both.
 
+### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI)
+
+The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
+
 ### §2.1 Output channels
 
 Standard Unix discipline: **stdout is the program's product, stderr is its narration.**
@@ -158,8 +161,9 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow
 
 1. Open WebSocket; resolve session per §1.1 (`session.create` or `session.attach`); subscribe to `log/entry`.
-2. Print banner; enter readline loop with `> ` prompt.
+2. Print banner; enter readline loop with `: ` prompt (it rhymes with nvim's cmdline; when an ask-default toggle exists, the prompt char flips to `? `).
 3. Each line entered is dispatched:
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /persona <path> /yolo /new [name] /stop /quit`. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/new` reconnects (one session per connection); `/stop` and `/help` stay reachable while a loop is in flight. Tab completes verbs and `/model` aliases via the readline completer — no screen takeover.
     - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
     - Lines starting with `!` → `rpc.call("op.exec", { command })`. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → `loop.run` with `flags.mode="ask"` (read-only loop); `: ` forces act. Per-line prefix overrides a global `--ask`.

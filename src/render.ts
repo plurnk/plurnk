@@ -9,6 +9,8 @@ export const OP_GLYPHS: Record<string, string> = {
     MOVE: "📦",
     SHOW: "➕",
     HIDE: "➖",
+    OPEN: "➕",
+    FOLD: "➖",
     SEND: "✉️ ",
     EXEC: "⚙️ ",
 };

@@ -152,6 +152,27 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     return raw;
 };
 
+// Conversation stripes (TUI). The true user↔model dialogue must stand
+// out against operation-record lines: model speech (broadcast SEND —
+// §5.4) renders on a dark-blue full-width band; the user's prompt (the
+// engine writes it as a system-origin EDIT to plurnk://prompt/<loop>/<turn>,
+// service SPEC §15) on dark green. 256-color picks with an explicit
+// near-white foreground so the bands read on any terminal theme;
+// `\x1b[K` (background-color-erase) paints each line to the right edge
+// without needing the terminal width.
+const MODEL_STRIPE = code("48;5;17") + code("38;5;254");
+const USER_STRIPE = code("48;5;22") + code("38;5;254");
+const ERASE_EOL = useColor ? "\x1b[K" : "";
+
+// Re-arm the stripe after every inner RESET (status colors, markdown
+// styling) so a styled span can't cut the band mid-line.
+const stripeLines = (lines: string[], stripe: string): string => {
+    if (stripe.length === 0) return lines.join("\n");
+    return lines
+        .map((l) => `${stripe}${l.split(RESET).join(RESET + stripe)}${ERASE_EOL}${RESET}`)
+        .join("\n");
+};
+
 // Broadcast SEND (model → user) — multi-line block, content not telemetry.
 // Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
 // body indents further (5 spaces) so it visually nests under the speaker.
@@ -165,14 +186,31 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const headerParts = [origin, opGlyph];
     if (subGlyph.length > 0) headerParts.push(subGlyph);
     headerParts.push(statusText);
-    const header = headerParts.join(" ");
 
+    const lines = [`  ${headerParts.join(" ")}`];
     const body = extractSendBody(entry.tx, /* prettify */ true);
-    const bodyBlock = body.length > 0
-        ? "\n" + body.split("\n").map((line) => `     ${line}`).join("\n")
-        : "";
+    if (body.length > 0) for (const l of body.split("\n")) lines.push(`     ${l}`);
 
-    return `\n  ${header}${bodyBlock}\n`;
+    const stripe = entry.origin === "model" ? MODEL_STRIPE
+        : entry.origin === "client" ? USER_STRIPE : "";
+    return `\n${stripeLines(lines, stripe)}\n`;
+};
+
+// The user's prompt is conversation, not an op record. The engine writes
+// it as a system-origin EDIT against plurnk://prompt/<loop>/<turn>
+// (service SPEC §15 — "prompt as a first-class entry"); the TUI renders
+// that row as user speech on the user band rather than as an EDIT trace.
+export const isPromptEntry = (entry: LogEntryWire): boolean =>
+    entry.op === "EDIT" && entry.scheme === "plurnk" && (entry.pathname ?? "").startsWith("prompt/");
+
+const renderUserPrompt = (entry: LogEntryWire): string => {
+    const tx = entry.tx as { body?: unknown } | null;
+    const body = typeof tx?.body === "string" ? tx.body : "";
+    const statusColor = colorForStatus(entry.status_rx);
+
+    const lines = [`  ${ORIGIN_GLYPHS.client} ${OP_GLYPHS.SEND} ${statusColor}${entry.status_rx}${RESET}`];
+    if (body.length > 0) for (const l of body.split("\n")) lines.push(`     ${l}`);
+    return `\n${stripeLines(lines, USER_STRIPE)}\n`;
 };
 
 // Render a log entry as one waterfall line.
@@ -183,6 +221,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // A SEND directed at file:// would have scheme=null but pathname set —
     // not a broadcast.
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry);
+    if (isPromptEntry(entry)) return renderUserPrompt(entry);
 
     const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
     const opGlyph = OP_GLYPHS[entry.op] ?? "?";

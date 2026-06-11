@@ -185,6 +185,8 @@ EXTRA examples per op:
 
 A SEND with no target URI is the model's reply to the user. It is the only op whose payload IS content rather than telemetry, and the only op a human reader consumes as conversation rather than as a trace. It deliberately breaks the one-op-one-line discipline of the waterfall.
 
+**Conversation stripes (v0.7.0).** Speech blocks carry full-width background bands so the dialogue pops against the operation grid: model broadcasts (102 and 200 alike, 499 included) on dark blue (`48;5;17`), the user's prompt — rendered from the engine's `plurnk://prompt/<loop>/<turn>` entry as a 👤 ✉️ block — on dark green (`48;5;22`). Bands paint to the right edge via `\x1b[K` and set their own near-white foreground, so they read identically on dark and light terminal themes. Rationale: scanning a busy waterfall, the eye finds the conversation by color mass, not by reading glyphs.
+
 Format:
 
 ```

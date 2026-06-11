@@ -190,6 +190,79 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
     assert.ok(!trimmed.includes("\n"), `expected single line, got: ${JSON.stringify(out)}`);
 });
 
+// ─── renderLogEntry: user prompt entry (plurnk://prompt/*) ───────────
+
+test("renderLogEntry: prompt entry renders as user speech block, not EDIT trace", () => {
+    const out = renderLogEntry(entry({
+        op: "EDIT",
+        origin: "system",
+        scheme: "plurnk",
+        pathname: "prompt/3/1",
+        status_rx: 201,
+        tx: { body: "What is the capital of France?" },
+    }));
+    assert.match(out, /^\n/);
+    assert.match(out, /👤/);
+    assert.match(out, /✉️/);
+    assert.match(out, /What is the capital of France\?/);
+    assert.doesNotMatch(out, /✏️/);
+});
+
+test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
+    const out = renderLogEntry(entry({
+        op: "EDIT",
+        origin: "system",
+        scheme: "plurnk",
+        pathname: "manifest.json",
+        status_rx: 201,
+        tx: { body: "{}" },
+    }));
+    assert.doesNotMatch(out, /^\n/);
+    assert.match(out, /✏️/);
+});
+
+// ─── Conversation stripes (color-enabled import) ─────────────────────
+// The main import runs under NO_COLOR; stripes need a color-enabled
+// instance. A query-suffixed dynamic import busts the ESM module cache
+// (computed specifier so tsc doesn't try to resolve the query form).
+const freshRender = async (tag: string): Promise<typeof import("./render.ts")> =>
+    await import(`./render.ts?${tag}`) as typeof import("./render.ts");
+
+test("stripes: model broadcast gets the full-width blue band", async () => {
+    process.env.NO_COLOR = "0";
+    const colored = await freshRender("stripes=1");
+    process.env.NO_COLOR = "1";
+    const out = colored.renderLogEntry(entry({
+        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        tx: { body: { raw: "Paris.", json: null } },
+    }));
+    assert.match(out, /\x1b\[48;5;17m/);   // model background
+    assert.match(out, /\x1b\[K/);          // painted to the right edge
+});
+
+test("stripes: prompt entry gets the green band; inner RESET re-arms it", async () => {
+    process.env.NO_COLOR = "0";
+    const colored = await freshRender("stripes=2");
+    process.env.NO_COLOR = "1";
+    const out = colored.renderLogEntry(entry({
+        op: "EDIT", origin: "system", scheme: "plurnk", pathname: "prompt/1/1",
+        status_rx: 201, tx: { body: "hi" },
+    }));
+    assert.match(out, /\x1b\[48;5;22m/);   // user background
+    // Header carries a status color that RESETs mid-line — the band must
+    // resume immediately after, not die at the first reset.
+    assert.match(out, /\x1b\[0m\x1b\[48;5;22m/);
+});
+
+test("stripes: NO_COLOR build emits no background codes", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        tx: { body: { raw: "Paris.", json: null } },
+    }));
+    assert.doesNotMatch(out, /48;5/);
+    assert.doesNotMatch(out, /\x1b\[K/);
+});
+
 // ─── renderLogEntry: trace line shape ─────────────────────────────────
 
 test("renderLogEntry: trace line starts with 2-space indent", () => {

@@ -195,7 +195,7 @@ One line per dispatched op. Format (vanilla ANSI, no framework):
 
 Width-tolerant; no fixed column widths. The status code drives color. Op glyphs and origin glyphs are defined in `TUI.md §4`.
 
-**Exception:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line.
+**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) renders as user speech per §5.4, not as an EDIT trace.
 
 ### §5.2 Summary line (per `loop.run`)
 
@@ -222,6 +222,13 @@ TUI mode contract (see TUI.md §3.4.1 for design rationale):
 - Body: split on `\n`, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
 - Surrounded by one blank line above and one blank line below.
 - Empty body is legal and renders as just the header.
+
+**Conversation stripes.** The true user↔model dialogue stands out against operation records as full-width background bands (every block line painted to the terminal's right edge via `\x1b[K`, with an explicit near-white foreground so the band reads on any theme):
+
+- **Model speech** — any broadcast SEND from `origin === "model"` (102 intermediate, 200/499 terminal alike): dark blue (`48;5;17`).
+- **User speech** — the prompt entry (system-origin `EDIT` to `plurnk://prompt/<loop>/<turn>`; rendered with the 👤 ✉️ header and the prompt body as block lines): dark green (`48;5;22`).
+
+Inner ANSI resets (status colors, markdown styling) re-arm the band so a styled span can't cut it mid-line. `NO_COLOR` drops the bands; the block layout (header + indented body) remains. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode contract: trace line emits as usual per §5.1, immediately followed by the body content as plain unprefixed lines. This makes the assistant's reply present in stdout for the standard Unix-tool posture (§2).
 

@@ -254,13 +254,26 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     return `  ${parts.join(" ")}`;
 };
 
-export const renderSummary = (turns: number, wallMs: number, tokens: number, finalStatus: number, hitMaxTurns: boolean): string => {
+export interface LoopUsage {
+    promptTokens?: number;
+    completionTokens?: number;
+    costPico?: number;
+}
+
+export const renderSummary = (turns: number, wallMs: number, tokens: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage): string => {
     const tag = hitMaxTurns ? "maxTurns" : finalStatus === 200 ? "done" : `final ${finalStatus}`;
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
-    // Tokens are summed from the loop's log/entry rows (log_entries.tokens —
-    // write-time content counts). Zero means no data, not zero usage; omit
-    // rather than mislead. Provider usage (↑prompt/↓completion) is not on
-    // the wire yet — plurnk-service#197.
-    const tokenPart = tokens > 0 ? ` · ${tokens} tokens` : "";
+    // Real provider usage (plurnk-service #197) when the daemon sends it:
+    // ↑prompt ↓completion + cost. Fallback: content tokens summed from the
+    // loop's log rows. Zero data → omit, never a fake gauge.
+    let tokenPart = "";
+    if (typeof usage?.promptTokens === "number" && typeof usage.completionTokens === "number") {
+        tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
+        if (typeof usage.costPico === "number" && usage.costPico > 0) {
+            tokenPart += ` · $${(usage.costPico / 1e12).toFixed(4)}`;
+        }
+    } else if (tokens > 0) {
+        tokenPart = ` · ${tokens} tokens`;
+    }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

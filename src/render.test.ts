@@ -236,6 +236,16 @@ test("renderSummary: non-200 final → 'final <N>'", () => {
     assert.match(s, /final 499/);
 });
 
+test("renderSummary: positive tokens render", () => {
+    const s = renderSummary(1, 500, 6841, 200, false);
+    assert.match(s, /6841 tokens/);
+});
+
+test("renderSummary: zero tokens omit the segment (no data ≠ zero usage)", () => {
+    const s = renderSummary(1, 500, 0, 200, false);
+    assert.doesNotMatch(s, /tokens/);
+});
+
 test("renderSummary: wall time in seconds when ≥1000ms", () => {
     const s = renderSummary(1, 1234, 0, 200, false);
     assert.match(s, /1\.23s/);

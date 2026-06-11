@@ -22,11 +22,16 @@ interface LoopRunResult {
 interface SessionResult { id: number; name: string }
 
 export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlias?: string; persona?: string; yolo: boolean }): Promise<void> => {
+    // Tokens for the summary line: summed from each dispatch's log/entry
+    // rows (log_entries.tokens). Reset per dispatch in the line handler.
+    let dispatchTokens = 0;
+
     // Subscribe to log/entry notifications — render each as a waterfall line.
     // `\r\x1b[2K` wipes any readline-redrawn prompt sitting on the current line
     // before our output, otherwise the first trace line lands beside `> `.
     rpc.onNotification("log/entry", (params) => {
-        const p = params as { entry: LogEntryWire };
+        const p = params as { entry: LogEntryWire & { tokens?: number } };
+        if (typeof p.entry.tokens === "number") dispatchTokens += p.entry.tokens;
         process.stdout.write(`\r\x1b[2K${renderLogEntry(p.entry)}\n`);
     });
 
@@ -98,7 +103,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
 
             inFlight = true;
             const start = Date.now();
-            let tokenCount = 0;
+            dispatchTokens = 0;
             let turnCount = 0;
             let finalStatus = 0;
             let hitMaxTurns = false;
@@ -117,10 +122,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: { modelAlia
                     finalStatus = result.finalStatus;
                     hitMaxTurns = result.hitMaxTurns;
                     turnCount = result.turnIds.length;
-                    // Token count would come from log.read; for now we just don't have it
                 }
                 const wallMs = Date.now() - start;
-                process.stdout.write(`${renderSummary(turnCount, wallMs, tokenCount, finalStatus, hitMaxTurns)}\n`);
+                process.stdout.write(`${renderSummary(turnCount, wallMs, dispatchTokens, finalStatus, hitMaxTurns)}\n`);
             } catch (cause) {
                 const msg = cause instanceof Error ? cause.message : String(cause);
                 process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);

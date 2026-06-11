@@ -61,8 +61,14 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     process.stderr.write(`session: ${session.name}\n`);
     process.stderr.write(`prompt: ${prompt}\n\n`);
 
+    // Tokens for the summary: summed from the loop's log/entry rows
+    // (log_entries.tokens — write-time content counts; provider usage is
+    // not on the wire yet, plurnk-service#197).
+    let loopTokens = 0;
+
     rpc.onNotification("log/entry", (params) => {
-        const p = params as { entry: LogEntryWire };
+        const p = params as { entry: LogEntryWire & { tokens?: number } };
+        if (typeof p.entry.tokens === "number") loopTokens += p.entry.tokens;
         process.stderr.write(`${formatPlain(p.entry)}\n`);
         if (!isTerminalBroadcast(p.entry)) return;
         const out = opts.json ? formatJsonReply(p.entry.tx) : extractSendBody(p.entry.tx, /* prettify */ false);
@@ -143,7 +149,8 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     const wallMs = Date.now() - start;
 
     process.stderr.write(`\nfinal status: ${result.finalStatus}${result.hitMaxTurns ? " (maxTurns reached)" : ""}\n`);
-    process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s\n`);
+    const tokenPart = loopTokens > 0 ? `, tokens: ${loopTokens}` : "";
+    process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s${tokenPart}\n`);
 
     if (result.finalStatus === 200) return 0;
     if (result.hitMaxTurns) return 2;

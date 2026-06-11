@@ -136,6 +136,17 @@ export const report = (event: TelemetryEvent): void => {
 
 // ─── Client-side emitters ────────────────────────────────────────────
 
+// `client:connection:daemon_stale` — discover is missing wire markers this
+// client depends on; the daemon predates the client (clients track HEAD per
+// service SPEC §13.9).
+export const clientDaemonStale = (missing: string[]): TelemetryEvent => ({
+    source: "client:connection",
+    kind: "daemon_stale",
+    message: `daemon is older than this client (missing: ${missing.join(", ")})`,
+    missing,
+    hints: ["Restart plurnk-service from a current checkout."],
+});
+
 // `client:connection:refused` — WebSocket connection couldn't be established.
 export const clientConnectionRefused = (url: string, cause: unknown): TelemetryEvent => ({
     source: "client:connection",

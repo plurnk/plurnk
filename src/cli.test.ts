@@ -124,3 +124,47 @@ test("formatJsonReply: escapes embedded quotes when wrapping raw", () => {
 test("formatJsonReply: raw not a string → empty", () => {
     assert.equal(formatJsonReply({ body: { raw: 42, json: null } }), "");
 });
+
+// ─── exitCodeForLoop / formatResultLine (benchmark surface) ───────────
+
+const { exitCodeForLoop, formatResultLine } = await import("./cli.ts");
+
+test("exitCodeForLoop: 200 → 0", () => {
+    assert.equal(exitCodeForLoop(200, false), 0);
+});
+
+test("exitCodeForLoop: maxTurns → 2 even at 200", () => {
+    assert.equal(exitCodeForLoop(200, true), 0);
+    assert.equal(exitCodeForLoop(102, true), 2);
+});
+
+test("exitCodeForLoop: 499 → 3 (cancellation)", () => {
+    assert.equal(exitCodeForLoop(499, false), 3);
+});
+
+test("exitCodeForLoop: 4xx/5xx → 4 (failure ≠ cancel)", () => {
+    assert.equal(exitCodeForLoop(500, false), 4);
+    assert.equal(exitCodeForLoop(413, false), 4);
+});
+
+test("formatResultLine: greppable prefix + compact JSON + omitted reason", () => {
+    const line = formatResultLine({
+        loopId: 7, finalStatus: 200, turns: 3, wallMs: 1234,
+        tokens: 456, hitMaxTurns: false, timedOut: false,
+    });
+    assert.match(line, /^result: \{/);
+    const parsed = JSON.parse(line.slice("result: ".length));
+    assert.equal(parsed.loopId, 7);
+    assert.equal(parsed.tokens, 456);
+    assert.equal(parsed.timedOut, false);
+    assert.ok(!("reason" in parsed));
+});
+
+test("formatResultLine: reason carried when present", () => {
+    const line = formatResultLine({
+        loopId: 1, finalStatus: 499, turns: 1, wallMs: 10,
+        tokens: 0, hitMaxTurns: false, timedOut: true, reason: "client_timeout",
+    });
+    assert.match(line, /"timedOut":true/);
+    assert.match(line, /"reason":"client_timeout"/);
+});

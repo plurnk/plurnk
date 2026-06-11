@@ -18,9 +18,34 @@ interface LoopRunResult {
     turnIds: number[];
     finalStatus: number;
     hitMaxTurns: boolean;
+    reason?: string;
 }
 
 interface SessionResult { id: number; name: string }
+
+// Exit-code honesty (SPEC §4): a 4xx/5xx loop death is a FAILURE (4), not a
+// user cancellation (3) — benchmark stats must distinguish them.
+export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): number => {
+    if (finalStatus === 200) return 0;
+    if (hitMaxTurns) return 2;
+    if (finalStatus >= 400 && finalStatus !== 499) return 4;
+    return 3;
+};
+
+// Machine-readable result envelope: one `result: {json}` line on stderr —
+// stdout stays the pure answer; harnesses grep `^result: `.
+export const formatResultLine = (r: {
+    loopId: number; finalStatus: number; turns: number; wallMs: number;
+    tokens: number; hitMaxTurns: boolean; timedOut: boolean; reason?: string;
+}): string => {
+    const payload: Record<string, unknown> = {
+        loopId: r.loopId, finalStatus: r.finalStatus, turns: r.turns,
+        wallMs: r.wallMs, tokens: r.tokens, hitMaxTurns: r.hitMaxTurns,
+        timedOut: r.timedOut,
+    };
+    if (r.reason !== undefined) payload.reason = r.reason;
+    return `result: ${JSON.stringify(payload)}`;
+};
 
 export const formatPlain = (entry: LogEntryWire): string => {
     // Render what the wire says — no synthesis. Bare pathname when scheme
@@ -55,7 +80,10 @@ export const formatJsonReply = (txUnknown: unknown): string => {
     return JSON.stringify(raw);
 };
 
-export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, opts: { json: boolean; modelAlias?: string; persona?: string; yolo: boolean }): Promise<number> => {
+export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, opts: {
+    json: boolean; modelAlias?: string; persona?: string; yolo: boolean;
+    loopFlags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number;
+}): Promise<number> => {
     // stdout is the program's product (the terminal answer); stderr is its narration.
     // Per SPEC.md §2: `plurnk "X" > answer.txt` captures just the terminal broadcast body.
     process.stderr.write(`session: ${session.name}\n`);
@@ -123,9 +151,11 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     });
 
     const start = Date.now();
-    const loopParams: { prompt: string; alias?: string; persona?: string } = { prompt };
+    const loopParams: { prompt: string; alias?: string; persona?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt };
     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
     if (opts.persona !== undefined) loopParams.persona = opts.persona;
+    if (opts.loopFlags !== undefined) loopParams.flags = opts.loopFlags;
+    if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
 
     // First Ctrl-C cancels the run's active drain via loop.cancel
     // (plurnk-service §13.5) — the pending loop.run resolves with
@@ -140,19 +170,35 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     };
     process.on("SIGINT", onSigint);
 
+    // --timeout: wall-clock cap. A wedged loop must not wedge the harness;
+    // cancel via the wire and let the normal 499 path resolve.
+    let timedOut = false;
+    let timer: NodeJS.Timeout | undefined;
+    if (opts.timeoutSec !== undefined && opts.timeoutSec > 0) {
+        timer = setTimeout(() => {
+            timedOut = true;
+            process.stderr.write(`timeout: ${opts.timeoutSec}s — cancelling\n`);
+            void rpc.call("loop.cancel", { reason: "client_timeout" });
+        }, opts.timeoutSec * 1000);
+    }
+
     let result: LoopRunResult;
     try {
         result = await rpc.call("loop.run", loopParams) as LoopRunResult;
     } finally {
         process.removeListener("SIGINT", onSigint);
+        if (timer !== undefined) clearTimeout(timer);
     }
     const wallMs = Date.now() - start;
 
     process.stderr.write(`\nfinal status: ${result.finalStatus}${result.hitMaxTurns ? " (maxTurns reached)" : ""}\n`);
     const tokenPart = loopTokens > 0 ? `, tokens: ${loopTokens}` : "";
     process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s${tokenPart}\n`);
+    process.stderr.write(`${formatResultLine({
+        loopId: result.loopId, finalStatus: result.finalStatus,
+        turns: result.turnIds.length, wallMs, tokens: loopTokens,
+        hitMaxTurns: result.hitMaxTurns, timedOut, reason: result.reason,
+    })}\n`);
 
-    if (result.finalStatus === 200) return 0;
-    if (result.hitMaxTurns) return 2;
-    return 3;
+    return exitCodeForLoop(result.finalStatus, result.hitMaxTurns);
 };

@@ -6,7 +6,37 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolvePersona } from "./dispatcher.ts";
+import { resolveProjectRoot, resolvePersona, resolveLoopFlags } from "./dispatcher.ts";
+
+// ─── resolveLoopFlags ────────────────────────────────────────────────
+
+test("resolveLoopFlags: neither → undefined", () => {
+    assert.equal(resolveLoopFlags(undefined, false), undefined);
+});
+
+test("resolveLoopFlags: --ask alone → {mode:'ask'}", () => {
+    assert.deepEqual(resolveLoopFlags(undefined, true), { mode: "ask" });
+});
+
+test("resolveLoopFlags: --flags JSON passes through verbatim", () => {
+    assert.deepEqual(resolveLoopFlags('{"yolo":true,"noWeb":true}', false), { yolo: true, noWeb: true });
+});
+
+test("resolveLoopFlags: --flags + --ask merge", () => {
+    assert.deepEqual(resolveLoopFlags('{"yolo":true}', true), { yolo: true, mode: "ask" });
+});
+
+test("resolveLoopFlags: --ask vs --flags mode conflict throws", () => {
+    assert.throws(() => resolveLoopFlags('{"mode":"act"}', true), /conflicts/);
+});
+
+test("resolveLoopFlags: malformed JSON throws", () => {
+    assert.throws(() => resolveLoopFlags("{nope", false), /valid JSON/);
+});
+
+test("resolveLoopFlags: non-object JSON throws", () => {
+    assert.throws(() => resolveLoopFlags('["yolo"]', false), /JSON object/);
+});
 
 // ─── resolveProjectRoot ──────────────────────────────────────────────
 

@@ -216,5 +216,10 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 export const renderSummary = (turns: number, wallMs: number, tokens: number, finalStatus: number, hitMaxTurns: boolean): string => {
     const tag = hitMaxTurns ? "maxTurns" : finalStatus === 200 ? "done" : `final ${finalStatus}`;
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
-    return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms} · ${tokens} tokens${RESET}`;
+    // Tokens are summed from the loop's log/entry rows (log_entries.tokens —
+    // write-time content counts). Zero means no data, not zero usage; omit
+    // rather than mislead. Provider usage (↑prompt/↓completion) is not on
+    // the wire yet — plurnk-service#197.
+    const tokenPart = tokens > 0 ? ` · ${tokens} tokens` : "";
+    return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

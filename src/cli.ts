@@ -19,6 +19,7 @@ interface LoopRunResult {
     finalStatus: number;
     hitMaxTurns: boolean;
     reason?: string;
+    usage?: { promptTokens?: number; completionTokens?: number; costPico?: number };
 }
 
 interface SessionResult { id: number; name: string }
@@ -37,6 +38,7 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
 export const formatResultLine = (r: {
     loopId: number; finalStatus: number; turns: number; wallMs: number;
     tokens: number; hitMaxTurns: boolean; timedOut: boolean; reason?: string;
+    usage?: { promptTokens?: number; completionTokens?: number; costPico?: number };
 }): string => {
     const payload: Record<string, unknown> = {
         loopId: r.loopId, finalStatus: r.finalStatus, turns: r.turns,
@@ -44,6 +46,10 @@ export const formatResultLine = (r: {
         timedOut: r.timedOut,
     };
     if (r.reason !== undefined) payload.reason = r.reason;
+    // Real provider usage when the daemon sends it (plurnk-service #197).
+    if (typeof r.usage?.promptTokens === "number") payload.promptTokens = r.usage.promptTokens;
+    if (typeof r.usage?.completionTokens === "number") payload.completionTokens = r.usage.completionTokens;
+    if (typeof r.usage?.costPico === "number") payload.costPico = r.usage.costPico;
     return `result: ${JSON.stringify(payload)}`;
 };
 
@@ -234,12 +240,19 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     const wallMs = Date.now() - start;
 
     process.stderr.write(`\nfinal status: ${result.finalStatus}${result.hitMaxTurns ? " (maxTurns reached)" : ""}\n`);
-    const tokenPart = loopTokens > 0 ? `, tokens: ${loopTokens}` : "";
+    let tokenPart = loopTokens > 0 ? `, tokens: ${loopTokens}` : "";
+    if (typeof result.usage?.promptTokens === "number" && typeof result.usage.completionTokens === "number") {
+        tokenPart = `, tokens: ↑${result.usage.promptTokens} ↓${result.usage.completionTokens}`;
+        if (typeof result.usage.costPico === "number" && result.usage.costPico > 0) {
+            tokenPart += `, cost: $${(result.usage.costPico / 1e12).toFixed(4)}`;
+        }
+    }
     process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s${tokenPart}\n`);
     process.stderr.write(`${formatResultLine({
         loopId: result.loopId, finalStatus: result.finalStatus,
         turns: result.turnIds.length, wallMs, tokens: loopTokens,
         hitMaxTurns: result.hitMaxTurns, timedOut, reason: result.reason,
+        usage: result.usage,
     })}\n`);
 
     return exitCodeForLoop(result.finalStatus, result.hitMaxTurns);

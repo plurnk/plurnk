@@ -30,6 +30,7 @@ interface LoopRunResult {
     turnIds: number[];
     finalStatus: number;
     hitMaxTurns: boolean;
+    usage?: { promptTokens?: number; completionTokens?: number; costPico?: number };
 }
 
 interface SessionResult { id: number; name: string }
@@ -255,6 +256,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             let turnCount = 0;
             let finalStatus = 0;
             let hitMaxTurns = false;
+            let usage: LoopRunResult["usage"];
 
             try {
                 if (trimmed.startsWith("<<")) {
@@ -285,9 +287,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     finalStatus = result.finalStatus;
                     hitMaxTurns = result.hitMaxTurns;
                     turnCount = result.turnIds.length;
+                    usage = result.usage;
                 }
                 const wallMs = Date.now() - start;
-                process.stdout.write(`${renderSummary(turnCount, wallMs, dispatchTokens, finalStatus, hitMaxTurns)}\n`);
+                process.stdout.write(`${renderSummary(turnCount, wallMs, dispatchTokens, finalStatus, hitMaxTurns, usage)}\n`);
             } catch (cause) {
                 const msg = cause instanceof Error ? cause.message : String(cause);
                 process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);

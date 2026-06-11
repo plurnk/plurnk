@@ -333,3 +333,16 @@ test("renderSummary: pluralizes turns", () => {
     assert.match(renderSummary(2, 500, 0, 200, false), /2 turns/);
     assert.match(renderSummary(1, 500, 0, 200, false), /1 turn /);
 });
+
+test("renderSummary: real usage wins over content-token fallback", () => {
+    const s = renderSummary(2, 500, 9999, 200, false, { promptTokens: 1200, completionTokens: 345, costPico: 420000000 });
+    assert.match(s, /↑1200 ↓345/);
+    assert.match(s, /\$0\.0004/);
+    assert.doesNotMatch(s, /9999 tokens/);
+});
+
+test("renderSummary: usage without cost omits the cost segment", () => {
+    const s = renderSummary(1, 100, 0, 200, false, { promptTokens: 10, completionTokens: 5 });
+    assert.match(s, /↑10 ↓5/);
+    assert.doesNotMatch(s, /\$/);
+});

@@ -203,3 +203,15 @@ test("completer: plain text completes nothing", () => {
     const [hits] = complete("what is france");
     assert.equal(hits.length, 0);
 });
+
+test("formatResultLine: usage fields flatten into the envelope", () => {
+    const line = formatResultLine({
+        loopId: 2, finalStatus: 200, turns: 1, wallMs: 50, tokens: 100,
+        hitMaxTurns: false, timedOut: false,
+        usage: { promptTokens: 800, completionTokens: 60, costPico: 1000 },
+    });
+    const parsed = JSON.parse(line.slice("result: ".length));
+    assert.equal(parsed.promptTokens, 800);
+    assert.equal(parsed.completionTokens, 60);
+    assert.equal(parsed.costPico, 1000);
+});

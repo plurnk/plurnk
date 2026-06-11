@@ -168,3 +168,38 @@ test("formatResultLine: reason carried when present", () => {
     assert.match(line, /"timedOut":true/);
     assert.match(line, /"reason":"client_timeout"/);
 });
+
+// ─── TUI verb helpers (converged language surface) ────────────────────
+
+const { parseSlash, makeCompleter, VERBS } = await import("./tui.ts");
+
+test("parseSlash: verb + args", () => {
+    assert.deepEqual(parseSlash("/model gemma"), { verb: "model", rest: "gemma" });
+    assert.deepEqual(parseSlash("/help"), { verb: "help", rest: "" });
+    assert.deepEqual(parseSlash("/"), { verb: "", rest: "" });
+});
+
+test("completer: verb fragments complete", () => {
+    const complete = makeCompleter(() => []);
+    const [hits] = complete("/mo");
+    assert.deepEqual(hits, ["/models", "/model"]);
+});
+
+test("completer: bare slash offers every verb", () => {
+    const complete = makeCompleter(() => []);
+    const [hits] = complete("/");
+    assert.equal(hits.length, VERBS.length);
+});
+
+test("completer: /model completes aliases", () => {
+    const complete = makeCompleter(() => ["gemma", "gpt-mini", "grok"]);
+    const [hits, frag] = complete("/model g");
+    assert.deepEqual(hits, ["gemma", "gpt-mini", "grok"]);
+    assert.equal(frag, "g");
+});
+
+test("completer: plain text completes nothing", () => {
+    const complete = makeCompleter(() => ["gemma"]);
+    const [hits] = complete("what is france");
+    assert.equal(hits.length, 0);
+});

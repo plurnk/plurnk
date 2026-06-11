@@ -45,28 +45,19 @@ export const resolvePersona = async (raw: string | undefined): Promise<string | 
 };
 
 // LoopFlags resolution: --flags takes raw JSON (the generic passthrough —
-// any flag the daemon wires lands without a client release); --ask is sugar
-// for {mode:"ask"}. A mode conflict between the two is an error, not a
-// silent winner.
-export const resolveLoopFlags = (rawJson: string | undefined, ask: boolean): Record<string, unknown> | undefined => {
-    let flags: Record<string, unknown> | undefined;
-    if (rawJson !== undefined) {
-        let parsed: unknown;
-        try { parsed = JSON.parse(rawJson); } catch {
-            throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
-        }
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-            throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
-        }
-        flags = parsed as Record<string, unknown>;
+// any flag the daemon wires lands without a client release). Mode is NOT a
+// flag here: ask/act ride the prompt-prefix habit (`? text` / `: text`),
+// converged across nvim, TUI, and the one-shot CLI.
+export const resolveLoopFlags = (rawJson: string | undefined): Record<string, unknown> | undefined => {
+    if (rawJson === undefined) return undefined;
+    let parsed: unknown;
+    try { parsed = JSON.parse(rawJson); } catch {
+        throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
     }
-    if (ask) {
-        if (flags?.mode !== undefined && flags.mode !== "ask") {
-            throw new TelemetryError(clientFlagInvalid("--ask", String(flags.mode), "conflicts with --flags mode"));
-        }
-        flags = { ...(flags ?? {}), mode: "ask" };
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
     }
-    return flags;
+    return parsed as Record<string, unknown>;
 };
 
 // projectRoot resolution: empty string = explicit headless (null on wire);
@@ -128,8 +119,6 @@ options:
                           passed on every loop.run. Overrides PLURNK_PERSONA.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_YOLO.
-      --ask               read-only loop: flags.mode="ask" — the daemon 403s
-                          schemes excluded in ask (file edits, exec).
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
                           (e.g. '{"yolo":true}' for server-side YOLO in
                           benchmark/automation runs).
@@ -282,7 +271,6 @@ export const main = async (argv: string[]): Promise<void> => {
             "project-root": { type: "string" },
             persona: { type: "string" },
             yolo: { type: "boolean" },
-            ask: { type: "boolean" },
             flags: { type: "string" },
             "max-turns": { type: "string" },
             timeout: { type: "string" },
@@ -331,7 +319,7 @@ export const main = async (argv: string[]): Promise<void> => {
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
-        loopFlags = resolveLoopFlags(values.flags, values.ask === true);
+        loopFlags = resolveLoopFlags(values.flags);
         maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
         timeoutSec = parseIntFlag(values.timeout, "--timeout");
     } catch (cause) {
@@ -389,7 +377,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
         const session = await attachOrCreateSession(rpc, { sessionName, runName, projectRoot });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, persona, yolo, loopFlags, maxTurns });
+            await runTui(rpc, session, { modelAlias, persona, yolo, loopFlags, maxTurns, projectRoot });
             process.exit(0);
         }
         const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, persona, yolo, loopFlags, maxTurns, timeoutSec });

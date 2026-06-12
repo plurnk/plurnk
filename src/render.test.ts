@@ -45,9 +45,9 @@ test("sendSubGlyph: 200 → ✅", () => assert.equal(sendSubGlyph(200), "✅"));
 test("sendSubGlyph: 201 → ✅ (2xx range)", () => assert.equal(sendSubGlyph(201), "✅"));
 test("sendSubGlyph: 102 → ⏳ (continuing)", () => assert.equal(sendSubGlyph(102), "⏳"));
 test("sendSubGlyph: 499 → ✋ (cancel)", () => assert.equal(sendSubGlyph(499), "✋"));
-test("sendSubGlyph: 410 → 🗑 (gone)", () => assert.equal(sendSubGlyph(410), "🗑"));
-test("sendSubGlyph: 404 → ⚠️ (4xx fallback)", () => assert.equal(sendSubGlyph(404), "⚠️ "));
-test("sendSubGlyph: 500 → 🔥 (5xx)", () => assert.equal(sendSubGlyph(500), "🔥"));
+test("sendSubGlyph: 410 → 💥 (gone/deleted)", () => assert.equal(sendSubGlyph(410), "💥"));
+test("sendSubGlyph: 404 → ❌ (single failure glyph, nvim-converged)", () => assert.equal(sendSubGlyph(404), "❌"));
+test("sendSubGlyph: 500 → ❌ (single failure glyph)", () => assert.equal(sendSubGlyph(500), "❌"));
 test("sendSubGlyph: 100 → '' (unknown range)", () => assert.equal(sendSubGlyph(100), ""));
 
 // ─── extractSendBody ──────────────────────────────────────────────────
@@ -206,7 +206,7 @@ test("renderLogEntry: prompt entry renders as a plain EDIT trace (no speech bloc
         status_rx: 201, tx: { body: "What is the capital of France?" },
     }));
     assert.doesNotMatch(out, /^\n/);
-    assert.match(out, /✏️/);
+    assert.match(out, /📝/);
 });
 
 test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
@@ -219,7 +219,7 @@ test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
         tx: { body: "{}" },
     }));
     assert.doesNotMatch(out, /^\n/);
-    assert.match(out, /✏️/);
+    assert.match(out, /📝/);
 });
 
 // ─── Conversation stripes (color-enabled import) ─────────────────────
@@ -382,8 +382,8 @@ test("broadcast: long single-line body breaks to the second line", () => {
 
 test("universal status glyph: every trace line carries one", () => {
     assert.match(renderLogEntry(entry({ op: "EDIT", scheme: "unknown", pathname: "/x", status_rx: 201, tx: { body: "p" } })), /✅/);
-    assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /🔥/);
-    assert.match(renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /⚠/);
+    assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /❌/);
+    assert.match(renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /❌/);
 });
 
 // ─── Coordinate prefix (plurnk-service#208) ───────────────────────────

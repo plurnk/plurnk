@@ -1,34 +1,40 @@
 // Glyph palette + line formatting for the TUI log waterfall.
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
+// Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
+// (width 2 in node and every major terminal); VS16 variation-selector
+// sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely after
+// two rounds of cursor-drift and column-gap forensics. No pad-space
+// hacks needed: stable widths give true column alignment.
 export const OP_GLYPHS: Record<string, string> = {
     FIND: "🔍",
     READ: "📖",
-    EDIT: "✏️ ",
+    EDIT: "📝",
     COPY: "📋",
     MOVE: "📦",
     SHOW: "➕",
     HIDE: "➖",
     OPEN: "➕",
     FOLD: "➖",
-    SEND: "✉️ ",
-    EXEC: "⚙️ ",
+    SEND: "💬",
+    EXEC: "🔧",
 };
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🤖",
     client: "👤",
-    system: "⚙️ ",
+    system: "🧰",
     plugin: "🔌",
 };
 
 export const sendSubGlyph = (status: number): string => {
-    if (status === 410) return "🗑";
+    if (status === 410) return "💥";
     if (status === 499) return "✋";
     if (status === 102) return "⏳";
     if (status >= 200 && status < 300) return "✅";
-    if (status >= 400 && status < 500) return "⚠️ ";
-    if (status >= 500 && status < 600) return "🔥";
+    // Single failure glyph for 4xx/5xx — converged with plurnk.nvim:
+    // one signal in the alignment column; the colored status carries class.
+    if (status >= 400 && status < 600) return "❌";
     return "";
 };
 
@@ -240,7 +246,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     const opGlyph = OP_GLYPHS[entry.op] ?? "?";
     // Universal status glyph — every line gets one (rummy f20c4a0 / nvim
     // convergence; a check that exists only sometimes is dissonant).
-    // SENDs glyph their signal (✋/🗑/⏳ carry meaning); everything else
+    // SENDs glyph their signal (✋/💥/⏳ carry meaning); everything else
     // glyphs the outcome status.
     const subGlyph = entry.op === "SEND" && typeof entry.signal === "number"
         ? sendSubGlyph(entry.signal)

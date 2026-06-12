@@ -131,13 +131,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // as text shift. Round 2 (bare `  : `) fixed the drift but destroyed
     // the row identity. 👤 (U+1F464) and ✅ (U+2705) are plain East-Asian-
     // Wide — width 2 in node AND every major terminal — so they stay; the
-    // 201 is the contract constant (the prompt row is always a 201 EDIT).
-    // Policy: VS16/ambiguous glyphs are banned from the PROMPT; output
-    // lines render anything (no cursor positioning happens on output).
+    // 201 is the contract constant (the prompt row is always a 201 EDIT);
+    // 💬 (U+1F4AC, stable-wide) fills the op slot the toxic ✉️ vacated.
+    // Policy: VS16/ambiguous glyphs are banned from the ENTIRE palette
+    // (render.ts) — stable widths are also what make columns align.
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "  👤 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m",
+        prompt: "  👤 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m",
         completer: makeCompleter(() => aliasCache),
     });
 

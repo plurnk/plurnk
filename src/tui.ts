@@ -122,20 +122,19 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (Array.isArray(aliases)) aliasCache = aliases.map((a) => a.alias);
     }).catch(() => { /* completion just stays empty */ });
 
-    // The prompt IS the full user-speech row, pre-rendered: hitting enter
-    // leaves `  👤 ✉️  ✅ 201 : <text>` in scrollback, column-aligned with
-    // the waterfall by construction. The 201 is "created before it exists"
-    // deliberately (operator call): the prompt row is ALWAYS a 201 EDIT by
-    // contract, so this is optimistic rendering of a constant, not a fake
-    // gauge — if the write ever fails, the loop errors loudly anyway.
-    // Known tradeoff, accepted: ✉️ (VS16) cell-counts as 1 on a minority of
-    // terminals while node counts 2, which can drift the cursor by a column
-    // during mid-line EDITING there; the echoed line itself renders fine,
-    // and forward typing is unaffected.
+    // ASCII-only prompt — settled EMPIRICALLY. The glyphful pre-rendered
+    // row (`  👤 ✉️  ✅ 201 : `) shifted the text after the colon in real
+    // terminals: the prompt string is static, but readline re-renders the
+    // line on history-nav/backspace/completion and repositions the cursor
+    // at ITS computed prompt width; emoji cell-width disagreement between
+    // node and the terminal lands as visible drift on every refresh. Emoji
+    // are therefore banned from the PROMPT specifically (output lines are
+    // safe — no cursor positioning happens there). Bold-only ANSI is fine:
+    // readline strips VT codes before width math.
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: `  👤 ✉️  ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`,
+        prompt: "  \x1b[1m: \x1b[0m",
         completer: makeCompleter(() => aliasCache),
     });
 

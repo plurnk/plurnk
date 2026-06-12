@@ -122,17 +122,20 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (Array.isArray(aliases)) aliasCache = aliases.map((a) => a.alias);
     }).catch(() => { /* completion just stays empty */ });
 
-    // The prompt IS the user-speech header: hitting enter leaves
-    // `  👤 : <text>` in scrollback, column-aligned with the waterfall —
-    // alignment by construction, zero cursor math. Glyph constraints are
-    // deliberate: 👤 (no VS16) is width-2-stable across modern terminals;
-    // ✉️ (VS16) is width-ambiguous and would break readline's cursor
-    // positioning on some of them, so it stays off the prompt. No status
-    // either — it doesn't exist until after submit.
+    // The prompt IS the full user-speech row, pre-rendered: hitting enter
+    // leaves `  👤 ✉️  ✅ 201 : <text>` in scrollback, column-aligned with
+    // the waterfall by construction. The 201 is "created before it exists"
+    // deliberately (operator call): the prompt row is ALWAYS a 201 EDIT by
+    // contract, so this is optimistic rendering of a constant, not a fake
+    // gauge — if the write ever fails, the loop errors loudly anyway.
+    // Known tradeoff, accepted: ✉️ (VS16) cell-counts as 1 on a minority of
+    // terminals while node counts 2, which can drift the cursor by a column
+    // during mid-line EDITING there; the echoed line itself renders fine,
+    // and forward typing is unaffected.
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "  👤 \x1b[1m: \x1b[0m",
+        prompt: `  👤 ✉️  ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`,
         completer: makeCompleter(() => aliasCache),
     });
 

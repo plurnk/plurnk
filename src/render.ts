@@ -109,7 +109,22 @@ export interface LogEntryWire {
     status_rx: number;
     tx: unknown;
     rx: unknown;
+    // Logical coordinate (the model's log://L/T/S address). On the wire
+    // once plurnk-service#208 lands; rendered only when present.
+    loop_seq?: number;
+    turn_seq?: number;
+    sequence?: number;
 }
+
+// `01/02/03 ` coordinate prefix — zero-padded to two digits minimum for
+// alignment zen, growing naturally past 99. Empty until the wire carries
+// the seqs (plurnk-service#208); never derived client-side (DB ids are
+// NOT the user's loop/turn numbers).
+const coordPrefix = (entry: LogEntryWire): string => {
+    if (typeof entry.loop_seq !== "number" || typeof entry.turn_seq !== "number" || typeof entry.sequence !== "number") return "";
+    const p = (n: number): string => String(n).padStart(2, "0");
+    return `${DIM}${p(entry.loop_seq)}/${p(entry.turn_seq)}/${p(entry.sequence)}${RESET} `;
+};
 
 const BOLD = code("1");
 const ITALIC = code("3");
@@ -188,7 +203,7 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const headerParts = [origin, opGlyph];
     if (subGlyph.length > 0) headerParts.push(subGlyph);
     headerParts.push(statusText);
-    const header = `  ${headerParts.join(" ")}`;
+    const header = `  ${coordPrefix(entry)}${headerParts.join(" ")}`;
 
     const body = extractSendBody(entry.tx, /* prettify */ true);
     // Short single-line replies inline after the header (nvim's
@@ -253,7 +268,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     if (pathText.length > 0) parts.push(pathText);
     if (extra.length > 0) parts.push(extra);
 
-    return `  ${parts.join(" ")}`;
+    return `  ${coordPrefix(entry)}${parts.join(" ")}`;
 };
 
 export interface LoopUsage {

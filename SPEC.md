@@ -223,7 +223,7 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 - The full packet (`turn.packet`). The client never displays the rendered index, log section, or telemetry — those are the model's view, not the user's.
 - Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `<<READ(log://...)>>`.
 - Raw RPC frames. Set `DEBUG=plurnk:rpc` (future) to enable.
-- Content fetching from streaming channels. Client renders `stream/event` and `stream/concluded` notifications as one-line metadata traces (`📡 stream/event exec://ls channel=stdout state=active len=1234`) on stderr (CLI) / waterfall (TUI); fetching the actual channel content via `entry.read` is the consumer's job. See §8.7.
+- Content fetching from streaming channels — with ONE bounded exception. Streams render coalesced: a single start line on the first `stream/event` (`📡 ⏳ <target>`; growth ticks and per-channel closes are silent) and a single conclusion line in the waterfall grammar (`📡 ✅ 200 <target> "<summary>"`, target echo stripped from the summary, `→ woke loop` only when the wake opened one). On conclusion the client makes one `entry.read` and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`) — at that size the content IS the better optics (a 12-byte exec answer should be visible, not described). Larger outputs remain summary-only; fetching them is the consumer's job. See §8.7.
 
 ### §5.4 Broadcast SEND rendering
 
@@ -473,11 +473,12 @@ stream/event     { entryId, target, channel, state, contentLength }
 stream/concluded { entryId, target, subscriptionId, scheme, closeStatus, summary, wakeAction, wakeLoopId? }
 ```
 
-`target` is the entry's URI (`scheme://pathname`, plurnk-service #179) — clients route on it without an entryId→URI lookup. Both render as one-line traces:
+`target` is the entry's URI (`scheme://pathname`, plurnk-service #179) — clients route on it without an entryId→URI lookup. Rendering is coalesced per §5.3:
 
 ```
-  📡 stream/event exec://ls -la channel=stdout state=active len=1234
-  📡 stream/concluded exec://ls -la status=200 wake=opened-loop "ls -la done"
+  📡 ⏳ exec://python/1/2/1
+  📡 ✅ 200 exec://python/1/2/1 "completed (exit 0); stdout=12 bytes, stderr=0 bytes"
+     Ulaanbaatar
 ```
 
 CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt-wipe prefix. **The client does not fetch the actual streamed content** — that's not the CLI's job. Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.

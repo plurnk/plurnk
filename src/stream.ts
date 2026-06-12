@@ -1,12 +1,14 @@
-// Stream notification renderers for plurnk-service's stream/event and
+// Stream trace rendering for plurnk-service's stream/event and
 // stream/concluded broadcasts (plurnk-service SPEC §7.1 / §13.6).
 //
-// Same `📡` glyph as TelemetryEvent (SPEC §8) — these are daemon-pushed
-// metadata events the user should see, in the same channel posture
-// (stderr in CLI, inline in TUI), distinguished by the discriminator.
-//
-// Content fetching (entry.read) is NOT done here — the CLI is a trace
-// viewer. plurnk.nvim does in-buffer content rendering.
+// Optics discipline (v0.12.0): a 12-byte exec used to produce four raw
+// metadata lines and never show its output. Now: ONE start line per
+// stream (first event; growth ticks and close transitions are silent),
+// one conclusion line in the waterfall grammar (📡 in the origin slot,
+// status glyph, status, target), and tiny concluded outputs are inlined
+// by the caller via entry.read — the single, bounded exception to "the
+// TUI doesn't fetch content" (SPEC §5.3), because the content IS the
+// optics when it's two lines long.
 
 import process from "node:process";
 
@@ -14,6 +16,8 @@ const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true"
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
 const DIM = code("2");
+const GREEN = code("32");
+const RED = code("31");
 
 const STREAM_GLYPH = "📡";
 
@@ -36,35 +40,64 @@ export interface StreamConcludedPayload {
     wakeLoopId?: number;
 }
 
-export const renderStreamEvent = (ev: StreamEventPayload): string => {
-    const parts = [
-        STREAM_GLYPH,
-        "stream/event",
-        ev.target,
-        `channel=${ev.channel}`,
-        `state=${ev.state}`,
-        `len=${ev.contentLength}`,
-    ];
-    return `  ${parts.join(" ")}`;
+const statusGlyph = (status: number): string => {
+    if (status === 200) return "✅";
+    if (status === 499) return "✋";
+    return "❌";
 };
 
-export const renderStreamConcluded = (ev: StreamConcludedPayload): string => {
-    const parts = [
-        STREAM_GLYPH,
-        "stream/concluded",
-        ev.target,
-        `status=${ev.closeStatus}`,
-        `wake=${ev.wakeAction}`,
-    ];
-    let line = `  ${parts.join(" ")}`;
-    if (ev.summary && ev.summary.length > 0) {
-        line += ` ${DIM}"${ev.summary}"${RESET}`;
+const statusColor = (status: number): string => status === 200 ? GREEN : RED;
+
+// Per-connection coalescing state: which streams have announced their
+// start. Cleared per entry on conclusion; plain Map, no timers.
+export default class StreamTrace {
+    #started = new Set<number>();
+
+    // First event for an entry announces the stream; every later tick
+    // (growth, per-channel close) is silent — a line-oriented view has
+    // nothing actionable to say about len changing.
+    event(ev: StreamEventPayload): string | null {
+        if (this.#started.has(ev.entryId)) return null;
+        this.#started.add(ev.entryId);
+        return `  ${STREAM_GLYPH} ⏳ ${ev.target}`;
     }
-    return line;
+
+    // One conclusion line in the waterfall grammar. The daemon's summary
+    // leads with the target we already printed — strip the echo. Wake is
+    // engine bookkeeping except when it actually opened a loop.
+    concluded(ev: StreamConcludedPayload): string {
+        this.#started.delete(ev.entryId);
+        let summary = ev.summary ?? "";
+        if (summary.startsWith(ev.target)) summary = summary.slice(ev.target.length).replace(/^\s+/, "");
+        const wake = ev.wakeAction === "opened-loop" ? " → woke loop" : "";
+        const parts = [
+            STREAM_GLYPH,
+            statusGlyph(ev.closeStatus),
+            `${statusColor(ev.closeStatus)}${ev.closeStatus}${RESET}`,
+            ev.target,
+        ];
+        let line = `  ${parts.join(" ")}`;
+        if (summary.length > 0) line += ` ${DIM}"${summary}"${RESET}`;
+        return line + wake;
+    }
+}
+
+// Inline-worthiness for concluded channel content: short enough that the
+// content IS the better optics. Anything larger stays behind the summary.
+export const inlineable = (content: string): boolean => {
+    if (content.length === 0 || content.length > 160) return false;
+    return content.trimEnd().split("\n").length <= 2;
 };
 
-// Write a stream event to stderr. Used by CLI mode; TUI mode renders
-// inline in the waterfall with the readline-prompt-wipe prefix.
+// Render a concluded channel's content as indented lines under the
+// conclusion; stderr is marked and tinted.
+export const renderInline = (channel: string, content: string): string =>
+    content.trimEnd().split("\n")
+        .map((l) => channel === "stderr" ? `     ${RED}!${RESET} ${l}` : `     ${l}`)
+        .join("\n");
+
+// Write a stream line to stderr. Used by CLI mode; TUI writes inline in
+// the waterfall with the readline-prompt-wipe prefix.
 export const reportStream = (line: string): void => {
     process.stderr.write(`${line}\n`);
 };

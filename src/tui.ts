@@ -21,7 +21,7 @@ import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
-import { renderStreamEvent, renderStreamConcluded } from "./stream.ts";
+import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 
@@ -104,12 +104,26 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         process.stdout.write(`\r\x1b[2K${renderTelemetryEvent(p.event)}\n`);
     });
 
-    // stream/event + stream/concluded — daemon-pushed channel metadata.
+    // Streams, coalesced: one start line, one conclusion line, and tiny
+    // concluded outputs inlined (the single bounded content fetch the TUI
+    // makes — SPEC §5.3; the content IS the optics at two lines).
+    const streams = new StreamTrace();
     rpc.onNotification("stream/event", (params) => {
-        process.stdout.write(`\r\x1b[2K${renderStreamEvent(params as StreamEventPayload)}\n`);
+        const line = streams.event(params as StreamEventPayload);
+        if (line !== null) process.stdout.write(`\r\x1b[2K${line}\n`);
     });
     rpc.onNotification("stream/concluded", (params) => {
-        process.stdout.write(`\r\x1b[2K${renderStreamConcluded(params as StreamConcludedPayload)}\n`);
+        const p = params as StreamConcludedPayload;
+        process.stdout.write(`\r\x1b[2K${streams.concluded(p)}\n`);
+        void rpc.call("entry.read", { target: p.target }).then((r) => {
+            const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+            for (const name of ["stdout", "stderr"]) {
+                const content = channels[name]?.content;
+                if (typeof content === "string" && inlineable(content)) {
+                    process.stdout.write(`\r\x1b[2K${renderInline(name, content)}\n`);
+                }
+            }
+        }).catch(() => { /* peek is best-effort */ });
     });
 
     process.stdout.write(`\x1b[2mplurnk · /help for the language · ctrl-c to quit · session: ${current.name}\x1b[0m\n\n`);

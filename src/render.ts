@@ -198,22 +198,14 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     return `\n${stripeLines(lines, stripe)}\n`;
 };
 
-// The user's prompt is conversation, not an op record. The engine writes
-// it as a system-origin EDIT against plurnk://prompt/<loop>/<turn>
-// (service SPEC §15 — "prompt as a first-class entry"); the TUI renders
-// that row as user speech on the user band rather than as an EDIT trace.
+// The prompt entry (system-origin EDIT against plurnk://prompt/<loop>/<turn>,
+// service SPEC §15). The TUI SKIPS these in the live waterfall: the line the
+// user typed at the readline prompt is already their record, and rendering
+// the broadcast too duplicated every prompt (#198 made it arrive live).
+// Erasing the typed echo instead would mean terminal-width math over
+// emoji/nerdfont prompts — the rabbit hole this client refuses to enter.
 export const isPromptEntry = (entry: LogEntryWire): boolean =>
     entry.op === "EDIT" && entry.scheme === "plurnk" && (entry.pathname ?? "").startsWith("prompt/");
-
-const renderUserPrompt = (entry: LogEntryWire): string => {
-    const tx = entry.tx as { body?: unknown } | null;
-    const body = typeof tx?.body === "string" ? tx.body : "";
-    const statusColor = colorForStatus(entry.status_rx);
-
-    const lines = [`  ${ORIGIN_GLYPHS.client} ${OP_GLYPHS.SEND} ${statusColor}${entry.status_rx}${RESET}`];
-    if (body.length > 0) for (const l of body.split("\n")) lines.push(`     ${l}`);
-    return `\n${stripeLines(lines, USER_STRIPE)}\n`;
-};
 
 // Render a log entry as one waterfall line.
 // Returns the full ANSI-formatted line WITHOUT trailing newline,
@@ -223,7 +215,6 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // A SEND directed at file:// would have scheme=null but pathname set —
     // not a broadcast.
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry);
-    if (isPromptEntry(entry)) return renderUserPrompt(entry);
 
     const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
     const opGlyph = OP_GLYPHS[entry.op] ?? "?";

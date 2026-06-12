@@ -14,6 +14,7 @@ const {
     extractSendBody,
     renderLogEntry,
     renderSummary,
+    isPromptEntry,
     OP_GLYPHS,
     ORIGIN_GLYPHS,
 } = await import("./render.ts");
@@ -192,20 +193,20 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
 
 // ─── renderLogEntry: user prompt entry (plurnk://prompt/*) ───────────
 
-test("renderLogEntry: prompt entry renders as user speech block, not EDIT trace", () => {
+test("isPromptEntry: classifies plurnk://prompt/* EDITs (the TUI skips them live — the typed line is the record)", () => {
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "prompt/3/1" })), true);
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "manifest.json" })), false);
+    assert.equal(isPromptEntry(entry({ op: "READ", scheme: "plurnk", pathname: "prompt/3/1" })), false);
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "known", pathname: "prompt/3/1" })), false);
+});
+
+test("renderLogEntry: prompt entry renders as a plain EDIT trace (no speech block — TUI skips it anyway)", () => {
     const out = renderLogEntry(entry({
-        op: "EDIT",
-        origin: "system",
-        scheme: "plurnk",
-        pathname: "prompt/3/1",
-        status_rx: 201,
-        tx: { body: "What is the capital of France?" },
+        op: "EDIT", origin: "system", scheme: "plurnk", pathname: "prompt/3/1",
+        status_rx: 201, tx: { body: "What is the capital of France?" },
     }));
-    assert.match(out, /^\n/);
-    assert.match(out, /👤/);
-    assert.match(out, /✉️/);
-    assert.match(out, /What is the capital of France\?/);
-    assert.doesNotMatch(out, /✏️/);
+    assert.doesNotMatch(out, /^\n/);
+    assert.match(out, /✏️/);
 });
 
 test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
@@ -240,13 +241,13 @@ test("stripes: model broadcast gets the full-width blue band", async () => {
     assert.match(out, /\x1b\[K/);          // painted to the right edge
 });
 
-test("stripes: prompt entry gets the green band; inner RESET re-arms it", async () => {
+test("stripes: client-origin broadcast gets the green band; inner RESET re-arms it", async () => {
     process.env.NO_COLOR = "0";
     const colored = await freshRender("stripes=2");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({
-        op: "EDIT", origin: "system", scheme: "plurnk", pathname: "prompt/1/1",
-        status_rx: 201, tx: { body: "hi" },
+        op: "SEND", origin: "client", scheme: null, pathname: null,
+        signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     }));
     assert.match(out, /\x1b\[48;5;22m/);   // user background
     // Header carries a status color that RESETs mid-line — the band must

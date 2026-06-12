@@ -161,7 +161,7 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow
 
 1. Open WebSocket; resolve session per §1.1 (`session.create` or `session.attach`); subscribe to `log/entry`.
-2. Print banner; enter readline loop with `: ` prompt (it rhymes with nvim's cmdline; when an ask-default toggle exists, the prompt char flips to `? `).
+2. Print banner; enter readline loop with the `  👤 : ` prompt — the prompt IS the user-speech header, so the echoed line (`  👤 : <text>`) column-aligns with the waterfall by construction (no cursor math, no echo erasure). The `: ` rhymes with nvim's cmdline and flips to `? ` when an ask-default toggle exists. Prompt glyph policy: width-stable emoji only (no VS16 sequences like ✉️ — they cell-count differently across terminals and corrupt readline cursor positioning); no status digits (a status doesn't exist until after submit).
 3. Each line entered is dispatched:
     - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /persona <path> /yolo /new [name] /stop /quit`. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/new` reconnects (one session per connection); `/stop` and `/help` stay reachable while a loop is in flight. Tab completes verbs and `/model` aliases via the readline completer — no screen takeover.
     - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
@@ -206,7 +206,7 @@ One line per dispatched op. Format (vanilla ANSI, no framework):
 
 Width-tolerant; no fixed column widths. The status code drives color. Op glyphs and origin glyphs are defined in `TUI.md §4`.
 
-**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) renders as user speech per §5.4, not as an EDIT trace.
+**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the broadcast too duplicated every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
 ### §5.2 Summary line (per `loop.run`)
 
@@ -237,7 +237,7 @@ TUI mode contract (see TUI.md §3.4.1 for design rationale):
 **Conversation stripes.** The true user↔model dialogue stands out against operation records as full-width background bands (every block line painted to the terminal's right edge via `\x1b[K`, with an explicit near-white foreground so the band reads on any theme):
 
 - **Model speech** — any broadcast SEND from `origin === "model"` (102 intermediate, 200/499 terminal alike): dark blue (`48;5;17`).
-- **User speech** — the prompt entry (system-origin `EDIT` to `plurnk://prompt/<loop>/<turn>`; rendered with the 👤 ✉️ header and the prompt body as block lines): dark green (`48;5;22`).
+- **User speech** — a client-origin broadcast SEND (rare today): dark green (`48;5;22`). The prompt entry is NOT banded — it is skipped per §5.1; the user's typed line is their record. (plurnk.nvim differs by design: its input buffer clears on submit, so the 👤 band is the only record there.)
 
 Inner ANSI resets (status colors, markdown styling) re-arm the band so a styled span can't cut it mid-line. `NO_COLOR` drops the bands; the block layout (header + indented body) remains. CLI mode is unaffected — stdout/stderr stay plain per §2.
 

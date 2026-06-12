@@ -15,7 +15,7 @@ import readline from "node:readline";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import type Rpc from "./rpc.ts";
-import { renderLogEntry, renderSummary } from "./render.ts";
+import { renderLogEntry, renderSummary, isPromptEntry } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
@@ -92,6 +92,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     rpc.onNotification("log/entry", (params) => {
         const p = params as { entry: LogEntryWire & { tokens?: number } };
         if (typeof p.entry.tokens === "number") dispatchTokens += p.entry.tokens;
+        // The typed line at the prompt is the user's record — rendering the
+        // prompt broadcast too would duplicate it (see isPromptEntry).
+        if (isPromptEntry(p.entry)) return;
         process.stdout.write(`\r\x1b[2K${renderLogEntry(p.entry)}\n`);
     });
 
@@ -119,10 +122,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (Array.isArray(aliases)) aliasCache = aliases.map((a) => a.alias);
     }).catch(() => { /* completion just stays empty */ });
 
+    // The prompt IS the user-speech header: hitting enter leaves
+    // `  👤 : <text>` in scrollback, column-aligned with the waterfall —
+    // alignment by construction, zero cursor math. Glyph constraints are
+    // deliberate: 👤 (no VS16) is width-2-stable across modern terminals;
+    // ✉️ (VS16) is width-ambiguous and would break readline's cursor
+    // positioning on some of them, so it stays off the prompt. No status
+    // either — it doesn't exist until after submit.
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "\x1b[1m: \x1b[0m",
+        prompt: "  👤 \x1b[1m: \x1b[0m",
         completer: makeCompleter(() => aliasCache),
     });
 

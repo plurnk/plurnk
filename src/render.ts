@@ -188,10 +188,15 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const headerParts = [origin, opGlyph];
     if (subGlyph.length > 0) headerParts.push(subGlyph);
     headerParts.push(statusText);
+    const header = `  ${headerParts.join(" ")}`;
 
-    const lines = [`  ${headerParts.join(" ")}`];
     const body = extractSendBody(entry.tx, /* prettify */ true);
-    if (body.length > 0) for (const l of body.split("\n")) lines.push(`     ${l}`);
+    // Short single-line replies inline after the header (nvim's
+    // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
+    // start on the next line, indented under the speaker.
+    const lines = body.length === 0 ? [header]
+        : !body.includes("\n") && body.length <= 80 ? [`${header}  ${body}`]
+        : [header, ...body.split("\n").map((l) => `     ${l}`)];
 
     const stripe = entry.origin === "model" ? MODEL_STRIPE
         : entry.origin === "client" ? USER_STRIPE : "";
@@ -218,7 +223,13 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 
     const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
     const opGlyph = OP_GLYPHS[entry.op] ?? "?";
-    const subGlyph = entry.op === "SEND" && typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "";
+    // Universal status glyph — every line gets one (rummy f20c4a0 / nvim
+    // convergence; a check that exists only sometimes is dissonant).
+    // SENDs glyph their signal (✋/🗑/⏳ carry meaning); everything else
+    // glyphs the outcome status.
+    const subGlyph = entry.op === "SEND" && typeof entry.signal === "number"
+        ? sendSubGlyph(entry.signal)
+        : sendSubGlyph(entry.status_rx);
 
     const statusColor = colorForStatus(entry.status_rx);
     const statusText = `${statusColor}${entry.status_rx}${RESET}`;

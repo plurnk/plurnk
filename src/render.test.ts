@@ -385,3 +385,34 @@ test("universal status glyph: every trace line carries one", () => {
     assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /🔥/);
     assert.match(renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /⚠/);
 });
+
+// ─── Coordinate prefix (plurnk-service#208) ───────────────────────────
+
+test("coordinate: zero-padded L/T/S prefix when the wire carries seqs", () => {
+    const out = renderLogEntry(entry({
+        op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
+        loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
+    }));
+    assert.match(out, /01\/02\/03 /);
+});
+
+test("coordinate: grows past two digits without truncation", () => {
+    const out = renderLogEntry(entry({
+        op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
+        loop_seq: 7, turn_seq: 104, sequence: 12, rx: {}, tx: {},
+    }));
+    assert.match(out, /07\/104\/12 /);
+});
+
+test("coordinate: absent seqs render no prefix (never derived from DB ids)", () => {
+    const out = renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/x", status_rx: 200, rx: {}, tx: {} }));
+    assert.doesNotMatch(out, /\d+\/\d+\/\d+ /);
+});
+
+test("coordinate: broadcasts carry it on the header line", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        loop_seq: 1, turn_seq: 4, sequence: 1, tx: { body: { raw: "Paris", json: null } },
+    }));
+    assert.match(out, /01\/04\/01 /);
+});

@@ -122,19 +122,22 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (Array.isArray(aliases)) aliasCache = aliases.map((a) => a.alias);
     }).catch(() => { /* completion just stays empty */ });
 
-    // ASCII-only prompt — settled EMPIRICALLY. The glyphful pre-rendered
-    // row (`  👤 ✉️  ✅ 201 : `) shifted the text after the colon in real
-    // terminals: the prompt string is static, but readline re-renders the
-    // line on history-nav/backspace/completion and repositions the cursor
-    // at ITS computed prompt width; emoji cell-width disagreement between
-    // node and the terminal lands as visible drift on every refresh. Emoji
-    // are therefore banned from the PROMPT specifically (output lines are
-    // safe — no cursor positioning happens there). Bold-only ANSI is fine:
-    // readline strips VT codes before width math.
+    // The prompt is the user's row, restricted to WIDTH-STABLE glyphs —
+    // settled empirically in two rounds. Round 1 (`  👤 ✉️  ✅ 201 : `)
+    // drifted by exactly one column: ✉️ is U+2709+VS16, the variation-
+    // selector class terminals genuinely cell-count differently; readline
+    // repositions the cursor at its own computed width on every
+    // history-nav/backspace/completion refresh, so the disagreement shows
+    // as text shift. Round 2 (bare `  : `) fixed the drift but destroyed
+    // the row identity. 👤 (U+1F464) and ✅ (U+2705) are plain East-Asian-
+    // Wide — width 2 in node AND every major terminal — so they stay; the
+    // 201 is the contract constant (the prompt row is always a 201 EDIT).
+    // Policy: VS16/ambiguous glyphs are banned from the PROMPT; output
+    // lines render anything (no cursor positioning happens on output).
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "  \x1b[1m: \x1b[0m",
+        prompt: "  👤 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m",
         completer: makeCompleter(() => aliasCache),
     });
 

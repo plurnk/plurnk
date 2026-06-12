@@ -10,7 +10,7 @@ import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalNoTtyReview } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
-import { renderStreamEvent, renderStreamConcluded, reportStream } from "./stream.ts";
+import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
 interface LoopRunResult {
@@ -140,16 +140,7 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         report(p.event);
     });
 
-    // stream/event + stream/concluded — daemon-pushed channel-growth and
-    // closure metadata per plurnk-service SPEC §13.6. Rendered as a one-
-    // line trace on stderr; content fetching is not done here (CLI is a
-    // trace viewer; plurnk.nvim does in-buffer content rendering).
-    rpc.onNotification("stream/event", (params) => {
-        reportStream(renderStreamEvent(params as StreamEventPayload));
-    });
-    rpc.onNotification("stream/concluded", (params) => {
-        reportStream(renderStreamConcluded(params as StreamConcludedPayload));
-    });
+
 
     // Proposal lifecycle (plurnk-service #42): pause-and-review for side-effecting
     // ops. Four paths:
@@ -191,6 +182,28 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         }
         return await runCliExec(rpc, command);
     }
+
+    // Streams, coalesced (loop mode only — exec one-shot prints its own
+    // output above): one start line, one conclusion line, tiny concluded
+    // outputs inlined via the single bounded content fetch (SPEC §5.3).
+    const streams = new StreamTrace();
+    rpc.onNotification("stream/event", (params) => {
+        const line = streams.event(params as StreamEventPayload);
+        if (line !== null) reportStream(line);
+    });
+    rpc.onNotification("stream/concluded", (params) => {
+        const p = params as StreamConcludedPayload;
+        reportStream(streams.concluded(p));
+        void rpc.call("entry.read", { target: p.target }).then((r) => {
+            const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+            for (const name of ["stdout", "stderr"]) {
+                const content = channels[name]?.content;
+                if (typeof content === "string" && inlineable(content)) {
+                    reportStream(renderInline(name, content));
+                }
+            }
+        }).catch(() => { /* best-effort */ });
+    });
     let effectiveFlags = opts.loopFlags;
     const p0 = prompt[0];
     if (p0 === "?" || p0 === ":") {

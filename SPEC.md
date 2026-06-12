@@ -201,10 +201,10 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 One line per dispatched op. Format (vanilla ANSI, no framework):
 
 ```
-  <glyph> <origin> <status> <op> <target>  <body-preview>
+  <origin> <op-glyph> <status-glyph> <status> <target>  <body-preview>
 ```
 
-Width-tolerant; no fixed column widths. The status code drives color. Op glyphs and origin glyphs are defined in `TUI.md §4`.
+Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/⚠️/🔥 from the outcome; SENDs glyph their signal — ✋/🗑/⏳ carry meaning). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent). Op glyphs and origin glyphs are defined in `TUI.md §4`.
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the broadcast too duplicated every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
@@ -230,7 +230,7 @@ A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's repl
 TUI mode contract (see TUI.md §3.4.1 for design rationale):
 
 - Header line: `  <origin-glyph> ✉️  <sub-glyph> <status>` — 2-space INDENT matching the trace lines, no PATH. Origin glyph column-aligns across waterfall and broadcast.
-- Body: split on `\n`, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
+- Body: a short single-line body (≤80 chars) inlines on the header line after two spaces (nvim convergence); otherwise the body starts on the next line, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
 - Surrounded by one blank line above and one blank line below.
 - Empty body is legal and renders as just the header.
 

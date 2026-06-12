@@ -347,3 +347,41 @@ test("renderSummary: usage without cost omits the cost segment", () => {
     assert.match(s, /↑10 ↓5/);
     assert.doesNotMatch(s, /\$/);
 });
+
+// ─── Inline broadcasts + universal status glyph (v0.10.0) ─────────────
+
+test("broadcast: short single-line body inlines after the header", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        tx: { body: { raw: "Paris.", json: null } },
+    }));
+    const inner = out.replace(/^\n|\n$/g, "");
+    assert.ok(!inner.includes("\n"), `expected one line, got: ${JSON.stringify(out)}`);
+    assert.match(inner, /Paris\.$/);
+});
+
+test("broadcast: multi-line body starts on the second line", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        tx: { body: { raw: "line one\nline two", json: null } },
+    }));
+    const lines = out.replace(/^\n|\n$/g, "").split("\n");
+    assert.equal(lines.length, 3);
+    assert.doesNotMatch(lines[0], /line one/);
+    assert.match(lines[1], /^     line one/);
+});
+
+test("broadcast: long single-line body breaks to the second line", () => {
+    const long = "x".repeat(81);
+    const out = renderLogEntry(entry({
+        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        tx: { body: { raw: long, json: null } },
+    }));
+    assert.equal(out.replace(/^\n|\n$/g, "").split("\n").length, 2);
+});
+
+test("universal status glyph: every trace line carries one", () => {
+    assert.match(renderLogEntry(entry({ op: "EDIT", scheme: "unknown", pathname: "/x", status_rx: 201, tx: { body: "p" } })), /✅/);
+    assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /🔥/);
+    assert.match(renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /⚠/);
+});

@@ -202,7 +202,7 @@ test("isPromptEntry: classifies plurnk://prompt/* EDITs (the TUI skips them live
 
 test("renderLogEntry: prompt entry renders as a plain EDIT trace (no speech block — TUI skips it anyway)", () => {
     const out = renderLogEntry(entry({
-        op: "EDIT", origin: "system", scheme: "plurnk", pathname: "prompt/3/1",
+        op: "EDIT", origin: "plurnk", scheme: "plurnk", pathname: "prompt/3/1",
         status_rx: 201, tx: { body: "What is the capital of France?" },
     }));
     assert.doesNotMatch(out, /^\n/);
@@ -212,7 +212,7 @@ test("renderLogEntry: prompt entry renders as a plain EDIT trace (no speech bloc
 test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
     const out = renderLogEntry(entry({
         op: "EDIT",
-        origin: "system",
+        origin: "plurnk",
         scheme: "plurnk",
         pathname: "manifest.json",
         status_rx: 201,

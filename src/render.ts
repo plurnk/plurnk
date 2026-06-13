@@ -23,8 +23,7 @@ export const OP_GLYPHS: Record<string, string> = {
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🤖",
     client: "👤",
-    plurnk: "🧰",   // the runtime actor (was "system" pre-0.21; §14.7)
-    system: "🧰",   // back-compat alias for older daemons
+    plurnk: "🧰",   // the runtime actor (§14.7)
     plugin: "🔌",
 };
 
@@ -116,19 +115,17 @@ export interface LogEntryWire {
     status_rx: number;
     tx: unknown;
     rx: unknown;
-    // Logical coordinate (the model's log://L/T/S address). On the wire
-    // once plurnk-service#208 lands; rendered only when present.
-    loop_seq?: number;
-    turn_seq?: number;
-    sequence?: number;
+    // Logical coordinate (the model's log://L/T/S address) — every wire
+    // log entry carries it (loops⋈turns JOIN, plurnk-service #208).
+    loop_seq: number;
+    turn_seq: number;
+    sequence: number;
 }
 
 // `01/02/03 ` coordinate prefix — zero-padded to two digits minimum for
-// alignment zen, growing naturally past 99. Empty until the wire carries
-// the seqs (plurnk-service#208); never derived client-side (DB ids are
-// NOT the user's loop/turn numbers).
+// alignment zen, growing naturally past 99. DB ids are NOT the user's
+// loop/turn numbers; only the wire's ordinals are.
 const coordPrefix = (entry: LogEntryWire): string => {
-    if (typeof entry.loop_seq !== "number" || typeof entry.turn_seq !== "number" || typeof entry.sequence !== "number") return "";
     const p = (n: number): string => String(n).padStart(2, "0");
     return `${DIM}${p(entry.loop_seq)}/${p(entry.turn_seq)}/${p(entry.sequence)}${RESET} `;
 };
@@ -279,25 +276,21 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 };
 
 export interface LoopUsage {
-    promptTokens?: number;
-    completionTokens?: number;
-    costPico?: number;
+    promptTokens: number;
+    completionTokens: number;
+    costPico: number;
 }
 
-export const renderSummary = (turns: number, wallMs: number, tokens: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage): string => {
+// usage is absent for non-model ops (op.exec / op.parse have no provider
+// call) — those render no token part. It is NOT a fallback for missing
+// data: a model loop always carries real usage (plurnk-service #197).
+export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage): string => {
     const tag = hitMaxTurns ? "maxTurns" : finalStatus === 200 ? "done" : `final ${finalStatus}`;
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
-    // Real provider usage (plurnk-service #197) when the daemon sends it:
-    // ↑prompt ↓completion + cost. Fallback: content tokens summed from the
-    // loop's log rows. Zero data → omit, never a fake gauge.
     let tokenPart = "";
-    if (typeof usage?.promptTokens === "number" && typeof usage.completionTokens === "number") {
+    if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
-        if (typeof usage.costPico === "number" && usage.costPico > 0) {
-            tokenPart += ` · $${(usage.costPico / 1e12).toFixed(4)}`;
-        }
-    } else if (tokens > 0) {
-        tokenPart = ` · ${tokens} tokens`;
+        if (usage.costPico > 0) tokenPart += ` · $${(usage.costPico / 1e12).toFixed(4)}`;
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

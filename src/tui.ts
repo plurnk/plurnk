@@ -16,6 +16,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry } from "./render.ts";
+import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
@@ -30,7 +31,7 @@ interface LoopRunResult {
     turnIds: number[];
     finalStatus: number;
     hitMaxTurns: boolean;
-    usage?: { promptTokens?: number; completionTokens?: number; costPico?: number };
+    usage?: LoopUsage;
 }
 
 interface SessionResult { id: number; name: string }
@@ -82,16 +83,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
 }): Promise<void> => {
     let current = session;
 
-    // Tokens for the summary line: summed from each dispatch's log/entry
-    // rows (log_entries.tokens). Reset per dispatch in the line handler.
-    let dispatchTokens = 0;
-
     // Subscribe to log/entry notifications — render each as a waterfall line.
     // `\r\x1b[2K` wipes any readline-redrawn prompt sitting on the current line
     // before our output, otherwise the first trace line lands beside the prompt.
     rpc.onNotification("log/entry", (params) => {
-        const p = params as { entry: LogEntryWire & { tokens?: number } };
-        if (typeof p.entry.tokens === "number") dispatchTokens += p.entry.tokens;
+        const p = params as { entry: LogEntryWire };
         // The typed line at the prompt is the user's record — rendering the
         // prompt broadcast too would duplicate it (see isPromptEntry).
         if (isPromptEntry(p.entry)) return;
@@ -280,7 +276,6 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
 
             inFlight = true;
             const start = Date.now();
-            dispatchTokens = 0;
             let turnCount = 0;
             let finalStatus = 0;
             let hitMaxTurns = false;
@@ -318,7 +313,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     usage = result.usage;
                 }
                 const wallMs = Date.now() - start;
-                process.stdout.write(`${renderSummary(turnCount, wallMs, dispatchTokens, finalStatus, hitMaxTurns, usage)}\n`);
+                process.stdout.write(`${renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage)}\n`);
             } catch (cause) {
                 const msg = cause instanceof Error ? cause.message : String(cause);
                 process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);

@@ -12,6 +12,9 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     suffix: "",
     origin: "model",
     signal: null,
+    loop_seq: 1,
+    turn_seq: 1,
+    sequence: 1,
     scheme: null,
     pathname: null,
     hostname: null,
@@ -150,23 +153,25 @@ test("exitCodeForLoop: 4xx/5xx → 4 (failure ≠ cancel)", () => {
 test("formatResultLine: greppable prefix + compact JSON + omitted reason", () => {
     const line = formatResultLine({
         loopId: 7, finalStatus: 200, turns: 3, wallMs: 1234,
-        tokens: 456, hitMaxTurns: false, timedOut: false,
+        hitMaxTurns: false, timedOut: false,
+        usage: { promptTokens: 456, completionTokens: 12, costPico: 0 },
     });
     assert.match(line, /^result: \{/);
     const parsed = JSON.parse(line.slice("result: ".length));
     assert.equal(parsed.loopId, 7);
-    assert.equal(parsed.tokens, 456);
+    assert.equal(parsed.promptTokens, 456);
     assert.equal(parsed.timedOut, false);
     assert.ok(!("reason" in parsed));
 });
 
-test("formatResultLine: reason carried when present", () => {
+test("formatResultLine: reason carried when present; no usage → no token fields", () => {
     const line = formatResultLine({
         loopId: 1, finalStatus: 499, turns: 1, wallMs: 10,
-        tokens: 0, hitMaxTurns: false, timedOut: true, reason: "client_timeout",
+        hitMaxTurns: false, timedOut: true, reason: "client_timeout",
     });
     assert.match(line, /"timedOut":true/);
     assert.match(line, /"reason":"client_timeout"/);
+    assert.doesNotMatch(line, /promptTokens/);
 });
 
 // ─── TUI verb helpers (converged language surface) ────────────────────
@@ -206,7 +211,7 @@ test("completer: plain text completes nothing", () => {
 
 test("formatResultLine: usage fields flatten into the envelope", () => {
     const line = formatResultLine({
-        loopId: 2, finalStatus: 200, turns: 1, wallMs: 50, tokens: 100,
+        loopId: 2, finalStatus: 200, turns: 1, wallMs: 50,
         hitMaxTurns: false, timedOut: false,
         usage: { promptTokens: 800, completionTokens: 60, costPico: 1000 },
     });

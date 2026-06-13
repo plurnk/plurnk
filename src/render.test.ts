@@ -36,6 +36,9 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     status_rx: 200,
     tx: null,
     rx: null,
+    loop_seq: 1,
+    turn_seq: 1,
+    sequence: 1,
     ...overrides,
 });
 
@@ -293,59 +296,53 @@ test("renderLogEntry: unknown op → '?' glyph", () => {
 
 // ─── renderSummary ────────────────────────────────────────────────────
 
+const usage = (p: number, c: number, cost = 0) => ({ promptTokens: p, completionTokens: c, costPico: cost });
+
 test("renderSummary: success → 'done'", () => {
-    const s = renderSummary(1, 500, 100, 200, false);
+    const s = renderSummary(1, 500, 200, false, usage(10, 5));
     assert.match(s, /done/);
     assert.match(s, /1 turn /);
 });
 
 test("renderSummary: maxTurns flag wins over finalStatus", () => {
-    const s = renderSummary(50, 18200, 6841, 200, true);
+    const s = renderSummary(50, 18200, 200, true, usage(100, 50));
     assert.match(s, /maxTurns/);
     assert.doesNotMatch(s, /done/);
 });
 
 test("renderSummary: non-200 final → 'final <N>'", () => {
-    const s = renderSummary(3, 1000, 50, 499, false);
+    const s = renderSummary(3, 1000, 499, false, usage(10, 5));
     assert.match(s, /final 499/);
 });
 
-test("renderSummary: positive tokens render", () => {
-    const s = renderSummary(1, 500, 6841, 200, false);
-    assert.match(s, /6841 tokens/);
-});
-
-test("renderSummary: zero tokens omit the segment (no data ≠ zero usage)", () => {
-    const s = renderSummary(1, 500, 0, 200, false);
-    assert.doesNotMatch(s, /tokens/);
-});
-
-test("renderSummary: wall time in seconds when ≥1000ms", () => {
-    const s = renderSummary(1, 1234, 0, 200, false);
-    assert.match(s, /1\.23s/);
-});
-
-test("renderSummary: wall time in ms when <1000", () => {
-    const s = renderSummary(1, 250, 0, 200, false);
-    assert.match(s, /250ms/);
-});
-
-test("renderSummary: pluralizes turns", () => {
-    assert.match(renderSummary(2, 500, 0, 200, false), /2 turns/);
-    assert.match(renderSummary(1, 500, 0, 200, false), /1 turn /);
-});
-
-test("renderSummary: real usage wins over content-token fallback", () => {
-    const s = renderSummary(2, 500, 9999, 200, false, { promptTokens: 1200, completionTokens: 345, costPico: 420000000 });
+test("renderSummary: real usage renders ↑prompt ↓completion + cost", () => {
+    const s = renderSummary(2, 500, 200, false, usage(1200, 345, 420000000));
     assert.match(s, /↑1200 ↓345/);
     assert.match(s, /\$0\.0004/);
-    assert.doesNotMatch(s, /9999 tokens/);
 });
 
 test("renderSummary: usage without cost omits the cost segment", () => {
-    const s = renderSummary(1, 100, 0, 200, false, { promptTokens: 10, completionTokens: 5 });
+    const s = renderSummary(1, 100, 200, false, usage(10, 5));
     assert.match(s, /↑10 ↓5/);
     assert.doesNotMatch(s, /\$/);
+});
+
+test("renderSummary: no usage (non-model op) omits the token part", () => {
+    const s = renderSummary(0, 50, 201, false);
+    assert.doesNotMatch(s, /↑|tokens/);
+});
+
+test("renderSummary: wall time in seconds when ≥1000ms", () => {
+    assert.match(renderSummary(1, 1234, 200, false, usage(1, 1)), /1\.23s/);
+});
+
+test("renderSummary: wall time in ms when <1000", () => {
+    assert.match(renderSummary(1, 250, 200, false, usage(1, 1)), /250ms/);
+});
+
+test("renderSummary: pluralizes turns", () => {
+    assert.match(renderSummary(2, 500, 200, false, usage(1, 1)), /2 turns/);
+    assert.match(renderSummary(1, 500, 200, false, usage(1, 1)), /1 turn /);
 });
 
 // ─── Inline broadcasts + universal status glyph (v0.10.0) ─────────────
@@ -404,9 +401,17 @@ test("coordinate: grows past two digits without truncation", () => {
     assert.match(out, /07\/104\/12 /);
 });
 
-test("coordinate: absent seqs render no prefix (never derived from DB ids)", () => {
-    const out = renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/x", status_rx: 200, rx: {}, tx: {} }));
-    assert.doesNotMatch(out, /\d+\/\d+\/\d+ /);
+test("coordinate: rendered from the wire ordinals, never DB ids", () => {
+    // loop_id/turn_id are the DB keys; the prefix uses ONLY loop_seq/turn_seq.
+    const out = renderLogEntry(entry({
+        op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
+        loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
+        // @ts-expect-error — DB ids are not part of LogEntryWire; ensure
+        // they can't leak into the coordinate even if present on the row.
+        loop_id: 38, turn_id: 412,
+    }));
+    assert.match(out, /01\/02\/03 /);
+    assert.doesNotMatch(out, /38\/412/);
 });
 
 test("coordinate: broadcasts carry it on the header line", () => {

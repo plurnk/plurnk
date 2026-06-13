@@ -23,7 +23,8 @@ export const OP_GLYPHS: Record<string, string> = {
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🤖",
     client: "👤",
-    system: "🧰",
+    plurnk: "🧰",   // the runtime actor (was "system" pre-0.21; §14.7)
+    system: "🧰",   // back-compat alias for older daemons
     plugin: "🔌",
 };
 

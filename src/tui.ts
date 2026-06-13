@@ -220,10 +220,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 process.stdout.write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
                 return;
             case "new": {
-                // One session per connection (service §13.5) — a new session
-                // means a fresh socket, same as plurnk.nvim's reconnect dance.
-                await rpc.close();
-                await rpc.connect();
+                // Rebind in place (service §13.5-rebind, v0.17.0) — no
+                // reconnect; the prior client loop releases server-side.
                 const params: { name?: string; projectRoot?: string | null } = {};
                 if (rest.length > 0) params.name = rest;
                 if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;

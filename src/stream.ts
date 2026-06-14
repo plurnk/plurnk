@@ -11,6 +11,7 @@
 // optics when it's two lines long.
 
 import process from "node:process";
+import { coordLabel } from "./render.ts";
 
 const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
@@ -59,7 +60,7 @@ export default class StreamTrace {
     event(ev: StreamEventPayload): string | null {
         if (this.#started.has(ev.entryId)) return null;
         this.#started.add(ev.entryId);
-        return `  ${STREAM_GLYPH} ⏳ ${ev.target}`;
+        return `  ${coordFromTarget(ev.target)}${STREAM_GLYPH} ⏳ ${ev.target}`;
     }
 
     // One conclusion line in the waterfall grammar. The daemon's summary
@@ -76,11 +77,21 @@ export default class StreamTrace {
             `${statusColor(ev.closeStatus)}${ev.closeStatus}${RESET}`,
             ev.target,
         ];
-        let line = `  ${parts.join(" ")}`;
+        let line = `  ${coordFromTarget(ev.target)}${parts.join(" ")}`;
         if (summary.length > 0) line += ` ${DIM}"${summary}"${RESET}`;
         return line + wake;
     }
 }
+
+// A stream's coordinate is its entry's coordinate, embedded in the exec
+// URI: `exec://<runtime>/<loop_seq>/<turn_seq>/<sequence>` — the trailing
+// three path segments. Streams are exec-only (the only streaming scheme),
+// so the tail is always present.
+export const coordFromTarget = (target: string): string => {
+    const m = target.match(/\/(\d+)\/(\d+)\/(\d+)$/);
+    if (m === null) return "";
+    return coordLabel(Number(m[1]), Number(m[2]), Number(m[3]));
+};
 
 // Inline-worthiness for concluded channel content: short enough that the
 // content IS the better optics. Anything larger stays behind the summary.

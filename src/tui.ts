@@ -15,7 +15,7 @@ import readline from "node:readline";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import type Rpc from "./rpc.ts";
-import { renderLogEntry, renderSummary, isPromptEntry } from "./render.ts";
+import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
@@ -82,12 +82,15 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     projectRoot?: string | null;
 }): Promise<void> => {
     let current = session;
+    // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
+    let lastLoopSeq = 0;
 
     // Subscribe to log/entry notifications — render each as a waterfall line.
     // `\r\x1b[2K` wipes any readline-redrawn prompt sitting on the current line
     // before our output, otherwise the first trace line lands beside the prompt.
     rpc.onNotification("log/entry", (params) => {
         const p = params as { entry: LogEntryWire };
+        if (p.entry.loop_seq > lastLoopSeq) lastLoopSeq = p.entry.loop_seq;
         // The typed line at the prompt is the user's record — rendering the
         // prompt broadcast too would duplicate it (see isPromptEntry).
         if (isPromptEntry(p.entry)) return;
@@ -145,12 +148,20 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // 💬 (U+1F4AC, stable-wide) fills the op slot the toxic ✉️ vacated.
     // Policy: VS16/ambiguous glyphs are banned from the ENTIRE palette
     // (render.ts) — stable widths are also what make columns align.
+    // The prompt is the user's row, coordinate-prefixed like every other
+    // waterfall line (§5.1). The coordinate is the one the typed line will
+    // get: the prompt becomes the next loop's foist EDIT at <next>/01/01.
+    // lastLoopSeq tracks the highest loop the waterfall has shown; the next
+    // prompt is one beyond it. Plain-ASCII coordinate — width-safe.
+    const buildPrompt = (): string =>
+        `  ${coordLabel(lastLoopSeq + 1, 1, 1)}👤 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "  👤 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m",
+        prompt: buildPrompt(),
         completer: makeCompleter(() => aliasCache),
     });
+    const reprompt = (): void => { rl.setPrompt(buildPrompt()); rl.prompt(); };
 
     // Proposal lifecycle: server-resolved proposals (flags.yolo/noProposals)
     // settle in-process — skip; --yolo auto-accepts locally; otherwise pause
@@ -236,7 +247,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         }
     };
 
-    rl.prompt();
+    reprompt();
 
     return new Promise<void>((resolve) => {
         let inFlight = false;
@@ -245,7 +256,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         rl.on("line", async (line) => {
             const trimmed = line.trim();
             if (trimmed.length === 0) {
-                rl.prompt();
+                reprompt();
                 return;
             }
 
@@ -255,7 +266,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 const { verb } = parseSlash(trimmed);
                 if (inFlight && verb !== "stop" && verb !== "help" && verb !== "") {
                     process.stdout.write("  \x1b[2m(busy; /stop to cancel, /help for the language)\x1b[0m\n");
-                    rl.prompt();
+                    reprompt();
                     return;
                 }
                 try {
@@ -264,13 +275,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     const msg = cause instanceof Error ? cause.message : String(cause);
                     process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);
                 }
-                rl.prompt();
+                reprompt();
                 return;
             }
 
             if (inFlight) {
                 process.stdout.write("  \x1b[2m(busy; /stop to cancel)\x1b[0m\n");
-                rl.prompt();
+                reprompt();
                 return;
             }
 
@@ -320,7 +331,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             } finally {
                 inFlight = false;
                 cancelRequested = false;
-                rl.prompt();
+                reprompt();
             }
         });
 

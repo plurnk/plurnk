@@ -122,13 +122,16 @@ export interface LogEntryWire {
     sequence: number;
 }
 
-// `01/02/03 ` coordinate prefix — zero-padded to two digits minimum for
-// alignment zen, growing naturally past 99. DB ids are NOT the user's
-// loop/turn numbers; only the wire's ordinals are.
-const coordPrefix = (entry: LogEntryWire): string => {
+// `01/02/03 ` coordinate label — zero-padded to two digits minimum for
+// alignment zen, growing naturally past 99. Every waterfall line carries
+// one (log entries from the wire, the prompt and stream lines from their
+// own coordinates — §5.1). DB ids are NOT the user's loop/turn numbers.
+export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): string => {
     const p = (n: number): string => String(n).padStart(2, "0");
-    return `${DIM}${p(entry.loop_seq)}/${p(entry.turn_seq)}/${p(entry.sequence)}${RESET} `;
+    return `${DIM}${p(loopSeq)}/${p(turnSeq)}/${p(sequence)}${RESET} `;
 };
+const coordPrefix = (entry: LogEntryWire): string =>
+    coordLabel(entry.loop_seq, entry.turn_seq, entry.sequence);
 
 const BOLD = code("1");
 const ITALIC = code("3");

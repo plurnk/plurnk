@@ -17,7 +17,7 @@ const {
     clientSubcommandSessionAmbiguous,
     clientSubcommandUnknownVerb,
     clientSubcommandMissingArgument,
-    clientProposalNoTtyReview,
+    clientProposalEditsBlocked,
     clientIoPersonaReadFailed,
     clientRuntimeError,
     clientRpcError,
@@ -204,11 +204,11 @@ test("clientSubcommandMissingArgument names path + argument", () => {
     assert.equal(ev.argument, "<name>");
 });
 
-test("clientProposalNoTtyReview carries the logEntryId", () => {
-    const ev = clientProposalNoTtyReview(42);
+test("clientProposalEditsBlocked names the source/kind and the why", () => {
+    const ev = clientProposalEditsBlocked();
     assert.equal(ev.source, "client:proposal");
-    assert.equal(ev.kind, "no_tty_review");
-    assert.equal(ev.logEntryId, 42);
+    assert.equal(ev.kind, "edits_blocked");
+    assert.match(ev.message ?? "", /no review channel/);
 });
 
 test("clientIoPersonaReadFailed carries path + cause message", () => {

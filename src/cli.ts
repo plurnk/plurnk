@@ -8,7 +8,7 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { extractSendBody } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
-import { report, clientProposalNoTtyReview } from "./telemetry.ts";
+import { report, clientProposalEditsBlocked } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -136,28 +136,25 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
 
 
 
+    // No review channel (non-TTY, no --yolo): the loop runs with
+    // flags.noProposals (set below), so the SERVER auto-rejects
+    // side-effecting ops in-process — fail-closed without a per-proposal
+    // client roundtrip, no 5-minute hang. The proposal still broadcasts;
+    // isServerResolved suppresses the handler. plurnk #24 (#169 client half).
+    const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
+
     // Proposal lifecycle (plurnk-service #42): pause-and-review for side-effecting
-    // ops. Four paths:
+    // ops. Three paths:
     // - server-resolved (flags.yolo / flags.noProposals): the daemon settles the
     //   entry in-process; a client loop.resolve would race it. Skip entirely.
     // - --yolo: auto-accept locally without prompting (server still sends the notification).
     // - TTY: interactive review.
-    // - no TTY, no yolo: fail closed (reject) so the daemon doesn't hang for 5 minutes.
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
         void (async () => {
             if (isServerResolved(p)) return;
             if (opts.yolo) {
                 await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" });
-                return;
-            }
-            if (process.stdin.isTTY !== true) {
-                report(clientProposalNoTtyReview(p.logEntryId));
-                await rpc.call("loop.resolve", {
-                    logEntryId: p.logEntryId,
-                    decision: "reject",
-                    outcome: "no_tty_review",
-                });
                 return;
             }
             const resolution = await reviewProposal(p);
@@ -203,6 +200,11 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     if (p0 === "?" || p0 === ":") {
         effectiveFlags = { ...(opts.loopFlags ?? {}), mode: p0 === "?" ? "ask" : "act" };
         prompt = prompt.replace(/^[?:]+\s*/, "");
+    }
+    // No review channel → run with noProposals and own the explanation.
+    if (noReviewChannel) {
+        effectiveFlags = { ...(effectiveFlags ?? {}), noProposals: true };
+        report(clientProposalEditsBlocked());
     }
 
     const start = Date.now();

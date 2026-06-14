@@ -318,15 +318,13 @@ Client-side opt-in. When set, the proposal handler skips the menu and immediatel
 
 This is distinct from **server-side YOLO** (`loop.run({flags: {yolo: true}})`, plurnk-service §13.5), where the daemon auto-accepts proposals in-process without client involvement — intended for benchmarks and automation, not routine client UX. The client does not expose a flag for it; its only obligation is the §6.1 suppression: a proposal carrying `flags.yolo` gets no review UI and no `loop.resolve`.
 
-### §6.4 Fail-closed (non-TTY, no yolo)
+### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals`
 
-When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. To avoid stalling on the daemon's 5-minute resolution timeout, the handler immediately sends:
+When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
 
-```
-loop.resolve({decision: "reject", outcome: "no_tty_review"})
-```
+Because the server is silent by design, **the client owns the explanation** — it emits `client:proposal:edits_blocked` once at loop start: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)."
 
-Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`. The model sees the reject in the next turn's telemetry and can adapt or terminate.
+Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`. A user who passes `--flags '{"noProposals":true}'` sets it explicitly; the no-review-channel detection merges with it.
 
 ### §6.5 What proposal review does NOT do
 
@@ -439,7 +437,7 @@ Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow
 | `client:connection` | `refused`, `closed`, `daemon_stale` | WebSocket couldn't open / dropped mid-call / `discover` is missing wire markers this client depends on (daemon older than client) |
 | `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
 | `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
-| `client:proposal` | `no_tty_review` | Fail-closed reject in CLI without `--yolo` |
+| `client:proposal` | `edits_blocked` | No review channel (non-TTY, no `--yolo`) — loop runs with `noProposals`; client owns the why |
 | `client:io` | `persona_read_failed` | `--persona` file unreadable |
 | `client:rpc` | `error` | Daemon-returned RPC error surfaced verbatim |
 | `client:runtime` | `error` | Generic fallback for unstructured throws |

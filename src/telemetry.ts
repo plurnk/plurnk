@@ -230,11 +230,15 @@ export const clientSubcommandMissingArgument = (path: string, argument: string):
 });
 
 // `client:proposal:no_tty_review` — fail-closed in CLI without --yolo.
-export const clientProposalNoTtyReview = (logEntryId: number): TelemetryEvent => ({
+// `client:proposal:edits_blocked` — no review channel (non-TTY, no --yolo),
+// so the loop runs with flags.noProposals: the server auto-rejects
+// side-effecting ops (the model sees a plain 400, mode-blind). Only the
+// client can say WHY, because the server is silent by design (plurnk #24 /
+// #169 client half). Emitted once at loop start, not per proposal.
+export const clientProposalEditsBlocked = (): TelemetryEvent => ({
     source: "client:proposal",
-    kind: "no_tty_review",
-    message: "no TTY for review, no --yolo — rejecting proposal",
-    logEntryId,
+    kind: "edits_blocked",
+    message: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)",
 });
 
 // `client:io:persona_read_failed` — couldn't read the --persona file.

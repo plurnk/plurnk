@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 process.env.NO_COLOR = "1";
 
-const { default: StreamTrace, inlineable, renderInline } = await import("./stream.ts");
+const { default: StreamTrace, inlineable, renderInline, coordFromTarget } = await import("./stream.ts");
 
 const event = (entryId: number, over: Partial<{ channel: string; state: string; contentLength: number }> = {}) => ({
     entryId, target: "exec://python/1/2/1", channel: "stdout", state: "active", contentLength: 12, ...over,
@@ -22,6 +22,7 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     const first = t.event(event(1));
     assert.ok(first !== null);
     assert.match(first, /📡 ⏳ exec:\/\/python\/1\/2\/1/);
+    assert.match(first, /^  01\/02\/01 /, "start line carries the exec coordinate");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
 });
@@ -37,6 +38,7 @@ test("StreamTrace: conclusion speaks the waterfall grammar and strips the target
     const t = new StreamTrace();
     const line = t.concluded(concluded());
     assert.match(line, /📡 ✅ 200 exec:\/\/python\/1\/2\/1/);
+    assert.match(line, /^  01\/02\/01 /, "conclusion line carries the exec coordinate");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
     assert.doesNotMatch(line, /exec:\/\/python\/1\/2\/1 completed/);
     assert.doesNotMatch(line, /no-op-active-loop/);
@@ -72,4 +74,9 @@ test("inlineable: short one-or-two-line content only", () => {
 test("renderInline: indents under the conclusion; stderr is marked", () => {
     assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "     Ulaanbaatar");
     assert.match(renderInline("stderr", "oh no\n"), /^     ! oh no$/);
+});
+
+test("coordFromTarget: extracts the trailing L/T/S from an exec URI", () => {
+    assert.match(coordFromTarget("exec://python/1/2/1"), /01\/02\/01 /);
+    assert.match(coordFromTarget("exec://search/12/3/45"), /12\/03\/45 /);
 });

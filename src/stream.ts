@@ -11,6 +11,7 @@
 // optics when it's two lines long.
 
 import process from "node:process";
+import { coordLabel } from "./render.ts";
 
 const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
@@ -21,7 +22,16 @@ const RED = code("31");
 
 const STREAM_GLYPH = "📡";
 
-export interface StreamEventPayload {
+// loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
+// coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
+// stream without a coordinate renders without one (no URI parsing).
+interface StreamCoord {
+    loop_seq?: number;
+    turn_seq?: number;
+    sequence?: number;
+}
+
+export interface StreamEventPayload extends StreamCoord {
     entryId: number;
     target: string;         // entry URI (scheme://pathname) — plurnk-service #179
     channel: string;
@@ -29,7 +39,7 @@ export interface StreamEventPayload {
     contentLength: number;
 }
 
-export interface StreamConcludedPayload {
+export interface StreamConcludedPayload extends StreamCoord {
     entryId: number;
     target: string;         // entry URI (scheme://pathname) — plurnk-service #179
     subscriptionId: number;
@@ -39,6 +49,13 @@ export interface StreamConcludedPayload {
     wakeAction: string;     // no-op-active-loop | opened-loop | skipped-aborted | skipped-no-provider
     wakeLoopId?: number;
 }
+
+// The coordinate label from a stream payload, or "" when the stream
+// carries none (non-coordinate-bearing scheme).
+const streamCoord = (ev: StreamCoord): string =>
+    typeof ev.loop_seq === "number" && typeof ev.turn_seq === "number" && typeof ev.sequence === "number"
+        ? coordLabel(ev.loop_seq, ev.turn_seq, ev.sequence)
+        : "";
 
 const statusGlyph = (status: number): string => {
     if (status === 200) return "✅";
@@ -59,10 +76,7 @@ export default class StreamTrace {
     event(ev: StreamEventPayload): string | null {
         if (this.#started.has(ev.entryId)) return null;
         this.#started.add(ev.entryId);
-        // No coordinate: stream notifications don't carry loop_seq/turn_seq
-        // (plurnk-service#224). Not reconstructed from the URI — that's the
-        // daemon's value to surface, not the client's to decode.
-        return `  ${STREAM_GLYPH} ⏳ ${ev.target}`;
+        return `  ${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${ev.target}`;
     }
 
     // One conclusion line in the waterfall grammar. The daemon's summary
@@ -79,7 +93,7 @@ export default class StreamTrace {
             `${statusColor(ev.closeStatus)}${ev.closeStatus}${RESET}`,
             ev.target,
         ];
-        let line = `  ${parts.join(" ")}`;
+        let line = `  ${streamCoord(ev)}${parts.join(" ")}`;
         if (summary.length > 0) line += ` ${DIM}"${summary}"${RESET}`;
         return line + wake;
     }

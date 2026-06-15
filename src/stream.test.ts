@@ -8,13 +8,14 @@ process.env.NO_COLOR = "1";
 const { default: StreamTrace, inlineable, renderInline } = await import("./stream.ts");
 
 const event = (entryId: number, over: Partial<{ channel: string; state: string; contentLength: number }> = {}) => ({
-    entryId, target: "exec://python/1/2/1", channel: "stdout", state: "active", contentLength: 12, ...over,
+    entryId, target: "exec://python/1/2/1", channel: "stdout", state: "active", contentLength: 12,
+    loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 
 const concluded = (over: Partial<{ closeStatus: number; summary: string; wakeAction: string }> = {}) => ({
     entryId: 1, target: "exec://python/1/2/1", subscriptionId: 1, scheme: "exec",
     closeStatus: 200, summary: "exec://python/1/2/1 completed (exit 0); stdout=12 bytes, stderr=0 bytes",
-    wakeAction: "no-op-active-loop", ...over,
+    wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 
 test("StreamTrace: first event announces the stream, every later tick is silent", () => {
@@ -22,6 +23,7 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     const first = t.event(event(1));
     assert.ok(first !== null);
     assert.match(first, /📡 ⏳ exec:\/\/python\/1\/2\/1/);
+    assert.match(first, /^  01\/02\/01 /, "start line carries the wire coordinate");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
 });
@@ -37,6 +39,7 @@ test("StreamTrace: conclusion speaks the waterfall grammar and strips the target
     const t = new StreamTrace();
     const line = t.concluded(concluded());
     assert.match(line, /📡 ✅ 200 exec:\/\/python\/1\/2\/1/);
+    assert.match(line, /^  01\/02\/01 /, "conclusion line carries the wire coordinate");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
     assert.doesNotMatch(line, /exec:\/\/python\/1\/2\/1 completed/);
     assert.doesNotMatch(line, /no-op-active-loop/);
@@ -72,4 +75,12 @@ test("inlineable: short one-or-two-line content only", () => {
 test("renderInline: indents under the conclusion; stderr is marked", () => {
     assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "     Ulaanbaatar");
     assert.match(renderInline("stderr", "oh no\n"), /^     ! oh no$/);
+});
+
+test("StreamTrace: a stream without a coordinate renders without one", () => {
+    const t = new StreamTrace();
+    const line = t.event({ entryId: 9, target: "sse://feed", channel: "data", state: "active", contentLength: 5 });
+    assert.ok(line !== null);
+    assert.doesNotMatch(line, /\d\d\/\d\d\/\d\d/);
+    assert.match(line, /📡 ⏳ sse:\/\/feed/);
 });

@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
-import Rpc from "./rpc.ts";
+import Rpc, { RpcError } from "./rpc.ts";
 import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
@@ -19,6 +19,7 @@ import {
     clientFlagInvalid,
     clientFlagMissingDependency,
     clientIoPersonaReadFailed,
+    clientRpcError,
     clientRuntimeError,
     clientSubcommandMissingArgument,
     clientSubcommandSessionNotFound,
@@ -388,12 +389,10 @@ export const main = async (argv: string[]): Promise<void> => {
             await rpc.close();
             process.exit(cause.exitCode);
         }
-        // RPC errors arrive as Error("rpc error N: msg") from rpc.ts; the
-        // method that failed is unknown at this catch boundary, so we tag it
-        // with the synthetic "rpc.call" — daemon already supplied the
-        // specific code/message via cause.message, which is what users care
-        // about.
-        report(clientRuntimeError(cause));
+        // A daemon-rejected RPC arrives as a typed RpcError carrying the failed
+        // method and the daemon's code/message — surface it as client:rpc:error.
+        // Anything else is a genuine non-RPC throw: the generic runtime fallback.
+        report(cause instanceof RpcError ? clientRpcError(cause.method, cause) : clientRuntimeError(cause));
         await rpc.close();
         process.exit(1);
     } finally {

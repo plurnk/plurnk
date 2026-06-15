@@ -5,6 +5,7 @@
 //   /verb [args]   command verbs (see VERBS); never call loop.run
 //   << raw DSL     op.parse
 //   ! cmd          op.exec via the daemon
+//   ... msg         loop.inject — speak into the running model loop
 //   ? text         ask — loop.run with flags.mode="ask"
 //   : text         act (the default)
 //   text           prompt
@@ -51,7 +52,7 @@ export const TUI_HELP = [
     "  /new [name]                        new session (reconnects)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
-    "  << raw DSL    ! cmd (exec)    ? text (ask)    : text (act)",
+    "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
 ].join("\n") + "\n";
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
@@ -293,7 +294,12 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             let usage: LoopRunResult["usage"];
 
             try {
-                if (trimmed.startsWith("<<")) {
+                if (trimmed.startsWith("...")) {
+                    // `... msg` — inject into the running model loop (#193).
+                    const msg = trimmed.replace(/^\.\.\.\s*/, "");
+                    const result = await rpc.call("loop.inject", { prompt: msg }) as { status?: number };
+                    finalStatus = result.status ?? 200;
+                } else if (trimmed.startsWith("<<")) {
                     // Raw DSL: send to op.parse
                     const result = await rpc.call("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
                     finalStatus = result.results[result.results.length - 1]?.status ?? 0;

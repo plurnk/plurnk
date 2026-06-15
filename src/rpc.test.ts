@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { WebSocketServer, type WebSocket } from "ws";
 import { once } from "node:events";
 
-import Rpc from "./rpc.ts";
+import Rpc, { RpcError } from "./rpc.ts";
 
 interface JsonRpcRequest {
     jsonrpc: "2.0";
@@ -74,14 +74,20 @@ test("Rpc: call resolves with server result", async () => {
     }
 });
 
-test("Rpc: server error → call rejects with formatted message", async () => {
+test("Rpc: server error → call rejects with typed RpcError carrying method + code", async () => {
     const { url, close } = await startServer((sock, req) => {
         sock.send(JSON.stringify({ jsonrpc: "2.0", id: req.id, error: { code: -32601, message: "method not found" } }));
     });
     try {
         const rpc = new Rpc({ url });
         await rpc.connect();
-        await assert.rejects(rpc.call("nope"), /rpc error -32601: method not found/);
+        await assert.rejects(rpc.call("nope"), (err: unknown) => {
+            assert.ok(err instanceof RpcError, "rejects with RpcError");
+            assert.equal(err.method, "nope", "carries the failed method");
+            assert.equal(err.code, -32601, "carries the daemon code");
+            assert.match(err.message, /rpc error -32601: method not found/);
+            return true;
+        });
         await rpc.close();
     } finally {
         await close();

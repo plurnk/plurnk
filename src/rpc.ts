@@ -9,6 +9,21 @@ interface JsonRpcResponse {
     error?: { code: number; message: string; data?: unknown };
 }
 
+// A daemon-supplied JSON-RPC error response, surfaced as a typed throw so
+// the catch boundary can classify it (client:rpc:error) without parsing the
+// message string. Carries the failed method (unknown at the boundary, known
+// here) and the daemon's numeric code.
+export class RpcError extends Error {
+    readonly method: string;
+    readonly code: number;
+    constructor(method: string, code: number, message: string) {
+        super(`rpc error ${code}: ${message}`);
+        this.name = "RpcError";
+        this.method = method;
+        this.code = code;
+    }
+}
+
 interface JsonRpcNotification {
     jsonrpc: "2.0";
     method: string;
@@ -23,7 +38,7 @@ export default class Rpc {
     #url: string;
     #ws: WebSocket | null = null;
     #nextId = 1;
-    #pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+    #pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string }>();
     #notificationHandlers = new Map<string, Array<(params: unknown) => void>>();
 
     constructor({ url }: RpcOptions) {
@@ -54,7 +69,7 @@ export default class Rpc {
         const payload: { jsonrpc: string; id: number; method: string; params?: object } = { jsonrpc: "2.0", id, method };
         if (params !== undefined) payload.params = params;
         return new Promise<unknown>((resolve, reject) => {
-            this.#pending.set(id, { resolve, reject });
+            this.#pending.set(id, { resolve, reject, method });
             this.#ws?.send(JSON.stringify(payload));
         });
     }
@@ -83,7 +98,7 @@ export default class Rpc {
             if (pending === undefined) return;
             this.#pending.delete(parsed.id);
             if (parsed.error !== undefined) {
-                pending.reject(new Error(`rpc error ${parsed.error.code}: ${parsed.error.message}`));
+                pending.reject(new RpcError(pending.method, parsed.error.code, parsed.error.message));
             } else {
                 pending.resolve(parsed.result);
             }

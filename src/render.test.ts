@@ -150,7 +150,7 @@ test("renderLogEntry: no path at all (both scheme + pathname null) for non-SEND 
 
 // ─── renderLogEntry: broadcast SEND ──────────────────────────────────
 
-test("renderLogEntry: broadcast SEND (scheme + pathname both null) → multi-line block", () => {
+test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single striped line, NO surrounding blanks", () => {
     const out = renderLogEntry(entry({
         op: "SEND",
         scheme: null,
@@ -159,11 +159,41 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → multi-lin
         status_rx: 200,
         tx: { body: { raw: "Hello.", json: null } },
     }));
-    // Block format: starts with \n, ends with \n, body lines indented 5 spaces
-    assert.match(out, /^\n/);
-    assert.match(out, /\n$/);
+    // The stripe background is the standout — no blank-line wrapping.
+    assert.doesNotMatch(out, /^\n/);
+    assert.doesNotMatch(out, /\n$/);
+    assert.ok(!out.includes("\n"), `short broadcast inlines to one line, got: ${JSON.stringify(out)}`);
     assert.match(out, /Hello\./);
     assert.match(out, /🤖/);  // origin glyph for model
+});
+
+test("renderLogEntry: multi-line broadcast SEND → striped block, body indented, still no surrounding blanks", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND",
+        scheme: null,
+        pathname: null,
+        signal: 200,
+        status_rx: 200,
+        tx: { body: { raw: "line one\nline two", json: null } },
+    }));
+    assert.doesNotMatch(out, /^\n/);
+    assert.doesNotMatch(out, /\n$/);
+    assert.match(out, /line one/);
+    assert.match(out, /line two/);
+});
+
+test("renderLogEntry: intermediate 102 broadcast → single striped line, no blanks (the per-turn ping)", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND",
+        scheme: null,
+        pathname: null,
+        signal: 102,
+        status_rx: 102,
+        tx: { body: { raw: "still working…", json: null } },
+    }));
+    assert.doesNotMatch(out, /^\n/);
+    assert.doesNotMatch(out, /\n$/);
+    assert.ok(!out.includes("\n"), `102 ping is one line, got: ${JSON.stringify(out)}`);
 });
 
 test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line", () => {
@@ -189,9 +219,10 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
         status_rx: 200,
         tx: { body: { raw: "", json: null } },
     }));
-    // Single header line; only the leading and trailing \n bracket it
-    const trimmed = out.replace(/^\n|\n$/g, "");
-    assert.ok(!trimmed.includes("\n"), `expected single line, got: ${JSON.stringify(out)}`);
+    // Single header line, no surrounding blanks.
+    assert.doesNotMatch(out, /^\n/);
+    assert.doesNotMatch(out, /\n$/);
+    assert.ok(!out.includes("\n"), `expected single line, got: ${JSON.stringify(out)}`);
 });
 
 // ─── renderLogEntry: user prompt entry (plurnk://prompt/*) ───────────

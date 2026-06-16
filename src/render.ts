@@ -213,16 +213,22 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const header = `  ${coordPrefix(entry)}${headerParts.join(" ")}`;
 
     const body = extractSendBody(entry.tx, /* prettify */ true);
+    const multiLine = body.includes("\n");
     // Short single-line replies inline after the header (nvim's
     // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
     // start on the next line, indented under the speaker.
     const lines = body.length === 0 ? [header]
-        : !body.includes("\n") && body.length <= 80 ? [`${header}  ${body}`]
+        : !multiLine && body.length <= 80 ? [`${header}  ${body}`]
         : [header, ...body.split("\n").map((l) => `     ${l}`)];
 
     const stripe = entry.origin === "model" ? MODEL_STRIPE
         : entry.origin === "client" ? USER_STRIPE : "";
-    return `\n${stripeLines(lines, stripe)}\n`;
+    // No surrounding blank lines: the stripe (full-width background color)
+    // is the standout — a broadcast reads as conversation whether single-
+    // or multi-line. Blank-wrapping every turn-terminator SEND (the model
+    // SENDs once per turn, 102 to continue) just padded the waterfall with
+    // empty lines between operations.
+    return stripeLines(lines, stripe);
 };
 
 // The prompt entry (system-origin EDIT against plurnk://prompt/<loop>/<turn>,
@@ -235,8 +241,10 @@ export const isPromptEntry = (entry: LogEntryWire): boolean =>
     entry.op === "EDIT" && entry.scheme === "plurnk" && (entry.pathname ?? "").startsWith("prompt/");
 
 // Render a log entry as one waterfall line.
-// Returns the full ANSI-formatted line WITHOUT trailing newline,
-// EXCEPT for broadcast SEND which returns a multi-line block with its own surrounding blank lines.
+// Returns the full ANSI-formatted line(s) WITHOUT trailing newline. A
+// broadcast SEND returns one striped line (single-line body) or a striped
+// block (multi-line body) — no surrounding blank lines; the stripe's
+// background color is the standout.
 export const renderLogEntry = (entry: LogEntryWire): string => {
     // Broadcast SEND has no path at all (both scheme AND pathname null).
     // A SEND directed at file:// would have scheme=null but pathname set —

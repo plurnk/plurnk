@@ -13,7 +13,9 @@
 // ask-default toggle exists (nvim first), the prompt char flips to `? `.
 
 import readline from "node:readline";
+import { PassThrough } from "node:stream";
 import { readFile } from "node:fs/promises";
+import PasteFilter from "./paste.ts";
 import { isAbsolute, resolve } from "node:path";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
@@ -156,9 +158,24 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // prompt is one beyond it. Plain-ASCII coordinate — width-safe.
     const buildPrompt = (): string =>
         `  ${coordLabel(lastLoopSeq + 1, 1, 1)}👤 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+    // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
+    // prompt, not one loop.run per line. readline reads a PassThrough we feed
+    // filtered stdin into; since the input is no longer the TTY directly, raw
+    // mode and ?2004 are ours to manage (terminal:true keeps readline's
+    // keypress decoding). Stream plumbing only — no cursor/width math.
+    const paste = new PasteFilter();
+    const input = new PassThrough();
+    const onStdin = (chunk: Buffer): void => {
+        const forward = paste.feed(chunk.toString("utf8"));
+        if (forward.length > 0) input.write(forward);
+    };
+    process.stdin.setRawMode?.(true);
+    process.stdin.on("data", onStdin);
+    process.stdout.write("\x1b[?2004h");
     const rl = readline.createInterface({
-        input: process.stdin,
+        input,
         output: process.stdout,
+        terminal: true,
         prompt: buildPrompt(),
         completer: makeCompleter(() => aliasCache),
     });
@@ -255,7 +272,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         let cancelRequested = false;
 
         rl.on("line", async (line) => {
-            const trimmed = line.trim();
+            // Expand any paste markers back to the raw multi-line text.
+            const trimmed = paste.expand(line).trim();
             if (trimmed.length === 0) {
                 reprompt();
                 return;
@@ -342,6 +360,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         });
 
         rl.on("close", () => {
+            process.stdout.write("\x1b[?2004l");
+            process.stdin.off("data", onStdin);
+            process.stdin.setRawMode?.(false);
             process.stdout.write("\n");
             resolve();
         });

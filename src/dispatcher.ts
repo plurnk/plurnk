@@ -111,6 +111,10 @@ options:
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
       --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
                           seconds; exits 3 with "timedOut":true in the result.
+      --pick <glob>       membership overlay: admit files git misses (the sole
+                          source when headless). Repeatable.
+      --hide <glob>       membership overlay: drop a tracked match. Repeatable.
+      --view <glob>       membership overlay: admit a member read-only. Repeatable.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -135,12 +139,30 @@ interface SessionResult { id: number; name: string }
 // Resolve the session by name (via session.list filter) or create a fresh one.
 // Names are the user-facing handle — ids are internals, not exposed via flags.
 // projectRoot is sent on creation only; attach inherits the daemon-stored value.
+// A membership-overlay constraint (svc#200), service vocabulary: `pick` admits
+// a file git misses (the sole source when headless), `hide` drops a tracked
+// match, `view` admits a member read-only.
+export interface Constraint { effect: "pick" | "hide" | "view"; glob: string }
+
+// Map the repeatable membership flags (--pick/--hide/--view) to constraints.
+export const buildConstraints = (values: {
+    pick?: string[]; hide?: string[]; view?: string[];
+}): Constraint[] => [
+    ...(values.pick ?? []).map((glob): Constraint => ({ effect: "pick", glob })),
+    ...(values.hide ?? []).map((glob): Constraint => ({ effect: "hide", glob })),
+    ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
+];
+
 const attachOrCreateSession = async (
     rpc: Rpc,
-    opts: { sessionName?: string; runName?: string; projectRoot: string | null },
+    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[] },
 ): Promise<SessionResult> => {
+    const constraints = opts.constraints ?? [];
     if (opts.sessionName === undefined) {
-        return await rpc.call("session.create", { projectRoot: opts.projectRoot }) as SessionResult;
+        // Seed the overlay atomically at creation so turn-1's manifest is right.
+        const params: { projectRoot: string | null; constraints?: Constraint[] } = { projectRoot: opts.projectRoot };
+        if (constraints.length > 0) params.constraints = constraints;
+        return await rpc.call("session.create", params) as SessionResult;
     }
     const { sessions } = await rpc.call("session.list") as { sessions: SessionResult[] };
     const matches = sessions.filter((s) => s.name === opts.sessionName);
@@ -154,7 +176,10 @@ const attachOrCreateSession = async (
     }
     const attachParams: { id: number; runName?: string } = { id: matches[0].id };
     if (opts.runName !== undefined) attachParams.runName = opts.runName;
-    return await rpc.call("session.attach", attachParams) as SessionResult;
+    const session = await rpc.call("session.attach", attachParams) as SessionResult;
+    // An existing session takes the flags live (session.create only seeds at birth).
+    for (const c of constraints) await rpc.call("session.constrain", c);
+    return session;
 };
 
 // Parse a string-valued integer flag, throwing if non-numeric. Used for
@@ -172,7 +197,7 @@ interface SubcommandOpts {
     sessionName?: string;
     runName?: string;
     projectRoot: string | null;
-    values: Record<string, string | boolean | undefined>;
+    values: Record<string, string | boolean | string[] | undefined>;
 }
 
 // Dispatch a positional-driven subcommand. Caller has already connected the
@@ -259,6 +284,10 @@ export const main = async (argv: string[]): Promise<void> => {
             flags: { type: "string" },
             "max-turns": { type: "string" },
             timeout: { type: "string" },
+            // membership overlay (svc#200) — repeatable globs; service vocabulary
+            pick: { type: "string", multiple: true },
+            hide: { type: "string", multiple: true },
+            view: { type: "string", multiple: true },
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -353,7 +382,10 @@ export const main = async (argv: string[]): Promise<void> => {
             process.exit(exitCode);
         }
 
-        const session = await attachOrCreateSession(rpc, { sessionName, runName, projectRoot });
+        const session = await attachOrCreateSession(rpc, {
+            sessionName, runName, projectRoot,
+            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
+        });
         if (prompt.length === 0) {
             await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot });
             process.exit(0);

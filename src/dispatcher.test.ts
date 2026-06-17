@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveProjectRoot, resolveLoopFlags } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints } from "./dispatcher.ts";
 
 // ─── resolveLoopFlags ────────────────────────────────────────────────
 // Mode is NOT a flag: ask/act ride the prompt prefix (`? `/`: `), the
@@ -53,3 +53,19 @@ test("resolveProjectRoot: bare name → throws", () => {
     );
 });
 
+
+// ─── buildConstraints (membership overlay, svc#200) ──────────────────
+
+test("buildConstraints: maps --pick/--hide/--view to service effects in order", () => {
+    const c = buildConstraints({ pick: ["docs/**"], hide: ["*.lock"], view: ["vendor/**", "gen/**"] });
+    assert.deepEqual(c, [
+        { effect: "pick", glob: "docs/**" },
+        { effect: "hide", glob: "*.lock" },
+        { effect: "view", glob: "vendor/**" },
+        { effect: "view", glob: "gen/**" },
+    ]);
+});
+
+test("buildConstraints: no flags → empty (no constraints param on session.create)", () => {
+    assert.deepEqual(buildConstraints({}), []);
+});

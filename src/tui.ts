@@ -42,6 +42,7 @@ interface SessionResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
     "yolo", "new", "stop", "quit",
+    "pick", "hide", "view", "drop", "members",
 ] as const;
 
 export const TUI_HELP = [
@@ -49,6 +50,11 @@ export const TUI_HELP = [
     "  /model <alias>                     model for subsequent loops",
     "  /yolo                              toggle local auto-accept",
     "  /new [name]                        new session (reconnects)",
+    "  /pick <glob>                       membership: admit files git misses",
+    "  /hide <glob>                       membership: drop a tracked match",
+    "  /view <glob>                       membership: admit read-only",
+    "  /drop <glob>                       membership: remove a constraint",
+    "  /members                           list membership constraints",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
@@ -238,6 +244,31 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
                 current = await rpc.call("session.create", params) as SessionResult;
                 process.stdout.write(`  session: ${current.name}\n`);
+                return;
+            }
+            case "pick":
+            case "hide":
+            case "view": {
+                // Membership overlay (svc#200) — service vocabulary. Live via
+                // session.constrain (session-scoped, re-resolved immediately).
+                if (rest.length === 0) { process.stdout.write(`  usage: /${verb} <glob>\n`); return; }
+                await rpc.call("session.constrain", { effect: verb, glob: rest });
+                process.stdout.write(`  ${verb}: ${rest}\n`);
+                return;
+            }
+            case "drop": {
+                if (rest.length === 0) { process.stdout.write("  usage: /drop <glob>\n"); return; }
+                const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+                const matches = constraints.filter((c) => c.glob === rest);
+                if (matches.length === 0) { process.stdout.write(`  no constraint matching ${JSON.stringify(rest)}\n`); return; }
+                for (const c of matches) await rpc.call("session.unconstrain", c);
+                process.stdout.write(`  dropped ${matches.length} constraint${matches.length === 1 ? "" : "s"} (${rest})\n`);
+                return;
+            }
+            case "members": {
+                const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+                if (constraints.length === 0) { process.stdout.write("  (no membership constraints)\n"); return; }
+                for (const c of constraints) process.stdout.write(`  ${c.effect.padEnd(5)}  ${c.glob}\n`);
                 return;
             }
             case "stop":

@@ -15,6 +15,7 @@
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
 import PasteFilter from "./paste.ts";
+import { pathPartial, completePath } from "./completion.ts";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
@@ -67,19 +68,27 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
 
 // readline completer — verbs after `/`, model aliases after `/model `.
 // Plain readline machinery only; no screen takeover, no terminal hell.
-export const makeCompleter = (getAliases: () => string[]) =>
-    (line: string): [string[], string] => {
+// readline's async completer form (arity 2 → async). Verb/alias completion
+// answers synchronously; path positions read the local fs (co-location law)
+// and answer once readdir resolves.
+export const makeCompleter = (getAliases: () => string[], cwd: string) =>
+    (line: string, callback: (err: null, result: [string[], string]) => void): void => {
         const verbFrag = line.match(/^\/(\w*)$/);
         if (verbFrag) {
-            const hits = VERBS.map((v) => `/${v}`).filter((v) => v.startsWith(line));
-            return [hits, line];
+            callback(null, [VERBS.map((v) => `/${v}`).filter((v) => v.startsWith(line)), line]);
+            return;
         }
         const aliasFrag = line.match(/^\/model\s+(\S*)$/);
         if (aliasFrag) {
-            const hits = getAliases().filter((a) => a.startsWith(aliasFrag[1]));
-            return [hits, aliasFrag[1]];
+            callback(null, [getAliases().filter((a) => a.startsWith(aliasFrag[1])), aliasFrag[1]]);
+            return;
         }
-        return [[], line];
+        const partial = pathPartial(line);
+        if (partial !== null) {
+            void completePath(partial, cwd).then((result) => callback(null, result));
+            return;
+        }
+        callback(null, [[], line]);
     };
 
 export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
@@ -180,7 +189,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         output: process.stdout,
         terminal: true,
         prompt: buildPrompt(),
-        completer: makeCompleter(() => aliasCache),
+        completer: makeCompleter(() => aliasCache, process.cwd()),
     });
     const reprompt = (): void => { rl.setPrompt(buildPrompt()); rl.prompt(); };
 

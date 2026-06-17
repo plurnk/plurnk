@@ -184,28 +184,28 @@ test("parseSlash: verb + args", () => {
     assert.deepEqual(parseSlash("/"), { verb: "", rest: "" });
 });
 
-test("completer: verb fragments complete", () => {
-    const complete = makeCompleter(() => []);
-    const [hits] = complete("/mo");
+// makeCompleter is readline's async form (line, callback); promisify for tests.
+const complete = (getAliases: () => string[], line: string): Promise<[string[], string]> =>
+    new Promise((res) => makeCompleter(getAliases, process.cwd())(line, (_e, r) => res(r)));
+
+test("completer: verb fragments complete", async () => {
+    const [hits] = await complete(() => [], "/mo");
     assert.deepEqual(hits, ["/models", "/model"]);
 });
 
-test("completer: bare slash offers every verb", () => {
-    const complete = makeCompleter(() => []);
-    const [hits] = complete("/");
+test("completer: bare slash offers every verb", async () => {
+    const [hits] = await complete(() => [], "/");
     assert.equal(hits.length, VERBS.length);
 });
 
-test("completer: /model completes aliases", () => {
-    const complete = makeCompleter(() => ["gemma", "gpt-mini", "grok"]);
-    const [hits, frag] = complete("/model g");
+test("completer: /model completes aliases", async () => {
+    const [hits, frag] = await complete(() => ["gemma", "gpt-mini", "grok"], "/model g");
     assert.deepEqual(hits, ["gemma", "gpt-mini", "grok"]);
     assert.equal(frag, "g");
 });
 
-test("completer: plain text completes nothing", () => {
-    const complete = makeCompleter(() => ["gemma"]);
-    const [hits] = complete("what is france");
+test("completer: plain text completes nothing", async () => {
+    const [hits] = await complete(() => ["gemma"], "what is france");
     assert.equal(hits.length, 0);
 });
 

@@ -99,6 +99,95 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         callback(null, [[], line]);
     };
 
+// Verb dispatch, extracted from runTui so the handlers are unit-testable
+// (stub rpc, collect writes, fake session/import). Verbs never call loop.run —
+// they're run-tab furniture. Returns "quit" to close the REPL.
+export interface VerbContext {
+    rpc: Rpc;
+    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null };
+    getSession: () => SessionResult;
+    setSession: (s: SessionResult) => void;
+    write: (s: string) => void;
+    importFile: (path: string) => Promise<void>;
+}
+
+export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
+    const { verb, rest } = parseSlash(line);
+    const { rpc, opts, write } = ctx;
+    switch (verb) {
+        case "":
+        case "help":
+            write(TUI_HELP);
+            return;
+        case "models": await runModels(rpc, { json: false }); return;
+        case "sessions": await runSessionList(rpc, { json: false }); return;
+        case "runs": await runSessionRuns(rpc, ctx.getSession().name, { json: false }); return;
+        case "log": {
+            const limit = rest.length > 0 ? Number(rest) : undefined;
+            const filters = Number.isInteger(limit) && (limit as number) > 0 ? { limit: limit as number } : {};
+            await runLogRead(rpc, { json: false, filters });
+            return;
+        }
+        case "model":
+            if (rest.length === 0) { write(`  model: ${opts.modelAlias ?? "(daemon default)"}\n`); return; }
+            opts.modelAlias = rest;
+            write(`  model: ${rest}\n`);
+            return;
+        case "yolo":
+            opts.yolo = !opts.yolo;
+            write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
+            return;
+        case "new": {
+            // Rebind in place (service §13.5-rebind) — no reconnect.
+            const params: { name?: string; projectRoot?: string | null } = {};
+            if (rest.length > 0) params.name = rest;
+            if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
+            ctx.setSession(await rpc.call("session.create", params) as SessionResult);
+            write(`  session: ${ctx.getSession().name}\n`);
+            return;
+        }
+        case "pick":
+        case "hide":
+        case "view": {
+            // Membership overlay (svc#200) — service vocabulary, live via
+            // session.constrain (session-scoped, re-resolved immediately).
+            if (rest.length === 0) { write(`  usage: /${verb} <glob>\n`); return; }
+            await rpc.call("session.constrain", { effect: verb, glob: rest });
+            write(`  ${verb}: ${rest}\n`);
+            return;
+        }
+        case "drop": {
+            if (rest.length === 0) { write("  usage: /drop <glob>\n"); return; }
+            const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+            const matches = constraints.filter((c) => c.glob === rest);
+            if (matches.length === 0) { write(`  no constraint matching ${JSON.stringify(rest)}\n`); return; }
+            for (const c of matches) await rpc.call("session.unconstrain", c);
+            write(`  dropped ${matches.length} constraint${matches.length === 1 ? "" : "s"} (${rest})\n`);
+            return;
+        }
+        case "members": {
+            const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+            if (constraints.length === 0) { write("  (no membership constraints)\n"); return; }
+            for (const c of constraints) write(`  ${c.effect.padEnd(5)}  ${c.glob}\n`);
+            return;
+        }
+        case "import":
+            // Dump a LOCAL file's content into the prompt (co-location law),
+            // via the paste machinery. The rl/paste glue lives in ctx.importFile.
+            if (rest.length === 0) { write("  usage: /import <path>\n"); return; }
+            await ctx.importFile(rest);
+            return;
+        case "stop":
+            await rpc.call("loop.cancel", { reason: "user_stop" });
+            return;
+        case "quit":
+            return "quit";
+        default:
+            report(clientSubcommandUnknownVerb(`/${verb}`, [...VERBS]));
+            return;
+    }
+};
+
 export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
@@ -223,92 +312,20 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         })();
     });
 
-    // Verbs never call loop.run; they are run-tab furniture, not conversation.
-    // Returns once the verb is fully rendered.
-    const handleVerb = async (line: string): Promise<"quit" | undefined> => {
-        const { verb, rest } = parseSlash(line);
-        switch (verb) {
-            case "":
-            case "help":
-                process.stdout.write(TUI_HELP);
-                return;
-            case "models": await runModels(rpc, { json: false }); return;
-            case "sessions": await runSessionList(rpc, { json: false }); return;
-            case "runs": await runSessionRuns(rpc, current.name, { json: false }); return;
-            case "log": {
-                const limit = rest.length > 0 ? Number(rest) : undefined;
-                const filters = Number.isInteger(limit) && (limit as number) > 0 ? { limit: limit as number } : {};
-                await runLogRead(rpc, { json: false, filters });
-                return;
-            }
-            case "model":
-                if (rest.length === 0) {
-                    process.stdout.write(`  model: ${opts.modelAlias ?? "(daemon default)"}\n`);
-                    return;
-                }
-                opts.modelAlias = rest;
-                process.stdout.write(`  model: ${rest}\n`);
-                return;
-            case "yolo":
-                opts.yolo = !opts.yolo;
-                process.stdout.write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
-                return;
-            case "new": {
-                // Rebind in place (service §13.5-rebind, v0.17.0) — no
-                // reconnect; the prior client loop releases server-side.
-                const params: { name?: string; projectRoot?: string | null } = {};
-                if (rest.length > 0) params.name = rest;
-                if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
-                current = await rpc.call("session.create", params) as SessionResult;
-                process.stdout.write(`  session: ${current.name}\n`);
-                return;
-            }
-            case "pick":
-            case "hide":
-            case "view": {
-                // Membership overlay (svc#200) — service vocabulary. Live via
-                // session.constrain (session-scoped, re-resolved immediately).
-                if (rest.length === 0) { process.stdout.write(`  usage: /${verb} <glob>\n`); return; }
-                await rpc.call("session.constrain", { effect: verb, glob: rest });
-                process.stdout.write(`  ${verb}: ${rest}\n`);
-                return;
-            }
-            case "drop": {
-                if (rest.length === 0) { process.stdout.write("  usage: /drop <glob>\n"); return; }
-                const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
-                const matches = constraints.filter((c) => c.glob === rest);
-                if (matches.length === 0) { process.stdout.write(`  no constraint matching ${JSON.stringify(rest)}\n`); return; }
-                for (const c of matches) await rpc.call("session.unconstrain", c);
-                process.stdout.write(`  dropped ${matches.length} constraint${matches.length === 1 ? "" : "s"} (${rest})\n`);
-                return;
-            }
-            case "members": {
-                const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
-                if (constraints.length === 0) { process.stdout.write("  (no membership constraints)\n"); return; }
-                for (const c of constraints) process.stdout.write(`  ${c.effect.padEnd(5)}  ${c.glob}\n`);
-                return;
-            }
-            case "import": {
-                // Dump a LOCAL file's content into the prompt (co-location law).
-                // Reuses the paste machinery: stash → short marker in the line →
-                // expands to the full content on submit, framed however you type.
-                if (rest.length === 0) { process.stdout.write("  usage: /import <path>\n"); return; }
-                const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);
-                let content: string;
-                try { content = await readFile(abs, "utf8"); }
-                catch (cause) { process.stdout.write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return; }
-                rl.write(paste.stash(content));
-                return;
-            }
-            case "stop":
-                await rpc.call("loop.cancel", { reason: "user_stop" });
-                return;
-            case "quit":
-                return "quit";
-            default:
-                report(clientSubcommandUnknownVerb(`/${verb}`, [...VERBS]));
-                return;
-        }
+    // Verb dispatch runs through the testable module-level handleVerb; this
+    // context injects the live session / opts / stdout / import glue.
+    const verbCtx: VerbContext = {
+        rpc, opts,
+        getSession: () => current,
+        setSession: (s) => { current = s; },
+        write: (text) => { process.stdout.write(text); },
+        importFile: async (rest) => {
+            const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);
+            let content: string;
+            try { content = await readFile(abs, "utf8"); }
+            catch (cause) { process.stdout.write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return; }
+            rl.write(paste.stash(content));
+        },
     };
 
     reprompt();
@@ -335,7 +352,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     return;
                 }
                 try {
-                    if (await handleVerb(trimmed) === "quit") { rl.close(); return; }
+                    if (await handleVerb(trimmed, verbCtx) === "quit") { rl.close(); return; }
                 } catch (cause) {
                     const msg = cause instanceof Error ? cause.message : String(cause);
                     process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);

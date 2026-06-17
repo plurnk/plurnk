@@ -8,3 +8,10 @@ AGENTS.md
 *.db
 *.db-shm
 *.db-wal
+
+# stray local scratch (never commit)
+PLURNK_ISSUES.md
+RUMSFELD.md
+answer.txt
+fizzbuzz.sh
+target

@@ -13,6 +13,7 @@ test("pathPartial: membership verbs expose their glob arg", () => {
     assert.equal(pathPartial("/hide *.lock"), "*.lock");
     assert.equal(pathPartial("/view vendor/"), "vendor/");
     assert.equal(pathPartial("/drop docs"), "docs");
+    assert.equal(pathPartial("/import src/fo"), "src/fo");
 });
 
 test("pathPartial: non-path contexts → null", () => {

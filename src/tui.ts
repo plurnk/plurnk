@@ -247,8 +247,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         }).catch(() => { /* peek is best-effort */ });
     });
 
-    if (opts.versionNotice !== undefined) process.stdout.write(`\x1b[2m${opts.versionNotice}\x1b[0m\n`);
-    process.stdout.write(`\x1b[2mplurnk · /help for the language · ctrl-c to quit · session: ${current.name}\x1b[0m\n\n`);
+    // One header line: version · session · help. The version notice already
+    // reads "plurnk client vX, plurnk-service vY …"; without it, just "plurnk".
+    const header = opts.versionNotice ?? "plurnk";
+    process.stdout.write(`\x1b[2m${header} · session: ${current.name} · /help\x1b[0m\n\n`);
 
     // Alias cache for /model completion — one cheap RPC, refreshed never
     // (aliases are daemon-boot-time config).

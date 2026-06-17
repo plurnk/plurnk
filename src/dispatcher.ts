@@ -3,7 +3,8 @@
 // §2 (CLI mode) and §3 (TUI mode).
 
 import { parseArgs } from "node:util";
-import { isAbsolute, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli } from "./cli.ts";
@@ -115,6 +116,10 @@ options:
                           source when headless). Repeatable.
       --hide <glob>       membership overlay: drop a tracked match. Repeatable.
       --view <glob>       membership overlay: admit a member read-only. Repeatable.
+      --manifest-items <n>  session-open preview: -1 full / 0 off / N first-N
+                          items of plurnk://manifest.json at turn 0. Create-time.
+      --md <name=path>    pin a markdown doc into the session (read at turn 0);
+                          merges with operator PLURNK_MD_*. Repeatable. Create-time.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -153,15 +158,57 @@ export const buildConstraints = (values: {
     ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
 ];
 
+// Session-open settings (svc#231). manifestItems REPLACES PLURNK_MANIFEST_ITEMS
+// for the session; mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a
+// collision). The client reads each --md file from its OWN local fs — correct,
+// not a workaround (co-location law) — and sends content, not a path.
+export interface Settings { manifestItems?: number; mdDocs?: Array<{ alias: string; content: string }> }
+
+export const buildSettings = async (
+    values: { "manifest-items"?: string; md?: string[] },
+    cwd: string,
+): Promise<Settings> => {
+    const settings: Settings = {};
+    const mi = values["manifest-items"];
+    if (mi !== undefined) {
+        const n = Number(mi);
+        if (!Number.isInteger(n) || n < -1) {
+            throw new TelemetryError(clientFlagInvalid("--manifest-items", mi, "must be -1 (full), 0 (off), or a positive integer"));
+        }
+        settings.manifestItems = n;
+    }
+    const mdSpecs = values.md ?? [];
+    if (mdSpecs.length > 0) {
+        const mdDocs: Array<{ alias: string; content: string }> = [];
+        for (const spec of mdSpecs) {
+            const eq = spec.indexOf("=");
+            if (eq <= 0) throw new TelemetryError(clientFlagInvalid("--md", spec, "must be NAME=path"));
+            const alias = spec.slice(0, eq);
+            const raw = spec.slice(eq + 1);
+            const abs = isAbsolute(raw) ? raw : resolve(cwd, raw);
+            try {
+                mdDocs.push({ alias, content: await readFile(abs, "utf8") });
+            } catch (cause) {
+                throw new TelemetryError(clientFlagInvalid("--md", spec, `file not readable: ${cause instanceof Error ? cause.message : String(cause)}`));
+            }
+        }
+        settings.mdDocs = mdDocs;
+    }
+    return settings;
+};
+
 const attachOrCreateSession = async (
     rpc: Rpc,
-    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[] },
+    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings },
 ): Promise<SessionResult> => {
     const constraints = opts.constraints ?? [];
+    const settings = opts.settings ?? {};
     if (opts.sessionName === undefined) {
-        // Seed the overlay atomically at creation so turn-1's manifest is right.
-        const params: { projectRoot: string | null; constraints?: Constraint[] } = { projectRoot: opts.projectRoot };
+        // Seed overlay + open-context settings atomically at creation so turn-1's
+        // manifest/preview/docs are right with no follow-up RPC.
+        const params: { projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
         if (constraints.length > 0) params.constraints = constraints;
+        if (Object.keys(settings).length > 0) params.settings = settings;
         return await rpc.call("session.create", params) as SessionResult;
     }
     const { sessions } = await rpc.call("session.list") as { sessions: SessionResult[] };
@@ -177,8 +224,13 @@ const attachOrCreateSession = async (
     const attachParams: { id: number; runName?: string } = { id: matches[0].id };
     if (opts.runName !== undefined) attachParams.runName = opts.runName;
     const session = await rpc.call("session.attach", attachParams) as SessionResult;
-    // An existing session takes the flags live (session.create only seeds at birth).
+    // An existing session takes the overlay flags live (session.create only
+    // seeds at birth). Settings (--manifest-items/--md) are session-create-only
+    // per svc#231 — there's no live setter, so flag-and-skip on attach.
     for (const c of constraints) await rpc.call("session.constrain", c);
+    if (Object.keys(settings).length > 0) {
+        process.stderr.write("  \x1b[2m--manifest-items/--md apply at session creation only; ignored on --session attach\x1b[0m\n");
+    }
     return session;
 };
 
@@ -288,6 +340,9 @@ export const main = async (argv: string[]): Promise<void> => {
             pick: { type: "string", multiple: true },
             hide: { type: "string", multiple: true },
             view: { type: "string", multiple: true },
+            // session-open settings (svc#231)
+            "manifest-items": { type: "string" },
+            md: { type: "string", multiple: true },
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -385,6 +440,7 @@ export const main = async (argv: string[]): Promise<void> => {
         const session = await attachOrCreateSession(rpc, {
             sessionName, runName, projectRoot,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
+            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[] }, process.cwd()),
         });
         if (prompt.length === 0) {
             await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot });

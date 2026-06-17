@@ -2,8 +2,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings } from "./dispatcher.ts";
 
 // ─── resolveLoopFlags ────────────────────────────────────────────────
 // Mode is NOT a flag: ask/act ride the prompt prefix (`? `/`: `), the
@@ -68,4 +71,38 @@ test("buildConstraints: maps --pick/--hide/--view to service effects in order", 
 
 test("buildConstraints: no flags → empty (no constraints param on session.create)", () => {
     assert.deepEqual(buildConstraints({}), []);
+});
+
+// ─── buildSettings (session-open settings, svc#231) ──────────────────
+
+test("buildSettings: manifest-items -1/0/N parse", async () => {
+    assert.deepEqual(await buildSettings({ "manifest-items": "-1" }, "/"), { manifestItems: -1 });
+    assert.deepEqual(await buildSettings({ "manifest-items": "0" }, "/"), { manifestItems: 0 });
+    assert.deepEqual(await buildSettings({ "manifest-items": "5" }, "/"), { manifestItems: 5 });
+});
+
+test("buildSettings: manifest-items rejects < -1 and non-integer", async () => {
+    await assert.rejects(buildSettings({ "manifest-items": "-2" }, "/"), /-1 \(full\)/);
+    await assert.rejects(buildSettings({ "manifest-items": "x" }, "/"), /must be/);
+});
+
+test("buildSettings: --md NAME=path reads local file → {alias, content}", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plurnk-md-"));
+    try {
+        await writeFile(join(dir, "policy.md"), "# Policy\nBe terse.", "utf8");
+        const s = await buildSettings({ md: [`POLICY=${join(dir, "policy.md")}`] }, "/");
+        assert.deepEqual(s.mdDocs, [{ alias: "POLICY", content: "# Policy\nBe terse." }]);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("buildSettings: --md without '=' → throws NAME=path", async () => {
+    await assert.rejects(buildSettings({ md: ["nopath"] }, "/"), /NAME=path/);
+});
+
+test("buildSettings: --md missing file → throws not readable", async () => {
+    await assert.rejects(buildSettings({ md: ["X=/no/such/file.md"] }, "/"), /not readable/);
+});
+
+test("buildSettings: empty → {}", async () => {
+    assert.deepEqual(await buildSettings({}, "/"), {});
 });

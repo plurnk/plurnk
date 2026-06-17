@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
@@ -120,6 +121,10 @@ options:
                           items of plurnk://manifest.json at turn 0. Create-time.
       --md <name=path>    pin a markdown doc into the session (read at turn 0);
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
+      --max-commands <n>  ceiling on ops per emission for the session (min with the
+                          daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
+      --no-git            deny git membership + telemetry for the session (never
+                          re-enables past the operator lockout). Create-time.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -158,17 +163,32 @@ export const buildConstraints = (values: {
     ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
 ];
 
-// Session-open settings (svc#231). manifestItems REPLACES PLURNK_MANIFEST_ITEMS
-// for the session; mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a
-// collision). The client reads each --md file from its OWN local fs — correct,
-// not a workaround (co-location law) — and sends content, not a path.
-export interface Settings { manifestItems?: number; mdDocs?: Array<{ alias: string; content: string }> }
+// Session-open settings. Open-context (svc#231): manifestItems REPLACES
+// PLURNK_MANIFEST_ITEMS; mdDocs UNIONS with the operator's PLURNK_MD_* (client
+// wins a collision; content read from the LOCAL fs — co-location law). Ceilings
+// (svc#232, most-restrictive-wins): maxCommands min()s PLURNK_MAX_COMMANDS;
+// git:false ANDs PLURNK_GIT_ALLOWED (deny-only, never re-enables).
+export interface Settings {
+    manifestItems?: number;
+    mdDocs?: Array<{ alias: string; content: string }>;
+    maxCommands?: number;
+    git?: boolean;
+}
 
 export const buildSettings = async (
-    values: { "manifest-items"?: string; md?: string[] },
+    values: { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean },
     cwd: string,
 ): Promise<Settings> => {
     const settings: Settings = {};
+    const mc = values["max-commands"];
+    if (mc !== undefined) {
+        const n = Number(mc);
+        if (!Number.isInteger(n) || n < 1) {
+            throw new TelemetryError(clientFlagInvalid("--max-commands", mc, "must be a positive integer"));
+        }
+        settings.maxCommands = n;
+    }
+    if (values["no-git"] === true) settings.git = false;
     const mi = values["manifest-items"];
     if (mi !== undefined) {
         const n = Number(mi);
@@ -195,6 +215,35 @@ export const buildSettings = async (
         settings.mdDocs = mdDocs;
     }
     return settings;
+};
+
+// svc#235: discover.versions { service:{installed, latest?}, client:{latest?} }.
+// The daemon polls npm; the client compares its OWN installed version against
+// the advertised latest and renders both lines + an "(update available)"
+// marker. The client never does registry IO — it just reads what discover says.
+export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+
+interface DiscoverVersions { service?: { installed?: string; latest?: string }; client?: { latest?: string } }
+
+const isOlder = (a: string, b: string): boolean => {
+    const pa = a.split(".").map(Number);
+    const pb = b.split(".").map(Number);
+    for (let i = 0; i < 3; i++) {
+        const x = pa[i] ?? 0, y = pb[i] ?? 0;
+        if (x < y) return true;
+        if (x > y) return false;
+    }
+    return false;
+};
+
+export const buildVersionNotice = (versions: DiscoverVersions | undefined, clientInstalled: string): string | undefined => {
+    if (versions === undefined) return undefined;
+    const svc = versions.service?.installed;
+    const parts = [`plurnk client v${clientInstalled}`];
+    if (svc !== undefined) parts.push(`plurnk-service v${svc}`);
+    const stale = (versions.client?.latest !== undefined && isOlder(clientInstalled, versions.client.latest))
+        || (svc !== undefined && versions.service?.latest !== undefined && isOlder(svc, versions.service.latest));
+    return parts.join(", ") + (stale ? " (update available)" : "");
 };
 
 const attachOrCreateSession = async (
@@ -340,9 +389,11 @@ export const main = async (argv: string[]): Promise<void> => {
             pick: { type: "string", multiple: true },
             hide: { type: "string", multiple: true },
             view: { type: "string", multiple: true },
-            // session-open settings (svc#231)
+            // session-open settings (svc#231) + tighten-only ceilings (svc#232)
             "manifest-items": { type: "string" },
             md: { type: "string", multiple: true },
+            "max-commands": { type: "string" },
+            "no-git": { type: "boolean" },
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -417,14 +468,16 @@ export const main = async (argv: string[]): Promise<void> => {
     // Daemon staleness check (clients track HEAD, service SPEC §13.9): probe
     // discover for wire markers this client depends on; warn bluntly when
     // missing. One local round-trip; never fatal.
+    let versionNotice: string | undefined;
     try {
-        const catalog = await rpc.call("discover") as { methods?: Record<string, unknown>; notifications?: Record<string, unknown> };
+        const catalog = await rpc.call("discover") as { methods?: Record<string, unknown>; notifications?: Record<string, unknown>; versions?: DiscoverVersions };
         const missing: string[] = [];
         for (const m of ["loop.cancel", "op.exec"]) {
             if (catalog.methods?.[m] === undefined) missing.push(m);
         }
         if (catalog.notifications?.["stream/concluded"] === undefined) missing.push("stream/concluded");
         if (missing.length > 0) report(clientDaemonStale(missing));
+        versionNotice = buildVersionNotice(catalog.versions, CLIENT_VERSION);  // svc#235
     } catch { /* discover failing will surface on the real call anyway */ }
 
     try {
@@ -440,12 +493,14 @@ export const main = async (argv: string[]): Promise<void> => {
         const session = await attachOrCreateSession(rpc, {
             sessionName, runName, projectRoot,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
-            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[] }, process.cwd()),
+            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
         });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot });
+            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice });
             process.exit(0);
         }
+        // CLI: the version notice is narration → stderr (never pollutes stdout/--json).
+        if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
         const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, yolo, loopFlags, maxTurns, timeoutSec });
         process.exit(exitCode);
     } catch (cause) {

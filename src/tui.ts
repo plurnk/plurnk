@@ -99,6 +99,16 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         callback(null, [[], line]);
     };
 
+// Seed readline history from the session's prior prompts (svc#238) so up/down
+// recalls them across restarts. One clean RPC — newest-first, exactly what
+// rl.history wants. Best-effort: a fresh session has none, failures are silent.
+export const seedPromptHistory = async (rpc: Rpc, sessionId: number, rl: readline.Interface): Promise<void> => {
+    try {
+        const { prompts } = await rpc.call("session.prompts", { id: sessionId, limit: 100 }) as { prompts?: string[] };
+        if (Array.isArray(prompts) && prompts.length > 0) (rl as unknown as { history: string[] }).history = prompts;
+    } catch { /* history is a convenience; never block the REPL */ }
+};
+
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
 // (stub rpc, collect writes, fake session/import). Verbs never call loop.run —
 // they're run-tab furniture. Returns "quit" to close the REPL.
@@ -191,7 +201,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
-    projectRoot?: string | null;
+    projectRoot?: string | null; versionNotice?: string;
 }): Promise<void> => {
     let current = session;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
@@ -237,6 +247,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         }).catch(() => { /* peek is best-effort */ });
     });
 
+    if (opts.versionNotice !== undefined) process.stdout.write(`\x1b[2m${opts.versionNotice}\x1b[0m\n`);
     process.stdout.write(`\x1b[2mplurnk · /help for the language · ctrl-c to quit · session: ${current.name}\x1b[0m\n\n`);
 
     // Alias cache for /model completion — one cheap RPC, refreshed never
@@ -289,6 +300,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         completer: makeCompleter(() => aliasCache, process.cwd()),
     });
     const reprompt = (): void => { rl.setPrompt(buildPrompt()); rl.prompt(); };
+    // Cross-restart up/down history from the daemon (svc#238) — non-blocking.
+    void seedPromptHistory(rpc, current.id, rl);
 
     // Proposal lifecycle: server-resolved proposals (flags.yolo/noProposals)
     // settle in-process — skip; --yolo auto-accepts locally; otherwise pause

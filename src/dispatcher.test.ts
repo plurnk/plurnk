@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice } from "./dispatcher.ts";
 
 // ─── resolveLoopFlags ────────────────────────────────────────────────
 // Mode is NOT a flag: ask/act ride the prompt prefix (`? `/`: `), the
@@ -105,4 +105,37 @@ test("buildSettings: --md missing file → throws not readable", async () => {
 
 test("buildSettings: empty → {}", async () => {
     assert.deepEqual(await buildSettings({}, "/"), {});
+});
+
+// ─── buildSettings ceilings (svc#232) ────────────────────────────────
+
+test("buildSettings: --max-commands (positive int) + --no-git → ceilings", async () => {
+    assert.deepEqual(await buildSettings({ "max-commands": "10", "no-git": true }, "/"), { maxCommands: 10, git: false });
+});
+
+test("buildSettings: --max-commands rejects non-positive / non-integer", async () => {
+    await assert.rejects(buildSettings({ "max-commands": "0" }, "/"), /positive integer/);
+    await assert.rejects(buildSettings({ "max-commands": "x" }, "/"), /positive integer/);
+});
+
+// ─── buildVersionNotice (svc#235) ────────────────────────────────────
+
+test("buildVersionNotice: both versions, client behind → update available", () => {
+    const n = buildVersionNotice({ service: { installed: "0.33.0", latest: "0.34.0" }, client: { latest: "0.22.0" } }, "0.21.3");
+    assert.match(n!, /plurnk client v0\.21\.3, plurnk-service v0\.33\.0 \(update available\)/);
+});
+
+test("buildVersionNotice: up to date → no marker", () => {
+    const n = buildVersionNotice({ service: { installed: "0.34.0", latest: "0.34.0" }, client: { latest: "0.22.0" } }, "0.22.0");
+    assert.match(n!, /plurnk-service v0\.34\.0$/);
+    assert.doesNotMatch(n!, /update available/);
+});
+
+test("buildVersionNotice: no versions → undefined", () => {
+    assert.equal(buildVersionNotice(undefined, "0.22.0"), undefined);
+});
+
+test("buildVersionNotice: service absent → client line only", () => {
+    const n = buildVersionNotice({ client: { latest: "0.22.0" } }, "0.21.3");
+    assert.match(n!, /^plurnk client v0\.21\.3 \(update available\)$/);
 });

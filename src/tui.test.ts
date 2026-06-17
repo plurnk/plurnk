@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleVerb, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, type VerbContext } from "./tui.ts";
 
 interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[] }
 
@@ -131,4 +131,24 @@ test("handleVerb /import with no path → usage, no importFile", async () => {
     await handleVerb("/import", ctx);
     assert.equal(ctx.imports.length, 0);
     assert.match(ctx.out.join(""), /usage: \/import/);
+});
+
+// ─── seedPromptHistory (svc#238) ─────────────────────────────────────
+
+test("seedPromptHistory: seeds rl.history from session.prompts (newest-first)", async () => {
+    const calls: Array<{ m: string; p?: unknown }> = [];
+    const rpc = { call: async (m: string, p?: unknown) => { calls.push({ m, p }); return { prompts: ["latest", "older"] }; } } as unknown as VerbContext["rpc"];
+    const rl = { history: [] as string[] };
+    await seedPromptHistory(rpc, 7, rl as unknown as Parameters<typeof seedPromptHistory>[2]);
+    assert.deepEqual(calls, [{ m: "session.prompts", p: { id: 7, limit: 100 } }]);
+    assert.deepEqual(rl.history, ["latest", "older"]);
+});
+
+test("seedPromptHistory: empty / error → history untouched", async () => {
+    const rl1 = { history: ["x"] };
+    await seedPromptHistory({ call: async () => ({ prompts: [] }) } as unknown as VerbContext["rpc"], 1, rl1 as unknown as Parameters<typeof seedPromptHistory>[2]);
+    assert.deepEqual(rl1.history, ["x"]);
+    const rl2 = { history: ["x"] };
+    await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], 1, rl2 as unknown as Parameters<typeof seedPromptHistory>[2]);
+    assert.deepEqual(rl2.history, ["x"]);
 });

@@ -95,3 +95,10 @@ test("completeOps: case-insensitive, returns <<OP tokens", () => {
     assert.equal(partial, "<<re");
     assert.equal(completeOps("")[0].length, 11);
 });
+
+test("pathPartial: DSL target path inside <<OP(...), scheme stripped", () => {
+    assert.equal(pathPartial("<<READ(src/fo"), "src/fo");
+    assert.equal(pathPartial("<<READ(file://src/fo"), "src/fo");
+    assert.equal(pathPartial("<<EDIT[tag](docs/re"), "docs/re");
+    assert.equal(pathPartial("<<READ(src/foo.ts):x:READ"), null);
+});

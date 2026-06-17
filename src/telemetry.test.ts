@@ -18,7 +18,6 @@ const {
     clientSubcommandUnknownVerb,
     clientSubcommandMissingArgument,
     clientProposalEditsBlocked,
-    clientIoPersonaReadFailed,
     clientRuntimeError,
     clientRpcError,
 } = await import("./telemetry.ts");
@@ -209,13 +208,6 @@ test("clientProposalEditsBlocked names the source/kind and the why", () => {
     assert.equal(ev.source, "client:proposal");
     assert.equal(ev.kind, "edits_blocked");
     assert.match(ev.message ?? "", /no review channel/);
-});
-
-test("clientIoPersonaReadFailed carries path + cause message", () => {
-    const ev = clientIoPersonaReadFailed("/no/file.md", new Error("ENOENT"));
-    assert.equal(ev.kind, "persona_read_failed");
-    assert.equal(ev.path, "/no/file.md");
-    assert.equal(ev.message, "ENOENT");
 });
 
 test("clientRpcError carries method + cause", () => {

@@ -17,6 +17,11 @@ export const pathPartial = (line: string): string | null => {
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);
     if (at) return at[1];
+    // DSL target path inside an unclosed `<<OP(...`: strip a leading scheme://
+    // and complete the path part. Bare/file:// resolve against the fs; other
+    // schemes (known://, log://, …) simply find nothing — harmless.
+    const target = line.match(/^<<\w+(?:\[[^\]]*\])?\(([^)]*)$/);
+    if (target) return target[1].replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
     return null;
 };
 

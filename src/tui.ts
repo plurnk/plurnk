@@ -17,7 +17,7 @@ import { PassThrough } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import PasteFilter from "./paste.ts";
-import { pathPartial, completePath } from "./completion.ts";
+import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
@@ -84,6 +84,11 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         const aliasFrag = line.match(/^\/model\s+(\S*)$/);
         if (aliasFrag) {
             callback(null, [getAliases().filter((a) => a.startsWith(aliasFrag[1])), aliasFrag[1]]);
+            return;
+        }
+        const op = dslOpPartial(line);
+        if (op !== null) {
+            callback(null, completeOps(op));
             return;
         }
         const partial = pathPartial(line);

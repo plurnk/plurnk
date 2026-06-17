@@ -11,8 +11,29 @@ import { isAbsolute, resolve } from "node:path";
 // cursor isn't in a path position. One case per call site — membership-verb
 // globs today; `@file` / `/import` / `/md` paths slot in here as they land.
 export const pathPartial = (line: string): string | null => {
-    const m = line.match(/^\/(?:pick|hide|view|drop|import)\s+(\S*)$/);
+    const verb = line.match(/^\/(?:pick|hide|view|drop|import)\s+(\S*)$/);
+    if (verb) return verb[1];
+    // @file: a path reference anywhere in a prompt (word-boundary @ to dodge
+    // emails). The leading @ stays; only the path part completes.
+    const at = line.match(/(?:^|\s)@(\S*)$/);
+    if (at) return at[1];
+    return null;
+};
+
+// The plurnk DSL operations (plurnk-grammar plurnk.md §Operations).
+const OPS = ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "SEND"] as const;
+
+// DSL op-name completion: a raw `<<` line with the op being typed; null
+// otherwise. (Target-path completion inside `<<OP(...)` is future work.)
+export const dslOpPartial = (line: string): string | null => {
+    const m = line.match(/^<<(\w*)$/);
     return m ? m[1] : null;
+};
+
+// Complete a partially-typed op into `<<OP` tokens (case-insensitive input).
+export const completeOps = (typed: string): [string[], string] => {
+    const up = typed.toUpperCase();
+    return [OPS.filter((o) => o.startsWith(up)).map((o) => `<<${o}`), `<<${typed}`];
 };
 
 // Complete a filesystem path partial against the local fs. Returns

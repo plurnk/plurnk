@@ -6,7 +6,7 @@ import { writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { pathPartial, completePath } from "./completion.ts";
+import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
 
 test("pathPartial: membership verbs expose their glob arg", () => {
     assert.equal(pathPartial("/pick src/comp"), "src/comp");
@@ -74,4 +74,24 @@ test("completePath: unreadable directory → no hits, partial echoed", async () 
     const [hits, partial] = await completePath("no/such/dir/x", "/nonexistent-root");
     assert.deepEqual(hits, []);
     assert.equal(partial, "no/such/dir/x");
+});
+
+test("pathPartial: @file completes after a word-boundary @, ignores emails", () => {
+    assert.equal(pathPartial("explain @src/fo"), "src/fo");
+    assert.equal(pathPartial("@README"), "README");
+    assert.equal(pathPartial("mail me@example.com"), null);
+});
+
+test("dslOpPartial: only matches a << line still typing an op name", () => {
+    assert.equal(dslOpPartial("<<RE"), "RE");
+    assert.equal(dslOpPartial("<<"), "");
+    assert.equal(dslOpPartial("explain this"), null);
+    assert.equal(dslOpPartial("<<READ(x):y:READ"), null);
+});
+
+test("completeOps: case-insensitive, returns <<OP tokens", () => {
+    const [hits, partial] = completeOps("re");
+    assert.deepEqual(hits, ["<<READ"]);
+    assert.equal(partial, "<<re");
+    assert.equal(completeOps("")[0].length, 11);
 });

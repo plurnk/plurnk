@@ -1,58 +1,57 @@
 # plurnk
 
-Client app for [plurnk-service](https://github.com/plurnk/plurnk-service). Type a prompt at the terminal, drive a real model loop through the plurnk DSL.
+Terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service) — type a prompt, drive a real model loop through the plurnk DSL. CLI one-shot, interactive TUI, and read-only subcommands over one WebSocket.
 
 ## install
 
 ```
-npm install -g @plurnk/plurnk
+npm install -g @plurnk/plurnk          # bundles the daemon (optional dep)
+export OPENAI_API_KEY="…"              # your provider keys (read by the daemon)
+plurnk-service                          # start the background daemon
 ```
 
-Requires Node ≥ 25.
+The client only needs the daemon reachable at `PLURNK_URL` (default `ws://127.0.0.1:3044`). All engine config — models, turns, providers — lives in the daemon's environment.
 
 ## use
 
-Set up env (copy `.env.example` to `.env`, or export the vars in your shell):
-
 ```
-PLURNK_DB_PATH=./plurnk.db
-PLURNK_MAX_TURNS=50
-OPENAI_BASE_URL=http://localhost:11435    # or your provider endpoint
-OPENAI_API_KEY=
-OPENAI_MODEL=macher.gguf
-OPENAI_CONTEXT_SIZE=262144
-OPENAI_FETCH_TIMEOUT_MS=600000
-OPENAI_THINK=0
+plurnk "what is the capital of France?"      # one-shot
+cat notes.md | plurnk "summarize this"        # piped stdin (appended)
+plurnk                                         # interactive TUI (no args, a TTY)
+plurnk models | session list | log read …      # read-only subcommands
+plurnk --help                                  # full flag list
 ```
 
-Run:
+**Line language** (converged across the TUI, the CLI prefixes, and plurnk.nvim's `:AI`):
 
-```
-plurnk "What is the capital of France? Store at known://france/capital and reply SEND[200]."
-```
+| | |
+|---|---|
+| `text` | a prompt (`?`=ask / `:`=act prefix) |
+| `/verb` | `/models /sessions /runs /log /model /yolo /new /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>` |
+| `<<…>>` | raw plurnk DSL (`op.parse`) |
+| `! cmd` | exec via the daemon |
+| `... text` | inject into the running loop (or just type — a mid-loop prompt steers) |
 
-You get a per-turn trace of the model's plurnk DSL emissions, the final loop status, and a list of entries written.
+Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and DSL ops (`<<RE`→`<<READ`). Multi-line paste folds to one prompt.
 
-## what plurnk does
+**Key flags:** `--model <alias>` · `--yolo` · `--json` · `--session/--run <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--manifest-items <n>` · `--md NAME=path`.
 
-Plurnk is the agent's command grammar. The model emits operations like:
+**Env:** `PLURNK_URL` (daemon) · `PLURNK_SESSION` / `PLURNK_RUN` (resume) · `PLURNK_MODEL` · `PLURNK_YOLO` · `PLURNK_PROJECT_ROOT`. Cascade: shell > `./.env` > `$XDG_CONFIG_HOME/plurnk/env`.
+
+## what plurnk is
+
+The model emits operations in a compact grammar; the daemon executes them, persists state, and the client renders the trace:
 
 ```
 <<EDIT[france,europe](known://countries/france/capital):Paris:EDIT
 <<SEND[200]:Paris:SEND
 ```
 
-The CLI parses these, dispatches each to its scheme handler, persists state, and surfaces what happened. Multi-turn loops emerge naturally — the model emits `SEND[102]` to continue, `SEND[200]` to terminate.
+Multi-turn loops emerge from the structure — `SEND[102]` continues, `SEND[200]` terminates — fancy agent behavior on weak models via grammar rather than raw capability. See [plurnk-service](https://github.com/plurnk/plurnk-service).
 
-The protocol's pitch: fancy multi-turn agent behavior on weak models, via the structure rather than the model's raw capability. See [plurnk-service](https://github.com/plurnk/plurnk-service)'s AGENTS.md for the full architecture.
+## exit codes (CLI mode)
 
-## exit codes
-
-- `0` — loop terminated successfully (`SEND[200]`)
-- `1` — runtime error
-- `2` — loop hit maxTurns safety cap
-- `3` — loop terminated with cancellation (`SEND[499]`)
-- `64` — usage error (missing prompt or env)
+`0` success (`SEND[200]`) · `1` runtime error · `2` maxTurns cap · `3` cancelled (`SEND[499]` / `--timeout`) · `4` loop failed (4xx/5xx final) · `64` usage error.
 
 ## license
 

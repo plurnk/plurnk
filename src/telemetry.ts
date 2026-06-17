@@ -154,8 +154,10 @@ export const clientConnectionRefused = (url: string, cause: unknown): TelemetryE
     message: cause instanceof Error ? cause.message : String(cause),
     url,
     hints: [
-        "Is the daemon running?",
-        "Start it from plurnk-service with: node bin/plurnk-service.js start",
+        "The plurnk client needs the background daemon running.",
+        "  1. Install the service:  npm i -g @plurnk/plurnk-service",
+        "  2. Configure your keys:  export OPENAI_API_KEY=\"your-key\"",
+        "  3. Start the daemon:     plurnk-service",
     ],
 });
 
@@ -239,14 +241,6 @@ export const clientProposalEditsBlocked = (): TelemetryEvent => ({
     source: "client:proposal",
     kind: "edits_blocked",
     message: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)",
-});
-
-// `client:io:persona_read_failed` — couldn't read the --persona file.
-export const clientIoPersonaReadFailed = (path: string, cause: unknown): TelemetryEvent => ({
-    source: "client:io",
-    kind: "persona_read_failed",
-    message: cause instanceof Error ? cause.message : String(cause),
-    path,
 });
 
 // `client:rpc:error` — RPC call rejected with a daemon-supplied error.

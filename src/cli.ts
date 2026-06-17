@@ -111,7 +111,7 @@ const runCliExec = async (rpc: Rpc, command: string): Promise<number> => {
 };
 
 export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, opts: {
-    json: boolean; modelAlias?: string; persona?: string; yolo: boolean;
+    json: boolean; modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number;
 }): Promise<number> => {
     // stdout is the program's product (the terminal answer); stderr is its narration.
@@ -208,9 +208,8 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     }
 
     const start = Date.now();
-    const loopParams: { prompt: string; alias?: string; persona?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt };
+    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt };
     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
-    if (opts.persona !== undefined) loopParams.persona = opts.persona;
     if (effectiveFlags !== undefined && Object.keys(effectiveFlags).length > 0) loopParams.flags = effectiveFlags;
     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
 

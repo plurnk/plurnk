@@ -14,9 +14,7 @@
 
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
-import { readFile } from "node:fs/promises";
 import PasteFilter from "./paste.ts";
-import { isAbsolute, resolve } from "node:path";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
@@ -43,13 +41,12 @@ interface SessionResult { id: number; name: string }
 // the argv subcommands. Convergence is policy: divergence needs a reason.
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
-    "persona", "yolo", "new", "stop", "quit",
+    "yolo", "new", "stop", "quit",
 ] as const;
 
 export const TUI_HELP = [
     "  /models /sessions /runs /log [n]   inspect (same tables as the CLI)",
     "  /model <alias>                     model for subsequent loops",
-    "  /persona <path>                    persona file for subsequent loops",
     "  /yolo                              toggle local auto-accept",
     "  /new [name]                        new session (reconnects)",
     "  /stop                              cancel the running loop",
@@ -80,7 +77,7 @@ export const makeCompleter = (getAliases: () => string[]) =>
     };
 
 export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
-    modelAlias?: string; persona?: string; yolo: boolean;
+    modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null;
 }): Promise<void> => {
@@ -229,17 +226,6 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 opts.modelAlias = rest;
                 process.stdout.write(`  model: ${rest}\n`);
                 return;
-            case "persona": {
-                if (rest.length === 0) { process.stdout.write("  usage: /persona <path>\n"); return; }
-                const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);
-                try {
-                    opts.persona = await readFile(abs, "utf8");
-                    process.stdout.write(`  persona: ${abs}\n`);
-                } catch {
-                    process.stdout.write(`  persona file not readable: ${abs}\n`);
-                }
-                return;
-            }
             case "yolo":
                 opts.yolo = !opts.yolo;
                 process.stdout.write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
@@ -299,7 +285,19 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             }
 
             if (inFlight) {
-                process.stdout.write("  \x1b[2m(busy; /stop to cancel)\x1b[0m\n");
+                // A model loop is running. A prompt typed now is the "btw"
+                // steering case (loop.inject, #193), NOT a conflict — inject it
+                // into the live loop. (Raw DSL / exec are separate client-run
+                // ops; keep them out of a running conversation for now.)
+                if (trimmed.startsWith("<<") || trimmed.startsWith("!")) {
+                    process.stdout.write("  \x1b[2m(loop running — /stop before a client op)\x1b[0m\n");
+                    reprompt();
+                    return;
+                }
+                const inject = trimmed.replace(/^(\.\.\.|[?:])\s*/, "");
+                void rpc.call("loop.inject", { prompt: inject })
+                    .then(() => process.stdout.write("  \x1b[2m↳ injected\x1b[0m\n"))
+                    .catch((cause) => process.stdout.write(`  \x1b[31minject failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`));
                 reprompt();
                 return;
             }
@@ -312,12 +310,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             let usage: LoopRunResult["usage"];
 
             try {
-                if (trimmed.startsWith("...")) {
-                    // `... msg` — inject into the running model loop (#193).
-                    const msg = trimmed.replace(/^\.\.\.\s*/, "");
-                    const result = await rpc.call("loop.inject", { prompt: msg }) as { status?: number };
-                    finalStatus = result.status ?? 200;
-                } else if (trimmed.startsWith("<<")) {
+                if (trimmed.startsWith("<<")) {
                     // Raw DSL: send to op.parse
                     const result = await rpc.call("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
                     finalStatus = result.results[result.results.length - 1]?.status ?? 0;
@@ -335,10 +328,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     if (prefix === "?" || prefix === ":") {
                         lineFlags = { ...(opts.loopFlags ?? {}), mode: prefix === "?" ? "ask" : "act" };
                     }
-                    const promptText = trimmed.replace(/^[?:]+\s*/, "");
-                    const loopParams: { prompt: string; alias?: string; persona?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt: promptText };
+                    const promptText = trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "");
+                    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt: promptText };
                     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
-                    if (opts.persona !== undefined) loopParams.persona = opts.persona;
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const result = await rpc.call("loop.run", loopParams) as LoopRunResult;

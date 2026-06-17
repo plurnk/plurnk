@@ -1,0 +1,27 @@
+# Plurnk Environment Analysis
+
+## 1. Syntax Ambiguities & Complexity
+### 1.1 Suffix Matching Requirement
+The requirement that `<<OPsuffix` must match the closing tag (e.g., `<<EDIT1...:EDIT1`) is a high-entropy constraint. A single digit mismatch results in syntax errors, increasing the probability of failure during complex multi-step operations.
+
+### 1.2 Matcher Dispatch Overlap
+The dispatch mechanism for body matchers (XPath `//`, Regex `/pattern/`, JSONPath `$`, Semantic `~`, Graph `@`, and Glob) relies on leading prefixes. However:
+- **Regex vs. Glob**: A pattern like `/*` could be interpreted as a glob or the start of a regex if not explicitly delimited by `/`. 
+- **XPath vs. Path**: The distinction between an XPath selector (`//selector`) and a standard path/glob requires strict adherence to leading characters, which may conflict with complex file names or URI structures.
+
+## 2. Addressing Inconsistencies
+### 2.1 Line vs. Result Indexing
+The system uses `<Line>` for `READ`/`EDIT` on entries but refers to `<Result>` when addressing the output of `FIND`, `OPEN`, or `FOLD`. While logically distinct, using decimal notation (e.g., `<2.5>`) in conjunction with semantic results (`<0.7>`) creates a multi-dimensional selection problem that is difficult for models to calculate deterministically without seeing the full indexed list first.
+
+### 2.3 Selection Sentinels
+The use of `<0>` for prepending and `<-1>` for appending is intuitive, but combining these with range selections (e.g., `<1,-1>`) in an `EDIT` operation to clear content requires precise understanding of whether the selection includes or excludes boundaries during a "clear" command.
+
+## 3. Operational Concerns
+### 3.1 Communication Bottlenecks
+The constraint "YOU MUST ONLY communicate with SEND, not with free text between operations" creates a significant barrier for error recovery and clarification. If an operation fails due to syntax ambiguity, the model cannot ask for clarification via standard chat; it must instead use `SEND` or attempt to resolve through more complex (and token-expensive) discovery operations.
+
+### 3.2 Context Management Burden
+The responsibility of managing context via `FOLD` and `OPEN` is shifted entirely to the agent. This requires constant monitoring of `tokensFree`, which consumes "working memory" tokens that would otherwise be used for reasoning, potentially leading to a feedback loop where management overhead degrades task performance.
+
+### 3.3 Knowledge Source Integrity
+The rule "YOU MUST ONLY populate known entries with source entry information, never with model training" creates a strict boundary between *retrieval* and *generation*. This prevents the agent from using its internal weights to augment `known://` entries, which may be necessary for synthesizing complex knowledge but is required here to maintain data provenance.

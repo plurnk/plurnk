@@ -3,8 +3,7 @@
 // §2 (CLI mode) and §3 (TUI mode).
 
 import { parseArgs } from "node:util";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli } from "./cli.ts";
@@ -18,7 +17,6 @@ import {
     clientDaemonStale,
     clientFlagInvalid,
     clientFlagMissingDependency,
-    clientIoPersonaReadFailed,
     clientRpcError,
     clientRuntimeError,
     clientSubcommandMissingArgument,
@@ -34,15 +32,6 @@ const readStdin = async (): Promise<string> => {
     let buf = "";
     for await (const chunk of process.stdin) buf += chunk;
     return buf;
-};
-
-// Persona resolution: the flag/env value is a path to a markdown file.
-// Personas are typically long; quoting multiline markdown on the command
-// line is hostile. Path-only keeps the contract obvious.
-export const resolvePersona = async (raw: string | undefined): Promise<string | undefined> => {
-    if (raw === undefined) return undefined;
-    const abs = isAbsolute(raw) ? raw : resolve(process.cwd(), raw);
-    return await readFile(abs, "utf8");
 };
 
 // LoopFlags resolution: --flags takes raw JSON (the generic passthrough —
@@ -94,8 +83,6 @@ env:
   PLURNK_PROJECT_ROOT   absolute path passed to session.create as the session's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
-  PLURNK_PERSONA        path to a persona file (text/markdown); contents are
-                        passed on every loop.run.
   PLURNK_YOLO           when truthy, auto-accept every proposal without prompting.
                         Client-side only — proposals still go through the wire.
 
@@ -116,8 +103,6 @@ options:
                           on --session attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
                           PLURNK_PROJECT_ROOT.
-      --persona <path>    path to a persona file (text/markdown); contents are
-                          passed on every loop.run. Overrides PLURNK_PERSONA.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_YOLO.
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
@@ -270,7 +255,6 @@ export const main = async (argv: string[]): Promise<void> => {
             run: { type: "string" },
             model: { type: "string" },
             "project-root": { type: "string" },
-            persona: { type: "string" },
             yolo: { type: "boolean" },
             flags: { type: "string" },
             "max-turns": { type: "string" },
@@ -336,13 +320,6 @@ export const main = async (argv: string[]): Promise<void> => {
             return dieWith(64, clientRuntimeError(cause));
         }
     })();
-    const persona: string | undefined = await (async () => {
-        try { return await resolvePersona(values.persona ?? process.env.PLURNK_PERSONA); }
-        catch (cause) {
-            const personaPath = values.persona ?? process.env.PLURNK_PERSONA ?? "(unknown)";
-            return dieWith(1, clientIoPersonaReadFailed(personaPath, cause));
-        }
-    })();
 
     const url = process.env.PLURNK_URL ?? "ws://127.0.0.1:3044";
     const rpc = new Rpc({ url });
@@ -378,10 +355,10 @@ export const main = async (argv: string[]): Promise<void> => {
 
         const session = await attachOrCreateSession(rpc, { sessionName, runName, projectRoot });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, persona, yolo, loopFlags, maxTurns, projectRoot });
+            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot });
             process.exit(0);
         }
-        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, persona, yolo, loopFlags, maxTurns, timeoutSec });
+        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, yolo, loopFlags, maxTurns, timeoutSec });
         process.exit(exitCode);
     } catch (cause) {
         if (cause instanceof TelemetryError) {

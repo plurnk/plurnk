@@ -14,6 +14,8 @@
 
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import PasteFilter from "./paste.ts";
 import { pathPartial, completePath } from "./completion.ts";
 import type Rpc from "./rpc.ts";
@@ -43,7 +45,7 @@ interface SessionResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
     "yolo", "new", "stop", "quit",
-    "pick", "hide", "view", "drop", "members",
+    "pick", "hide", "view", "drop", "members", "import",
 ] as const;
 
 export const TUI_HELP = [
@@ -56,6 +58,7 @@ export const TUI_HELP = [
     "  /view <glob>                       membership: admit read-only",
     "  /drop <glob>                       membership: remove a constraint",
     "  /members                           list membership constraints",
+    "  /import <path>                     dump a local file's content into the prompt",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
@@ -278,6 +281,18 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
                 if (constraints.length === 0) { process.stdout.write("  (no membership constraints)\n"); return; }
                 for (const c of constraints) process.stdout.write(`  ${c.effect.padEnd(5)}  ${c.glob}\n`);
+                return;
+            }
+            case "import": {
+                // Dump a LOCAL file's content into the prompt (co-location law).
+                // Reuses the paste machinery: stash → short marker in the line →
+                // expands to the full content on submit, framed however you type.
+                if (rest.length === 0) { process.stdout.write("  usage: /import <path>\n"); return; }
+                const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);
+                let content: string;
+                try { content = await readFile(abs, "utf8"); }
+                catch (cause) { process.stdout.write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return; }
+                rl.write(paste.stash(content));
                 return;
             }
             case "stop":

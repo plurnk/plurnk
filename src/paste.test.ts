@@ -83,3 +83,15 @@ test("PasteFilter: a marker is consumed once (expand is destructive)", () => {
     assert.equal(f.expand(out), "a\nb");
     assert.equal(f.expand(out), out, "second expand finds nothing stored");
 });
+
+test("PasteFilter: stash multi-line content (/import) → marker, expands back", () => {
+    const f = new PasteFilter();
+    const marker = f.stash("a\nb\nc");
+    assert.match(marker, /^\[paste #1 \+3 lines\]$/);
+    assert.equal(f.expand(marker), "a\nb\nc");
+});
+
+test("PasteFilter: stash single-line content → verbatim (no marker)", () => {
+    const f = new PasteFilter();
+    assert.equal(f.stash("one line"), "one line");
+});

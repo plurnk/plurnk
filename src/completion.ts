@@ -11,7 +11,7 @@ import { isAbsolute, resolve } from "node:path";
 // cursor isn't in a path position. One case per call site — membership-verb
 // globs today; `@file` / `/import` / `/md` paths slot in here as they land.
 export const pathPartial = (line: string): string | null => {
-    const m = line.match(/^\/(?:pick|hide|view|drop)\s+(\S*)$/);
+    const m = line.match(/^\/(?:pick|hide|view|drop|import)\s+(\S*)$/);
     return m ? m[1] : null;
 };
 

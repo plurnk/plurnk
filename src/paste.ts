@@ -80,6 +80,13 @@ export default class PasteFilter {
         return `[paste #${id} +${paste.split("\n").length} lines]`;
     }
 
+    // Stash externally-supplied content (e.g. /import <path>) as if it were
+    // pasted; returns the marker to insert into the line. Single-line content
+    // comes back verbatim (no marker needed).
+    stash(content: string): string {
+        return this.#emit(content);
+    }
+
     // Replace paste markers in a submitted line with their stored text.
     // Unknown ids (user edited the marker) are left literal.
     expand(line: string): string {

@@ -452,3 +452,75 @@ test("coordinate: broadcasts carry it on the header line", () => {
     }));
     assert.match(out, /01\/04\/01 /);
 });
+
+// ─── buildExtra: per-op branch coverage ──────────────────────────────
+
+test("renderLogEntry: FIND shows the result count", () => {
+    const out = renderLogEntry(entry({ op: "FIND", scheme: "known", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "a\nb\nc" } }));
+    assert.match(out, /→ 3 results/);
+    assert.match(out, /🔍/);
+});
+
+test("renderLogEntry: FIND with one result is singular", () => {
+    const out = renderLogEntry(entry({ op: "FIND", scheme: "known", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "only" } }));
+    assert.match(out, /→ 1 result\b/);
+});
+
+test("renderLogEntry: COPY shows the destination", () => {
+    const out = renderLogEntry(entry({ op: "COPY", scheme: "known", pathname: "/a", status_rx: 200, tx: { body: { raw: "known://b" } } }));
+    assert.match(out, /→ known:\/\/b/);
+    assert.match(out, /📋/);
+});
+
+test("renderLogEntry: COPY/MOVE with null body reads (deleted)", () => {
+    const out = renderLogEntry(entry({ op: "MOVE", scheme: "known", pathname: "/a", status_rx: 200, tx: { body: null } }));
+    assert.match(out, /\(deleted\)/);
+    assert.match(out, /📦/);
+});
+
+test("renderLogEntry: EXEC shows the command body", () => {
+    const out = renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "/1/1/1", status_rx: 200, tx: { body: "ls -la" } }));
+    assert.match(out, /"ls -la"/);
+    assert.match(out, /🔧/);
+});
+
+// ─── colorForStatus: each status class is exercised ──────────────────
+
+test("renderLogEntry: status classes render without throwing (color branches)", () => {
+    for (const status of [102, 301, 404, 500]) {
+        const out = renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/x", status_rx: status, rx: {} }));
+        assert.match(out, new RegExp(String(status)), `status ${status} appears`);
+    }
+});
+
+// ─── renderMarkdown: construct branches (via prettify) ───────────────
+
+test("extractSendBody prettify: markdown header → bold, no leading #", () => {
+    const out = extractSendBody({ body: { raw: "# Title", json: null } }, true);
+    assert.match(out, /Title/);
+    assert.doesNotMatch(out, /# Title/);
+});
+
+test("extractSendBody prettify: bold, inline code, and bullets transform", () => {
+    assert.match(extractSendBody({ body: { raw: "**strong**", json: null } }, true), /strong/);
+    assert.match(extractSendBody({ body: { raw: "`code`", json: null } }, true), /code/);
+    assert.match(extractSendBody({ body: { raw: "- one\n- two", json: null } }, true), /• one/);
+});
+
+test("extractSendBody prettify: plain text (no markdown markers) passes through", () => {
+    assert.equal(extractSendBody({ body: { raw: "just words", json: null } }, true), "just words");
+});
+
+// ─── renderSummary: usage token part ─────────────────────────────────
+
+test("renderSummary: usage renders ↑prompt ↓completion and cost", () => {
+    const out = renderSummary(3, 850, 200, false, { promptTokens: 100, completionTokens: 50, costPico: 500_000_000_000 });
+    assert.match(out, /↑100 ↓50/);
+    assert.match(out, /\$0\.5000/);
+});
+
+test("renderSummary: zero cost omits the $ part", () => {
+    const out = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costPico: 0 });
+    assert.match(out, /↑10 ↓5/);
+    assert.doesNotMatch(out, /\$/);
+});

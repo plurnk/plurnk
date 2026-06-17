@@ -39,11 +39,15 @@ Options:
 | `--run <name>` | string | Resume (or create) the named run within the session. Requires `--session`. Overrides `PLURNK_RUN`. See §1.1. |
 | `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_PROJECT_ROOT`. |
-| `--persona <path>` | string | Path to a persona file; contents passed on every `loop.run`. See §1.3. Overrides `PLURNK_PERSONA`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
 | `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
+| `--pick <glob>` | string, repeatable | Membership overlay: admit files git misses (the sole source when headless). Maps to a `pick` constraint. Create-time / session-level. See §1.4. |
+| `--hide <glob>` | string, repeatable | Membership overlay: drop a tracked match. Maps to a `hide` constraint. See §1.4. |
+| `--view <glob>` | string, repeatable | Membership overlay: admit a member read-only. Maps to a `view` constraint. See §1.4. |
+| `--manifest-items <n>` | string | Session-open preview: `-1` full / `0` off / `N` first-N items of `plurnk://manifest.json` at turn 0. Create-time only. See §1.4. |
+| `--md <name=path>` | string, repeatable | Pin a markdown doc into the session (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
 
 Env:
 
@@ -54,7 +58,6 @@ Env:
 | `PLURNK_RUN` | _unset_ | Run name to resume/create. Equivalent to `--run`. Requires `PLURNK_SESSION`. |
 | `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
 | `PLURNK_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
-| `PLURNK_PERSONA` | _unset_ | Path to a persona file; contents sent on every `loop.run`. Equivalent to `--persona`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
 **Cascading env.** Three layers, highest precedence first: explicit shell exports → project `./.env` → user-level `$XDG_CONFIG_HOME/plurnk/env` (fallback `~/.config/plurnk/env`). Both files are optional. The user file is where per-machine defaults live (`PLURNK_URL`, `PLURNK_MODEL`); the project `.env` overrides per-repo; the shell wins ad hoc.
@@ -91,7 +94,7 @@ Resolution at the client:
 
 Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via `providers.list` (RPC; not currently surfaced as a client subcommand).
 
-### §1.3 Project root and persona
+### §1.3 Project root
 
 **Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that session. Stored on `sessions.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "session has no project_root").
 
@@ -102,14 +105,26 @@ Client behavior:
 - Explicit headless: set to empty string (`--project-root=`) → wire as `null`.
 - Sent on `session.create` only. On `--session` attach, the daemon preserves the stored value and the client's flag is silently ignored (no surprise overwrites of a session you're resuming). To change a live session's root, call `session.set_root` directly — not yet surfaced as a client command.
 
-**Persona** is the text/markdown identity prompt the daemon plumbs into `packet.system.persona`. Set per-call on `loop.run({persona})`.
+The "inject standing context into every loop" role formerly served by persona is now `--md`/`mdDocs` (§1.4): markdown docs pinned into the session and read at turn 0.
 
-Client behavior:
+### §1.4 Membership overlay and session-open settings
 
-- Default: omitted; daemon uses its own `persona.md` baseline.
-- Override: `--persona <path>` or `PLURNK_PERSONA`, both pointing to a file. Contents are read once at startup and passed on every `loop.run` for the invocation.
-- File-only (no literal-text mode): personas are typically long markdown; quoting them on the command line is hostile. If you need a quick literal, write a one-line `.md` file.
-- A missing/unreadable file is a fatal startup error (exit 1) — better to fail loudly than to silently drop the persona.
+These flags shape what the session sees. The membership overlay flags map to **constraints** (service vocabulary, svc#200); the settings flags map to **session-open settings** (svc#231). All are creation-time / session-level.
+
+**Membership overlay** — repeatable glob flags, sent as `constraints` on `session.create`:
+
+- `--pick <glob>` → `{effect: "pick", glob}` — admit files git misses (the sole source when headless).
+- `--hide <glob>` → `{effect: "hide", glob}` — drop a tracked match.
+- `--view <glob>` → `{effect: "view", glob}` — admit a member read-only.
+
+Seeded atomically at `session.create` so turn-1's manifest is right with no follow-up RPC. On `--session` attach, each constraint is applied **live** via `session.constrain` (session-scoped, re-resolved immediately).
+
+**Session-open settings** — sent as `settings` on `session.create`:
+
+- `--manifest-items <n>` → `manifestItems`. Controls the `plurnk://manifest.json` preview at turn 0: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_MANIFEST_ITEMS` for the session.
+- `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the session, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
+
+Settings are **session-create-only** (no live setter). On `--session` attach, `--manifest-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
 
 ---
 
@@ -161,14 +176,15 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow
 
 1. Open WebSocket; resolve session per §1.1 (`session.create` or `session.attach`); subscribe to `log/entry`.
-2. Print banner; enter readline loop with the `  👤 ✅ 201 : ` prompt — the user's waterfall row, pre-rendered, restricted to WIDTH-STABLE glyphs. Settled empirically in two rounds: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned; `👤`/`✅` are plain East-Asian-Wide (width 2 in node and every major terminal) and stay. The `201` is a contract constant (the prompt row is always a 201 EDIT). The `: ` flips to `? ` when an ask-default toggle exists. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
+2. Print banner; enter readline loop with the `  <coord>👤 💬 ✅ 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs. Settled empirically in two rounds: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned; `👤`/`✅` are plain East-Asian-Wide (width 2 in node and every major terminal) and stay, `💬` (stable-wide) fills the op slot. The `201` is a contract constant (the prompt row is always a 201 EDIT). The `: ` flips to `? ` when an ask-default toggle exists. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /persona <path> /yolo /new [name] /stop /quit`. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/new` rebinds the connection in place (§13.5-rebind); `/stop` and `/help` stay reachable while a loop is in flight. Tab completes verbs and `/model` aliases via the readline completer — no screen takeover.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /yolo /new [name] /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/new` rebinds the connection in place (§13.5-rebind); membership verbs apply live via `session.constrain`/`session.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
     - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
     - Lines starting with `!` → `rpc.call("op.exec", { command })`. Daemon-owned shell; proposal-gated like any side effect.
-    - Lines starting with `? ` → `loop.run` with `flags.mode="ask"` (read-only loop); `: ` forces act. Per-line prefix overrides a global `--ask`.
+    - Lines starting with `? ` → `loop.run` with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
+    - Lines starting with `...` → `loop.inject` — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → `rpc.call("loop.run", { prompt })`. Standard prompt-driven loop.
-4. While a dispatch is in flight, additional input is rejected with a "busy" notice.
+4. While a dispatch is in flight, additional input is rejected with a "busy" notice (except `/stop`, `/help`, and a bare `...`/`?`/`:` prompt, which injects).
 5. `Ctrl-C` or `EOF` exits cleanly.
 
 ### §3.2 Cancellation
@@ -176,6 +192,12 @@ Triggered when `argv` has no positional prompt.
 `Ctrl-C` during an in-flight dispatch calls `loop.cancel` (plurnk-service SPEC §13.5) — the daemon aborts the run's active drain, the pending `loop.run` resolves with `finalStatus: 499`, and the REPL continues. A second `Ctrl-C` (or `Ctrl-C` while idle) closes the readline interface — the escape hatch for dispatches a drain-cancel can't unblock (`op.parse`).
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
+
+### §3.3 `/import` and bracketed paste
+
+`/import <path>` reads a **local** file (co-location law — the client reads its own fs, the daemon never sees the path) and stashes its content into the prompt buffer, reusing the paste machinery (§below): a short marker lands in the line and expands to the full content on submit, framed however you type. Relative paths resolve against cwd; an unreadable file prints an error and is a no-op.
+
+**Bracketed paste.** A multi-line paste must become ONE prompt, not one `loop.run` per line. The client filters stdin through a paste filter and feeds readline a `PassThrough`, buffering the paste between the terminal's `?2004` markers so the whole block submits as a single prompt. Stream plumbing only — no cursor/width math.
 
 ---
 
@@ -381,7 +403,7 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 
 - Send prompts. They never call `loop.run`.
 - Mutate state (yet). Future write subcommands (e.g. `plurnk session rename`) would be a separate addition.
-- Honor flags that only matter to loop runs (`--model`, `--persona`, `--yolo`) — those parse without error but have no effect in subcommand mode.
+- Honor flags that only matter to loop runs (`--model`, `--yolo`) — those parse without error but have no effect in subcommand mode.
 
 ---
 
@@ -402,7 +424,7 @@ interface TelemetryEvent {
 }
 ```
 
-`source` follows the pattern `^[a-z]+(:[a-z][a-z0-9-]*)?$`. Daemon producers: `grammar`, `engine:rail`, `scheme:<name>`, `provider:<vendor>`. Client producers: `client:connection`, `client:flag`, `client:subcommand`, `client:proposal`, `client:io`, `client:rpc`, `client:runtime`.
+`source` follows the pattern `^[a-z]+(:[a-z][a-z0-9-]*)?$`. Daemon producers: `grammar`, `engine:rail`, `scheme:<name>`, `provider:<vendor>`. Client producers: `client:connection`, `client:flag`, `client:subcommand`, `client:proposal`, `client:rpc`, `client:runtime`.
 
 ### §8.2 Rendering
 
@@ -438,7 +460,6 @@ Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow
 | `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
 | `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
 | `client:proposal` | `edits_blocked` | No review channel (non-TTY, no `--yolo`) — loop runs with `noProposals`; client owns the why |
-| `client:io` | `persona_read_failed` | `--persona` file unreadable |
 | `client:rpc` | `error` | Daemon-returned RPC error surfaced verbatim |
 | `client:runtime` | `error` | Generic fallback for unstructured throws |
 

@@ -58,7 +58,7 @@ export const TUI_HELP = [
     "  /view <glob>                       membership: admit read-only",
     "  /repo <glob>                       membership: declare a git repo folder",
     "  /drop <glob>                       membership: remove a constraint",
-    "  /members                           list membership constraints",
+    "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -178,9 +178,31 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "members": {
+            // The model's RESOLVED universe (svc#243) — daemon-resolved
+            // (ls-files ∪ pick) − hide, never the client's rule globs. Showing
+            // the rules here (the old behavior) misinforms: rules are deltas,
+            // not the universe. The constraint list rides along as a footer —
+            // it's what /drop targets, but it is NOT "what the model sees".
+            const { members, hidden } = await rpc.call("session.members") as {
+                members: Array<{ path: string; effect: string }>; hidden: string[];
+            };
+            const editable = members.filter((m) => m.effect === "member");
+            const view = members.filter((m) => m.effect === "view");
+            if (members.length === 0 && hidden.length === 0) {
+                write("  the model's universe is empty — no members (/pick a file or /repo a folder)\n");
+            } else {
+                write(`  the model's universe: ${members.length} file${members.length === 1 ? "" : "s"}`
+                    + ` — ${editable.length} editable, ${view.length} read-only`
+                    + `${hidden.length ? `, ${hidden.length} hidden` : ""}\n`);
+                for (const m of view) write(`  view    ${m.path}\n`);
+                for (const p of hidden) write(`  hidden  ${p}\n`);
+                if (editable.length <= 40) for (const m of editable) write(`  member  ${m.path}\n`);
+                else write(`  member  …${editable.length} editable files (git-tracked); listing suppressed\n`);
+            }
             const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
-            if (constraints.length === 0) { write("  (no membership constraints)\n"); return; }
-            for (const c of constraints) write(`  ${c.effect.padEnd(5)}  ${c.glob}\n`);
+            write(constraints.length === 0
+                ? "  rules: none (git-tracked files only)\n"
+                : `  rules: ${constraints.map((c) => `${c.effect} ${c.glob}`).join(", ")}\n`);
             return;
         }
         case "import":

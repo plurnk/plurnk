@@ -62,17 +62,43 @@ test("handleVerb /drop with no match → no unconstrain", async () => {
     assert.match(ctx.out.join(""), /no constraint matching/);
 });
 
-test("handleVerb /members → lists the constraints", async () => {
-    const ctx = makeCtx({ "session.constraints": { constraints: [{ effect: "view", glob: "vendor/**" }] } });
+test("handleVerb /members → reports the RESOLVED universe (session.members), not the rule globs", async () => {
+    const ctx = makeCtx({
+        "session.members": {
+            members: [{ path: "/src/a.ts", effect: "member" }, { path: "/vendor/x.js", effect: "view" }],
+            hidden: ["/secret.env"],
+        },
+        "session.constraints": { constraints: [{ effect: "view", glob: "vendor/**" }] },
+    });
     await handleVerb("/members", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "session.constraints", params: undefined }]);
-    assert.match(ctx.out.join(""), /view.*vendor\/\*\*/);
+    // The universe comes from session.members — the daemon's resolution, not a client glob list.
+    assert.equal(ctx.calls[0].method, "session.members");
+    const o = ctx.out.join("");
+    assert.match(o, /the model's universe: 2 files — 1 editable, 1 read-only, 1 hidden/);
+    assert.match(o, /view\s+\/vendor\/x\.js/);   // read-only member, by resolved path
+    assert.match(o, /member\s+\/src\/a\.ts/);    // editable member, by resolved path
+    assert.match(o, /hidden\s+\/secret\.env/);   // excluded file surfaced honestly
+    assert.match(o, /rules: view vendor\/\*\*/); // the rule footer (what /drop targets), distinct from the universe
 });
 
-test("handleVerb /members empty → (no membership constraints)", async () => {
-    const ctx = makeCtx({ "session.constraints": { constraints: [] } });
+test("handleVerb /members empty universe → says so, doesn't imply the rules ARE the universe", async () => {
+    const ctx = makeCtx({
+        "session.members": { members: [], hidden: [] },
+        "session.constraints": { constraints: [] },
+    });
     await handleVerb("/members", ctx);
-    assert.match(ctx.out.join(""), /no membership constraints/);
+    const o = ctx.out.join("");
+    assert.match(o, /the model's universe is empty/);
+    assert.match(o, /rules: none/);
+});
+
+test("handleVerb /members → suppresses the editable list past 40 but still states the true count", async () => {
+    const members = Array.from({ length: 50 }, (_, i) => ({ path: `/f${i}.ts`, effect: "member" }));
+    const ctx = makeCtx({ "session.members": { members, hidden: [] }, "session.constraints": { constraints: [] } });
+    await handleVerb("/members", ctx);
+    const o = ctx.out.join("");
+    assert.match(o, /the model's universe: 50 files — 50 editable/);
+    assert.match(o, /…50 editable files \(git-tracked\); listing suppressed/);
 });
 
 // ─── state verbs ─────────────────────────────────────────────────────

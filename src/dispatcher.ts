@@ -117,6 +117,8 @@ options:
                           source when headless). Repeatable.
       --hide <glob>       membership overlay: drop a tracked match. Repeatable.
       --view <glob>       membership overlay: admit a member read-only. Repeatable.
+      --repo <glob>       membership overlay: declare a git repo folder (its
+                          ls-files join membership), relative to project root. Repeatable.
       --manifest-items <n>  session-open preview: -1 full / 0 off / N first-N
                           items of plurnk://manifest.json at turn 0. Create-time.
       --md <name=path>    pin a markdown doc into the session (read at turn 0);
@@ -152,15 +154,18 @@ interface SessionResult { id: number; name: string }
 // A membership-overlay constraint (svc#200), service vocabulary: `pick` admits
 // a file git misses (the sole source when headless), `hide` drops a tracked
 // match, `view` admits a member read-only.
-export interface Constraint { effect: "pick" | "hide" | "view"; glob: string }
+export interface Constraint { effect: "pick" | "hide" | "view" | "repo"; glob: string }
 
-// Map the repeatable membership flags (--pick/--hide/--view) to constraints.
+// Map the repeatable membership flags (--pick/--hide/--view/--repo) to
+// constraints. repo (svc#242) declares a git repo folder (its ls-files join
+// membership), addressed relative to the project root.
 export const buildConstraints = (values: {
-    pick?: string[]; hide?: string[]; view?: string[];
+    pick?: string[]; hide?: string[]; view?: string[]; repo?: string[];
 }): Constraint[] => [
     ...(values.pick ?? []).map((glob): Constraint => ({ effect: "pick", glob })),
     ...(values.hide ?? []).map((glob): Constraint => ({ effect: "hide", glob })),
     ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
+    ...(values.repo ?? []).map((glob): Constraint => ({ effect: "repo", glob })),
 ];
 
 // Session-open settings. Open-context (svc#231): manifestItems REPLACES
@@ -385,10 +390,11 @@ export const main = async (argv: string[]): Promise<void> => {
             flags: { type: "string" },
             "max-turns": { type: "string" },
             timeout: { type: "string" },
-            // membership overlay (svc#200) — repeatable globs; service vocabulary
+            // membership overlay (svc#200/#242) — repeatable globs; service vocabulary
             pick: { type: "string", multiple: true },
             hide: { type: "string", multiple: true },
             view: { type: "string", multiple: true },
+            repo: { type: "string", multiple: true },
             // session-open settings (svc#231) + tighten-only ceilings (svc#232)
             "manifest-items": { type: "string" },
             md: { type: "string", multiple: true },
@@ -492,7 +498,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
         const session = await attachOrCreateSession(rpc, {
             sessionName, runName, projectRoot,
-            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
+            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
         });
         if (prompt.length === 0) {

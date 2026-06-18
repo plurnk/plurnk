@@ -4,7 +4,25 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleVerb, seedPromptHistory, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, type VerbContext } from "./tui.ts";
+
+// ─── buildHeader (startup banner: version · session · model · help) ──────
+
+test("buildHeader: shows the client's explicit --model/PLURNK_MODEL alias", () => {
+    const h = buildHeader({ versionNotice: "plurnk client v1", sessionName: "sess", modelAlias: "opus", activeAlias: "haiku" });
+    assert.equal(h, "plurnk client v1 · session: sess · model: opus · /help");
+});
+
+test("buildHeader: with no client model, names the daemon's active default", () => {
+    const h = buildHeader({ sessionName: "sess", activeAlias: "haiku" });
+    assert.match(h, /model: haiku/);
+    assert.match(h, /^plurnk · session: sess ·/);  // version notice absent → "plurnk"
+});
+
+test("buildHeader: no client model and no resolvable active → honest fallback", () => {
+    const h = buildHeader({ sessionName: "sess" });
+    assert.match(h, /model: \(daemon default\)/);
+});
 
 interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[] }
 

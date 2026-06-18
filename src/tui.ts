@@ -45,7 +45,7 @@ interface SessionResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
     "yolo", "new", "stop", "quit",
-    "pick", "hide", "view", "drop", "members", "import",
+    "pick", "hide", "view", "repo", "drop", "members", "import",
 ] as const;
 
 export const TUI_HELP = [
@@ -56,6 +56,7 @@ export const TUI_HELP = [
     "  /pick <glob>                       membership: admit files git misses",
     "  /hide <glob>                       membership: drop a tracked match",
     "  /view <glob>                       membership: admit read-only",
+    "  /repo <glob>                       membership: declare a git repo folder",
     "  /drop <glob>                       membership: remove a constraint",
     "  /members                           list membership constraints",
     "  /import <path>                     dump a local file's content into the prompt",
@@ -158,8 +159,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "pick":
         case "hide":
-        case "view": {
-            // Membership overlay (svc#200) — service vocabulary, live via
+        case "view":
+        case "repo": {
+            // Membership overlay (svc#200/#242) — service vocabulary, live via
             // session.constrain (session-scoped, re-resolved immediately).
             if (rest.length === 0) { write(`  usage: /${verb} <glob>\n`); return; }
             await rpc.call("session.constrain", { effect: verb, glob: rest });

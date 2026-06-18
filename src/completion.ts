@@ -11,7 +11,7 @@ import { isAbsolute, resolve } from "node:path";
 // cursor isn't in a path position. One case per call site — membership-verb
 // globs today; `@file` / `/import` / `/md` paths slot in here as they land.
 export const pathPartial = (line: string): string | null => {
-    const verb = line.match(/^\/(?:pick|hide|view|drop|import)\s+(\S*)$/);
+    const verb = line.match(/^\/(?:pick|hide|view|repo|drop|import)\s+(\S*)$/);
     if (verb) return verb[1];
     // @file: a path reference anywhere in a prompt (word-boundary @ to dodge
     // emails). The leading @ stays; only the path part completes.

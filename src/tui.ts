@@ -110,6 +110,18 @@ export const seedPromptHistory = async (rpc: Rpc, sessionId: number, rl: readlin
     } catch { /* history is a convenience; never block the REPL */ }
 };
 
+// The one-line startup banner: version · session · model · help. Pure so the
+// model-label resolution is unit-testable. modelLabel = the client's
+// --model/PLURNK_MODEL when set, else the daemon's active default
+// (providers.list `active`), else an honest fallback.
+export const buildHeader = (opts: {
+    versionNotice?: string; sessionName: string; modelAlias?: string; activeAlias?: string;
+}): string => {
+    const head = opts.versionNotice ?? "plurnk";
+    const modelLabel = opts.modelAlias ?? opts.activeAlias ?? "(daemon default)";
+    return `${head} · session: ${opts.sessionName} · model: ${modelLabel} · /help`;
+};
+
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
 // (stub rpc, collect writes, fake session/import). Verbs never call loop.run —
 // they're run-tab furniture. Returns "quit" to close the REPL.
@@ -271,18 +283,27 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         }).catch(() => { /* peek is best-effort */ });
     });
 
-    // One header line: version · session · help. The version notice already
-    // reads "plurnk client vX, plurnk-service vY …"; without it, just "plurnk".
-    const header = opts.versionNotice ?? "plurnk";
-    process.stdout.write(`\x1b[2m${header} · session: ${current.name} · /help\x1b[0m\n\n`);
-
-    // Alias cache for /model completion — one cheap RPC, refreshed never
-    // (aliases are daemon-boot-time config).
+    // Alias cache for /model completion + the active alias for the header —
+    // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
+    // Awaited before the banner so the header can name the model the daemon
+    // will actually use when --model/PLURNK_MODEL is unset (providers.list
+    // marks the boot-time default `active`).
     let aliasCache: string[] = [];
-    void rpc.call("providers.list").then((r) => {
-        const aliases = (r as { aliases?: Array<{ alias: string }> }).aliases;
-        if (Array.isArray(aliases)) aliasCache = aliases.map((a) => a.alias);
-    }).catch(() => { /* completion just stays empty */ });
+    let activeAlias: string | undefined;
+    try {
+        const r = await rpc.call("providers.list") as { aliases?: Array<{ alias: string; active?: boolean }> };
+        if (Array.isArray(r.aliases)) {
+            aliasCache = r.aliases.map((a) => a.alias);
+            activeAlias = r.aliases.find((a) => a.active)?.alias;
+        }
+    } catch { /* completion stays empty; header falls back to (daemon default) */ }
+
+    // One header line: version · session · model · help (see buildHeader).
+    const header = buildHeader({
+        versionNotice: opts.versionNotice, sessionName: current.name,
+        modelAlias: opts.modelAlias, activeAlias,
+    });
+    process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
 
     // The prompt is the user's row, restricted to WIDTH-STABLE glyphs —
     // settled empirically in two rounds. Round 1 (`  👤 ✉️  ✅ 201 : `)

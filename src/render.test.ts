@@ -384,10 +384,10 @@ test("renderSummary: non-200 final → 'final <N>'", () => {
     assert.match(s, /final 499/);
 });
 
-test("renderSummary: real usage renders ↑prompt ↓completion + cost", () => {
+test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", () => {
     const s = renderSummary(2, 500, 200, false, usage(1200, 345, 420000000));
     assert.match(s, /↑1200 ↓345/);
-    assert.match(s, /\$0\.0004/);
+    assert.match(s, /loop \$0\.0004/);
 });
 
 test("renderSummary: usage without cost omits the cost segment", () => {
@@ -401,11 +401,15 @@ test("renderSummary: no usage (non-model op) omits the token part", () => {
     assert.doesNotMatch(s, /↑|tokens/);
 });
 
-test("renderSummary: account balance (svc#252) renders `bal $X` when present, absent otherwise", () => {
-    const withBal = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costPico: 420000000, balancePico: 12_340_000_000_000 });
-    assert.match(withBal, /bal \$12\.34/);
-    // No balance field → no bal segment (the staged slot stays dark).
-    assert.doesNotMatch(renderSummary(1, 100, 200, false, usage(10, 5, 420000000)), /bal/);
+test("renderSummary: loop / session / remaining — each only when available (svc#254/#252)", () => {
+    const all = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costPico: 420000000, sessionCostPico: 12_560_000_000_000, balancePico: 198_530_000_000_000 });
+    assert.match(all, /loop \$0\.0004/);
+    assert.match(all, /session \$12\.56/);     // daemon's authoritative total
+    assert.match(all, /remaining \$198\.53/);  // account balance
+    // Neither pushed → only the loop cost shows; session/remaining stay dark.
+    const loopOnly = renderSummary(1, 100, 200, false, usage(10, 5, 420000000));
+    assert.match(loopOnly, /loop \$/);
+    assert.doesNotMatch(loopOnly, /session|remaining/);
 });
 
 test("renderSummary: wall time in seconds when ≥1000ms", () => {

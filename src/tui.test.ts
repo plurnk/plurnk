@@ -4,7 +4,22 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, type VerbContext } from "./tui.ts";
+
+// ─── expandNewlines (↵ marker → real newline on submit) ──────────────────
+
+test("expandNewlines: each ↵ marker becomes a real newline", () => {
+    assert.equal(expandNewlines(`a${NL_MARK}b${NL_MARK}c`), "a\nb\nc");
+});
+
+test("expandNewlines: a line with no marker is untouched", () => {
+    assert.equal(expandNewlines("just one line"), "just one line");
+});
+
+test("expandNewlines: marker insertion is WYSIWYG — no spurious spaces around newlines", () => {
+    // "line one " (trailing space) + soft-enter + "line two"
+    assert.equal(expandNewlines(`line one ${NL_MARK}line two`), "line one \nline two");
+});
 
 // ─── isNewlineKey (non-submitting newline: Ctrl-J + Alt-Enter) ───────────
 

@@ -4,7 +4,28 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleVerb, seedPromptHistory, buildHeader, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, type VerbContext } from "./tui.ts";
+
+// ─── isNewlineKey (non-submitting newline: Ctrl-J + Alt-Enter) ───────────
+
+test("isNewlineKey: Ctrl-J (LF) is a non-submitting newline", () => {
+    assert.equal(isNewlineKey("\n"), true);
+});
+
+test("isNewlineKey: Alt-Enter (Meta+CR / Meta+LF) is a non-submitting newline", () => {
+    assert.equal(isNewlineKey("\x1b\r"), true);
+    assert.equal(isNewlineKey("\x1b\n"), true);
+});
+
+test("isNewlineKey: plain Enter (CR) still submits — NOT a newline key", () => {
+    assert.equal(isNewlineKey("\r"), false);
+});
+
+test("isNewlineKey: ordinary input and bare ESC are not newline keys", () => {
+    for (const s of ["a", "hello", "\x1b", "\x1b[A", "\x1b[200~", " "]) {
+        assert.equal(isNewlineKey(s), false, `${JSON.stringify(s)} must not trigger a newline`);
+    }
+});
 
 // ─── buildHeader (startup banner: version · session · model · help) ──────
 

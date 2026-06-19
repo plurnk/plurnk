@@ -65,7 +65,7 @@ export const TUI_HELP = [
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
-    "  Ctrl-J / Alt-Enter                 newline (compose multi-line); Enter submits",
+    "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
 ].join("\n") + "\n";
 
 // The non-submitting newline keys, by their raw byte sequence (post paste
@@ -75,6 +75,15 @@ export const TUI_HELP = [
 // design (it can't be distinguished without the kitty/modifyOtherKeys protocol).
 export const isNewlineKey = (forward: string): boolean =>
     forward === "\n" || forward === "\x1b\r" || forward === "\x1b\n";
+
+// A soft-enter inserts this single-width glyph into readline's ONE line, so the
+// whole multi-line buffer stays natively editable (backspace deletes the ↵ to
+// rejoin; arrows/history cross it; readline owns the wrapping). On submit it
+// expands back to a real newline. A pasted literal ↵ is preserved — expansion
+// runs on the typed line BEFORE paste markers expand, so paste content is
+// untouched.
+export const NL_MARK = "↵";
+export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK, "\n");
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
@@ -372,36 +381,20 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     });
     const reprompt = (): void => { rl.setPrompt(buildPrompt()); rl.prompt(); };
 
-    // Multi-line composition. The non-submitting newline keys freeze the
-    // current line and continue on a dim continuation prompt; Enter (CR, `\r`)
-    // submits the joined buffer. Two keys, one behavior (see isNewlineKey):
-    // Ctrl-J (LF, `\n`) works on EVERY terminal; Alt-Enter (Meta+CR,
-    // `\x1b\r`/`\x1b\n`) covers most. Shift-Enter is intentionally unhandled —
-    // it needs the kitty/modifyOtherKeys protocols, out of scope. Line-oriented:
-    // frozen lines are immutable echoes above, no cursor/width math (reuses the
-    // established wipe-line + print + reprompt pattern).
-    const pending: string[] = [];
-    const CONT_PROMPT = "\x1b[2m·\x1b[0m ";
-    const continueLine = (): void => {
-        const frozen = rl.getPrompt() + rl.line;
-        pending.push(rl.line);
-        // Clear readline's buffer WITHOUT submitting: to end-of-line, then
-        // kill-to-start (standard emacs bindings readline ships with).
-        rl.write(null, { ctrl: true, name: "e" });
-        rl.write(null, { ctrl: true, name: "u" });
-        process.stdout.write(`\r\x1b[2K${frozen}\n`);
-        rl.setPrompt(CONT_PROMPT);
-        rl.prompt();
-    };
-
-    // Interpose on stdin: bracketed-paste buffering (paste.ts) feeds readline a
-    // PassThrough, and the two newline keys are caught here so the suppressed
-    // bytes never reach readline (which would otherwise submit on `\n`). Each
-    // interactive keypress is its own chunk, so an exact match is reliable.
+    // Multi-line composition. The non-submitting newline keys insert a single ↵
+    // marker into readline's ONE line; Enter submits, expanding ↵→\n. Keeping it
+    // one readline line means backspace/arrows/history edit across newlines
+    // natively — no second buffer, no cursor/width math, the same idiom as
+    // paste. Two keys, one behavior (see isNewlineKey): Ctrl-J (LF) on every
+    // terminal, Alt-Enter (Meta+CR) on most; Shift-Enter is unhandled by design
+    // (needs the kitty/modifyOtherKeys protocols). Interposing on stdin
+    // (paste.ts feeds readline a PassThrough) is where we catch the keys, so the
+    // suppressed bytes never reach readline — which would otherwise submit on
+    // `\n`. Each interactive keypress is its own chunk, so an exact match holds.
     const onStdin = (chunk: Buffer): void => {
         const forward = paste.feed(chunk.toString("utf8"));
         if (forward.length === 0) return;
-        if (isNewlineKey(forward)) { continueLine(); return; }
+        if (isNewlineKey(forward)) { rl.write(NL_MARK); return; }
         input.write(forward);
     };
     process.stdin.on("data", onStdin);
@@ -453,11 +446,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         let cancelRequested = false;
 
         rl.on("line", async (line) => {
-            // Join any frozen continuation lines (Ctrl-J / Alt-Enter), then
-            // expand paste markers back to the raw multi-line text.
-            const full = pending.length > 0 ? [...pending, line].join("\n") : line;
-            pending.length = 0;
-            const trimmed = paste.expand(full).trim();
+            // Expand typed ↵ markers (Ctrl-J / Alt-Enter newlines) FIRST, then
+            // paste markers — so a pasted literal ↵ stays literal.
+            const trimmed = paste.expand(expandNewlines(line)).trim();
             if (trimmed.length === 0) {
                 reprompt();
                 return;
@@ -558,13 +549,6 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         });
 
         rl.on("SIGINT", () => {
-            // Mid-compose Ctrl-C abandons the multi-line buffer (doesn't quit).
-            if (pending.length > 0) {
-                pending.length = 0;
-                process.stdout.write("\r\x1b[2K  \x1b[2m(compose cancelled)\x1b[0m\n");
-                reprompt();
-                return;
-            }
             // First Ctrl-C with a dispatch in flight: cancel the run's active
             // drain via loop.cancel (plurnk-service §13.5); the pending
             // loop.run resolves with finalStatus 499 and the REPL continues.

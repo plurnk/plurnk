@@ -4,7 +4,25 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, type VerbContext } from "./tui.ts";
+
+// ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
+
+test("altShortcut: Alt-m / Alt-s / Alt-y map to the matching verbs", () => {
+    assert.equal(altShortcut("\x1bm"), "/models");
+    assert.equal(altShortcut("\x1bs"), "/sessions");
+    assert.equal(altShortcut("\x1by"), "/yolo");
+});
+
+test("altShortcut: an unmapped Alt-letter → null (falls through to readline)", () => {
+    assert.equal(altShortcut("\x1bz"), null);
+});
+
+test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", () => {
+    assert.equal(altShortcut("m"), null);       // plain typing
+    assert.equal(altShortcut("\x1b[A"), null);  // up-arrow (ESC [ A)
+    assert.equal(altShortcut("\x1b"), null);    // bare ESC
+});
 
 // ─── expandNewlines (↵ marker → real newline on submit) ──────────────────
 

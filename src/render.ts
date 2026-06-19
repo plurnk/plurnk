@@ -310,9 +310,11 @@ export interface LoopUsage {
     promptTokens: number;
     completionTokens: number;
     costPico: number;
-    // Account balance in pico-USD, when the provider reports it (svc#252 —
-    // provider→client). Absent for providers that don't expose balance; the
-    // summary renders `· bal $X` only when present. Staged slot; light-up on land.
+    // Session lifetime total in pico-USD — the DAEMON's authoritative cascade
+    // (svc#254), pushed on the wire. The client renders it, never aggregates it
+    // (runs fork + multiple clients ⇒ no client sees every turn). Staged slot.
+    sessionCostPico?: number;
+    // Account balance in pico-USD, when the provider reports it (svc#252). Staged.
     balancePico?: number;
 }
 
@@ -325,9 +327,12 @@ export const renderSummary = (turns: number, wallMs: number, finalStatus: number
     let tokenPart = "";
     if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
-        if (usage.costPico > 0) tokenPart += ` · $${(usage.costPico / 1e12).toFixed(4)}`;
-        // Account balance (svc#252), when the provider reports it.
-        if (usage.balancePico !== undefined) tokenPart += ` · bal $${(usage.balancePico / 1e12).toFixed(2)}`;
+        // Money: loop (this loop's cost) | session (daemon total, svc#254) |
+        // remaining (account balance, svc#252). Each only when available — the
+        // client renders all three, aggregates none.
+        if (usage.costPico > 0) tokenPart += ` · loop $${(usage.costPico / 1e12).toFixed(4)}`;
+        if (usage.sessionCostPico !== undefined) tokenPart += ` · session $${(usage.sessionCostPico / 1e12).toFixed(2)}`;
+        if (usage.balancePico !== undefined) tokenPart += ` · remaining $${(usage.balancePico / 1e12).toFixed(2)}`;
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

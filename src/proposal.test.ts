@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, isServerResolved, isBroadcastProposal } = await import("./proposal.ts");
+const { renderBody, formatTarget, isServerResolved, isBroadcastProposal, renderProposalMenu, keyToResolution } = await import("./proposal.ts");
 
 const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     logEntryId: 1,
@@ -37,6 +37,28 @@ test("isBroadcastProposal: a real EDIT proposal → false (must be reviewed)", (
 
 test("isBroadcastProposal: a DIRECTED SEND (has a scheme target) → false", () => {
     assert.equal(isBroadcastProposal({ ...proposal({}), op: "SEND", target: { scheme: "wss", pathname: "/feed" } }), false);
+});
+
+// ─── keyToResolution + renderProposalMenu (non-blocking review primitives) ──
+
+test("keyToResolution: a/r/c → accept/reject/cancel; unknown key → null (pass-through)", async () => {
+    const p = proposal({});
+    assert.deepEqual(await keyToResolution("a", p), { decision: "accept" });
+    assert.deepEqual(await keyToResolution("r", p), { decision: "reject" });
+    assert.deepEqual(await keyToResolution("c", p), { decision: "cancel" });
+    assert.equal(await keyToResolution("/", p), null);   // typing /accept must NOT resolve
+    assert.equal(await keyToResolution("x", p), null);
+});
+
+test("keyToResolution: case-insensitive (A == a)", async () => {
+    assert.deepEqual(await keyToResolution("A", proposal({})), { decision: "accept" });
+});
+
+test("renderProposalMenu: shows the op, target, and the key menu", () => {
+    const menu = renderProposalMenu({ ...proposal({}), op: "EDIT", target: { scheme: "file", pathname: "/tmp/x" } });
+    assert.match(menu, /proposal EDIT/);
+    assert.match(menu, /\[a\]ccept/);
+    assert.match(menu, /\[r\]eject/);
 });
 
 // ─── isServerResolved ────────────────────────────────────────────────

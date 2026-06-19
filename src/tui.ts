@@ -22,8 +22,8 @@ import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { reviewProposal, isServerResolved, isBroadcastProposal } from "./proposal.ts";
-import type { ProposalParams } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, isServerResolved, isBroadcastProposal } from "./proposal.ts";
+import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
@@ -46,6 +46,7 @@ export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
     "yolo", "new", "rename", "fork", "stop", "quit",
     "pick", "hide", "view", "repo", "drop", "members", "import",
+    "accept", "reject", "cancel", "edit",
 ] as const;
 
 export const TUI_HELP = [
@@ -62,6 +63,7 @@ export const TUI_HELP = [
     "  /drop <glob>                       membership: remove a constraint",
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
+    "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
@@ -174,6 +176,9 @@ export interface VerbContext {
     setSession: (s: SessionResult) => void;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
+    // Resolve the pending proposal (no-op if none) — the typed no-modifier
+    // fallback for the a/e/r/c review keys. `edit` opens $EDITOR.
+    resolveProposal: (action: "accept" | "reject" | "cancel" | "edit") => Promise<void>;
 }
 
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
@@ -282,6 +287,13 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // via the paste machinery. The rl/paste glue lives in ctx.importFile.
             if (rest.length === 0) { write("  usage: /import <path>\n"); return; }
             await ctx.importFile(rest);
+            return;
+        case "accept":
+        case "reject":
+        case "cancel":
+        case "edit":
+            // Typed no-modifier fallback for the a/e/r/c proposal review keys.
+            await ctx.resolveProposal(verb as "accept" | "reject" | "cancel" | "edit");
             return;
         case "stop":
             await rpc.call("loop.cancel", { reason: "user_stop" });
@@ -413,13 +425,22 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // (paste.ts feeds readline a PassThrough) is where we catch the keys, so the
     // suppressed bytes never reach readline — which would otherwise submit on
     // `\n`. Each interactive keypress is its own chunk, so an exact match holds.
-    // Alt-<letter> quick-keys (ALT_SHORTCUTS) dispatch a verb; assigned after
-    // verbCtx exists. onStdin is the single keyboard dispatcher: paste, the
-    // newline keys, the shortcuts, else readline.
+    // onStdin is the single keyboard dispatcher: pending-proposal key, paste,
+    // the newline keys, the Alt-shortcuts, else readline. The proposal/shortcut
+    // handlers are forward-declared (assigned once verbCtx exists).
+    let pendingProposal: ProposalParams | null = null;
+    let onProposalKey: (key: string) => void = () => {};
     let dispatchShortcut: (verb: string) => void = () => {};
     const onStdin = (chunk: Buffer): void => {
         const forward = paste.feed(chunk.toString("utf8"));
         if (forward.length === 0) return;
+        // A pending proposal + an EMPTY prompt line: a single review key
+        // (a/e/r/c) resolves it. Anything else — including typing `/accept` —
+        // falls through to readline, so the no-modifier verb fallback works.
+        if (pendingProposal !== null && rl.line.length === 0 && /^[aerc]$/i.test(forward)) {
+            onProposalKey(forward);
+            return;
+        }
         if (isNewlineKey(forward)) { rl.write(NL_MARK); return; }
         const verb = altShortcut(forward);
         if (verb !== null) { dispatchShortcut(verb); return; }
@@ -429,41 +450,59 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // Cross-restart up/down history from the daemon (svc#238) — non-blocking.
     void seedPromptHistory(rpc, current.id, rl);
 
-    // Proposal lifecycle. Server-resolved (flags.yolo/noProposals) settle
-    // in-process — skip. --yolo auto-accepts. A broadcast SEND (the model
-    // speaking/parking — no target) is NOT a reviewable side-effect: auto-accept
-    // so the loop proceeds without a bogus accept/reject UI (the daemon
-    // proposing it at all is the SEND[202] vs proposal-202 collision — svc#255).
-    // Real proposals (EDIT/EXEC) are reviewed ONE AT A TIME: concurrent reviews
-    // trample raw stdin. During a review we hand stdin to readSingleKey (detach
-    // onStdin) and restore the interposition + resume() after — else
-    // readSingleKey's stdin.pause() leaves the TUI input dead (the freeze).
+    // Proposal lifecycle — NON-BLOCKING. Server-resolved (flags.yolo/noProposals)
+    // settle in-process → skip. --yolo auto-accepts. A broadcast SEND (model
+    // speech/park — no target) is not reviewable → auto-accept (svc#255). A real
+    // proposal renders its menu and parks as `pendingProposal` (queue beyond),
+    // WITHOUT pausing readline or grabbing stdin: resolve via a single key
+    // (onStdin, above) OR the typed `/accept`/`/reject`/`/cancel`/`/edit` verbs.
+    // Only the `$EDITOR` path hands the terminal off — and only for its spawn.
     const proposalQueue: ProposalParams[] = [];
-    let reviewing = false;
-    const drainProposals = async (): Promise<void> => {
-        if (reviewing) return;
-        reviewing = true;
+    const showNextProposal = (): void => {
+        if (pendingProposal !== null || proposalQueue.length === 0) return;
+        pendingProposal = proposalQueue.shift() as ProposalParams;
+        process.stdout.write(`\r\x1b[2K${renderProposalMenu(pendingProposal)}\n`
+            + `\x1b[2m  resolve: a/e/r/c  or  /accept /reject /cancel /edit\x1b[0m\n`);
+        reprompt();
+    };
+    const resolvePending = async (resolution: Resolution): Promise<void> => {
+        const p = pendingProposal;
+        if (p === null) return;
+        pendingProposal = null;
         try {
-            while (proposalQueue.length > 0) {
-                const p = proposalQueue.shift() as ProposalParams;
-                rl.pause();
-                process.stdin.off("data", onStdin);
-                try {
-                    const resolution = await reviewProposal(p);
-                    await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
-                } catch (cause) {
-                    process.stdout.write(`  \x1b[31mproposal error: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
-                } finally {
-                    process.stdin.setRawMode?.(true);
-                    process.stdin.resume();
-                    process.stdin.on("data", onStdin);
-                    rl.resume();
-                    rl.prompt(true);
-                }
-            }
-        } finally {
-            reviewing = false;
+            await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
+        } catch (cause) {
+            process.stdout.write(`  \x1b[31mresolve failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
         }
+        showNextProposal();
+        reprompt();
+    };
+    // `e`/`/edit` → $EDITOR. It needs the terminal: detach onStdin + raw-off for
+    // the spawn, restore after. The ONE place the non-blocking design still hands
+    // off — bounded to the editor's lifetime.
+    const editAndResolve = async (): Promise<void> => {
+        const p = pendingProposal;
+        if (p === null) return;
+        process.stdin.off("data", onStdin);
+        process.stdin.setRawMode?.(false);
+        let resolution: Resolution;
+        try {
+            resolution = (await keyToResolution("e", p)) ?? { decision: "cancel", outcome: "edit_failed" };
+        } catch (cause) {
+            process.stdout.write(`  \x1b[31medit failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
+            resolution = { decision: "cancel", outcome: "edit_error" };
+        } finally {
+            process.stdin.setRawMode?.(true);
+            process.stdin.resume();
+            process.stdin.on("data", onStdin);
+        }
+        await resolvePending(resolution);
+    };
+    // Single review key (from onStdin): a/r/c resolve directly, e edits.
+    onProposalKey = (key: string): void => {
+        if (key.toLowerCase() === "e") { void editAndResolve(); return; }
+        void keyToResolution(key, pendingProposal as ProposalParams)
+            .then((r) => { if (r !== null) return resolvePending(r); });
     };
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
@@ -479,7 +518,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             return;
         }
         proposalQueue.push(p);
-        void drainProposals();
+        showNextProposal();
     });
 
     // Verb dispatch runs through the testable module-level handleVerb; this
@@ -495,6 +534,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             try { content = await readFile(abs, "utf8"); }
             catch (cause) { process.stdout.write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return; }
             rl.write(paste.stash(content));
+        },
+        resolveProposal: async (action) => {
+            if (pendingProposal === null) { process.stdout.write("  (no pending proposal)\n"); return; }
+            if (action === "edit") { await editAndResolve(); return; }
+            await resolvePending({ decision: action });
         },
     };
 
@@ -532,7 +576,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             // flight — /stop is precisely the mid-loop verb.
             if (trimmed.startsWith("/")) {
                 const { verb } = parseSlash(trimmed);
-                if (inFlight && verb !== "stop" && verb !== "help" && verb !== "") {
+                // /stop, /help, and the proposal verbs stay reachable mid-loop —
+                // a proposal pauses the loop and must be resolvable by typing.
+                const PASS = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit"]);
+                if (inFlight && !PASS.has(verb)) {
                     process.stdout.write("  \x1b[2m(busy; /stop to cancel, /help for the language)\x1b[0m\n");
                     reprompt();
                     return;

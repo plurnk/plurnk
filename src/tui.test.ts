@@ -86,12 +86,13 @@ test("buildHeader: no client model and no resolvable active → honest fallback"
     assert.match(h, /model: \(daemon default\)/);
 });
 
-interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[] }
+interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
     const calls: Array<{ method: string; params?: unknown }> = [];
     const out: string[] = [];
     const imports: string[] = [];
+    const resolved: string[] = [];
     let session = { id: 1, name: "sess" };
     return {
         rpc: {
@@ -106,7 +107,8 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         setSession: (s) => { session = s; },
         write: (s) => { out.push(s); },
         importFile: async (p) => { imports.push(p); },
-        calls, out, imports,
+        resolveProposal: async (action) => { resolved.push(action); },
+        calls, out, imports, resolved,
     };
 };
 
@@ -214,6 +216,15 @@ test("handleVerb /fork with no name → run.fork with no name (auto <parent>-for
     });
     await handleVerb("/fork", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
+});
+
+test("handleVerb /accept /reject /cancel /edit → resolveProposal(action) — typed no-modifier fallback", async () => {
+    for (const action of ["accept", "reject", "cancel", "edit"] as const) {
+        const ctx = makeCtx();
+        await handleVerb(`/${action}`, ctx);
+        assert.deepEqual(ctx.resolved, [action], `/${action} resolves the pending proposal`);
+        assert.equal(ctx.calls.length, 0, "the verb never touches the wire directly");
+    }
 });
 
 // ─── state verbs ─────────────────────────────────────────────────────

@@ -66,6 +66,7 @@ export const TUI_HELP = [
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
+    "  Alt-m/s/r/l/y/n/h                  quick verbs: models sessions runs log yolo new help",
 ].join("\n") + "\n";
 
 // The non-submitting newline keys, by their raw byte sequence (post paste
@@ -84,6 +85,25 @@ export const isNewlineKey = (forward: string): boolean =>
 // untouched.
 export const NL_MARK = "↵";
 export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK, "\n");
+
+// Muscle-memory quick-keys, converged with plurnk.nvim's `<leader>a<letter>`
+// mnemonics. Delivered as Alt-<letter> (ESC+letter) because Ctrl-<letter>
+// collides with terminal/readline control codes — Ctrl-m IS Enter, Ctrl-s is
+// XOFF, Ctrl-i is Tab, and readline owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped
+// (readline word-ops). The letter matches nvim; the modifier is what a terminal
+// can actually carry.
+export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
+    m: "/models", s: "/sessions", r: "/runs", l: "/log",
+    y: "/yolo", n: "/new", h: "/help",
+});
+
+// An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
+// or function key) mapped to its verb, or null. Reassembled by the paste filter
+// whether it arrives in one chunk or split.
+export const altShortcut = (forward: string): string | null => {
+    const m = forward.match(/^\x1b([a-z])$/);
+    return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
+};
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
@@ -391,10 +411,16 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // (paste.ts feeds readline a PassThrough) is where we catch the keys, so the
     // suppressed bytes never reach readline — which would otherwise submit on
     // `\n`. Each interactive keypress is its own chunk, so an exact match holds.
+    // Alt-<letter> quick-keys (ALT_SHORTCUTS) dispatch a verb; assigned after
+    // verbCtx exists. onStdin is the single keyboard dispatcher: paste, the
+    // newline keys, the shortcuts, else readline.
+    let dispatchShortcut: (verb: string) => void = () => {};
     const onStdin = (chunk: Buffer): void => {
         const forward = paste.feed(chunk.toString("utf8"));
         if (forward.length === 0) return;
         if (isNewlineKey(forward)) { rl.write(NL_MARK); return; }
+        const verb = altShortcut(forward);
+        if (verb !== null) { dispatchShortcut(verb); return; }
         input.write(forward);
     };
     process.stdin.on("data", onStdin);
@@ -468,6 +494,21 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             catch (cause) { process.stdout.write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return; }
             rl.write(paste.stash(content));
         },
+    };
+
+    // Alt-<letter> shortcut → run the verb. Wipe the prompt line, dispatch
+    // through the same handleVerb the typed `/verb` uses (the partial prompt in
+    // readline's buffer survives), then reprompt. Print-above pattern; no math.
+    dispatchShortcut = (verb: string): void => {
+        process.stdout.write("\r\x1b[2K");
+        void (async () => {
+            try {
+                if (await handleVerb(verb, verbCtx) === "quit") { rl.close(); return; }
+            } catch (cause) {
+                process.stdout.write(`  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
+            }
+            reprompt();
+        })();
     };
 
     reprompt();

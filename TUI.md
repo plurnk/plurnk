@@ -165,7 +165,7 @@ INDENT ORIGIN OP [SUB] STATUS PATH  EXTRA
 | INDENT   | Two spaces (visual offset from `>`) | `  `                                     |
 | ORIGIN   | `log_entries.origin` glyph          | 🤖 model / 👤 client / ⚙️ system / 🔌 plugin |
 | OP       | Op glyph from §4                    | ✏️ EDIT / 📖 READ / 🔍 FIND / etc.        |
-| SUB      | Sub-status glyph for SEND only      | ✅ 200 / 🗑 410 / ✋ 499 / ⚠️ 4xx / 🔥 5xx |
+| SUB      | Sub-status glyph (see §4.2)          | ✅ 200 / 💤 202 / ❓ 300 / ✋ 499 / ❌ 4xx-5xx |
 | STATUS   | HTTP status code, 3 digits          | `201`, `404`, `200`                      |
 | PATH     | Full URI as typed by the source     | `known://france/capital`                 |
 | EXTRA    | Op-specific short context           | `"Paris"` (EDIT) / `→ 1 result` (FIND)   |
@@ -298,14 +298,17 @@ Universal across all plurnk clients (TUI, CLI, neovim, Telegram, web). Mimetype 
 
 ### §4.2 SEND sub-status glyphs
 
-| Status range | Glyph | Meaning                              |
-|--------------|-------|--------------------------------------|
-| 102          | ⏳    | Processing (open subscription)       |
-| 2xx          | ✅    | Success / terminal                   |
-| 410          | 🗑    | Gone / delete                        |
-| 499          | ✋    | Cancel                               |
-| 4xx (other)  | ⚠️    | Client error                         |
-| 5xx          | 🔥    | Server / handler error               |
+Aligned to the grammar's terminal SEND set `[102, 200, 202, 300, 499]` (plurnk-grammar plurnk.md) plus the directed-SEND/error families. The glyph carries the **state**; the color (§colorForStatus) carries the **class**. All glyphs are EAW width-2, VS16-free (column-stable). Specific codes win over ranges.
+
+| Status      | Glyph | Meaning                              |
+|-------------|-------|--------------------------------------|
+| 102         | ⏳    | Continuing — more turns coming       |
+| 200 / 2xx   | ✅    | Success / final                      |
+| 202         | 💤    | Parked / waiting on an external event |
+| 300         | ❓    | Needs a decision (multiple choices)  |
+| 410         | 💥    | Directed SEND to a gone resource     |
+| 499         | ✋    | Failed / aborted / cancelled         |
+| 4xx / 5xx   | ❌    | Error (color carries 4xx vs 5xx)     |
 
 ### §4.3 Origin glyphs
 

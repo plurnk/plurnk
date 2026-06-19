@@ -27,13 +27,19 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
     plugin: "🔌",
 };
 
+// Status → sub-glyph, aligned to the grammar's terminal SEND set
+// [102, 200, 202, 300, 499] (plurnk-grammar plurnk.md) plus the directed-SEND
+// and error families. Specific codes before ranges. Every glyph is EAW width-2,
+// VS16-free (column-stable). The COLOR (colorForStatus) carries the class; the
+// glyph carries the state. Converged with plurnk.nvim's STATUS_GLYPHS.
 export const sendSubGlyph = (status: number): string => {
-    if (status === 410) return "💥";
-    if (status === 499) return "✋";
-    if (status === 102) return "⏳";
-    if (status >= 200 && status < 300) return "✅";
-    // Single failure glyph for 4xx/5xx — converged with plurnk.nvim:
-    // one signal in the alignment column; the colored status carries class.
+    if (status === 102) return "⏳";   // continuing — more turns coming
+    if (status === 202) return "💤";   // parked/waiting on an external event
+    if (status === 300) return "❓";   // needs a decision (multiple choices)
+    if (status === 410) return "💥";   // directed SEND to a gone resource
+    if (status === 499) return "✋";   // failed / aborted / cancelled
+    if (status >= 200 && status < 300) return "✅";   // success / final
+    // Single failure glyph for 4xx/5xx — the colored status carries 4xx vs 5xx.
     if (status >= 400 && status < 600) return "❌";
     return "";
 };
@@ -51,7 +57,9 @@ const RED = code("31");
 const BRIGHT_RED = code("1;31");
 
 const colorForStatus = (status: number): string => {
-    if (status === 102 || (status >= 300 && status < 400)) return YELLOW;
+    // In-progress / parked / needs-decision share yellow (attention, not done);
+    // 202 is explicitly NOT green — parked ≠ success (aligns with the 💤 glyph).
+    if (status === 102 || status === 202 || (status >= 300 && status < 400)) return YELLOW;
     if (status >= 200 && status < 300) return GREEN;
     if (status >= 400 && status < 500) return RED;
     if (status >= 500 && status < 600) return BRIGHT_RED;
@@ -302,6 +310,10 @@ export interface LoopUsage {
     promptTokens: number;
     completionTokens: number;
     costPico: number;
+    // Account balance in pico-USD, when the provider reports it (svc#252 —
+    // provider→client). Absent for providers that don't expose balance; the
+    // summary renders `· bal $X` only when present. Staged slot; light-up on land.
+    balancePico?: number;
 }
 
 // usage is absent for non-model ops (op.exec / op.parse have no provider
@@ -314,6 +326,8 @@ export const renderSummary = (turns: number, wallMs: number, finalStatus: number
     if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
         if (usage.costPico > 0) tokenPart += ` · $${(usage.costPico / 1e12).toFixed(4)}`;
+        // Account balance (svc#252), when the provider reports it.
+        if (usage.balancePico !== undefined) tokenPart += ` · bal $${(usage.balancePico / 1e12).toFixed(2)}`;
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

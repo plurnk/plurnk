@@ -47,8 +47,10 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
 test("sendSubGlyph: 200 → ✅", () => assert.equal(sendSubGlyph(200), "✅"));
 test("sendSubGlyph: 201 → ✅ (2xx range)", () => assert.equal(sendSubGlyph(201), "✅"));
 test("sendSubGlyph: 102 → ⏳ (continuing)", () => assert.equal(sendSubGlyph(102), "⏳"));
-test("sendSubGlyph: 499 → ✋ (cancel)", () => assert.equal(sendSubGlyph(499), "✋"));
-test("sendSubGlyph: 410 → 💥 (gone/deleted)", () => assert.equal(sendSubGlyph(410), "💥"));
+test("sendSubGlyph: 202 → 💤 (parked/waiting — NOT the generic 2xx ✅)", () => assert.equal(sendSubGlyph(202), "💤"));
+test("sendSubGlyph: 300 → ❓ (needs a decision)", () => assert.equal(sendSubGlyph(300), "❓"));
+test("sendSubGlyph: 499 → ✋ (failed/aborted)", () => assert.equal(sendSubGlyph(499), "✋"));
+test("sendSubGlyph: 410 → 💥 (directed SEND, gone)", () => assert.equal(sendSubGlyph(410), "💥"));
 test("sendSubGlyph: 404 → ❌ (single failure glyph, nvim-converged)", () => assert.equal(sendSubGlyph(404), "❌"));
 test("sendSubGlyph: 500 → ❌ (single failure glyph)", () => assert.equal(sendSubGlyph(500), "❌"));
 test("sendSubGlyph: 100 → '' (unknown range)", () => assert.equal(sendSubGlyph(100), ""));
@@ -399,6 +401,13 @@ test("renderSummary: no usage (non-model op) omits the token part", () => {
     assert.doesNotMatch(s, /↑|tokens/);
 });
 
+test("renderSummary: account balance (svc#252) renders `bal $X` when present, absent otherwise", () => {
+    const withBal = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costPico: 420000000, balancePico: 12_340_000_000_000 });
+    assert.match(withBal, /bal \$12\.34/);
+    // No balance field → no bal segment (the staged slot stays dark).
+    assert.doesNotMatch(renderSummary(1, 100, 200, false, usage(10, 5, 420000000)), /bal/);
+});
+
 test("renderSummary: wall time in seconds when ≥1000ms", () => {
     assert.match(renderSummary(1, 1234, 200, false, usage(1, 1)), /1\.23s/);
 });
@@ -523,7 +532,7 @@ test("renderLogEntry: EXEC shows the command body", () => {
 // ─── colorForStatus: each status class is exercised ──────────────────
 
 test("renderLogEntry: status classes render without throwing (color branches)", () => {
-    for (const status of [102, 301, 404, 500]) {
+    for (const status of [102, 202, 301, 404, 500]) {
         const out = renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/x", status_rx: status, rx: {} }));
         assert.match(out, new RegExp(String(status)), `status ${status} appears`);
     }

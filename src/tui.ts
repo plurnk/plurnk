@@ -22,7 +22,7 @@ import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { reviewProposal, isServerResolved } from "./proposal.ts";
+import { reviewProposal, isServerResolved, isBroadcastProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -401,26 +401,57 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // Cross-restart up/down history from the daemon (svc#238) — non-blocking.
     void seedPromptHistory(rpc, current.id, rl);
 
-    // Proposal lifecycle: server-resolved proposals (flags.yolo/noProposals)
-    // settle in-process — skip; --yolo auto-accepts locally; otherwise pause
-    // readline, review, resolve, resume.
+    // Proposal lifecycle. Server-resolved (flags.yolo/noProposals) settle
+    // in-process — skip. --yolo auto-accepts. A broadcast SEND (the model
+    // speaking/parking — no target) is NOT a reviewable side-effect: auto-accept
+    // so the loop proceeds without a bogus accept/reject UI (the daemon
+    // proposing it at all is the SEND[202] vs proposal-202 collision — svc#255).
+    // Real proposals (EDIT/EXEC) are reviewed ONE AT A TIME: concurrent reviews
+    // trample raw stdin. During a review we hand stdin to readSingleKey (detach
+    // onStdin) and restore the interposition + resume() after — else
+    // readSingleKey's stdin.pause() leaves the TUI input dead (the freeze).
+    const proposalQueue: ProposalParams[] = [];
+    let reviewing = false;
+    const drainProposals = async (): Promise<void> => {
+        if (reviewing) return;
+        reviewing = true;
+        try {
+            while (proposalQueue.length > 0) {
+                const p = proposalQueue.shift() as ProposalParams;
+                rl.pause();
+                process.stdin.off("data", onStdin);
+                try {
+                    const resolution = await reviewProposal(p);
+                    await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
+                } catch (cause) {
+                    process.stdout.write(`  \x1b[31mproposal error: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
+                } finally {
+                    process.stdin.setRawMode?.(true);
+                    process.stdin.resume();
+                    process.stdin.on("data", onStdin);
+                    rl.resume();
+                    rl.prompt(true);
+                }
+            }
+        } finally {
+            reviewing = false;
+        }
+    };
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
-        void (async () => {
-            if (isServerResolved(p)) return;
-            if (opts.yolo) {
-                await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" });
-                return;
-            }
-            rl.pause();
-            try {
-                const resolution = await reviewProposal(p);
-                await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
-            } finally {
-                rl.resume();
-                rl.prompt(true);
-            }
-        })();
+        if (isServerResolved(p)) return;
+        if (isBroadcastProposal(p)) {
+            void rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "broadcast" })
+                .catch(() => { /* a stale/duplicate resolve is harmless */ });
+            return;
+        }
+        if (opts.yolo) {
+            void rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
+                .catch(() => { /* idem */ });
+            return;
+        }
+        proposalQueue.push(p);
+        void drainProposals();
     });
 
     // Verb dispatch runs through the testable module-level handleVerb; this

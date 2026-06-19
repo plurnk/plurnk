@@ -176,17 +176,26 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     return raw;
 };
 
-// Conversation stripes (TUI). The true user↔model dialogue must stand
-// out against operation-record lines: model speech (broadcast SEND —
-// §5.4) renders on a dark-blue full-width band; the user's prompt (the
-// engine writes it as a system-origin EDIT to plurnk://prompt/<loop>/<turn>,
-// service SPEC §15) on dark green. 256-color picks with an explicit
-// near-white foreground so the bands read on any terminal theme;
-// `\x1b[K` (background-color-erase) paints each line to the right edge
+// Conversation stripe (TUI). Model speech (broadcast SEND — §5.4) is the ONE
+// thing that gets a background: the project green (#148800) full-width band, so
+// the model's turn stands out against the operation-record grid. Nothing else
+// is banded. Explicit near-white foreground so the band reads on any terminal
+// theme; `\x1b[K` (background-color-erase) paints each line to the right edge
 // without needing the terminal width.
-const MODEL_STRIPE = code("48;5;17") + code("38;5;254");
-const USER_STRIPE = code("48;5;22") + code("38;5;254");
+//
+// #148800 is emitted as truecolor when the terminal advertises it (COLORTERM),
+// else the nearest 256-color cube entry (28 = #008700) so the band stays green
+// on every terminal — the universality rule.
+const TRUECOLOR = process.env.COLORTERM === "truecolor" || process.env.COLORTERM === "24bit";
+const MODEL_BG = code(TRUECOLOR ? "48;2;20;136;0" : "48;5;28");
+const MODEL_STRIPE = MODEL_BG + code("38;5;254");
 const ERASE_EOL = useColor ? "\x1b[K" : "";
+
+// On the green band a 2xx's green-on-green vanishes — let it inherit the band's
+// near-white foreground; non-2xx keep their signal color (yellow/red read fine
+// on green). Off-band status uses colorForStatus directly.
+const bandStatusColor = (status: number): string =>
+    status >= 200 && status < 300 ? "" : colorForStatus(status);
 
 // Re-arm the stripe after every inner RESET (status colors, markdown
 // styling) so a styled span can't cut the band mid-line.
@@ -204,7 +213,10 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
     const opGlyph = OP_GLYPHS.SEND;
     const subGlyph = typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "";
-    const statusColor = colorForStatus(entry.status_rx);
+    // Only a model SEND gets the green band; on it, keep a 2xx readable (band-
+    // white) rather than green-on-green. Off-band SENDs use normal status color.
+    const banded = entry.origin === "model";
+    const statusColor = banded ? bandStatusColor(entry.status_rx) : colorForStatus(entry.status_rx);
     const statusText = `${statusColor}${entry.status_rx}${RESET}`;
 
     const headerParts = [origin, opGlyph];
@@ -221,8 +233,8 @@ const renderBroadcast = (entry: LogEntryWire): string => {
         : !multiLine && body.length <= 80 ? [`${header}  ${body}`]
         : [header, ...body.split("\n").map((l) => `     ${l}`)];
 
-    const stripe = entry.origin === "model" ? MODEL_STRIPE
-        : entry.origin === "client" ? USER_STRIPE : "";
+    // Only a model SEND is banded — nothing else gets a background.
+    const stripe = banded ? MODEL_STRIPE : "";
     // No surrounding blank lines: the stripe (full-width background color)
     // is the standout — a broadcast reads as conversation whether single-
     // or multi-line. Blank-wrapping every turn-terminator SEND (the model

@@ -116,19 +116,21 @@ const editInEditor = async (body: string, op: string): Promise<string | null> =>
     }
 };
 
-// Interactively review a proposal. Writes the rendered diff + menu to stderr
-// (telemetry, not product); reads the user's single keypress; returns the
-// resolution. Caller sends loop.resolve.
-export const reviewProposal = async (params: ProposalParams): Promise<Resolution> => {
-    process.stderr.write(`\n${BOLD}── proposal ${params.op} ${formatTarget(params.target)} ──${RESET}\n`);
-    process.stderr.write(renderBody(params.op, params.body));
-    if (!params.body.endsWith("\n")) process.stderr.write("\n");
-    process.stderr.write(`${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `);
+// The rendered diff + key menu as a string. Shared by the CLI (writes it to
+// stderr) and the non-blocking TUI review (writes it to stdout). No I/O here.
+export const renderProposalMenu = (params: ProposalParams): string => {
+    const nl = params.body.endsWith("\n") ? "" : "\n";
+    return `\n${BOLD}── proposal ${params.op} ${formatTarget(params.target)} ──${RESET}\n`
+        + renderBody(params.op, params.body) + nl
+        + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
+};
 
-    const key = (await readSingleKey()).toLowerCase();
-    process.stderr.write(`${key}\n`);
-
-    switch (key) {
+// Map a single review key to a resolution. `e` runs $EDITOR (async — caller
+// must own the terminal during the spawn). Returns null for non-review keys, so
+// callers can pass them through (the TUI lets them reach readline) or default
+// (the CLI cancels for safety).
+export const keyToResolution = async (key: string, params: ProposalParams): Promise<Resolution | null> => {
+    switch (key.toLowerCase()) {
         case "a":
             return { decision: "accept" };
         case "e": {
@@ -141,7 +143,17 @@ export const reviewProposal = async (params: ProposalParams): Promise<Resolution
         case "c":
             return { decision: "cancel" };
         default:
-            // Anything else (including ctrl-c = \x03) → cancel for safety.
-            return { decision: "cancel", outcome: "unknown_key" };
+            return null;
     }
+};
+
+// Interactively review a proposal (CLI mode — blocking, owns stdin). Writes the
+// diff + menu to stderr, reads one keypress, returns the resolution. The TUI
+// uses the non-blocking renderProposalMenu + keyToResolution instead.
+export const reviewProposal = async (params: ProposalParams): Promise<Resolution> => {
+    process.stderr.write(renderProposalMenu(params));
+    const key = (await readSingleKey()).toLowerCase();
+    process.stderr.write(`${key}\n`);
+    // Unknown key (incl. ctrl-c = \x03) → cancel for safety.
+    return (await keyToResolution(key, params)) ?? { decision: "cancel", outcome: "unknown_key" };
 };

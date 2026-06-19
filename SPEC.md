@@ -260,10 +260,10 @@ TUI mode contract (see TUI.md §3.4.1 for design rationale):
 - Surrounded by one blank line above and one blank line below.
 - Empty body is legal and renders as just the header.
 
-**Conversation stripes.** The true user↔model dialogue stands out against operation records as full-width background bands (every block line painted to the terminal's right edge via `\x1b[K`, with an explicit near-white foreground so the band reads on any theme):
+**Conversation stripe.** Model speech stands out against operation records as a full-width background band (every block line painted to the terminal's right edge via `\x1b[K`, with an explicit near-white foreground so the band reads on any theme). It is the ONLY thing that gets a background:
 
-- **Model speech** — any broadcast SEND from `origin === "model"` (102 intermediate, 200/499 terminal alike): dark blue (`48;5;17`).
-- **User speech** — a client-origin broadcast SEND (rare today): dark green (`48;5;22`). The prompt entry is NOT banded — it is skipped per §5.1; the user's typed line is their record. (plurnk.nvim differs by design: its input buffer clears on submit, so the 👤 band is the only record there.)
+- **Model speech** — any broadcast SEND from `origin === "model"` (102 intermediate, 200/499 terminal alike): the project green `#148800`, emitted as truecolor (`48;2;20;136;0`) when `COLORTERM` advertises it, else the nearest 256-color cube entry (`48;5;28` = `#008700`). A 2xx on the band drops its green foreground (band-white) so it doesn't vanish green-on-green; non-2xx keep their signal color.
+- **Nothing else is banded.** The user's prompt entry is skipped per §5.1 (the typed line is their record); client-origin and other broadcasts render plain. One band, one signal.
 
 Inner ANSI resets (status colors, markdown styling) re-arm the band so a styled span can't cut it mid-line. `NO_COLOR` drops the bands; the block layout (header + indented body) remains. CLI mode is unaffected — stdout/stderr stay plain per §2.
 

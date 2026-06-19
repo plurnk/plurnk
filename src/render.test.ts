@@ -263,30 +263,66 @@ test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
 const freshRender = async (tag: string): Promise<typeof import("./render.ts")> =>
     await import(`./render.ts?${tag}`) as typeof import("./render.ts");
 
-test("stripes: model broadcast gets the full-width blue band", async () => {
+const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
+
+test("stripes: model broadcast gets the green band (256-color fallback when no truecolor)", async () => {
+    const savedCT = process.env.COLORTERM;
+    delete process.env.COLORTERM;
     process.env.NO_COLOR = "0";
     const colored = await freshRender("stripes=1");
     process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
-        tx: { body: { raw: "Paris.", json: null } },
-    }));
-    assert.match(out, /\x1b\[48;5;17m/);   // model background
+    if (savedCT !== undefined) process.env.COLORTERM = savedCT;
+    const out = colored.renderLogEntry(entry(sendEntry));
+    assert.match(out, /\x1b\[48;5;28m/);   // #148800 ≈ 256-cube 28 (#008700)
+    assert.doesNotMatch(out, /\x1b\[48;5;17m/);  // no longer blue
     assert.match(out, /\x1b\[K/);          // painted to the right edge
 });
 
-test("stripes: client-origin broadcast gets the green band; inner RESET re-arms it", async () => {
+test("stripes: model broadcast uses exact truecolor #148800 when COLORTERM advertises it", async () => {
+    const savedCT = process.env.COLORTERM;
+    process.env.COLORTERM = "truecolor";
+    process.env.NO_COLOR = "0";
+    const colored = await freshRender("stripes=tc");
+    process.env.NO_COLOR = "1";
+    if (savedCT === undefined) delete process.env.COLORTERM; else process.env.COLORTERM = savedCT;
+    const out = colored.renderLogEntry(entry(sendEntry));
+    assert.match(out, /\x1b\[48;2;20;136;0m/);   // #148800 = rgb(20,136,0)
+});
+
+test("stripes: a 2xx on the green band is NOT green-on-green; a 4xx keeps red", async () => {
+    process.env.NO_COLOR = "0";
+    const colored = await freshRender("stripes=status");
+    process.env.NO_COLOR = "1";
+    const ok = colored.renderLogEntry(entry({ ...sendEntry, signal: 200, status_rx: 200 }));
+    // GREEN is \x1b[32m — must not precede the status on the band.
+    assert.doesNotMatch(ok, /\x1b\[32m200/);
+    const err = colored.renderLogEntry(entry({ ...sendEntry, signal: 404, status_rx: 404 }));
+    assert.match(err, /\x1b\[31m404/);     // 4xx still pops red
+});
+
+test("stripes: a model broadcast's inner RESET re-arms the band (status color can't cut it)", async () => {
+    const savedCT = process.env.COLORTERM;
+    delete process.env.COLORTERM;
     process.env.NO_COLOR = "0";
     const colored = await freshRender("stripes=2");
+    process.env.NO_COLOR = "1";
+    if (savedCT !== undefined) process.env.COLORTERM = savedCT;
+    // A 4xx carries a status color that RESETs mid-line — the band must resume
+    // immediately after, not die at the first reset.
+    const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 404, status_rx: 404 }));
+    assert.match(out, /\x1b\[0m\x1b\[48;5;28m/);
+});
+
+test("stripes: ONLY model SEND is banded — a client-origin broadcast gets no background", async () => {
+    process.env.NO_COLOR = "0";
+    const colored = await freshRender("stripes=client");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({
         op: "SEND", origin: "client", scheme: null, pathname: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     }));
-    assert.match(out, /\x1b\[48;5;22m/);   // user background
-    // Header carries a status color that RESETs mid-line — the band must
-    // resume immediately after, not die at the first reset.
-    assert.match(out, /\x1b\[0m\x1b\[48;5;22m/);
+    assert.doesNotMatch(out, /48;[25]/);   // no background band of any kind
+    assert.doesNotMatch(out, /\x1b\[K/);   // and no edge-paint
 });
 
 test("stripes: NO_COLOR build emits no background codes", () => {
@@ -294,7 +330,7 @@ test("stripes: NO_COLOR build emits no background codes", () => {
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
-    assert.doesNotMatch(out, /48;5/);
+    assert.doesNotMatch(out, /48;[25]/);   // neither 256-color nor truecolor bg
     assert.doesNotMatch(out, /\x1b\[K/);
 });
 

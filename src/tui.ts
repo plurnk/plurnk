@@ -44,7 +44,7 @@ interface SessionResult { id: number; name: string }
 // the argv subcommands. Convergence is policy: divergence needs a reason.
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
-    "yolo", "new", "stop", "quit",
+    "yolo", "new", "rename", "fork", "stop", "quit",
     "pick", "hide", "view", "repo", "drop", "members", "import",
 ] as const;
 
@@ -53,6 +53,8 @@ export const TUI_HELP = [
     "  /model <alias>                     model for subsequent loops",
     "  /yolo                              toggle local auto-accept",
     "  /new [name]                        new session (reconnects)",
+    "  /rename <name>                     rename this session (a mutable handle)",
+    "  /fork [name]                       branch this conversation into a new run",
     "  /pick <glob>                       membership: admit files git misses",
     "  /hide <glob>                       membership: drop a tracked match",
     "  /view <glob>                       membership: admit read-only",
@@ -167,6 +169,24 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
             ctx.setSession(await rpc.call("session.create", params) as SessionResult);
             write(`  session: ${ctx.getSession().name}\n`);
+            return;
+        }
+        case "rename": {
+            // session.rename — a session's name is a mutable handle on the world
+            // (a run's is not). Mutates the attached session in place. svc#248.
+            if (rest.length === 0) { write("  usage: /rename <name>\n"); return; }
+            const renamed = await rpc.call("session.rename", { name: rest }) as SessionResult;
+            ctx.setSession(renamed);
+            write(`  session: ${renamed.name}\n`);
+            return;
+        }
+        case "fork": {
+            // run.fork (svc#248) — branch this conversation into a new run,
+            // optionally named at instantiation (immutable after). Bind to the
+            // fork so the next prompt speaks there. The session is unchanged.
+            const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { runId: number; runName: string };
+            await rpc.call("session.attach", { id: ctx.getSession().id, runId: forked.runId });
+            write(`  forked → ${forked.runName}\n`);
             return;
         }
         case "pick":

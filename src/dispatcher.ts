@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli } from "./cli.ts";
 import { runTui } from "./tui.ts";
-import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
+import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
 import {
     TelemetryError,
@@ -66,6 +66,7 @@ const USAGE = `usage: plurnk [--json] [--session <name>] [--run <name>] [--model
        plurnk models [--json]
        plurnk session list [--json]
        plurnk session runs <name> [--json]
+       plurnk session rename <name> <newname> [--json]
        plurnk log read --session <name> [--run <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
 
@@ -136,6 +137,8 @@ subcommands:
   models                  list configured model aliases (providers.list)
   session list            list sessions on the daemon (session.list)
   session runs <name>     list runs in the named session (session.runs)
+  session rename <a> <b>  rename session <a> to <b> (session.rename — a session's
+                          name is a mutable handle; runs are immutable)
   log read --session ...  read log entries from the named session's run
 `;
 
@@ -336,7 +339,18 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             }
             return await runSessionRuns(rpc, name, { json: opts.json });
         }
-        throw new TelemetryError(clientSubcommandUnknownVerb(`session ${sub ?? "(missing)"}`, ["list", "runs"]));
+        if (sub === "rename") {
+            const name = positionals[2];
+            const newName = positionals[3];
+            if (name === undefined || newName === undefined) {
+                throw new TelemetryError(clientSubcommandMissingArgument("plurnk session rename", "<name> <newname>"));
+            }
+            if (positionals.length > 4) {
+                throw new TelemetryError(clientSubcommandUnknownVerb(`session rename ${positionals.slice(4).join(" ")}`));
+            }
+            return await runSessionRename(rpc, name, newName, { json: opts.json });
+        }
+        throw new TelemetryError(clientSubcommandUnknownVerb(`session ${sub ?? "(missing)"}`, ["list", "runs", "rename"]));
     }
 
     if (verb === "log") {

@@ -8,10 +8,18 @@ import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewline
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
 
-test("altShortcut: Alt-m / Alt-s / Alt-y map to the matching verbs", () => {
+test("altShortcut: lowercase mnemonics map (nvim's lowercase: m, s, x)", () => {
     assert.equal(altShortcut("\x1bm"), "/models");
     assert.equal(altShortcut("\x1bs"), "/sessions");
-    assert.equal(altShortcut("\x1by"), "/yolo");
+    assert.equal(altShortcut("\x1bx"), "/stop");
+});
+
+test("altShortcut: CASE matches nvim — capitals are distinct (R/L/Y/N/M)", () => {
+    assert.equal(altShortcut("\x1bR"), "/runs");      // nvim <leader>aR
+    assert.equal(altShortcut("\x1bM"), "/members");   // nvim <leader>aM
+    assert.equal(altShortcut("\x1bY"), "/yolo");      // nvim <leader>aY
+    // lowercase of a capital-mnemonic is NOT mapped — case is significant.
+    assert.equal(altShortcut("\x1br"), null);
 });
 
 test("altShortcut: an unmapped Alt-letter → null (falls through to readline)", () => {

@@ -119,6 +119,41 @@ test("handleVerb /members → suppresses the editable list past 40 but still sta
     assert.match(o, /…50 editable files \(git-tracked\); listing suppressed/);
 });
 
+test("handleVerb /rename → session.rename, adopts the returned name", async () => {
+    const ctx = makeCtx({ "session.rename": { id: 1, name: "renamed" } });
+    await handleVerb("/rename renamed", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "session.rename", params: { name: "renamed" } }]);
+    assert.equal(ctx.getSession().name, "renamed");
+    assert.match(ctx.out.join(""), /session: renamed/);
+});
+
+test("handleVerb /rename with no name → usage, no rpc", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/rename", ctx);
+    assert.equal(ctx.calls.length, 0);
+    assert.match(ctx.out.join(""), /usage: \/rename/);
+});
+
+test("handleVerb /fork [name] → run.fork then binds to the forked run", async () => {
+    const ctx = makeCtx({
+        "run.fork": { runId: 42, runName: "main-fork" },
+        "session.attach": { id: 1, name: "sess", runId: 42, runName: "main-fork" },
+    });
+    await handleVerb("/fork branch-a", ctx);
+    assert.deepEqual(ctx.calls[0], { method: "run.fork", params: { name: "branch-a" } });
+    assert.deepEqual(ctx.calls[1], { method: "session.attach", params: { id: 1, runId: 42 } });
+    assert.match(ctx.out.join(""), /forked → main-fork/);
+});
+
+test("handleVerb /fork with no name → run.fork with no name (auto <parent>-fork)", async () => {
+    const ctx = makeCtx({
+        "run.fork": { runId: 42, runName: "main-fork" },
+        "session.attach": { id: 1, name: "sess", runId: 42, runName: "main-fork" },
+    });
+    await handleVerb("/fork", ctx);
+    assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
+});
+
 // ─── state verbs ─────────────────────────────────────────────────────
 
 test("handleVerb /yolo → toggles opts.yolo and reports", async () => {

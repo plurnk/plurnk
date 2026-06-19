@@ -129,6 +129,37 @@ export const runSessionRuns = async (
     return 0;
 };
 
+// ─── plurnk session rename ────────────────────────────────────────────
+
+// session.rename mutates the ATTACHED session's name (a session is the world;
+// its name is a mutable handle — unlike a run, which is immutable history).
+// Resolve <name> by list, attach, rename. svc#248.
+export const runSessionRename = async (
+    rpc: Rpc,
+    sessionName: string,
+    newName: string,
+    opts: { json: boolean },
+): Promise<number> => {
+    const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
+    const matches = sessions.filter((s) => s.name === sessionName);
+    if (matches.length === 0) {
+        report(clientSubcommandSessionNotFound(sessionName));
+        return 1;
+    }
+    if (matches.length > 1) {
+        report(clientSubcommandSessionAmbiguous(sessionName, matches.length));
+        return 1;
+    }
+    await rpc.call("session.attach", { id: matches[0].id });
+    const result = await rpc.call("session.rename", { name: newName }) as { id: number; name: string };
+    if (opts.json) {
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        return 0;
+    }
+    process.stdout.write(`renamed ${JSON.stringify(sessionName)} → ${JSON.stringify(result.name)}\n`);
+    return 0;
+};
+
 // ─── plurnk log read ──────────────────────────────────────────────────
 
 // Caller has already attached the session via attachOrCreateSession; we just

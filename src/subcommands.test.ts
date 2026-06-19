@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
+import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead } from "./subcommands.ts";
 import type Rpc from "./rpc.ts";
 
 interface RecordedCall { method: string; params: unknown }
@@ -37,6 +37,27 @@ const captureStdout = async (fn: () => Promise<unknown>): Promise<string> => {
     finally { process.stdout.write = original; }
     return chunks.join("");
 };
+
+// ─── runSessionRename ─────────────────────────────────────────────────
+
+test("runSessionRename: resolves by name, attaches, renames the attached session", async () => {
+    const { rpc, calls } = fakeRpc({
+        "session.list": { sessions: [{ id: 7, name: "old", project_root: "/p" }] },
+        "session.attach": { id: 7, name: "old", runId: 8, runName: "r" },
+        "session.rename": { id: 7, name: "new" },
+    });
+    const code = await captureStdout(async () => assert.equal(await runSessionRename(rpc, "old", "new", { json: false }), 0));
+    const seq = calls.map((c) => c.method);
+    assert.deepEqual(seq, ["session.list", "session.attach", "session.rename"]);
+    assert.deepEqual(calls.find((c) => c.method === "session.rename")?.params, { name: "new" });
+    assert.match(code, /renamed "old" → "new"/);
+});
+
+test("runSessionRename: unknown session → exit 1, no rename attempted", async () => {
+    const { rpc, calls } = fakeRpc({ "session.list": { sessions: [] } });
+    assert.equal(await runSessionRename(rpc, "ghost", "x", { json: false }), 1);
+    assert.equal(calls.some((c) => c.method === "session.rename"), false);
+});
 
 // ─── runModels ────────────────────────────────────────────────────────
 

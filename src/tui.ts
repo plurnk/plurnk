@@ -66,7 +66,8 @@ export const TUI_HELP = [
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
-    "  Alt-m/s/r/l/y/n/h                  quick verbs: models sessions runs log yolo new help",
+    "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models sessions runs",
+    "                                     log yolo new members stop · Alt-h help",
 ].join("\n") + "\n";
 
 // The non-submitting newline keys, by their raw byte sequence (post paste
@@ -87,21 +88,22 @@ export const NL_MARK = "↵";
 export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK, "\n");
 
 // Muscle-memory quick-keys, converged with plurnk.nvim's `<leader>a<letter>`
-// mnemonics. Delivered as Alt-<letter> (ESC+letter) because Ctrl-<letter>
-// collides with terminal/readline control codes — Ctrl-m IS Enter, Ctrl-s is
-// XOFF, Ctrl-i is Tab, and readline owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped
-// (readline word-ops). The letter matches nvim; the modifier is what a terminal
-// can actually carry.
+// mnemonics — SAME CASE as nvim (lowercase m/s/x, capital R/L/Y/N/M), which
+// Alt-<letter> can carry (Alt-m = `ESC m`, Alt-M = `ESC M` — distinct bytes).
+// Delivered as Alt not Ctrl because Ctrl-<letter> collides with terminal/
+// readline control codes: Ctrl-m IS Enter, Ctrl-Shift-m is ALSO Enter (Shift
+// doesn't change a control code), Ctrl-s is XOFF, Ctrl-i is Tab, and readline
+// owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped (readline word-ops).
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
-    m: "/models", s: "/sessions", r: "/runs", l: "/log",
-    y: "/yolo", n: "/new", h: "/help",
+    m: "/models", s: "/sessions", R: "/runs", L: "/log",
+    Y: "/yolo", N: "/new", M: "/members", x: "/stop", h: "/help",
 });
 
 // An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
-// or function key) mapped to its verb, or null. Reassembled by the paste filter
-// whether it arrives in one chunk or split.
+// or function key) mapped to its verb, or null. Case-sensitive (mirrors nvim).
+// Reassembled by the paste filter whether it arrives in one chunk or split.
 export const altShortcut = (forward: string): string | null => {
-    const m = forward.match(/^\x1b([a-z])$/);
+    const m = forward.match(/^\x1b([a-zA-Z])$/);
     return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
 };
 

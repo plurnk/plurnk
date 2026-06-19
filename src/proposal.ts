@@ -39,6 +39,13 @@ export interface ProposalParams {
 export const isServerResolved = ({ flags }: ProposalParams): boolean =>
     flags?.yolo === true || flags?.noProposals === true;
 
+// A broadcast SEND (op SEND, no target) is the model SPEAKING — not a
+// side-effecting op to accept/reject. It reaches the proposal path only via the
+// SEND[202]-parked vs proposal-202 collision (svc#255). Auto-accept it (the
+// only sensible resolution for speech) rather than freeze on a bogus review UI.
+export const isBroadcastProposal = (p: ProposalParams): boolean =>
+    p.op === "SEND" && (p.target == null || p.target.scheme === null);
+
 export interface Resolution {
     decision: "accept" | "reject" | "cancel";
     body?: string;

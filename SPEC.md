@@ -43,9 +43,9 @@ Options:
 | `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
-| `--pick <glob>` | string, repeatable | Membership overlay: admit files git misses (the sole source when headless). Maps to a `pick` constraint. Create-time / session-level. See §1.4. |
-| `--hide <glob>` | string, repeatable | Membership overlay: drop a tracked match. Maps to a `hide` constraint. See §1.4. |
-| `--view <glob>` | string, repeatable | Membership overlay: admit a member read-only. Maps to a `view` constraint. See §1.4. |
+| `--pick <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (the sole source when headless). Maps to a `pick` constraint. Create-time / session-level. See §1.4. |
+| `--hide <glob>` | string, repeatable | Membership overlay: block file(s) from manifest. Maps to a `hide` constraint. See §1.4. |
+| `--view <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (read-only). Maps to a `view` constraint. See §1.4. |
 | `--manifest-items <n>` | string | Session-open preview: `-1` full / `0` off / `N` first-N items of `plurnk://manifest.json` at turn 0. Create-time only. See §1.4. |
 | `--md <name=path>` | string, repeatable | Pin a markdown doc into the session (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
 
@@ -113,9 +113,9 @@ These flags shape what the session sees. The membership overlay flags map to **c
 
 **Membership overlay** — repeatable glob flags, sent as `constraints` on `session.create`:
 
-- `--pick <glob>` → `{effect: "pick", glob}` — admit files git misses (the sole source when headless).
-- `--hide <glob>` → `{effect: "hide", glob}` — drop a tracked match.
-- `--view <glob>` → `{effect: "view", glob}` — admit a member read-only.
+- `--pick <glob>` → `{effect: "pick", glob}` — track file(s) in manifest (the sole source when headless).
+- `--hide <glob>` → `{effect: "hide", glob}` — block file(s) from manifest.
+- `--view <glob>` → `{effect: "view", glob}` — track file(s) in manifest (read-only).
 
 Seeded atomically at `session.create` so turn-1's manifest is right with no follow-up RPC. On `--session` attach, each constraint is applied **live** via `session.constrain` (session-scoped, re-resolved immediately).
 

@@ -123,12 +123,12 @@ options:
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
       --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
                           seconds; exits 3 with "timedOut":true in the result.
-      --pick <glob>       membership overlay: admit files git misses (the sole
+      --pick <glob>       membership: track file(s) in manifest (the sole
                           source when headless). Repeatable.
-      --hide <glob>       membership overlay: drop a tracked match. Repeatable.
-      --view <glob>       membership overlay: admit a member read-only. Repeatable.
-      --repo <glob>       membership overlay: declare a git repo folder (its
-                          ls-files join membership), relative to project root. Repeatable.
+      --hide <glob>       membership: block file(s) from manifest. Repeatable.
+      --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
+      --repo <glob>       membership: track a git repo folder (its ls-files join
+                          the manifest), relative to project root. Repeatable.
       --manifest-items <n>  session-open preview: -1 full / 0 off / N first-N
                           items of plurnk://manifest.json at turn 0. Create-time.
       --md <name=path>    pin a markdown doc into the session (read at turn 0);

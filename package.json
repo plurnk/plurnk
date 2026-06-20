@@ -1,6 +1,6 @@
 {
   "name": "@plurnk/plurnk",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
   "type": "module",
   "license": "MIT",
@@ -27,7 +27,7 @@
     "build:dist": "tsc -p tsconfig.build.json",
     "build": "npm run build:dist",
     "prepare": "npm run build",
-    "test:tui": "node --test --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
+    "test:tui": "node --test --test-timeout=20000 --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
     "build:global:install": "npm run build && npm install -g .",
     "build:global:uninstall": "npm uninstall -g @plurnk/plurnk",
     "build:local:install": "node scripts/install-sandbox.mjs install",

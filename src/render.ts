@@ -35,7 +35,7 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
 export const sendSubGlyph = (status: number): string => {
     if (status === 102) return "⏳";   // continuing — more turns coming
     if (status === 202) return "💤";   // parked/waiting on an external event
-    if (status === 300) return "❓";   // needs a decision (multiple choices)
+    if (status === 300) return "🤔";   // needs a decision (multiple choices)
     if (status === 410) return "💥";   // directed SEND to a gone resource
     if (status === 499) return "✋";   // failed / aborted / cancelled
     if (status >= 200 && status < 300) return "✅";   // success / final

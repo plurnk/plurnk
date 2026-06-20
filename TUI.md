@@ -165,7 +165,7 @@ INDENT ORIGIN OP [SUB] STATUS PATH  EXTRA
 | INDENT   | Two spaces (visual offset from `>`) | `  `                                     |
 | ORIGIN   | `log_entries.origin` glyph          | 🤖 model / 🐹 client / ⚙️ system / 🔌 plugin |
 | OP       | Op glyph from §4                    | ✏️ EDIT / 📖 READ / 🔍 FIND / etc.        |
-| SUB      | Sub-status glyph (see §4.2)          | ✅ 200 / 💤 202 / ❓ 300 / ✋ 499 / ❌ 4xx-5xx |
+| SUB      | Sub-status glyph (see §4.2)          | ✅ 200 / 💤 202 / 🤔 300 / ✋ 499 / ❌ 4xx-5xx |
 | STATUS   | HTTP status code, 3 digits          | `201`, `404`, `200`                      |
 | PATH     | Full URI as typed by the source     | `known://france/capital`                 |
 | EXTRA    | Op-specific short context           | `"Paris"` (EDIT) / `→ 1 result` (FIND)   |
@@ -305,7 +305,7 @@ Aligned to the grammar's terminal SEND set `[102, 200, 202, 300, 499]` (plurnk-g
 | 102         | ⏳    | Continuing — more turns coming       |
 | 200 / 2xx   | ✅    | Success / final                      |
 | 202         | 💤    | Parked / waiting on an external event |
-| 300         | ❓    | Needs a decision (multiple choices)  |
+| 300         | 🤔    | Needs a decision (multiple choices)  |
 | 410         | 💥    | Directed SEND to a gone resource     |
 | 499         | ✋    | Failed / aborted / cancelled         |
 | 4xx / 5xx   | ❌    | Error (color carries 4xx vs 5xx)     |

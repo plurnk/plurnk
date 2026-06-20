@@ -15,6 +15,7 @@ import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
 interface LoopRunResult {
     loopId: number;
+    modelRunId?: number;   // the conversation's run (live on loop.run, svc 0.44.0)
     turnIds: number[];
     finalStatus: number;
     hitMaxTurns: boolean;
@@ -61,7 +62,7 @@ const entryCoord = (e: LogEntryWire): string => {
 export const buildJsonRecord = (input: {
     session: SessionResult; prompt: string; response: string;
     entries: LogEntryWire[]; telemetry: TelemetryEvent[];
-    result: { loopId: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
+    result: { loopId: number; modelRunId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
     wallMs: number; timedOut: boolean;
 }): Record<string, unknown> => {
     // Group ops by turn (turn_seq), preserving wire order within each turn, so
@@ -86,6 +87,7 @@ export const buildJsonRecord = (input: {
         hitMaxTurns: input.result.hitMaxTurns,
         timedOut: input.timedOut,
         loopId: input.result.loopId,
+        runId: input.result.modelRunId ?? null,   // the conversation's run, for correlation / `read --run`
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage !== undefined

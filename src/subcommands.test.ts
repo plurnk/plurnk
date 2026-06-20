@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead } from "./subcommands.ts";
+import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead, parseCoord } from "./subcommands.ts";
 import type Rpc from "./rpc.ts";
 
 interface RecordedCall { method: string; params: unknown }
@@ -257,4 +257,54 @@ test("runLogRead: only sends defined filters (no undefined keys)", async () => {
     const { rpc, calls } = fakeRpc({ "log.read": { status: 200, entries: [] } });
     await captureStdout(() => runLogRead(rpc, { json: false, filters: { limit: 10 } }));
     assert.deepEqual(calls[0].params, { limit: 10 });
+});
+
+// ─── plurnk read <L/T/S> (coordinate-addressed entry.read) ────────────
+
+test("parseCoord: accepts bare and zero-padded; rejects malformed", () => {
+    assert.deepEqual(parseCoord("3/1/2"), [3, 1, 2]);
+    assert.deepEqual(parseCoord("03/01/02"), [3, 1, 2]);
+    assert.equal(parseCoord("3/1"), null);          // too few
+    assert.equal(parseCoord("3/1/2/0"), null);      // too many
+    assert.equal(parseCoord("a/1/2"), null);        // non-numeric
+    assert.equal(parseCoord("3/-1/2"), null);       // negative
+});
+
+// log.read carries the entry content; runRead matches by coordinate.
+const coordEntry = (loop: number, turn: number, seq: number, over: Record<string, unknown> = {}): unknown => ({
+    id: loop * 100 + turn * 10 + seq, op: "READ", suffix: "", origin: "model", signal: null,
+    scheme: null, pathname: null, hostname: null, fragment: null, status_rx: 200,
+    loop_seq: loop, turn_seq: turn, sequence: seq, tx: null, rx: null, ...over,
+});
+
+test("runRead: matches the coordinate in log.read and emits the structured entry", async () => {
+    const target = coordEntry(3, 1, 2, { op: "READ", rx: { status: 200, content: "the read result" } });
+    const other = coordEntry(3, 1, 1);
+    const { rpc, calls } = fakeRpc({ "log.read": { status: 200, entries: [other, target] } });
+    const out = await captureStdout(() => runRead(rpc, "3/1/2", { json: true }));
+    assert.deepEqual(calls[0], { method: "log.read", params: {} });   // run-relative; attach picks the run
+    const doc = JSON.parse(out.trim());
+    assert.equal(doc.coord, "3/1/2");
+    assert.equal(doc.entry.op, "READ");
+    assert.ok(typeof doc.schemaVersion === "number");
+});
+
+test("runRead: text mode prints the entry body (rx.content); accepts zero-padded coords", async () => {
+    const target = coordEntry(3, 1, 2, { rx: { status: 200, content: "the body" } });
+    const { rpc } = fakeRpc({ "log.read": { status: 200, entries: [target] } });
+    const out = await captureStdout(() => runRead(rpc, "03/01/02", { json: false }));
+    assert.match(out, /the body/);
+});
+
+test("runRead: coordinate not in the attached run → exit 4 with a model-run hint", async () => {
+    const { rpc } = fakeRpc({ "log.read": { status: 200, entries: [] } });
+    const code = await runRead(rpc, "3/1/2", { json: false });
+    assert.equal(code, 4);
+});
+
+test("runRead: malformed coordinate → exit 64, never hits the wire", async () => {
+    const { rpc, calls } = fakeRpc({});
+    const code = await runRead(rpc, "nope", { json: false });
+    assert.equal(code, 64);
+    assert.equal(calls.length, 0);
 });

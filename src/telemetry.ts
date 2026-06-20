@@ -156,7 +156,7 @@ export const clientConnectionRefused = (url: string, cause: unknown): TelemetryE
     hints: [
         "The plurnk client needs the background daemon running.",
         "  1. Install the service:  npm i -g @plurnk/plurnk-service",
-        "  2. Configure your keys:  export OPENAI_API_KEY=\"your-key\"",
+        "  2. Configure your key:   export PLURNK_API_KEY=\"your-key\"",
         "  3. Start the daemon:     plurnk-service",
     ],
 });

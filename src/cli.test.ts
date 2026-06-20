@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatPlain, isTerminalBroadcast, formatJsonReply } from "./cli.ts";
+import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
 
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -97,40 +97,73 @@ test("isTerminalBroadcast: signal not a number → false", () => {
     assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: "200" as unknown as number })), false);
 });
 
-// ─── formatJsonReply ──────────────────────────────────────────────────
+// ─── buildJsonRecord (the complete client-observed run record) ────────
 
-test("formatJsonReply: null tx → empty", () => {
-    assert.equal(formatJsonReply(null), "");
+const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}): Parameters<typeof buildJsonRecord>[0] => ({
+    session: { id: 12, name: "sess" },
+    prompt: "what is the capital of France?",
+    response: "Paris",
+    entries: [
+        entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1 }),
+        entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
+    ],
+    telemetry: [{ source: "engine", kind: "note", message: "ok" }],
+    result: { loopId: 7, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 7000000000 } },
+    wallMs: 1234, timedOut: false,
+    ...over,
 });
 
-test("formatJsonReply: tx with null body → empty", () => {
-    assert.equal(formatJsonReply({ body: null }), "");
+test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
+    const doc = buildJsonRecord(recordInput()) as Record<string, unknown>;
+    assert.equal(doc.schemaVersion, JSON_SCHEMA_VERSION);
+    assert.equal(doc.response, "Paris");          // the jq -r .response common case
+    assert.equal(doc.finalStatus, 200);
+    assert.equal(doc.loopId, 7);
+    assert.equal(doc.turnCount, 2);
+    assert.deepEqual(doc.session, { id: 12, name: "sess" });
+    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000 });
 });
 
-test("formatJsonReply: json present → compact JSON.stringify (no double-wrap)", () => {
-    assert.equal(formatJsonReply({ body: { raw: '{"k":"v"}', json: { k: "v" } } }), '{"k":"v"}');
+test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate + target", () => {
+    const doc = buildJsonRecord(recordInput()) as { turns: Array<{ turn: number; ops: Array<Record<string, unknown>> }> };
+    assert.equal(doc.turns.length, 2);
+    assert.equal(doc.turns[0].turn, 1);
+    assert.deepEqual(doc.turns[0].ops[0], {
+        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, signal: null,
+    });
+    // the terminal SEND keeps its numeric signal
+    assert.equal(doc.turns[1].ops[0].signal, 200);
+    assert.equal(doc.turns[1].ops[0].target, null);
 });
 
-test("formatJsonReply: json is the literal value null → falls through to raw stringify", () => {
-    // json===null means parse failed; we should treat as non-JSON.
-    assert.equal(formatJsonReply({ body: { raw: "plain text", json: null } }), '"plain text"');
+test("buildJsonRecord: no usage → usage null; reason carried only when present", () => {
+    const noUsage = buildJsonRecord(recordInput({ result: { loopId: 1, turnIds: [1], finalStatus: 499, hitMaxTurns: false, reason: "client_timeout" } })) as Record<string, unknown>;
+    assert.equal(noUsage.usage, null);
+    assert.equal(noUsage.reason, "client_timeout");
+    assert.ok(!("reason" in (buildJsonRecord(recordInput()) as Record<string, unknown>)));
 });
 
-test("formatJsonReply: raw non-JSON string → JSON-string-literal wrap", () => {
-    assert.equal(formatJsonReply({ body: { raw: "Paris", json: null } }), '"Paris"');
+test("buildJsonRecord: round-trips through JSON.stringify as one valid document", () => {
+    const s = JSON.stringify(buildJsonRecord(recordInput()));
+    const parsed = JSON.parse(s);
+    assert.equal(parsed.response, "Paris");
+    assert.equal(parsed.telemetry[0].source, "engine");
 });
 
-test("formatJsonReply: escapes embedded quotes when wrapping raw", () => {
-    assert.equal(formatJsonReply({ body: { raw: 'she said "hi"', json: null } }), '"she said \\"hi\\""');
+// ─── buildJsonError (json mode fails as valid JSON too) ───────────────
+
+test("buildJsonError: schemaVersion + error shape + extras", () => {
+    const e = buildJsonError("rpc_error", "loop.run rejected", { method: "loop.run" }) as { schemaVersion: number; error: Record<string, unknown> };
+    assert.equal(e.schemaVersion, JSON_SCHEMA_VERSION);
+    assert.equal(e.error.kind, "rpc_error");
+    assert.equal(e.error.message, "loop.run rejected");
+    assert.equal(e.error.method, "loop.run");
+    JSON.parse(JSON.stringify(e)); // must be valid JSON
 });
 
-test("formatJsonReply: raw not a string → empty", () => {
-    assert.equal(formatJsonReply({ body: { raw: 42, json: null } }), "");
-});
+// ─── exitCodeForLoop (benchmark surface) ──────────────────────────────
 
-// ─── exitCodeForLoop / formatResultLine (benchmark surface) ───────────
-
-const { exitCodeForLoop, formatResultLine } = await import("./cli.ts");
+const { exitCodeForLoop } = await import("./cli.ts");
 
 test("exitCodeForLoop: 200 → 0", () => {
     assert.equal(exitCodeForLoop(200, false), 0);
@@ -148,30 +181,6 @@ test("exitCodeForLoop: 499 → 3 (cancellation)", () => {
 test("exitCodeForLoop: 4xx/5xx → 4 (failure ≠ cancel)", () => {
     assert.equal(exitCodeForLoop(500, false), 4);
     assert.equal(exitCodeForLoop(413, false), 4);
-});
-
-test("formatResultLine: greppable prefix + compact JSON + omitted reason", () => {
-    const line = formatResultLine({
-        loopId: 7, finalStatus: 200, turns: 3, wallMs: 1234,
-        hitMaxTurns: false, timedOut: false,
-        usage: { promptTokens: 456, completionTokens: 12, costPico: 0 },
-    });
-    assert.match(line, /^result: \{/);
-    const parsed = JSON.parse(line.slice("result: ".length));
-    assert.equal(parsed.loopId, 7);
-    assert.equal(parsed.promptTokens, 456);
-    assert.equal(parsed.timedOut, false);
-    assert.ok(!("reason" in parsed));
-});
-
-test("formatResultLine: reason carried when present; no usage → no token fields", () => {
-    const line = formatResultLine({
-        loopId: 1, finalStatus: 499, turns: 1, wallMs: 10,
-        hitMaxTurns: false, timedOut: true, reason: "client_timeout",
-    });
-    assert.match(line, /"timedOut":true/);
-    assert.match(line, /"reason":"client_timeout"/);
-    assert.doesNotMatch(line, /promptTokens/);
 });
 
 // ─── TUI verb helpers (converged language surface) ────────────────────
@@ -209,14 +218,3 @@ test("completer: plain text completes nothing", async () => {
     assert.equal(hits.length, 0);
 });
 
-test("formatResultLine: usage fields flatten into the envelope", () => {
-    const line = formatResultLine({
-        loopId: 2, finalStatus: 200, turns: 1, wallMs: 50,
-        hitMaxTurns: false, timedOut: false,
-        usage: { promptTokens: 800, completionTokens: 60, costPico: 1000 },
-    });
-    const parsed = JSON.parse(line.slice("result: ".length));
-    assert.equal(parsed.promptTokens, 800);
-    assert.equal(parsed.completionTokens, 60);
-    assert.equal(parsed.costPico, 1000);
-});

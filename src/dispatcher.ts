@@ -8,9 +8,9 @@ import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import Rpc, { RpcError } from "./rpc.ts";
-import { runCli } from "./cli.ts";
+import { runCli, buildJsonError } from "./cli.ts";
 import { runTui } from "./tui.ts";
-import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead } from "./subcommands.ts";
+import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
 import {
     TelemetryError,
@@ -69,12 +69,13 @@ const USAGE = `usage: plurnk [--json] [--session <name>] [--run <name>] [--model
        plurnk session rename <name> <newname> [--json]
        plurnk log read --session <name> [--run <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
+       plurnk read <loop>/<turn>/<seq> --session <name> [--run <name>] [--json]
 
 Connects to the plurnk-service daemon. Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
 enters the interactive REPL. Read-only subcommands (models / session list /
-log read) inspect daemon state without running a loop.
+log read / read <coord>) inspect daemon state without running a loop.
 
 env:
   PLURNK_URL            daemon WebSocket URL (default ws://127.0.0.1:3044)
@@ -88,12 +89,15 @@ env:
                         Empty string = headless (no project_root, file ops 400).
   PLURNK_YOLO           when truthy, auto-accept every proposal without prompting.
                         Client-side only — proposals still go through the wire.
+  PLURNK_JSON           when truthy, same as --json for one-shot runs.
 
 options:
   -h, --help              print this message and exit
-      --json              emit the terminal answer as a JSON value on stdout
-                          (compact, validated; non-JSON replies are wrapped as
-                          JSON string literals). CLI mode only.
+      --json              json OUTPUT MODE: one complete structured document on
+                          stdout (the whole client-observed record — turns/ops,
+                          telemetry, the answer at .response, usage), stderr
+                          silent, errors emitted as {"error":…}. Drill into one
+                          op's content with: plurnk read <coord> --json. CLI only.
       --session <name>    resume the named session; without it, a fresh session
                           is created. Overrides PLURNK_SESSION.
       --run <name>        resume (or create) the named run within the session.
@@ -146,6 +150,14 @@ subcommands:
 // fatal client signal uses the unified shape from telemetry.ts.
 const dieWith = (code: number, event: TelemetryEvent): never => {
     report(event);
+    process.exit(code);
+};
+
+// json-mode failure: a valid JSON error document on stdout (the consumer's
+// parser never chokes), paired with a non-zero exit. The json counterpart of
+// dieWith — text mode narrates errors to stderr, json mode emits structured.
+const dieJson = (code: number, kind: string, message: string, extra?: Record<string, unknown>): never => {
+    process.stdout.write(`${JSON.stringify(buildJsonError(kind, message, extra))}\n`);
     process.exit(code);
 };
 
@@ -291,6 +303,19 @@ const attachOrCreateSession = async (
     return session;
 };
 
+// Read-only subcommands (read / log read) inspect the CONVERSATION, which lives
+// in the session's model run — but a bare attach binds a fresh CLIENT run
+// (run-split). When the user didn't pin --run, re-attach the most-recent
+// origin="model" run so `read <coord> --session X` targets the conversation
+// instead of an empty client run. No model run yet (fresh session) → no-op.
+const attachConversationRun = async (rpc: Rpc, sessionId: number): Promise<void> => {
+    const { runs } = await rpc.call("session.runs", { id: sessionId }) as {
+        runs: Array<{ id: number; origin: string }>;
+    };
+    const model = runs.find((r) => r.origin === "model");   // session.runs is newest-first
+    if (model !== undefined) await rpc.call("session.attach", { id: sessionId, runId: model.id });
+};
+
 // Parse a string-valued integer flag, throwing if non-numeric. Used for
 // log.read filter flags (--loop / --turn / --since / --limit) since
 // parseArgs stores their raw string values regardless of intent.
@@ -361,11 +386,13 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--session (or PLURNK_SESSION)"));
         }
         // log.read requires an attached session — same resolution as the loop flows.
-        await attachOrCreateSession(rpc, {
+        const attached = await attachOrCreateSession(rpc, {
             sessionName: opts.sessionName,
             runName: opts.runName,
             projectRoot: opts.projectRoot,
         });
+        // Default to the conversation (model run) unless --run pins one.
+        if (opts.runName === undefined) await attachConversationRun(rpc, attached.id);
         const filters: LogReadFilters = {};
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
         const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
@@ -376,6 +403,28 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
         if (sinceId !== undefined) filters.sinceId = sinceId;
         if (limit !== undefined) filters.limit = limit;
         return await runLogRead(rpc, { json: opts.json, filters });
+    }
+
+    if (verb === "read") {
+        const coord = positionals[1];
+        if (coord === undefined) {
+            throw new TelemetryError(clientSubcommandMissingArgument("plurnk read", "<loop>/<turn>/<seq>"));
+        }
+        if (positionals.length > 2) {
+            throw new TelemetryError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
+        }
+        if (opts.sessionName === undefined) {
+            throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--session (or PLURNK_SESSION)"));
+        }
+        // The coordinate is run-relative — attach the same way log read does,
+        // defaulting to the conversation (model run) unless --run pins one.
+        const attached = await attachOrCreateSession(rpc, {
+            sessionName: opts.sessionName,
+            runName: opts.runName,
+            projectRoot: opts.projectRoot,
+        });
+        if (opts.runName === undefined) await attachConversationRun(rpc, attached.id);
+        return await runRead(rpc, coord, { json: opts.json });
     }
 
     throw new TelemetryError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
@@ -424,10 +473,14 @@ export const main = async (argv: string[]): Promise<void> => {
 
     if (values.help) { process.stdout.write(USAGE); process.exit(0); }
 
+    // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
+    // read). One complete document on stdout, stderr silent, structured errors.
+    const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_JSON ?? "").toLowerCase());
+
     // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
     // a known read-only subcommand (models / session / log), we skip stdin
     // reading and prompt construction entirely.
-    const SUBCOMMANDS = ["models", "session", "log"] as const;
+    const SUBCOMMANDS = ["models", "session", "log", "read"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -439,8 +492,9 @@ export const main = async (argv: string[]): Promise<void> => {
         prompt = positionalPrompt.length > 0 && stdinPrompt.length > 0
             ? `${positionalPrompt}\n\n${stdinPrompt}`
             : positionalPrompt || stdinPrompt;
-        if (values.json === true && prompt.length === 0) {
-            dieWith(64, clientFlagMissingDependency("--json", "a prompt (CLI mode only)"));
+        if (json && prompt.length === 0) {
+            if (values.json === true) dieJson(64, "usage", "--json needs a prompt (CLI mode only)", { flag: "--json" });
+            // PLURNK_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
         }
     }
 
@@ -482,6 +536,7 @@ export const main = async (argv: string[]): Promise<void> => {
     try {
         await rpc.connect();
     } catch (cause) {
+        if (json) dieJson(1, "connection_refused", cause instanceof Error ? cause.message : String(cause), { url });
         dieWith(1, clientConnectionRefused(url, cause));
     }
 
@@ -501,8 +556,6 @@ export const main = async (argv: string[]): Promise<void> => {
     } catch { /* discover failing will surface on the real call anyway */ }
 
     try {
-        const json = values.json === true;
-
         if (isSubcommand) {
             const exitCode = await runSubcommand(rpc, positionals, {
                 json, sessionName, runName, projectRoot, values,
@@ -524,6 +577,16 @@ export const main = async (argv: string[]): Promise<void> => {
         const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, yolo, loopFlags, maxTurns, timeoutSec });
         process.exit(exitCode);
     } catch (cause) {
+        // json mode: a structured error document on stdout (valid JSON even on
+        // failure), paired with the right exit code. Text mode narrates to stderr.
+        if (json) {
+            const kind = cause instanceof RpcError ? "rpc_error"
+                : cause instanceof TelemetryError ? cause.event.kind : "runtime_error";
+            const extra = cause instanceof RpcError ? { method: cause.method } : undefined;
+            const code = cause instanceof TelemetryError ? cause.exitCode : 1;
+            await rpc.close();
+            dieJson(code, kind, cause instanceof Error ? cause.message : String(cause), extra);
+        }
         if (cause instanceof TelemetryError) {
             report(cause.event);
             await rpc.close();

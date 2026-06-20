@@ -22,7 +22,7 @@ export const OP_GLYPHS: Record<string, string> = {
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🤖",
-    client: "👤",
+    client: "🐹",   // the user/client — the brand head (was the generic 👤)
     plurnk: "🧰",   // the runtime actor (§14.7)
     plugin: "🔌",
 };

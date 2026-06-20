@@ -73,8 +73,11 @@ export const renderBody = (op: string, body: string): string => {
     }).join("\n");
 };
 
-export const formatTarget = ({ scheme, pathname }: ProposalParams["target"]): string => {
-    if (scheme === null) return "(no target)";
+// EXEC with no explicit target runs in the default shell (`sh`) — name it,
+// don't render "(no target)" as if the proposal were malformed. Every other op
+// without a target is genuinely targetless.
+export const formatTarget = ({ scheme, pathname }: ProposalParams["target"], op?: string): string => {
+    if (scheme === null) return op === "EXEC" ? "sh" : "(no target)";
     return `${scheme}://${pathname ?? ""}`;
 };
 
@@ -120,7 +123,7 @@ const editInEditor = async (body: string, op: string): Promise<string | null> =>
 // stderr) and the non-blocking TUI review (writes it to stdout). No I/O here.
 export const renderProposalMenu = (params: ProposalParams): string => {
     const nl = params.body.endsWith("\n") ? "" : "\n";
-    return `\n${BOLD}── proposal ${params.op} ${formatTarget(params.target)} ──${RESET}\n`
+    return `\n${BOLD}── proposal ${params.op} ${formatTarget(params.target, params.op)} ──${RESET}\n`
         + renderBody(params.op, params.body) + nl
         + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
 };

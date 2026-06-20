@@ -152,7 +152,7 @@ plurnk v0.1.0 · daemon ws://127.0.0.1:3044 · session 47 · ctrl-c to quit
 $
 ```
 
-The user's direct DSL dispatch (line 2) shows origin 👤 (client) instead of 🤖 (model), making manual ops visually distinct in the waterfall.
+The user's direct DSL dispatch (line 2) shows origin 🐹 (client) instead of 🤖 (model), making manual ops visually distinct in the waterfall.
 
 ### §3.4 Line format
 
@@ -163,7 +163,7 @@ INDENT ORIGIN OP [SUB] STATUS PATH  EXTRA
 | Field    | Source                              | Example                                  |
 |----------|-------------------------------------|------------------------------------------|
 | INDENT   | Two spaces (visual offset from `>`) | `  `                                     |
-| ORIGIN   | `log_entries.origin` glyph          | 🤖 model / 👤 client / ⚙️ system / 🔌 plugin |
+| ORIGIN   | `log_entries.origin` glyph          | 🤖 model / 🐹 client / ⚙️ system / 🔌 plugin |
 | OP       | Op glyph from §4                    | ✏️ EDIT / 📖 READ / 🔍 FIND / etc.        |
 | SUB      | Sub-status glyph (see §4.2)          | ✅ 200 / 💤 202 / ❓ 300 / ✋ 499 / ❌ 4xx-5xx |
 | STATUS   | HTTP status code, 3 digits          | `201`, `404`, `200`                      |
@@ -185,9 +185,9 @@ EXTRA examples per op:
 
 A SEND with no target URI is the model's reply to the user. It is the only op whose payload IS content rather than telemetry, and the only op a human reader consumes as conversation rather than as a trace. It deliberately breaks the one-op-one-line discipline of the waterfall.
 
-**Conversation stripes (v0.7.0; user half revised v0.9.2; recolored green v0.29.0).** Model speech carries a full-width band in the project green `#148800` (truecolor `48;2;20;136;0` when `COLORTERM` advertises it, else the nearest 256-color `48;5;28`; 102/200/499 alike) so the dialogue pops against the operation grid — painted to the right edge via `\x1b[K`, self-contained foreground, theme-safe. A 2xx on the band drops its green foreground (band-white) so it doesn't read green-on-green. The user's half is the line they typed at the prompt: once plurnk-service#198 made the prompt entry broadcast live, banding it duplicated every prompt, and erasing the typed echo would mean terminal-row math over emoji/nerdfont widths — the rabbit hole this client refuses by policy. The user's typed line is the pre-rendered row `  👤 ✅ 201 : <text>` — width-stable glyphs only. Two empirical rounds got here: the full row including ✉️ drifted one column (VS16 cell-width disagreement × readline's per-refresh cursor repositioning); the bare-`: ` revert killed the drift but left the user's line as a lonely colon against a dense glyph grid. The surviving policy: VS16/ambiguous sequences are banned from the PROMPT; plain East-Asian-Wide emoji (👤, ✅) are allowed; OUTPUT lines render anything (no cursor math there). Model = green band, user = their own aligned line, which stands out precisely by being the only glyph-anchored UNBANDED line.
+**Conversation stripes (v0.7.0; user half revised v0.9.2; recolored green v0.29.0).** Model speech carries a full-width band in the project green `#148800` (truecolor `48;2;20;136;0` when `COLORTERM` advertises it, else the nearest 256-color `48;5;28`; 102/200/499 alike) so the dialogue pops against the operation grid — painted to the right edge via `\x1b[K`, self-contained foreground, theme-safe. A 2xx on the band drops its green foreground (band-white) so it doesn't read green-on-green. The user's half is the line they typed at the prompt: once plurnk-service#198 made the prompt entry broadcast live, banding it duplicated every prompt, and erasing the typed echo would mean terminal-row math over emoji/nerdfont widths — the rabbit hole this client refuses by policy. The user's typed line is the pre-rendered row `  🐹 ✅ 201 : <text>` — width-stable glyphs only. Two empirical rounds got here: the full row including ✉️ drifted one column (VS16 cell-width disagreement × readline's per-refresh cursor repositioning); the bare-`: ` revert killed the drift but left the user's line as a lonely colon against a dense glyph grid. The surviving policy: VS16/ambiguous sequences are banned from the PROMPT; plain East-Asian-Wide emoji (🐹, ✅) are allowed; OUTPUT lines render anything (no cursor math there). Model = green band, user = their own aligned line, which stands out precisely by being the only glyph-anchored UNBANDED line.
 
-**Stripes stay scarce (policy).** The contrast economy is: one band (model speech, green), one deliberate absence (the user's `👤 :` line), everything else is plain dim field. Banding more categories turns the waterfall into a quilt — when everything is a stripe, stripeless stops signifying, and the eye is back to parsing glyphs instead of seeing color mass. Telemetry already carries its 📡 discriminator; streams live in their own splits; neither gets paint.
+**Stripes stay scarce (policy).** The contrast economy is: one band (model speech, green), one deliberate absence (the user's `🐹 :` line), everything else is plain dim field. Banding more categories turns the waterfall into a quilt — when everything is a stripe, stripeless stops signifying, and the eye is back to parsing glyphs instead of seeing color mass. Telemetry already carries its 📡 discriminator; streams live in their own splits; neither gets paint.
 
 Format:
 
@@ -315,7 +315,7 @@ Aligned to the grammar's terminal SEND set `[102, 200, 202, 300, 499]` (plurnk-g
 | Origin | Glyph |
 |--------|-------|
 | model  | 🤖    |
-| client | 👤    |
+| client | 🐹    |
 | system | ⚙️    |
 | plugin | 🔌    |
 

@@ -32,7 +32,7 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<stri
         cols: 100,
         rows: 30,
         cwd: process.cwd(),
-        env: { ...(process.env as Record<string, string>), PLURNK_URL: url, NO_COLOR: "1", ...extraEnv },
+        env: { ...(process.env as Record<string, string>), PLURNK_WS: url, NO_COLOR: "1", ...extraEnv },
     });
 
     let buf = "";

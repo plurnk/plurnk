@@ -53,14 +53,14 @@ Env:
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PLURNK_URL` | `ws://127.0.0.1:3044` | Daemon WebSocket URL |
+| `PLURNK_WS` | `ws://127.0.0.1:3044` | Daemon WebSocket URL |
 | `PLURNK_SESSION` | _unset_ | Session name to resume. Equivalent to `--session`. |
 | `PLURNK_RUN` | _unset_ | Run name to resume/create. Equivalent to `--run`. Requires `PLURNK_SESSION`. |
 | `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
 | `PLURNK_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
-**Cascading env.** Three layers, highest precedence first: explicit shell exports → project `./.env` → user-level `$XDG_CONFIG_HOME/plurnk/env` (fallback `~/.config/plurnk/env`). Both files are optional. The user file is where per-machine defaults live (`PLURNK_URL`, `PLURNK_MODEL`); the project `.env` overrides per-repo; the shell wins ad hoc.
+**Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.example` (the floor plurnk-service ships and copies on first run). All layers optional; the client works with no config at all. The client reads exactly ONE knob from this shared home — `PLURNK_WS` (which daemon to reach) — and ships no `.env.example` of its own; the floor and everything else there are the daemon's.
 
 ### §1.1 Sessions and runs
 
@@ -159,7 +159,7 @@ Consequence:
 
 ### §2.2 Flow
 
-1. Open WebSocket to `PLURNK_URL`.
+1. Open WebSocket to `PLURNK_WS`.
 2. Resolve session per §1.1 (`session.create` or `session.attach`); write `session:` and `prompt:` lines to stderr.
 3. Subscribe to `log/entry` notifications; per-action trace lines go to stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
 4. `rpc.call("loop.run", { prompt })` → receive `{loopId, turnIds, finalStatus, hitMaxTurns}`.
@@ -524,7 +524,7 @@ CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt
 A conforming `plurnk` client:
 
 1. Speaks JSON-RPC 2.0 over WebSocket per plurnk-service SPEC §13.
-2. Connects to the URL in `PLURNK_URL` (or its default).
+2. Connects to the URL in `PLURNK_WS` (or its default).
 3. Resolves the session per §1.1 (`session.create` by default, or `session.attach` when `--session`/`PLURNK_SESSION` is set); uses the returned session for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping server-resolved proposals (`flags.yolo` / `flags.noProposals`) entirely.

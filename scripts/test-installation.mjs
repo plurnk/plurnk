@@ -22,7 +22,7 @@ const runBin = (args, env = {}) => {
     try {
         const stdout = execFileSync(bin, args, {
             cwd: sandbox, encoding: "utf8", input: "",
-            env: { ...process.env, PLURNK_URL: "ws://127.0.0.1:59999", ...env },
+            env: { ...process.env, PLURNK_WS: "ws://127.0.0.1:59999", ...env },
         });
         return { code: 0, stdout, stderr: "" };
     } catch (e) {

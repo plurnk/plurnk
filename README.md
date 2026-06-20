@@ -11,7 +11,7 @@ export PLURNK_API_KEY="…"              # your plurnk key (read by the daemon)
 plurnk-service                          # start the background daemon
 ```
 
-The client is a pure WebSocket client: it connects to a daemon at `PLURNK_URL` (default `ws://127.0.0.1:3044`) and never starts one. Install and run `@plurnk/plurnk-service` separately (it has its own lean install story). All engine config — models, turns, providers — lives in the daemon's environment.
+The client is a pure WebSocket client: it connects to a daemon at `PLURNK_WS` (default `ws://127.0.0.1:3044`) and never starts one. Install and run `@plurnk/plurnk-service` separately (it has its own lean install story). All engine config — models, turns, providers — lives in the daemon's environment.
 
 ## use
 
@@ -41,7 +41,7 @@ Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and DSL ops (
 
 **Key flags:** `--model <alias>` · `--yolo` · `--json` · `--session/--run <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--manifest-items <n>` · `--md NAME=path`.
 
-**Env:** `PLURNK_URL` (daemon) · `PLURNK_SESSION` / `PLURNK_RUN` (resume) · `PLURNK_MODEL` · `PLURNK_YOLO` · `PLURNK_PROJECT_ROOT`. Cascade: shell > `./.env` > `$XDG_CONFIG_HOME/plurnk/env`.
+**Env:** `PLURNK_WS` (the one knob the client needs — daemon URL, default `ws://127.0.0.1:3044`) · `PLURNK_SESSION` / `PLURNK_RUN` (resume) · `PLURNK_MODEL` · `PLURNK_YOLO` · `PLURNK_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.example` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell. The client ships no `.env.example` of its own — the floor is the daemon's; the client just reads `PLURNK_WS` from it (and works with no config at all).
 
 ## what plurnk is
 

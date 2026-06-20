@@ -36,7 +36,7 @@ interface RunResult { code: number; stdout: string; stderr: string }
 // Run the plurnk binary against the test daemon. Returns exit code + captured streams.
 const runPlurnk = async (args: string[]): Promise<RunResult> => {
     const child = spawn("node", [PLURNK_BIN, ...args], {
-        env: { ...process.env, PLURNK_URL: daemon!.url, NO_COLOR: "1" },
+        env: { ...process.env, PLURNK_WS: daemon!.url, NO_COLOR: "1" },
         stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "", stderr = "";

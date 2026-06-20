@@ -704,7 +704,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);
-            process.stdout.write("\n");
+            // Steal pi's nicety: hand back the one-liner to pick this session up.
+            process.stdout.write(`\n  \x1b[2mresume this session:  plurnk --session ${current.name}\x1b[0m\n`);
             resolve();
         });
 

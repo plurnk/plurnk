@@ -22,9 +22,17 @@ export const locateDaemon = async (): Promise<string | null> => {
     if (envPath !== undefined && envPath.length > 0) {
         try { await access(envPath, fsConstants.X_OK); return envPath; } catch { /* fall through */ }
     }
-    // The service's bin migrated .js → .ts (plurnk-service #183); probe both.
-    for (const name of ["plurnk-service.ts", "plurnk-service.js"]) {
-        const sibling = resolve(__dirname, `../../../plurnk-service/bin/${name}`);
+    // The service entrypoint has moved over time: bin/plurnk-service.js →
+    // bin/plurnk-service.ts (#183) → src/service.ts (bin: dist/service.js,
+    // 2026-06-20). Probe newest-first, keeping the old paths for older checkouts.
+    const candidates = [
+        "src/service.ts",
+        "dist/service.js",
+        "bin/plurnk-service.ts",
+        "bin/plurnk-service.js",
+    ];
+    for (const rel of candidates) {
+        const sibling = resolve(__dirname, `../../../plurnk-service/${rel}`);
         try { await access(sibling, fsConstants.R_OK); return sibling; } catch { /* not present */ }
     }
     return null;

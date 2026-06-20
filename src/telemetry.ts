@@ -154,10 +154,10 @@ export const clientConnectionRefused = (url: string, cause: unknown): TelemetryE
     message: cause instanceof Error ? cause.message : String(cause),
     url,
     hints: [
-        "The plurnk client needs the background daemon running.",
-        "  1. Install the service:  npm i -g @plurnk/plurnk-service",
-        "  2. Configure your key:   export PLURNK_API_KEY=\"your-key\"",
-        "  3. Start the daemon:     plurnk-service",
+        "No daemon is running — the plurnk client connects to one.",
+        "  Set your key:              export PLURNK_API_KEY=\"your-key\"",
+        "  Quick start (no install):  npx @plurnk/plurnk-service start",
+        "  Or install it:             npm i -g @plurnk/plurnk-service && plurnk-service",
     ],
 });
 

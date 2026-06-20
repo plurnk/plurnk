@@ -4,14 +4,23 @@ Terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service) �
 
 ## install
 
+Try it instantly — zero install, npx fetches both (always latest):
+
 ```
-npm install -g @plurnk/plurnk          # the client — lean, just a WebSocket client
-npm install -g @plurnk/plurnk-service  # the daemon — install + run it separately
-export PLURNK_API_KEY="…"              # your plurnk key (read by the daemon)
+export PLURNK_API_KEY="…"               # your plurnk key
+npx @plurnk/plurnk-service start         # daemon — terminal 1
+npx @plurnk/plurnk "what is 2+2?"        # client — terminal 2
+```
+
+Or install for keeps:
+
+```
+npm install -g @plurnk/plurnk           # the client — lean, just a WebSocket client
+npm install -g @plurnk/plurnk-service   # the daemon — its own (lean) install story
 plurnk-service                          # start the background daemon
 ```
 
-The client is a pure WebSocket client: it connects to a daemon at `PLURNK_WS` (default `ws://127.0.0.1:3044`) and never starts one. Install and run `@plurnk/plurnk-service` separately (it has its own lean install story). All engine config — models, turns, providers — lives in the daemon's environment.
+The client is a pure WebSocket client: it connects to a daemon at `PLURNK_WS` (default `ws://127.0.0.1:3044`) and never starts one — the daemon is installed and run separately. All engine config — models, turns, providers — lives in the daemon's environment.
 
 ## use
 

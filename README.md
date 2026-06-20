@@ -5,12 +5,13 @@ Terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service) �
 ## install
 
 ```
-npm install -g @plurnk/plurnk          # bundles the daemon (optional dep)
+npm install -g @plurnk/plurnk          # the client — lean, just a WebSocket client
+npm install -g @plurnk/plurnk-service  # the daemon — install + run it separately
 export PLURNK_API_KEY="…"              # your plurnk key (read by the daemon)
 plurnk-service                          # start the background daemon
 ```
 
-The client only needs the daemon reachable at `PLURNK_URL` (default `ws://127.0.0.1:3044`). All engine config — models, turns, providers — lives in the daemon's environment.
+The client is a pure WebSocket client: it connects to a daemon at `PLURNK_URL` (default `ws://127.0.0.1:3044`) and never starts one. Install and run `@plurnk/plurnk-service` separately (it has its own lean install story). All engine config — models, turns, providers — lives in the daemon's environment.
 
 ## use
 

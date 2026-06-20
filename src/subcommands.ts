@@ -4,7 +4,7 @@
 // mode per SPEC.md §2.1.
 
 import type Rpc from "./rpc.ts";
-import { formatPlain } from "./cli.ts";
+import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
 import { report, clientSubcommandSessionNotFound, clientSubcommandSessionAmbiguous } from "./telemetry.ts";
 
@@ -198,5 +198,61 @@ export const runLogRead = async (
     for (const entry of entries) {
         process.stdout.write(`${formatPlain(entry)}\n`);
     }
+    return 0;
+};
+
+// ─── plurnk read <L/T/S> ──────────────────────────────────────────────
+
+// Drill into ONE log entry by its L/T/S coordinate — the address on every
+// waterfall line. Resolved via log.read on the attached run + a client-side
+// coordinate match: log.read carries each entry's full tx/rx, and (unlike
+// `entry.read({target:"log:///L/T/S"})`, which 404s on this daemon — SPEC drift,
+// see Open ecosystem deps) it actually returns the content. The coordinate is
+// run-relative, so target the conversation's run with `--run <model-run>`.
+// Accepts zero-padded display form (03/01/02) or bare (3/1/2) alike.
+export const parseCoord = (raw: string): [number, number, number] | null => {
+    const parts = raw.split("/");
+    if (parts.length !== 3) return null;
+    const nums = parts.map((p) => (/^\d+$/.test(p.trim()) ? Number(p) : NaN));
+    if (nums.some((n) => !Number.isInteger(n) || n < 0)) return null;
+    return [nums[0], nums[1], nums[2]];
+};
+
+// The human-readable body of an entry: a READ's result content, else the op's
+// own body (SEND/PLAN/EDIT carry it on tx.body), else null → caller pretty-prints.
+const extractEntryContent = (entry: LogEntryWire): string | null => {
+    const rx = entry.rx as { content?: unknown } | null;
+    const tx = entry.tx as { body?: unknown } | null;
+    if (typeof rx?.content === "string" && rx.content.length > 0) return rx.content;
+    const body = tx?.body;
+    if (typeof body === "string" && body.length > 0) return body;
+    // SEND/broadcast bodies arrive as { raw, json } — surface the raw text.
+    if (body !== null && typeof body === "object") {
+        const raw = (body as { raw?: unknown }).raw;
+        if (typeof raw === "string" && raw.length > 0) return raw;
+    }
+    return null;
+};
+
+export const runRead = async (rpc: Rpc, coord: string, opts: { json: boolean }): Promise<number> => {
+    const parsed = parseCoord(coord);
+    if (parsed === null) {
+        process.stderr.write("usage: plurnk read <loop>/<turn>/<seq>   (e.g. plurnk read 3/1/2)\n");
+        return 64;
+    }
+    const [loop, turn, seq] = parsed;
+    const { entries } = await rpc.call("log.read", {}) as LogReadResult;
+    const match = entries.find((e) => e.loop_seq === loop && e.turn_seq === turn && e.sequence === seq);
+    if (match === undefined) {
+        process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached run`
+            + ` (the conversation lives in the model run — try --run <model-run>)\n`);
+        return 4;
+    }
+    if (opts.json) {
+        process.stdout.write(`${JSON.stringify({ schemaVersion: JSON_SCHEMA_VERSION, coord: `${loop}/${turn}/${seq}`, entry: match })}\n`);
+        return 0;
+    }
+    // Text mode: the entry's content if it has a body, else the entry structure.
+    process.stdout.write(`${extractEntryContent(match) ?? JSON.stringify(match, null, 2)}\n`);
     return 0;
 };

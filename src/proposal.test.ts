@@ -124,3 +124,9 @@ test("formatTarget: scheme + pathname → 'scheme://pathname'", () => {
 test("formatTarget: scheme + null pathname → 'scheme://'", () => {
     assert.equal(formatTarget({ scheme: "exec", pathname: null }), "exec://");
 });
+
+test("formatTarget: EXEC with no target → 'sh' (the default shell), not '(no target)'", () => {
+    assert.equal(formatTarget({ scheme: null, pathname: null }, "EXEC"), "sh");
+    // Non-EXEC ops with no target are genuinely targetless.
+    assert.equal(formatTarget({ scheme: null, pathname: null }, "EDIT"), "(no target)");
+});

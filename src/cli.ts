@@ -33,25 +33,77 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
     return 3;
 };
 
-// Machine-readable result envelope: one `result: {json}` line on stderr —
-// stdout stays the pure answer; harnesses grep `^result: `.
-export const formatResultLine = (r: {
-    loopId: number; finalStatus: number; turns: number; wallMs: number;
-    hitMaxTurns: boolean; timedOut: boolean; reason?: string; usage?: LoopUsage;
-}): string => {
-    const payload: Record<string, unknown> = {
-        loopId: r.loopId, finalStatus: r.finalStatus, turns: r.turns,
-        wallMs: r.wallMs, hitMaxTurns: r.hitMaxTurns, timedOut: r.timedOut,
-    };
-    if (r.reason !== undefined) payload.reason = r.reason;
-    // Real provider usage (plurnk-service #197); absent only for non-model ops.
-    if (r.usage !== undefined) {
-        payload.promptTokens = r.usage.promptTokens;
-        payload.completionTokens = r.usage.completionTokens;
-        payload.costPico = r.usage.costPico;
-    }
-    return `result: ${JSON.stringify(payload)}`;
+// `--json` / `PLURNK_JSON` is a distinct OUTPUT MODE, not a flag on the text
+// output: stdout carries ONE complete structured document and nothing else,
+// stderr stays silent. The CLI becomes the integration layer — shell out,
+// parse, no third-party client needed. The document is the complete
+// CLIENT-OBSERVED record (every turn's ops with target/status, telemetry, the
+// answer, usage) — NOT op CONTENT: under co-location the consumer is on the
+// same filesystem and can `plurnk read L/T/S` any entry on demand, the same
+// OPEN/FOLD discipline the engine runs on. Bump on any breaking schema change.
+export const JSON_SCHEMA_VERSION = 1;
+
+const entryTarget = (e: LogEntryWire): string | null => {
+    if (e.pathname === null) return null;
+    return e.scheme !== null
+        ? `${e.scheme}://${e.hostname ?? ""}${e.pathname}${e.fragment !== null ? `#${e.fragment}` : ""}`
+        : e.pathname;
 };
+
+// The logical L/T/S coordinate — the address `plurnk read` takes.
+const entryCoord = (e: LogEntryWire): string => {
+    const p = (n: number): string => String(n).padStart(2, "0");
+    return `${p(e.loop_seq)}/${p(e.turn_seq)}/${p(e.sequence)}`;
+};
+
+// The complete client-observed record of one loop run, as a plain object ready
+// to JSON.stringify. Pure → unit-testable without a daemon.
+export const buildJsonRecord = (input: {
+    session: SessionResult; prompt: string; response: string;
+    entries: LogEntryWire[]; telemetry: TelemetryEvent[];
+    result: { loopId: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
+    wallMs: number; timedOut: boolean;
+}): Record<string, unknown> => {
+    // Group ops by turn (turn_seq), preserving wire order within each turn, so
+    // each turn/op stays a standalone object — NDJSON-able later without rework.
+    const byTurn = new Map<number, Array<Record<string, unknown>>>();
+    for (const e of input.entries) {
+        const ops = byTurn.get(e.turn_seq) ?? [];
+        ops.push({
+            coord: entryCoord(e), op: e.op, origin: e.origin,
+            target: entryTarget(e), status: e.status_rx,
+            signal: typeof e.signal === "number" ? e.signal : null,
+        });
+        byTurn.set(e.turn_seq, ops);
+    }
+    const turns = [...byTurn.entries()].sort((a, b) => a[0] - b[0]).map(([turn, ops]) => ({ turn, ops }));
+    const doc: Record<string, unknown> = {
+        schemaVersion: JSON_SCHEMA_VERSION,
+        session: { id: input.session.id, name: input.session.name },
+        prompt: input.prompt,
+        response: input.response,
+        finalStatus: input.result.finalStatus,
+        hitMaxTurns: input.result.hitMaxTurns,
+        timedOut: input.timedOut,
+        loopId: input.result.loopId,
+        turnCount: input.result.turnIds.length,
+        wallMs: input.wallMs,
+        usage: input.result.usage !== undefined
+            ? { promptTokens: input.result.usage.promptTokens, completionTokens: input.result.usage.completionTokens, costPico: input.result.usage.costPico }
+            : null,
+        turns,
+        telemetry: input.telemetry,
+    };
+    if (input.result.reason !== undefined) doc.reason = input.result.reason;
+    return doc;
+};
+
+// In json mode, even a failure emits valid JSON on stdout — the consumer's
+// parser never chokes. Pairs with a non-zero exit code (both channels).
+export const buildJsonError = (kind: string, message: string, extra?: Record<string, unknown>): Record<string, unknown> => ({
+    schemaVersion: JSON_SCHEMA_VERSION,
+    error: { kind, message, ...(extra ?? {}) },
+});
 
 export const formatPlain = (entry: LogEntryWire): string => {
     // Render what the wire says — no synthesis. Bare pathname when scheme
@@ -76,15 +128,6 @@ export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>
     && entry.pathname === null
     && typeof entry.signal === "number"
     && (entry.signal === 200 || entry.signal === 499);
-
-export const formatJsonReply = (txUnknown: unknown): string => {
-    const tx = txUnknown as { body?: { raw?: unknown; json?: unknown } | null } | null;
-    if (tx === null || tx === undefined || tx.body === null || tx.body === undefined) return "";
-    const { raw, json } = tx.body;
-    if (json !== null && json !== undefined) return JSON.stringify(json);
-    if (typeof raw !== "string") return "";
-    return JSON.stringify(raw);
-};
 
 // One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
 // conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus.
@@ -114,23 +157,38 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     json: boolean; modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number;
 }): Promise<number> => {
-    // stdout is the program's product (the terminal answer); stderr is its narration.
-    // Per SPEC.md §2: `plurnk "X" > answer.txt` captures just the terminal broadcast body.
-    process.stderr.write(`session: ${session.name}\n`);
-    process.stderr.write(`prompt: ${prompt}\n\n`);
+    // Two output modes. text (default): stdout = the answer, stderr = the human
+    // trace (`plurnk "X" > answer.txt` captures just the broadcast body, SPEC §2).
+    // json: accumulate everything, stay SILENT on both streams until the end,
+    // then emit ONE complete document on stdout (buildJsonRecord).
+    const json = opts.json;
+    const entries: LogEntryWire[] = [];
+    const telemetryEvents: TelemetryEvent[] = [];
+    let response = "";
+
+    if (!json) {
+        process.stderr.write(`session: ${session.name}\n`);
+        process.stderr.write(`prompt: ${prompt}\n\n`);
+    }
 
     rpc.onNotification("log/entry", (params) => {
         const p = params as { entry: LogEntryWire };
+        if (json) {
+            entries.push(p.entry);
+            if (isTerminalBroadcast(p.entry)) response = extractSendBody(p.entry.tx, /* prettify */ false);
+            return;
+        }
         process.stderr.write(`${formatPlain(p.entry)}\n`);
         if (!isTerminalBroadcast(p.entry)) return;
-        const out = opts.json ? formatJsonReply(p.entry.tx) : extractSendBody(p.entry.tx, /* prettify */ false);
+        const out = extractSendBody(p.entry.tx, /* prettify */ false);
         if (out.length > 0) process.stdout.write(`${out}\n`);
     });
 
     // telemetry/event — parse errors, engine rail signals, scheme/provider
-    // failures. Routed through the unified renderer per SPEC.md §8.
+    // failures. Per SPEC.md §8. json mode folds them into the record's telemetry[].
     rpc.onNotification("telemetry/event", (params) => {
         const p = params as { loopId: number; event: TelemetryEvent };
+        if (json) { telemetryEvents.push(p.event); return; }
         report(p.event);
     });
 
@@ -177,12 +235,17 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     // Streams, coalesced (loop mode only — exec one-shot prints its own
     // output above): one start line, one conclusion line, tiny concluded
     // outputs inlined via the single bounded content fetch (SPEC §5.3).
+    // Stream traces are content/progress narration → stderr, text mode only.
+    // In json mode the EXEC/stream op already appears in turns[].ops; its output
+    // is content, fetched on demand via `plurnk read L/T/S` (not inlined).
     const streams = new StreamTrace();
     rpc.onNotification("stream/event", (params) => {
+        if (json) return;
         const line = streams.event(params as StreamEventPayload);
         if (line !== null) reportStream(line);
     });
     rpc.onNotification("stream/concluded", (params) => {
+        if (json) return;
         const p = params as StreamConcludedPayload;
         reportStream(streams.concluded(p));
         void rpc.call("entry.read", { target: p.target }).then((r) => {
@@ -201,10 +264,11 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         effectiveFlags = { ...(opts.loopFlags ?? {}), mode: p0 === "?" ? "ask" : "act" };
         prompt = prompt.replace(/^[?:]+\s*/, "");
     }
-    // No review channel → run with noProposals and own the explanation.
+    // No review channel → run with noProposals and own the explanation (text
+    // mode; in json mode the server-rejected proposals show in turns[].ops).
     if (noReviewChannel) {
         effectiveFlags = { ...(effectiveFlags ?? {}), noProposals: true };
-        report(clientProposalEditsBlocked());
+        if (!json) report(clientProposalEditsBlocked());
     }
 
     const start = Date.now();
@@ -247,6 +311,13 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     }
     const wallMs = Date.now() - start;
 
+    if (json) {
+        // ONE complete document on stdout; stderr stayed silent throughout.
+        const doc = buildJsonRecord({ session, prompt, response, entries, telemetry: telemetryEvents, result, wallMs, timedOut });
+        process.stdout.write(`${JSON.stringify(doc)}\n`);
+        return exitCodeForLoop(result.finalStatus, result.hitMaxTurns);
+    }
+
     process.stderr.write(`\nfinal status: ${result.finalStatus}${result.hitMaxTurns ? " (maxTurns reached)" : ""}\n`);
     // Real provider usage (plurnk-service #197) — a model loop always carries it.
     let tokenPart = "";
@@ -255,12 +326,6 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         if (result.usage.costPico > 0) tokenPart += `, cost: $${(result.usage.costPico / 1e12).toFixed(4)}`;
     }
     process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s${tokenPart}\n`);
-    process.stderr.write(`${formatResultLine({
-        loopId: result.loopId, finalStatus: result.finalStatus,
-        turns: result.turnIds.length, wallMs,
-        hitMaxTurns: result.hitMaxTurns, timedOut, reason: result.reason,
-        usage: result.usage,
-    })}\n`);
 
     return exitCodeForLoop(result.finalStatus, result.hitMaxTurns);
 };

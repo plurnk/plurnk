@@ -6,7 +6,7 @@ Terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service) �
 
 ```
 npm install -g @plurnk/plurnk          # bundles the daemon (optional dep)
-export OPENAI_API_KEY="…"              # your provider keys (read by the daemon)
+export PLURNK_API_KEY="…"              # your plurnk key (read by the daemon)
 plurnk-service                          # start the background daemon
 ```
 
@@ -15,19 +15,23 @@ The client only needs the daemon reachable at `PLURNK_URL` (default `ws://127.0.
 ## use
 
 ```
-plurnk "what is the capital of France?"      # one-shot
+plurnk "what is the capital of France?"      # one-shot — bare answer on stdout
+plurnk --json "…" | jq -r .response            # json mode: ONE complete record document
+plurnk read 3/1/2 --json                       # drill into one op by L/T/S coordinate
 cat notes.md | plurnk "summarize this"        # piped stdin (appended)
 plurnk                                         # interactive TUI (no args, a TTY)
 plurnk models | session list | log read …      # read-only subcommands
 plurnk --help                                  # full flag list
 ```
 
+**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. `--json` (or `PLURNK_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `telemetry` + `usage`), stderr silent, errors as `{"error":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse, no WebSocket client to build.
+
 **Line language** (converged across the TUI, the CLI prefixes, and plurnk.nvim's `:AI`):
 
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/models /sessions /runs /log /model /yolo /new /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>` |
+| `/verb` | `/models /sessions /runs /log /model /yolo /session [name] /run [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>` |
 | `<<…>>` | raw plurnk DSL (`op.parse`) |
 | `! cmd` | exec via the daemon |
 | `... text` | inject into the running loop (or just type — a mid-loop prompt steers) |

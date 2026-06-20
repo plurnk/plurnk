@@ -34,7 +34,7 @@ Options:
 | Flag | Type | Meaning |
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
-| `--json` | flag | CLI mode only. Format the terminal broadcast body as a JSON value on stdout. See §5.4. |
+| `--json` | flag | CLI mode only (or `PLURNK_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
 | `--session <name>` | string | Resume the named session. See §1.1. Overrides `PLURNK_SESSION`. |
 | `--run <name>` | string | Resume (or create) the named run within the session. Requires `--session`. Overrides `PLURNK_RUN`. See §1.1. |
 | `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
@@ -138,10 +138,16 @@ The prompt's first character carries the same habits as nvim's `:AI` and the TUI
 
 ### §2.1 Output channels
 
-Standard Unix discipline: **stdout is the program's product, stderr is its narration.**
+Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_JSON` — not a flag on one output, but two distinct contracts:
 
+**text mode (default):**
 - **stdout** — the body of the *terminal* broadcast SEND (status 200 or 499), per §5.4. Exactly one value per invocation (none if the loop hit maxTurns and never terminated). Intermediate broadcasts (SEND[102] etc.) are protocol mechanics, not the answer, and do NOT appear on stdout.
 - **stderr** — session/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
+
+**json mode (`--json` / `PLURNK_JSON`):**
+- **stdout** — ONE complete document and nothing else (§5.5): the whole client-observed record of the run — `schemaVersion`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
+- **stderr** — silent.
+- **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
 Consequence:
 
@@ -149,7 +155,7 @@ Consequence:
 - `plurnk "X" 2>/dev/null` suppresses the trace.
 - A TTY user sees both interleaved as before (the terminal merges streams).
 - `plurnk "X" | tool` pipes only the answer.
-- `plurnk --json "X" | jq` pipes the answer as a valid JSON value.
+- `plurnk --json "X" | jq -r .response` pulls the answer; `… | jq .turns` the structured trace. One document, no stderr archaeology — the CLI is the integration layer, no third-party client needed for basic needs.
 
 ### §2.2 Flow
 
@@ -157,7 +163,7 @@ Consequence:
 2. Resolve session per §1.1 (`session.create` or `session.attach`); write `session:` and `prompt:` lines to stderr.
 3. Subscribe to `log/entry` notifications; per-action trace lines go to stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
 4. `rpc.call("loop.run", { prompt })` → receive `{loopId, turnIds, finalStatus, hitMaxTurns}`.
-5. Write summary lines to stderr, ending with the machine-readable result envelope — one line `result: {"loopId","finalStatus","turns","wallMs","tokens","hitMaxTurns","timedOut","reason"?}` (compact JSON; harnesses grep `^result: `). stdout stays the pure answer.
+5. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
 6. Close WebSocket.
 7. Exit with the appropriate code (§4).
 
@@ -176,9 +182,9 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow
 
 1. Open WebSocket; resolve session per §1.1 (`session.create` or `session.attach`); subscribe to `log/entry`.
-2. Print banner; enter readline loop with the `  <coord>👤 💬 ✅ 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs. Settled empirically in two rounds: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned; `👤`/`✅` are plain East-Asian-Wide (width 2 in node and every major terminal) and stay, `💬` (stable-wide) fills the op slot. The `201` is a contract constant (the prompt row is always a 201 EDIT). The `: ` flips to `? ` when an ask-default toggle exists. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
+2. Print banner; enter readline loop with the `  <coord>🐹 💬 ✅ 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs. Settled empirically in two rounds: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned; `🐹`/`✅` are plain East-Asian-Wide (width 2 in node and every major terminal) and stay, `💬` (stable-wide) fills the op slot. The `201` is a contract constant (the prompt row is always a 201 EDIT). The `: ` flips to `? ` when an ask-default toggle exists. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /yolo /new [name] /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/new` rebinds the connection in place (§13.5-rebind); membership verbs apply live via `session.constrain`/`session.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /yolo /session [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/session [name]` opens a fresh session (rebinds the connection in place, §13.5-rebind), `/sessions` lists; `/run [name]` forks a new run (`run.fork`), `/runs` lists; `/rename <name>` retargets the session's mutable handle (a run's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `session.constrain`/`session.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
     - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
     - Lines starting with `!` → `rpc.call("op.exec", { command })`. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → `loop.run` with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -230,7 +236,7 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 
 **Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. Log entries carry it on the wire (§13, loop_seq/turn_seq/sequence); the readline prompt shows the coordinate the typed line WILL get — the next loop's foist EDIT at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's `loop_seq`/`turn_seq`/`sequence` on the wire (plurnk-service#224), read straight from the payload (never reconstructed from the URI). A stream without a coordinate (a non-exec streaming scheme) renders without one.
 
-**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 👤 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 (ops) · ⏳ ✅ 💥 ✋ ❌ (status). Op glyphs and origin glyphs are defined in `TUI.md §4`.
+**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 (ops) · ⏳ ✅ 💥 ✋ ❌ (status). Op glyphs and origin glyphs are defined in `TUI.md §4`.
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the broadcast too duplicated every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 

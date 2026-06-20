@@ -86,6 +86,12 @@ test("buildHeader: no client model and no resolvable active → honest fallback"
     assert.match(h, /model: \(daemon default\)/);
 });
 
+test("buildHeader: yolo on → shows 'yolo: on'; off/unset → no yolo segment", () => {
+    assert.match(buildHeader({ sessionName: "sess", yolo: true }), /· yolo: on ·/);
+    assert.doesNotMatch(buildHeader({ sessionName: "sess", yolo: false }), /yolo/);
+    assert.doesNotMatch(buildHeader({ sessionName: "sess" }), /yolo/);
+});
+
 interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
@@ -198,23 +204,23 @@ test("handleVerb /rename with no name → usage, no rpc", async () => {
     assert.match(ctx.out.join(""), /usage: \/rename/);
 });
 
-test("handleVerb /fork [name] → run.fork then binds to the forked run", async () => {
+test("handleVerb /run [name] → run.fork (new run) then binds to it", async () => {
     const ctx = makeCtx({
         "run.fork": { runId: 42, runName: "main-fork" },
         "session.attach": { id: 1, name: "sess", runId: 42, runName: "main-fork" },
     });
-    await handleVerb("/fork branch-a", ctx);
+    await handleVerb("/run branch-a", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: { name: "branch-a" } });
     assert.deepEqual(ctx.calls[1], { method: "session.attach", params: { id: 1, runId: 42 } });
-    assert.match(ctx.out.join(""), /forked → main-fork/);
+    assert.match(ctx.out.join(""), /run: main-fork \(new\)/);
 });
 
-test("handleVerb /fork with no name → run.fork with no name (auto <parent>-fork)", async () => {
+test("handleVerb /run with no name → run.fork with no name (auto <parent>-fork)", async () => {
     const ctx = makeCtx({
         "run.fork": { runId: 42, runName: "main-fork" },
         "session.attach": { id: 1, name: "sess", runId: 42, runName: "main-fork" },
     });
-    await handleVerb("/fork", ctx);
+    await handleVerb("/run", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
 });
 
@@ -246,11 +252,12 @@ test("handleVerb /model <alias> sets it; bare /model shows current", async () =>
     assert.match(ctx.out.join(""), /model: gpt/);
 });
 
-test("handleVerb /new → session.create + setSession", async () => {
+test("handleVerb /session → session.create (new) + setSession", async () => {
     const ctx = makeCtx({ "session.create": { id: 9, name: "fresh" } });
-    await handleVerb("/new fresh", ctx);
+    await handleVerb("/session fresh", ctx);
     assert.deepEqual(ctx.calls[0], { method: "session.create", params: { name: "fresh" } });
     assert.equal(ctx.getSession().name, "fresh");
+    assert.match(ctx.out.join(""), /session: fresh \(new\)/);
 });
 
 test("handleVerb /stop → loop.cancel", async () => {

@@ -42,9 +42,13 @@ interface SessionResult { id: number; name: string }
 
 // One verb vocabulary across nvim's :AI/, the TUI, and (where they exist)
 // the argv subcommands. Convergence is policy: divergence needs a reason.
+// Singular = CREATE, plural = LIST: /session makes a new session, /sessions
+// lists them; /run forks a new run, /runs lists them. The old /new was
+// ambiguous (session or run?) and is gone. /rename retargets the current
+// session's mutable handle (a run's name is immutable — no /rename for runs).
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
-    "yolo", "new", "rename", "fork", "stop", "quit",
+    "yolo", "session", "rename", "run", "stop", "quit",
     "pick", "hide", "view", "repo", "drop", "members", "import",
     "accept", "reject", "cancel", "edit",
 ] as const;
@@ -53,9 +57,9 @@ export const TUI_HELP = [
     "  /models /sessions /runs /log [n]   inspect (same tables as the CLI)",
     "  /model <alias>                     model for subsequent loops",
     "  /yolo                              toggle local auto-accept",
-    "  /new [name]                        new session (reconnects)",
+    "  /session [name]                    new session (a fresh world)",
     "  /rename <name>                     rename this session (a mutable handle)",
-    "  /fork [name]                       branch this conversation into a new run",
+    "  /run [name]                        new run (branch this conversation)",
     "  /pick <glob>                       membership: admit files git misses",
     "  /hide <glob>                       membership: drop a tracked match",
     "  /view <glob>                       membership: admit read-only",
@@ -69,7 +73,7 @@ export const TUI_HELP = [
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models sessions runs",
-    "                                     log yolo new members stop · Alt-h help",
+    "                                     log yolo session members stop · Alt-h help",
 ].join("\n") + "\n";
 
 // The non-submitting newline keys, by their raw byte sequence (post paste
@@ -98,7 +102,7 @@ export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK,
 // owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped (readline word-ops).
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     m: "/models", s: "/sessions", R: "/runs", L: "/log",
-    Y: "/yolo", N: "/new", M: "/members", x: "/stop", h: "/help",
+    Y: "/yolo", N: "/session", M: "/members", x: "/stop", h: "/help",
 });
 
 // An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
@@ -159,11 +163,12 @@ export const seedPromptHistory = async (rpc: Rpc, sessionId: number, rl: readlin
 // --model/PLURNK_MODEL when set, else the daemon's active default
 // (providers.list `active`), else an honest fallback.
 export const buildHeader = (opts: {
-    versionNotice?: string; sessionName: string; modelAlias?: string; activeAlias?: string;
+    versionNotice?: string; sessionName: string; modelAlias?: string; activeAlias?: string; yolo?: boolean;
 }): string => {
     const head = opts.versionNotice ?? "plurnk";
     const modelLabel = opts.modelAlias ?? opts.activeAlias ?? "(daemon default)";
-    return `${head} · session: ${opts.sessionName} · model: ${modelLabel} · /help`;
+    const yolo = opts.yolo ? " · yolo: on" : "";
+    return `${head} · session: ${opts.sessionName} · model: ${modelLabel}${yolo} · /help`;
 };
 
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
@@ -207,13 +212,15 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             opts.yolo = !opts.yolo;
             write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
             return;
-        case "new": {
-            // Rebind in place (service §13.5-rebind) — no reconnect.
+        case "session": {
+            // New session — a fresh world. Rebind in place (service
+            // §13.5-rebind), no reconnect. Name is optional (auto-named if
+            // omitted) and is a mutable handle (/rename retargets it later).
             const params: { name?: string; projectRoot?: string | null } = {};
             if (rest.length > 0) params.name = rest;
             if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
             ctx.setSession(await rpc.call("session.create", params) as SessionResult);
-            write(`  session: ${ctx.getSession().name}\n`);
+            write(`  session: ${ctx.getSession().name} (new)\n`);
             return;
         }
         case "rename": {
@@ -225,13 +232,13 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  session: ${renamed.name}\n`);
             return;
         }
-        case "fork": {
-            // run.fork (svc#248) — branch this conversation into a new run,
-            // optionally named at instantiation (immutable after). Bind to the
-            // fork so the next prompt speaks there. The session is unchanged.
+        case "run": {
+            // New run — run.fork (svc#248) branches this conversation, optionally
+            // named at instantiation (immutable after). Bind to the fork so the
+            // next prompt speaks there. The session (the world) is unchanged.
             const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { runId: number; runName: string };
             await rpc.call("session.attach", { id: ctx.getSession().id, runId: forked.runId });
-            write(`  forked → ${forked.runName}\n`);
+            write(`  run: ${forked.runName} (new)\n`);
             return;
         }
         case "pick":
@@ -314,23 +321,35 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     let current = session;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
     let lastLoopSeq = 0;
+    // Loop state, hoisted so buildPrompt can show a steer prompt while a loop
+    // runs and the line handler / SIGINT can share it.
+    let inFlight = false;
+    let cancelRequested = false;
 
-    // Subscribe to log/entry notifications — render each as a waterfall line.
-    // `\r\x1b[2K` wipes any readline-redrawn prompt sitting on the current line
-    // before our output, otherwise the first trace line lands beside the prompt.
+    // Print a line ABOVE the live readline prompt without eating the user's
+    // in-progress input. The canonical "log while prompting" idiom: wipe the
+    // prompt row, write the line, then re-render the prompt + current buffer on
+    // the row below (rl.prompt(true) preserves what's typed). This is what lets a
+    // loop stream traces AND keep a steer prompt the user can inject into — no
+    // cursor/width math, readline owns the redraw. Reassigned to the real impl
+    // once rl exists; until then (no loop can be running yet) it just appends.
+    let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
+
+    // Subscribe to log/entry notifications — render each as a waterfall line,
+    // printed above the prompt so a running loop's trace never clobbers it.
     rpc.onNotification("log/entry", (params) => {
         const p = params as { entry: LogEntryWire };
         if (p.entry.loop_seq > lastLoopSeq) lastLoopSeq = p.entry.loop_seq;
         // The typed line at the prompt is the user's record — rendering the
         // prompt broadcast too would duplicate it (see isPromptEntry).
         if (isPromptEntry(p.entry)) return;
-        process.stdout.write(`\r\x1b[2K${renderLogEntry(p.entry)}\n`);
+        printAbove(renderLogEntry(p.entry));
     });
 
     // telemetry/event — interleaved with the trace waterfall.
     rpc.onNotification("telemetry/event", (params) => {
         const p = params as { loopId: number; event: TelemetryEvent };
-        process.stdout.write(`\r\x1b[2K${renderTelemetryEvent(p.event)}\n`);
+        printAbove(renderTelemetryEvent(p.event));
     });
 
     // Streams, coalesced: one start line, one conclusion line, and tiny
@@ -339,17 +358,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     const streams = new StreamTrace();
     rpc.onNotification("stream/event", (params) => {
         const line = streams.event(params as StreamEventPayload);
-        if (line !== null) process.stdout.write(`\r\x1b[2K${line}\n`);
+        if (line !== null) printAbove(line);
     });
     rpc.onNotification("stream/concluded", (params) => {
         const p = params as StreamConcludedPayload;
-        process.stdout.write(`\r\x1b[2K${streams.concluded(p)}\n`);
+        printAbove(streams.concluded(p));
         void rpc.call("entry.read", { target: p.target }).then((r) => {
             const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
             for (const name of ["stdout", "stderr"]) {
                 const content = channels[name]?.content;
                 if (typeof content === "string" && inlineable(content)) {
-                    process.stdout.write(`\r\x1b[2K${renderInline(name, content)}\n`);
+                    printAbove(renderInline(name, content));
                 }
             }
         }).catch(() => { /* peek is best-effort */ });
@@ -373,7 +392,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // One header line: version · session · model · help (see buildHeader).
     const header = buildHeader({
         versionNotice: opts.versionNotice, sessionName: current.name,
-        modelAlias: opts.modelAlias, activeAlias,
+        modelAlias: opts.modelAlias, activeAlias, yolo: opts.yolo,
     });
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
 
@@ -384,8 +403,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // repositions the cursor at its own computed width on every
     // history-nav/backspace/completion refresh, so the disagreement shows
     // as text shift. Round 2 (bare `  : `) fixed the drift but destroyed
-    // the row identity. 👤 (U+1F464) and ✅ (U+2705) are plain East-Asian-
-    // Wide — width 2 in node AND every major terminal — so they stay; the
+    // the row identity. 🐹 (U+1F439, the brand head — was the generic 👤
+    // U+1F464) and ✅ (U+2705) are plain East-Asian-Wide single code points —
+    // width 2 in node AND every major terminal, no VS16 — so they stay; the
     // 201 is the contract constant (the prompt row is always a 201 EDIT);
     // 💬 (U+1F4AC, stable-wide) fills the op slot the toxic ✉️ vacated.
     // Policy: VS16/ambiguous glyphs are banned from the ENTIRE palette
@@ -395,8 +415,16 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // get: the prompt becomes the next loop's foist EDIT at <next>/01/01.
     // lastLoopSeq tracks the highest loop the waterfall has shown; the next
     // prompt is one beyond it. Plain-ASCII coordinate — width-safe.
-    const buildPrompt = (): string =>
-        `  ${coordLabel(lastLoopSeq + 1, 1, 1)}👤 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+    // While a loop runs, the prompt becomes a dim steer line: a stable row the
+    // user can type into to inject (loop.inject, #193) — kept alive above the
+    // streaming traces by printAbove. Idle, it's the user's 201 EDIT row, with a
+    // `yolo` badge when local auto-accept is on (plain ASCII — width-deterministic,
+    // unlike the VS16 glyphs banned from this row).
+    const buildPrompt = (): string => {
+        if (inFlight) return `  \x1b[2m… steer (loop running; Enter injects):\x1b[0m `;
+        const yolo = opts.yolo ? "\x1b[1;33myolo\x1b[0m " : "";
+        return `  ${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+    };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
     // filtered stdin into; since the input is no longer the TTY directly, raw
@@ -413,7 +441,19 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         prompt: buildPrompt(),
         completer: makeCompleter(() => aliasCache, process.cwd()),
     });
-    const reprompt = (): void => { rl.setPrompt(buildPrompt()); rl.prompt(); };
+    const reprompt = (): void => {
+        readline.cursorTo(process.stdout, 0);
+        readline.clearLine(process.stdout, 0);
+        rl.setPrompt(buildPrompt());
+        rl.prompt();
+    };
+    // Now that rl exists, printAbove can re-render the prompt after each line.
+    printAbove = (text: string): void => {
+        readline.cursorTo(process.stdout, 0);
+        readline.clearLine(process.stdout, 0);
+        process.stdout.write(`${text}\n`);
+        rl.prompt(true);
+    };
 
     // Multi-line composition. The non-submitting newline keys insert a single ↵
     // marker into readline's ONE line; Enter submits, expanding ↵→\n. Keeping it
@@ -560,9 +600,6 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     reprompt();
 
     return new Promise<void>((resolve) => {
-        let inFlight = false;
-        let cancelRequested = false;
-
         rl.on("line", async (line) => {
             // Expand typed ↵ markers (Ctrl-J / Alt-Enter newlines) FIRST, then
             // paste markers — so a pasted literal ↵ stays literal.
@@ -580,8 +617,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 // a proposal pauses the loop and must be resolvable by typing.
                 const PASS = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit"]);
                 if (inFlight && !PASS.has(verb)) {
-                    process.stdout.write("  \x1b[2m(busy; /stop to cancel, /help for the language)\x1b[0m\n");
-                    reprompt();
+                    printAbove("  \x1b[2m(busy; /stop to cancel, /help for the language)\x1b[0m");
                     return;
                 }
                 try {
@@ -600,19 +636,22 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 // into the live loop. (Raw DSL / exec are separate client-run
                 // ops; keep them out of a running conversation for now.)
                 if (trimmed.startsWith("<<") || trimmed.startsWith("!")) {
-                    process.stdout.write("  \x1b[2m(loop running — /stop before a client op)\x1b[0m\n");
-                    reprompt();
+                    printAbove("  \x1b[2m(loop running — /stop before a client op)\x1b[0m");
                     return;
                 }
                 const inject = trimmed.replace(/^(\.\.\.|[?:])\s*/, "");
                 void rpc.call("loop.inject", { prompt: inject })
-                    .then(() => process.stdout.write("  \x1b[2m↳ injected\x1b[0m\n"))
-                    .catch((cause) => process.stdout.write(`  \x1b[31minject failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`));
+                    .then(() => printAbove("  \x1b[2m↳ injected\x1b[0m"))
+                    .catch((cause) => printAbove(`  \x1b[31minject failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
                 reprompt();
                 return;
             }
 
             inFlight = true;
+            // Surface a live steer prompt for the duration of the loop, so the
+            // user has a stable row to type an inject into (the traces print
+            // above it). buildPrompt switches to its steer form while inFlight.
+            reprompt();
             const start = Date.now();
             let turnCount = 0;
             let finalStatus = 0;
@@ -650,10 +689,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     usage = result.usage;
                 }
                 const wallMs = Date.now() - start;
-                process.stdout.write(`${renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage)}\n`);
+                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage));
             } catch (cause) {
                 const msg = cause instanceof Error ? cause.message : String(cause);
-                process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);
+                printAbove(`  \x1b[31merror: ${msg}\x1b[0m`);
             } finally {
                 inFlight = false;
                 cancelRequested = false;

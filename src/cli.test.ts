@@ -108,7 +108,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
         entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     telemetry: [{ source: "engine", kind: "note", message: "ok" }],
-    result: { loopId: 7, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 7000000000 } },
+    result: { loopId: 7, modelRunId: 39, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 7000000000 } },
     wallMs: 1234, timedOut: false,
     ...over,
 });
@@ -119,6 +119,7 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.response, "Paris");          // the jq -r .response common case
     assert.equal(doc.finalStatus, 200);
     assert.equal(doc.loopId, 7);
+    assert.equal(doc.runId, 39);   // the conversation run, from loop.run's modelRunId
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.session, { id: 12, name: "sess" });
     assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000 });

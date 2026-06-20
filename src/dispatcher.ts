@@ -77,8 +77,11 @@ is appended after a blank line). With no positionals and a TTY stdin,
 enters the interactive REPL. Read-only subcommands (models / session list /
 log read / read <coord>) inspect daemon state without running a loop.
 
-env:
-  PLURNK_URL            daemon WebSocket URL (default ws://127.0.0.1:3044)
+env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
+     < --env-file < shell — same layering as plurnk-service):
+  PLURNK_WS             daemon WebSocket URL (default ws://127.0.0.1:3044) — the
+                        ONE knob the client needs; everything else in ~/.plurnk
+                        is the daemon's. Works with no config at all.
   PLURNK_SESSION        resume an existing session by name
   PLURNK_RUN            resume (or create) a named run within that session
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
@@ -115,6 +118,8 @@ options:
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
                           (e.g. '{"yolo":true}' for server-side YOLO in
                           benchmark/automation runs).
+      --env-file <p>      load env from <p> (errors if missing). Repeatable.
+      --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
       --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
                           seconds; exits 3 with "timedOut":true in the result.
@@ -159,6 +164,26 @@ const dieWith = (code: number, event: TelemetryEvent): never => {
 const dieJson = (code: number, kind: string, message: string, extra?: Record<string, unknown>): never => {
     process.stdout.write(`${JSON.stringify(buildJsonError(kind, message, extra))}\n`);
     process.exit(code);
+};
+
+// Env cascade, aligned with plurnk-service's ~/.plurnk layering so the two share
+// one config home. process.loadEnvFile only fills UNSET vars, so loading
+// highest-precedence-first yields:
+//   shell > --env-file > --env-file-if-exists > ./.env > ~/.plurnk/.env > ~/.plurnk/.env.example
+// The client reads exactly ONE knob from this shared file — PLURNK_WS (which
+// daemon to reach) — and defaults it sanely when nothing is set. Everything else
+// in ~/.plurnk is the daemon's; the client doesn't ship its own .env.example.
+const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void => {
+    const ifExists = (p: string): void => { try { process.loadEnvFile(p); } catch { /* optional layer */ } };
+    for (const f of envFiles) {
+        try { process.loadEnvFile(f); }
+        catch { dieWith(64, clientFlagInvalid("--env-file", f, "file not found")); }
+    }
+    for (const f of envFilesIfExists) ifExists(f);
+    ifExists(".env");
+    const home = join(homedir(), ".plurnk");
+    ifExists(join(home, ".env"));
+    ifExists(join(home, ".env.example"));
 };
 
 interface SessionResult { id: number; name: string }
@@ -431,20 +456,16 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
 };
 
 export const main = async (argv: string[]): Promise<void> => {
-    // Cascading env. loadEnvFile never overrides variables that are
-    // already set, so load order produces the precedence:
-    //   shell exports  >  project ./.env  >  $XDG_CONFIG_HOME/plurnk/env
-    // (user-level file falls back to ~/.config/plurnk/env). Both optional.
-    try { process.loadEnvFile(".env"); } catch { /* optional */ }
-    const userEnvDir = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
-    try { process.loadEnvFile(join(userEnvDir, "plurnk", "env")); } catch { /* optional */ }
-
     const { positionals, values } = parseArgs({
         args: argv.slice(2),
         allowPositionals: true,
         options: {
             help: { type: "boolean", short: "h" },
             json: { type: "boolean" },
+            // Node-native env layering (mirrors plurnk-service): --env-file
+            // requires the file, --env-file-if-exists skips a missing one.
+            "env-file": { type: "string", multiple: true },
+            "env-file-if-exists": { type: "string", multiple: true },
             session: { type: "string" },
             run: { type: "string" },
             model: { type: "string" },
@@ -472,6 +493,9 @@ export const main = async (argv: string[]): Promise<void> => {
     });
 
     if (values.help) { process.stdout.write(USAGE); process.exit(0); }
+
+    // Shared ~/.plurnk env cascade (after parse so --env-file flags participate).
+    loadEnvCascade((values["env-file"] as string[] | undefined) ?? [], (values["env-file-if-exists"] as string[] | undefined) ?? []);
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
@@ -530,7 +554,7 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     })();
 
-    const url = process.env.PLURNK_URL ?? "ws://127.0.0.1:3044";
+    const url = process.env.PLURNK_WS ?? "ws://127.0.0.1:3044";
     const rpc = new Rpc({ url });
 
     try {

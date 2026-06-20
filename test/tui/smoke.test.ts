@@ -29,9 +29,10 @@ describe("TUI pty harness", () => {
             tui.write("/help\r");
             const afterHelp = await tui.waitFor(/\/models .*\/sessions/);
             assert.match(afterHelp, /\/yolo/, "help lists the verb surface");
-            // 3. /quit closes the REPL with a clean exit code.
+            // 3. /quit closes the REPL with a clean exit code + the resume hint.
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0, "/quit exits 0");
+            assert.match(tui.output(), /resume this session:\s+plurnk --session /, "quit prints the resume one-liner");
         } finally {
             tui.kill();
         }

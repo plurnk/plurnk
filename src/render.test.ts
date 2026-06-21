@@ -152,7 +152,7 @@ test("renderLogEntry: no path at all (both scheme + pathname null) for non-SEND 
 
 // ─── renderLogEntry: broadcast SEND ──────────────────────────────────
 
-test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single striped line, NO surrounding blanks", () => {
+test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bold line, NO surrounding blanks", () => {
     const out = renderLogEntry(entry({
         op: "SEND",
         scheme: null,
@@ -161,7 +161,7 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single st
         status_rx: 200,
         tx: { body: { raw: "Hello.", json: null } },
     }));
-    // The stripe background is the standout — no blank-line wrapping.
+    // The bold body is the standout — no blank-line wrapping.
     assert.doesNotMatch(out, /^\n/);
     assert.doesNotMatch(out, /\n$/);
     assert.ok(!out.includes("\n"), `short broadcast inlines to one line, got: ${JSON.stringify(out)}`);
@@ -169,7 +169,7 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single st
     assert.match(out, /🤖/);  // origin glyph for model
 });
 
-test("renderLogEntry: multi-line broadcast SEND → striped block, body indented, still no surrounding blanks", () => {
+test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, still no surrounding blanks", () => {
     const out = renderLogEntry(entry({
         op: "SEND",
         scheme: null,
@@ -184,7 +184,7 @@ test("renderLogEntry: multi-line broadcast SEND → striped block, body indented
     assert.match(out, /line two/);
 });
 
-test("renderLogEntry: intermediate 102 broadcast → single striped line, no blanks (the per-turn ping)", () => {
+test("renderLogEntry: intermediate 102 broadcast → single plain line, no blanks (the per-turn ping)", () => {
     const out = renderLogEntry(entry({
         op: "SEND",
         scheme: null,
@@ -258,81 +258,71 @@ test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
     assert.match(out, /📝/);
 });
 
-// ─── Conversation stripes (color-enabled import) ─────────────────────
-// The main import runs under NO_COLOR; stripes need a color-enabled
-// instance. A query-suffixed dynamic import busts the ESM module cache
-// (computed specifier so tsc doesn't try to resolve the query form).
+// ─── Conversation bold (color-enabled import) ────────────────────────
+// The model's ANSWER (terminal SEND) renders BOLD; no background band
+// (background-color-erase isn't universal → jagged stripes). The main
+// import runs under NO_COLOR; bold needs a color-enabled instance. A
+// query-suffixed dynamic import busts the ESM module cache (computed
+// specifier so tsc doesn't try to resolve the query form).
 const freshRender = async (tag: string): Promise<typeof import("./render.ts")> =>
     await import(`./render.ts?${tag}`) as typeof import("./render.ts");
 
 const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
-test("stripes: model broadcast gets the green band (256-color fallback when no truecolor)", async () => {
-    const savedCT = process.env.COLORTERM;
-    delete process.env.COLORTERM;
+test("bold: the model's terminal SEND (200) renders bold, with NO background band", async () => {
     process.env.NO_COLOR = "0";
-    const colored = await freshRender("stripes=1");
+    const colored = await freshRender("bold=1");
     process.env.NO_COLOR = "1";
-    if (savedCT !== undefined) process.env.COLORTERM = savedCT;
     const out = colored.renderLogEntry(entry(sendEntry));
-    assert.match(out, /\x1b\[48;5;28m/);   // #148800 ≈ 256-cube 28 (#008700)
-    assert.doesNotMatch(out, /\x1b\[48;5;17m/);  // no longer blue
-    assert.match(out, /\x1b\[K/);          // painted to the right edge
+    assert.match(out, /\x1b\[1m/);          // bold
+    assert.doesNotMatch(out, /48;[25]/);    // no background band of any kind
+    assert.doesNotMatch(out, /\x1b\[K/);    // no edge-paint
 });
 
-test("stripes: model broadcast uses exact truecolor #148800 when COLORTERM advertises it", async () => {
-    const savedCT = process.env.COLORTERM;
-    process.env.COLORTERM = "truecolor";
+test("bold: a cancelled terminal SEND (499) is also bold (it's a terminal answer)", async () => {
     process.env.NO_COLOR = "0";
-    const colored = await freshRender("stripes=tc");
+    const colored = await freshRender("bold=499");
     process.env.NO_COLOR = "1";
-    if (savedCT === undefined) delete process.env.COLORTERM; else process.env.COLORTERM = savedCT;
-    const out = colored.renderLogEntry(entry(sendEntry));
-    assert.match(out, /\x1b\[48;2;20;136;0m/);   // #148800 = rgb(20,136,0)
+    const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 499, status_rx: 499 }));
+    assert.match(out, /\x1b\[1m/);
 });
 
-test("stripes: a 2xx on the green band is NOT green-on-green; a 4xx keeps red", async () => {
+test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)", async () => {
     process.env.NO_COLOR = "0";
-    const colored = await freshRender("stripes=status");
+    const colored = await freshRender("bold=102");
     process.env.NO_COLOR = "1";
-    const ok = colored.renderLogEntry(entry({ ...sendEntry, signal: 200, status_rx: 200 }));
-    // GREEN is \x1b[32m — must not precede the status on the band.
-    assert.doesNotMatch(ok, /\x1b\[32m200/);
-    const err = colored.renderLogEntry(entry({ ...sendEntry, signal: 404, status_rx: 404 }));
-    assert.match(err, /\x1b\[31m404/);     // 4xx still pops red
+    const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 102, status_rx: 102, tx: { body: { raw: "working…", json: null } } }));
+    assert.doesNotMatch(out, /\x1b\[1m/);   // plain
 });
 
-test("stripes: a model broadcast's inner RESET re-arms the band (status color can't cut it)", async () => {
-    const savedCT = process.env.COLORTERM;
-    delete process.env.COLORTERM;
+test("bold: inner RESET re-arms bold so a markdown span can't cut it mid-line", async () => {
     process.env.NO_COLOR = "0";
-    const colored = await freshRender("stripes=2");
+    const colored = await freshRender("bold=rearm");
     process.env.NO_COLOR = "1";
-    if (savedCT !== undefined) process.env.COLORTERM = savedCT;
-    // A 4xx carries a status color that RESETs mid-line — the band must resume
+    // The markdown **bold** span emits its own RESET; the line-bold must resume
     // immediately after, not die at the first reset.
-    const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 404, status_rx: 404 }));
-    assert.match(out, /\x1b\[0m\x1b\[48;5;28m/);
+    const out = colored.renderLogEntry(entry({ ...sendEntry, tx: { body: { raw: "**strong** then more", json: null } } }));
+    assert.match(out, /\x1b\[0m\x1b\[1m/);
 });
 
-test("stripes: ONLY model SEND is banded — a client-origin broadcast gets no background", async () => {
+test("bold: a client-origin broadcast is NOT bold (only the MODEL's answer)", async () => {
     process.env.NO_COLOR = "0";
-    const colored = await freshRender("stripes=client");
+    const colored = await freshRender("bold=client");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({
         op: "SEND", origin: "client", scheme: null, pathname: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     }));
-    assert.doesNotMatch(out, /48;[25]/);   // no background band of any kind
-    assert.doesNotMatch(out, /\x1b\[K/);   // and no edge-paint
+    assert.doesNotMatch(out, /\x1b\[1m/);
 });
 
-test("stripes: NO_COLOR build emits no background codes", () => {
+test("bold: NO_COLOR build emits no bold (or background) codes", () => {
     const out = renderLogEntry(entry({
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
-    assert.doesNotMatch(out, /48;[25]/);   // neither 256-color nor truecolor bg
+    assert.doesNotMatch(out, /\x1b\[1m/);  // no bold
+    assert.doesNotMatch(out, /48;[25]/);   // no background band
     assert.doesNotMatch(out, /\x1b\[K/);
 });
 

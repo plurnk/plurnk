@@ -184,33 +184,18 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     return raw;
 };
 
-// Conversation stripe (TUI). Model speech (broadcast SEND — §5.4) is the ONE
-// thing that gets a background: the project green (#148800) full-width band, so
-// the model's turn stands out against the operation-record grid. Nothing else
-// is banded. Explicit near-white foreground so the band reads on any terminal
-// theme; `\x1b[K` (background-color-erase) paints each line to the right edge
-// without needing the terminal width.
-//
-// #148800 is emitted as truecolor when the terminal advertises it (COLORTERM),
-// else the nearest 256-color cube entry (28 = #008700) so the band stays green
-// on every terminal — the universality rule.
-const TRUECOLOR = process.env.COLORTERM === "truecolor" || process.env.COLORTERM === "24bit";
-const MODEL_BG = code(TRUECOLOR ? "48;2;20;136;0" : "48;5;28");
-const MODEL_STRIPE = MODEL_BG + code("38;5;254");
-const ERASE_EOL = useColor ? "\x1b[K" : "";
-
-// On the green band a 2xx's green-on-green vanishes — let it inherit the band's
-// near-white foreground; non-2xx keep their signal color (yellow/red read fine
-// on green). Off-band status uses colorForStatus directly.
-const bandStatusColor = (status: number): string =>
-    status >= 200 && status < 300 ? "" : colorForStatus(status);
-
-// Re-arm the stripe after every inner RESET (status colors, markdown
-// styling) so a styled span can't cut the band mid-line.
-const stripeLines = (lines: string[], stripe: string): string => {
-    if (stripe.length === 0) return lines.join("\n");
+// Bold the model's ANSWER. The model's terminal SEND (200 done / 499 cancelled
+// — a signal, not a directed target) is its reply to the user; its body renders
+// BOLD so it stands out against the operation-record grid. Intermediate 102
+// "continue" pings and non-model SENDs stay plain. Re-arm BOLD after every inner
+// RESET (markdown spans, status color) so a styled span can't cut the bold
+// mid-line. No background band: background-color-erase (\x1b[K) isn't universal,
+// so a full-width green stripe rendered jagged on terminals without it — bold is
+// width-independent and works on every terminal.
+const emphasizeLines = (lines: string[], on: boolean): string => {
+    if (!on || BOLD.length === 0) return lines.join("\n");
     return lines
-        .map((l) => `${stripe}${l.split(RESET).join(RESET + stripe)}${ERASE_EOL}${RESET}`)
+        .map((l) => `${BOLD}${l.split(RESET).join(RESET + BOLD)}${RESET}`)
         .join("\n");
 };
 
@@ -221,11 +206,7 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
     const opGlyph = OP_GLYPHS.SEND;
     const subGlyph = typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "";
-    // Only a model SEND gets the green band; on it, keep a 2xx readable (band-
-    // white) rather than green-on-green. Off-band SENDs use normal status color.
-    const banded = entry.origin === "model";
-    const statusColor = banded ? bandStatusColor(entry.status_rx) : colorForStatus(entry.status_rx);
-    const statusText = `${statusColor}${entry.status_rx}${RESET}`;
+    const statusText = `${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}`;
 
     const headerParts = [origin, opGlyph];
     if (subGlyph.length > 0) headerParts.push(subGlyph);
@@ -241,14 +222,10 @@ const renderBroadcast = (entry: LogEntryWire): string => {
         : !multiLine && body.length <= 80 ? [`${header}  ${body}`]
         : [header, ...body.split("\n").map((l) => `     ${l}`)];
 
-    // Only a model SEND is banded — nothing else gets a background.
-    const stripe = banded ? MODEL_STRIPE : "";
-    // No surrounding blank lines: the stripe (full-width background color)
-    // is the standout — a broadcast reads as conversation whether single-
-    // or multi-line. Blank-wrapping every turn-terminator SEND (the model
-    // SENDs once per turn, 102 to continue) just padded the waterfall with
-    // empty lines between operations.
-    return stripeLines(lines, stripe);
+    // The model's answer (terminal SEND) is bold; everything else plain. No
+    // surrounding blank lines — the bold body is the standout on its own.
+    const isAnswer = entry.origin === "model" && (entry.signal === 200 || entry.signal === 499);
+    return emphasizeLines(lines, isAnswer);
 };
 
 // The prompt entry (system-origin EDIT against plurnk://prompt/<loop>/<turn>,

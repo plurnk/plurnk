@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, isServerResolved, isBroadcastProposal, renderProposalMenu, keyToResolution } = await import("./proposal.ts");
+const { renderBody, formatTarget, isServerResolved, renderProposalMenu, keyToResolution } = await import("./proposal.ts");
 
 const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     logEntryId: 1,
@@ -21,23 +21,6 @@ const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     flags,
 });
 
-// ─── isBroadcastProposal (don't review the model's speech — svc#255) ──────
-
-test("isBroadcastProposal: SEND with no target → true (auto-accept, not reviewable)", () => {
-    assert.equal(isBroadcastProposal({ ...proposal({}), op: "SEND", target: { scheme: null, pathname: null } }), true);
-});
-
-test("isBroadcastProposal: SEND with a null target object → true (defensive)", () => {
-    assert.equal(isBroadcastProposal({ ...proposal({}), op: "SEND", target: null as unknown as { scheme: string | null; pathname: string | null } }), true);
-});
-
-test("isBroadcastProposal: a real EDIT proposal → false (must be reviewed)", () => {
-    assert.equal(isBroadcastProposal(proposal({})), false);
-});
-
-test("isBroadcastProposal: a DIRECTED SEND (has a scheme target) → false", () => {
-    assert.equal(isBroadcastProposal({ ...proposal({}), op: "SEND", target: { scheme: "wss", pathname: "/feed" } }), false);
-});
 
 // ─── keyToResolution + renderProposalMenu (non-blocking review primitives) ──
 

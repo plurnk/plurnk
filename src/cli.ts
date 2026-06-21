@@ -13,6 +13,8 @@ import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
+// The assembled loop outcome — loopId/modelRunId from the loop.run ACK,
+// the rest from the loop/terminated event (svc 0.45.0+ split, see below).
 interface LoopRunResult {
     loopId: number;
     modelRunId?: number;   // the conversation's run (live on loop.run, svc 0.44.0)
@@ -20,6 +22,24 @@ interface LoopRunResult {
     finalStatus: number;
     hitMaxTurns: boolean;
     reason?: string;
+    usage?: LoopUsage;
+}
+
+// loop.run is fire-and-forget (svc 0.45.0+): it ACKS {loopId, modelRunId,
+// finalStatus:100} and the loop drains async — the outcome rides loop/terminated.
+// `status`/`error` appear only on a synchronous failure (501 no provider, etc.).
+interface LoopAck {
+    loopId?: number;
+    modelRunId?: number;
+    finalStatus?: number;
+    status?: number;
+    error?: string;
+}
+interface LoopTerminated {
+    loopId: number;
+    turnIds: number[];
+    finalStatus: number;
+    hitMaxTurns: boolean;
     usage?: LoopUsage;
 }
 
@@ -279,10 +299,18 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     if (effectiveFlags !== undefined && Object.keys(effectiveFlags).length > 0) loopParams.flags = effectiveFlags;
     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
 
+    // loop.run only ACKS now (svc 0.45.0+); the outcome rides loop/terminated.
+    // Register the waiter BEFORE the call so a fast loop that terminates before
+    // the ack lands can't slip past us. Single-shot: the first terminated is ours
+    // (the doc-materialization EDITs run as a plurnk run, not a model loop).
+    const terminated = new Promise<LoopTerminated>((res) => {
+        rpc.onNotification("loop/terminated", (p) => res(p as LoopTerminated));
+    });
+
     // First Ctrl-C cancels the run's active drain via loop.cancel
-    // (plurnk-service §13.5) — the pending loop.run resolves with
-    // finalStatus 499 and the normal exit-code path (3) applies. A second
-    // Ctrl-C force-exits in case the daemon never comes back.
+    // (plurnk-service §13.5) — loop/terminated then fires with finalStatus 499
+    // and the normal exit-code path (3) applies. A second Ctrl-C force-exits in
+    // case the daemon never comes back.
     let cancelRequested = false;
     const onSigint = (): void => {
         if (cancelRequested) process.exit(3);
@@ -306,7 +334,17 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
 
     let result: LoopRunResult;
     try {
-        result = await rpc.call("loop.run", loopParams) as LoopRunResult;
+        const ack = await rpc.call("loop.run", loopParams) as LoopAck;
+        if (ack.error !== undefined) throw new Error(ack.error);
+        // Status-100 ack → block on loop/terminated for the real outcome;
+        // assemble the result from the ack (loopId/modelRunId) + the event.
+        // Any non-100 status is already terminal (defensive — shouldn't occur).
+        if (ack.finalStatus === 100 && ack.loopId !== undefined) {
+            const t = await terminated;
+            result = { loopId: ack.loopId, modelRunId: ack.modelRunId, turnIds: t.turnIds, finalStatus: t.finalStatus, hitMaxTurns: t.hitMaxTurns, usage: t.usage };
+        } else {
+            result = { loopId: ack.loopId ?? 0, modelRunId: ack.modelRunId, turnIds: [], finalStatus: ack.finalStatus ?? ack.status ?? 0, hitMaxTurns: false };
+        }
     } finally {
         process.removeListener("SIGINT", onSigint);
         if (timer !== undefined) clearTimeout(timer);

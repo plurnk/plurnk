@@ -51,6 +51,28 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
+    test("/pick → /members reflects the rule; /drop removes it", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("/pick *.xyz\r"); await tui.waitFor(/pick: \*\.xyz/);
+            tui.write("/members\r");    await tui.waitFor(/rules:.*pick \*\.xyz/);
+            tui.write("/drop *.xyz\r");  await tui.waitFor(/dropped 1 constraint/);
+            tui.write("/members\r");    await tui.waitFor(/rules: none/);
+        } finally { tui.kill(); }
+    });
+
+    test("Tab completes a verb prefix (/mo → /model)", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("/mo\t");           // Tab → common prefix of /models, /model
+            await tui.waitFor(/\/model\b/);
+        } finally { tui.kill(); }
+    });
+
     test("/import <file> stashes the content behind a paste marker", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const dir = await mkdtemp(join(tmpdir(), "plurnk-import-"));

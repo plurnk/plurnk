@@ -26,12 +26,12 @@ export interface Tui {
 interface Waiter { re: RegExp; resolve: (s: string) => void; timer: ReturnType<typeof setTimeout> }
 
 // Spawn `node bin/plurnk.js <args>` in a 100×30 pty against the given daemon URL.
-export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<string, string> = {}): Tui => {
+export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<string, string> = {}, cwd: string = process.cwd()): Tui => {
     const term = pty.spawn("node", [BIN, ...args], {
         name: "xterm-256color",
         cols: 100,
         rows: 30,
-        cwd: process.cwd(),
+        cwd,   // the client sends cwd as the session's project_root (membership + edits resolve here)
         env: { ...(process.env as Record<string, string>), PLURNK_WS: url, NO_COLOR: "1", ...extraEnv },
     });
 

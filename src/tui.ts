@@ -415,13 +415,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // get: the prompt becomes the next loop's foist EDIT at <next>/01/01.
     // lastLoopSeq tracks the highest loop the waterfall has shown; the next
     // prompt is one beyond it. Plain-ASCII coordinate — width-safe.
-    // While a loop runs, the prompt becomes a dim steer line: a stable row the
-    // user can type into to inject (loop.inject, #193) — kept alive above the
-    // streaming traces by printAbove. Idle, it's the user's 201 EDIT row, with a
-    // `yolo` badge when local auto-accept is on (plain ASCII — width-deterministic,
-    // unlike the VS16 glyphs banned from this row).
+    // The prompt is the SAME whether or not a loop is running — kept alive above
+    // the streaming traces by printAbove. The user just types; a line submitted
+    // while a loop is in flight is folded into it (loop.inject), else it starts
+    // the next loop. The user never has to know which — both continue the same
+    // conversation. `yolo` badge when local auto-accept is on (plain ASCII —
+    // width-deterministic, unlike the VS16 glyphs banned from this row).
     const buildPrompt = (): string => {
-        if (inFlight) return `  \x1b[2m… steer (loop running; Enter injects):\x1b[0m `;
         const yolo = opts.yolo ? "\x1b[1;33myolo\x1b[0m " : "";
         return `  ${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
@@ -641,7 +641,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 }
                 const inject = trimmed.replace(/^(\.\.\.|[?:])\s*/, "");
                 void rpc.call("loop.inject", { prompt: inject })
-                    .then(() => printAbove("  \x1b[2m↳ injected\x1b[0m"))
+                    .then(() => printAbove("  \x1b[2m↳ added to the run\x1b[0m"))
                     .catch((cause) => printAbove(`  \x1b[31minject failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
                 reprompt();
                 return;

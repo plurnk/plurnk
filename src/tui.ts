@@ -419,10 +419,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // the streaming traces by printAbove. The user just types; a line submitted
     // while a loop is in flight is folded into it (loop.inject), else it starts
     // the next loop. The user never has to know which — both continue the same
-    // conversation. `yolo` badge when local auto-accept is on (plain ASCII —
-    // width-deterministic, unlike the VS16 glyphs banned from this row).
+    // conversation. 🔥 badge when local auto-accept (yolo) is on — a width-stable
+    // plane-1 emoji (U+1F525), NOT the BMP ⚡ (U+26A1) which a font may render
+    // width-1 and drift the readline cursor (the ❓ U+2753 lesson).
     const buildPrompt = (): string => {
-        const yolo = opts.yolo ? "\x1b[1;33myolo\x1b[0m " : "";
+        const yolo = opts.yolo ? "🔥 " : "";
         return `  ${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE

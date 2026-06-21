@@ -31,21 +31,24 @@ before(async () => {
 after(async () => { await daemon?.cleanup(); });
 
 describe("TUI live (model-gated)", () => {
-    // The readline referendum — the CLIENT contract: while a loop runs the prompt
-    // becomes the steer row, and a line typed there goes out as loop.inject (not a
-    // new loop.run) and is acknowledged, with the prompt surviving the trace burst.
-    // (Whether the MODEL honors the injected content is the model's behavior.)
-    test("mid-loop inject — steer prompt holds; the line goes out as loop.inject", async (t) => {
+    // The readline referendum — the CLIENT contract: a line typed while a loop is
+    // in flight is folded in via loop.inject (NOT a new loop.run) and acknowledged,
+    // with the prompt surviving the trace burst. The prompt is identical to idle —
+    // injection is seamless, the user never sees it. (Whether the MODEL honors the
+    // injected content is the model's behavior, not the client's.)
+    test("mid-loop inject — a line typed during a loop is folded in (loop.inject)", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         if (!canLoop) { t.skip("no working model (no provider key in ~/.plurnk/.env)"); return; }
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            // Multi-step so the loop is reliably still in-flight when we inject.
-            tui.write("Run SIX separate python steps, ONE number per step, never batched — print(1), then print(2)…print(6) — waiting for each result before the next. Then summarize.\r");
-            await tui.waitFor(/steer \(loop running/, 30_000);   // inFlight → steer prompt
+            // Anything multi-step keeps the loop alive a beat; we inject on the
+            // FIRST trace (the prompt foist) — the widest in-flight window, since
+            // a fast model can finish a short loop before the keystroke lands.
+            tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
+            await tui.waitFor(/plurnk:\/\/\/prompt\/\d+\/1/, 30_000);  // the foist → loop in-flight
             tui.write("btw keep the summary short\r");
-            await tui.waitFor(/↳ injected/, 20_000);             // loop.inject path (NOT a new loop.run)
+            await tui.waitFor(/↳ added to the run/, 25_000);     // loop.inject path (NOT a new loop.run)
         } finally { tui.kill(); }
     });
 });

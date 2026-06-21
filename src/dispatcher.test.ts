@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, agentsAutoload } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice } from "./dispatcher.ts";
 
 // ─── resolveLoopFlags ────────────────────────────────────────────────
 // Mode is NOT a flag: ask/act ride the prompt prefix (`? `/`: `), the
@@ -102,34 +102,6 @@ test("buildSettings: --md without '=' → throws NAME=path", async () => {
 
 test("buildSettings: --md missing file → throws not readable", async () => {
     await assert.rejects(buildSettings({ md: ["X=/no/such/file.md"] }, "/"), /not readable/);
-});
-
-// ─── agentsAutoload (AGENTS.md auto-load, svc#250) ───────────────────
-
-test("agentsAutoload: local AGENTS.md present → pick + autoReadAgents", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "plurnk-agents-"));
-    try {
-        await writeFile(join(dir, "AGENTS.md"), "# scratchpad", "utf8");
-        assert.deepEqual(await agentsAutoload(false, dir), {
-            pick: { effect: "pick", glob: "AGENTS.md" },
-            autoReadAgents: true,
-        });
-    } finally { await rm(dir, { recursive: true, force: true }); }
-});
-
-test("agentsAutoload: --no-agents opts out even with a local AGENTS.md", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "plurnk-agents-"));
-    try {
-        await writeFile(join(dir, "AGENTS.md"), "# scratchpad", "utf8");
-        assert.equal(await agentsAutoload(true, dir), null);
-    } finally { await rm(dir, { recursive: true, force: true }); }
-});
-
-test("agentsAutoload: no local AGENTS.md → null (nothing to load)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "plurnk-agents-"));
-    try {
-        assert.equal(await agentsAutoload(false, dir), null);
-    } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test("buildSettings: empty → {}", async () => {

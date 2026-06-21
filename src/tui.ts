@@ -22,7 +22,7 @@ import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, isServerResolved, isBroadcastProposal } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, isServerResolved } from "./proposal.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -30,11 +30,21 @@ import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 
-interface LoopRunResult {
-    loopId: number;
-    turnIds: number[];
+// loop.run is fire-and-forget (svc 0.45.0+ "Model 3"): it ACKS immediately
+// with {loopId, finalStatus:100, action} and the loop drains async — the real
+// outcome rides loop/terminated. `status`/`error` appear only on a synchronous
+// failure (e.g. 501 no provider). LoopTerminated is the loop/terminated payload.
+interface LoopAck {
+    loopId?: number;
+    finalStatus?: number;
+    status?: number;
+    error?: string;
+}
+
+interface LoopTerminated {
     finalStatus: number;
     hitMaxTurns: boolean;
+    turnIds: number[];
     usage?: LoopUsage;
 }
 
@@ -176,7 +186,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: Rpc;
-    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null };
+    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; autoReadAgents?: boolean };
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
     write: (s: string) => void;
@@ -216,9 +226,15 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // New session — a fresh world. Rebind in place (service
             // §13.5-rebind), no reconnect. Name is optional (auto-named if
             // omitted) and is a mutable handle (/rename retargets it later).
-            const params: { name?: string; projectRoot?: string | null } = {};
+            const params: { name?: string; projectRoot?: string | null; constraints?: Array<{ effect: string; glob: string }>; settings?: { autoReadAgents: boolean } } = {};
             if (rest.length > 0) params.name = rest;
             if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
+            // #250 — a fresh session inherits the launch-time AGENTS.md auto-load
+            // decision (cwd is fixed for the process): pick it + opt the session in.
+            if (opts.autoReadAgents) {
+                params.constraints = [{ effect: "pick", glob: "AGENTS.md" }];
+                params.settings = { autoReadAgents: true };
+            }
             ctx.setSession(await rpc.call("session.create", params) as SessionResult);
             write(`  session: ${ctx.getSession().name} (new)\n`);
             return;
@@ -317,6 +333,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
+    autoReadAgents?: boolean;   // #250 — carry the launch-time AGENTS.md decision to /session
 }): Promise<void> => {
     let current = session;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
@@ -373,6 +390,25 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             }
         }).catch(() => { /* peek is best-effort */ });
     });
+
+    // loop.run→loop/terminated bridge. loop.run only ACKS now (status 100); the
+    // outcome arrives later on loop/terminated. A fresh loop awaits its own
+    // termination by loopId. The buffer covers the race where a fast loop
+    // terminates BEFORE loop.run's own response lands (we don't yet know the
+    // loopId to register a waiter), so the event is held until the awaiter asks.
+    const terminatedBuffer = new Map<number, LoopTerminated>();
+    const terminatedWaiters = new Map<number, (t: LoopTerminated) => void>();
+    rpc.onNotification("loop/terminated", (params) => {
+        const { loopId, ...t } = params as { loopId: number } & LoopTerminated;
+        const waiter = terminatedWaiters.get(loopId);
+        if (waiter !== undefined) { terminatedWaiters.delete(loopId); waiter(t); return; }
+        terminatedBuffer.set(loopId, t);
+    });
+    const awaitTermination = (loopId: number): Promise<LoopTerminated> => {
+        const buffered = terminatedBuffer.get(loopId);
+        if (buffered !== undefined) { terminatedBuffer.delete(loopId); return Promise.resolve(buffered); }
+        return new Promise((res) => terminatedWaiters.set(loopId, res));
+    };
 
     // Alias cache for /model completion + the active alias for the header —
     // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
@@ -494,8 +530,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     void seedPromptHistory(rpc, current.id, rl);
 
     // Proposal lifecycle — NON-BLOCKING. Server-resolved (flags.yolo/noProposals)
-    // settle in-process → skip. --yolo auto-accepts. A broadcast SEND (model
-    // speech/park — no target) is not reviewable → auto-accept (svc#255). A real
+    // settle in-process → skip. --yolo auto-accepts. A real
     // proposal renders its menu and parks as `pendingProposal` (queue beyond),
     // WITHOUT pausing readline or grabbing stdin: resolve via a single key
     // (onStdin, above) OR the typed `/accept`/`/reject`/`/cancel`/`/edit` verbs.
@@ -550,11 +585,6 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
         if (isServerResolved(p)) return;
-        if (isBroadcastProposal(p)) {
-            void rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "broadcast" })
-                .catch(() => { /* a stale/duplicate resolve is harmless */ });
-            return;
-        }
         if (opts.yolo) {
             void rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
                 .catch(() => { /* idem */ });
@@ -659,7 +689,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             let turnCount = 0;
             let finalStatus = 0;
             let hitMaxTurns = false;
-            let usage: LoopRunResult["usage"];
+            let usage: LoopUsage | undefined;
 
             try {
                 if (trimmed.startsWith("<<")) {
@@ -685,11 +715,20 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
-                    const result = await rpc.call("loop.run", loopParams) as LoopRunResult;
-                    finalStatus = result.finalStatus;
-                    hitMaxTurns = result.hitMaxTurns;
-                    turnCount = result.turnIds.length;
-                    usage = result.usage;
+                    const ack = await rpc.call("loop.run", loopParams) as LoopAck;
+                    // Synchronous failure (501 no provider, etc.) carries `error`.
+                    if (ack.error !== undefined) throw new Error(ack.error);
+                    // Normal path: status 100 ack → block on loop/terminated for
+                    // the real outcome. Any non-100 status is already terminal.
+                    if (ack.finalStatus === 100 && ack.loopId !== undefined) {
+                        const t = await awaitTermination(ack.loopId);
+                        finalStatus = t.finalStatus;
+                        hitMaxTurns = t.hitMaxTurns;
+                        turnCount = t.turnIds.length;
+                        usage = t.usage;
+                    } else {
+                        finalStatus = ack.finalStatus ?? ack.status ?? 0;
+                    }
                 }
                 const wallMs = Date.now() - start;
                 printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage));

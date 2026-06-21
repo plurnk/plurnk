@@ -419,12 +419,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // the streaming traces by printAbove. The user just types; a line submitted
     // while a loop is in flight is folded into it (loop.inject), else it starts
     // the next loop. The user never has to know which — both continue the same
-    // conversation. 🔥 badge when local auto-accept (yolo) is on — a width-stable
-    // plane-1 emoji (U+1F525), NOT the BMP ⚡ (U+26A1) which a font may render
-    // width-1 and drift the readline cursor (the ❓ U+2753 lesson).
+    // conversation. The yolo badge FILLS the prompt's 2-col indent — 🔥 (U+1F525) is width-2,
+    // exactly the indent — so toggling yolo never shifts the prompt and the
+    // coordinate stays column-aligned with the waterfall. 🔥 is plane-1 (width-
+    // stable), NOT the BMP ⚡ (U+26A1) which a font may render width-1 and drift
+    // the readline cursor (the ❓ U+2753 lesson).
     const buildPrompt = (): string => {
-        const yolo = opts.yolo ? "🔥 " : "";
-        return `  ${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        const yolo = opts.yolo ? "🔥" : "  ";
+        return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed

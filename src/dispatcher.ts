@@ -3,8 +3,7 @@
 // §2 (CLI mode) and §3 (TUI mode).
 
 import { parseArgs } from "node:util";
-import { readFile, access } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
@@ -138,8 +137,6 @@ options:
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + telemetry for the session (never
                           re-enables past the operator lockout). Create-time.
-      --no-agents         opt out of AGENTS.md auto-load (default: a local AGENTS.md
-                          is picked + read into the first model turn). Create-time.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -221,25 +218,7 @@ export interface Settings {
     mdDocs?: Array<{ alias: string; content: string }>;
     maxCommands?: number;
     git?: boolean;
-    autoReadAgents?: boolean;
 }
-
-// #250 — auto-load the project's AGENTS.md scratchpad into the first model turn.
-// Default ON when a local AGENTS.md exists (co-location: the client shares the
-// daemon's fs, so it just checks); --no-agents opts out. Activating takes BOTH
-// halves: PICK AGENTS.md into membership (it's gitignored by convention → not a
-// git member) AND settings.autoReadAgents so the engine READs it at turn-0. The
-// setting has no live setter (svc#231), so this is CREATE-only — callers skip it
-// on --session attach. Returns null when off or no local AGENTS.md exists.
-export const agentsAutoload = async (
-    optOut: boolean,
-    cwd: string,
-): Promise<{ pick: Constraint; autoReadAgents: true } | null> => {
-    if (optOut) return null;
-    try { await access(resolve(cwd, "AGENTS.md"), fsConstants.R_OK); }
-    catch { return null; }
-    return { pick: { effect: "pick", glob: "AGENTS.md" }, autoReadAgents: true };
-};
 
 export const buildSettings = async (
     values: { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean },
@@ -505,7 +484,6 @@ export const main = async (argv: string[]): Promise<void> => {
             md: { type: "string", multiple: true },
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
-            "no-agents": { type: "boolean" },   // #250 — opt out of AGENTS.md auto-load
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -609,19 +587,13 @@ export const main = async (argv: string[]): Promise<void> => {
             process.exit(exitCode);
         }
 
-        const constraints = buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] });
-        const settings = await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd());
-        // #250 — AGENTS.md auto-load, CREATE-only (the setting can't be set on
-        // attach). Compute once: cwd doesn't move for the process, so the same
-        // decision applies to a /session-created session mid-TUI.
-        const autoAgents = await agentsAutoload(values["no-agents"] === true, process.cwd());
-        if (autoAgents !== null && sessionName === undefined) {
-            constraints.push(autoAgents.pick);
-            settings.autoReadAgents = autoAgents.autoReadAgents;
-        }
-        const session = await attachOrCreateSession(rpc, { sessionName, runName, projectRoot, constraints, settings });
+        const session = await attachOrCreateSession(rpc, {
+            sessionName, runName, projectRoot,
+            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
+            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
+        });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, autoReadAgents: autoAgents !== null });
+            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice });
             process.exit(0);
         }
         // CLI: the version notice is narration → stderr (never pollutes stdout/--json).

@@ -186,7 +186,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: Rpc;
-    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; autoReadAgents?: boolean };
+    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null };
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
     write: (s: string) => void;
@@ -226,15 +226,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // New session — a fresh world. Rebind in place (service
             // §13.5-rebind), no reconnect. Name is optional (auto-named if
             // omitted) and is a mutable handle (/rename retargets it later).
-            const params: { name?: string; projectRoot?: string | null; constraints?: Array<{ effect: string; glob: string }>; settings?: { autoReadAgents: boolean } } = {};
+            const params: { name?: string; projectRoot?: string | null } = {};
             if (rest.length > 0) params.name = rest;
             if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
-            // #250 — a fresh session inherits the launch-time AGENTS.md auto-load
-            // decision (cwd is fixed for the process): pick it + opt the session in.
-            if (opts.autoReadAgents) {
-                params.constraints = [{ effect: "pick", glob: "AGENTS.md" }];
-                params.settings = { autoReadAgents: true };
-            }
             ctx.setSession(await rpc.call("session.create", params) as SessionResult);
             write(`  session: ${ctx.getSession().name} (new)\n`);
             return;
@@ -333,7 +327,6 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
-    autoReadAgents?: boolean;   // #250 — carry the launch-time AGENTS.md decision to /session
 }): Promise<void> => {
     let current = session;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.

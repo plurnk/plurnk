@@ -137,6 +137,8 @@ options:
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + telemetry for the session (never
                           re-enables past the operator lockout). Create-time.
+      --no-agents-md      turn off the service's AGENTS.md auto-load for this
+                          session (overrides PLURNK_AGENTS_AUTO). Create-time.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -218,11 +220,12 @@ export interface Settings {
     mdDocs?: Array<{ alias: string; content: string }>;
     maxCommands?: number;
     git?: boolean;
-    client?: string;   // #249 — frontend id, set on every session.create
+    client?: string;          // #249 — frontend id, set on every session.create
+    autoReadAgents?: boolean; // #268 — per-session override of the service AGENTS auto-load
 }
 
 export const buildSettings = async (
-    values: { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean },
+    values: { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean },
     cwd: string,
 ): Promise<Settings> => {
     const settings: Settings = {};
@@ -235,6 +238,9 @@ export const buildSettings = async (
         settings.maxCommands = n;
     }
     if (values["no-git"] === true) settings.git = false;
+    // #268 — pure passthrough of the per-session AGENTS auto-load override (the
+    // service does the picking + reading; the client just forces it off here).
+    if (values["no-agents-md"] === true) settings.autoReadAgents = false;
     const mi = values["manifest-items"];
     if (mi !== undefined) {
         const n = Number(mi);
@@ -491,6 +497,7 @@ export const main = async (argv: string[]): Promise<void> => {
             md: { type: "string", multiple: true },
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
+            "no-agents-md": { type: "boolean" },   // #268 — override: AGENTS auto-load off for this session
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -597,10 +604,12 @@ export const main = async (argv: string[]): Promise<void> => {
         const session = await attachOrCreateSession(rpc, {
             sessionName, runName, projectRoot,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
+            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
         });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: CLIENT_ID });
+            // #268 — carry the AGENTS-auto-load override onto /session-created sessions too.
+            const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
+            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: CLIENT_ID, autoReadAgents });
             process.exit(0);
         }
         // CLI: the version notice is narration → stderr (never pollutes stdout/--json).

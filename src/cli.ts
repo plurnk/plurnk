@@ -5,7 +5,7 @@
 
 import type Rpc from "./rpc.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { extractSendBody } from "./render.ts";
+import { extractSendBody, contextGauge } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked } from "./telemetry.ts";
@@ -111,7 +111,7 @@ export const buildJsonRecord = (input: {
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage !== undefined
-            ? { promptTokens: input.result.usage.promptTokens, completionTokens: input.result.usage.completionTokens, costPico: input.result.usage.costPico }
+            ? { promptTokens: input.result.usage.promptTokens, completionTokens: input.result.usage.completionTokens, costPico: input.result.usage.costPico, contextTokens: input.result.usage.contextTokens ?? null }
             : null,
         turns,
         telemetry: input.telemetry,
@@ -365,7 +365,14 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
         tokenPart = `, tokens: ↑${result.usage.promptTokens} ↓${result.usage.completionTokens}`;
         if (result.usage.costPico > 0) tokenPart += `, cost: $${(result.usage.costPico / 1e12).toFixed(4)}`;
     }
-    process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s${tokenPart}\n`);
+    // Context gauge (svc#263): the active model's window is the denominator. One
+    // cheap co-located call, text mode only — json already carries contextTokens.
+    let contextSize: number | null | undefined;
+    try {
+        const pl = await rpc.call("providers.list") as { aliases?: Array<{ active?: boolean; contextSize?: number | null }> };
+        contextSize = pl.aliases?.find((a) => a.active)?.contextSize;
+    } catch { /* gauge omitted */ }
+    process.stderr.write(`turns: ${result.turnIds.length}, wall: ${(wallMs / 1000).toFixed(2)}s${tokenPart}${contextGauge(result.usage?.contextTokens, contextSize)}\n`);
 
     return exitCodeForLoop(result.finalStatus, result.hitMaxTurns);
 };

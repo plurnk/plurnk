@@ -410,11 +410,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // marks the boot-time default `active`).
     let aliasCache: string[] = [];
     let activeAlias: string | undefined;
+    // The active model's context window (svc#263) — the context-gauge denominator,
+    // null when the provider can't report it. Fetched once with the alias list;
+    // the gauge is approximate if /model later switches off the active default.
+    let activeContextSize: number | null | undefined;
     try {
-        const r = await rpc.call("providers.list") as { aliases?: Array<{ alias: string; active?: boolean }> };
+        const r = await rpc.call("providers.list") as { aliases?: Array<{ alias: string; active?: boolean; contextSize?: number | null }> };
         if (Array.isArray(r.aliases)) {
             aliasCache = r.aliases.map((a) => a.alias);
-            activeAlias = r.aliases.find((a) => a.active)?.alias;
+            const active = r.aliases.find((a) => a.active);
+            activeAlias = active?.alias;
+            activeContextSize = active?.contextSize;
         }
     } catch { /* completion stays empty; header falls back to (daemon default) */ }
 
@@ -724,7 +730,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     }
                 }
                 const wallMs = Date.now() - start;
-                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage));
+                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, activeContextSize));
             } catch (cause) {
                 const msg = cause instanceof Error ? cause.message : String(cause);
                 printAbove(`  \x1b[31merror: ${msg}\x1b[0m`);

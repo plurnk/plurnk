@@ -14,6 +14,7 @@ const {
     extractSendBody,
     renderLogEntry,
     renderSummary,
+    contextGauge,
     isPromptEntry,
     OP_GLYPHS,
     ORIGIN_GLYPHS,
@@ -378,6 +379,36 @@ test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", ()
     const s = renderSummary(2, 500, 200, false, usage(1200, 345, 420000000));
     assert.match(s, /↑1200 ↓345/);
     assert.match(s, /loop \$0\.0004/);
+});
+
+// ─── contextGauge (svc#263) ──────────────────────────────────────────
+
+test("contextGauge: occupancy + window → 'ctx N%/Mk'", () => {
+    assert.equal(contextGauge(7360, 49152), " · ctx 15%/49k");
+});
+
+test("contextGauge: sub-1000 window stays bare (no k)", () => {
+    assert.equal(contextGauge(120, 512), " · ctx 23%/512");
+});
+
+test("contextGauge: null/absent contextSize → omitted (never guessed)", () => {
+    assert.equal(contextGauge(7360, null), "");
+    assert.equal(contextGauge(7360, undefined), "");
+    assert.equal(contextGauge(7360, 0), "");
+});
+
+test("contextGauge: absent contextTokens → omitted", () => {
+    assert.equal(contextGauge(undefined, 49152), "");
+});
+
+test("renderSummary: contextTokens + contextSize → gauge appended", () => {
+    const s = renderSummary(1, 500, 200, false, { ...usage(7360, 27), contextTokens: 7360 }, 49152);
+    assert.match(s, /ctx 15%\/49k/);
+});
+
+test("renderSummary: no contextSize → no gauge even with contextTokens", () => {
+    const s = renderSummary(1, 500, 200, false, { ...usage(7360, 27), contextTokens: 7360 });
+    assert.doesNotMatch(s, /ctx /);
 });
 
 test("renderSummary: usage without cost omits the cost segment", () => {

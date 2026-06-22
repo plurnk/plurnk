@@ -122,7 +122,14 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.runId, 39);   // the conversation run, from loop.run's modelRunId
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.session, { id: 12, name: "sess" });
-    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000 });
+    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000, contextTokens: null });
+});
+
+test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge numerator)", () => {
+    const doc = buildJsonRecord(recordInput({
+        result: { loopId: 7, turnIds: [1], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 0, contextTokens: 7360 } },
+    })) as Record<string, unknown>;
+    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 0, contextTokens: 7360 });
 });
 
 test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate + target", () => {

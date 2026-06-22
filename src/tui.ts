@@ -187,7 +187,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: Rpc;
-    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string };
+    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string; autoReadAgents?: boolean };
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
     write: (s: string) => void;
@@ -227,10 +227,15 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // New session — a fresh world. Rebind in place (service
             // §13.5-rebind), no reconnect. Name is optional (auto-named if
             // omitted) and is a mutable handle (/rename retargets it later).
-            const params: { name?: string; projectRoot?: string | null; settings?: { client: string } } = {};
+            const params: { name?: string; projectRoot?: string | null; settings?: { client?: string; autoReadAgents?: boolean } } = {};
             if (rest.length > 0) params.name = rest;
             if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
-            if (opts.client !== undefined) params.settings = { client: opts.client };   // #249
+            // #249 client id + #268 AGENTS-auto-load override, carried onto the fresh session.
+            if (opts.client !== undefined || opts.autoReadAgents !== undefined) {
+                params.settings = {};
+                if (opts.client !== undefined) params.settings.client = opts.client;
+                if (opts.autoReadAgents !== undefined) params.settings.autoReadAgents = opts.autoReadAgents;
+            }
             ctx.setSession(await rpc.call("session.create", params) as SessionResult);
             write(`  session: ${ctx.getSession().name} (new)\n`);
             return;
@@ -329,7 +334,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
-    client?: string;   // #249 — frontend id, carried onto /session-created sessions
+    client?: string;            // #249 — frontend id, carried onto /session-created sessions
+    autoReadAgents?: boolean;   // #268 — AGENTS auto-load override, carried onto /session
 }): Promise<void> => {
     let current = session;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.

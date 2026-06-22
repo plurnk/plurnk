@@ -204,34 +204,23 @@ export const runLogRead = async (
 // ─── plurnk read <L/T/S> ──────────────────────────────────────────────
 
 // Drill into ONE log entry by its L/T/S coordinate — the address on every
-// waterfall line. Resolved via log.read on the attached run + a client-side
-// coordinate match: log.read carries each entry's full tx/rx, and (unlike
-// `entry.read({target:"log:///L/T/S"})`, which 404s on this daemon — SPEC drift,
-// see Open ecosystem deps) it actually returns the content. The coordinate is
-// run-relative, so target the conversation's run with `--run <model-run>`.
-// Accepts zero-padded display form (03/01/02) or bare (3/1/2) alike.
+// waterfall line. The CLEAN contract: hand the coordinate to the SERVICE via
+// op.read of the Log scheme (§schemes/Log.ts coordinate addressing); the daemon
+// resolves it and returns the content. The client renders what it's given — NO
+// fetch-all, NO client-side coordinate match, NO tx/rx second-guessing (that was
+// a protocol compromise — the client's job is the contract, not the daemon's).
+// Run-relative, so target the conversation's run with `--run <model-run>`. Accepts
+// zero-padded display form (03/01/02) or bare (3/1/2) alike.
+// svc#271: op.read of a log:// entry returns only the rx receipt, so a non-READ
+// entry (SEND/PLAN/EDIT) shows status metadata, not its tx body — visibly degraded
+// until the service surfaces the full entry shape by coordinate. That's the
+// forcing function, not something to paper over client-side.
 export const parseCoord = (raw: string): [number, number, number] | null => {
     const parts = raw.split("/");
     if (parts.length !== 3) return null;
     const nums = parts.map((p) => (/^\d+$/.test(p.trim()) ? Number(p) : NaN));
     if (nums.some((n) => !Number.isInteger(n) || n < 0)) return null;
     return [nums[0], nums[1], nums[2]];
-};
-
-// The human-readable body of an entry: a READ's result content, else the op's
-// own body (SEND/PLAN/EDIT carry it on tx.body), else null → caller pretty-prints.
-const extractEntryContent = (entry: LogEntryWire): string | null => {
-    const rx = entry.rx as { content?: unknown } | null;
-    const tx = entry.tx as { body?: unknown } | null;
-    if (typeof rx?.content === "string" && rx.content.length > 0) return rx.content;
-    const body = tx?.body;
-    if (typeof body === "string" && body.length > 0) return body;
-    // SEND/broadcast bodies arrive as { raw, json } — surface the raw text.
-    if (body !== null && typeof body === "object") {
-        const raw = (body as { raw?: unknown }).raw;
-        if (typeof raw === "string" && raw.length > 0) return raw;
-    }
-    return null;
 };
 
 export const runRead = async (rpc: Rpc, coord: string, opts: { json: boolean }): Promise<number> => {
@@ -241,18 +230,22 @@ export const runRead = async (rpc: Rpc, coord: string, opts: { json: boolean }):
         return 64;
     }
     const [loop, turn, seq] = parsed;
-    const { entries } = await rpc.call("log.read", {}) as LogReadResult;
-    const match = entries.find((e) => e.loop_seq === loop && e.turn_seq === turn && e.sequence === seq);
-    if (match === undefined) {
+    // One clean call: the daemon resolves the coordinate and returns the content.
+    const target = `log:///${loop}/${turn}/${seq}`;
+    const r = await rpc.call("op.read", { target }) as { status: number; content: string | null; mimetype?: string };
+    if (r.status === 404) {
         process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached run`
             + ` (the conversation lives in the model run — try --run <model-run>)\n`);
         return 4;
     }
+    if (r.status >= 400) {
+        process.stderr.write(`read failed: ${r.status}\n`);
+        return 4;
+    }
     if (opts.json) {
-        process.stdout.write(`${JSON.stringify({ schemaVersion: JSON_SCHEMA_VERSION, coord: `${loop}/${turn}/${seq}`, entry: match })}\n`);
+        process.stdout.write(`${JSON.stringify({ schemaVersion: JSON_SCHEMA_VERSION, coord: `${loop}/${turn}/${seq}`, status: r.status, content: r.content, mimetype: r.mimetype ?? null })}\n`);
         return 0;
     }
-    // Text mode: the entry's content if it has a body, else the entry structure.
-    process.stdout.write(`${extractEntryContent(match) ?? JSON.stringify(match, null, 2)}\n`);
+    process.stdout.write(`${r.content ?? ""}\n`);
     return 0;
 };

@@ -199,6 +199,17 @@ test("renderLogEntry: intermediate 102 broadcast → single plain line, no blank
     assert.ok(!out.includes("\n"), `102 ping is one line, got: ${JSON.stringify(out)}`);
 });
 
+test("renderLogEntry: PLAN → 🧠 glyph + the plan text (not a bare ?)", () => {
+    const out = renderLogEntry(entry({ op: "PLAN", origin: "model", scheme: null, pathname: null, signal: null, status_rx: 200, tx: { body: "Acknowledge user prompt." } as unknown as { body: { raw: string; json: null } } }));
+    assert.match(out, /🧠/);
+    assert.match(out, /Acknowledge user prompt\./);
+});
+
+test("renderLogEntry: PLAN collapses newlines in the plan body", () => {
+    const out = renderLogEntry(entry({ op: "PLAN", origin: "model", scheme: null, pathname: null, signal: null, status_rx: 200, tx: { body: "Step one.\nStep two." } as unknown as { body: { raw: string; json: null } } }));
+    assert.match(out, /Step one\. Step two\./);
+});
+
 test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line", () => {
     const out = renderLogEntry(entry({
         op: "SEND",

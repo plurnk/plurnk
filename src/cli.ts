@@ -11,6 +11,7 @@ import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
+import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
 // The assembled loop outcome — loopId/modelRunId from the loop.run ACK,
@@ -294,10 +295,12 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     }
 
     const start = Date.now();
-    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt };
+    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt };
     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
     if (effectiveFlags !== undefined && Object.keys(effectiveFlags).length > 0) loopParams.flags = effectiveFlags;
     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
+    const openPaths = extractOpenPaths(prompt);   // @file refs → daemon turn-0 READs (#260)
+    if (openPaths.length > 0) loopParams.openPaths = openPaths;
 
     // loop.run only ACKS now (svc 0.45.0+); the outcome rides loop/terminated.
     // Register the waiter BEFORE the call so a fast loop that terminates before

@@ -53,7 +53,10 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("/pick → /members reflects the rule; /drop removes it", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        // --no-agents-md: the daemon auto-picks AGENTS.md (svc#268, PLURNK_AGENTS_AUTO=1
+        // in the service .env), which would seed a standing `pick AGENTS.md` rule and
+        // pollute the assertions below. Opt out so this test owns the full rule set.
+        const tui = spawnTui(daemon.url, ["--no-agents-md"]);
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("/pick *.xyz\r"); await tui.waitFor(/pick: \*\.xyz/);

@@ -259,7 +259,7 @@ test("runLogRead: only sends defined filters (no undefined keys)", async () => {
     assert.deepEqual(calls[0].params, { limit: 10 });
 });
 
-// ─── plurnk read <L/T/S> (coordinate-addressed entry.read) ────────────
+// ─── plurnk read <L/T/S> (clean op.read coordinate contract, svc#271) ─────
 
 test("parseCoord: accepts bare and zero-padded; rejects malformed", () => {
     assert.deepEqual(parseCoord("3/1/2"), [3, 1, 2]);
@@ -270,34 +270,25 @@ test("parseCoord: accepts bare and zero-padded; rejects malformed", () => {
     assert.equal(parseCoord("3/-1/2"), null);       // negative
 });
 
-// log.read carries the entry content; runRead matches by coordinate.
-const coordEntry = (loop: number, turn: number, seq: number, over: Record<string, unknown> = {}): unknown => ({
-    id: loop * 100 + turn * 10 + seq, op: "READ", suffix: "", origin: "model", signal: null,
-    scheme: null, pathname: null, hostname: null, fragment: null, status_rx: 200,
-    loop_seq: loop, turn_seq: turn, sequence: seq, tx: null, rx: null, ...over,
-});
-
-test("runRead: matches the coordinate in log.read and emits the structured entry", async () => {
-    const target = coordEntry(3, 1, 2, { op: "READ", rx: { status: 200, content: "the read result" } });
-    const other = coordEntry(3, 1, 1);
-    const { rpc, calls } = fakeRpc({ "log.read": { status: 200, entries: [other, target] } });
+test("runRead: hands the coordinate to op.read(log:///L/T/S) — the daemon resolves it", async () => {
+    const { rpc, calls } = fakeRpc({ "op.read": { status: 200, content: "the read result", mimetype: "text/plain" } });
     const out = await captureStdout(() => runRead(rpc, "3/1/2", { json: true }));
-    assert.deepEqual(calls[0], { method: "log.read", params: {} });   // run-relative; attach picks the run
+    assert.deepEqual(calls[0], { method: "op.read", params: { target: "log:///3/1/2" } });
     const doc = JSON.parse(out.trim());
     assert.equal(doc.coord, "3/1/2");
-    assert.equal(doc.entry.op, "READ");
+    assert.equal(doc.content, "the read result");
     assert.ok(typeof doc.schemaVersion === "number");
 });
 
-test("runRead: text mode prints the entry body (rx.content); accepts zero-padded coords", async () => {
-    const target = coordEntry(3, 1, 2, { rx: { status: 200, content: "the body" } });
-    const { rpc } = fakeRpc({ "log.read": { status: 200, entries: [target] } });
+test("runRead: text mode prints the content the daemon returns; zero-pad normalizes the target", async () => {
+    const { rpc, calls } = fakeRpc({ "op.read": { status: 200, content: "the body" } });
     const out = await captureStdout(() => runRead(rpc, "03/01/02", { json: false }));
+    assert.deepEqual(calls[0].params, { target: "log:///3/1/2" });
     assert.match(out, /the body/);
 });
 
-test("runRead: coordinate not in the attached run → exit 4 with a model-run hint", async () => {
-    const { rpc } = fakeRpc({ "log.read": { status: 200, entries: [] } });
+test("runRead: op.read 404 → exit 4 with a model-run hint", async () => {
+    const { rpc } = fakeRpc({ "op.read": { status: 404, content: null } });
     const code = await runRead(rpc, "3/1/2", { json: false });
     assert.equal(code, 4);
 });

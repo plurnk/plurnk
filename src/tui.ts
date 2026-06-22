@@ -17,6 +17,7 @@ import { PassThrough } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import PasteFilter from "./paste.ts";
+import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
 import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
@@ -186,7 +187,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: Rpc;
-    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null };
+    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string };
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
     write: (s: string) => void;
@@ -226,9 +227,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // New session — a fresh world. Rebind in place (service
             // §13.5-rebind), no reconnect. Name is optional (auto-named if
             // omitted) and is a mutable handle (/rename retargets it later).
-            const params: { name?: string; projectRoot?: string | null } = {};
+            const params: { name?: string; projectRoot?: string | null; settings?: { client: string } } = {};
             if (rest.length > 0) params.name = rest;
             if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
+            if (opts.client !== undefined) params.settings = { client: opts.client };   // #249
             ctx.setSession(await rpc.call("session.create", params) as SessionResult);
             write(`  session: ${ctx.getSession().name} (new)\n`);
             return;
@@ -327,6 +329,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     modelAlias?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
+    client?: string;   // #249 — frontend id, carried onto /session-created sessions
 }): Promise<void> => {
     let current = session;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
@@ -710,10 +713,12 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                         lineFlags = { ...(opts.loopFlags ?? {}), mode: prefix === "?" ? "ask" : "act" };
                     }
                     const promptText = trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "");
-                    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number } = { prompt: promptText };
+                    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
                     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
+                    const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
+                    if (openPaths.length > 0) loopParams.openPaths = openPaths;
                     const ack = await rpc.call("loop.run", loopParams) as LoopAck;
                     // Synchronous failure (501 no provider, etc.) carries `error`.
                     if (ack.error !== undefined) throw new Error(ack.error);

@@ -218,6 +218,7 @@ export interface Settings {
     mdDocs?: Array<{ alias: string; content: string }>;
     maxCommands?: number;
     git?: boolean;
+    client?: string;   // #249 — frontend id, set on every session.create
 }
 
 export const buildSettings = async (
@@ -268,6 +269,11 @@ export const buildSettings = async (
 // marker. The client never does registry IO — it just reads what discover says.
 export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
+// #249 — session-stable frontend id, passed on session.create and forwarded by
+// the daemon to the plurnk provider as the Plurnk-Client header (dropped by
+// every other provider). The 'plurnk.nvim/1.4.0' shape; nvim sends its own.
+export const CLIENT_ID = `@plurnk/plurnk/${CLIENT_VERSION}`;
+
 interface DiscoverVersions { service?: { installed?: string; latest?: string }; client?: { latest?: string } }
 
 const isOlder = (a: string, b: string): boolean => {
@@ -300,6 +306,7 @@ const attachOrCreateSession = async (
     if (opts.sessionName === undefined) {
         // Seed overlay + open-context settings atomically at creation so turn-1's
         // manifest/preview/docs are right with no follow-up RPC.
+        settings.client = CLIENT_ID;   // #249 — every session carries the frontend id
         const params: { projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
         if (constraints.length > 0) params.constraints = constraints;
         if (Object.keys(settings).length > 0) params.settings = settings;
@@ -593,7 +600,7 @@ export const main = async (argv: string[]): Promise<void> => {
             settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
         });
         if (prompt.length === 0) {
-            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice });
+            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: CLIENT_ID });
             process.exit(0);
         }
         // CLI: the version notice is narration → stderr (never pollutes stdout/--json).

@@ -46,8 +46,10 @@ ok(help.code === 0 && /usage: plurnk /.test(help.stdout), "`--help` prints usage
 // No daemon, text mode → onboarding hints on stderr, exit 1, stdout clean.
 const refused = runBin(["hello"]);
 ok(refused.code === 1, "no-daemon prompt exits 1");
-ok(/needs the background daemon|Install the service|Start the daemon/.test(refused.stderr),
-    "connection-refused onboarding hints on stderr");
+ok(/No daemon is running/.test(refused.stderr)
+    && /npx @plurnk\/plurnk-service/.test(refused.stderr)
+    && /npm i -g @plurnk\/plurnk-service/.test(refused.stderr),
+    "connection-refused onboarding hints on stderr (no-daemon + npx + npm-install)");
 
 // No daemon, json mode → ONE structured error on stdout, stderr silent.
 const refusedJson = runBin(["--json", "hello"]);

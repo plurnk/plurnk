@@ -293,17 +293,35 @@ export interface LoopUsage {
     sessionCostPico?: number;
     // Account balance in pico-USD, when the provider reports it (svc#252). Staged.
     balancePico?: number;
+    // Current context-window occupancy in tokens (svc#263) — the daemon's
+    // figure, NOT the double-counting promptTokens sum. The gauge numerator;
+    // contextSize (the denominator) rides providers.list, not the loop.
+    contextTokens?: number;
 }
+
+// Compact token count: 49152 → "49k", 980 → "980". The gauge stays terse.
+const formatK = (n: number): string => n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`;
+
+// Context-% gauge (svc#263): `ctx 15%/49k`. Numerator = the loop's contextTokens
+// (occupancy), denominator = the active model's contextSize (providers.list).
+// Omitted — never guessed — when either is absent (a provider that can't report
+// its window returns contextSize null; §provider-surface-identity).
+export const contextGauge = (contextTokens?: number, contextSize?: number | null): string => {
+    if (contextTokens === undefined || contextSize === undefined || contextSize === null || contextSize <= 0) return "";
+    const pct = Math.round((contextTokens / contextSize) * 100);
+    return ` · ctx ${pct}%/${formatK(contextSize)}`;
+};
 
 // usage is absent for non-model ops (op.exec / op.parse have no provider
 // call) — those render no token part. It is NOT a fallback for missing
 // data: a model loop always carries real usage (plurnk-service #197).
-export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage): string => {
+export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage, contextSize?: number | null): string => {
     const tag = hitMaxTurns ? "maxTurns" : finalStatus === 200 ? "done" : `final ${finalStatus}`;
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
     if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
+        tokenPart += contextGauge(usage.contextTokens, contextSize);
         // Money: loop (this loop's cost) | session (daemon total, svc#254) |
         // remaining (account balance, svc#252). Each only when available — the
         // client renders all three, aggregates none.

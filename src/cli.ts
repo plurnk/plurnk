@@ -138,7 +138,16 @@ export const formatPlain = (entry: LogEntryWire): string => {
             : entry.pathname;
     }
     const sub = entry.op === "SEND" && typeof entry.signal === "number" ? `[${entry.signal}]` : "";
-    return `[${entry.status_rx}] ${entry.origin} ${entry.op}${sub} ${path}`.trim();
+    let line = `[${entry.status_rx}] ${entry.origin} ${entry.op}${sub} ${path}`.trim();
+    // PLAN's reasoning rides tx.body (a plain string) — surface it like the TUI/nvim
+    // do, so a one-shot run shows what the model planned, not a bare op name.
+    if (entry.op === "PLAN") {
+        const planBody = (entry.tx as { body?: unknown } | null)?.body;
+        if (typeof planBody === "string" && planBody.trim().length > 0) {
+            line += `  ${planBody.replace(/\s*\n\s*/g, " ").trim()}`;
+        }
+    }
+    return line;
 };
 
 // Per plurnk-service Engine.ts, only SEND[200] and SEND[499] terminate a loop.

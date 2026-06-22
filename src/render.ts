@@ -18,6 +18,7 @@ export const OP_GLYPHS: Record<string, string> = {
     FOLD: "➖",
     SEND: "💬",
     EXEC: "🔧",
+    PLAN: "🧠",   // the model's per-turn reasoning (grammar 0.70 leads every turn with PLAN)
 };
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
@@ -279,6 +280,16 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     parts.push(statusText);
     if (pathText.length > 0) parts.push(pathText);
     if (extra.length > 0) parts.push(extra);
+
+    // PLAN carries the model's reasoning as a plain string in tx.body (NOT the
+    // SEND {raw,json} shape) — surface it dimmed, newlines collapsed, so the
+    // waterfall shows what the model planned instead of a bare glyph.
+    if (entry.op === "PLAN") {
+        const planBody = (entry.tx as { body?: unknown } | null)?.body;
+        if (typeof planBody === "string" && planBody.trim().length > 0) {
+            parts.push(`${DIM}${planBody.replace(/\s*\n\s*/g, " ").trim()}${RESET}`);
+        }
+    }
 
     return `  ${coordPrefix(entry)}${parts.join(" ")}`;
 };

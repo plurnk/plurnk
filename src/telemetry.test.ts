@@ -93,6 +93,39 @@ test("renderTelemetryEvent: hints rendered as indented continuation lines", () =
     assert.match(lines[2], /^     Start it from plurnk-service/);
 });
 
+// ─── Severity coloring (color-enabled import) ────────────────────────
+// The main import runs under NO_COLOR; severity color needs a color-enabled
+// instance. Query-suffixed dynamic import busts the ESM cache.
+const freshTel = async (tag: string): Promise<typeof import("./telemetry.ts")> =>
+    await import(`./telemetry.ts?${tag}`) as typeof import("./telemetry.ts");
+
+test("renderTelemetryEvent: error-class headline is RED (not dim)", async () => {
+    process.env.NO_COLOR = "0";
+    const m = await freshTel("sev-err");
+    process.env.NO_COLOR = "1";
+    const out = m.renderTelemetryEvent({ source: "client:connection", kind: "refused", message: "no daemon" });
+    assert.match(out, /\x1b\[31m/);          // red
+    assert.doesNotMatch(out, /\x1b\[2m"no daemon"/);  // message not dim
+});
+
+test("renderTelemetryEvent: warning-class headline is YELLOW (daemon_stale)", async () => {
+    process.env.NO_COLOR = "0";
+    const m = await freshTel("sev-warn");
+    process.env.NO_COLOR = "1";
+    const out = m.renderTelemetryEvent({ source: "client:connection", kind: "daemon_stale", message: "update available" });
+    assert.match(out, /\x1b\[33m/);          // yellow
+    assert.doesNotMatch(out, /\x1b\[31m/);   // not red
+});
+
+test("renderTelemetryEvent: neutral kind stays uncolored, message dim", async () => {
+    process.env.NO_COLOR = "0";
+    const m = await freshTel("sev-neutral");
+    process.env.NO_COLOR = "1";
+    const out = m.renderTelemetryEvent({ source: "engine", kind: "graceful", message: "done" });
+    assert.doesNotMatch(out, /\x1b\[31m|\x1b\[33m/);  // not red/yellow
+    assert.match(out, /\x1b\[2m"done"/);              // dim message
+});
+
 test("renderTelemetryEvent: snippet + hints both rendered in order", () => {
     const out = renderTelemetryEvent({
         source: "grammar",

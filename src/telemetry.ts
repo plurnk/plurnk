@@ -87,8 +87,26 @@ const formatPosition = (pos: Position | null | undefined): string => {
     return "";
 };
 
+// Severity from the source:kind discriminator — the wire carries no explicit
+// level, so we classify the open kind vocabulary by token. Failure families
+// paint the whole headline RED, warnings YELLOW; everything else stays neutral
+// (plain discriminator, dim message). Heuristic, but it covers the kinds the
+// stack actually emits (refused/error/closed/invalid/parse_error/strike/
+// action_failure/*_exceeded/*_overflow/not_found/ambiguous/unknown/missing → red;
+// stale/blocked/warn → yellow; graceful/statement/url/note → neutral).
+const ERROR_RE = /error|fail|refus|invalid|not_found|ambiguous|exceeded|overflow|denied|unknown|missing|closed|strike|unenforced|rejected|conflict|crash/i;
+const WARN_RE = /stale|warn|deprecat|blocked/i;
+const severityColor = (event: TelemetryEvent): string => {
+    const tag = `${event.source}:${event.kind}`;
+    if (ERROR_RE.test(tag)) return RED;
+    if (WARN_RE.test(tag)) return YELLOW;
+    return "";
+};
+
 // Format the headline: `<glyph> <source>:<kind> <position?> <message?>`. The
-// caller is responsible for trailing newlines.
+// caller is responsible for trailing newlines. Error/warning headlines render
+// in their severity color (so an error reads as an error); neutral ones keep
+// the plain discriminator + dim message.
 const renderHeadline = (event: TelemetryEvent): string => {
     const discriminator = `${event.source}:${event.kind}`;
     const position = formatPosition(event.position);
@@ -97,6 +115,11 @@ const renderHeadline = (event: TelemetryEvent): string => {
         : "";
     const parts = [TELEMETRY_GLYPH, discriminator];
     if (position.length > 0) parts.push(position);
+    const color = severityColor(event);
+    if (color.length > 0) {
+        if (message.length > 0) parts.push(message);
+        return `  ${color}${parts.join(" ")}${RESET}`;
+    }
     if (message.length > 0) parts.push(`${DIM}${message}${RESET}`);
     return `  ${parts.join(" ")}`;
 };

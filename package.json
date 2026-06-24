@@ -1,6 +1,6 @@
 {
   "name": "@plurnk/plurnk",
-  "version": "0.49.0",
+  "version": "0.50.0",
   "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
   "type": "module",
   "license": "MIT",
@@ -8,7 +8,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=25"
+    "node": ">=26"
   },
   "bin": {
     "plurnk": "bin/plurnk.js"
@@ -35,7 +35,7 @@
     "test:installation": "node scripts/test-installation.mjs"
   },
   "devDependencies": {
-    "@types/node": "^25.8.0",
+    "@types/node": "^26.0.0",
     "@types/ws": "^8.18.1",
     "node-pty": "^1.1.0",
     "typescript": "^6.0.3"

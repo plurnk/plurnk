@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import Rpc, { RpcError } from "./rpc.ts";
-import { runCli, buildJsonError } from "./cli.ts";
+import { runCli, runScript, buildJsonError } from "./cli.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
@@ -151,6 +151,10 @@ subcommands:
   session rename <a> <b>  rename session <a> to <b> (session.rename — a session's
                           name is a mutable handle; runs are immutable)
   log read --session ...  read log entries from the named session's run
+  script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
+                          trace, exit by worst op status. Honors --session/--yolo
+                          /--project-root + membership flags. The daemon owns the
+                          grammar; the client just feeds the file.
 `;
 
 // Render a telemetry event to stderr and exit. Single egress point so every
@@ -518,7 +522,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
     // a known read-only subcommand (models / session / log), we skip stdin
     // reading and prompt construction entirely.
-    const SUBCOMMANDS = ["models", "session", "log", "read"] as const;
+    const SUBCOMMANDS = ["models", "session", "log", "read", "script"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -594,6 +598,29 @@ export const main = async (argv: string[]): Promise<void> => {
     } catch { /* discover failing will surface on the real call anyway */ }
 
     try {
+        // `plurnk script foo.plk` — feed a .plk file to op.parse. Unlike the
+        // read-only subcommands, a script MUTATES (EDIT/MOVE/COPY), so it attaches
+        // a real client run with the same constraints + settings as the loop path.
+        // The client never parses the file; the daemon owns the grammar.
+        if (subcommand === "script") {
+            const filePath = positionals[1];
+            if (filePath === undefined) {
+                throw new TelemetryError(clientSubcommandMissingArgument("plurnk script", "<file.plk>"));
+            }
+            if (positionals.length > 2) {
+                throw new TelemetryError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
+            }
+            const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
+            const session = await attachOrCreateSession(rpc, {
+                sessionName, runName, projectRoot,
+                constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
+                settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
+            });
+            if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
+            const exitCode = await runScript(rpc, text, session, { json, yolo });
+            process.exit(exitCode);
+        }
+
         if (isSubcommand) {
             const exitCode = await runSubcommand(rpc, positionals, {
                 json, sessionName, runName, projectRoot, values,

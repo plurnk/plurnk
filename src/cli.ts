@@ -78,18 +78,12 @@ const entryCoord = (e: LogEntryWire): string => {
     return `${p(e.loop_seq)}/${p(e.turn_seq)}/${p(e.sequence)}`;
 };
 
-// The complete client-observed record of one loop run, as a plain object ready
-// to JSON.stringify. Pure → unit-testable without a daemon.
-export const buildJsonRecord = (input: {
-    session: SessionResult; prompt: string; response: string;
-    entries: LogEntryWire[]; telemetry: TelemetryEvent[];
-    result: { loopId: number; modelRunId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
-    wallMs: number; timedOut: boolean;
-}): Record<string, unknown> => {
-    // Group ops by turn (turn_seq), preserving wire order within each turn, so
-    // each turn/op stays a standalone object — NDJSON-able later without rework.
+// Group ops by turn (turn_seq), preserving wire order within each turn, so each
+// turn/op stays a standalone object — NDJSON-able later without rework. Shared
+// by the loop record and the script record.
+const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Array<Record<string, unknown>> }> => {
     const byTurn = new Map<number, Array<Record<string, unknown>>>();
-    for (const e of input.entries) {
+    for (const e of entries) {
         const ops = byTurn.get(e.turn_seq) ?? [];
         ops.push({
             coord: entryCoord(e), op: e.op, origin: e.origin,
@@ -98,7 +92,18 @@ export const buildJsonRecord = (input: {
         });
         byTurn.set(e.turn_seq, ops);
     }
-    const turns = [...byTurn.entries()].sort((a, b) => a[0] - b[0]).map(([turn, ops]) => ({ turn, ops }));
+    return [...byTurn.entries()].sort((a, b) => a[0] - b[0]).map(([turn, ops]) => ({ turn, ops }));
+};
+
+// The complete client-observed record of one loop run, as a plain object ready
+// to JSON.stringify. Pure → unit-testable without a daemon.
+export const buildJsonRecord = (input: {
+    session: SessionResult; prompt: string; response: string;
+    entries: LogEntryWire[]; telemetry: TelemetryEvent[];
+    result: { loopId: number; modelRunId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
+    wallMs: number; timedOut: boolean;
+}): Record<string, unknown> => {
+    const turns = groupOpsByTurn(input.entries);
     const doc: Record<string, unknown> = {
         schemaVersion: JSON_SCHEMA_VERSION,
         session: { id: input.session.id, name: input.session.name },
@@ -183,6 +188,113 @@ const runCliExec = async (rpc: Rpc, command: string): Promise<number> => {
     if (typeof err === "string" && err.length > 0) process.stderr.write(err);
     process.stderr.write(`exec: ${fin.closeStatus}\n`);
     return fin.closeStatus === 200 ? 0 : fin.closeStatus === 499 ? 3 : 4;
+};
+
+// The complete client-observed record of a `plurnk script` run. Pure →
+// unit-testable without a daemon. Mirrors buildJsonRecord's turn grouping, minus
+// the loop-only fields (no prompt/response/usage — a straight-line script has
+// neither a model nor a conversation).
+export const buildScriptJsonRecord = (input: {
+    session: SessionResult; results: Array<{ status: number }>;
+    entries: LogEntryWire[]; telemetry: TelemetryEvent[]; wallMs: number;
+}): Record<string, unknown> => ({
+    schemaVersion: JSON_SCHEMA_VERSION,
+    session: { id: input.session.id, name: input.session.name },
+    results: input.results,
+    turns: groupOpsByTurn(input.entries),
+    telemetry: input.telemetry,
+    wallMs: input.wallMs,
+});
+
+// `plurnk script foo.plk` — feed a .plk file's DSL to op.parse and render the
+// trace. The client is a dumb feeder: read bytes, hand the text to the daemon
+// (which owns the grammar + dispatch), render the log/entry broadcasts, exit by
+// worst op status. What's IN the file — flat ops today, richer topologies later
+// — is the daemon's business; this surface never changes as the language grows.
+export const runScript = async (rpc: Rpc, text: string, session: SessionResult, opts: {
+    json: boolean; yolo: boolean;
+}): Promise<number> => {
+    const json = opts.json;
+    const entries: LogEntryWire[] = [];
+    const telemetryEvents: TelemetryEvent[] = [];
+
+    if (!json) process.stderr.write(`session: ${session.name}\n\n`);
+
+    rpc.onNotification("log/entry", (params) => {
+        const p = params as { entry: LogEntryWire };
+        if (json) { entries.push(p.entry); return; }
+        process.stderr.write(`${formatPlain(p.entry)}\n`);
+        if (!isTerminalBroadcast(p.entry)) return;
+        const out = extractSendBody(p.entry.tx, /* prettify */ false);
+        if (out.length > 0) process.stdout.write(`${out}\n`);
+    });
+
+    rpc.onNotification("telemetry/event", (params) => {
+        const p = params as { loopId: number; event: TelemetryEvent };
+        if (json) { telemetryEvents.push(p.event); return; }
+        report(p.event);
+    });
+
+    // Side-effecting ops (EDIT/MOVE/COPY) pause for review — same three paths as
+    // the loop: --yolo auto-accepts, a TTY reviews interactively, a non-TTY with
+    // no review channel auto-rejects locally. op.parse has no noProposals flag, so
+    // the client MUST settle the proposal or the daemon's dispatch hangs.
+    const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
+    if (noReviewChannel && !json) report(clientProposalEditsBlocked());
+    rpc.onNotification("loop/proposal", (params) => {
+        const p = params as ProposalParams;
+        void (async () => {
+            if (isServerResolved(p)) return;
+            if (opts.yolo) {
+                await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" });
+                return;
+            }
+            if (noReviewChannel) {
+                await rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "reject", outcome: "no_review_channel" });
+                return;
+            }
+            const resolution = await reviewProposal(p);
+            await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
+        })();
+    });
+
+    // EXEC ops narrate via stream/event — same coalescing as the loop.
+    const streams = new StreamTrace();
+    rpc.onNotification("stream/event", (params) => {
+        if (json) return;
+        const line = streams.event(params as StreamEventPayload);
+        if (line !== null) reportStream(line);
+    });
+    rpc.onNotification("stream/concluded", (params) => {
+        if (json) return;
+        const p = params as StreamConcludedPayload;
+        reportStream(streams.concluded(p));
+        void rpc.call("entry.read", { target: p.target }).then((r) => {
+            const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+            for (const name of ["stdout", "stderr"]) {
+                const content = channels[name]?.content;
+                if (typeof content === "string" && inlineable(content)) reportStream(renderInline(name, content));
+            }
+        }).catch(() => { /* best-effort */ });
+    });
+
+    // op.parse fires its log/entry notifications BEFORE the response (svc #253),
+    // so entries[] is complete the moment this resolves.
+    const start = Date.now();
+    const { results } = await rpc.call("op.parse", { text }) as { results: Array<{ status: number }> };
+    const wallMs = Date.now() - start;
+
+    // Exit honesty: worst op status drives the code. Any 4xx/5xx → 4 (failure);
+    // all clear → 0. A straight-line script has no cancellation/max-turns cases.
+    const worst = results.reduce((w, r) => (r.status > w ? r.status : w), 0);
+    const exitCode = worst >= 400 ? 4 : 0;
+
+    if (json) {
+        process.stdout.write(`${JSON.stringify(buildScriptJsonRecord({ session, results, entries, telemetry: telemetryEvents, wallMs }))}\n`);
+        return exitCode;
+    }
+    process.stderr.write(`\n${results.length} op${results.length === 1 ? "" : "s"}, ${wallMs}ms${worst >= 400 ? `, worst status ${worst}` : ""}\n`);
+    return exitCode;
 };
 
 export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, opts: {

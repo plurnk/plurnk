@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
+import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
 
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -156,6 +156,38 @@ test("buildJsonRecord: round-trips through JSON.stringify as one valid document"
     const parsed = JSON.parse(s);
     assert.equal(parsed.response, "Paris");
     assert.equal(parsed.telemetry[0].source, "engine");
+});
+
+// ─── buildScriptJsonRecord (`plurnk script foo.plk` record) ───────────
+
+test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fields", () => {
+    const doc = buildScriptJsonRecord({
+        session: { id: 5, name: "scripted" },
+        results: [{ status: 200 }, { status: 404 }],
+        entries: [
+            entry({ op: "EDIT", origin: "client", scheme: "file", pathname: "/a.md", status_rx: 200, loop_seq: 1, turn_seq: 1, sequence: 1 }),
+            entry({ op: "READ", origin: "client", scheme: "file", pathname: "/gone.md", status_rx: 404, loop_seq: 1, turn_seq: 2, sequence: 1 }),
+        ],
+        telemetry: [{ source: "scheme", kind: "not_found", message: "no /gone.md" }],
+        wallMs: 42,
+    }) as Record<string, unknown>;
+    assert.equal(doc.schemaVersion, JSON_SCHEMA_VERSION);
+    assert.deepEqual(doc.session, { id: 5, name: "scripted" });
+    assert.deepEqual(doc.results, [{ status: 200 }, { status: 404 }]);
+    assert.equal(doc.wallMs, 42);
+    // grouped by turn, sharing buildJsonRecord's op shape
+    const turns = doc.turns as Array<{ turn: number; ops: Array<Record<string, unknown>> }>;
+    assert.equal(turns.length, 2);
+    assert.deepEqual(turns[0].ops[0], { coord: "01/01/01", op: "EDIT", origin: "client", target: "file:///a.md", status: 200, signal: null });
+    // no loop-only fields leak in (it's a straight-line script, no model)
+    assert.ok(!("response" in doc) && !("loopId" in doc) && !("usage" in doc));
+});
+
+test("buildScriptJsonRecord: round-trips through JSON.stringify", () => {
+    const s = JSON.stringify(buildScriptJsonRecord({
+        session: { id: 1, name: "s" }, results: [{ status: 200 }], entries: [], telemetry: [], wallMs: 1,
+    }));
+    assert.deepEqual(JSON.parse(s).results, [{ status: 200 }]);
 });
 
 // ─── buildJsonError (json mode fails as valid JSON too) ───────────────

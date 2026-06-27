@@ -15,6 +15,7 @@ test("pathPartial: membership verbs expose their glob arg", () => {
     assert.equal(pathPartial("/repo packages/ap"), "packages/ap");
     assert.equal(pathPartial("/drop docs"), "docs");
     assert.equal(pathPartial("/import src/fo"), "src/fo");
+    assert.equal(pathPartial("/script flows/build.pl"), "flows/build.pl");
 });
 
 test("pathPartial: non-path contexts → null", () => {

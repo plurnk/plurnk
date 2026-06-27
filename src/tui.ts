@@ -60,7 +60,7 @@ interface SessionResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
     "yolo", "session", "rename", "run", "stop", "quit",
-    "pick", "hide", "view", "repo", "drop", "members", "import",
+    "pick", "hide", "view", "repo", "drop", "members", "import", "script",
     "accept", "reject", "cancel", "edit",
 ] as const;
 
@@ -78,6 +78,7 @@ export const TUI_HELP = [
     "  /drop <glob>                       membership: remove tracking rules for file(s), remove git tracking for folder",
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
+    "  /script <path>                     run a .plk file (its DSL → op.parse)",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -312,6 +313,18 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             if (rest.length === 0) { write("  usage: /import <path>\n"); return; }
             await ctx.importFile(rest);
             return;
+        case "script": {
+            // Run a .plk file: read its bytes, feed the DSL to op.parse. The op
+            // traces broadcast via log/entry (rendered above the prompt by the
+            // global handler); side-effecting ops pause for review like any client
+            // op. The client never parses the file — the daemon owns the grammar.
+            if (rest.length === 0) { write("  usage: /script <path>\n"); return; }
+            const text = await readFile(resolve(rest), "utf8");   // fail-hard on a missing file
+            const { results } = await rpc.call("op.parse", { text }) as { results: Array<{ status: number }> };
+            const worst = results.reduce((w, r) => (r.status > w ? r.status : w), 0);
+            write(`  script: ${results.length} op${results.length === 1 ? "" : "s"}${worst >= 400 ? `, worst status ${worst}` : " ok"}\n`);
+            return;
+        }
         case "accept":
         case "reject":
         case "cancel":

@@ -4,6 +4,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { writeFile, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, type VerbContext } from "./tui.ts";
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
@@ -290,6 +293,42 @@ test("handleVerb /import with no path → usage, no importFile", async () => {
     await handleVerb("/import", ctx);
     assert.equal(ctx.imports.length, 0);
     assert.match(ctx.out.join(""), /usage: \/import/);
+});
+
+// ─── /script (run a .plk file → op.parse) ────────────────────────────
+
+test("handleVerb /script <path> → reads the file, ships its DSL to op.parse, summarizes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plk-"));
+    const file = join(dir, "go.plk");
+    await writeFile(file, "<<EDIT(file://a.md):hi:EDIT\n<<READ(file://a.md):READ\n");
+    const ctx = makeCtx({ "op.parse": { results: [{ status: 200 }, { status: 200 }] } });
+    await handleVerb(`/script ${file}`, ctx);
+    const parse = ctx.calls.find((c) => c.method === "op.parse");
+    assert.ok(parse, "op.parse was called");
+    assert.match((parse!.params as { text: string }).text, /<<EDIT\(file:\/\/a\.md\)/);   // raw file text, unparsed by the client
+    assert.match(ctx.out.join(""), /script: 2 ops ok/);
+});
+
+test("handleVerb /script surfaces the worst op status", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plk-"));
+    const file = join(dir, "bad.plk");
+    await writeFile(file, "<<READ(file://gone.md):READ\n");
+    const ctx = makeCtx({ "op.parse": { results: [{ status: 404 }] } });
+    await handleVerb(`/script ${file}`, ctx);
+    assert.match(ctx.out.join(""), /script: 1 op, worst status 404/);
+});
+
+test("handleVerb /script with no path → usage, no op.parse", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/script", ctx);
+    assert.equal(ctx.calls.length, 0);
+    assert.match(ctx.out.join(""), /usage: \/script/);
+});
+
+test("handleVerb /script on a missing file → throws (fail-hard, surfaced by the caller)", async () => {
+    const ctx = makeCtx({ "op.parse": { results: [] } });
+    await assert.rejects(handleVerb("/script /no/such/file.plk", ctx));
+    assert.equal(ctx.calls.length, 0);   // never reaches op.parse
 });
 
 // ─── seedPromptHistory (svc#238) ─────────────────────────────────────

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, type VerbContext } from "./tui.ts";
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
 
@@ -33,6 +33,70 @@ test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", (
     assert.equal(altShortcut("m"), null);       // plain typing
     assert.equal(altShortcut("\x1b[A"), null);  // up-arrow (ESC [ A)
     assert.equal(altShortcut("\x1b"), null);    // bare ESC
+});
+
+// ─── lookRewrite (<<LOOK → <<READ token swap, rest passed through) ───────
+
+test("lookRewrite: swaps the op token at BOTH ends — open and the :OP terminator", () => {
+    assert.equal(lookRewrite("<<LOOK(known:///plan.md)::LOOK"), "<<READ(known:///plan.md)::READ");
+    assert.equal(lookRewrite("<<LOOK(log:///1/2/3)::LOOK"), "<<READ(log:///1/2/3)::READ");
+});
+
+test("lookRewrite: passes [tags](target)<N,M>:body through, swaps only the op", () => {
+    assert.equal(lookRewrite("<<LOOK[2](a.ts)<1,40>::LOOK"), "<<READ[2](a.ts)<1,40>::READ");
+    assert.equal(lookRewrite("<<LOOK(users.json):$.name:LOOK"), "<<READ(users.json):$.name:READ");
+});
+
+test("lookRewrite: case-insensitive in, uppercase READ out", () => {
+    assert.equal(lookRewrite("<<look(a.md)::look"), "<<READ(a.md)::READ");
+});
+
+test("lookRewrite: a non-LOOK op (incl. the LOOKUP false-friend) → null", () => {
+    assert.equal(lookRewrite("<<READ(a.md)::READ"), null);
+    assert.equal(lookRewrite("<<EDIT(a.md):x:EDIT"), null);
+    assert.equal(lookRewrite("<<LOOKUP(a.md)::LOOKUP"), null);   // \b guards the boundary
+    assert.equal(lookRewrite("plain prompt"), null);
+});
+
+// ─── cycleKey (Alt-p/Alt-n → LOOK prior-op cycler) ───────────────────────
+// Alt-<letter> survives the paste-filter pipeline intact; a Shift-Up CSI
+// (ESC[1;2A) fragments and leaks to readline as history-prev (proven in pty).
+
+test("cycleKey: Alt-p cycles prev/older (up), Alt-n next/newer (down)", () => {
+    assert.equal(cycleKey("\x1bp"), "up");
+    assert.equal(cycleKey("\x1bn"), "down");
+});
+
+test("cycleKey: a plain arrow or bare letter is NOT a cycle key", () => {
+    assert.equal(cycleKey("\x1b[A"), null);     // plain up → readline history
+    assert.equal(cycleKey("\x1b[1;2A"), null);  // Shift-Up CSI — deliberately not used (fragments)
+    assert.equal(cycleKey("p"), null);          // plain typing
+    assert.equal(cycleKey("\x1bm"), null);      // an Alt verb shortcut, not a cycle key
+});
+
+// ─── cycleCoord (pure cursor math for the LOOK cycler) ───────────────────
+
+test("cycleCoord: first 'up' starts at the newest coordinate", () => {
+    assert.equal(cycleCoord(3, null, "up"), 2);
+});
+
+test("cycleCoord: 'up' walks toward older and clamps at the oldest", () => {
+    assert.equal(cycleCoord(3, 2, "up"), 1);
+    assert.equal(cycleCoord(3, 1, "up"), 0);
+    assert.equal(cycleCoord(3, 0, "up"), 0);   // clamp
+});
+
+test("cycleCoord: 'down' walks toward newer and clamps at the newest", () => {
+    assert.equal(cycleCoord(3, 0, "down"), 1);
+    assert.equal(cycleCoord(3, 2, "down"), 2);   // clamp
+});
+
+test("cycleCoord: 'down' with no prior cycle is a no-op (null)", () => {
+    assert.equal(cycleCoord(3, null, "down"), null);
+});
+
+test("cycleCoord: nothing seen yet → null (nothing to cycle)", () => {
+    assert.equal(cycleCoord(0, null, "up"), null);
 });
 
 // ─── expandNewlines (↵ marker → real newline on submit) ──────────────────

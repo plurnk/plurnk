@@ -28,6 +28,11 @@ export const pathPartial = (line: string): string | null => {
 // The plurnk DSL operations (plurnk-grammar plurnk.md §Operations).
 const OPS = ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "SEND"] as const;
 
+// Client pseudo-op: `<<LOOK(target)` rewrites to `<<READ(target)` on a side run
+// for off-conversation inspection ("READ, but for me instead of the model"). The
+// daemon never sees "LOOK" — but it completes like a real op so the surface rhymes.
+const CLIENT_OPS = ["LOOK"] as const;
+
 // DSL op-name completion: a raw `<<` line with the op being typed; null
 // otherwise. (Target-path completion inside `<<OP(...)` is future work.)
 export const dslOpPartial = (line: string): string | null => {
@@ -38,7 +43,7 @@ export const dslOpPartial = (line: string): string | null => {
 // Complete a partially-typed op into `<<OP` tokens (case-insensitive input).
 export const completeOps = (typed: string): [string[], string] => {
     const up = typed.toUpperCase();
-    return [OPS.filter((o) => o.startsWith(up)).map((o) => `<<${o}`), `<<${typed}`];
+    return [[...OPS, ...CLIENT_OPS].filter((o) => o.startsWith(up)).map((o) => `<<${o}`), `<<${typed}`];
 };
 
 // Complete a filesystem path partial against the local fs. Returns

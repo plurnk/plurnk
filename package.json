@@ -1,6 +1,6 @@
 {
   "name": "@plurnk/plurnk",
-  "version": "0.52.0",
+  "version": "0.53.0",
   "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
   "type": "module",
   "license": "MIT",

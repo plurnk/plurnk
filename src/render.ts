@@ -243,6 +243,17 @@ export const isPromptEntry = (entry: LogEntryWire): boolean =>
 // broadcast SEND returns one striped line (single-line body) or a striped
 // block (multi-line body) — no surrounding blank lines; the stripe's
 // background color is the standout.
+// The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
+// the bare pathname when scheme is null (the daemon's file:// shortcut). null
+// when the entry has no path at all (a broadcast SEND). One source for both the
+// waterfall render and the <<LOOK cycler — no synthesis, render what the daemon sent.
+export const entryTarget = (entry: LogEntryWire): string | null => {
+    if (entry.pathname === null) return null;
+    return entry.scheme !== null
+        ? `${entry.scheme}://${entry.hostname ?? ""}${entry.pathname}${entry.fragment !== null ? `#${entry.fragment}` : ""}`
+        : entry.pathname;
+};
+
 export const renderLogEntry = (entry: LogEntryWire): string => {
     // Broadcast SEND has no path at all (both scheme AND pathname null).
     // A SEND directed at file:// would have scheme=null but pathname set —
@@ -265,13 +276,8 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // Render whatever target the daemon supplied — no synthesis. If scheme
     // is null but pathname is set, that's the daemon's choice (e.g. file://
     // shortcut) and we render the bare path.
-    let pathText = "";
-    if (entry.pathname !== null) {
-        const path = entry.scheme !== null
-            ? `${entry.scheme}://${entry.hostname ?? ""}${entry.pathname}${entry.fragment !== null ? `#${entry.fragment}` : ""}`
-            : entry.pathname;
-        pathText = `${CYAN}${path}${RESET}`;
-    }
+    const target = entryTarget(entry);
+    const pathText = target !== null ? `${CYAN}${target}${RESET}` : "";
 
     const extra = buildExtra(entry);
 

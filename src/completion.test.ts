@@ -95,7 +95,11 @@ test("completeOps: case-insensitive, returns <<OP tokens", () => {
     const [hits, partial] = completeOps("re");
     assert.deepEqual(hits, ["<<READ"]);
     assert.equal(partial, "<<re");
-    assert.equal(completeOps("")[0].length, 11);
+    assert.equal(completeOps("")[0].length, 12);   // 11 daemon ops + the LOOK client pseudo-op
+});
+
+test("completeOps: <<LOOK (client pseudo-op) completes alongside the daemon ops", () => {
+    assert.deepEqual(completeOps("lo")[0], ["<<LOOK"]);
 });
 
 test("pathPartial: DSL target path inside <<OP(...), scheme stripped", () => {

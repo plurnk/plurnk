@@ -4,6 +4,7 @@
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
 //   /verb [args]   command verbs (see VERBS); never call loop.run
 //   << raw DSL     op.parse
+//   << LOOK(uri)   off-run READ — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         ask — loop.run with flags.mode="ask"
@@ -20,7 +21,7 @@ import PasteFilter from "./paste.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
 import type Rpc from "./rpc.ts";
-import { renderLogEntry, renderSummary, isPromptEntry, coordLabel } from "./render.ts";
+import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, entryTarget } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved } from "./proposal.ts";
@@ -83,6 +84,8 @@ export const TUI_HELP = [
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
     "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
+    "  << LOOK(uri)                       off-run READ — inspect a uri for you, not the model",
+    "  Alt-p / Alt-n                      cycle <<LOOK through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models sessions runs",
     "                                     log yolo session members stop · Alt-h help",
@@ -123,6 +126,34 @@ export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
 export const altShortcut = (forward: string): string | null => {
     const m = forward.match(/^\x1b([a-zA-Z])$/);
     return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
+};
+
+// `<<LOOK…::LOOK` is a CLIENT pseudo-op — "READ, but for me instead of the model".
+// The grammar (plurnk-grammar plurnk.md §Operations) terminates a statement with its
+// own op name (`<<OP…:body:OP`), so a faithful rewrite swaps BOTH ends LOOK→READ and passes
+// [signal](target)<sel>:body through untouched — the daemon only ever sees a real
+// READ. `\b` keeps `<<LOOKUP` from matching. null when the line isn't a LOOK.
+export const lookRewrite = (line: string): string | null =>
+    /^<<LOOK\b/i.test(line)
+        ? line.replace(/^<<LOOK\b/i, "<<READ").replace(/:LOOK(\s*)$/i, ":READ$1")
+        : null;
+
+// Alt-p / Alt-n cycle the <<LOOK target through prior operations (prev/next op).
+// Alt-<letter> (`ESC<letter>`) survives the input pipeline intact — the paste
+// filter always holds a lone ESC and reassembles `ESC<letter>`, the same path the
+// Alt verb shortcuts use — whereas a Shift-Up CSI (`ESC[1;2A`) fragments at `ESC[1`
+// and leaks to readline as history-prev. Caught before altShortcut (which has no
+// lowercase p/n binding). null = not a cycle key.
+export const cycleKey = (forward: string): "up" | "down" | null =>
+    forward === "\x1bp" ? "up" : forward === "\x1bn" ? "down" : null;
+
+// Pure cursor math for the LOOK coordinate cycler over `count` seen coordinates
+// (oldest→newest). Up walks toward older (start at newest), down toward newer.
+// Returns the next index, or null when there's nothing to cycle.
+export const cycleCoord = (count: number, cursor: number | null, dir: "up" | "down"): number | null => {
+    if (count === 0) return null;
+    if (cursor === null) return dir === "up" ? count - 1 : null;
+    return dir === "up" ? Math.max(0, cursor - 1) : Math.min(count - 1, cursor + 1);
 };
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
@@ -357,6 +388,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // runs and the line handler / SIGINT can share it.
     let inFlight = false;
     let cancelRequested = false;
+    // <<LOOK off-run inspection: the REAL target URIs of prior operations the
+    // waterfall has shown (oldest→newest, e.g. known:///plan.md) feed the Alt-p/
+    // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
+    const priorTargets: string[] = [];
+    let lookCursor: number | null = null;
 
     // Print a line ABOVE the live readline prompt without eating the user's
     // in-progress input. The canonical "log while prompting" idiom: wipe the
@@ -375,6 +411,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         // The typed line at the prompt is the user's record — rendering the
         // prompt broadcast too would duplicate it (see isPromptEntry).
         if (isPromptEntry(p.entry)) return;
+        // Record this op's REAL target URI for the Alt-p/Alt-n <<LOOK cycler
+        // (skip targetless ops — PLAN, broadcast SEND). Appending never shifts
+        // earlier indices, so a mid-cycle lookCursor stays valid.
+        const target = entryTarget(p.entry);
+        if (target !== null) priorTargets.push(target);
         printAbove(renderLogEntry(p.entry));
     });
 
@@ -515,6 +556,37 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         rl.prompt(true);
     };
 
+    // Replace the whole readline buffer with `text`, public-API only: Ctrl-U kills
+    // to line start, Ctrl-K from there to the end (clearing whatever was typed),
+    // then type the new text. No private fields, no cursor/width math.
+    const setLine = (text: string): void => {
+        rl.write(null, { ctrl: true, name: "u" });
+        rl.write(null, { ctrl: true, name: "k" });
+        rl.write(text);
+    };
+
+    // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
+    // `<<LOOK(<that uri>)::LOOK` line into the buffer — an editable starting point
+    // (hand-edit before Enter). Nothing to cycle → leave the line be.
+    const cycleLook = (dir: "up" | "down"): void => {
+        lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
+        if (lookCursor === null) return;
+        setLine(`<<LOOK(${priorTargets[lookCursor]})::LOOK`);
+    };
+
+    // `<<LOOK(uri)` already rewritten (op token LOOK→READ) to a READ statement.
+    // LOOK is a PURE QUERY: op.look (plurnk-service#283, shipped v0.57.0) runs READ's
+    // full resolver but writes NO log entry — so the model never sees it and there's no
+    // run to manage. Run on the main connection (the conversation run, so log:/// resolves
+    // run-relative against the right run). Render the content; no op, no harvest. Trust
+    // the contract: status is required, content is `string | null` (svc ReadResult).
+    const runLook = async (readText: string): Promise<number> => {
+        const r = await rpc.call("op.look", { text: readText }) as { status: number; content: string | null };
+        const content = r.content ?? "";
+        printAbove(content.length > 0 ? content : `  \x1b[2m(look ${r.status}: no content)\x1b[0m`);
+        return r.status;
+    };
+
     // Multi-line composition. The non-submitting newline keys insert a single ↵
     // marker into readline's ONE line; Enter submits, expanding ↵→\n. Keeping it
     // one readline line means backspace/arrows/history edit across newlines
@@ -542,6 +614,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             return;
         }
         if (isNewlineKey(forward)) { rl.write(NL_MARK); return; }
+        const dir = cycleKey(forward);
+        if (dir !== null) { cycleLook(dir); return; }
         const verb = altShortcut(forward);
         if (verb !== null) { dispatchShortcut(verb); return; }
         input.write(forward);
@@ -713,7 +787,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             let usage: LoopUsage | undefined;
 
             try {
-                if (trimmed.startsWith("<<")) {
+                const lookText = trimmed.startsWith("<<") ? lookRewrite(trimmed) : null;
+                if (lookText !== null) {
+                    // <<LOOK: off-run READ on the side connection — for me, not the model.
+                    finalStatus = await runLook(lookText);
+                } else if (trimmed.startsWith("<<")) {
                     // Raw DSL: send to op.parse
                     const result = await rpc.call("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
                     finalStatus = result.results[result.results.length - 1]?.status ?? 0;

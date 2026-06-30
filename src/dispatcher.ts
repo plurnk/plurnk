@@ -82,7 +82,7 @@ env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
   PLURNK_WS             daemon WebSocket URL (default ws://127.0.0.1:3044) — the
                         ONE knob the client needs; everything else in ~/.plurnk
                         is the daemon's. Works with no config at all.
-  PLURNK_SESSION        resume an existing session by name
+  PLURNK_SESSION        resume a session by name, or create it if none exists
   PLURNK_RUN            resume (or create) a named run within that session
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
@@ -101,8 +101,9 @@ options:
                           telemetry, the answer at .response, usage), stderr
                           silent, errors emitted as {"error":…}. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
-      --session <name>    resume the named session; without it, a fresh session
-                          is created. Overrides PLURNK_SESSION.
+      --session <name>    resume the named session, or create it under that name
+                          if none exists (attach-or-create). Without it, a fresh
+                          auto-named session is created. Overrides PLURNK_SESSION.
       --run <name>        resume (or create) the named run within the session.
                           Requires --session. Overrides PLURNK_RUN.
       --model <alias>     model alias to pass on every loop.run. Resolved
@@ -309,22 +310,31 @@ export const buildVersionNotice = (versions: DiscoverVersions | undefined, clien
 
 const attachOrCreateSession = async (
     rpc: Rpc,
-    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings },
+    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings; create?: boolean },
 ): Promise<SessionResult> => {
     const constraints = opts.constraints ?? [];
     const settings = opts.settings ?? {};
-    if (opts.sessionName === undefined) {
-        // Seed overlay + open-context settings atomically at creation so turn-1's
-        // manifest/preview/docs are right with no follow-up RPC.
+    // Create a fresh session — named when `name` is given (session.create takes an
+    // optional name; auto-generated otherwise). Seeds the overlay + open-context
+    // settings atomically at creation so turn-1's manifest/preview/docs are right
+    // with no follow-up RPC.
+    const createSession = async (name?: string): Promise<SessionResult> => {
         settings.client = CLIENT_ID;   // #249 — every session carries the frontend id
-        const params: { projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
+        const params: { name?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
+        if (name !== undefined) params.name = name;
         if (constraints.length > 0) params.constraints = constraints;
         if (Object.keys(settings).length > 0) params.settings = settings;
         return await rpc.call("session.create", params) as SessionResult;
-    }
+    };
+    if (opts.sessionName === undefined) return await createSession();
     const { sessions } = await rpc.call("session.list") as { sessions: SessionResult[] };
     const matches = sessions.filter((s) => s.name === opts.sessionName);
     if (matches.length === 0) {
+        // --session <name> is attach-OR-CREATE on the loop/script path — the CLI's
+        // named-session create, symmetric with TUI /session <name> + nvim
+        // :PlurnkSessionNew (AGENTS gap). Read-only subcommands pass no `create`:
+        // you can't read a session that was never created, so they still error.
+        if (opts.create === true) return await createSession(opts.sessionName);
         const ev = clientSubcommandSessionNotFound(opts.sessionName);
         ev.hints = ["run without --session to create a fresh session"];
         throw new TelemetryError(ev);
@@ -612,7 +622,7 @@ export const main = async (argv: string[]): Promise<void> => {
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
             const session = await attachOrCreateSession(rpc, {
-                sessionName, runName, projectRoot,
+                sessionName, runName, projectRoot, create: true,
                 constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
                 settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
             });
@@ -629,7 +639,7 @@ export const main = async (argv: string[]): Promise<void> => {
         }
 
         const session = await attachOrCreateSession(rpc, {
-            sessionName, runName, projectRoot,
+            sessionName, runName, projectRoot, create: true,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
         });

@@ -6,7 +6,9 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { resolve, dirname } from "node:path";
+import { writeFile, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Rpc from "../../src/rpc.ts";
 import { locateDaemon, bootDaemon, type Daemon } from "./harness.ts";
@@ -156,4 +158,37 @@ test("plurnk unknownverb → exit 64", async (t) => {
     const r = await runPlurnk(["log", "weirdverb"]);
     assert.equal(r.code, 64);
     assert.match(r.stderr, /unknown subcommand/);
+});
+
+// ─── --session attach-OR-CREATE (the named-session CLI gap) ───────────
+
+// Does a session of this name exist on the daemon? Raw session.list probe.
+const sessionExists = async (name: string): Promise<boolean> => {
+    const rpc = new Rpc({ url: daemon!.url });
+    await rpc.connect();
+    try {
+        const { sessions } = await rpc.call("session.list") as { sessions: Array<{ name: string }> };
+        return sessions.some((s) => s.name === name);
+    } finally { await rpc.close(); }
+};
+
+test("script --session <fresh> CREATES the named session (attach-or-create)", async (t) => {
+    if (guard(t)) return;
+    const name = "intg-attach-or-create-mint";
+    assert.equal(await sessionExists(name), false, "precondition: name is unused");
+    // A model-free mutating path: the script attaches create:true, runs one
+    // known:/// EDIT via op.parse (--yolo auto-accepts the proposal).
+    const dir = await mkdtemp(join(tmpdir(), "plurnk-script-"));
+    const plk = join(dir, "probe.plk");
+    await writeFile(plk, "<<EDIT(known:///probe.md):routing-probe:EDIT\n");
+    const r = await runPlurnk(["script", plk, "--session", name, "--yolo", "--project-root", daemon!.workspace]);
+    assert.equal(r.code, 0, `script exited ${r.code}: ${r.stderr}`);
+    assert.equal(await sessionExists(name), true, "the named session was created");
+});
+
+test("log read --session <never-created> still ERRORS (create is loop/script-only)", async (t) => {
+    if (guard(t)) return;
+    const r = await runPlurnk(["log", "read", "--session", "intg-no-such-session-ever"]);
+    assert.equal(r.code, 64);
+    assert.match(r.stderr, /no session named/);
 });

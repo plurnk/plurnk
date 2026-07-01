@@ -393,7 +393,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 };
 
 export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
-    modelAlias?: string; yolo: boolean;
+    modelAlias?: string; model?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     client?: string;            // #249 — frontend id, carried onto /session-created sessions
@@ -871,8 +871,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                         lineFlags = { ...(opts.loopFlags ?? {}), mode: prefix === "?" ? "ask" : "act" };
                     }
                     const promptText = trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "");
-                    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
-                    if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
+                    const loopParams: { prompt: string; alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
+                    if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;   // display label
+                    if (opts.model !== undefined) loopParams.model = opts.model;             // #90 client-resolved routing (precedence)
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)

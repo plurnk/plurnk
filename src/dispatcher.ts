@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
+import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli, runScript, buildJsonError } from "./cli.ts";
 import { runTui } from "./tui.ts";
@@ -50,6 +51,19 @@ export const resolveLoopFlags = (rawJson: string | undefined): Record<string, un
         throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
     }
     return parsed as Record<string, unknown>;
+};
+
+// #90 — resolve a model alias to a concrete "<provider>/<model>" from the CLIENT's
+// (always-fresh) env, so a long-lived daemon launched before the user set
+// PLURNK_MODEL_<alias> doesn't reject loop.run with "unknown alias" (the daemon's
+// launch env is frozen; ours isn't). First-slash split is lossless — provider is
+// before the first "/", the model id is the rest (may itself contain "/"). baseUrl
+// stays daemon-side. null → send bare {alias} and let the daemon resolve or fail.
+// parseAliasesFromEnv is fail-hard on a duplicate/dangling env config — let it throw.
+export const resolveModelSpec = (alias: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined => {
+    if (alias === undefined) return undefined;
+    const match = parseAliasesFromEnv(env).find((a) => a.alias === alias.toLowerCase());
+    return match !== undefined ? `${match.provider}/${match.model}` : undefined;
 };
 
 // projectRoot resolution: empty string = explicit headless (null on wire);
@@ -654,15 +668,18 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
         });
+        // #90 — resolve the alias to a concrete provider/model from OUR fresh env
+        // (staleness-proof); send it on loop.run, alias rides along for display.
+        const model = resolveModelSpec(modelAlias);
         if (prompt.length === 0) {
             // #268 — carry the AGENTS-auto-load override onto /session-created sessions too.
             const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
-            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: clientId, autoReadAgents });
+            await runTui(rpc, session, { modelAlias, model, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: clientId, autoReadAgents });
             process.exit(0);
         }
         // CLI: the version notice is narration → stderr (never pollutes stdout/--json).
         if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
-        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, yolo, loopFlags, maxTurns, timeoutSec });
+        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, model, yolo, loopFlags, maxTurns, timeoutSec });
         process.exit(exitCode);
     } catch (cause) {
         // json mode: a structured error document on stdout (valid JSON even on

@@ -298,7 +298,7 @@ export const runScript = async (rpc: Rpc, text: string, session: SessionResult, 
 };
 
 export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, opts: {
-    json: boolean; modelAlias?: string; yolo: boolean;
+    json: boolean; modelAlias?: string; model?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number;
 }): Promise<number> => {
     // Two output modes. text (default): stdout = the answer, stderr = the human
@@ -416,8 +416,9 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     }
 
     const start = Date.now();
-    const loopParams: { prompt: string; alias?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt };
-    if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;
+    const loopParams: { prompt: string; alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt };
+    if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;   // display label
+    if (opts.model !== undefined) loopParams.model = opts.model;             // #90 client-resolved routing (precedence)
     if (effectiveFlags !== undefined && Object.keys(effectiveFlags).length > 0) loopParams.flags = effectiveFlags;
     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
     const openPaths = extractOpenPaths(prompt);   // @file refs → daemon turn-0 READs (#260)

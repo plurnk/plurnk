@@ -283,7 +283,11 @@ export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json")
 // #249 — session-stable frontend id, passed on session.create and forwarded by
 // the daemon to the plurnk provider as the Plurnk-Client header (dropped by
 // every other provider). The 'plurnk.nvim/1.4.0' shape; nvim sends its own.
-export const CLIENT_ID = `@plurnk/plurnk/${CLIENT_VERSION}`;
+// #71 — one id per FRONTEND, name/version form, session-stable. CLI and TUI are
+// distinct frontends of this package (nvim self-ids separately as plurnk.nvim);
+// splitting them lets service telemetry attribute usage per surface.
+export const CLIENT_ID_CLI = `@plurnk/plurnk-cli/${CLIENT_VERSION}`;
+export const CLIENT_ID_TUI = `@plurnk/plurnk-tui/${CLIENT_VERSION}`;
 
 interface DiscoverVersions { service?: { installed?: string; latest?: string }; client?: { latest?: string } }
 
@@ -310,7 +314,7 @@ export const buildVersionNotice = (versions: DiscoverVersions | undefined, clien
 
 const attachOrCreateSession = async (
     rpc: Rpc,
-    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings; create?: boolean },
+    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings; create?: boolean; client: string },
 ): Promise<SessionResult> => {
     const constraints = opts.constraints ?? [];
     const settings = opts.settings ?? {};
@@ -319,7 +323,7 @@ const attachOrCreateSession = async (
     // settings atomically at creation so turn-1's manifest/preview/docs are right
     // with no follow-up RPC.
     const createSession = async (name?: string): Promise<SessionResult> => {
-        settings.client = CLIENT_ID;   // #249 — every session carries the frontend id
+        settings.client = opts.client;   // #249/#71 — the caller's frontend id (cli vs tui)
         const params: { name?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
         if (name !== undefined) params.name = name;
         if (constraints.length > 0) params.constraints = constraints;
@@ -442,6 +446,7 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             sessionName: opts.sessionName,
             runName: opts.runName,
             projectRoot: opts.projectRoot,
+            client: CLIENT_ID_CLI,
         });
         // Default to the conversation (model run) unless --run pins one.
         if (opts.runName === undefined) await attachConversationRun(rpc, attached.id);
@@ -474,6 +479,7 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             sessionName: opts.sessionName,
             runName: opts.runName,
             projectRoot: opts.projectRoot,
+            client: CLIENT_ID_CLI,
         });
         if (opts.runName === undefined) await attachConversationRun(rpc, attached.id);
         return await runRead(rpc, coord, { json: opts.json });
@@ -622,7 +628,7 @@ export const main = async (argv: string[]): Promise<void> => {
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
             const session = await attachOrCreateSession(rpc, {
-                sessionName, runName, projectRoot, create: true,
+                sessionName, runName, projectRoot, create: true, client: CLIENT_ID_CLI,
                 constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
                 settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
             });
@@ -638,15 +644,17 @@ export const main = async (argv: string[]): Promise<void> => {
             process.exit(exitCode);
         }
 
+        // Mode decides the frontend id (#71): no prompt = interactive TUI, else CLI.
+        const clientId = prompt.length === 0 ? CLIENT_ID_TUI : CLIENT_ID_CLI;
         const session = await attachOrCreateSession(rpc, {
-            sessionName, runName, projectRoot, create: true,
+            sessionName, runName, projectRoot, create: true, client: clientId,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
         });
         if (prompt.length === 0) {
             // #268 — carry the AGENTS-auto-load override onto /session-created sessions too.
             const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
-            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: CLIENT_ID, autoReadAgents });
+            await runTui(rpc, session, { modelAlias, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: clientId, autoReadAgents });
             process.exit(0);
         }
         // CLI: the version notice is narration → stderr (never pollutes stdout/--json).

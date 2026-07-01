@@ -76,15 +76,15 @@ test("buildConstraints: no flags → empty (no constraints param on session.crea
 
 // ─── buildSettings (session-open settings, svc#231) ──────────────────
 
-test("buildSettings: manifest-items -1/0/N parse", async () => {
-    assert.deepEqual(await buildSettings({ "manifest-items": "-1" }, "/"), { manifestItems: -1 });
-    assert.deepEqual(await buildSettings({ "manifest-items": "0" }, "/"), { manifestItems: 0 });
-    assert.deepEqual(await buildSettings({ "manifest-items": "5" }, "/"), { manifestItems: 5 });
+test("buildSettings: files-items -1/0/N parse", async () => {
+    assert.deepEqual(await buildSettings({ "files-items": "-1" }, "/"), { filesItems: -1 });
+    assert.deepEqual(await buildSettings({ "files-items": "0" }, "/"), { filesItems: 0 });
+    assert.deepEqual(await buildSettings({ "files-items": "5" }, "/"), { filesItems: 5 });
 });
 
-test("buildSettings: manifest-items rejects < -1 and non-integer", async () => {
-    await assert.rejects(buildSettings({ "manifest-items": "-2" }, "/"), /-1 \(full\)/);
-    await assert.rejects(buildSettings({ "manifest-items": "x" }, "/"), /must be/);
+test("buildSettings: files-items rejects < -1 and non-integer", async () => {
+    await assert.rejects(buildSettings({ "files-items": "-2" }, "/"), /-1 \(full\)/);
+    await assert.rejects(buildSettings({ "files-items": "x" }, "/"), /must be/);
 });
 
 test("buildSettings: --md NAME=path reads local file → {alias, content}", async () => {

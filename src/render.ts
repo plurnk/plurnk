@@ -332,8 +332,21 @@ export const contextGauge = (contextTokens?: number, contextSize?: number | null
 // usage is absent for non-model ops (op.exec / op.parse have no provider
 // call) — those render no token part. It is NOT a fallback for missing
 // data: a model loop always carries real usage (plurnk-service #197).
+// Terminal loop status → label. plurnk-service 0.42.0 split the flat 499 into
+// distinct verdicts (#70): 499 is the model/actor give-up or external KILL/cancel;
+// 413/429/500/508 are ENGINE verdicts the model never emits. Labelled so a
+// ceiling (413/429) reads differently from an abandonment (500/508), not "final N".
+export const terminalStatusLabel = (status: number): string =>
+    status === 200 ? "done"
+        : status === 413 ? "budget overflow"
+            : status === 429 ? "turn ceiling"
+                : status === 499 ? "cancelled"
+                    : status === 500 ? "strike-out"
+                        : status === 508 ? "loop detected"
+                            : `final ${status}`;
+
 export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage, contextSize?: number | null): string => {
-    const tag = hitMaxTurns ? "maxTurns" : finalStatus === 200 ? "done" : `final ${finalStatus}`;
+    const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(finalStatus);
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
     if (usage !== undefined) {

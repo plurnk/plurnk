@@ -381,9 +381,16 @@ test("renderSummary: maxTurns flag wins over finalStatus", () => {
     assert.doesNotMatch(s, /done/);
 });
 
-test("renderSummary: non-200 final → 'final <N>'", () => {
-    const s = renderSummary(3, 1000, 499, false, usage(10, 5));
-    assert.match(s, /final 499/);
+test("renderSummary: differentiated terminal codes get distinct labels (#70)", () => {
+    assert.match(renderSummary(3, 1000, 499, false, usage(10, 5)), /cancelled/);
+    assert.match(renderSummary(3, 1000, 413, false, usage(10, 5)), /budget overflow/);
+    assert.match(renderSummary(3, 1000, 429, false, usage(10, 5)), /turn ceiling/);
+    assert.match(renderSummary(3, 1000, 500, false, usage(10, 5)), /strike-out/);
+    assert.match(renderSummary(3, 1000, 508, false, usage(10, 5)), /loop detected/);
+});
+
+test("renderSummary: an unmapped non-200 still falls back to 'final <N>'", () => {
+    assert.match(renderSummary(3, 1000, 418, false, usage(10, 5)), /final 418/);
 });
 
 test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", () => {

@@ -99,29 +99,29 @@ test("renderTelemetryEvent: hints rendered as indented continuation lines", () =
 const freshTel = async (tag: string): Promise<typeof import("./telemetry.ts")> =>
     await import(`./telemetry.ts?${tag}`) as typeof import("./telemetry.ts");
 
-test("renderTelemetryEvent: error-class headline is RED (not dim)", async () => {
+test("renderTelemetryEvent: level 'error' headline is RED (not dim)", async () => {
     process.env.NO_COLOR = "0";
     const m = await freshTel("sev-err");
     process.env.NO_COLOR = "1";
-    const out = m.renderTelemetryEvent({ source: "client:connection", kind: "refused", message: "no daemon" });
+    const out = m.renderTelemetryEvent({ source: "client:connection", kind: "refused", level: "error", message: "no daemon" });
     assert.match(out, /\x1b\[31m/);          // red
     assert.doesNotMatch(out, /\x1b\[2m"no daemon"/);  // message not dim
 });
 
-test("renderTelemetryEvent: warning-class headline is YELLOW (daemon_stale)", async () => {
+test("renderTelemetryEvent: level 'warn' headline is YELLOW", async () => {
     process.env.NO_COLOR = "0";
     const m = await freshTel("sev-warn");
     process.env.NO_COLOR = "1";
-    const out = m.renderTelemetryEvent({ source: "client:connection", kind: "daemon_stale", message: "update available" });
+    const out = m.renderTelemetryEvent({ source: "client:connection", kind: "daemon_stale", level: "warn", message: "update available" });
     assert.match(out, /\x1b\[33m/);          // yellow
     assert.doesNotMatch(out, /\x1b\[31m/);   // not red
 });
 
-test("renderTelemetryEvent: neutral kind stays uncolored, message dim", async () => {
+test("renderTelemetryEvent: level 'info' (or absent) stays uncolored, message dim", async () => {
     process.env.NO_COLOR = "0";
     const m = await freshTel("sev-neutral");
     process.env.NO_COLOR = "1";
-    const out = m.renderTelemetryEvent({ source: "engine", kind: "graceful", message: "done" });
+    const out = m.renderTelemetryEvent({ source: "engine", kind: "graceful", level: "info", message: "done" });
     assert.doesNotMatch(out, /\x1b\[31m|\x1b\[33m/);  // not red/yellow
     assert.match(out, /\x1b\[2m"done"/);              // dim message
 });

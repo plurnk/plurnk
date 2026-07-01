@@ -156,6 +156,24 @@ export const cycleCoord = (count: number, cursor: number | null, dir: "up" | "do
     return dir === "up" ? Math.max(0, cursor - 1) : Math.min(count - 1, cursor + 1);
 };
 
+// engine:turn lifecycle telemetry (plurnk-service #301 / client #114) → the
+// steer-prompt heartbeat label. turn_awaiting_model brackets the provider call
+// (the long, silent wait that used to read as a hang); turn_generated marks the
+// response landing, ops about to commit. Unknown kinds → null so the caller
+// falls back to rendering them as an ordinary telemetry line (no silent drop).
+export const turnHeartbeatLabel = (kind: string): string | null =>
+    kind === "turn_awaiting_model" ? "model thinking…"
+        : kind === "turn_generated" ? "working…"
+            : null;
+
+// Elapsed wall time as a compact steer-prompt counter: "8s", "1m04s". A plain
+// ticking number, not a spinner — liveness without cursor/width math.
+export const formatElapsed = (ms: number): string => {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+};
+
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
     return { verb: m?.[1] ?? "", rest: (m?.[2] ?? "").trim() };
@@ -388,6 +406,12 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // runs and the line handler / SIGINT can share it.
     let inFlight = false;
     let cancelRequested = false;
+    // Steer-prompt heartbeat (client #114): engine:turn telemetry sets the label
+    // ("model thinking…" / "working…"), a 1s timer ticks the elapsed clock. Both
+    // ride buildPrompt's inFlight branch. Started/cleared at the inFlight edges.
+    let heartbeatLabel: string | null = null;
+    let heartbeatStartMs = 0;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. known:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -422,6 +446,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // telemetry/event — interleaved with the trace waterfall.
     rpc.onNotification("telemetry/event", (params) => {
         const p = params as { loopId: number; event: TelemetryEvent };
+        // engine:turn lifecycle drives the steer-prompt heartbeat, NOT a waterfall
+        // line (#114): set the label and repaint the prompt immediately (the 1s
+        // timer only advances the clock). An unrecognized engine:turn kind falls
+        // through to a normal telemetry line rather than vanishing.
+        if (p.event.source === "engine:turn") {
+            const label = turnHeartbeatLabel(p.event.kind);
+            if (label !== null) { heartbeatLabel = label; if (inFlight) repromptPreserving(); return; }
+        }
         printAbove(renderTelemetryEvent(p.event));
     });
 
@@ -524,6 +556,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // the readline cursor (the ❓ U+2753 lesson).
     const buildPrompt = (): string => {
         const yolo = opts.yolo ? "🔥" : "  ";
+        // Steer form (#114): while a loop runs, the prompt IS the heartbeat — a
+        // ticking elapsed clock + the engine:turn label — so silence reads as
+        // "working", never "hung". Still an editable row (inject rides here).
+        if (inFlight) {
+            const elapsed = formatElapsed(Date.now() - heartbeatStartMs);
+            return `${yolo}⏳ \x1b[2m${elapsed} · ${heartbeatLabel ?? "working…"}\x1b[0m \x1b[1m… \x1b[0m`;
+        }
         return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
@@ -547,6 +586,25 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         readline.clearLine(process.stdout, 0);
         rl.setPrompt(buildPrompt());
         rl.prompt();
+    };
+    // Heartbeat tick: same wipe-and-redraw as reprompt but rl.prompt(true) so an
+    // in-progress inject survives the per-second clock update (the printAbove
+    // idiom — readline owns the redraw, no cursor/width math).
+    const repromptPreserving = (): void => {
+        readline.cursorTo(process.stdout, 0);
+        readline.clearLine(process.stdout, 0);
+        rl.setPrompt(buildPrompt());
+        rl.prompt(true);
+    };
+    const startHeartbeat = (): void => {
+        heartbeatStartMs = Date.now();
+        heartbeatLabel = null;
+        heartbeatTimer = setInterval(repromptPreserving, 1000);
+    };
+    const stopHeartbeat = (): void => {
+        if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        heartbeatLabel = null;
     };
     // Now that rl exists, printAbove can re-render the prompt after each line.
     printAbove = (text: string): void => {
@@ -778,7 +836,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             inFlight = true;
             // Surface a live steer prompt for the duration of the loop, so the
             // user has a stable row to type an inject into (the traces print
-            // above it). buildPrompt switches to its steer form while inFlight.
+            // above it). buildPrompt switches to its steer form while inFlight,
+            // and startHeartbeat ticks the elapsed clock so the wait reads as
+            // "working", never "hung" (#114).
+            startHeartbeat();
             reprompt();
             const start = Date.now();
             let turnCount = 0;
@@ -839,11 +900,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             } finally {
                 inFlight = false;
                 cancelRequested = false;
+                stopHeartbeat();
                 reprompt();
             }
         });
 
         rl.on("close", () => {
+            stopHeartbeat();   // clear the tick if a loop was mid-flight at quit
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);

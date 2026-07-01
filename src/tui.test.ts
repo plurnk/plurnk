@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, turnHeartbeatLabel, formatElapsed, type VerbContext } from "./tui.ts";
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
 
@@ -97,6 +97,32 @@ test("cycleCoord: 'down' with no prior cycle is a no-op (null)", () => {
 
 test("cycleCoord: nothing seen yet → null (nothing to cycle)", () => {
     assert.equal(cycleCoord(0, null, "up"), null);
+});
+
+// ─── turnHeartbeatLabel (engine:turn telemetry → steer-prompt label) ─────
+
+test("turnHeartbeatLabel: awaiting_model → thinking, generated → working", () => {
+    assert.equal(turnHeartbeatLabel("turn_awaiting_model"), "model thinking…");
+    assert.equal(turnHeartbeatLabel("turn_generated"), "working…");
+});
+
+test("turnHeartbeatLabel: an unknown engine:turn kind → null (render normally)", () => {
+    assert.equal(turnHeartbeatLabel("turn_something_new"), null);
+    assert.equal(turnHeartbeatLabel("embed_progress"), null);
+});
+
+// ─── formatElapsed (steer-prompt elapsed clock) ──────────────────────────
+
+test("formatElapsed: sub-minute is bare seconds", () => {
+    assert.equal(formatElapsed(0), "0s");
+    assert.equal(formatElapsed(8_400), "8s");     // floors
+    assert.equal(formatElapsed(59_999), "59s");
+});
+
+test("formatElapsed: a minute or more is m + zero-padded s", () => {
+    assert.equal(formatElapsed(60_000), "1m00s");
+    assert.equal(formatElapsed(64_000), "1m04s");
+    assert.equal(formatElapsed(600_000), "10m00s");
 });
 
 // ─── expandNewlines (↵ marker → real newline on submit) ──────────────────

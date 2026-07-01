@@ -77,6 +77,11 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         // local llama-server when present; tests that don't call loop.run
         // never actually connect.
         OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? "http://127.0.0.1:11435",
+        // The daemon hard-requires PLURNK_EMBED_WORKERS (no fallback — it's a
+        // memory↔throughput call the embedder won't make for us). Tests don't
+        // tune it; a small fixed pool keeps boot deterministic and light. A shell
+        // value wins (the --env-file only fills unset vars).
+        PLURNK_EMBED_WORKERS: process.env.PLURNK_EMBED_WORKERS ?? "2",
         ...(opts.extraEnv ?? {}),
     };
 

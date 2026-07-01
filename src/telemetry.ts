@@ -38,6 +38,10 @@ export type Position = ContentOffset | LogCoordinate;
 export interface TelemetryEvent {
     source: string;          // e.g. "grammar", "engine:rail", "client:connection"
     kind: string;            // e.g. "parse_error", "strike", "refused"
+    // Severity, set by the PRODUCER at the emit site (grammar 0.74.29+, svc#276).
+    // The client colors straight off this — never re-derives it from the kind
+    // string. Optional only for a producer predating the field → neutral.
+    level?: "error" | "warn" | "info";
     message?: string | null;
     position?: Position | null;
     hints?: string[];
@@ -87,21 +91,12 @@ const formatPosition = (pos: Position | null | undefined): string => {
     return "";
 };
 
-// Severity from the source:kind discriminator — the wire carries no explicit
-// level, so we classify the open kind vocabulary by token. Failure families
-// paint the whole headline RED, warnings YELLOW; everything else stays neutral
-// (plain discriminator, dim message). Heuristic, but it covers the kinds the
-// stack actually emits (refused/error/closed/invalid/parse_error/strike/
-// action_failure/*_exceeded/*_overflow/not_found/ambiguous/unknown/missing → red;
-// stale/blocked/warn → yellow; graceful/statement/url/note → neutral).
-const ERROR_RE = /error|fail|refus|invalid|not_found|ambiguous|exceeded|overflow|denied|unknown|missing|closed|strike|unenforced|rejected|conflict|crash/i;
-const WARN_RE = /stale|warn|deprecat|blocked/i;
-const severityColor = (event: TelemetryEvent): string => {
-    const tag = `${event.source}:${event.kind}`;
-    if (ERROR_RE.test(tag)) return RED;
-    if (WARN_RE.test(tag)) return YELLOW;
-    return "";
-};
+// Severity straight off the producer-set `level` (grammar 0.74.29+, svc#276 /
+// client#110): error → RED headline, warn → YELLOW, everything else neutral
+// (plain discriminator, dim message). No kind-string heuristic — severity is
+// meaning the producer owns, not something we re-derive by pattern-matching.
+const severityColor = (event: TelemetryEvent): string =>
+    event.level === "error" ? RED : event.level === "warn" ? YELLOW : "";
 
 // Format the headline: `<glyph> <source>:<kind> <position?> <message?>`. The
 // caller is responsible for trailing newlines. Error/warning headlines render
@@ -165,6 +160,7 @@ export const report = (event: TelemetryEvent): void => {
 export const clientDaemonStale = (missing: string[]): TelemetryEvent => ({
     source: "client:connection",
     kind: "daemon_stale",
+    level: "warn",
     message: `daemon is older than this client (missing: ${missing.join(", ")})`,
     missing,
     hints: ["Restart plurnk-service from a current checkout."],
@@ -174,6 +170,7 @@ export const clientDaemonStale = (missing: string[]): TelemetryEvent => ({
 export const clientConnectionRefused = (url: string, cause: unknown): TelemetryEvent => ({
     source: "client:connection",
     kind: "refused",
+    level: "error",
     message: cause instanceof Error ? cause.message : String(cause),
     url,
     hints: [
@@ -189,6 +186,7 @@ export const clientConnectionRefused = (url: string, cause: unknown): TelemetryE
 export const clientRuntimeError = (cause: unknown): TelemetryEvent => ({
     source: "client:runtime",
     kind: "error",
+    level: "error",
     message: cause instanceof Error ? cause.message : String(cause),
 });
 
@@ -196,6 +194,7 @@ export const clientRuntimeError = (cause: unknown): TelemetryEvent => ({
 export const clientConnectionClosed = (cause: unknown): TelemetryEvent => ({
     source: "client:connection",
     kind: "closed",
+    level: "error",
     message: cause instanceof Error ? cause.message : String(cause),
 });
 
@@ -203,6 +202,7 @@ export const clientConnectionClosed = (cause: unknown): TelemetryEvent => ({
 export const clientFlagInvalid = (flag: string, value: string, reason: string): TelemetryEvent => ({
     source: "client:flag",
     kind: "invalid",
+    level: "error",
     message: reason,
     flag,
     value,
@@ -212,6 +212,7 @@ export const clientFlagInvalid = (flag: string, value: string, reason: string): 
 export const clientFlagMissingDependency = (flag: string, requires: string): TelemetryEvent => ({
     source: "client:flag",
     kind: "missing_dependency",
+    level: "error",
     message: `${flag} requires ${requires}`,
     flag,
     requires,
@@ -221,6 +222,7 @@ export const clientFlagMissingDependency = (flag: string, requires: string): Tel
 export const clientSubcommandSessionNotFound = (name: string): TelemetryEvent => ({
     source: "client:subcommand",
     kind: "session_not_found",
+    level: "error",
     message: `no session named ${JSON.stringify(name)}`,
     name,
 });
@@ -229,6 +231,7 @@ export const clientSubcommandSessionNotFound = (name: string): TelemetryEvent =>
 export const clientSubcommandSessionAmbiguous = (name: string, count: number): TelemetryEvent => ({
     source: "client:subcommand",
     kind: "session_ambiguous",
+    level: "error",
     message: `${count} sessions named ${JSON.stringify(name)}; pick a unique name`,
     name,
     count,
@@ -238,6 +241,7 @@ export const clientSubcommandSessionAmbiguous = (name: string, count: number): T
 export const clientSubcommandUnknownVerb = (path: string, available?: string[]): TelemetryEvent => ({
     source: "client:subcommand",
     kind: "unknown_verb",
+    level: "error",
     message: available !== undefined && available.length > 0
         ? `unknown subcommand '${path}'. Available: ${available.join(", ")}`
         : `unknown subcommand '${path}'`,
@@ -249,6 +253,7 @@ export const clientSubcommandUnknownVerb = (path: string, available?: string[]):
 export const clientSubcommandMissingArgument = (path: string, argument: string): TelemetryEvent => ({
     source: "client:subcommand",
     kind: "missing_argument",
+    level: "error",
     message: `${path}: missing ${argument}`,
     path,
     argument,
@@ -263,6 +268,7 @@ export const clientSubcommandMissingArgument = (path: string, argument: string):
 export const clientProposalEditsBlocked = (): TelemetryEvent => ({
     source: "client:proposal",
     kind: "edits_blocked",
+    level: "warn",
     message: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)",
 });
 
@@ -270,6 +276,7 @@ export const clientProposalEditsBlocked = (): TelemetryEvent => ({
 export const clientRpcError = (method: string, cause: unknown): TelemetryEvent => ({
     source: "client:rpc",
     kind: "error",
+    level: "error",
     message: cause instanceof Error ? cause.message : String(cause),
     method,
 });

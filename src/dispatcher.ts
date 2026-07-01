@@ -130,8 +130,9 @@ options:
       --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
       --repo <glob>       membership: track a git repo folder (its ls-files join
                           the manifest), relative to project root. Repeatable.
-      --manifest-items <n>  session-open preview: -1 full / 0 off / N first-N
-                          items of plurnk://manifest.json at turn 0. Create-time.
+      --files-items <n>   session-open preview of the TRACKED-FILE list
+                          (FIND(file:///**)): -1 full / 0 off / N first-N. Memory
+                          (known/unknown/run/plurnk) always foists full. Create-time.
       --md <name=path>    pin a markdown doc into the session (read at turn 0);
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
       --max-commands <n>  ceiling on ops per emission for the session (min with the
@@ -215,13 +216,15 @@ export const buildConstraints = (values: {
     ...(values.repo ?? []).map((glob): Constraint => ({ effect: "repo", glob })),
 ];
 
-// Session-open settings. Open-context (svc#231): manifestItems REPLACES
-// PLURNK_MANIFEST_ITEMS; mdDocs UNIONS with the operator's PLURNK_MD_* (client
-// wins a collision; content read from the LOCAL fs — co-location law). Ceilings
-// (svc#232, most-restrictive-wins): maxCommands min()s PLURNK_MAX_COMMANDS;
-// git:false ANDs PLURNK_GIT_ALLOWED (deny-only, never re-enables).
+// Session-open settings. Open-context (svc#231/#286): filesItems REPLACES
+// PLURNK_FILES_ITEMS (renamed from manifestItems/PLURNK_MANIFEST_ITEMS — it only
+// ever capped the tracked-file list, FIND(file:///**); memory always foists
+// full); mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a collision;
+// content read from the LOCAL fs — co-location law). Ceilings (svc#232,
+// most-restrictive-wins): maxCommands min()s PLURNK_MAX_COMMANDS; git:false ANDs
+// PLURNK_GIT_ALLOWED (deny-only, never re-enables).
 export interface Settings {
-    manifestItems?: number;
+    filesItems?: number;
     mdDocs?: Array<{ alias: string; content: string }>;
     maxCommands?: number;
     git?: boolean;
@@ -230,7 +233,7 @@ export interface Settings {
 }
 
 export const buildSettings = async (
-    values: { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean },
+    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean },
     cwd: string,
 ): Promise<Settings> => {
     const settings: Settings = {};
@@ -246,13 +249,13 @@ export const buildSettings = async (
     // #268 — pure passthrough of the per-session AGENTS auto-load override (the
     // service does the picking + reading; the client just forces it off here).
     if (values["no-agents-md"] === true) settings.autoReadAgents = false;
-    const mi = values["manifest-items"];
-    if (mi !== undefined) {
-        const n = Number(mi);
+    const fi = values["files-items"];
+    if (fi !== undefined) {
+        const n = Number(fi);
         if (!Number.isInteger(n) || n < -1) {
-            throw new TelemetryError(clientFlagInvalid("--manifest-items", mi, "must be -1 (full), 0 (off), or a positive integer"));
+            throw new TelemetryError(clientFlagInvalid("--files-items", fi, "must be -1 (full), 0 (off), or a positive integer"));
         }
-        settings.manifestItems = n;
+        settings.filesItems = n;
     }
     const mdSpecs = values.md ?? [];
     if (mdSpecs.length > 0) {
@@ -350,11 +353,11 @@ const attachOrCreateSession = async (
     if (opts.runName !== undefined) attachParams.runName = opts.runName;
     const session = await rpc.call("session.attach", attachParams) as SessionResult;
     // An existing session takes the overlay flags live (session.create only
-    // seeds at birth). Settings (--manifest-items/--md) are session-create-only
+    // seeds at birth). Settings (--files-items/--md) are session-create-only
     // per svc#231 — there's no live setter, so flag-and-skip on attach.
     for (const c of constraints) await rpc.call("session.constrain", c);
     if (Object.keys(settings).length > 0) {
-        process.stderr.write("  \x1b[2m--manifest-items/--md apply at session creation only; ignored on --session attach\x1b[0m\n");
+        process.stderr.write("  \x1b[2m--files-items/--md apply at session creation only; ignored on --session attach\x1b[0m\n");
     }
     return session;
 };
@@ -513,7 +516,7 @@ export const main = async (argv: string[]): Promise<void> => {
             view: { type: "string", multiple: true },
             repo: { type: "string", multiple: true },
             // session-open settings (svc#231) + tighten-only ceilings (svc#232)
-            "manifest-items": { type: "string" },
+            "files-items": { type: "string" },
             md: { type: "string", multiple: true },
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
@@ -630,7 +633,7 @@ export const main = async (argv: string[]): Promise<void> => {
             const session = await attachOrCreateSession(rpc, {
                 sessionName, runName, projectRoot, create: true, client: CLIENT_ID_CLI,
                 constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-                settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
+                settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
             });
             if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
             const exitCode = await runScript(rpc, text, session, { json, yolo });
@@ -649,7 +652,7 @@ export const main = async (argv: string[]): Promise<void> => {
         const session = await attachOrCreateSession(rpc, {
             sessionName, runName, projectRoot, create: true, client: clientId,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-            settings: await buildSettings(values as { "manifest-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
+            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
         });
         if (prompt.length === 0) {
             // #268 — carry the AGENTS-auto-load override onto /session-created sessions too.

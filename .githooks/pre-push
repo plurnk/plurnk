@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Local gate (workspace convention): a red suite blocks the push before the
+# remote ever sees it. Wired via `prepare` → git config core.hooksPath .githooks.
+exec npm test

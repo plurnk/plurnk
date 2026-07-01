@@ -1,6 +1,6 @@
 {
   "name": "@plurnk/plurnk",
-  "version": "0.54.0",
+  "version": "0.54.1",
   "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
   "type": "module",
   "license": "MIT",
@@ -24,9 +24,11 @@
     "test:intg": "node --test --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
     "test": "npm run test:lint && npm run test:unit",
     "test:all": "npm run test:lint && npm run test:unit && npm run test:intg && npm run test:tui",
+    "deps:fresh": "npm outdated",
     "build:dist": "tsc -p tsconfig.build.json",
     "build": "npm run build:dist",
-    "prepare": "npm run build",
+    "prepare": "git config core.hooksPath .githooks && npm run build",
+    "prepublishOnly": "npm run test && npm audit --audit-level=high && npm run deps:fresh",
     "test:tui": "node --test --test-timeout=600000 --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
     "build:global:install": "npm run build && npm install -g .",
     "build:global:uninstall": "npm uninstall -g @plurnk/plurnk",
@@ -35,12 +37,12 @@
     "test:installation": "node scripts/test-installation.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.1.0",
     "@types/ws": "^8.18.1",
     "node-pty": "^1.1.0",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "ws": "^8.20.1"
+    "ws": "^8.21.0"
   }
 }

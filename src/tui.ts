@@ -158,23 +158,6 @@ export const cycleCoord = (count: number, cursor: number | null, dir: "up" | "do
     return dir === "up" ? Math.max(0, cursor - 1) : Math.min(count - 1, cursor + 1);
 };
 
-// engine:turn lifecycle telemetry (plurnk-service #301 / client #114) → the
-// steer-prompt heartbeat label. turn_awaiting_model brackets the provider call
-// (the long, silent wait that used to read as a hang); turn_generated marks the
-// response landing, ops about to commit. Unknown kinds → null so the caller
-// falls back to rendering them as an ordinary telemetry line (no silent drop).
-export const turnHeartbeatLabel = (kind: string): string | null =>
-    kind === "turn_awaiting_model" ? "model thinking…"
-        : kind === "turn_generated" ? "working…"
-            : null;
-
-// Elapsed wall time as a compact steer-prompt counter: "8s", "1m04s". A plain
-// ticking number, not a spinner — liveness without cursor/width math.
-export const formatElapsed = (ms: number): string => {
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return `${s}s`;
-    return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
-};
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
@@ -418,15 +401,12 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // runs and the line handler / SIGINT can share it.
     let inFlight = false;
     let cancelRequested = false;
-    // Steer-prompt heartbeat (client #114): engine:turn telemetry sets the label
-    // ("model thinking…" / "working…"), a 1s timer ticks the elapsed clock. Both
-    // ride buildPrompt's inFlight branch. Started/cleared at the inFlight edges.
-    let heartbeatLabel: string | null = null;
-    let heartbeatStartMs = 0;
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    // Live embedding progress → a left prefix on the prompt line while it runs
-    // (like the heartbeat), null when idle so it vanishes with no trace.
-    let embed: { completed: number; total: number } | null = null;
+    // Prompt status gutter (#114, refined): two reserved slots — 🧮 while
+    // embeddings warm, and a busy glyph (⏳ working / 💤 hibernating) whenever a
+    // loop OR embedding is active. Glyphs when active, blanks when not, so the
+    // prompt never shifts. Pure state, no timer — repainted on state change.
+    let embedding = false;
+    let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. known:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -455,27 +435,24 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         // earlier indices, so a mid-cycle lookCursor stays valid.
         const target = entryTarget(p.entry);
         if (target !== null) priorTargets.push(target);
+        // A model SEND[202] parks the loop (awaiting streams/workers) → 💤; any
+        // other entry means it's actively working → ⏳. printAbove repaints the
+        // prompt, so the gutter reflects this immediately.
+        hibernating = p.entry.op === "SEND" && p.entry.signal === 202;
         printAbove(renderLogEntry(p.entry));
     });
 
     // telemetry/event — interleaved with the trace waterfall.
     rpc.onNotification("telemetry/event", (params) => {
         const p = params as { loopId: number; event: TelemetryEvent };
-        // engine:turn lifecycle drives the steer-prompt heartbeat, NOT a waterfall
-        // line (#114): set the label and repaint the prompt immediately (the 1s
-        // timer only advances the clock). An unrecognized engine:turn kind falls
-        // through to a normal telemetry line rather than vanishing.
-        if (p.event.source === "engine:turn") {
-            const label = turnHeartbeatLabel(p.event.kind);
-            if (label !== null) { heartbeatLabel = label; if (inFlight) repromptPreserving(); return; }
-        }
-        // engine:derivation:embed_progress → a left prefix on the prompt that adds
-        // up while embeddings run, cleared (vanishes) on the final beat. Never a
-        // waterfall line — no per-beat spam. Repaint preserves a typed-in inject.
+        // engine:turn liveness is the ⏳ gutter (driven by inFlight), not a
+        // waterfall line — suppress it so it never spams the trace (#114).
+        if (p.event.source === "engine:turn") return;
+        // embed_progress toggles the 🧮 slot; no numbers shown, so repaint only on
+        // the appear/disappear edge (preserving a typed-in inject). No per-beat spam.
         if (p.event.source === "engine:derivation" && p.event.kind === "embed_progress") {
-            const completed = Number(p.event.completed), total = Number(p.event.total);
-            embed = completed < total ? { completed, total } : null;
-            repromptPreserving();
+            const active = Number(p.event.completed) < Number(p.event.total);
+            if (active !== embedding) { embedding = active; repromptPreserving(); }
             return;
         }
         printAbove(renderTelemetryEvent(p.event));
@@ -583,17 +560,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // stable), NOT the BMP ⚡ (U+26A1) which a font may render width-1 and drift
     // the readline cursor (the ❓ U+2753 lesson).
     const buildPrompt = (): string => {
-        // Far-left transient prefix while embeddings warm — adds up, then vanishes.
-        const abacus = embed !== null ? `\x1b[2m🧮 ${embed.completed}/${embed.total}\x1b[0m ` : "";
+        // Two reserved status slots, far left. 🧮 = embeddings warming. Busy slot:
+        // ⏳ whenever a loop OR embedding is active (💤 when the loop is parked on a
+        // SEND[202]). Each is a width-2 glyph or two blanks — same width either way,
+        // so appearing/vanishing never shifts the prompt. All plane-1, VS16-free.
+        const abacus = embedding ? "🧮" : "  ";
+        const busy = inFlight ? (hibernating ? "💤" : "⏳") : embedding ? "⏳" : "  ";
         const yolo = opts.yolo ? "🔥" : "  ";
-        // Steer form (#114): while a loop runs, the prompt IS the heartbeat — a
-        // ticking elapsed clock + the engine:turn label — so silence reads as
-        // "working", never "hung". Still an editable row (inject rides here).
-        if (inFlight) {
-            const elapsed = formatElapsed(Date.now() - heartbeatStartMs);
-            return `${abacus}${yolo}⏳ \x1b[2m${elapsed} · ${heartbeatLabel ?? "working…"}\x1b[0m \x1b[1m… \x1b[0m`;
-        }
-        return `${abacus}${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        return `${abacus}${busy} ${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -617,24 +591,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         rl.setPrompt(buildPrompt());
         rl.prompt();
     };
-    // Heartbeat tick: same wipe-and-redraw as reprompt but rl.prompt(true) so an
-    // in-progress inject survives the per-second clock update (the printAbove
-    // idiom — readline owns the redraw, no cursor/width math).
+    // Repaint the prompt preserving a typed-in inject (rl.prompt(true)) — used
+    // when the status gutter changes (embedding starts/stops) mid-typing. The
+    // printAbove idiom; readline owns the redraw, no cursor/width math.
     const repromptPreserving = (): void => {
         readline.cursorTo(process.stdout, 0);
         readline.clearLine(process.stdout, 0);
         rl.setPrompt(buildPrompt());
         rl.prompt(true);
-    };
-    const startHeartbeat = (): void => {
-        heartbeatStartMs = Date.now();
-        heartbeatLabel = null;
-        heartbeatTimer = setInterval(repromptPreserving, 1000);
-    };
-    const stopHeartbeat = (): void => {
-        if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
-        heartbeatLabel = null;
     };
     // Now that rl exists, printAbove can re-render the prompt after each line.
     printAbove = (text: string): void => {
@@ -864,12 +828,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             }
 
             inFlight = true;
-            // Surface a live steer prompt for the duration of the loop, so the
-            // user has a stable row to type an inject into (the traces print
-            // above it). buildPrompt switches to its steer form while inFlight,
-            // and startHeartbeat ticks the elapsed clock so the wait reads as
-            // "working", never "hung" (#114).
-            startHeartbeat();
+            hibernating = false;   // fresh loop — the ⏳ busy glyph lights the whole run
+            // Keep a live steer prompt for the duration of the loop — a stable row
+            // to type an inject into (traces print above it); the gutter's ⏳ shows
+            // the loop is active (#114). Still editable.
             reprompt();
             const start = Date.now();
             let turnCount = 0;
@@ -931,13 +893,11 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             } finally {
                 inFlight = false;
                 cancelRequested = false;
-                stopHeartbeat();
-                reprompt();
+                reprompt();   // loop over → the busy glyph clears from the gutter
             }
         });
 
         rl.on("close", () => {
-            stopHeartbeat();   // clear the tick if a loop was mid-flight at quit
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);

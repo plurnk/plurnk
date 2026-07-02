@@ -176,6 +176,11 @@ export const formatElapsed = (ms: number): string => {
     return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
 };
 
+// engine:derivation:embed_progress text for the single in-place startup line —
+// a count that climbs on ONE row instead of one waterfall line per beat.
+export const embedProgressText = (completed: number, total: number): string =>
+    completed >= total ? `embedded ${total} entries` : `embedding ${completed}/${total}`;
+
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
     return { verb: m?.[1] ?? "", rest: (m?.[2] ?? "").trim() };
@@ -424,6 +429,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     let heartbeatLabel: string | null = null;
     let heartbeatStartMs = 0;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    // Is the bottom waterfall row our live in-place embed counter? Any other
+    // printAbove resets it, so a real line is never clobbered by the rewrite.
+    let embedLive = false;
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. known:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -465,6 +473,12 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (p.event.source === "engine:turn") {
             const label = turnHeartbeatLabel(p.event.kind);
             if (label !== null) { heartbeatLabel = label; if (inFlight) repromptPreserving(); return; }
+        }
+        // engine:derivation:embed_progress → one in-place counter, not a line per
+        // beat (the startup-warming spam). Coalesced on the left, adding up.
+        if (p.event.source === "engine:derivation" && p.event.kind === "embed_progress") {
+            renderEmbed(Number(p.event.completed), Number(p.event.total));
+            return;
         }
         printAbove(renderTelemetryEvent(p.event));
     });
@@ -624,9 +638,22 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     };
     // Now that rl exists, printAbove can re-render the prompt after each line.
     printAbove = (text: string): void => {
+        embedLive = false;   // a real line breaks the in-place embed chain (#embed-progress)
         readline.cursorTo(process.stdout, 0);
         readline.clearLine(process.stdout, 0);
         process.stdout.write(`${text}\n`);
+        rl.prompt(true);
+    };
+    // Single "adding up" line for embed_progress: rewrite the live embed row in
+    // place (it sits just above the prompt — move up one, clear, rewrite) instead
+    // of one printAbove per beat. embedLive gates the move so we only ever rewrite
+    // OUR row; the final beat commits (embedLive=false → next output prints below).
+    const renderEmbed = (completed: number, total: number): void => {
+        readline.cursorTo(process.stdout, 0);
+        if (embedLive) readline.moveCursor(process.stdout, 0, -1);
+        readline.clearLine(process.stdout, 0);
+        process.stdout.write(`  \x1b[2m📡 ${embedProgressText(completed, total)}\x1b[0m\n`);
+        embedLive = completed < total;
         rl.prompt(true);
     };
 

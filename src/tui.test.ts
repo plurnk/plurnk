@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, turnHeartbeatLabel, formatElapsed, embedProgressText, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, turnHeartbeatLabel, formatElapsed, type VerbContext } from "./tui.ts";
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
 
@@ -123,13 +123,6 @@ test("formatElapsed: a minute or more is m + zero-padded s", () => {
     assert.equal(formatElapsed(60_000), "1m00s");
     assert.equal(formatElapsed(64_000), "1m04s");
     assert.equal(formatElapsed(600_000), "10m00s");
-});
-
-// ─── embedProgressText (single in-place startup counter) ─────────────────
-
-test("embedProgressText: shows the climbing count (done beat vanishes, isn't rendered)", () => {
-    assert.equal(embedProgressText(6, 61), "embedding 6/61");
-    assert.equal(embedProgressText(60, 61), "embedding 60/61");
 });
 
 // ─── expandNewlines (↵ marker → real newline on submit) ──────────────────

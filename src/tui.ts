@@ -26,7 +26,7 @@ import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved } from "./proposal.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
-import { renderTelemetryEvent, report, clientSubcommandUnknownVerb } from "./telemetry.ts";
+import { renderTelemetryEvent, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import { runOAuth } from "./auth.ts";
@@ -875,7 +875,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     if (openPaths.length > 0) loopParams.openPaths = openPaths;
                     const ack = await rpc.call("loop.run", loopParams) as LoopAck;
                     // Synchronous failure (501 no provider, etc.) carries `error`.
-                    if (ack.error !== undefined) throw new Error(ack.error);
+                    // 501 = no model configured → repeat the .env pointer (#120).
+                    if (ack.error !== undefined) throw new Error(ack.status === 501 ? ack.error + NO_MODEL_HINT : ack.error);
                     // Normal path: status 100 ack → block on loop/terminated for
                     // the real outcome. Any non-100 status is already terminal.
                     if (ack.finalStatus === 100 && ack.loopId !== undefined) {

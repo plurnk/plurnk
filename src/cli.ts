@@ -8,7 +8,7 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { extractSendBody, contextGauge } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
-import { report, clientProposalEditsBlocked } from "./telemetry.ts";
+import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import { extractOpenPaths } from "./openpaths.ts";
@@ -460,7 +460,8 @@ export const runCli = async (rpc: Rpc, prompt: string, session: SessionResult, o
     let result: LoopRunResult;
     try {
         const ack = await rpc.call("loop.run", loopParams) as LoopAck;
-        if (ack.error !== undefined) throw new Error(ack.error);
+        // 501 = no model configured → repeat the .env pointer (#120).
+        if (ack.error !== undefined) throw new Error(ack.status === 501 ? ack.error + NO_MODEL_HINT : ack.error);
         // Status-100 ack → block on loop/terminated for the real outcome;
         // assemble the result from the ack (loopId/modelRunId) + the event.
         // Any non-100 status is already terminal (defensive — shouldn't occur).

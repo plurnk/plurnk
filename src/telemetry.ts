@@ -272,6 +272,12 @@ export const clientProposalEditsBlocked = (): TelemetryEvent => ({
     message: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)",
 });
 
+// #120 — a 501 loop.run ack means no model is configured anywhere. The daemon
+// says so at ITS boot stderr (easily lost under a supervisor); repeat the
+// pointer where the user is actually looking. One clause, appended to the
+// daemon's own error at both ack sites (TUI + CLI, so --json carries it too).
+export const NO_MODEL_HINT = " — configure a model: edit ~/.plurnk/.env and uncomment one option";
+
 // `client:rpc:error` — RPC call rejected with a daemon-supplied error.
 export const clientRpcError = (method: string, cause: unknown): TelemetryEvent => ({
     source: "client:rpc",

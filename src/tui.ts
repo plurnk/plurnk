@@ -560,14 +560,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // stable), NOT the BMP ⚡ (U+26A1) which a font may render width-1 and drift
     // the readline cursor (the ❓ U+2753 lesson).
     const buildPrompt = (): string => {
-        // Two reserved status slots, far left. 🧮 = embeddings warming. Busy slot:
-        // ⏳ whenever a loop OR embedding is active (💤 when the loop is parked on a
-        // SEND[202]). Each is a width-2 glyph or two blanks — same width either way,
-        // so appearing/vanishing never shifts the prompt. All plane-1, VS16-free.
-        const abacus = embedding ? "🧮" : "  ";
-        const busy = inFlight ? (hibernating ? "💤" : "⏳") : embedding ? "⏳" : "  ";
+        // Status rides the prompt's OWN glyphs — no prepended gutter, so the row
+        // never shifts and stays column-aligned with the waterfall. The origin
+        // 🐹→🧮 while embeddings warm; the status ✅→⏳ (💤 if the loop is parked on
+        // a SEND[202]) whenever a loop OR embedding is active. All are same-width
+        // palette glyphs (⏳/💤 are the blessed sendSubGlyph status set) — swapping
+        // in place keeps the column widths and the readline cursor stable.
+        const busy = inFlight || embedding;
+        const origin = embedding ? "🧮" : "🐹";
+        const status = busy ? (inFlight && hibernating ? "💤" : "⏳") : "✅";
         const yolo = opts.yolo ? "🔥" : "  ";
-        return `${abacus}${busy} ${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}${origin} 💬 ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed

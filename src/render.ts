@@ -219,8 +219,10 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     // Short single-line replies inline after the header (nvim's
     // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
     // start on the next line, indented under the speaker.
+    // Single space before the body — the same separator op rows use before their
+    // target, so inline SEND bodies sit in the target column, not one right of it.
     const lines = body.length === 0 ? [header]
-        : !multiLine && body.length <= 80 ? [`${header}  ${body}`]
+        : !multiLine && body.length <= 80 ? [`${header} ${body}`]
         : [header, ...body.split("\n").map((l) => `     ${l}`)];
 
     // The model's answer (terminal SEND) is bold; everything else plain. No

@@ -73,10 +73,14 @@ export default class StreamTrace {
     // First event for an entry announces the stream; every later tick
     // (growth, per-channel close) is silent — a line-oriented view has
     // nothing actionable to say about len changing.
+    // Column discipline: the waterfall grammar is `origin op status code target`.
+    // A stream has no op and (while open) no code — those slots render as
+    // width-matched blanks ("  " for the op glyph, "   " for the code) so the
+    // status/code/target columns line up with the op rows instead of drifting left.
     event(ev: StreamEventPayload): string | null {
         if (this.#started.has(ev.entryId)) return null;
         this.#started.add(ev.entryId);
-        return `  ${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${ev.target}`;
+        return `  ${streamCoord(ev)}${STREAM_GLYPH}    ⏳     ${ev.target}`;
     }
 
     // One conclusion line in the waterfall grammar. The daemon's summary
@@ -89,6 +93,7 @@ export default class StreamTrace {
         const wake = ev.wakeAction === "opened-loop" ? " → woke loop" : "";
         const parts = [
             STREAM_GLYPH,
+            "  ",   // blank op slot — streams have no op; keeps the status column aligned
             statusGlyph(ev.closeStatus),
             `${statusColor(ev.closeStatus)}${ev.closeStatus}${RESET}`,
             ev.target,

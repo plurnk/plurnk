@@ -22,7 +22,9 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     const t = new StreamTrace();
     const first = t.event(event(1));
     assert.ok(first !== null);
-    assert.match(first, /📡 ⏳ exec:\/\/python\/1\/2\/1/);
+    // Blank op slot (2sp) + blank code slot (3sp) hold the waterfall columns:
+    // `📡 <op> ⏳ <code> target` with the empty slots width-matched.
+    assert.match(first, /📡 {4}⏳ {5}exec:\/\/python\/1\/2\/1/);
     assert.match(first, /^  01\/02\/01 /, "start line carries the wire coordinate");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
@@ -38,7 +40,9 @@ test("StreamTrace: distinct entries each announce once", () => {
 test("StreamTrace: conclusion speaks the waterfall grammar and strips the target echo", () => {
     const t = new StreamTrace();
     const line = t.concluded(concluded());
-    assert.match(line, /📡 ✅ 200 exec:\/\/python\/1\/2\/1/);
+    // Blank op slot between origin and status keeps the code/target columns
+    // aligned with op rows (📡 has no op glyph).
+    assert.match(line, /📡 {4}✅ 200 exec:\/\/python\/1\/2\/1/);
     assert.match(line, /^  01\/02\/01 /, "conclusion line carries the wire coordinate");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
     assert.doesNotMatch(line, /exec:\/\/python\/1\/2\/1 completed/);
@@ -82,5 +86,5 @@ test("StreamTrace: a stream without a coordinate renders without one", () => {
     const line = t.event({ entryId: 9, target: "sse://feed", channel: "data", state: "active", contentLength: 5 });
     assert.ok(line !== null);
     assert.doesNotMatch(line, /\d\d\/\d\d\/\d\d/);
-    assert.match(line, /📡 ⏳ sse:\/\/feed/);
+    assert.match(line, /📡 {4}⏳ {5}sse:\/\/feed/);
 });

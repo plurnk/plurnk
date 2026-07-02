@@ -127,13 +127,9 @@ test("formatElapsed: a minute or more is m + zero-padded s", () => {
 
 // ─── embedProgressText (single in-place startup counter) ─────────────────
 
-test("embedProgressText: mid-run shows the climbing count", () => {
+test("embedProgressText: shows the climbing count (done beat vanishes, isn't rendered)", () => {
     assert.equal(embedProgressText(6, 61), "embedding 6/61");
     assert.equal(embedProgressText(60, 61), "embedding 60/61");
-});
-
-test("embedProgressText: at/over total reads as a committed total", () => {
-    assert.equal(embedProgressText(61, 61), "embedded 61 entries");
 });
 
 // ─── expandNewlines (↵ marker → real newline on submit) ──────────────────

@@ -176,10 +176,11 @@ export const formatElapsed = (ms: number): string => {
     return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
 };
 
-// engine:derivation:embed_progress text for the single in-place startup line —
-// a count that climbs on ONE row instead of one waterfall line per beat.
+// engine:derivation:embed_progress text for the single in-place line — a count
+// that climbs on ONE transient row. Only rendered while embedding; the done beat
+// removes the row entirely (see renderEmbed), so there's no committed end state.
 export const embedProgressText = (completed: number, total: number): string =>
-    completed >= total ? `embedded ${total} entries` : `embedding ${completed}/${total}`;
+    `embedding ${completed}/${total}`;
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
@@ -644,16 +645,23 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         process.stdout.write(`${text}\n`);
         rl.prompt(true);
     };
-    // Single "adding up" line for embed_progress: rewrite the live embed row in
-    // place (it sits just above the prompt — move up one, clear, rewrite) instead
-    // of one printAbove per beat. embedLive gates the move so we only ever rewrite
-    // OUR row; the final beat commits (embedLive=false → next output prints below).
+    // Single transient "adding up" line for embed_progress: while embedding, rewrite
+    // the live row in place (it sits just above the prompt — move up one, clear,
+    // rewrite). The done beat clears the row and does NOT re-emit it, then pulls the
+    // prompt up (clearScreenDown wipes the old prompt row below) — so the line shows
+    // only while embeddings run and vanishes with no committed trace. embedLive gates
+    // the move so we only ever touch OUR row; any real printAbove breaks the chain.
     const renderEmbed = (completed: number, total: number): void => {
         readline.cursorTo(process.stdout, 0);
         if (embedLive) readline.moveCursor(process.stdout, 0, -1);
-        readline.clearLine(process.stdout, 0);
-        process.stdout.write(`  \x1b[2m📡 ${embedProgressText(completed, total)}\x1b[0m\n`);
-        embedLive = completed < total;
+        if (completed < total) {
+            readline.clearLine(process.stdout, 0);
+            process.stdout.write(`  \x1b[2m🧮 ${embedProgressText(completed, total)}\x1b[0m\n`);
+            embedLive = true;
+        } else {
+            readline.clearScreenDown(process.stdout);   // remove the row + the old prompt below it
+            embedLive = false;
+        }
         rl.prompt(true);
     };
 

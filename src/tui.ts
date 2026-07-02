@@ -29,6 +29,7 @@ import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
+import { runOAuth } from "./auth.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 
@@ -62,7 +63,7 @@ export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
     "yolo", "session", "rename", "run", "stop", "quit",
     "pick", "hide", "view", "repo", "drop", "members", "import", "script",
-    "accept", "reject", "cancel", "edit",
+    "auth", "accept", "reject", "cancel", "edit",
 ] as const;
 
 export const TUI_HELP = [
@@ -80,6 +81,7 @@ export const TUI_HELP = [
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /script <path>                     run a .plk file (its DSL → op.parse)",
+    "  /auth <target>                     OAuth an auth-protected exec (e.g. notion) via browser",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -381,6 +383,16 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // Typed no-modifier fallback for the a/e/r/c proposal review keys.
             await ctx.resolveProposal(verb as "accept" | "reject" | "cancel" | "edit");
             return;
+        case "auth": {
+            // #116 — the OAuth loopback leg: bind → authorize → open → capture →
+            // complete. Blocks the REPL for the browser round-trip (Ctrl-C exits);
+            // the service half is stateless, we own the loopback + timeout.
+            const target = rest.trim();
+            if (target.length === 0) { write("  \x1b[2musage: /auth <target>  (the exec needing auth, e.g. notion)\x1b[0m"); return; }
+            const r = await runOAuth(rpc, target, { print: write });
+            write(`  ${r.ok ? "✅" : "❌"} ${r.message}`);
+            return;
+        }
         case "stop":
             await rpc.call("loop.cancel", { reason: "user_stop" });
             return;
@@ -468,6 +480,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     rpc.onNotification("stream/concluded", (params) => {
         const p = params as StreamConcludedPayload;
         printAbove(streams.concluded(p));
+        // #116 — an auth-required close (401) offers the OAuth flow; target is the
+        // stream's scheme (e.g. notion). We surface the offer, not auto-open — the
+        // user runs /auth when ready (browser + loopback is a deliberate step).
+        if (p.closeStatus === 401) printAbove(`  🔒 ${p.scheme} needs authorization — run \x1b[1m/auth ${p.scheme}\x1b[0m`);
         void rpc.call("entry.read", { target: p.target }).then((r) => {
             const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
             for (const name of ["stdout", "stderr"]) {

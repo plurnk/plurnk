@@ -176,12 +176,6 @@ export const formatElapsed = (ms: number): string => {
     return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
 };
 
-// engine:derivation:embed_progress text for the single in-place line — a count
-// that climbs on ONE transient row. Only rendered while embedding; the done beat
-// removes the row entirely (see renderEmbed), so there's no committed end state.
-export const embedProgressText = (completed: number, total: number): string =>
-    `embedding ${completed}/${total}`;
-
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
     return { verb: m?.[1] ?? "", rest: (m?.[2] ?? "").trim() };
@@ -430,9 +424,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     let heartbeatLabel: string | null = null;
     let heartbeatStartMs = 0;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    // Is the bottom waterfall row our live in-place embed counter? Any other
-    // printAbove resets it, so a real line is never clobbered by the rewrite.
-    let embedLive = false;
+    // Live embedding progress → a left prefix on the prompt line while it runs
+    // (like the heartbeat), null when idle so it vanishes with no trace.
+    let embed: { completed: number; total: number } | null = null;
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. known:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -475,10 +469,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             const label = turnHeartbeatLabel(p.event.kind);
             if (label !== null) { heartbeatLabel = label; if (inFlight) repromptPreserving(); return; }
         }
-        // engine:derivation:embed_progress → one in-place counter, not a line per
-        // beat (the startup-warming spam). Coalesced on the left, adding up.
+        // engine:derivation:embed_progress → a left prefix on the prompt that adds
+        // up while embeddings run, cleared (vanishes) on the final beat. Never a
+        // waterfall line — no per-beat spam. Repaint preserves a typed-in inject.
         if (p.event.source === "engine:derivation" && p.event.kind === "embed_progress") {
-            renderEmbed(Number(p.event.completed), Number(p.event.total));
+            const completed = Number(p.event.completed), total = Number(p.event.total);
+            embed = completed < total ? { completed, total } : null;
+            repromptPreserving();
             return;
         }
         printAbove(renderTelemetryEvent(p.event));
@@ -586,15 +583,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // stable), NOT the BMP ⚡ (U+26A1) which a font may render width-1 and drift
     // the readline cursor (the ❓ U+2753 lesson).
     const buildPrompt = (): string => {
+        // Far-left transient prefix while embeddings warm — adds up, then vanishes.
+        const abacus = embed !== null ? `\x1b[2m🧮 ${embed.completed}/${embed.total}\x1b[0m ` : "";
         const yolo = opts.yolo ? "🔥" : "  ";
         // Steer form (#114): while a loop runs, the prompt IS the heartbeat — a
         // ticking elapsed clock + the engine:turn label — so silence reads as
         // "working", never "hung". Still an editable row (inject rides here).
         if (inFlight) {
             const elapsed = formatElapsed(Date.now() - heartbeatStartMs);
-            return `${yolo}⏳ \x1b[2m${elapsed} · ${heartbeatLabel ?? "working…"}\x1b[0m \x1b[1m… \x1b[0m`;
+            return `${abacus}${yolo}⏳ \x1b[2m${elapsed} · ${heartbeatLabel ?? "working…"}\x1b[0m \x1b[1m… \x1b[0m`;
         }
-        return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        return `${abacus}${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}🐹 💬 ✅ \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -639,29 +638,9 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     };
     // Now that rl exists, printAbove can re-render the prompt after each line.
     printAbove = (text: string): void => {
-        embedLive = false;   // a real line breaks the in-place embed chain (#embed-progress)
         readline.cursorTo(process.stdout, 0);
         readline.clearLine(process.stdout, 0);
         process.stdout.write(`${text}\n`);
-        rl.prompt(true);
-    };
-    // Single transient "adding up" line for embed_progress: while embedding, rewrite
-    // the live row in place (it sits just above the prompt — move up one, clear,
-    // rewrite). The done beat clears the row and does NOT re-emit it, then pulls the
-    // prompt up (clearScreenDown wipes the old prompt row below) — so the line shows
-    // only while embeddings run and vanishes with no committed trace. embedLive gates
-    // the move so we only ever touch OUR row; any real printAbove breaks the chain.
-    const renderEmbed = (completed: number, total: number): void => {
-        readline.cursorTo(process.stdout, 0);
-        if (embedLive) readline.moveCursor(process.stdout, 0, -1);
-        if (completed < total) {
-            readline.clearLine(process.stdout, 0);
-            process.stdout.write(`  \x1b[2m🧮 ${embedProgressText(completed, total)}\x1b[0m\n`);
-            embedLive = true;
-        } else {
-            readline.clearScreenDown(process.stdout);   // remove the row + the old prompt below it
-            embedLive = false;
-        }
         rl.prompt(true);
     };
 

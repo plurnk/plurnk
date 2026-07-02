@@ -11,9 +11,12 @@ test("parseCallback: code + state present → parsed", () => {
     assert.deepEqual(parseCallback("/callback?code=abc123&state=xyz"), { code: "abc123", state: "xyz" });
 });
 
-test("parseCallback: missing code or state → null (stray hit)", () => {
+test("parseCallback: state is optional (PKCE flows omit it — joint e2e); code alone captures", () => {
+    assert.deepEqual(parseCallback("/callback?code=abc"), { code: "abc", state: null });
+});
+
+test("parseCallback: missing code → null (stray hit)", () => {
     assert.equal(parseCallback("/callback?state=xyz"), null);
-    assert.equal(parseCallback("/callback?code=abc"), null);
     assert.equal(parseCallback("/favicon.ico"), null);
 });
 

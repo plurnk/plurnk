@@ -16,13 +16,15 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import type Rpc from "./rpc.ts";
 
-// Parse a loopback callback URL's query → { code, state }, or null when either
-// is absent (a stray/favicon hit, not the redirect). Pure — the capture core.
-export const parseCallback = (url: string): { code: string; state: string } | null => {
+// Parse a loopback callback URL's query → { code, state }, or null when code is
+// absent (a stray/favicon hit, not the redirect). `state` is optional on the
+// wire — the PKCE flow doesn't require it (execs-mcp builds authorize URLs
+// without one; the joint e2e proved this) — so it's null when not sent and the
+// guard in runOAuth only enforces it when the authorization URL committed to one.
+export const parseCallback = (url: string): { code: string; state: string | null } | null => {
     const q = new URL(url, "http://127.0.0.1").searchParams;
     const code = q.get("code");
-    const state = q.get("state");
-    return code !== null && state !== null ? { code, state } : null;
+    return code !== null ? { code, state: q.get("state") } : null;
 };
 
 // The `state` an authorization URL commits to — for the client's defense-in-depth
@@ -40,15 +42,15 @@ const openBrowser = (url: string): void => {
 export interface Loopback {
     redirectUri: string;
     // Resolve on the first callback hit; null on timeout. Tears the listener down either way.
-    capture: (timeoutMs: number) => Promise<{ code: string; state: string } | null>;
+    capture: (timeoutMs: number) => Promise<{ code: string; state: string | null } | null>;
 }
 
 // Stand up the transient loopback on an ephemeral port. Exported for direct
 // testing of the capture leg (bind → hit → assert) without a daemon or browser.
 export const bindLoopback = (): Promise<Loopback> =>
     new Promise((resolve) => {
-        let onHit: (v: { code: string; state: string } | null) => void = () => {};
-        const hit = new Promise<{ code: string; state: string } | null>((r) => { onHit = r; });
+        let onHit: (v: { code: string; state: string | null } | null) => void = () => {};
+        const hit = new Promise<{ code: string; state: string | null } | null>((r) => { onHit = r; });
         const server = http.createServer((req, res) => {
             const parsed = req.url !== undefined ? parseCallback(req.url) : null;
             res.writeHead(200, { "content-type": "text/html" });
@@ -58,7 +60,7 @@ export const bindLoopback = (): Promise<Loopback> =>
         server.listen(0, "127.0.0.1", () => {
             const addr = server.address();
             const port = typeof addr === "object" && addr !== null ? addr.port : 0;
-            const capture = (timeoutMs: number): Promise<{ code: string; state: string } | null> => {
+            const capture = (timeoutMs: number): Promise<{ code: string; state: string | null } | null> => {
                 const timer = setTimeout(() => onHit(null), timeoutMs);
                 return hit.finally(() => { clearTimeout(timer); server.close(); });
             };

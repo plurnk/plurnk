@@ -554,6 +554,17 @@ test("renderLogEntry: FIND with one result is singular", () => {
     assert.match(out, /→ 1 result\b/);
 });
 
+test("renderLogEntry: FIND counts an ARRAY rx.results (uniform matcher, #129)", () => {
+    const items = Array.from({ length: 33 }, (_, i) => ({ pathname: `/f${i}` }));
+    const out = renderLogEntry(entry({ op: "FIND", scheme: "file", pathname: "/**", status_rx: 200, tx: {}, rx: { results: items } }));
+    assert.match(out, /→ 33 results/);
+});
+
+test("renderLogEntry: FIND with missing/empty rx → 0 results", () => {
+    const out = renderLogEntry(entry({ op: "FIND", scheme: "file", pathname: "/**", status_rx: 200, tx: {}, rx: {} }));
+    assert.match(out, /→ 0 results/);
+});
+
 test("renderLogEntry: COPY shows the destination", () => {
     const out = renderLogEntry(entry({ op: "COPY", scheme: "known", pathname: "/a", status_rx: 200, tx: { body: { raw: "known://b" } } }));
     assert.match(out, /→ known:\/\/b/);

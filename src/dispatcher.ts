@@ -96,17 +96,17 @@ env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
   PLURNK_WS             daemon WebSocket URL (default ws://127.0.0.1:3044) — the
                         ONE knob the client needs; everything else in ~/.plurnk
                         is the daemon's. Works with no config at all.
-  PLURNK_SESSION        resume a session by name, or create it if none exists
-  PLURNK_RUN            resume (or create) a named run within that session
+  PLURNK_CLIENT_SESSION        resume a session by name, or create it if none exists
+  PLURNK_CLIENT_RUN            resume (or create) a named run within that session
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
                         overrides for this invocation only.
-  PLURNK_PROJECT_ROOT   absolute path passed to session.create as the session's
+  PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to session.create as the session's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
-  PLURNK_YOLO           when truthy, auto-accept every proposal without prompting.
+  PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
                         Client-side only — proposals still go through the wire.
-  PLURNK_JSON           when truthy, same as --json for one-shot runs.
+  PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
 
 options:
   -h, --help              print this message and exit
@@ -117,9 +117,9 @@ options:
                           op's content with: plurnk read <coord> --json. CLI only.
       --session <name>    resume the named session, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
-                          auto-named session is created. Overrides PLURNK_SESSION.
+                          auto-named session is created. Overrides PLURNK_CLIENT_SESSION.
       --run <name>        resume (or create) the named run within the session.
-                          Requires --session. Overrides PLURNK_RUN.
+                          Requires --session. Overrides PLURNK_CLIENT_RUN.
       --model <alias>     model alias to pass on every loop.run. Resolved
                           server-side against PLURNK_MODEL_<alias>. Without
                           this (and PLURNK_MODEL unset), the daemon uses its
@@ -127,9 +127,9 @@ options:
       --project-root <p>  absolute path. Sent on session.create only; ignored
                           on --session attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
-                          PLURNK_PROJECT_ROOT.
+                          PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
-                          Overrides PLURNK_YOLO.
+                          Overrides PLURNK_CLIENT_YOLO.
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
                           (e.g. '{"yolo":true}' for server-side YOLO in
                           benchmark/automation runs).
@@ -456,7 +456,7 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             throw new TelemetryError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
         }
         if (opts.sessionName === undefined) {
-            throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--session (or PLURNK_SESSION)"));
+            throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--session (or PLURNK_CLIENT_SESSION)"));
         }
         // log.read requires an attached session — same resolution as the loop flows.
         const attached = await attachOrCreateSession(rpc, {
@@ -488,7 +488,7 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
             throw new TelemetryError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
         }
         if (opts.sessionName === undefined) {
-            throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--session (or PLURNK_SESSION)"));
+            throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--session (or PLURNK_CLIENT_SESSION)"));
         }
         // The coordinate is run-relative — attach the same way log read does,
         // defaulting to the conversation (model run) unless --run pins one.
@@ -550,7 +550,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
-    const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_JSON ?? "").toLowerCase());
+    const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_JSON ?? "").toLowerCase());
 
     // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
     // a known read-only subcommand (models / session / log), we skip stdin
@@ -569,17 +569,17 @@ export const main = async (argv: string[]): Promise<void> => {
             : positionalPrompt || stdinPrompt;
         if (json && prompt.length === 0) {
             if (values.json === true) dieJson(64, "usage", "--json needs a prompt (CLI mode only)", { flag: "--json" });
-            // PLURNK_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
+            // PLURNK_CLIENT_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
         }
     }
 
     // CLI flag overrides env; env overrides nothing.
-    const sessionName = values.session ?? process.env.PLURNK_SESSION;
-    const runName = values.run ?? process.env.PLURNK_RUN;
+    const sessionName = values.session ?? process.env.PLURNK_CLIENT_SESSION;
+    const runName = values.run ?? process.env.PLURNK_CLIENT_RUN;
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
-    const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_YOLO ?? "").toLowerCase());
+    const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
     if (runName !== undefined && sessionName === undefined) {
-        dieWith(64, clientFlagMissingDependency("--run (or PLURNK_RUN)", "--session (or PLURNK_SESSION)"));
+        dieWith(64, clientFlagMissingDependency("--run (or PLURNK_CLIENT_RUN)", "--session (or PLURNK_CLIENT_SESSION)"));
     }
 
     // Loop knobs (benchmark surface): --flags JSON passthrough, --ask sugar,
@@ -596,7 +596,7 @@ export const main = async (argv: string[]): Promise<void> => {
         dieWith(64, clientRuntimeError(cause));
     }
 
-    const projectRootRaw = values["project-root"] ?? process.env.PLURNK_PROJECT_ROOT;
+    const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
     const projectRoot: string | null = (() => {
         try { return resolveProjectRoot(projectRootRaw); }
         catch (cause) {

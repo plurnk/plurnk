@@ -90,8 +90,15 @@ const buildExtra = (entry: LogEntryWire): string => {
             return `${DIM}→ ${body.raw ?? ""}${RESET}`;
         }
         case "FIND": {
-            const results = rx !== null && typeof rx.results === "string" ? rx.results : "";
-            const count = results.length === 0 ? 0 : results.split("\n").filter((l) => l.length > 0).length;
+            // rx.results is an ARRAY of matches on the current wire (uniform
+            // matcher, svc#286; client #129 — the old string read printed
+            // "0 results" against a 33-item rx). Older stored rows replayed via
+            // log hydration still carry the newline-joined string — count both
+            // known shapes, never re-derive from content.
+            const raw = rx?.results;
+            const count = Array.isArray(raw) ? raw.length
+                : typeof raw === "string" && raw.length > 0 ? raw.split("\n").filter((l) => l.length > 0).length
+                : 0;
             return `${DIM}→ ${count} result${count === 1 ? "" : "s"}${RESET}`;
         }
         case "READ": {

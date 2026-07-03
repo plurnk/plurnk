@@ -55,7 +55,7 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
     return 3;
 };
 
-// `--json` / `PLURNK_JSON` is a distinct OUTPUT MODE, not a flag on the text
+// `--json` / `PLURNK_CLIENT_JSON` is a distinct OUTPUT MODE, not a flag on the text
 // output: stdout carries ONE complete structured document and nothing else,
 // stderr stays silent. The CLI becomes the integration layer — shell out,
 // parse, no third-party client needed. The document is the complete

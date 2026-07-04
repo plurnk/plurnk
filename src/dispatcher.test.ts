@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy } from "./dispatcher.ts";
 
 // ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
 
@@ -28,6 +28,30 @@ test("resolveModelSpec: undefined alias → undefined (no --model / PLURNK_MODEL
 
 test("resolveModelSpec: alias absent from env → undefined (fall back to bare {alias})", () => {
     assert.equal(resolveModelSpec("nope", { PLURNK_MODEL_ccp: "anthropic/claude-x" }), undefined);
+});
+
+// ─── collectExecsPolicy (#132 per-session exec-policy layer) ─────────
+
+test("collectExecsPolicy: forwards the enable/disable grammar", () => {
+    assert.deepEqual(
+        collectExecsPolicy({ PLURNK_EXECS_ONLY: "search", PLURNK_EXECS_NODE: "0", PLURNK_EXECS_MCP: "0" }),
+        { PLURNK_EXECS_ONLY: "search", PLURNK_EXECS_NODE: "0", PLURNK_EXECS_MCP: "0" },
+    );
+});
+
+test("collectExecsPolicy: NEVER forwards PLURNK_EXECS_MCP_* server configs/secrets", () => {
+    const out = collectExecsPolicy({
+        PLURNK_EXECS_ONLY: "search",
+        PLURNK_EXECS_MCP_NOTION: "https://notion.example/mcp",
+        PLURNK_EXECS_MCP_NOTION_HEADERS: '{"Authorization":"Bearer sk-secret"}',
+        PLURNK_EXECS_MCP_INSTALL: "0",
+    });
+    assert.deepEqual(out, { PLURNK_EXECS_ONLY: "search" });
+    assert.ok(!JSON.stringify(out).includes("secret"), "no bearer token leaks onto the wire");
+});
+
+test("collectExecsPolicy: ignores unrelated env; nothing set → empty map", () => {
+    assert.deepEqual(collectExecsPolicy({ PLURNK_WS: "ws://x", PATH: "/usr/bin" }), {});
 });
 
 // ─── resolveLoopFlags ────────────────────────────────────────────────

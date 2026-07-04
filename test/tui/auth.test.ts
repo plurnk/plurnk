@@ -43,7 +43,9 @@ before(async () => {
     if (bin === null) return;   // no service checkout → suite skips per-test
     const booted = await bootMockOAuth(bin);
     mock = booted.proc;
-    daemon = await bootDaemon(bin, { extraEnv: { PLURNK_MCP_TESTAUTH: `${booted.base}/mcp` } });
+    // execs-mcp 0.5 renamed PLURNK_MCP_* → PLURNK_EXECS_MCP_*; an http(s) URL
+    // selects the http transport (required for OAuth).
+    daemon = await bootDaemon(bin, { extraEnv: { PLURNK_EXECS_MCP_TESTAUTH: `${booted.base}/mcp` } });
 });
 
 after(async () => {

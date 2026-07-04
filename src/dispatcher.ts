@@ -66,6 +66,24 @@ export const resolveModelSpec = (alias: string | undefined, env: NodeJS.ProcessE
     return match !== undefined ? `${match.provider}/${match.model}` : undefined;
 };
 
+// #132 — the client's per-session exec-policy layer: forward the PLURNK_EXECS_*
+// enable/disable grammar (PLURNK_EXECS_ONLY, PLURNK_EXECS_<TAG>=0|false) so the
+// daemon intersects it with its own ceiling (service ∧ client — subtractive,
+// can never re-enable a service-disabled tag). Forwarded VERBATIM: the daemon's
+// execs Policy is the single interpreter (pull-don't-copy). EXCLUDES
+// PLURNK_EXECS_MCP_* — those are MCP SERVER configs (URLs, header bearer tokens),
+// not policy, and must never ride the wire. The bare PLURNK_EXECS_MCP tag toggle
+// (no trailing `_`) stays. Session-scoped: a per-session .env carries its own.
+export const collectExecsPolicy = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(env)) {
+        if (v === undefined) continue;
+        if (!k.startsWith("PLURNK_EXECS_") || k.startsWith("PLURNK_EXECS_MCP_")) continue;
+        out[k] = v;
+    }
+    return out;
+};
+
 // projectRoot resolution: empty string = explicit headless (null on wire);
 // otherwise must be an absolute path. Caller passes cwd as default.
 export const resolveProjectRoot = (raw: string | undefined): string | null => {
@@ -107,6 +125,12 @@ env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
                         Client-side only — proposals still go through the wire.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
+  PLURNK_EXECS_*        per-session exec-runtime policy, sent to the daemon at
+                        session.create (PLURNK_EXECS_ONLY=a,b allowlist;
+                        PLURNK_EXECS_<tag>=0 kill one). Subtractive only — the
+                        daemon intersects with its ceiling; the client can narrow,
+                        never re-enable. Shares the daemon's grammar; a session's
+                        .env carries its own. (MCP server configs are NOT sent.)
 
 options:
   -h, --help              print this message and exit
@@ -244,6 +268,7 @@ export interface Settings {
     git?: boolean;
     client?: string;          // #249 — frontend id, set on every session.create
     autoReadAgents?: boolean; // #268 — per-session override of the service AGENTS auto-load
+    execs?: Record<string, string>; // #132 — per-session exec-policy layer (PLURNK_EXECS_* forwarded)
 }
 
 export const buildSettings = async (
@@ -341,6 +366,8 @@ const attachOrCreateSession = async (
     // with no follow-up RPC.
     const createSession = async (name?: string): Promise<SessionResult> => {
         settings.client = opts.client;   // #249/#71 — the caller's frontend id (cli vs tui)
+        const execs = collectExecsPolicy();   // #132 — per-session exec-policy narrowing
+        if (Object.keys(execs).length > 0) settings.execs = execs;
         const params: { name?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
         if (name !== undefined) params.name = name;
         if (constraints.length > 0) params.constraints = constraints;

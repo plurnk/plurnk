@@ -68,9 +68,12 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
 
     const env: Record<string, string> = {
         ...(process.env as Record<string, string>),
-        PLURNK_DB_PATH: dbPath,
+        // v0.66.0 renamed PLURNK_DB_PATH → PLURNK_SERVICE_DB_PATH (required). Setting
+        // the OLD name silently fell back to the daemon's real ~/.plurnk/plurnk.db —
+        // the harness was writing test sessions into the user's live DB. Must be the
+        // temp path so each boot is isolated. (Spawn env wins; --env-file fills unset.)
+        PLURNK_SERVICE_DB_PATH: dbPath,
         PLURNK_PORT: "0",  // ephemeral
-        PLURNK_WORKSPACE_ROOT: workspace,
         // Avoid contacting the model unless a test wants to — but the daemon
         // still needs a non-null OPENAI_BASE_URL because PLURNK_MODEL=gemma in
         // the .env resolves to the openai provider at boot. Point at the

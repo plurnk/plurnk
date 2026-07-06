@@ -40,6 +40,7 @@ export default class Rpc {
     #nextId = 1;
     #pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string }>();
     #notificationHandlers = new Map<string, Array<(params: unknown) => void>>();
+    #closeHandlers: Array<() => void> = [];
 
     constructor({ url }: RpcOptions) {
         this.#url = url;
@@ -60,7 +61,18 @@ export default class Rpc {
             }
             this.#pending.clear();
             this.#ws = null;
+            // Notify subscribers AFTER pending rejections + nulling #ws, so a
+            // handler that reacts to the drop sees a consistent disconnected state.
+            for (const handler of this.#closeHandlers) handler();
         });
+    }
+
+    // Register a handler fired when the socket closes (drop OR intentional close).
+    // Notifications reject their in-flight rpc.call; a waiter on a *notification*
+    // (e.g. loop/terminated) has no such backstop, so consumers use this to settle
+    // those and unwedge — see the TUI's inFlight recovery.
+    onClose(handler: () => void): void {
+        this.#closeHandlers.push(handler);
     }
 
     async call(method: string, params?: object): Promise<unknown> {

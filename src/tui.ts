@@ -490,18 +490,30 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // terminates BEFORE loop.run's own response lands (we don't yet know the
     // loopId to register a waiter), so the event is held until the awaiter asks.
     const terminatedBuffer = new Map<number, LoopTerminated>();
-    const terminatedWaiters = new Map<number, (t: LoopTerminated) => void>();
+    const terminatedWaiters = new Map<number, { resolve: (t: LoopTerminated) => void; reject: (e: Error) => void }>();
     rpc.onNotification("loop/terminated", (params) => {
         const { loopId, ...t } = params as { loopId: number } & LoopTerminated;
         const waiter = terminatedWaiters.get(loopId);
-        if (waiter !== undefined) { terminatedWaiters.delete(loopId); waiter(t); return; }
+        if (waiter !== undefined) { terminatedWaiters.delete(loopId); waiter.resolve(t); return; }
         terminatedBuffer.set(loopId, t);
     });
     const awaitTermination = (loopId: number): Promise<LoopTerminated> => {
         const buffered = terminatedBuffer.get(loopId);
         if (buffered !== undefined) { terminatedBuffer.delete(loopId); return Promise.resolve(buffered); }
-        return new Promise((res) => terminatedWaiters.set(loopId, res));
+        return new Promise((resolve, reject) => terminatedWaiters.set(loopId, { resolve, reject }));
     };
+    // A dropped socket rejects in-flight rpc.calls, but a loop.run awaiting its
+    // loop/terminated NOTIFICATION would otherwise hang inFlight forever (the
+    // trap: /quit reads "busy", /stop can't reach a dead daemon). On close, reject
+    // every termination waiter so the awaiting dispatch throws → its finally clears
+    // inFlight and the REPL is escapable. shuttingDown suppresses it on an
+    // intentional quit (rpc.close fires the same event).
+    let shuttingDown = false;
+    rpc.onClose(() => {
+        if (shuttingDown) return;
+        for (const [, w] of terminatedWaiters) w.reject(new Error("connection to the daemon was lost"));
+        terminatedWaiters.clear();
+    });
 
     // Alias cache for /model completion + the active alias for the header —
     // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
@@ -798,9 +810,12 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 const { verb } = parseSlash(trimmed);
                 // /stop, /help, and the proposal verbs stay reachable mid-loop —
                 // a proposal pauses the loop and must be resolvable by typing.
-                const PASS = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit"]);
+                // /quit is the universal escape: NEVER "busy"-blocked, so a wedged
+                // or disconnected loop is always exitable (the daemon owns the loop;
+                // quitting the client just drops the connection — resumable).
+                const PASS = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit", "quit"]);
                 if (inFlight && !PASS.has(verb)) {
-                    printAbove("  \x1b[2m(busy; /stop to cancel, /help for the language)\x1b[0m");
+                    printAbove("  \x1b[2m(busy; /stop to cancel, /quit to exit, /help for the language)\x1b[0m");
                     return;
                 }
                 try {
@@ -902,6 +917,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         });
 
         rl.on("close", () => {
+            shuttingDown = true;   // intentional teardown — the rpc.close that follows isn't a "lost connection"
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);

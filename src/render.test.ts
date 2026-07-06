@@ -45,8 +45,11 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
 
 // ─── sendSubGlyph ─────────────────────────────────────────────────────
 
-test("sendSubGlyph: 200 → ✅", () => assert.equal(sendSubGlyph(200), "✅"));
-test("sendSubGlyph: 201 → ✅ (2xx range)", () => assert.equal(sendSubGlyph(201), "✅"));
+test("sendSubGlyph: routine 2xx badges nothing — blank width-2 slot (not ✅)", () => {
+    assert.equal(sendSubGlyph(200), "  ");
+    assert.equal(sendSubGlyph(201), "  ");
+    assert.equal(sendSubGlyph(204), "  ");
+});
 test("sendSubGlyph: 102 → ⏳ (continuing)", () => assert.equal(sendSubGlyph(102), "⏳"));
 test("sendSubGlyph: 202 → 💤 (parked/waiting — NOT the generic 2xx ✅)", () => assert.equal(sendSubGlyph(202), "💤"));
 test("sendSubGlyph: 300 → 🤔 (needs a decision)", () => assert.equal(sendSubGlyph(300), "🤔"));
@@ -54,7 +57,7 @@ test("sendSubGlyph: 499 → ✋ (failed/aborted)", () => assert.equal(sendSubGly
 test("sendSubGlyph: 410 → 💥 (directed SEND, gone)", () => assert.equal(sendSubGlyph(410), "💥"));
 test("sendSubGlyph: 404 → ❌ (single failure glyph, nvim-converged)", () => assert.equal(sendSubGlyph(404), "❌"));
 test("sendSubGlyph: 500 → ❌ (single failure glyph)", () => assert.equal(sendSubGlyph(500), "❌"));
-test("sendSubGlyph: 100 → '' (unknown range)", () => assert.equal(sendSubGlyph(100), ""));
+test("sendSubGlyph: unknown range → reserved blank slot (width-2, keeps alignment)", () => assert.equal(sendSubGlyph(100), "  "));
 
 // ─── extractSendBody ──────────────────────────────────────────────────
 
@@ -243,6 +246,7 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
 
 test("isPromptEntry: classifies plurnk://prompt/* EDITs (the TUI skips them live — the typed line is the record)", () => {
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "prompt/3/1" })), true);
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "/prompt/3/1" })), true, "leading slash (plurnk:///prompt/…) — the real foist shape");
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "manifest.json" })), false);
     assert.equal(isPromptEntry(entry({ op: "READ", scheme: "plurnk", pathname: "prompt/3/1" })), false);
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "known", pathname: "prompt/3/1" })), false);
@@ -496,8 +500,8 @@ test("broadcast: long single-line body breaks to the second line", () => {
     assert.equal(out.replace(/^\n|\n$/g, "").split("\n").length, 2);
 });
 
-test("universal status glyph: every trace line carries one", () => {
-    assert.match(renderLogEntry(entry({ op: "EDIT", scheme: "unknown", pathname: "/x", status_rx: 201, tx: { body: "p" } })), /✅/);
+test("status glyph: routine 2xx badges NOTHING (no ✅); only notable statuses glyph", () => {
+    assert.doesNotMatch(renderLogEntry(entry({ op: "EDIT", scheme: "unknown", pathname: "/x", status_rx: 201, tx: { body: "p" } })), /✅/);
     assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /❌/);
     assert.match(renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /❌/);
 });

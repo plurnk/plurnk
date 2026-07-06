@@ -349,14 +349,16 @@ test("renderLogEntry: trace line starts with 2-space indent", () => {
     assert.match(line, /^  /);
 });
 
-test("renderLogEntry: includes origin glyph for model", () => {
-    const line = renderLogEntry(entry({ op: "READ", origin: "model" }));
-    assert.ok(line.includes(ORIGIN_GLYPHS.model), `expected model glyph in ${line}`);
+test("renderLogEntry: a SEND shows the ACTOR glyph (who's speaking), not the op 💬", () => {
+    const client = renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hi" } } }));
+    assert.ok(client.includes(ORIGIN_GLYPHS.client), `expected 🐹 in ${client}`);
+    assert.ok(!client.includes(OP_GLYPHS.SEND), "the 💬 op glyph is dropped — the actor conveys speaking");
 });
 
-test("renderLogEntry: includes origin glyph for client", () => {
-    const line = renderLogEntry(entry({ op: "READ", origin: "client" }));
-    assert.ok(line.includes(ORIGIN_GLYPHS.client));
+test("renderLogEntry: an operation shows its OP glyph, no origin column", () => {
+    const line = renderLogEntry(entry({ op: "READ", origin: "model", scheme: "known", pathname: "/x", status_rx: 200 }));
+    assert.ok(line.includes(OP_GLYPHS.READ), `expected 📖 in ${line}`);
+    assert.ok(!line.includes(ORIGIN_GLYPHS.model), "op rows drop the origin — the op glyph is self-evidently the agent working");
 });
 
 test("renderLogEntry: includes op glyph", () => {

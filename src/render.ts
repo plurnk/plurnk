@@ -213,15 +213,14 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
 // body indents further (5 spaces) so it visually nests under the speaker.
 const renderBroadcast = (entry: LogEntryWire): string => {
-    const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
-    const opGlyph = OP_GLYPHS.SEND;
-    const subGlyph = typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "";
+    // A broadcast SEND is the model (or you) speaking — ONE actor glyph, no 💬,
+    // status glyph reserved (blank on routine 2xx) so the code column aligns with
+    // every other row.
+    const idGlyph = ORIGIN_GLYPHS[entry.origin] ?? "?";
+    const subGlyph = typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "  ";
     const statusText = `${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}`;
 
-    const headerParts = [origin, opGlyph];
-    if (subGlyph.length > 0) headerParts.push(subGlyph);
-    headerParts.push(statusText);
-    const header = `  ${coordPrefix(entry)}${headerParts.join(" ")}`;
+    const header = `  ${coordPrefix(entry)}${[idGlyph, subGlyph, statusText].join(" ")}`;
 
     const body = extractSendBody(entry.tx, /* prettify */ true);
     const multiLine = body.includes("\n");
@@ -274,12 +273,14 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // not a broadcast.
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry);
 
-    const origin = ORIGIN_GLYPHS[entry.origin] ?? "?";
-    const opGlyph = OP_GLYPHS[entry.op] ?? "?";
-    // Universal status glyph — every line gets one (rummy f20c4a0 / nvim
-    // convergence; a check that exists only sometimes is dissonant).
-    // SENDs glyph their signal (✋/💥/⏳ carry meaning); everything else
-    // glyphs the outcome status.
+    // ONE identity/action glyph, not origin+op (they were redundant on SEND and
+    // cluttered elsewhere). A SEND shows its ACTOR (🐹 you / 🤖 model — the "who's
+    // speaking"); any other op shows its OP glyph (🧠/🔍/📖/📝/🔧 — self-evidently
+    // the agent working). The 💬 and the origin column are both gone.
+    const idGlyph = entry.op === "SEND" ? (ORIGIN_GLYPHS[entry.origin] ?? "?") : (OP_GLYPHS[entry.op] ?? "?");
+    // Status glyph: SENDs glyph their signal, others the outcome. Routine 2xx →
+    // "  " (a width-2 blank exactly matching a glyph) so the code column NEVER
+    // shifts — the status slot is always present, glyph or reserved blank.
     const subGlyph = entry.op === "SEND" && typeof entry.signal === "number"
         ? sendSubGlyph(entry.signal)
         : sendSubGlyph(entry.status_rx);
@@ -295,9 +296,9 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 
     const extra = buildExtra(entry);
 
-    const parts = [origin, opGlyph];
-    if (subGlyph.length > 0) parts.push(subGlyph);
-    parts.push(statusText);
+    // Fixed columns: idGlyph · status (always present — glyph or reserved blank) ·
+    // code · target · extra. subGlyph is ALWAYS pushed so the code column is stable.
+    const parts = [idGlyph, subGlyph, statusText];
     if (pathText.length > 0) parts.push(pathText);
     if (extra.length > 0) parts.push(extra);
 

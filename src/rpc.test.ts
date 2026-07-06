@@ -59,6 +59,23 @@ test("Rpc: connect twice → throws on second", async () => {
     }
 });
 
+test("Rpc: onClose fires when the socket drops, and a call awaiting a response rejects", async () => {
+    // Server accepts the call but NEVER responds, then drops the connection —
+    // the disconnect-mid-request case that wedged the TUI (#escape-a-dead-loop).
+    const { url, close } = await startServer((sock) => { sock.close(); });
+    try {
+        const rpc = new Rpc({ url });
+        await rpc.connect();
+        let closed = false;
+        rpc.onClose(() => { closed = true; });
+        await assert.rejects(rpc.call("hang", {}), /connection closed before response/);
+        assert.equal(closed, true, "onClose handler fired on the drop");
+        await assert.rejects(rpc.call("after", {}), /not connected/);   // #ws nulled after close
+    } finally {
+        await close();
+    }
+});
+
 test("Rpc: call resolves with server result", async () => {
     const { url, close } = await startServer((sock, req) => {
         sock.send(JSON.stringify({ jsonrpc: "2.0", id: req.id, result: { echo: req.params } }));

@@ -58,7 +58,7 @@ const streamCoord = (ev: StreamCoord): string =>
         : "";
 
 const statusGlyph = (status: number): string => {
-    if (status === 200) return "✅";
+    if (status === 200) return "  ";   // routine success — empty slot, not a check on every conclusion
     if (status === 499) return "✋";
     return "❌";
 };

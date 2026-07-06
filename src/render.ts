@@ -39,10 +39,12 @@ export const sendSubGlyph = (status: number): string => {
     if (status === 300) return "🤔";   // needs a decision (multiple choices)
     if (status === 410) return "💥";   // directed SEND to a gone resource
     if (status === 499) return "✋";   // failed / aborted / cancelled
-    if (status >= 200 && status < 300) return "✅";   // success / final
+    // Routine success (2xx) badges NOTHING — a check on every row is noise; leave
+    // the slot empty. Two blanks keep the width-2 column so `code` stays aligned.
+    if (status >= 200 && status < 300) return "  ";
     // Single failure glyph for 4xx/5xx — the colored status carries 4xx vs 5xx.
     if (status >= 400 && status < 600) return "❌";
-    return "";
+    return "  ";   // reserve the slot — never a bare, width-shifting empty string
 };
 
 // ANSI escape codes. NO_COLOR support per Unix convention.
@@ -245,7 +247,10 @@ const renderBroadcast = (entry: LogEntryWire): string => {
 // Erasing the typed echo instead would mean terminal-width math over
 // emoji/nerdfont prompts — the rabbit hole this client refuses to enter.
 export const isPromptEntry = (entry: LogEntryWire): boolean =>
-    entry.op === "EDIT" && entry.scheme === "plurnk" && (entry.pathname ?? "").startsWith("prompt/");
+    entry.op === "EDIT" && entry.scheme === "plurnk" && /^\/?prompt\//.test(entry.pathname ?? "");
+    // ^ leading slash tolerated: the foist arrives as plurnk:///prompt/<loop>/<turn>
+    // → pathname "/prompt/…"; the old startsWith("prompt/") missed it, so the prompt
+    // rendered TWICE (readline echo + this committed EDIT). The echo is the record.
 
 // Render a log entry as one waterfall line.
 // Returns the full ANSI-formatted line(s) WITHOUT trailing newline. A

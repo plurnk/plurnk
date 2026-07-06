@@ -42,7 +42,9 @@ test("StreamTrace: conclusion speaks the waterfall grammar and strips the target
     const line = t.concluded(concluded());
     // Blank op slot between origin and status keeps the code/target columns
     // aligned with op rows (📡 has no op glyph).
-    assert.match(line, /📡 {4}✅ 200 exec:\/\/python\/1\/2\/1/);
+    // Routine 200 conclusion badges no ✅ now (blank status slot); code + target stay aligned.
+    assert.doesNotMatch(line, /✅/);
+    assert.match(line, /📡.*200 exec:\/\/python\/1\/2\/1/);
     assert.match(line, /^  01\/02\/01 /, "conclusion line carries the wire coordinate");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
     assert.doesNotMatch(line, /exec:\/\/python\/1\/2\/1 completed/);

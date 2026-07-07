@@ -125,6 +125,8 @@ env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
                         Client-side only — proposals still go through the wire.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
+  PLURNK_QUESTIONS      when truthy, let the model ask you via SEND[300] (shared
+                        intent — the daemon reads it too). --questions overrides.
   PLURNK_EXECS_*        per-session exec-runtime policy, sent to the daemon at
                         session.create (PLURNK_EXECS_ONLY=a,b allowlist;
                         PLURNK_EXECS_<tag>=0 kill one). Subtractive only — the
@@ -157,6 +159,10 @@ options:
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
                           (e.g. '{"yolo":true}' for server-side YOLO in
                           benchmark/automation runs).
+      --questions         let the model ask you (SEND[300]) when it needs a
+                          decision — multiple choice with a free-response escape,
+                          or an open question. Off by default. Overrides
+                          PLURNK_QUESTIONS. (Requires a daemon that emits SEND[300].)
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
@@ -549,6 +555,7 @@ export const main = async (argv: string[]): Promise<void> => {
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
             flags: { type: "string" },
+            questions: { type: "boolean" },   // --questions: allow the model to ask via SEND[300]
             "max-turns": { type: "string" },
             timeout: { type: "string" },
             // membership overlay (svc#200/#242) — repeatable globs; service vocabulary
@@ -622,6 +629,13 @@ export const main = async (argv: string[]): Promise<void> => {
         if (cause instanceof TelemetryError) dieWith(cause.exitCode, cause.event);
         dieWith(64, clientRuntimeError(cause));
     }
+
+    // --questions / PLURNK_QUESTIONS: let the model ask the user via SEND[300]
+    // (grammar's "needs a decision"). A loop flag the daemon reads — shared user
+    // intent, so the env is bare (both sides read the same name). Merges into the
+    // passthrough bag; off by default (the model can't interrupt unless invited).
+    const questions = values.questions === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_QUESTIONS ?? "").toLowerCase());
+    if (questions) loopFlags = { ...(loopFlags ?? {}), questions: true };
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
     const projectRoot: string | null = (() => {

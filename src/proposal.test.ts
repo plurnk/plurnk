@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, isServerResolved, renderProposalMenu, keyToResolution } = await import("./proposal.ts");
+const { renderBody, formatTarget, isServerResolved, renderProposalMenu, keyToResolution, questionFromProposal, renderQuestionMenu, answerForLine } = await import("./proposal.ts");
 
 const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     logEntryId: 1,
@@ -19,6 +19,47 @@ const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     body: "",
     attrs: {},
     flags,
+});
+
+// ─── SEND[300] questions (#346) ──────────────────────────────────────
+
+const qProposal = (attrs: object, op = "SEND"): Parameters<typeof questionFromProposal>[0] =>
+    ({ logEntryId: 7, loopId: 1, turnId: 1, op, target: { scheme: null, pathname: null }, body: "", attrs, flags: {} });
+
+test("questionFromProposal: SEND with attrs.question → the question + choices", () => {
+    assert.deepEqual(questionFromProposal(qProposal({ question: "Which?", choices: ["A", "B"] })), { question: "Which?", choices: ["A", "B"] });
+});
+
+test("questionFromProposal: no choices → open question (empty choices)", () => {
+    assert.deepEqual(questionFromProposal(qProposal({ question: "Your name?" })), { question: "Your name?", choices: [] });
+});
+
+test("questionFromProposal: a non-SEND op, or no attrs.question → null (normal proposal)", () => {
+    assert.equal(questionFromProposal(qProposal({ question: "x" }, "EDIT")), null);
+    assert.equal(questionFromProposal(qProposal({})), null);
+});
+
+test("answerForLine: a digit in range picks that choice's text", () => {
+    assert.equal(answerForLine("2", ["A", "B", "C"]), "B");
+    assert.equal(answerForLine(" 1 ", ["A", "B"]), "A");
+});
+
+test("answerForLine: out-of-range or non-numeric is free response (reject the premise)", () => {
+    assert.equal(answerForLine("9", ["A", "B"]), "9");
+    assert.equal(answerForLine("actually, neither", ["A", "B"]), "actually, neither");
+    assert.equal(answerForLine("3", []), "3");   // open question — everything is free text
+});
+
+test("answerForLine: empty line → null (re-ask, don't resolve with nothing)", () => {
+    assert.equal(answerForLine("   ", ["A"]), null);
+});
+
+test("renderQuestionMenu: numbers the choices + free-response hint; open question just prompts", () => {
+    const mc = renderQuestionMenu("Which?", ["Alpha", "Beta"]);
+    assert.match(mc, /1\. Alpha/);
+    assert.match(mc, /2\. Beta/);
+    assert.match(mc, /Free Response/);
+    assert.match(renderQuestionMenu("Name?", []), /type your answer/);
 });
 
 

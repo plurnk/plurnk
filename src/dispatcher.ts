@@ -275,13 +275,18 @@ export interface Settings {
     client?: string;          // #249 — frontend id, set on every session.create
     autoReadAgents?: boolean; // #268 — per-session override of the service AGENTS auto-load
     execs?: Record<string, string>; // #132 — per-session exec-policy layer (PLURNK_EXECS_* forwarded)
+    questions?: boolean;      // svc#346 — enable model→user SEND[300] questions for the session (+ questions.md teaching)
 }
 
 export const buildSettings = async (
-    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean },
+    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean },
     cwd: string,
 ): Promise<Settings> => {
     const settings: Settings = {};
+    // svc#346 — enable model→user SEND[300] questions (per-session; the daemon
+    // injects questions.md teaching + intersects its PLURNK_QUESTIONS ceiling).
+    // Flag or bare env (shared user intent). The daemon owns refusal when off.
+    if (values.questions === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_QUESTIONS ?? "").toLowerCase())) settings.questions = true;
     const mc = values["max-commands"];
     if (mc !== undefined) {
         const n = Number(mc);
@@ -630,12 +635,9 @@ export const main = async (argv: string[]): Promise<void> => {
         dieWith(64, clientRuntimeError(cause));
     }
 
-    // --questions / PLURNK_QUESTIONS: let the model ask the user via SEND[300]
-    // (grammar's "needs a decision"). A loop flag the daemon reads — shared user
-    // intent, so the env is bare (both sides read the same name). Merges into the
-    // passthrough bag; off by default (the model can't interrupt unless invited).
-    const questions = values.questions === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_QUESTIONS ?? "").toLowerCase());
-    if (questions) loopFlags = { ...(loopFlags ?? {}), questions: true };
+    // --questions / PLURNK_QUESTIONS is a SESSION setting (settings.questions in
+    // buildSettings), NOT a loop flag — svc#346 ruled it session-scoped (it also
+    // gates the questions.md teaching, so capability + teaching arrive together).
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
     const projectRoot: string | null = (() => {
@@ -688,7 +690,7 @@ export const main = async (argv: string[]): Promise<void> => {
             const session = await attachOrCreateSession(rpc, {
                 sessionName, runName, projectRoot, create: true, client: CLIENT_ID_CLI,
                 constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-                settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
+                settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
             });
             if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
             const exitCode = await runScript(rpc, text, session, { json, yolo });
@@ -707,7 +709,7 @@ export const main = async (argv: string[]): Promise<void> => {
         const session = await attachOrCreateSession(rpc, {
             sessionName, runName, projectRoot, create: true, client: clientId,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean }, process.cwd()),
+            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
         });
         // #90 — resolve the alias to a concrete provider/model from OUR fresh env
         // (staleness-proof); send it on loop.run, alias rides along for display.

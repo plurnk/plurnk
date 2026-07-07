@@ -121,6 +121,44 @@ export const renderProposalMenu = (params: ProposalParams): string => {
         + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
 };
 
+// ─── SEND[300] questions (plurnk-service#346) ────────────────────────
+// A question rides the SAME proposal lifecycle (world-stopped; answer via
+// loop.resolve `body`), but renders + collects differently: a numbered menu the
+// user picks by typing, always with a free-response escape. attrs carries
+// { question, choices } (choices absent/empty = open question).
+
+// Is this proposal a SEND[300] question? Returns its shape, or null (a normal op
+// proposal → the a/e/r/c path). Choices default to [] (open question).
+export const questionFromProposal = (params: ProposalParams): { question: string; choices: string[] } | null => {
+    if (params.op !== "SEND") return null;
+    const a = params.attrs as { question?: unknown; choices?: unknown } | null;
+    if (a === null || typeof a !== "object" || typeof a.question !== "string") return null;
+    const choices = Array.isArray(a.choices) ? a.choices.filter((c): c is string => typeof c === "string") : [];
+    return { question: a.question, choices };
+};
+
+// The question menu: the question, numbered choices, and the always-present
+// free-response escape. An open question (no choices) is just "type your answer".
+export const renderQuestionMenu = (question: string, choices: string[]): string => {
+    const lines = [`\n${BOLD}── question ──${RESET}`, `  ${question}`];
+    choices.forEach((c, i) => lines.push(`  ${DIM}${i + 1}.${RESET} ${c}`));
+    lines.push(choices.length > 0
+        ? `${DIM}  type 1–${choices.length} to pick, or type your own answer (Free Response)${RESET} `
+        : `${DIM}  type your answer${RESET} `);
+    return lines.join("\n");
+};
+
+// Map a typed line to the answer: a digit 1..N picks that choice's text; anything
+// else is free response (rejecting the premise / an open answer). Empty → null
+// (caller re-prompts rather than resolving with nothing).
+export const answerForLine = (line: string, choices: string[]): string | null => {
+    const t = line.trim();
+    if (t.length === 0) return null;
+    const n = Number(t);
+    if (Number.isInteger(n) && n >= 1 && n <= choices.length) return choices[n - 1];
+    return t;
+};
+
 // Map a single review key to a resolution. `e` runs $EDITOR (async — caller
 // must own the terminal during the spawn). Returns null for non-review keys, so
 // callers can pass them through (the TUI lets them reach readline) or default

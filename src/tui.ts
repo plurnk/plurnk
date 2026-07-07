@@ -24,7 +24,7 @@ import type Rpc from "./rpc.ts";
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, entryTarget } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, isServerResolved } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -513,6 +513,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (shuttingDown) return;
         for (const [, w] of terminatedWaiters) w.reject(new Error("connection to the daemon was lost"));
         terminatedWaiters.clear();
+        pendingQuestion = null;   // a dead socket can't carry the answer
     });
 
     // Alias cache for /model completion + the active alias for the header —
@@ -669,6 +670,10 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // handlers are forward-declared (assigned once verbCtx exists).
     let pendingProposal: ProposalParams | null = null;
     let onProposalKey: (key: string) => void = () => {};
+    // A pending SEND[300] question (#346): answered by TYPING (a number picks a
+    // choice; anything else is free response), NOT the a/e/r/c keypress path —
+    // free response needs text. The line handler intercepts while this is set.
+    let pendingQuestion: { logEntryId: number; choices: string[] } | null = null;
     let dispatchShortcut: (verb: string) => void = () => {};
     const onStdin = (chunk: Buffer): void => {
         const forward = paste.feed(chunk.toString("utf8"));
@@ -746,6 +751,17 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     };
     rpc.onNotification("loop/proposal", (params) => {
         const p = params as ProposalParams;
+        // SEND[300] question: render the menu + collect by typing. Checked FIRST —
+        // even a yolo loop stops the world for a question (the daemon won't
+        // server-resolve it, and the client must never auto-answer: the point is a
+        // human). The line handler resolves it from the next typed line.
+        const q = questionFromProposal(p);
+        if (q !== null) {
+            pendingQuestion = { logEntryId: p.logEntryId, choices: q.choices };
+            printAbove(renderQuestionMenu(q.question, q.choices));
+            reprompt();
+            return;
+        }
         if (isServerResolved(p)) return;
         if (opts.yolo) {
             void rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
@@ -796,6 +812,20 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
 
     return new Promise<void>((resolve) => {
         rl.on("line", async (line) => {
+            // A pending SEND[300] question consumes the typed line as its answer,
+            // BEFORE any verb/prompt/inject handling (#346): a number picks a
+            // choice, anything else is free response. Empty → re-ask (don't
+            // resolve with nothing). Resolves the world-stopped proposal via body.
+            if (pendingQuestion !== null) {
+                const body = answerForLine(line, pendingQuestion.choices);
+                if (body === null) { reprompt(); return; }
+                const { logEntryId } = pendingQuestion;
+                pendingQuestion = null;
+                await rpc.call("loop.resolve", { logEntryId, decision: "accept", body })
+                    .catch((e) => printAbove(`  \x1b[31manswer failed: ${e instanceof Error ? e.message : String(e)}\x1b[0m`));
+                reprompt();
+                return;
+            }
             // Expand typed ↵ markers (Ctrl-J / Alt-Enter newlines) FIRST, then
             // paste markers — so a pasted literal ↵ stays literal.
             const trimmed = paste.expand(expandNewlines(line)).trim();
@@ -912,6 +942,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             } finally {
                 inFlight = false;
                 cancelRequested = false;
+                pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
                 reprompt();   // loop over → the busy glyph clears from the gutter
             }
         });

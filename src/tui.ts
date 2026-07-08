@@ -25,6 +25,7 @@ import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, entryTarget }
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
+import WsTransport, { BridgeTransport, RunAckError, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -33,23 +34,9 @@ import { runOAuth } from "./auth.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
 
-// loop.run is fire-and-forget (svc 0.45.0+ "Model 3"): it ACKS immediately
-// with {loopId, finalStatus:100, action} and the loop drains async — the real
-// outcome rides loop/terminated. `status`/`error` appear only on a synchronous
-// failure (e.g. 501 no provider). LoopTerminated is the loop/terminated payload.
-interface LoopAck {
-    loopId?: number;
-    finalStatus?: number;
-    status?: number;
-    error?: string;
-}
-
-interface LoopTerminated {
-    finalStatus: number;
-    hitMaxTurns: boolean;
-    turnIds: number[];
-    usage?: LoopUsage;
-}
+// The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
+// the outcome on loop/terminated; a synchronous 501/error surfaces immediately)
+// now lives in the Transport (WsTransport's loopId-keyed done, TerminatedInfo).
 
 interface SessionResult { id: number; name: string }
 
@@ -422,99 +409,26 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // once rl exists; until then (no loop can be running yet) it just appends.
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
 
-    // Subscribe to log/entry notifications — render each as a waterfall line,
-    // printed above the prompt so a running loop's trace never clobbers it.
-    rpc.onNotification("log/entry", (params) => {
-        const p = params as { entry: LogEntryWire };
-        if (p.entry.loop_seq > lastLoopSeq) lastLoopSeq = p.entry.loop_seq;
-        // The typed line at the prompt is the user's record — rendering the
-        // prompt broadcast too would duplicate it (see isPromptEntry).
-        if (isPromptEntry(p.entry)) return;
-        // Record this op's REAL target URI for the Alt-p/Alt-n <<LOOK cycler
-        // (skip targetless ops — PLAN, broadcast SEND). Appending never shifts
-        // earlier indices, so a mid-cycle lookCursor stays valid.
-        const target = entryTarget(p.entry);
-        if (target !== null) priorTargets.push(target);
-        // A model SEND[202] parks the loop (awaiting streams/workers) → 💤; any
-        // other entry means it's actively working → ⏳. printAbove repaints the
-        // prompt, so the gutter reflects this immediately.
-        hibernating = p.entry.op === "SEND" && p.entry.signal === 202;
-        printAbove(renderLogEntry(p.entry));
-    });
+    // The transport seam (plurnk-agui#1): the run plane rides EITHER the raw daemon
+    // WS (WsTransport, default) or the AG-UI bridge (BridgeTransport, PLURNK_AGUI_URL).
+    // WS behavior is unchanged — WsTransport re-registers the same notification
+    // subscriptions, forwarding to the persistent RunHandlers wired via subscribe()
+    // below, and owns the loop/terminated→done bridge (loopId-keyed, race-buffered)
+    // that used to live here. The bridge un-projects plurnk.* customs to the same
+    // handlers. tui.ts is transport-agnostic from here down.
+    const bridgeUrl = process.env.PLURNK_AGUI_URL;
+    const transport: Transport = bridgeUrl !== undefined && bridgeUrl.length > 0
+        ? new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, current.name, opts.projectRoot ?? null)
+        : new WsTransport(rpc);
 
-    // telemetry/event — interleaved with the trace waterfall.
-    rpc.onNotification("telemetry/event", (params) => {
-        const p = params as { loopId: number; event: TelemetryEvent };
-        // engine:turn liveness is the ⏳ gutter (driven by inFlight), not a
-        // waterfall line — suppress it so it never spams the trace (#114).
-        if (p.event.source === "engine:turn") return;
-        // embed_progress toggles the 🧮 slot; no numbers shown, so repaint only on
-        // the appear/disappear edge (preserving a typed-in inject). No per-beat spam.
-        if (p.event.source === "engine:derivation" && p.event.kind === "embed_progress") {
-            const active = Number(p.event.completed) < Number(p.event.total);
-            if (active !== embedding) { embedding = active; repromptPreserving(); }
-            return;
-        }
-        printAbove(renderTelemetryEvent(p.event));
-    });
-
-    // Streams, coalesced: one start line, one conclusion line, and tiny
-    // concluded outputs inlined (the single bounded content fetch the TUI
-    // makes — SPEC §5.3; the content IS the optics at two lines).
+    // Streams, coalesced: one start line, one conclusion line, and tiny concluded
+    // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
     const streams = new StreamTrace();
-    rpc.onNotification("stream/event", (params) => {
-        const line = streams.event(params as StreamEventPayload);
-        if (line !== null) printAbove(line);
-    });
-    rpc.onNotification("stream/concluded", (params) => {
-        const p = params as StreamConcludedPayload;
-        printAbove(streams.concluded(p));
-        // #116 — an auth-required close (401) offers the OAuth flow; target is the
-        // stream's scheme (e.g. notion). We surface the offer, not auto-run — the
-        // user runs /auth when ready (device-grant: print a URL + code, then poll).
-        if (p.closeStatus === 401) printAbove(`  🔒 ${p.scheme} needs authorization — run \x1b[1m/auth ${p.scheme}\x1b[0m`);
-        void rpc.call("entry.read", { target: p.target }).then((r) => {
-            const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
-            for (const name of ["stdout", "stderr"]) {
-                const content = channels[name]?.content;
-                if (typeof content === "string" && inlineable(content)) {
-                    printAbove(renderInline(name, content));
-                }
-            }
-        }).catch(() => { /* peek is best-effort */ });
-    });
 
-    // loop.run→loop/terminated bridge. loop.run only ACKS now (status 100); the
-    // outcome arrives later on loop/terminated. A fresh loop awaits its own
-    // termination by loopId. The buffer covers the race where a fast loop
-    // terminates BEFORE loop.run's own response lands (we don't yet know the
-    // loopId to register a waiter), so the event is held until the awaiter asks.
-    const terminatedBuffer = new Map<number, LoopTerminated>();
-    const terminatedWaiters = new Map<number, { resolve: (t: LoopTerminated) => void; reject: (e: Error) => void }>();
-    rpc.onNotification("loop/terminated", (params) => {
-        const { loopId, ...t } = params as { loopId: number } & LoopTerminated;
-        const waiter = terminatedWaiters.get(loopId);
-        if (waiter !== undefined) { terminatedWaiters.delete(loopId); waiter.resolve(t); return; }
-        terminatedBuffer.set(loopId, t);
-    });
-    const awaitTermination = (loopId: number): Promise<LoopTerminated> => {
-        const buffered = terminatedBuffer.get(loopId);
-        if (buffered !== undefined) { terminatedBuffer.delete(loopId); return Promise.resolve(buffered); }
-        return new Promise((resolve, reject) => terminatedWaiters.set(loopId, { resolve, reject }));
-    };
-    // A dropped socket rejects in-flight rpc.calls, but a loop.run awaiting its
-    // loop/terminated NOTIFICATION would otherwise hang inFlight forever (the
-    // trap: /quit reads "busy", /stop can't reach a dead daemon). On close, reject
-    // every termination waiter so the awaiting dispatch throws → its finally clears
-    // inFlight and the REPL is escapable. shuttingDown suppresses it on an
-    // intentional quit (rpc.close fires the same event).
+    // A dropped socket can't carry a pending question's answer. shuttingDown (set on
+    // an intentional quit) tells the transport to suppress its connection-lost reject.
     let shuttingDown = false;
-    rpc.onClose(() => {
-        if (shuttingDown) return;
-        for (const [, w] of terminatedWaiters) w.reject(new Error("connection to the daemon was lost"));
-        terminatedWaiters.clear();
-        pendingQuestion = null;   // a dead socket can't carry the answer
-    });
+    rpc.onClose(() => { if (!shuttingDown) pendingQuestion = null; });
 
     // Alias cache for /model completion + the active alias for the header —
     // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
@@ -528,7 +442,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // the gauge is approximate if /model later switches off the active default.
     let activeContextSize: number | null | undefined;
     try {
-        const r = await rpc.call("providers.list") as { aliases?: Array<{ alias: string; active?: boolean; contextSize?: number | null }> };
+        const r = await transport.rpc("providers.list") as { aliases?: Array<{ alias: string; active?: boolean; contextSize?: number | null }> };
         if (Array.isArray(r.aliases)) {
             aliasCache = r.aliases.map((a) => a.alias);
             const active = r.aliases.find((a) => a.active);
@@ -649,7 +563,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // run-relative against the right run). Render the content; no op, no harvest. Trust
     // the contract: status is required, content is `string | null` (svc ReadResult).
     const runLook = async (readText: string): Promise<number> => {
-        const r = await rpc.call("op.look", { text: readText }) as { status: number; content: string | null };
+        const r = await transport.rpc("op.look", { text: readText }) as { status: number; content: string | null };
         const content = r.content ?? "";
         printAbove(content.length > 0 ? content : `  \x1b[2m(look ${r.status}: no content)\x1b[0m`);
         return r.status;
@@ -715,7 +629,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         if (p === null) return;
         pendingProposal = null;
         try {
-            await rpc.call("loop.resolve", { logEntryId: p.logEntryId, ...resolution });
+            await transport.resolve({ logEntryId: p.logEntryId, ...resolution });
         } catch (cause) {
             process.stdout.write(`  \x1b[31mresolve failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
         }
@@ -749,33 +663,84 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         void keyToResolution(key, pendingProposal as ProposalParams)
             .then((r) => { if (r !== null) return resolvePending(r); });
     };
-    rpc.onNotification("loop/proposal", (params) => {
-        const p = params as ProposalParams;
-        // SEND[300] question: render the menu + collect by typing. Checked FIRST —
-        // even a yolo loop stops the world for a question (the daemon won't
-        // server-resolve it, and the client must never auto-answer: the point is a
-        // human). The line handler resolves it from the next typed line.
-        const q = questionFromProposal(p);
-        if (q !== null) {
-            pendingQuestion = { logEntryId: p.logEntryId, choices: q.choices };
-            printAbove(renderQuestionMenu(q.question, q.choices));
-            reprompt();
-            return;
-        }
-        if (isServerResolved(p)) return;
-        if (opts.yolo) {
-            void rpc.call("loop.resolve", { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
-                .catch(() => { /* idem */ });
-            return;
-        }
-        proposalQueue.push(p);
-        showNextProposal();
+    // The persistent run-plane handlers — one set, wired once, driven by whichever
+    // transport is live. Same bodies as the old inline rpc.onNotification handlers;
+    // they render the shared session's activity whether this REPL started the loop
+    // or a worker/second client did (multi-client observability).
+    transport.subscribe({
+        onEntry: (entry) => {
+            if (entry.loop_seq > lastLoopSeq) lastLoopSeq = entry.loop_seq;
+            // The typed line at the prompt is the user's record — rendering the
+            // prompt broadcast too would duplicate it (see isPromptEntry).
+            if (isPromptEntry(entry)) return;
+            // Record this op's REAL target URI for the Alt-p/Alt-n <<LOOK cycler.
+            const target = entryTarget(entry);
+            if (target !== null) priorTargets.push(target);
+            // A model SEND[202] parks the loop → 💤; anything else → ⏳.
+            hibernating = entry.op === "SEND" && entry.signal === 202;
+            printAbove(renderLogEntry(entry));
+        },
+        onTelemetry: (event) => {
+            // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
+            if (event.source === "engine:turn") return;
+            // embed_progress toggles the 🧮 slot; repaint only on the edge.
+            if (event.source === "engine:derivation" && event.kind === "embed_progress") {
+                const active = Number(event.completed) < Number(event.total);
+                if (active !== embedding) { embedding = active; repromptPreserving(); }
+                return;
+            }
+            printAbove(renderTelemetryEvent(event));
+        },
+        onStream: (payload) => {
+            // One channel for the lifecycle: concluded carries closeStatus, a start
+            // event carries state. One start line, one conclusion line, tiny outputs inlined.
+            if (typeof (payload as { closeStatus?: unknown }).closeStatus === "number") {
+                const p = payload as StreamConcludedPayload;
+                printAbove(streams.concluded(p));
+                // #116 — a 401 close offers the device-grant flow (run /auth <scheme>).
+                if (p.closeStatus === 401) printAbove(`  🔒 ${p.scheme} needs authorization — run \x1b[1m/auth ${p.scheme}\x1b[0m`);
+                void transport.rpc("entry.read", { target: p.target }).then((r) => {
+                    const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+                    for (const name of ["stdout", "stderr"]) {
+                        const content = channels[name]?.content;
+                        if (typeof content === "string" && inlineable(content)) printAbove(renderInline(name, content));
+                    }
+                }).catch(() => { /* peek is best-effort */ });
+            } else {
+                const line = streams.event(payload as StreamEventPayload);
+                if (line !== null) printAbove(line);
+            }
+        },
+        onProposal: (p) => {
+            // SEND[300] question FIRST — even a yolo loop stops the world for a human;
+            // the line handler resolves it from the next typed line.
+            const q = questionFromProposal(p);
+            if (q !== null) {
+                pendingQuestion = { logEntryId: p.logEntryId, choices: q.choices };
+                printAbove(renderQuestionMenu(q.question, q.choices));
+                reprompt();
+                return;
+            }
+            if (isServerResolved(p)) return;
+            if (opts.yolo) { void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" }).catch(() => {}); return; }
+            proposalQueue.push(p);
+            showNextProposal();
+        },
+        // A loop terminating just clears the parked glyph; the summary is rendered
+        // from the run's own done (below).
+        onTerminated: () => { hibernating = false; },
     });
+
+    // Verbs + read-only subcommands call rpc.call(...) only; route that through the
+    // live transport (WS, or the bridge's management plane over /plurnk/rpc). A
+    // .call-only adapter — no verb/subcommand here subscribes, so the other Rpc
+    // methods are never reached.
+    const verbRpc = { call: (method: string, params?: object): Promise<unknown> => transport.rpc(method, params) } as unknown as Rpc;
 
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live session / opts / stdout / import glue.
     const verbCtx: VerbContext = {
-        rpc, opts,
+        rpc: verbRpc, opts,
         getSession: () => current,
         setSession: (s) => { current = s; },
         write: (text) => { process.stdout.write(text); },
@@ -821,7 +786,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                 if (body === null) { reprompt(); return; }
                 const { logEntryId } = pendingQuestion;
                 pendingQuestion = null;
-                await rpc.call("loop.resolve", { logEntryId, decision: "accept", body })
+                await transport.resolve({ logEntryId, decision: "accept", body })
                     .catch((e) => printAbove(`  \x1b[31manswer failed: ${e instanceof Error ? e.message : String(e)}\x1b[0m`));
                 reprompt();
                 return;
@@ -868,7 +833,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     return;
                 }
                 const inject = trimmed.replace(/^(\.\.\.|[?:])\s*/, "");
-                void rpc.call("loop.inject", { prompt: inject })
+                void transport.inject(inject)
                     .then(() => printAbove("  \x1b[2m↳ added to the run\x1b[0m"))
                     .catch((cause) => printAbove(`  \x1b[31minject failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
                 reprompt();
@@ -894,13 +859,13 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     finalStatus = await runLook(lookText);
                 } else if (trimmed.startsWith("<<")) {
                     // Raw DSL: send to op.parse
-                    const result = await rpc.call("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
+                    const result = await transport.rpc("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
                     finalStatus = result.results[result.results.length - 1]?.status ?? 0;
                 } else if (trimmed.startsWith("!")) {
                     // `! cmd` — exec via the daemon (proposal-gated like any
                     // side effect; output streams as stream/event traces).
                     const command = trimmed.replace(/^!+\s*/, "");
-                    const result = await rpc.call("op.exec", { command }) as { status: number };
+                    const result = await transport.rpc("op.exec", { command }) as { status: number };
                     finalStatus = result.status;
                 } else {
                     // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
@@ -918,26 +883,21 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
                     if (openPaths.length > 0) loopParams.openPaths = openPaths;
-                    const ack = await rpc.call("loop.run", loopParams) as LoopAck;
-                    // Synchronous failure (501 no provider, etc.) carries `error`.
-                    // 501 = no model configured → repeat the .env pointer (#120).
-                    if (ack.error !== undefined) throw new Error(ack.status === 501 ? ack.error + NO_MODEL_HINT : ack.error);
-                    // Normal path: status 100 ack → block on loop/terminated for
-                    // the real outcome. Any non-100 status is already terminal.
-                    if (ack.finalStatus === 100 && ack.loopId !== undefined) {
-                        const t = await awaitTermination(ack.loopId);
-                        finalStatus = t.finalStatus;
-                        hitMaxTurns = t.hitMaxTurns;
-                        turnCount = t.turnIds.length;
-                        usage = t.usage;
-                    } else {
-                        finalStatus = ack.finalStatus ?? ack.status ?? 0;
-                    }
+                    // The transport owns the ack→terminated bridge; done resolves
+                    // with the loop's outcome. A synchronous ACK failure surfaces as
+                    // RunAckError (caught below; 501 gets the .env pointer, #120).
+                    const t = await transport.run(promptText, loopParams).done;
+                    finalStatus = t.finalStatus;
+                    hitMaxTurns = t.hitMaxTurns;
+                    turnCount = t.turnIds?.length ?? 0;
+                    usage = t.usage;
                 }
                 const wallMs = Date.now() - start;
                 printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, activeContextSize));
             } catch (cause) {
-                const msg = cause instanceof Error ? cause.message : String(cause);
+                const msg = cause instanceof RunAckError && cause.status === 501
+                    ? cause.message + NO_MODEL_HINT
+                    : cause instanceof Error ? cause.message : String(cause);
                 printAbove(`  \x1b[31merror: ${msg}\x1b[0m`);
             } finally {
                 inFlight = false;
@@ -949,6 +909,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
 
         rl.on("close", () => {
             shuttingDown = true;   // intentional teardown — the rpc.close that follows isn't a "lost connection"
+            transport.shutdown();  // suppress the transport's connection-lost reject on an intentional quit
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);
@@ -966,7 +927,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
             if (inFlight && !cancelRequested) {
                 cancelRequested = true;
                 process.stdout.write("\r\x1b[2K  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m\n");
-                void rpc.call("loop.cancel", { reason: "user_sigint" });
+                void transport.rpc("loop.cancel", { reason: "user_sigint" }).catch(() => {});
                 return;
             }
             rl.close();

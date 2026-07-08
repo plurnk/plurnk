@@ -6,11 +6,52 @@
 // skips cleanly when the service binary isn't reachable (locateDaemon → null).
 
 import pty from "node-pty";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const BIN = resolve(__dirname, "../../bin/plurnk.js");
+
+// The plurnk-agui bridge serve entrypoint — a sibling checkout. Used to drive
+// TUI-OVER-BRIDGE pty tests (plurnk-agui#1 Phase C): boot a daemon, boot the
+// bridge at it, then spawnTui(daemon.url, [], { PLURNK_AGUI_URL: bridge.url }).
+const BRIDGE_SERVE = resolve(__dirname, "../../../plurnk-agui/src/bin/serve.ts");
+
+// Boot the bridge against `daemonUrl`; resolve its base URL from the serve banner.
+// null when the sibling checkout is absent (the bridge suite skips, like the
+// daemon gate). The caller kills it in after().
+export const bootBridge = (daemonUrl: string): Promise<{ url: string; kill: () => void } | null> => {
+    if (!existsSync(BRIDGE_SERVE)) return Promise.resolve(null);
+    return new Promise((res, rej) => {
+        const proc = spawn("node", [BRIDGE_SERVE], {
+            stdio: ["ignore", "pipe", "pipe"],
+            env: {
+                ...(process.env as Record<string, string>),
+                PLURNK_AGUI_DAEMON_URL: daemonUrl,
+                PLURNK_AGUI_HOST: "127.0.0.1",
+                PLURNK_AGUI_PORT: "0",   // ephemeral — the banner carries the real port
+                PLURNK_AGUI_TOKEN: "",
+                PLURNK_AGUI_SESSION_PREFIX: "agui",
+                PLURNK_AGUI_MAX_TURNS: "24",
+                PLURNK_AGUI_QUESTIONS: "0",
+                PLURNK_AGUI_YOLO: "0",
+            },
+        });
+        let out = "";
+        let err = "";
+        const timer = setTimeout(() => { proc.kill("SIGINT"); rej(new Error(`bridge boot timeout; stdout: ${out} stderr: ${err}`)); }, 10_000);
+        proc.stderr?.on("data", (c: Buffer) => { err += c.toString("utf8"); });
+        proc.stdout?.on("data", (c: Buffer) => {
+            out += c.toString("utf8");
+            const m = out.match(/http:\/\/127\.0\.0\.1:\d+/);
+            if (m !== null) { clearTimeout(timer); res({ url: m[0], kill: () => { try { proc.kill("SIGINT"); } catch { /* gone */ } } }); }
+        });
+        proc.once("error", (e) => { clearTimeout(timer); rej(e); });
+        proc.once("exit", (c) => { clearTimeout(timer); rej(new Error(`bridge exited ${c} before serving; stderr: ${err}`)); });
+    });
+};
 
 export interface Tui {
     // Send raw bytes (use "\r" for Enter, "\x1b…" for control sequences).

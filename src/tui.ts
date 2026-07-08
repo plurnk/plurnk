@@ -81,7 +81,7 @@ export const TUI_HELP = [
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /script <path>                     run a .plk file (its DSL → op.parse)",
-    "  /auth <target>                     OAuth an auth-protected exec (e.g. notion) via browser",
+    "  /auth <target>                     OAuth an auth-protected exec (e.g. notion) via device code",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -367,9 +367,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             await ctx.resolveProposal(verb as "accept" | "reject" | "cancel" | "edit");
             return;
         case "auth": {
-            // #116 — the OAuth loopback leg: bind → authorize → open → capture →
-            // complete. Blocks the REPL for the browser round-trip (Ctrl-C exits);
-            // the service half is stateless, we own the loopback + timeout.
+            // #116 — the OAuth device-grant leg: authorize → print URL + code →
+            // poll to authorized. Blocks the REPL while polling (Ctrl-C exits); the
+            // service half is stateless, we own the poll loop + expiry bound.
             const target = rest.trim();
             if (target.length === 0) { write("  \x1b[2musage: /auth <target>  (the exec needing auth, e.g. notion)\x1b[0m"); return; }
             const r = await runOAuth(rpc, target, { print: write });
@@ -470,8 +470,8 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
         const p = params as StreamConcludedPayload;
         printAbove(streams.concluded(p));
         // #116 — an auth-required close (401) offers the OAuth flow; target is the
-        // stream's scheme (e.g. notion). We surface the offer, not auto-open — the
-        // user runs /auth when ready (browser + loopback is a deliberate step).
+        // stream's scheme (e.g. notion). We surface the offer, not auto-run — the
+        // user runs /auth when ready (device-grant: print a URL + code, then poll).
         if (p.closeStatus === 401) printAbove(`  🔒 ${p.scheme} needs authorization — run \x1b[1m/auth ${p.scheme}\x1b[0m`);
         void rpc.call("entry.read", { target: p.target }).then((r) => {
             const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};

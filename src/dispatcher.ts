@@ -665,7 +665,11 @@ export const main = async (argv: string[]): Promise<void> => {
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, projectRoot });
             process.exit(code);
         } catch (cause) {
-            dieWith(1, clientConnectionRefused(bridgeUrl, cause));
+            // The bridge is reachable-but-erroring OR unreachable — surface the real
+            // cause (runViaBridge already says "bridge run failed: NNN — …" / "fetch
+            // failed"), NOT the daemon's "no daemon running" boilerplate.
+            const detail = cause instanceof Error ? cause.message : String(cause);
+            dieWith(1, clientRuntimeError(new Error(`plurnk-agui bridge (${bridgeUrl}) — ${detail}`)));
         }
     }
 

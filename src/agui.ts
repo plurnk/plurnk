@@ -27,10 +27,12 @@ export interface BridgeTarget { bridgeUrl: string; token?: string }
 export async function* runViaBridge(
     target: BridgeTarget,
     run: { threadId: string; prompt: string; runId?: string; forwardedProps?: Record<string, unknown> },
+    signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
     const res = await fetch(new URL("/", target.bridgeUrl), {
         method: "POST",
         headers: jsonHeaders(target.token),
+        signal,   // abort ⇒ drop the SSE ⇒ the bridge cancels the loop (its req.on close)
         body: JSON.stringify({
             threadId: run.threadId,
             runId: run.runId,

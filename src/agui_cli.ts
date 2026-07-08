@@ -16,7 +16,7 @@ import type { LogEntryWire } from "./render.ts";
 import { reviewProposal, isServerResolved, type Resolution, type ProposalParams } from "./proposal.ts";
 import { report } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
-import StreamTrace, { type StreamConcludedPayload } from "./stream.ts";
+import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { runViaBridge, resolveViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
@@ -104,7 +104,17 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         } else if (name === "plurnk.telemetry") {
             if (io.json) telemetry.push(value as TelemetryEvent); else io.telemetry(value as TelemetryEvent);
         } else if (name === "plurnk.stream") {
-            if (!io.json) io.err(`${streams.concluded(value as StreamConcludedPayload)}\n`);
+            // plurnk.stream carries the whole lifecycle: a concluded payload has
+            // closeStatus; a start/event payload has state. (json: streams aren't in
+            // the record — content is fetched on demand via `read L/T/S`.)
+            if (!io.json) {
+                if (typeof (value as { closeStatus?: unknown }).closeStatus === "number") {
+                    io.err(`${streams.concluded(value as StreamConcludedPayload)}\n`);
+                } else {
+                    const line = streams.event(value as StreamEventPayload);
+                    if (line !== null) io.err(`${line}\n`);
+                }
+            }
         } else if (name === "plurnk.proposal") {
             await settleProposal(value as BridgeProposal, io);
         }

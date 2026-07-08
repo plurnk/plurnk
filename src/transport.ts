@@ -127,17 +127,21 @@ export default class WsTransport implements Transport {
 // the persistent handlers via un-projection, and `done` resolves with the outcome
 // from plurnk.terminated. inject rides /plurnk/rpc on the SAME thread (reaches the
 // active loop, events on the open SSE); cancel aborts the SSE (bridge cancels).
+// Session options that ride forwardedProps.plurnk on the thread's FIRST run
+// (§agui-forwarded-props) — the bridge applies them at session.create.
+export interface BridgeSessionOpts { projectRoot?: string | null; constraints?: unknown[]; settings?: object }
+
 export class BridgeTransport implements Transport {
     #target: BridgeTarget;
     #threadId: string;
-    #projectRoot?: string | null;
+    #session: BridgeSessionOpts;
     #h: RunHandlers | null = null;
     #firstRun = true;
 
-    constructor(target: BridgeTarget, threadId: string, projectRoot?: string | null) {
+    constructor(target: BridgeTarget, threadId: string, session: BridgeSessionOpts = {}) {
         this.#target = target;
         this.#threadId = threadId;
-        this.#projectRoot = projectRoot;
+        this.#session = session;
     }
 
     rpc<T>(method: string, params?: object): Promise<T> {
@@ -148,9 +152,17 @@ export class BridgeTransport implements Transport {
 
     run(prompt: string, opts: RunOpts): RunHandle {
         const ac = new AbortController();
-        // First run carries session options; every run forwards per-run knobs (agui 0.2.4).
+        // First run carries session options (projectRoot/constraints/settings — the
+        // bridge applies them at session.create); every run forwards per-run knobs.
+        const firstRunOpts = this.#firstRun
+            ? {
+                ...(this.#session.projectRoot !== undefined && this.#session.projectRoot !== null ? { projectRoot: this.#session.projectRoot } : {}),
+                ...(this.#session.constraints !== undefined && this.#session.constraints.length > 0 ? { constraints: this.#session.constraints } : {}),
+                ...(this.#session.settings !== undefined && Object.keys(this.#session.settings).length > 0 ? { settings: this.#session.settings } : {}),
+            }
+            : {};
         const fwd: Record<string, unknown> = {
-            ...(this.#firstRun && this.#projectRoot !== undefined && this.#projectRoot !== null ? { projectRoot: this.#projectRoot } : {}),
+            ...firstRunOpts,
             ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
             ...(opts.model !== undefined ? { model: opts.model } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),

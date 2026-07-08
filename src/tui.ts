@@ -184,9 +184,12 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
 // Seed readline history from the session's prior prompts (svc#238) so up/down
 // recalls them across restarts. One clean RPC — newest-first, exactly what
 // rl.history wants. Best-effort: a fresh session has none, failures are silent.
-export const seedPromptHistory = async (rpc: Rpc, sessionId: number, rl: readline.Interface): Promise<void> => {
+export const seedPromptHistory = async (rpc: Pick<Rpc, "call">, sessionId: number, rl: readline.Interface): Promise<void> => {
     try {
-        const { prompts } = await rpc.call("session.prompts", { id: sessionId, limit: 100 }) as { prompts?: string[] };
+        // Bridge mode has no client-known session id → omit it (the connection's
+        // attached session answers); WS passes the real id.
+        const params = sessionId > 0 ? { id: sessionId, limit: 100 } : { limit: 100 };
+        const { prompts } = await rpc.call("session.prompts", params) as { prompts?: string[] };
         if (Array.isArray(prompts) && prompts.length > 0) (rl as unknown as { history: string[] }).history = prompts;
     } catch { /* history is a convenience; never block the REPL */ }
 };
@@ -374,7 +377,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
     }
 };
 
-export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
+export const runTui = async (transport: Transport, session: SessionResult, opts: {
     modelAlias?: string; model?: string; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
@@ -409,26 +412,14 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     // once rl exists; until then (no loop can be running yet) it just appends.
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
 
-    // The transport seam (plurnk-agui#1): the run plane rides EITHER the raw daemon
-    // WS (WsTransport, default) or the AG-UI bridge (BridgeTransport, PLURNK_AGUI_URL).
-    // WS behavior is unchanged — WsTransport re-registers the same notification
-    // subscriptions, forwarding to the persistent RunHandlers wired via subscribe()
-    // below, and owns the loop/terminated→done bridge (loopId-keyed, race-buffered)
-    // that used to live here. The bridge un-projects plurnk.* customs to the same
-    // handlers. tui.ts is transport-agnostic from here down.
-    const bridgeUrl = process.env.PLURNK_AGUI_URL;
-    const transport: Transport = bridgeUrl !== undefined && bridgeUrl.length > 0
-        ? new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, current.name, opts.projectRoot ?? null)
-        : new WsTransport(rpc);
-
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
     const streams = new StreamTrace();
 
-    // A dropped socket can't carry a pending question's answer. shuttingDown (set on
-    // an intentional quit) tells the transport to suppress its connection-lost reject.
+    // A dropped connection can't carry a pending question's answer. shuttingDown
+    // (set on an intentional quit) tells the transport to suppress its reject.
     let shuttingDown = false;
-    rpc.onClose(() => { if (!shuttingDown) pendingQuestion = null; });
+    transport.onClose(() => { if (!shuttingDown) pendingQuestion = null; });
 
     // Alias cache for /model completion + the active alias for the header —
     // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
@@ -608,7 +599,7 @@ export const runTui = async (rpc: Rpc, session: SessionResult, opts: {
     };
     process.stdin.on("data", onStdin);
     // Cross-restart up/down history from the daemon (svc#238) — non-blocking.
-    void seedPromptHistory(rpc, current.id, rl);
+    void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, current.id, rl);
 
     // Proposal lifecycle — NON-BLOCKING. Server-resolved (flags.yolo/noProposals)
     // settle in-process → skip. --yolo auto-accepts. A real

@@ -11,6 +11,7 @@ import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli, runScript, buildJsonError } from "./cli.ts";
 import { runCliViaBridge } from "./agui_cli.ts";
+import WsTransport, { BridgeTransport } from "./transport.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
@@ -676,6 +677,19 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     }
 
+    // TUI through the bridge (no prompt): skip the WS connect + session.create — a
+    // pure-bridge client has no direct daemon WS. The bridge owns the session; we
+    // pass a threadId-named stub (the daemon session id is bridge-created). projectRoot
+    // rides forwardedProps; PLURNK_AGUI_QUESTIONS gates questions bridge-side.
+    // (Per-session constraints/settings over the bridge are a follow-up.)
+    if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
+        const threadId = sessionName ?? "tui";
+        const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, projectRoot);
+        const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
+        await runTui(transport, { id: 0, name: threadId }, { modelAlias, model: resolveModelSpec(modelAlias), yolo, loopFlags, maxTurns, projectRoot, client: CLIENT_ID_TUI, autoReadAgents });
+        process.exit(0);
+    }
+
     const url = process.env.PLURNK_WS ?? "ws://127.0.0.1:3044";
     const rpc = new Rpc({ url });
 
@@ -745,7 +759,7 @@ export const main = async (argv: string[]): Promise<void> => {
         if (prompt.length === 0) {
             // #268 — carry the AGENTS-auto-load override onto /session-created sessions too.
             const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
-            await runTui(rpc, session, { modelAlias, model, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: clientId, autoReadAgents });
+            await runTui(new WsTransport(rpc), session, { modelAlias, model, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: clientId, autoReadAgents });
             process.exit(0);
         }
         // CLI: the version notice is narration → stderr (never pollutes stdout/--json).

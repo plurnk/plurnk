@@ -178,6 +178,12 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         opts: { yolo: false, ...opts },
         getSession: () => session,
         setSession: (s) => { session = s; },
+        switchSession: async (name) => {
+            calls.push({ method: "session.create", params: { name } });
+            const r = results["session.create"];
+            session = ((typeof r === "function" ? (r as (p: unknown) => unknown)({ name }) : r) ?? { id: 2, name: name ?? "new" }) as { id: number; name: string };
+            return session;
+        },
         write: (s) => { out.push(s); },
         importFile: async (p) => { imports.push(p); },
         resolveProposal: async (action) => { resolved.push(action); },

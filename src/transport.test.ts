@@ -150,3 +150,22 @@ test("BridgeTransport: cancel() aborts the SSE and done resolves (499), not a th
         assert.equal((await handle.done).finalStatus, 499, "cancel → clean 499 outcome");
     } finally { await mock.close(); }
 });
+
+test("WsTransport.useSession: rebinds via session.create with name + projectRoot + settings", async () => {
+    const { rpc, calls } = fakeRpc();
+    const wt = new WsTransport(rpc as never);
+    await wt.useSession("proj-x", { projectRoot: "/w", client: "cli/1", autoReadAgents: false });
+    assert.deepEqual(calls[0], { method: "session.create", params: { name: "proj-x", projectRoot: "/w", settings: { client: "cli/1", autoReadAgents: false } } });
+});
+
+test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new session", async () => {
+    const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "old");
+        const s = await bt.useSession("new-thread", {});
+        assert.equal(s.name, "new-thread");
+        bt.subscribe(collectingHandlers().h);
+        await bt.run("go", {}).done;
+        assert.equal((mock.captured[0].body as { threadId: string }).threadId, "new-thread", "the run targets the re-mapped thread");
+    } finally { await mock.close(); }
+});

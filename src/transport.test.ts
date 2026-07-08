@@ -110,7 +110,7 @@ test("BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolve
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", "/proj");
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", { alias: "opus" }).done;
@@ -119,7 +119,7 @@ test("BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolve
         assert.equal((seen.telemetry[0] as { source: string }).source, "grammar");
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.sessionId, 7, "done resolves with the terminated outcome incl. sessionId");
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { projectRoot: "/proj", alias: "opus" } });
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "session options + per-run knobs ride the first run's forwardedProps");
     } finally { await mock.close(); }
 });
 

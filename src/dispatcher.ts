@@ -684,7 +684,14 @@ export const main = async (argv: string[]): Promise<void> => {
     // (Per-session constraints/settings over the bridge are a follow-up.)
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         const threadId = sessionName ?? "tui";
-        const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, projectRoot);
+        // Session options ride the thread's first run (forwardedProps.plurnk): the
+        // same constraints (--pick/hide/view/repo) + settings the WS path sends on
+        // session.create, so a bridge TUI is configured identically.
+        const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
+            projectRoot,
+            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
+            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
+        });
         const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
         await runTui(transport, { id: 0, name: threadId }, { modelAlias, model: resolveModelSpec(modelAlias), yolo, loopFlags, maxTurns, projectRoot, client: CLIENT_ID_TUI, autoReadAgents });
         process.exit(0);

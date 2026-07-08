@@ -215,6 +215,9 @@ export interface VerbContext {
     opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string; autoReadAgents?: boolean };
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
+    // Switch to (or create) a named session — transport-agnostic (WS rebind /
+    // bridge threadId re-map). Returns the new session handle.
+    switchSession: (name: string | undefined) => Promise<SessionResult>;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
     // Resolve the pending proposal (no-op if none) — the typed no-modifier
@@ -249,19 +252,12 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
             return;
         case "session": {
-            // New session — a fresh world. Rebind in place (service
-            // §13.5-rebind), no reconnect. Name is optional (auto-named if
-            // omitted) and is a mutable handle (/rename retargets it later).
-            const params: { name?: string; projectRoot?: string | null; settings?: { client?: string; autoReadAgents?: boolean } } = {};
-            if (rest.length > 0) params.name = rest;
-            if (opts.projectRoot !== undefined) params.projectRoot = opts.projectRoot;
-            // #249 client id + #268 AGENTS-auto-load override, carried onto the fresh session.
-            if (opts.client !== undefined || opts.autoReadAgents !== undefined) {
-                params.settings = {};
-                if (opts.client !== undefined) params.settings.client = opts.client;
-                if (opts.autoReadAgents !== undefined) params.settings.autoReadAgents = opts.autoReadAgents;
-            }
-            ctx.setSession(await rpc.call("session.create", params) as SessionResult);
+            // New session — a fresh world. Transport-agnostic: WS rebinds the
+            // connection in place (service §13.5-rebind); the bridge re-maps its
+            // threadId. Name is optional (auto-named/generated) and is a mutable
+            // handle (/rename retargets it). client id (#249) + AGENTS override
+            // (#268) ride the switch.
+            ctx.setSession(await ctx.switchSession(rest.length > 0 ? rest : undefined));
             write(`  session: ${ctx.getSession().name} (new)\n`);
             return;
         }
@@ -734,6 +730,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
         rpc: verbRpc, opts,
         getSession: () => current,
         setSession: (s) => { current = s; },
+        switchSession: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client, autoReadAgents: opts.autoReadAgents }),
         write: (text) => { process.stdout.write(text); },
         importFile: async (rest) => {
             const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);

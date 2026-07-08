@@ -60,6 +60,10 @@ export interface Transport {
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     onClose(handler: () => void): void;   // WS: the daemon socket dropped. Bridge: no-op (each run is its own SSE).
     shutdown(): void;   // suppress the connection-lost reject on an intentional quit
+    // Switch to (or create) a named session. WS rebinds the connection via
+    // session.create; the bridge re-maps its threadId (the bridge lazy-creates the
+    // session on the next run). Returns the session handle for the header.
+    useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string; autoReadAgents?: boolean }): Promise<{ id: number; name: string }>;
 }
 
 interface LoopAck { loopId?: number; finalStatus?: number; status?: number; error?: string }
@@ -121,6 +125,17 @@ export default class WsTransport implements Transport {
     async inject(prompt: string): Promise<void> { await this.#rpc.call("loop.inject", { prompt }); }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> { await this.#rpc.call("loop.resolve", r); }
     onClose(handler: () => void): void { this.#rpc.onClose(handler); }
+    async useSession(name: string | undefined, params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
+        const p: { name?: string; projectRoot?: string | null; settings?: { client?: string; autoReadAgents?: boolean } } = {};
+        if (name !== undefined) p.name = name;
+        if (params.projectRoot !== undefined) p.projectRoot = params.projectRoot;
+        if (params.client !== undefined || params.autoReadAgents !== undefined) {
+            p.settings = {};
+            if (params.client !== undefined) p.settings.client = params.client;
+            if (params.autoReadAgents !== undefined) p.settings.autoReadAgents = params.autoReadAgents;
+        }
+        return this.#rpc.call("session.create", p) as Promise<{ id: number; name: string }>;
+    }
 }
 
 // ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
@@ -199,6 +214,15 @@ export class BridgeTransport implements Transport {
         await resolveViaBridge(this.#target, { threadId: this.#threadId, logEntryId: r.logEntryId, decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) });
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
+    async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
+        // Re-map the threadId: subsequent runs address the bridge's agui-<threadId>
+        // session (lazy-created on the next run, which re-forwards session opts). The
+        // daemon session id is bridge-created, so it's unknown here (0).
+        const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
+        this.#threadId = threadId;
+        this.#firstRun = true;
+        return { id: 0, name: threadId };
+    }
 
     // Un-project one CUSTOM plurnk.* → the handlers; returns TerminatedInfo when it
     // was the terminal event, else null. Core AG-UI events are for generic frontends.

@@ -1,98 +1,93 @@
-// Unit tests for the OAuth loopback leg (#116). Pure helpers + a real
-// bind→hit→capture round-trip over an actual loopback (no daemon, no browser).
+// Unit tests for the OAuth Device Authorization Grant leg (#116 / execs-mcp#2).
+// A fake rpc scripts authorize + a poll sequence; an injected no-op clock keeps
+// the poll loop instant (no real interval waits).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCallback, expectedState, bindLoopback, runOAuth } from "./auth.ts";
+import { runOAuth } from "./auth.ts";
 
-// ─── parseCallback ───────────────────────────────────────────────────
-
-test("parseCallback: code + state present → parsed", () => {
-    assert.deepEqual(parseCallback("/callback?code=abc123&state=xyz"), { code: "abc123", state: "xyz" });
-});
-
-test("parseCallback: state is optional (PKCE flows omit it — joint e2e); code alone captures", () => {
-    assert.deepEqual(parseCallback("/callback?code=abc"), { code: "abc", state: null });
-});
-
-test("parseCallback: missing code → null (stray hit)", () => {
-    assert.equal(parseCallback("/callback?state=xyz"), null);
-    assert.equal(parseCallback("/favicon.ico"), null);
-});
-
-// ─── expectedState ───────────────────────────────────────────────────
-
-test("expectedState: pulls state from the authorization URL", () => {
-    assert.equal(expectedState("https://auth.example/authorize?client_id=x&state=s3cr3t&scope=read"), "s3cr3t");
-});
-
-test("expectedState: no state param → null", () => {
-    assert.equal(expectedState("https://auth.example/authorize?client_id=x"), null);
-});
-
-// ─── loopback capture (real http, no daemon) ─────────────────────────
-
-test("bindLoopback: a redirect hit resolves capture with code+state", async () => {
-    const { redirectUri, capture } = await bindLoopback();
-    const pending = capture(5_000);
-    const res = await fetch(`${redirectUri}?code=THE_CODE&state=THE_STATE`);
-    assert.equal(res.status, 200);
-    assert.deepEqual(await pending, { code: "THE_CODE", state: "THE_STATE" });
-});
-
-test("bindLoopback: no hit within the window → null (listener torn down)", async () => {
-    const { capture } = await bindLoopback();
-    assert.equal(await capture(50), null);
-});
-
-// ─── runOAuth (stub rpc + real loopback + injected open) ─────────────
-
-// Minimal fake Rpc: records calls, returns scripted responses.
-const fakeRpc = (authorizationUrl: string) => {
+// Fake Rpc: records calls, returns a scripted authorize response then walks a
+// queue of poll statuses (last one repeats if the client over-polls).
+const fakeRpc = (pollStatuses: string[], authorize: Record<string, unknown> = {}) => {
     const calls: Array<{ method: string; params: unknown }> = [];
+    const queue = [...pollStatuses];
     const rpc = {
         call: async (method: string, params: unknown) => {
             calls.push({ method, params });
-            if (method === "auth.authorize") return { authorizationUrl, pkce: { v: "opaque" } };
-            return { ok: true };
+            if (method === "auth.authorize") {
+                return { verificationUri: "https://provider/device", userCode: "WDJB-MJHT", device: { d: "opaque" }, interval: 5, expiresIn: 900, ...authorize };
+            }
+            return { status: queue.length > 1 ? queue.shift() : queue[0] };
         },
     };
     return { rpc, calls };
 };
 
-test("runOAuth: happy path authorizes, round-trips pkce, completes", async () => {
-    const { rpc, calls } = fakeRpc("https://auth.example/authorize?state=ST8");
+const noClock = { sleep: async () => {}, nowMs: () => 0 };
+
+test("runOAuth: prints the verification URL + user code (no browser, no loopback)", async () => {
+    const { rpc } = fakeRpc(["authorized"]);
     const lines: string[] = [];
-    // The injected `open` fires the redirect at our own loopback with the right state.
-    const result = await runOAuth(rpc as never, "notion", {
-        print: (l) => lines.push(l),
-        timeoutMs: 5_000,
-        // Simulate the browser: fire the redirect at our loopback with the right state.
-        open: () => {
-            const redirect = (calls[0].params as { redirectUri: string }).redirectUri;
-            void fetch(`${redirect}?code=CODE9&state=ST8`);
-        },
-    });
-    assert.equal(result.ok, true);
-    assert.match(result.message, /notion authorized/);
-    // authorize then complete, with pkce echoed verbatim + the captured code
-    assert.equal(calls[0].method, "auth.authorize");
-    assert.equal(calls[1].method, "auth.authorize.complete");
-    assert.deepEqual((calls[1].params as { pkce: unknown }).pkce, { v: "opaque" });
-    assert.equal((calls[1].params as { code: string }).code, "CODE9");
+    await runOAuth(rpc as never, "notion", { print: (l) => lines.push(l), ...noClock });
+    const joined = lines.join("\n");
+    assert.match(joined, /https:\/\/provider\/device/);
+    assert.match(joined, /WDJB-MJHT/);
 });
 
-test("runOAuth: state mismatch aborts before completing", async () => {
-    const { rpc, calls } = fakeRpc("https://auth.example/authorize?state=EXPECTED");
+test("runOAuth: polls until authorized, round-tripping the device blob verbatim", async () => {
+    const { rpc, calls } = fakeRpc(["pending", "pending", "authorized"]);
+    const result = await runOAuth(rpc as never, "notion", { print: () => {}, ...noClock });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /notion authorized/);
+    assert.equal(calls[0].method, "auth.authorize");
+    const polls = calls.filter((c) => c.method === "auth.authorize.poll");
+    assert.equal(polls.length, 3, "polled through both pendings to authorized");
+    assert.deepEqual((polls[0].params as { device: unknown }).device, { d: "opaque" });
+    assert.equal((polls[0].params as { target: string }).target, "notion");
+});
+
+test("runOAuth: verificationUriComplete is surfaced when present", async () => {
+    const { rpc } = fakeRpc(["authorized"], { verificationUriComplete: "https://provider/device?code=WDJB-MJHT" });
+    const lines: string[] = [];
+    await runOAuth(rpc as never, "notion", { print: (l) => lines.push(l), ...noClock });
+    assert.match(lines.join("\n"), /open directly: https:\/\/provider\/device\?code=WDJB-MJHT/);
+});
+
+test("runOAuth: denied → fails", async () => {
+    const { rpc } = fakeRpc(["pending", "denied"]);
+    const result = await runOAuth(rpc as never, "notion", { print: () => {}, ...noClock });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /denied/);
+});
+
+test("runOAuth: expired → fails with a re-run hint", async () => {
+    const { rpc } = fakeRpc(["expired"]);
+    const result = await runOAuth(rpc as never, "notion", { print: () => {}, ...noClock });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /expired.*run \/auth notion again/);
+});
+
+test("runOAuth: slow_down backs off but keeps polling to authorized (never aborts)", async () => {
+    const { rpc, calls } = fakeRpc(["slow_down", "authorized"]);
+    let maxSlept = 0;
     const result = await runOAuth(rpc as never, "notion", {
         print: () => {},
-        timeoutMs: 5_000,
-        open: () => {
-            const redirect = (calls[0].params as { redirectUri: string }).redirectUri;
-            void fetch(`${redirect}?code=CODE&state=WRONG`);
-        },
+        nowMs: () => 0,
+        sleep: async (ms) => { maxSlept = Math.max(maxSlept, ms); },
+    });
+    assert.equal(result.ok, true);
+    assert.ok(maxSlept >= 10_000, "interval backed off past the initial 5s after slow_down");
+    assert.equal(calls.filter((c) => c.method === "auth.authorize.poll").length, 2);
+});
+
+test("runOAuth: expiresIn deadline → times out rather than polling forever", async () => {
+    const { rpc } = fakeRpc(["pending"], { expiresIn: 10, interval: 5 });
+    let t = 0;
+    const result = await runOAuth(rpc as never, "notion", {
+        print: () => {},
+        nowMs: () => t,
+        sleep: async (ms) => { t += ms; },   // advance the clock as we "wait"
     });
     assert.equal(result.ok, false);
-    assert.match(result.message, /state mismatch/);
-    assert.equal(calls.length, 1);   // authorize only — never completed
+    assert.match(result.message, /timed out/);
 });

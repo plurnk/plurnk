@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
 import Rpc, { RpcError } from "./rpc.ts";
 import { runCli, runScript, buildJsonError } from "./cli.ts";
+import { runCliViaBridge } from "./agui_cli.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters } from "./subcommands.ts";
@@ -127,6 +128,11 @@ env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
   PLURNK_QUESTIONS      when truthy, let the model ask you via SEND[300] (shared
                         intent — the daemon reads it too). --questions overrides.
+  PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
+                        set, a text one-shot runs THROUGH the bridge instead of raw
+                        daemon WS (the exclusive-portal path). PLURNK_AGUI_TOKEN is
+                        the bearer if the bridge requires one. --json/scripts stay
+                        on the daemon for now.
   PLURNK_EXECS_*        per-session exec-runtime policy, sent to the daemon at
                         session.create (PLURNK_EXECS_ONLY=a,b allowlist;
                         PLURNK_EXECS_<tag>=0 kill one). Subtractive only — the
@@ -647,6 +653,21 @@ export const main = async (argv: string[]): Promise<void> => {
             return dieWith(64, clientRuntimeError(cause));
         }
     })();
+
+    // plurnk-agui#1 — CLI one-shot through the exclusive-portal bridge (text mode):
+    // when PLURNK_AGUI_URL is set, a prompt run rides the bridge (which owns the WS
+    // + session) instead of raw daemon WS. Scripts, subcommands, and --json stay on
+    // the daemon for now (the Translator doesn't yet project cost/loopId a faithful
+    // json record needs — a bridge-side follow-up). Dual-surface, per the charter.
+    const bridgeUrl = process.env.PLURNK_AGUI_URL;
+    if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0 && !json) {
+        try {
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, projectRoot });
+            process.exit(code);
+        } catch (cause) {
+            dieWith(1, clientConnectionRefused(bridgeUrl, cause));
+        }
+    }
 
     const url = process.env.PLURNK_WS ?? "ws://127.0.0.1:3044";
     const rpc = new Rpc({ url });

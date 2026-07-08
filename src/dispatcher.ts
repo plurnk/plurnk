@@ -129,10 +129,10 @@ env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
   PLURNK_QUESTIONS      when truthy, let the model ask you via SEND[300] (shared
                         intent — the daemon reads it too). --questions overrides.
   PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
-                        set, a text one-shot runs THROUGH the bridge instead of raw
-                        daemon WS (the exclusive-portal path). PLURNK_AGUI_TOKEN is
-                        the bearer if the bridge requires one. --json/scripts stay
-                        on the daemon for now.
+                        set, a one-shot (text AND --json) runs THROUGH the bridge
+                        instead of raw daemon WS (the exclusive-portal path).
+                        PLURNK_AGUI_TOKEN is the bearer if the bridge requires one.
+                        Scripts + subcommands stay on the daemon.
   PLURNK_EXECS_*        per-session exec-runtime policy, sent to the daemon at
                         session.create (PLURNK_EXECS_ONLY=a,b allowlist;
                         PLURNK_EXECS_<tag>=0 kill one). Subtractive only — the
@@ -654,21 +654,24 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     })();
 
-    // plurnk-agui#1 — CLI one-shot through the exclusive-portal bridge (text mode):
-    // when PLURNK_AGUI_URL is set, a prompt run rides the bridge (which owns the WS
-    // + session) instead of raw daemon WS. Scripts, subcommands, and --json stay on
-    // the daemon for now (the Translator doesn't yet project cost/loopId a faithful
-    // json record needs — a bridge-side follow-up). Dual-surface, per the charter.
+    // plurnk-agui#1 — CLI one-shot through the exclusive-portal bridge: when
+    // PLURNK_AGUI_URL is set, a prompt run rides the bridge (which owns the WS +
+    // session) instead of raw daemon WS. Both text and --json route here now
+    // (plurnk-agui 0.2.1's plurnk.terminated carries sessionId/loopId/turnIds/cost,
+    // so the json record matches the WS schema). Scripts + subcommands stay on the
+    // daemon. Dual-surface, per the charter.
     const bridgeUrl = process.env.PLURNK_AGUI_URL;
-    if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0 && !json) {
+    if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, projectRoot });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, json, projectRoot });
             process.exit(code);
         } catch (cause) {
             // The bridge is reachable-but-erroring OR unreachable — surface the real
             // cause (runViaBridge already says "bridge run failed: NNN — …" / "fetch
-            // failed"), NOT the daemon's "no daemon running" boilerplate.
+            // failed"), NOT the daemon's "no daemon running" boilerplate. json mode
+            // still emits ONE valid document on stdout.
             const detail = cause instanceof Error ? cause.message : String(cause);
+            if (json) dieJson(1, "bridge_error", detail, { bridge: bridgeUrl });
             dieWith(1, clientRuntimeError(new Error(`plurnk-agui bridge (${bridgeUrl}) — ${detail}`)));
         }
     }

@@ -18,7 +18,9 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 });
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: "CUSTOM", name: "plurnk.row", value: entry(e) });
+const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: "CUSTOM", name: "plurnk.row", value: { ...entry(e), run_id: runId } });
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: "CUSTOM", name: "plurnk.terminated", value: { sessionId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, contextSize: 6848, meta: {} }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 
@@ -26,7 +28,7 @@ const sink = (over: Partial<CliRunSinks> = {}) => {
     const out: string[] = [], err: string[] = [], resolved: unknown[] = [];
     const io: CliRunSinks = {
         out: (s) => out.push(s), err: (s) => err.push(s), telemetry: () => {},
-        yolo: false, noReviewChannel: false,
+        json: false, yolo: false, noReviewChannel: false,
         review: async () => ({ decision: "accept" } as Resolution),
         resolve: async (r) => { resolved.push(r); },
         ...over,
@@ -36,22 +38,22 @@ const sink = (over: Partial<CliRunSinks> = {}) => {
 
 test("consumeCliRun: terminal broadcast body → stdout (answer), rows → stderr (trace), exit 0", async () => {
     const { io, out, err } = sink();
-    const code = await consumeCliRun(stream([
+    const { exitCode } = await consumeCliRun(stream([
         row({ op: "FIND", scheme: "file", pathname: "/x" }),
         terminalSend("Jupiter is the largest planet."),
         { type: "RUN_FINISHED", threadId: "t", runId: "r" },
     ]), io);
-    assert.equal(code, 0);
+    assert.equal(exitCode, 0);
     assert.equal(out.join(""), "Jupiter is the largest planet.\n", "only the answer on stdout");
     assert.ok(err.length >= 2, "every row traced to stderr");
 });
 
 test("consumeCliRun: RUN_ERROR carries the finalStatus into the exit code + a maxTurns read", async () => {
     const { io, err } = sink();
-    const code = await consumeCliRun(stream([
+    const { exitCode } = await consumeCliRun(stream([
         { type: "RUN_ERROR", message: "loop terminated 429 (maxTurns)", code: "429" },
     ]), io);
-    assert.equal(code, 2, "maxTurns → exit 2");
+    assert.equal(exitCode, 2, "maxTurns → exit 2");
     assert.match(err.join(""), /loop terminated 429/);
 });
 
@@ -95,4 +97,31 @@ test("consumeCliRun: plurnk.telemetry routes to the telemetry sink; generic AG-U
     assert.equal(tele.length, 1, "telemetry captured");
     assert.equal(out.join(""), "", "generic TEXT_MESSAGE not rendered by the family client");
     assert.equal(err.join(""), "", "no row → no trace");
+});
+
+test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {
+    const { io, out, err } = sink({ json: true });
+    const res = await consumeCliRun(stream([
+        rowRun({ op: "PLAN", origin: "model" }, 42),
+        rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
+        terminalSend("Jupiter."),
+        terminated({ sessionId: 512, loopId: 9, turnIds: [1, 2, 3], usage: { promptTokens: 20, completionTokens: 8, costPico: 4200, contextTokens: 20, contextSize: 6848, meta: {} } }),
+        { type: "RUN_FINISHED" },
+    ]), io);
+    assert.equal(out.join(""), "", "json mode: silent stdout");
+    assert.equal(err.join(""), "", "json mode: silent stderr");
+    assert.equal(res.exitCode, 0);
+    assert.equal(res.entries.length, 3, "all rows accumulated");
+    assert.equal(res.response, "Jupiter.", "terminal broadcast captured");
+    assert.equal(res.modelRunId, 42, "modelRunId derived from the first model row's run_id");
+    assert.equal(res.terminated?.sessionId, 512, "sessionId from plurnk.terminated");
+    assert.equal(res.terminated?.usage.costPico, 4200, "cost from plurnk.terminated");
+});
+
+test("consumeCliRun: plurnk.terminated is authoritative for the exit code", async () => {
+    const { io } = sink();
+    const { exitCode } = await consumeCliRun(stream([
+        terminated({ finalStatus: 499, turnIds: [] }),
+    ]), io);
+    assert.equal(exitCode, 3, "499 cancel → exit 3 (exitCodeForLoop)");
 });

@@ -9,7 +9,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
-import { bootBridge } from "./harness.ts";
+import { bootBridge, spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
 let bridge: { url: string; kill: () => void } | null = null;
@@ -35,4 +35,23 @@ test("bootBridge: a real bridge serves against the daemon (the pty enabler for T
     assert.equal(res.status, 404, "bridge serving: GET / → 404");
     const body = await res.json() as { error?: string };
     assert.match(body.error ?? "", /POST/, "the router's usage hint");
+});
+
+test("TUI over the bridge: a prompt runs through the portal and renders in the waterfall", async (t) => {
+    if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+    if (bridge === null) { t.skip("no plurnk-agui sibling checkout"); return; }
+    // PLURNK_AGUI_URL set + no prompt → the dispatcher's TUI-bridge branch: no WS
+    // connect, BridgeTransport drives the run. (PLURNK_WS is set but unused.)
+    const tui = spawnTui(daemon.url, [], { PLURNK_AGUI_URL: bridge.url });
+    try {
+        await tui.waitFor(/\/help/, 15_000);
+        tui.write("Say hi in one short sentence.\r");
+        // The run streams through the bridge → plurnk.row → the waterfall, and on
+        // terminate the loop summary renders its token tally (↑prompt ↓completion) —
+        // NOT in the prompt, so matching it proves the full round-trip through the
+        // portal (terminated + summary), not an echo of the typed line.
+        await tui.waitFor(/↑\d+ ↓\d+/, 90_000);
+        tui.write("/quit\r");
+        assert.equal(await tui.exited, 0);
+    } finally { tui.kill(); }
 });

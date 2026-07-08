@@ -58,6 +58,7 @@ export interface Transport {
     run(prompt: string, opts: RunOpts): RunHandle;
     inject(prompt: string): Promise<void>;
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
+    onClose(handler: () => void): void;   // WS: the daemon socket dropped. Bridge: no-op (each run is its own SSE).
     shutdown(): void;   // suppress the connection-lost reject on an intentional quit
 }
 
@@ -119,6 +120,7 @@ export default class WsTransport implements Transport {
 
     async inject(prompt: string): Promise<void> { await this.#rpc.call("loop.inject", { prompt }); }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> { await this.#rpc.call("loop.resolve", r); }
+    onClose(handler: () => void): void { this.#rpc.onClose(handler); }
 }
 
 // ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
@@ -184,6 +186,7 @@ export class BridgeTransport implements Transport {
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> {
         await resolveViaBridge(this.#target, { threadId: this.#threadId, logEntryId: r.logEntryId, decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) });
     }
+    onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
 
     // Un-project one CUSTOM plurnk.* → the handlers; returns TerminatedInfo when it
     // was the terminal event, else null. Core AG-UI events are for generic frontends.

@@ -665,7 +665,8 @@ export const main = async (argv: string[]): Promise<void> => {
     // the daemon's in-process module. PLURNK_AGUI_URL remains an explicit override
     // (a remote portal); otherwise the canonical legend is the default — the WS path
     // below is legacy awaiting deletion.
-    const bridgeUrl = process.env.PLURNK_AGUI_URL ?? `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
+    const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
+    const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, json, projectRoot });

@@ -84,22 +84,6 @@ export const resolveViaBridge = async (
     if (!res.ok) throw new Error(`bridge resolve failed: ${res.status}`);
 };
 
-// The management escape hatch: a daemon JSON-RPC method scoped to the thread's own
-// session (§agui-management-plane). Returns the daemon's result verbatim.
-export const rpcViaBridge = async <T = unknown>(
-    target: BridgeTarget,
-    call: { threadId: string; method: string; params?: object },
-): Promise<T> => {
-    const res = await fetch(new URL("/plurnk/rpc", target.bridgeUrl), {
-        method: "POST",
-        headers: jsonHeaders(target.token),
-        body: JSON.stringify({ threadId: call.threadId, method: call.method, params: call.params ?? {} }),
-    });
-    if (!res.ok) throw new Error(`bridge rpc ${call.method} failed: ${res.status}`);
-    const parsed = await res.json() as { result: T };
-    return parsed.result;
-};
-
 // AG-UI+ verb surface (§3): a management action rides its own run —
 // forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.
 // Replaces the retired /plurnk/rpc side-channel; the run envelope is the interface.

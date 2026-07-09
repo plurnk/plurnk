@@ -123,18 +123,26 @@ test("BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolve
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: inject rides /plurnk/rpc on the thread; resolve hits /resolve", async () => {
+test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/rpc side-channel)", async () => {
     const mock = await bootMock((req, res) => {
-        if (req.url === "/plurnk/rpc") { res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: {} })); return; }
-        res.writeHead(200).end("{}");
+        if (req.url === "/resolve") { res.writeHead(200).end("{}"); return; }
+        // An action run answers on its own SSE: result custom + RUN_FINISHED.
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "x", ok: true, result: { action: "injected_next_turn", loopId: 7 } } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
     });
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         await bt.inject("steer mid-run");
+        const providers = await bt.rpc<{ action: string }>("providers.list");
+        assert.equal(providers.action, "injected_next_turn", "the action result returns verbatim");
         await bt.resolve({ logEntryId: 4, decision: "reject" });
-        const inj = mock.captured.find((c) => c.url === "/plurnk/rpc");
-        assert.equal((inj?.body as { method: string }).method, "loop.inject");
-        assert.deepEqual((inj?.body as { params: unknown }).params, { prompt: "steer mid-run" });
+        const injectRun = mock.captured.find((c) => c.url === "/" && (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } }).forwardedProps?.plurnk?.action?.kind === "loop.inject");
+        assert.ok(injectRun !== undefined, "inject rides an action run");
+        assert.deepEqual((injectRun?.body as { forwardedProps: { plurnk: { action: unknown } } }).forwardedProps.plurnk.action, { kind: "loop.inject", prompt: "steer mid-run" });
+        const rpcRun = mock.captured.find((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "providers.list");
+        assert.ok(rpcRun !== undefined, "verbs ride action runs");
         assert.deepEqual(mock.captured.find((c) => c.url === "/resolve")?.body, { threadId: "th", logEntryId: 4, decision: "reject" });
     } finally { await mock.close(); }
 });

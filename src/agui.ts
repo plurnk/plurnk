@@ -65,25 +65,6 @@ export async function* runViaBridge(
     }
 }
 
-// Answer a stopped-world proposal (file edit, MCP auth, [300] question) — the
-// bridge passes it through to loop.resolve.
-export const resolveViaBridge = async (
-    target: BridgeTarget,
-    resolution: { threadId: string; logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string },
-): Promise<void> => {
-    const res = await fetch(new URL("/resolve", target.bridgeUrl), {
-        method: "POST",
-        headers: jsonHeaders(target.token),
-        body: JSON.stringify({
-            threadId: resolution.threadId,
-            logEntryId: resolution.logEntryId,
-            decision: resolution.decision,
-            ...(resolution.body !== undefined ? { body: resolution.body } : {}),
-        }),
-    });
-    if (!res.ok) throw new Error(`bridge resolve failed: ${res.status}`);
-};
-
 // AG-UI+ verb surface (§3): a management action rides its own run —
 // forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.
 // Replaces the retired /plurnk/rpc side-channel; the run envelope is the interface.

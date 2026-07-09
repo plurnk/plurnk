@@ -13,11 +13,11 @@ import process from "node:process";
 import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { reviewProposal, isServerResolved, type Resolution, type ProposalParams } from "./proposal.ts";
+import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import { report } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
-import { runViaBridge, resolveViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
 
@@ -35,6 +35,9 @@ interface TerminatedValue {
 
 export interface CliRunResult {
     exitCode: number;
+    // Terminate-resume: set when the segment ended on a client-owned proposal
+    // tool-call — the caller POSTs this as the resume run's tool-result.
+    pendingResume: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string } | null;
     entries: LogEntryWire[];
     telemetry: TelemetryEvent[];
     response: string;
@@ -50,17 +53,16 @@ export interface CliRunSinks {
     yolo: boolean;
     noReviewChannel: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
-    resolve: (r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }) => Promise<void>;
 }
 
-// Settle a stopped-world proposal that arrived over the bridge, mirroring the WS
-// CLI's three paths — but the answer rides POST /resolve, not loop.resolve.
-const settleProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<void> => {
-    if (isServerResolved(p)) return;   // the daemon settled it in-process (bridge flags.yolo); a client resolve would race
-    if (io.yolo) { await io.resolve({ logEntryId: p.logEntryId, decision: "accept" }); return; }
-    if (io.noReviewChannel) { await io.resolve({ logEntryId: p.logEntryId, decision: "reject" }); return; }
+// Decide a stopped-world proposal (AG-UI+ terminate-resume): the run segment ended
+// on the tool-call; the decision returns as the resume run's tool-result. A
+// tool-call strictly means client-owned (the module filters server-yolo/noProposals).
+const decideProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }> => {
+    if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept" };
+    if (io.noReviewChannel) return { logEntryId: p.logEntryId, decision: "reject" };
     const resolution = await io.review(p);
-    await io.resolve({ logEntryId: p.logEntryId, decision: resolution.decision, ...(resolution.body !== undefined ? { body: resolution.body } : {}) });
+    return { logEntryId: p.logEntryId, decision: resolution.decision, ...(resolution.body !== undefined ? { body: resolution.body } : {}) };
 };
 
 // Drive a bridge run's AG-UI event stream. Text mode renders to the sinks
@@ -75,6 +77,9 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     let response = "";
     let terminated: TerminatedValue | null = null;
     let modelRunId: number | null = null;
+    let pendingResume: CliRunResult["pendingResume"] = null;
+    let toolId = "";
+    let toolArgs = "";
     const entries: LogEntryWire[] = [];
     const telemetry: TelemetryEvent[] = [];
     const streams = new StreamTrace();
@@ -84,6 +89,13 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             finalStatus = Number.isFinite(code) && code > 0 ? code : 500;
             hitMaxTurns = /maxTurns/.test(String((e as { message?: string }).message ?? ""));
             if (!io.json) io.err(`${String((e as { message?: string }).message ?? "")}\n`);
+            continue;
+        }
+        if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
+        if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) { toolArgs += String((e as { delta?: unknown }).delta ?? ""); continue; }
+        if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
+            const a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+            pendingResume = await decideProposal({ logEntryId: Number(toolId.slice(5)), ...a } as unknown as BridgeProposal, io);
             continue;
         }
         if (e.type !== "CUSTOM") continue;   // generic vocab is for third-party frontends
@@ -115,11 +127,9 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                     if (line !== null) io.err(`${line}\n`);
                 }
             }
-        } else if (name === "plurnk.proposal") {
-            await settleProposal(value as BridgeProposal, io);
         }
     }
-    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, telemetry, response, terminated, modelRunId };
+    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, telemetry, response, terminated, modelRunId, pendingResume };
 };
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
@@ -135,16 +145,32 @@ export const runCliViaBridge = async (
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
     const forwardedProps = opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : undefined;
     const started = Date.now();
-    const result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, prompt, forwardedProps }), {
-        out: (s) => process.stdout.write(s),
-        err: (s) => process.stderr.write(s),
-        telemetry: (e) => report(e),
+    const io = {
+        out: (s: string) => process.stdout.write(s),
+        err: (s: string) => process.stderr.write(s),
+        telemetry: (e: Parameters<typeof report>[0]) => report(e),
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,
         review: reviewProposal,
-        resolve: (r) => resolveViaBridge(target, { threadId: opts.threadId, ...r }),
-    });
+    };
+    // Terminate-resume segments: a client-owned proposal ends the segment as a
+    // tool-call; the decision POSTs as the next segment's tool-result. Accumulate
+    // across segments — one logical run, one record.
+    let next: { prompt?: string; messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+    while (result.pendingResume !== null) {
+        const r = result.pendingResume;
+        next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+        const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+        result = {
+            ...seg,
+            entries: [...result.entries, ...seg.entries],
+            telemetry: [...result.telemetry, ...seg.telemetry],
+            response: seg.response.length > 0 ? seg.response : result.response,
+            modelRunId: result.modelRunId ?? seg.modelRunId,
+        };
+    }
     if (opts.json) {
         const t = result.terminated;
         const doc = buildJsonRecord({

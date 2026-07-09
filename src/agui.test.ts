@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaBridge, resolveViaBridge, rpcViaBridge } from "./agui.ts";
+import { runViaBridge, resolveViaBridge, actionViaBridge } from "./agui.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -84,22 +84,18 @@ test("resolveViaBridge: POSTs {threadId, logEntryId, decision, body} to /resolve
     } finally { await mock.close(); }
 });
 
-test("rpcViaBridge: POSTs {threadId, method, params} to /plurnk/rpc, returns the daemon result", async () => {
-    const mock = await bootMock((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: { sessions: [{ id: 1, name: "x" }] } })));
+test("actionViaBridge: a verb rides its own run; the result custom returns verbatim; ok:false throws", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "session.list", ok: true, result: { sessions: [{ id: 1, name: "s" }] } } }) + "\n\n");
+        res.write("data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n");
+        res.end();
+    });
     try {
-        const out = await rpcViaBridge({ bridgeUrl: mock.url }, { threadId: "t", method: "session.list", params: {} });
-        assert.deepEqual(out, { sessions: [{ id: 1, name: "x" }] });
-        assert.equal(mock.captured[0].url, "/plurnk/rpc");
-        assert.equal((mock.captured[0].body as { method: string }).method, "session.list");
+        const out = await actionViaBridge<{ sessions: Array<{ id: number }> }>({ bridgeUrl: mock.url }, { threadId: "t", kind: "session.list" });
+        assert.equal(out.sessions[0].id, 1);
+        const sent = mock.captured[0].body as { forwardedProps: { plurnk: { action: { kind: string } } } };
+        assert.equal(sent.forwardedProps.plurnk.action.kind, "session.list", "the action rides forwardedProps.plurnk.action");
     } finally { await mock.close(); }
 });
 
-test("bearer token rides the Authorization header when set (empty = local trust, header omitted)", async () => {
-    const mock = await bootMock((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ result: true })));
-    try {
-        await rpcViaBridge({ bridgeUrl: mock.url, token: "sekret" }, { threadId: "t", method: "ping" });
-        assert.equal(mock.captured[0].auth, "Bearer sekret");
-        await rpcViaBridge({ bridgeUrl: mock.url }, { threadId: "t", method: "ping" });
-        assert.equal(mock.captured[1].auth, undefined);
-    } finally { await mock.close(); }
-});

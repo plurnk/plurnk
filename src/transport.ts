@@ -15,7 +15,7 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
-import { runViaBridge, actionViaBridge, resolveViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { runViaBridge, actionViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
 // plurnk.terminated + sessionId).
@@ -152,6 +152,7 @@ export class BridgeTransport implements Transport {
     #session: BridgeSessionOpts;
     #h: RunHandlers | null = null;
     #firstRun = true;
+    #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
 
     constructor(target: BridgeTarget, threadId: string, session: BridgeSessionOpts = {}) {
         this.#target = target;
@@ -186,24 +187,50 @@ export class BridgeTransport implements Transport {
         };
         this.#firstRun = false;
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
+        // AG-UI+ terminate-resume (§agui-plus): a stopped-world ends the run as a
+        // request_approval/request_user_input TOOL_CALL (the loop stays paused
+        // in-engine). resolve() supplies the decision; we POST the tool-result as the
+        // resume run and keep consuming — done spans the whole pause/resume chain, so
+        // the TUI's seam contract never changes.
         const done = (async (): Promise<TerminatedInfo> => {
             let terminated: TerminatedInfo | null = null;
             let errStatus = 0;
-            try {
-                for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, prompt, forwardedProps }, ac.signal)) {
-                    if (e.type === "RUN_ERROR") {
-                        const code = Number((e as { code?: string }).code);
-                        errStatus = Number.isFinite(code) && code > 0 ? code : 500;
-                    } else if (e.type === "CUSTOM") {
-                        const t = this.#dispatch(e);
-                        if (t !== null) terminated = t;
+            let next: { prompt?: string; messages?: Array<Record<string, unknown>> } = { prompt };
+            let fp = forwardedProps;
+            for (;;) {
+                let pausedProp: number | null = null;
+                let toolId = "";
+                let toolArgs = "";
+                try {
+                    for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...next, forwardedProps: fp }, ac.signal)) {
+                        if (e.type === "RUN_ERROR") {
+                            const code = Number((e as { code?: string }).code);
+                            errStatus = Number.isFinite(code) && code > 0 ? code : 500;
+                        } else if (e.type === "TOOL_CALL_START") {
+                            toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
+                            toolArgs = "";
+                        } else if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) {
+                            toolArgs += String((e as { delta?: unknown }).delta ?? "");
+                        } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
+                            pausedProp = Number(toolId.slice(5));
+                            const a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                            this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs, staleClobberRisk: a.staleClobberRisk } as unknown as ProposalParams);
+                        } else if (e.type === "CUSTOM") {
+                            const t = this.#dispatch(e);
+                            if (t !== null) terminated = t;
+                        }
                     }
+                } catch (err) {
+                    if (ac.signal.aborted) return terminated ?? { finalStatus: 499, hitMaxTurns: false };
+                    throw err;
                 }
-            } catch (err) {
-                if (ac.signal.aborted) return terminated ?? { finalStatus: 499, hitMaxTurns: false };
-                throw err;
+                if (terminated !== null) return terminated;
+                if (pausedProp === null) return { finalStatus: errStatus > 0 ? errStatus : 200, hitMaxTurns: false };
+                // Paused: hold done open until the client resolves, then resume with the tool-result.
+                const r = await new Promise<{ logEntryId: number; decision: string; body?: string }>((res) => { this.#pendingResolve = res; });
+                next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+                fp = undefined;
             }
-            return terminated ?? { finalStatus: errStatus > 0 ? errStatus : 200, hitMaxTurns: false };
         })();
         return { done, cancel: () => ac.abort() };
     }
@@ -214,7 +241,12 @@ export class BridgeTransport implements Transport {
         await actionViaBridge(this.#target, { threadId: this.#threadId, kind: "loop.inject", params: { prompt } });
     }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> {
-        await resolveViaBridge(this.#target, { threadId: this.#threadId, logEntryId: r.logEntryId, decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) });
+        // Terminate-resume: the decision releases the paused run loop, which POSTs the
+        // tool-result resume. No paused run = a contract violation — fail hard.
+        const pending = this.#pendingResolve;
+        if (pending === null) throw new Error("resolve without a paused proposal run (terminate-resume contract)");
+        this.#pendingResolve = null;
+        pending(r);
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
     async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
@@ -233,7 +265,6 @@ export class BridgeTransport implements Transport {
         const name = (e as { name?: string }).name;
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.row") this.#h?.onEntry(value as LogEntryWire);
-        else if (name === "plurnk.proposal") this.#h?.onProposal(value as ProposalParams);
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.telemetry") this.#h?.onTelemetry(value as TelemetryEvent);
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);

@@ -23,6 +23,12 @@ const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null
 const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: "CUSTOM", name: "plurnk.terminated", value: { sessionId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, contextSize: 6848, meta: {} }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
+// AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
+const proposalCall = (logEntryId: number, args: Record<string, unknown> = {}): AguiEvent[] => [
+    { type: "TOOL_CALL_START", toolCallId: `prop:${logEntryId}`, toolCallName: "request_approval" },
+    { type: "TOOL_CALL_ARGS", toolCallId: `prop:${logEntryId}`, delta: JSON.stringify({ op: "EDIT", target: {}, body: "diff", attrs: {}, ...args }) },
+    { type: "TOOL_CALL_END", toolCallId: `prop:${logEntryId}` },
+];
 
 const sink = (over: Partial<CliRunSinks> = {}) => {
     const out: string[] = [], err: string[] = [], resolved: unknown[] = [];
@@ -30,7 +36,6 @@ const sink = (over: Partial<CliRunSinks> = {}) => {
         out: (s) => out.push(s), err: (s) => err.push(s), telemetry: () => {},
         json: false, yolo: false, noReviewChannel: false,
         review: async () => ({ decision: "accept" } as Resolution),
-        resolve: async (r) => { resolved.push(r); },
         ...over,
     };
     return { io, out, err, resolved };
@@ -57,33 +62,30 @@ test("consumeCliRun: RUN_ERROR carries the finalStatus into the exit code + a ma
     assert.match(err.join(""), /loop terminated 429/);
 });
 
-test("consumeCliRun: a proposal is reviewed then resolved over the bridge", async () => {
-    const { io, resolved } = sink({ review: async () => ({ decision: "accept", body: "edited" }) });
-    await consumeCliRun(stream([
-        { type: "CUSTOM", name: "plurnk.proposal", value: { logEntryId: 9, op: "EDIT", target: {}, body: "diff", attrs: {}, flags: {} } },
-        { type: "RUN_FINISHED" },
-    ]), io);
-    assert.deepEqual(resolved, [{ logEntryId: 9, decision: "accept", body: "edited" }]);
+test("consumeCliRun: a proposal tool-call is reviewed; the decision rides pendingResume", async () => {
+    const { io } = sink({ review: async () => ({ decision: "accept", body: "edited" }) });
+    const r = await consumeCliRun(stream([...proposalCall(9), { type: "RUN_FINISHED" }]), io);
+    assert.deepEqual(r.pendingResume, { logEntryId: 9, decision: "accept", body: "edited" }, "the resume tool-result carries the reviewed decision");
 });
 
 test("consumeCliRun: yolo auto-accepts a proposal without review", async () => {
     let reviewed = false;
-    const { io, resolved } = sink({ yolo: true, review: async () => { reviewed = true; return { decision: "accept" }; } });
-    await consumeCliRun(stream([{ type: "CUSTOM", name: "plurnk.proposal", value: { logEntryId: 3, op: "EDIT", target: {}, body: "", attrs: {}, flags: {} } }]), io);
+    const { io } = sink({ yolo: true, review: async () => { reviewed = true; return { decision: "accept" }; } });
+    const r = await consumeCliRun(stream(proposalCall(3)), io);
     assert.equal(reviewed, false, "yolo skips review");
-    assert.deepEqual(resolved, [{ logEntryId: 3, decision: "accept" }]);
+    assert.deepEqual(r.pendingResume, { logEntryId: 3, decision: "accept" });
 });
 
 test("consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
-    const { io, resolved } = sink({ noReviewChannel: true });
-    await consumeCliRun(stream([{ type: "CUSTOM", name: "plurnk.proposal", value: { logEntryId: 4, op: "EDIT", target: {}, body: "", attrs: {}, flags: {} } }]), io);
-    assert.deepEqual(resolved, [{ logEntryId: 4, decision: "reject" }]);
+    const { io } = sink({ noReviewChannel: true });
+    const r = await consumeCliRun(stream(proposalCall(4)), io);
+    assert.deepEqual(r.pendingResume, { logEntryId: 4, decision: "reject" });
 });
 
-test("consumeCliRun: a server-resolved proposal (flags.yolo) is skipped — client would race", async () => {
-    const { io, resolved } = sink();
-    await consumeCliRun(stream([{ type: "CUSTOM", name: "plurnk.proposal", value: { logEntryId: 5, op: "EDIT", target: {}, body: "", attrs: {}, flags: { yolo: true } } }]), io);
-    assert.deepEqual(resolved, [], "no client resolve for a server-settled proposal");
+test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals never reach the wire)", async () => {
+    const { io } = sink();
+    const r = await consumeCliRun(stream([terminated(), { type: "RUN_FINISHED" }]), io);
+    assert.equal(r.pendingResume, null, "a clean run carries no resume");
 });
 
 test("consumeCliRun: plurnk.telemetry routes to the telemetry sink; generic AG-UI events are ignored", async () => {

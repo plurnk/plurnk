@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaBridge, resolveViaBridge, actionViaBridge } from "./agui.ts";
+import { runViaBridge, actionViaBridge } from "./agui.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -72,15 +72,6 @@ test("runViaBridge: a non-200 run surfaces the bridge error, not a silent hang",
             async () => { for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
             /bridge run failed: 401.*bearer token required/,
         );
-    } finally { await mock.close(); }
-});
-
-test("resolveViaBridge: POSTs {threadId, logEntryId, decision, body} to /resolve", async () => {
-    const mock = await bootMock((_req, res) => res.writeHead(200).end("{}"));
-    try {
-        await resolveViaBridge({ bridgeUrl: mock.url }, { threadId: "t", logEntryId: 7, decision: "accept", body: "Beta" });
-        assert.equal(mock.captured[0].url, "/resolve");
-        assert.deepEqual(mock.captured[0].body, { threadId: "t", logEntryId: 7, decision: "accept", body: "Beta" });
     } finally { await mock.close(); }
 });
 

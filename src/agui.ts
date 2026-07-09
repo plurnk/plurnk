@@ -26,9 +26,12 @@ export interface BridgeTarget { bridgeUrl: string; token?: string }
 // signal (its req.on("close") cancels the loop) — hanging up IS cancellation.
 export async function* runViaBridge(
     target: BridgeTarget,
-    run: { threadId: string; prompt: string; runId?: string; forwardedProps?: Record<string, unknown> },
+    run: { threadId: string; prompt?: string; messages?: Array<Record<string, unknown>>; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
+    // messages verbatim when given (a terminate-resume tool-result run, an action run);
+    // else the prompt as the user message. AG-UI+ dialect (§agui-plus).
+    const messages = run.messages ?? (run.prompt !== undefined ? [{ role: "user", content: run.prompt }] : []);
     const res = await fetch(new URL("/", target.bridgeUrl), {
         method: "POST",
         headers: jsonHeaders(target.token),
@@ -36,7 +39,7 @@ export async function* runViaBridge(
         body: JSON.stringify({
             threadId: run.threadId,
             runId: run.runId,
-            messages: [{ role: "user", content: run.prompt }],
+            messages,
             ...(run.forwardedProps !== undefined ? { forwardedProps: { plurnk: run.forwardedProps } } : {}),
         }),
     });
@@ -95,4 +98,21 @@ export const rpcViaBridge = async <T = unknown>(
     if (!res.ok) throw new Error(`bridge rpc ${call.method} failed: ${res.status}`);
     const parsed = await res.json() as { result: T };
     return parsed.result;
+};
+
+// AG-UI+ verb surface (§3): a management action rides its own run —
+// forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.
+// Replaces the retired /plurnk/rpc side-channel; the run envelope is the interface.
+export const actionViaBridge = async <T = unknown>(
+    target: BridgeTarget,
+    req: { threadId: string; kind: string; params?: object },
+): Promise<T> => {
+    for await (const e of runViaBridge(target, { threadId: req.threadId, messages: [], forwardedProps: { action: { kind: req.kind, ...(req.params ?? {}) } } })) {
+        if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
+            const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
+            if (!v.ok) throw new Error(`action ${req.kind} failed: ${v.error ?? "unknown"}`);
+            return v.result as T;
+        }
+    }
+    throw new Error(`action ${req.kind}: the run ended without a plurnk.action.result`);
 };

@@ -15,7 +15,7 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
-import { runViaBridge, rpcViaBridge, resolveViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { runViaBridge, actionViaBridge, resolveViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
 // plurnk.terminated + sessionId).
@@ -159,8 +159,9 @@ export class BridgeTransport implements Transport {
         this.#session = session;
     }
 
+    // AG-UI+ dialect: verbs are §3 action runs (the /plurnk/rpc side-channel is dead).
     rpc<T>(method: string, params?: object): Promise<T> {
-        return rpcViaBridge<T>(this.#target, { threadId: this.#threadId, method, params });
+        return actionViaBridge<T>(this.#target, { threadId: this.#threadId, kind: method, params });
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }
@@ -207,8 +208,10 @@ export class BridgeTransport implements Transport {
         return { done, cancel: () => ac.abort() };
     }
 
+    // §4 — inject rides the action surface; the steered effect streams on the
+    // original run's open SSE (the ack rides this action run).
     async inject(prompt: string): Promise<void> {
-        await rpcViaBridge(this.#target, { threadId: this.#threadId, method: "loop.inject", params: { prompt } });
+        await actionViaBridge(this.#target, { threadId: this.#threadId, kind: "loop.inject", params: { prompt } });
     }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> {
         await resolveViaBridge(this.#target, { threadId: this.#threadId, logEntryId: r.logEntryId, decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) });

@@ -661,7 +661,11 @@ export const main = async (argv: string[]): Promise<void> => {
     // (plurnk-agui 0.2.1's plurnk.terminated carries sessionId/loopId/turnIds/cost,
     // so the json record matches the WS schema). Scripts + subcommands stay on the
     // daemon. Dual-surface, per the charter.
-    const bridgeUrl = process.env.PLURNK_AGUI_URL;
+    // AG-UI+ IS the client surface (service 0.81.0): PLURNK_HOST/PLURNK_PORT point at
+    // the daemon's in-process module. PLURNK_AGUI_URL remains an explicit override
+    // (a remote portal); otherwise the canonical legend is the default — the WS path
+    // below is legacy awaiting deletion.
+    const bridgeUrl = process.env.PLURNK_AGUI_URL ?? `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, json, projectRoot });

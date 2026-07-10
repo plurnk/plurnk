@@ -142,3 +142,18 @@ test("BridgeTransport: resolve without a paused run fails hard (terminate-resume
     const bt = new BridgeTransport({ bridgeUrl: "http://127.0.0.1:1" }, "th");
     await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /without a paused proposal run/);
 });
+
+test("BridgeTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "RUN_STARTED" }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "READ" } }));
+        res.end();   // no plurnk.terminated, no RUN_ERROR — the stream just dies
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        bt.subscribe(collectingHandlers().h);
+        const t = await bt.run("go", {}).done;
+        assert.equal(t.finalStatus, 502, "silent stream death surfaces as 502, not success");
+    } finally { await mock.close(); }
+});

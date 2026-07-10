@@ -169,7 +169,11 @@ export class BridgeTransport implements Transport {
                     throw err;
                 }
                 if (terminated !== null) return terminated;
-                if (pausedProp === null) return { finalStatus: errStatus > 0 ? errStatus : 200, hitMaxTurns: false };
+                if (pausedProp === null) {
+                    // NO fabricated success (fabrication audit, 2026-07-11): a stream that
+                    // ends without terminal truth is a broken wire — 502, never 200.
+                    return { finalStatus: errStatus > 0 ? errStatus : 502, hitMaxTurns: false };
+                }
                 // Paused: hold done open until the client resolves, then resume with the tool-result.
                 const r = await new Promise<{ logEntryId: number; decision: string; body?: string }>((res) => { this.#pendingResolve = res; });
                 next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };

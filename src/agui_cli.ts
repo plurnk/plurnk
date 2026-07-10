@@ -231,7 +231,10 @@ export const runScriptViaBridge = async (
         next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
         result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
     }
-    const results = parse === null ? [] : (parse as { results: Array<{ status: number }> }).results;
+    // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
+    // result never arrived did NOT succeed — fail hard, loudly.
+    if (parse === null) throw new Error("script: the op.parse result never arrived — the run ended without it");
+    const results = (parse as { results: Array<{ status: number }> }).results;
     const worst = results.reduce((w, r) => (r.status > w ? r.status : w), 0);
     const exitCode = worst >= 400 ? 4 : 0;
     if (opts.json) {

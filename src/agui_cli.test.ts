@@ -139,3 +139,15 @@ test("consumeCliRun: plurnk.stream routes start (state) and conclusion (closeSta
     assert.match(trace, /exec:\/\/p\/1\/1\/1/, "stream lines traced to stderr");
     assert.match(trace, /200/, "the conclusion carries the close status");
 });
+
+test("runScript segments: a run with NO parse result must not report success", async () => {
+    // consumeCliRun sees a stream that ends without plurnk.action.result — the
+    // caller (runScriptViaBridge) must treat a missing parse as failure, so the
+    // sink-level contract here: no onActionResult fired, pendingResume null,
+    // and the CALLER-visible marker (parse missing) is testable via the sink.
+    let fired = false;
+    const { io } = sink({ onActionResult: () => { fired = true; } });
+    const r = await consumeCliRun(stream([{ type: "RUN_FINISHED" }]), io);
+    assert.equal(fired, false);
+    assert.equal(r.pendingResume, null);
+});

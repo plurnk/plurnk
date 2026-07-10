@@ -80,7 +80,9 @@ export default class StreamTrace {
     event(ev: StreamEventPayload): string | null {
         if (this.#started.has(ev.entryId)) return null;
         this.#started.add(ev.entryId);
-        return `  ${streamCoord(ev)}${STREAM_GLYPH}    ⏳     ${ev.target}`;
+        // TWO lanes (identity · status) like every waterfall row; the in-flight line
+        // has no status CODE yet, so the code column holds a reserved 3-blank.
+        return `  ${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${DIM}...${RESET} ${ev.target}`;
     }
 
     // One conclusion line in the waterfall grammar. The daemon's summary
@@ -92,9 +94,8 @@ export default class StreamTrace {
         if (summary.startsWith(ev.target)) summary = summary.slice(ev.target.length).replace(/^\s+/, "");
         const wake = ev.wakeAction === "opened-loop" ? " → woke loop" : "";
         const parts = [
-            STREAM_GLYPH,
-            "  ",   // blank op slot — streams have no op; keeps the status column aligned
-            statusGlyph(ev.closeStatus),
+            STREAM_GLYPH,   // lane 1: identity (the stream)
+            statusGlyph(ev.closeStatus),   // lane 2: status (reserved blank on 2xx)
             `${statusColor(ev.closeStatus)}${ev.closeStatus}${RESET}`,
             ev.target,
         ];

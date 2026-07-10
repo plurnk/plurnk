@@ -477,15 +477,16 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     const buildPrompt = (): string => {
         // Status rides the prompt's OWN glyphs — no prepended gutter, so the row
         // never shifts and stays column-aligned with the waterfall. The origin
-        // 🐹→🧮 while embeddings warm; the status ✅→⏳ (💤 if the loop is parked on
-        // a SEND[202]) whenever a loop OR embedding is active. All are same-width
-        // palette glyphs (⏳/💤 are the blessed sendSubGlyph status set) — swapping
-        // in place keeps the column widths and the readline cursor stable.
+        // 🐹→🧮 while embeddings warm; the status lane shows ⏳ (💤 if the loop is
+        // parked on a SEND[202]) while busy, and holds a RESERVED BLANK when idle —
+        // TWO lanes exactly, same as every waterfall row (identity · status), so the
+        // prompt sits flush in the ladder. All glyphs are same-width palette members;
+        // swapping in place keeps the columns and the readline cursor stable.
         const busy = inFlight || embedding;
         const origin = embedding ? "🧮" : "🐹";
-        const status = busy ? (inFlight && hibernating ? "💤" : "⏳") : "✅";
+        const status = busy ? (inFlight && hibernating ? "💤" : "⏳") : "  ";
         const yolo = opts.yolo ? "🔥" : "  ";
-        return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}${origin} 💬 ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}${origin} ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed

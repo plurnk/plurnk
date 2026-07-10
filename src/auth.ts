@@ -15,7 +15,9 @@
 // server name, e.g. `notion`).
 
 import process from "node:process";
-import type Rpc from "./rpc.ts";
+// The minimal wire surface: any transport's verb caller satisfies it (AG-UI+
+// actions or — until deletion day — the legacy WS Rpc).
+export interface Caller { call(method: string, params?: object): Promise<unknown> }
 
 export interface OAuthResult { ok: boolean; message: string }
 
@@ -36,7 +38,7 @@ const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r
 // the prompt; `io.sleep`/`io.nowMs` are injectable (tests pass a no-op clock so
 // the poll loop doesn't wait real seconds).
 export const runOAuth = async (
-    rpc: Rpc,
+    rpc: Caller,
     target: string,
     io: { print: (line: string) => void; sleep?: (ms: number) => Promise<void>; nowMs?: () => number },
 ): Promise<OAuthResult> => {

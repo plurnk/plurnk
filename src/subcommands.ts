@@ -3,7 +3,9 @@
 // goes to stdout (the product), trace/errors to stderr — same posture as CLI
 // mode per SPEC.md §2.1.
 
-import type Rpc from "./rpc.ts";
+// The minimal wire surface: any transport's verb caller satisfies it (AG-UI+
+// actions or — until deletion day — the legacy WS Rpc).
+export interface Caller { call(method: string, params?: object): Promise<unknown> }
 import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
 import { report, clientSubcommandSessionNotFound, clientSubcommandSessionAmbiguous } from "./telemetry.ts";
@@ -32,7 +34,7 @@ interface ProviderAlias {
     active: boolean;
 }
 
-export const runModels = async (rpc: Rpc, opts: { json: boolean }): Promise<number> => {
+export const runModels = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
     const { aliases } = await rpc.call("providers.list") as { aliases: ProviderAlias[] };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(aliases)}\n`);
@@ -69,7 +71,7 @@ const formatCost = (picoUsd: number): string => {
     return `$${usd.toFixed(4)}`;
 };
 
-export const runSessionList = async (rpc: Rpc, opts: { json: boolean }): Promise<number> => {
+export const runSessionList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
     const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(sessions)}\n`);
@@ -99,7 +101,7 @@ interface RunRow {
 }
 
 export const runSessionRuns = async (
-    rpc: Rpc,
+    rpc: Caller,
     sessionName: string,
     opts: { json: boolean },
 ): Promise<number> => {
@@ -135,7 +137,7 @@ export const runSessionRuns = async (
 // its name is a mutable handle — unlike a run, which is immutable history).
 // Resolve <name> by list, attach, rename. svc#248.
 export const runSessionRename = async (
-    rpc: Rpc,
+    rpc: Caller,
     sessionName: string,
     newName: string,
     opts: { json: boolean },
@@ -178,7 +180,7 @@ export interface LogReadFilters {
 }
 
 export const runLogRead = async (
-    rpc: Rpc,
+    rpc: Caller,
     opts: { json: boolean; filters: LogReadFilters },
 ): Promise<number> => {
     const params: LogReadFilters = {};
@@ -236,7 +238,7 @@ const extractEntryContent = (entry: LogEntryWire): string | null => {
     return null;
 };
 
-export const runRead = async (rpc: Rpc, coord: string, opts: { json: boolean }): Promise<number> => {
+export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean }): Promise<number> => {
     const parsed = parseCoord(coord);
     if (parsed === null) {
         process.stderr.write("usage: plurnk read <loop>/<turn>/<seq>   (e.g. plurnk read 3/1/2)\n");

@@ -89,8 +89,24 @@ export class BridgeTransport implements Transport {
     }
 
     // AG-UI+ dialect: verbs are §3 action runs (the /plurnk/rpc side-channel is dead).
-    rpc<T>(method: string, params?: object): Promise<T> {
-        return actionViaBridge<T>(this.#target, { threadId: this.#threadId, kind: method, params });
+    // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
+    // emitted (a raw-DSL op's rows, telemetry, streams). Feed those through the same
+    // persistent handlers a run uses (the WS socket delivered every session row;
+    // parity demands the action stream does too — e.g. the Alt-p cycler harvests
+    // targets from onEntry).
+    async rpc<T>(method: string, params?: object): Promise<T> {
+        let result: T | undefined;
+        let errmsg: string | undefined;
+        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, messages: [], forwardedProps: { action: { kind: method, ...(params ?? {}) } } })) {
+            if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
+                const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
+                if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
+                continue;
+            }
+            if (e.type === "CUSTOM") this.#dispatch(e);
+        }
+        if (errmsg !== undefined) throw new Error(`action ${method} failed: ${errmsg}`);
+        return result as T;
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }

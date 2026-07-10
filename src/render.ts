@@ -33,6 +33,19 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
 // and error families. Specific codes before ranges. Every glyph is EAW width-2,
 // VS16-free (column-stable). The COLOR (colorForStatus) carries the class; the
 // glyph carries the state. Converged with plurnk.nvim's STATUS_GLYPHS.
+// Model-SEND lane-1 (operator ruling 2026-07-10): the STATE is the identity — the
+// constant 🤖 retired. 102 thinking-on, 200 the answer, 202 parked, 300 a question;
+// failures keep the shared error glyphs. All plane-1/EAW-wide, VS16-free.
+export const modelSendGlyph = (status: number): string => {
+    if (status === 102) return "💭";
+    if (status === 202) return "💤";
+    if (status === 300) return "🤔";
+    if (status === 499) return "✋";
+    if (status >= 200 && status < 300) return "💡";
+    if (status >= 400 && status < 600) return "❌";
+    return "💡";
+};
+
 export const sendSubGlyph = (status: number): string => {
     if (status === 102) return "⏳";   // continuing — more turns coming
     if (status === 202) return "💤";   // parked/waiting on an external event
@@ -213,11 +226,12 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
 // body indents further (5 spaces) so it visually nests under the speaker.
 const renderBroadcast = (entry: LogEntryWire): string => {
-    // A broadcast SEND is the model (or you) speaking — ONE actor glyph, no 💬,
-    // status glyph reserved (blank on routine 2xx) so the code column aligns with
-    // every other row.
-    const idGlyph = ORIGIN_GLYPHS[entry.origin] ?? "?";
-    const subGlyph = typeof entry.signal === "number" ? sendSubGlyph(entry.signal) : "  ";
+    // TWO lanes. The user speaking keeps the 🐹 identity + a status lane; the MODEL
+    // speaking carries its state AS lane 1 (💭 102 / 💡 200 / 💤 202 / 🤔 300 —
+    // operator ruling) with lane 2 held as a reserved blank.
+    const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
+    const idGlyph = entry.origin === "model" ? modelSendGlyph(signal) : (ORIGIN_GLYPHS[entry.origin] ?? "?");
+    const subGlyph = entry.origin === "model" ? "  " : sendSubGlyph(signal);
     const statusText = `${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}`;
 
     const header = `  ${coordPrefix(entry)}${[idGlyph, subGlyph, statusText].join(" ")}`;
@@ -277,7 +291,9 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // cluttered elsewhere). A SEND shows its ACTOR (🐹 you / 🤖 model — the "who's
     // speaking"); any other op shows its OP glyph (🧠/🔍/📖/📝/🔧 — self-evidently
     // the agent working). The 💬 and the origin column are both gone.
-    const idGlyph = entry.op === "SEND" ? (ORIGIN_GLYPHS[entry.origin] ?? "?") : (OP_GLYPHS[entry.op] ?? "?");
+    const idGlyph = entry.op === "SEND"
+        ? (entry.origin === "model" ? modelSendGlyph(typeof entry.signal === "number" ? entry.signal : entry.status_rx) : (ORIGIN_GLYPHS[entry.origin] ?? "?"))
+        : (OP_GLYPHS[entry.op] ?? "?");
     // Status glyph: SENDs glyph their signal, others the outcome. Routine 2xx →
     // "  " (a width-2 blank exactly matching a glyph) so the code column NEVER
     // shifts — the status slot is always present, glyph or reserved blank.

@@ -170,7 +170,7 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bo
     assert.doesNotMatch(out, /\n$/);
     assert.ok(!out.includes("\n"), `short broadcast inlines to one line, got: ${JSON.stringify(out)}`);
     assert.match(out, /Hello\./);
-    assert.match(out, /🤖/);  // origin glyph for model
+    assert.match(out, /💡/);  // the answer state IS the identity (operator ruling)
 });
 
 test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, still no surrounding blanks", () => {

@@ -1,6 +1,6 @@
 # plurnk
 
-Terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service) — type a prompt, drive a real model loop through the plurnk DSL. CLI one-shot, interactive TUI, and read-only subcommands over one WebSocket.
+Terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service) — type a prompt, drive a real model loop through the plurnk DSL. CLI one-shot, interactive TUI, and read-only subcommands over ONE wire: AG-UI+ (the daemon's sole client surface).
 
 ## install
 
@@ -15,12 +15,12 @@ npx @plurnk/plurnk "what is 2+2?"        # client — terminal 2
 Or install for keeps:
 
 ```
-npm install -g @plurnk/plurnk           # the client — lean, just a WebSocket client
+npm install -g @plurnk/plurnk           # the client — lean, a pure AG-UI+ consumer
 npm install -g @plurnk/plurnk-service   # the daemon — its own (lean) install story
 plurnk-service                          # start the background daemon
 ```
 
-The client is a pure WebSocket client: it connects to a daemon at `PLURNK_WS` (default `ws://127.0.0.1:3044`) and never starts one — the daemon is installed and run separately. All engine config — models, turns, providers — lives in the daemon's environment.
+The client is a pure AG-UI+ consumer: it POSTs runs/actions to the daemon's module at `http://PLURNK_HOST:PLURNK_PORT` (default `127.0.0.1:3044`) and never starts one — the daemon is installed and run separately. All engine config — models, turns, providers — lives in the daemon's environment.
 
 ## use
 
@@ -34,7 +34,7 @@ plurnk models | session list | log read …      # read-only subcommands
 plurnk --help                                  # full flag list
 ```
 
-**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `telemetry` + `usage`), stderr silent, errors as `{"error":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse, no WebSocket client to build.
+**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `telemetry` + `usage`), stderr silent, errors as `{"error":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
 
 **Line language** (converged across the TUI, the CLI prefixes, and plurnk.nvim's `:AI`):
 
@@ -50,7 +50,7 @@ Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and DSL ops (
 
 **Key flags:** `--model <alias>` · `--yolo` · `--json` · `--session/--run <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--manifest-items <n>` · `--md NAME=path`.
 
-**Env:** `PLURNK_WS` (the one knob the client needs — daemon URL, default `ws://127.0.0.1:3044`) · `PLURNK_CLIENT_SESSION` / `PLURNK_CLIENT_RUN` (resume) · `PLURNK_MODEL` · `PLURNK_CLIENT_YOLO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.example` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell. The client ships no `.env.example` of its own — the floor is the daemon's; the client just reads `PLURNK_WS` from it (and works with no config at all).
+**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_SESSION` / `PLURNK_CLIENT_RUN` (resume) · `PLURNK_MODEL` · `PLURNK_CLIENT_YOLO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.example` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell. The client ships no `.env.example` of its own — the floor is the daemon's; the client just reads `PLURNK_HOST`/`PLURNK_PORT` from it (and works with no config at all).
 
 ## what plurnk is
 

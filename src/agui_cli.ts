@@ -53,6 +53,7 @@ export interface CliRunSinks {
     yolo: boolean;
     noReviewChannel: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
+    onActionResult?: (v: { kind: string; ok: boolean; result?: unknown; error?: string }) => void;
 }
 
 // Decide a stopped-world proposal (AG-UI+ terminate-resume): the run segment ended
@@ -113,6 +114,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             terminated = value as TerminatedValue;
             finalStatus = terminated.finalStatus;   // authoritative outcome
             hitMaxTurns = terminated.hitMaxTurns;
+        } else if (name === "plurnk.action.result") {
+            io.onActionResult?.(value as { kind: string; ok: boolean; result?: unknown; error?: string });
         } else if (name === "plurnk.telemetry") {
             if (io.json) telemetry.push(value as TelemetryEvent); else io.telemetry(value as TelemetryEvent);
         } else if (name === "plurnk.stream") {
@@ -193,4 +196,48 @@ export const runCliViaBridge = async (
         process.stdout.write(`${JSON.stringify(doc)}\n`);
     }
     return result.exitCode;
+};
+
+// Script mode over AG-UI+ (one op.parse action; gated ops pause/resume like any run).
+// Exit honesty matches the WS runScript: worst op status ≥400 → 4, else 0.
+export const runScriptViaBridge = async (
+    target: BridgeTarget,
+    text: string,
+    opts: { threadId: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+): Promise<number> => {
+    const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
+    let parse: { results: Array<{ status: number }> } | null = null;
+    const io: CliRunSinks = {
+        out: (s) => process.stdout.write(s),
+        err: (s) => process.stderr.write(s),
+        telemetry: (e) => report(e),
+        json: opts.json, yolo: opts.yolo, noReviewChannel,
+        review: reviewProposal,
+        onActionResult: (v) => {
+            if (v.kind !== "op.parse") return;
+            if (!v.ok) throw new Error(`op.parse failed: ${v.error ?? "unknown"}`);
+            parse = v.result as { results: Array<{ status: number }> };
+        },
+    };
+    const started = Date.now();
+    const forwardedProps: Record<string, unknown> = {
+        action: { kind: "op.parse", text },
+        ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
+    };
+    let next: { messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { messages: [], forwardedProps };
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+    while (result.pendingResume !== null) {
+        const r = result.pendingResume;
+        next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+    }
+    const results = parse === null ? [] : (parse as { results: Array<{ status: number }> }).results;
+    const worst = results.reduce((w, r) => (r.status > w ? r.status : w), 0);
+    const exitCode = worst >= 400 ? 4 : 0;
+    if (opts.json) {
+        process.stdout.write(`${JSON.stringify({ schemaVersion: 1, script: true, results, worst, exitCode, wallMs: Date.now() - started })}\n`);
+        return exitCode;
+    }
+    process.stderr.write(`\n${results.length} op${results.length === 1 ? "" : "s"}, ${Date.now() - started}ms${worst >= 400 ? `, worst status ${worst}` : ""}\n`);
+    return exitCode;
 };

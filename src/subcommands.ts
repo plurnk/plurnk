@@ -173,6 +173,7 @@ interface LogReadResult {
 }
 
 export interface LogReadFilters {
+    runId?: number;   // pin a run by id (AG-UI+: no connection state — the pin rides params)
     loopId?: number;
     turnId?: number;
     sinceId?: number;
@@ -238,7 +239,7 @@ const extractEntryContent = (entry: LogEntryWire): string | null => {
     return null;
 };
 
-export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean }): Promise<number> => {
+export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean; runId?: number }): Promise<number> => {
     const parsed = parseCoord(coord);
     if (parsed === null) {
         process.stderr.write("usage: plurnk read <loop>/<turn>/<seq>   (e.g. plurnk read 3/1/2)\n");
@@ -247,7 +248,7 @@ export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean 
     const [loop, turn, seq] = parsed;
     // One clean call (svc#271): the daemon resolves the coordinate, returns the
     // single full entry (tx + rx). No fetch-all, no client-side coordinate match.
-    const { entries } = await rpc.call("log.read", { loopSeq: loop, turnSeq: turn, sequence: seq }) as LogReadResult;
+    const { entries } = await rpc.call("log.read", { loopSeq: loop, turnSeq: turn, sequence: seq, ...(opts.runId !== undefined ? { runId: opts.runId } : {}) }) as LogReadResult;
     const entry = entries[0];
     if (entry === undefined) {
         process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached run`

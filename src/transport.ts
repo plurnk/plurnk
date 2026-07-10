@@ -10,7 +10,6 @@
 // idle, so the notification handlers can't be scoped per-run. run() drives one
 // loop and its `done` resolves with that loop's outcome (for the summary).
 
-import type Rpc from "./rpc.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -67,77 +66,6 @@ export interface Transport {
 }
 
 interface LoopAck { loopId?: number; finalStatus?: number; status?: number; error?: string }
-
-// ── WS transport — the raw daemon connection. Persistent subscriptions render
-// all session activity; run() awaits ITS loop's terminated (loopId-keyed, with a
-// buffer for the ack-vs-terminated race).
-export default class WsTransport implements Transport {
-    #rpc: Rpc;
-    #h: RunHandlers | null = null;
-    #waiters = new Map<number, { resolve: (t: TerminatedInfo) => void; reject: (e: Error) => void }>();
-    #buffer = new Map<number, TerminatedInfo>();
-    #shuttingDown = false;
-
-    constructor(rpc: Rpc) {
-        this.#rpc = rpc;
-        rpc.onNotification("log/entry", (p) => this.#h?.onEntry((p as { entry: LogEntryWire }).entry));
-        rpc.onNotification("loop/proposal", (p) => this.#h?.onProposal(p as ProposalParams));
-        rpc.onNotification("stream/event", (p) => this.#h?.onStream(p as StreamEventPayload));
-        rpc.onNotification("stream/concluded", (p) => this.#h?.onStream(p as StreamConcludedPayload));
-        rpc.onNotification("telemetry/event", (p) => this.#h?.onTelemetry((p as { event: TelemetryEvent }).event));
-        rpc.onNotification("loop/quiesced", (p) => this.#h?.onQuiesced?.(p));
-        rpc.onNotification("loop/terminated", (p) => {
-            const { loopId, ...rest } = p as { loopId: number } & TerminatedInfo;
-            const t: TerminatedInfo = { loopId, ...rest };
-            this.#h?.onTerminated(t);
-            const w = this.#waiters.get(loopId);
-            if (w !== undefined) { this.#waiters.delete(loopId); w.resolve(t); return; }
-            this.#buffer.set(loopId, t);
-        });
-        rpc.onClose(() => {
-            if (this.#shuttingDown) return;
-            for (const [, w] of this.#waiters) w.reject(new Error("connection to the daemon was lost"));
-            this.#waiters.clear();
-        });
-    }
-
-    #awaitTerminated(loopId: number): Promise<TerminatedInfo> {
-        const buffered = this.#buffer.get(loopId);
-        if (buffered !== undefined) { this.#buffer.delete(loopId); return Promise.resolve(buffered); }
-        return new Promise((resolve, reject) => this.#waiters.set(loopId, { resolve, reject }));
-    }
-
-    rpc<T>(method: string, params?: object): Promise<T> { return this.#rpc.call(method, params) as Promise<T>; }
-    subscribe(handlers: RunHandlers): void { this.#h = handlers; }
-    shutdown(): void { this.#shuttingDown = true; }
-
-    run(prompt: string, opts: RunOpts): RunHandle {
-        const done = (async (): Promise<TerminatedInfo> => {
-            const ack = await this.#rpc.call("loop.run", { prompt, ...opts }) as LoopAck;
-            if (ack.error !== undefined) throw new RunAckError(ack.error, ack.status);
-            // status 100 ack → the outcome rides loop/terminated; any other status is terminal.
-            if (ack.finalStatus === 100 && ack.loopId !== undefined) return this.#awaitTerminated(ack.loopId);
-            return { finalStatus: ack.finalStatus ?? ack.status ?? 0, hitMaxTurns: false };
-        })();
-        return { done, cancel: () => { void this.#rpc.call("loop.cancel", { reason: "user_stop" }).catch(() => {}); } };
-    }
-
-    async inject(prompt: string): Promise<void> { await this.#rpc.call("loop.inject", { prompt }); }
-    async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> { await this.#rpc.call("loop.resolve", r); }
-    onClose(handler: () => void): void { this.#rpc.onClose(handler); }
-    async useSession(name: string | undefined, params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
-        const p: { name?: string; projectRoot?: string | null; settings?: { client?: string; autoReadAgents?: boolean } } = {};
-        if (name !== undefined) p.name = name;
-        if (params.projectRoot !== undefined) p.projectRoot = params.projectRoot;
-        if (params.client !== undefined || params.autoReadAgents !== undefined) {
-            p.settings = {};
-            if (params.client !== undefined) p.settings.client = params.client;
-            if (params.autoReadAgents !== undefined) p.settings.autoReadAgents = params.autoReadAgents;
-        }
-        return this.#rpc.call("session.create", p) as Promise<{ id: number; name: string }>;
-    }
-}
-
 // ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
 // the persistent handlers via un-projection, and `done` resolves with the outcome
 // from plurnk.terminated. inject rides /plurnk/rpc on the SAME thread (reaches the

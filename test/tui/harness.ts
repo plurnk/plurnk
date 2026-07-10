@@ -73,7 +73,9 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<stri
         cols: 100,
         rows: 30,
         cwd,   // the client sends cwd as the session's project_root (membership + edits resolve here)
-        env: { ...(process.env as Record<string, string>), PLURNK_WS: url, NO_COLOR: "1", ...extraEnv },
+        // `url` is the daemon module's http address (bootDaemon returns it) — the
+        // client reads PLURNK_HOST/PLURNK_PORT, AG-UI+ underneath.
+        env: { ...(process.env as Record<string, string>), PLURNK_HOST: new URL(url).hostname, PLURNK_PORT: new URL(url).port, PLURNK_AGUI_URL: "", NO_COLOR: "1", ...extraEnv },
     });
 
     let buf = "";

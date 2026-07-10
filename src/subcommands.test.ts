@@ -6,11 +6,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead, parseCoord } from "./subcommands.ts";
-import type Rpc from "./rpc.ts";
+import type { Caller } from "./subcommands.ts";
 
 interface RecordedCall { method: string; params: unknown }
 
-const fakeRpc = (responses: Record<string, unknown>): { rpc: Rpc; calls: RecordedCall[] } => {
+const fakeRpc = (responses: Record<string, unknown>): { rpc: Caller; calls: RecordedCall[] } => {
     const calls: RecordedCall[] = [];
     const rpc = {
         call: async (method: string, params?: object): Promise<unknown> => {
@@ -21,7 +21,7 @@ const fakeRpc = (responses: Record<string, unknown>): { rpc: Rpc; calls: Recorde
         connect: async (): Promise<void> => {},
         close: async (): Promise<void> => {},
         onNotification: (): void => {},
-    } as unknown as Rpc;
+    } as Caller;
     return { rpc, calls };
 };
 

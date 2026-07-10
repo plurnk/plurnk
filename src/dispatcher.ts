@@ -8,13 +8,13 @@ import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
-import Rpc, { RpcError } from "./rpc.ts";
-import { runCli, runScript, buildJsonError } from "./cli.ts";
-import { runCliViaBridge } from "./agui_cli.ts";
-import WsTransport, { BridgeTransport } from "./transport.ts";
+import { buildJsonError } from "./cli.ts";
+import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
+import { BridgeTransport } from "./transport.ts";
+import { actionViaBridge } from "./agui.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
-import type { LogReadFilters } from "./subcommands.ts";
+import type { LogReadFilters, Caller } from "./subcommands.ts";
 import {
     TelemetryError,
     report,
@@ -22,7 +22,6 @@ import {
     clientDaemonStale,
     clientFlagInvalid,
     clientFlagMissingDependency,
-    clientRpcError,
     clientRuntimeError,
     clientSubcommandMissingArgument,
     clientSubcommandSessionNotFound,
@@ -113,7 +112,6 @@ log read / read <coord>) inspect daemon state without running a loop.
 
 env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
      < --env-file < shell — same layering as plurnk-service):
-  PLURNK_WS             daemon WebSocket URL (default ws://127.0.0.1:3044) — the
                         ONE knob the client needs; everything else in ~/.plurnk
                         is the daemon's. Works with no config at all.
   PLURNK_CLIENT_SESSION        resume a session by name, or create it if none exists
@@ -229,7 +227,6 @@ const dieJson = (code: number, kind: string, message: string, extra?: Record<str
 // one config home. process.loadEnvFile only fills UNSET vars, so loading
 // highest-precedence-first yields:
 //   shell > --env-file > --env-file-if-exists > ./.env > ~/.plurnk/.env > ~/.plurnk/.env.example
-// The client reads exactly ONE knob from this shared file — PLURNK_WS (which
 // daemon to reach) — and defaults it sanely when nothing is set. Everything else
 // in ~/.plurnk is the daemon's; the client doesn't ship its own .env.example.
 const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void => {
@@ -372,78 +369,22 @@ export const buildVersionNotice = (versions: DiscoverVersions | undefined, clien
     return parts.join(", ") + (stale ? " (update available)" : "");
 };
 
-const attachOrCreateSession = async (
-    rpc: Rpc,
-    opts: { sessionName?: string; runName?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings; create?: boolean; client: string },
-): Promise<SessionResult> => {
-    const constraints = opts.constraints ?? [];
-    const settings = opts.settings ?? {};
-    // Create a fresh session — named when `name` is given (session.create takes an
-    // optional name; auto-generated otherwise). Seeds the overlay + open-context
-    // settings atomically at creation so turn-1's manifest/preview/docs are right
-    // with no follow-up RPC.
-    const createSession = async (name?: string): Promise<SessionResult> => {
-        settings.client = opts.client;   // #249/#71 — the caller's frontend id (cli vs tui)
-        const execs = collectExecsPolicy();   // #132 — per-session exec-policy narrowing
-        if (Object.keys(execs).length > 0) settings.execs = execs;
-        const params: { name?: string; projectRoot: string | null; constraints?: Constraint[]; settings?: Settings } = { projectRoot: opts.projectRoot };
-        if (name !== undefined) params.name = name;
-        if (constraints.length > 0) params.constraints = constraints;
-        if (Object.keys(settings).length > 0) params.settings = settings;
-        return await rpc.call("session.create", params) as SessionResult;
-    };
-    if (opts.sessionName === undefined) return await createSession();
-    const { sessions } = await rpc.call("session.list") as { sessions: SessionResult[] };
-    const matches = sessions.filter((s) => s.name === opts.sessionName);
-    if (matches.length === 0) {
-        // --session <name> is attach-OR-CREATE on the loop/script path — the CLI's
-        // named-session create, symmetric with TUI /session <name> + nvim
-        // :PlurnkSessionNew (AGENTS gap). Read-only subcommands pass no `create`:
-        // you can't read a session that was never created, so they still error.
-        if (opts.create === true) return await createSession(opts.sessionName);
-        const ev = clientSubcommandSessionNotFound(opts.sessionName);
-        ev.hints = ["run without --session to create a fresh session"];
-        throw new TelemetryError(ev);
-    }
-    if (matches.length > 1) {
-        throw new TelemetryError(clientSubcommandSessionAmbiguous(opts.sessionName, matches.length));
-    }
-    const attachParams: { id: number; runName?: string } = { id: matches[0].id };
-    if (opts.runName !== undefined) attachParams.runName = opts.runName;
-    const session = await rpc.call("session.attach", attachParams) as SessionResult;
-    // An existing session takes the overlay flags live (session.create only
-    // seeds at birth). Settings (--files-items/--md) are session-create-only
-    // per svc#231 — there's no live setter, so flag-and-skip on attach.
-    for (const c of constraints) await rpc.call("session.constrain", c);
-    if (Object.keys(settings).length > 0) {
-        process.stderr.write("  \x1b[2m--files-items/--md apply at session creation only; ignored on --session attach\x1b[0m\n");
-    }
-    return session;
+// Resolve --run <name> to its id over the action surface (session.runs is scoped
+// to the caller's thread/session). Undefined runName = the module's model-run default.
+const resolveRunId = async (rpc: Caller, runName: string | undefined): Promise<number | undefined> => {
+    if (runName === undefined) return undefined;
+    const { runs } = await rpc.call("session.runs") as { runs: Array<{ id: number; name: string }> };
+    const hit = runs.find((r) => r.name === runName);
+    if (hit === undefined) throw new Error(`--run ${runName}: no such run in the session`);
+    return hit.id;
 };
 
-// Read-only subcommands (read / log read) inspect the CONVERSATION, which lives
-// in the session's model run — but a bare attach binds a fresh CLIENT run
-// (run-split). When the user didn't pin --run, re-attach the most-recent
-// origin="model" run so `read <coord> --session X` targets the conversation
-// instead of an empty client run. No model run yet (fresh session) → no-op.
-const attachConversationRun = async (rpc: Rpc, sessionId: number): Promise<void> => {
-    const { runs } = await rpc.call("session.runs", { id: sessionId }) as {
-        runs: Array<{ id: number; origin: string }>;
-    };
-    const model = runs.find((r) => r.origin === "model");   // session.runs is newest-first
-    if (model !== undefined) await rpc.call("session.attach", { id: sessionId, runId: model.id });
-};
-
-// Parse a string-valued integer flag, throwing if non-numeric. Used for
-// log.read filter flags (--loop / --turn / --since / --limit) since
-// parseArgs stores their raw string values regardless of intent.
 const parseIntFlag = (raw: string | undefined, name: string): number | undefined => {
     if (raw === undefined) return undefined;
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 0) throw new TelemetryError(clientFlagInvalid(name, raw, "must be a non-negative integer"));
     return n;
 };
-
 interface SubcommandOpts {
     json: boolean;
     sessionName?: string;
@@ -452,9 +393,9 @@ interface SubcommandOpts {
     values: Record<string, string | boolean | string[] | undefined>;
 }
 
-// Dispatch a positional-driven subcommand. Caller has already connected the
-// Rpc. Returns the exit code the dispatcher should propagate.
-const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOpts): Promise<number> => {
+// Dispatch a positional-driven subcommand over the action surface. Returns the
+// exit code the dispatcher should propagate.
+const runSubcommand = async (rpc: Caller, positionals: string[], opts: SubcommandOpts): Promise<number> => {
     const verb = positionals[0];
     const sub = positionals[1];
 
@@ -503,16 +444,9 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
         if (opts.sessionName === undefined) {
             throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--session (or PLURNK_CLIENT_SESSION)"));
         }
-        // log.read requires an attached session — same resolution as the loop flows.
-        const attached = await attachOrCreateSession(rpc, {
-            sessionName: opts.sessionName,
-            runName: opts.runName,
-            projectRoot: opts.projectRoot,
-            client: CLIENT_ID_CLI,
-        });
-        // Default to the conversation (model run) unless --run pins one.
-        if (opts.runName === undefined) await attachConversationRun(rpc, attached.id);
-        const filters: LogReadFilters = {};
+        // The caller's threadId (--session) scopes the action to that session; the
+        // module defaults reads to the conversation (model run); --run pins by name.
+        const filters: LogReadFilters = { ...(await resolveRunId(rpc, opts.runName) !== undefined ? { runId: await resolveRunId(rpc, opts.runName) } : {}) };
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
         const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
         const sinceId = parseIntFlag(opts.values.since as string | undefined, "--since");
@@ -535,16 +469,9 @@ const runSubcommand = async (rpc: Rpc, positionals: string[], opts: SubcommandOp
         if (opts.sessionName === undefined) {
             throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--session (or PLURNK_CLIENT_SESSION)"));
         }
-        // The coordinate is run-relative — attach the same way log read does,
-        // defaulting to the conversation (model run) unless --run pins one.
-        const attached = await attachOrCreateSession(rpc, {
-            sessionName: opts.sessionName,
-            runName: opts.runName,
-            projectRoot: opts.projectRoot,
-            client: CLIENT_ID_CLI,
-        });
-        if (opts.runName === undefined) await attachConversationRun(rpc, attached.id);
-        return await runRead(rpc, coord, { json: opts.json });
+        // The coordinate is run-relative; the module defaults to the conversation
+        // (model run) — --run pins by name via params, no connection state.
+        return await runRead(rpc, coord, { json: opts.json, runId: await resolveRunId(rpc, opts.runName) });
     }
 
     throw new TelemetryError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
@@ -702,36 +629,15 @@ export const main = async (argv: string[]): Promise<void> => {
         process.exit(0);
     }
 
-    const url = process.env.PLURNK_WS ?? "ws://127.0.0.1:3044";
-    const rpc = new Rpc({ url });
+    // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
+    // speak the action surface through a structural Caller.
+    const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
+    const callerThread = sessionName ?? "cli";
+    const caller = { call: (method: string, params?: object) => actionViaBridge<unknown>(target, { threadId: callerThread, kind: method, params }) };
 
     try {
-        await rpc.connect();
-    } catch (cause) {
-        if (json) dieJson(1, "connection_refused", cause instanceof Error ? cause.message : String(cause), { url });
-        dieWith(1, clientConnectionRefused(url, cause));
-    }
-
-    // Daemon staleness check (clients track HEAD, service SPEC §13.9): probe
-    // discover for wire markers this client depends on; warn bluntly when
-    // missing. One local round-trip; never fatal.
-    let versionNotice: string | undefined;
-    try {
-        const catalog = await rpc.call("discover") as { methods?: Record<string, unknown>; notifications?: Record<string, unknown>; versions?: DiscoverVersions };
-        const missing: string[] = [];
-        for (const m of ["loop.cancel", "op.exec"]) {
-            if (catalog.methods?.[m] === undefined) missing.push(m);
-        }
-        if (catalog.notifications?.["stream/concluded"] === undefined) missing.push("stream/concluded");
-        if (missing.length > 0) report(clientDaemonStale(missing));
-        versionNotice = buildVersionNotice(catalog.versions, CLIENT_VERSION);  // svc#235
-    } catch { /* discover failing will surface on the real call anyway */ }
-
-    try {
-        // `plurnk script foo.plk` — feed a .plk file to op.parse. Unlike the
-        // read-only subcommands, a script MUTATES (EDIT/MOVE/COPY), so it attaches
-        // a real client run with the same constraints + settings as the loop path.
-        // The client never parses the file; the daemon owns the grammar.
+        // `plurnk script foo.plk` — feed a .plk file to op.parse over the action
+        // surface. The client never parses the file; the module owns the grammar.
         if (subcommand === "script") {
             const filePath = positionals[1];
             if (filePath === undefined) {
@@ -741,69 +647,37 @@ export const main = async (argv: string[]): Promise<void> => {
                 throw new TelemetryError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
-            const session = await attachOrCreateSession(rpc, {
-                sessionName, runName, projectRoot, create: true, client: CLIENT_ID_CLI,
-                constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-                settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
-            });
-            if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
-            const exitCode = await runScript(rpc, text, session, { json, yolo });
+            const exitCode = await runScriptViaBridge(target, text, { threadId: callerThread, yolo, json, projectRoot });
             process.exit(exitCode);
         }
 
         if (isSubcommand) {
-            const exitCode = await runSubcommand(rpc, positionals, {
+            const exitCode = await runSubcommand(caller, positionals, {
                 json, sessionName, runName, projectRoot, values,
             });
             process.exit(exitCode);
         }
 
-        // Mode decides the frontend id (#71): no prompt = interactive TUI, else CLI.
-        const clientId = prompt.length === 0 ? CLIENT_ID_TUI : CLIENT_ID_CLI;
-        const session = await attachOrCreateSession(rpc, {
-            sessionName, runName, projectRoot, create: true, client: clientId,
-            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
-        });
-        // #90 — resolve the alias to a concrete provider/model from OUR fresh env
-        // (staleness-proof); send it on loop.run, alias rides along for display.
-        const model = resolveModelSpec(modelAlias);
-        if (prompt.length === 0) {
-            // #268 — carry the AGENTS-auto-load override onto /session-created sessions too.
-            const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
-            await runTui(new WsTransport(rpc), session, { modelAlias, model, yolo, loopFlags, maxTurns, projectRoot, versionNotice, client: clientId, autoReadAgents });
-            process.exit(0);
-        }
-        // CLI: the version notice is narration → stderr (never pollutes stdout/--json).
-        if (versionNotice !== undefined && json === false) process.stderr.write(`\x1b[2m${versionNotice}\x1b[0m\n`);
-        const exitCode = await runCli(rpc, prompt, session, { json, modelAlias, model, yolo, loopFlags, maxTurns, timeoutSec });
-        process.exit(exitCode);
+        // Reaching here is a dispatcher bug: prompts + the TUI ride the bridge
+        // branches above; script + subcommands returned above. Fail hard.
+        throw new Error("dispatcher fell through every AG-UI+ path — unreachable");
     } catch (cause) {
         // json mode: a structured error document on stdout (valid JSON even on
         // failure), paired with the right exit code. Text mode narrates to stderr.
         if (json) {
-            const kind = cause instanceof RpcError ? "rpc_error"
-                : cause instanceof TelemetryError ? cause.event.kind : "runtime_error";
-            const extra = cause instanceof RpcError ? { method: cause.method } : undefined;
+            const kind = cause instanceof TelemetryError ? cause.event.kind : "runtime_error";
+            const extra = undefined;
             const code = cause instanceof TelemetryError ? cause.exitCode : 1;
-            await rpc.close();
             dieJson(code, kind, cause instanceof Error ? cause.message : String(cause), extra);
         }
         if (cause instanceof TelemetryError) {
             report(cause.event);
-            await rpc.close();
             process.exit(cause.exitCode);
         }
         // A daemon-rejected RPC arrives as a typed RpcError carrying the failed
         // method and the daemon's code/message — surface it as client:rpc:error.
         // Anything else is a genuine non-RPC throw: the generic runtime fallback.
-        report(cause instanceof RpcError ? clientRpcError(cause.method, cause) : clientRuntimeError(cause));
-        await rpc.close();
+        report(clientRuntimeError(cause));
         process.exit(1);
-    } finally {
-        // Idempotent close — the catch paths already closed; this finally
-        // covers the success paths where we returned via process.exit() but
-        // the await on the runX call already completed.
-        await rpc.close();
     }
 };

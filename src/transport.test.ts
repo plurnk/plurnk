@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import WsTransport, { BridgeTransport, type RunHandlers } from "./transport.ts";
+import { BridgeTransport, type RunHandlers } from "./transport.ts";
 
 const collectingHandlers = () => {
     const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; telemetry: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], telemetry: [], terminated: [] };
@@ -18,69 +18,6 @@ const collectingHandlers = () => {
     };
     return { h, seen };
 };
-
-// ── WsTransport ──────────────────────────────────────────────────────
-
-const fakeRpc = () => {
-    const handlers: Record<string, (p: unknown) => void> = {};
-    const calls: Array<{ method: string; params: unknown }> = [];
-    const rpc = {
-        onNotification: (m: string, cb: (p: unknown) => void) => { handlers[m] = cb; },
-        onClose: () => {},
-        call: async (method: string, params?: unknown) => {
-            calls.push({ method, params });
-            if (method === "loop.run") return { finalStatus: 100, loopId: 1 };
-            return {};
-        },
-    };
-    return { rpc, handlers, calls };
-};
-
-test("WsTransport: persistent subscription forwards notifications even before/after a run (multi-client)", () => {
-    const { rpc, handlers } = fakeRpc();
-    const wt = new WsTransport(rpc as never);
-    const { h, seen } = collectingHandlers();
-    wt.subscribe(h);
-    // A shared session's activity arrives with NO run in flight — must still render.
-    handlers["log/entry"]({ entry: { id: 1, op: "SEND" } });
-    handlers["telemetry/event"]({ loopId: 9, event: { source: "engine:rail", kind: "strike" } });
-    assert.deepEqual(seen.entries, [{ id: 1, op: "SEND" }], "log/entry rendered while idle");
-    assert.deepEqual(seen.telemetry, [{ source: "engine:rail", kind: "strike" }], "telemetry unwrapped to the event");
-});
-
-test("WsTransport: run() calls loop.run; done resolves with the loopId's terminated outcome", async () => {
-    const { rpc, handlers, calls } = fakeRpc();
-    const wt = new WsTransport(rpc as never);
-    wt.subscribe(collectingHandlers().h);
-    const handle = wt.run("hello", { alias: "opus" });
-    assert.deepEqual(calls[0], { method: "loop.run", params: { prompt: "hello", alias: "opus" } });
-    handlers["loop/terminated"]({ loopId: 1, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2] });
-    const t = await handle.done;
-    assert.equal(t.finalStatus, 200);
-    assert.deepEqual(t.turnIds, [1, 2]);
-});
-
-test("WsTransport: a terminated arriving before the awaiter (fast loop) is buffered, not lost", async () => {
-    const { rpc, handlers } = fakeRpc();
-    const wt = new WsTransport(rpc as never);
-    wt.subscribe(collectingHandlers().h);
-    const handle = wt.run("go", {});
-    // terminated races in before `done`'s awaitTerminated registers (loopId 1 from the ack)
-    await Promise.resolve();
-    handlers["loop/terminated"]({ loopId: 1, finalStatus: 200, hitMaxTurns: false });
-    assert.equal((await handle.done).finalStatus, 200);
-});
-
-test("WsTransport: inject/resolve/cancel map to loop.inject/resolve/cancel", async () => {
-    const { rpc, calls } = fakeRpc();
-    const wt = new WsTransport(rpc as never);
-    wt.subscribe(collectingHandlers().h);
-    await wt.inject("steer");
-    await wt.resolve({ logEntryId: 3, decision: "accept", body: "x" });
-    wt.run("go", {}).cancel();
-    const methods = calls.map((c) => c.method);
-    assert.ok(methods.includes("loop.inject") && methods.includes("loop.resolve") && methods.includes("loop.cancel"));
-});
 
 // ── BridgeTransport ──────────────────────────────────────────────────
 
@@ -152,13 +89,6 @@ test("BridgeTransport: cancel() aborts the SSE and done resolves (499), not a th
         handle.cancel();
         assert.equal((await handle.done).finalStatus, 499, "cancel → clean 499 outcome");
     } finally { await mock.close(); }
-});
-
-test("WsTransport.useSession: rebinds via session.create with name + projectRoot + settings", async () => {
-    const { rpc, calls } = fakeRpc();
-    const wt = new WsTransport(rpc as never);
-    await wt.useSession("proj-x", { projectRoot: "/w", client: "cli/1", autoReadAgents: false });
-    assert.deepEqual(calls[0], { method: "session.create", params: { name: "proj-x", projectRoot: "/w", settings: { client: "cli/1", autoReadAgents: false } } });
 });
 
 test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new session", async () => {

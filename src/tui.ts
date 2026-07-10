@@ -20,12 +20,13 @@ import { isAbsolute, resolve } from "node:path";
 import PasteFilter from "./paste.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
-import type Rpc from "./rpc.ts";
+// The verb wire: a structural caller (AG-UI+ actions underneath).
+export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, entryTarget } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
-import WsTransport, { BridgeTransport, RunAckError, type Transport } from "./transport.ts";
+import { BridgeTransport, RunAckError, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderTelemetryEvent, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -184,7 +185,7 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
 // Seed readline history from the session's prior prompts (svc#238) so up/down
 // recalls them across restarts. One clean RPC — newest-first, exactly what
 // rl.history wants. Best-effort: a fresh session has none, failures are silent.
-export const seedPromptHistory = async (rpc: Pick<Rpc, "call">, sessionId: number, rl: readline.Interface): Promise<void> => {
+export const seedPromptHistory = async (rpc: VerbCaller, sessionId: number, rl: readline.Interface): Promise<void> => {
     try {
         // Bridge mode has no client-known session id → omit it (the connection's
         // attached session answers); WS passes the real id.
@@ -211,7 +212,7 @@ export const buildHeader = (opts: {
 // (stub rpc, collect writes, fake session/import). Verbs never call loop.run —
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
-    rpc: Rpc;
+    rpc: VerbCaller;
     opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string; autoReadAgents?: boolean };
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
@@ -722,7 +723,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     // live transport (WS, or the bridge's management plane over /plurnk/rpc). A
     // .call-only adapter — no verb/subcommand here subscribes, so the other Rpc
     // methods are never reached.
-    const verbRpc = { call: (method: string, params?: object): Promise<unknown> => transport.rpc(method, params) } as unknown as Rpc;
+    const verbRpc = { call: (method: string, params?: object): Promise<unknown> => transport.rpc(method, params) } as VerbCaller;
 
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live session / opts / stdout / import glue.

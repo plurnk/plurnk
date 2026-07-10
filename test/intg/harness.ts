@@ -8,7 +8,8 @@
 // whole suite cleanly. This keeps `npm test` from hard-failing downstream.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm, access, constants as fsConstants } from "node:fs/promises";
+import { mkdtemp, rm, access, writeFile, constants as fsConstants } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,29 +65,30 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
     const dbPath = (await mkdtemp(join(tmpdir(), "plurnk-intg-db-"))) + "/plurnk.db";
     const workspace = await mkdtemp(join(tmpdir(), "plurnk-intg-ws-"));
     const daemonEnv = await locateDaemonEnv(binPath);
-    const args = daemonEnv !== null ? [`--env-file=${daemonEnv}`, binPath] : [binPath];
-
-    const env: Record<string, string> = {
-        ...(process.env as Record<string, string>),
-        // v0.66.0 renamed PLURNK_DB_PATH → PLURNK_SERVICE_DB_PATH (required). Setting
-        // the OLD name silently fell back to the daemon's real ~/.plurnk/plurnk.db —
-        // the harness was writing test sessions into the user's live DB. Must be the
-        // temp path so each boot is isolated. (Spawn env wins; --env-file fills unset.)
-        PLURNK_SERVICE_DB_PATH: dbPath,
-        PLURNK_PORT: "0",  // ephemeral
-        // Avoid contacting the model unless a test wants to — but the daemon
-        // still needs a non-null OPENAI_BASE_URL because PLURNK_MODEL=gemma in
-        // the .env resolves to the openai provider at boot. Point at the
-        // local llama-server when present; tests that don't call loop.run
-        // never actually connect.
-        OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? "http://127.0.0.1:11435",
-        // The daemon hard-requires PLURNK_EMBED_WORKERS (no fallback — it's a
-        // memory↔throughput call the embedder won't make for us). Tests don't
-        // tune it; a small fixed pool keeps boot deterministic and light. A shell
-        // value wins (the --env-file only fills unset vars).
-        PLURNK_EMBED_WORKERS: process.env.PLURNK_EMBED_WORKERS ?? "2",
-        ...(opts.extraEnv ?? {}),
-    };
+    // The service loads env IN-SCRIPT (process.loadEnvFile OVERRIDES spawn env), so
+    // spawn-env pins don't survive; its own --env-file flags, loaded LAST, are the
+    // sanctioned override. Also: PLURNK_PORT=0 makes the banner lie (prints the
+    // configured 0) — allocate a concrete port so the module is addressable.
+    const port = await new Promise<number>((r) => {
+        const srv = createServer();
+        srv.listen(0, "127.0.0.1", () => { const p = (srv.address() as { port: number }).port; srv.close(() => r(p)); });
+    });
+    const overrides = [
+        `PLURNK_SERVICE_DB_PATH=${dbPath}`,
+        `PLURNK_PORT=${port}`,
+        "PLURNK_WS_PORT=0",
+        `OPENAI_BASE_URL=${process.env.OPENAI_BASE_URL ?? "http://127.0.0.1:11435"}`,
+        `PLURNK_EMBED_WORKERS=${process.env.PLURNK_EMBED_WORKERS ?? "2"}`,
+        ...Object.entries(opts.extraEnv ?? {}).map(([k, v]) => `${k}=${v}`),
+    ].join("\n");
+    const overridesPath = join(dirname(dbPath), "test.env");
+    await writeFile(overridesPath, `${overrides}\n`);
+    const args = [
+        binPath,
+        ...(daemonEnv !== null ? [`--env-file=${daemonEnv}`] : []),
+        `--env-file=${overridesPath}`,
+    ];
+    const env = process.env as Record<string, string>;
 
     const child: ChildProcess = spawn("node", args, {
         env,
@@ -107,10 +109,11 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
 
         child.stdout?.on("data", (chunk: Buffer) => {
             stdout += chunk.toString("utf8");
-            const m = stdout.match(/ws:\/\/(\d+\.\d+\.\d+\.\d+):(\d+)/);
+            // AG-UI+ is the client surface — the module's port is the daemon's address.
+            const m = stdout.match(/agui=http:\/\/(\d+\.\d+\.\d+\.\d+):(\d+)/);
             if (m !== null) {
                 clearTimeout(timeout);
-                resolveBoot(`ws://${m[1]}:${m[2]}`);
+                resolveBoot(`http://${m[1]}:${m[2]}`);
             }
         });
         child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });

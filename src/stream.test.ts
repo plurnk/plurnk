@@ -23,8 +23,9 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     const first = t.event(event(1));
     assert.ok(first !== null);
     // Blank op slot (2sp) + blank code slot (3sp) hold the waterfall columns:
-    // `📡 <op> ⏳ <code> target` with the empty slots width-matched.
-    assert.match(first, /📡 {4}⏳ {5}exec:\/\/python\/1\/2\/1/);
+    // Two lanes (identity · status): `📡 ⏳ ... target` — the in-flight line holds a
+    // dim 3-dot reserve in the code column.
+    assert.match(first, /📡 ⏳ \.{3} exec:\/\/python\/1\/2\/1/);
     assert.match(first, /^  01\/02\/01 /, "start line carries the wire coordinate");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
@@ -88,5 +89,5 @@ test("StreamTrace: a stream without a coordinate renders without one", () => {
     const line = t.event({ entryId: 9, target: "sse://feed", channel: "data", state: "active", contentLength: 5 });
     assert.ok(line !== null);
     assert.doesNotMatch(line, /\d\d\/\d\d\/\d\d/);
-    assert.match(line, /📡 {4}⏳ {5}sse:\/\/feed/);
+    assert.match(line, /📡 ⏳ \.{3} sse:\/\/feed/);
 });

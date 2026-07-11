@@ -40,7 +40,10 @@ export async function* runViaBridge(
             threadId: run.threadId,
             runId: run.runId,
             messages,
-            ...(run.forwardedProps !== undefined ? { forwardedProps: { plurnk: run.forwardedProps } } : {}),
+            // The session (world) is REQUIRED — a run has no existence without one. The
+            // client resolves ONE session name and IS its threadId (one conversation per
+            // world until #366 splits them); send it verbatim as forwardedProps.plurnk.session.
+            forwardedProps: { plurnk: { session: run.threadId, ...(run.forwardedProps ?? {}) } },
         }),
     });
     if (!res.ok || res.body === null) {

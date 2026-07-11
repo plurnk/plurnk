@@ -55,13 +55,23 @@ test("runViaBridge: yields AG-UI events in order, reassembling frames split acro
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: forwardedProps.plurnk carries session options on the run", async () => {
+test("runViaBridge: forwardedProps.plurnk ALWAYS carries the session (world) + any options", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         const seen: string[] = [];
         for await (const e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
         assert.deepEqual(seen, ["RUN_FINISHED"]);
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { projectRoot: "/x" } });
+        // The session is REQUIRED and rides verbatim — the client sends its world, never
+        // relying on the module to forge one from the threadId.
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { session: "t", projectRoot: "/x" } });
+    } finally { await mock.close(); }
+});
+
+test("runViaBridge: even with NO options, the session (world) still rides — it is not optional", async () => {
+    const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
+    try {
+        for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "solo", prompt: "hi" })) void _e;
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { session: "solo" } });
     } finally { await mock.close(); }
 });
 

@@ -157,3 +157,20 @@ test("BridgeTransport: a stream that dies without terminal truth is an ERROR, ne
         assert.equal(t.finalStatus, 502, "silent stream death surfaces as 502, not success");
     } finally { await mock.close(); }
 });
+
+test("[§cli-sessions-and-runs] a boot-time rpc CARRIES the session options — the first wire touch creates the session, so it must arrive dressed (#140: the rootless-session hole)", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "session.prompts", ok: true, result: { prompts: [] } } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } });
+        await bt.rpc("session.prompts", { limit: 50 });   // the TUI's real first touch (seedPromptHistory)
+        const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+        assert.equal(fp.projectRoot, "/home/user/repo", "projectRoot rides the session-creating request — never a rootless session from inside a repo");
+        assert.deepEqual(fp.constraints, [{ effect: "pick", glob: "src/**" }]);
+        assert.deepEqual(fp.settings, { questions: true });
+    } finally { await mock.close(); }
+});

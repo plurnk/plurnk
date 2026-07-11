@@ -99,7 +99,7 @@ export class BridgeTransport implements Transport {
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
         let errmsg: string | undefined;
-        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), messages: [], forwardedProps: { action: { kind: method, ...(params ?? {}) } } })) {
+        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), messages: [], forwardedProps: { ...this.#firstTouchOpts(), action: { kind: method, ...(params ?? {}) } } })) {
             if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                 const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
                 if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
@@ -113,25 +113,31 @@ export class BridgeTransport implements Transport {
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }
 
+    // Session options for the FIRST wire touch of any kind (#140): the module creates
+    // the session on whichever request arrives first — a boot-time rpc (session.prompts)
+    // beat the first run and minted the owner's session ROOTLESS. Whoever gets there
+    // first carries the dressing; consumed once.
+    #firstTouchOpts(): Record<string, unknown> {
+        if (!this.#firstRun) return {};
+        this.#firstRun = false;
+        return {
+            ...(this.#session.projectRoot !== undefined && this.#session.projectRoot !== null ? { projectRoot: this.#session.projectRoot } : {}),
+            ...(this.#session.constraints !== undefined && this.#session.constraints.length > 0 ? { constraints: this.#session.constraints } : {}),
+            ...(this.#session.settings !== undefined && Object.keys(this.#session.settings).length > 0 ? { settings: this.#session.settings } : {}),
+        };
+    }
+
     run(prompt: string, opts: RunOpts): RunHandle {
         const ac = new AbortController();
-        // First run carries session options (projectRoot/constraints/settings — the
-        // bridge applies them at session.create); every run forwards per-run knobs.
-        const firstRunOpts = this.#firstRun
-            ? {
-                ...(this.#session.projectRoot !== undefined && this.#session.projectRoot !== null ? { projectRoot: this.#session.projectRoot } : {}),
-                ...(this.#session.constraints !== undefined && this.#session.constraints.length > 0 ? { constraints: this.#session.constraints } : {}),
-                ...(this.#session.settings !== undefined && Object.keys(this.#session.settings).length > 0 ? { settings: this.#session.settings } : {}),
-            }
-            : {};
+        // First wire touch carries session options (#firstTouchOpts — see #140); every
+        // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
-            ...firstRunOpts,
+            ...this.#firstTouchOpts(),
             ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
             ...(opts.model !== undefined ? { model: opts.model } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
             ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
         };
-        this.#firstRun = false;
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
         // AG-UI+ terminate-resume (§agui-plus): a stopped-world ends the run as a
         // request_approval/request_user_input TOOL_CALL (the loop stays paused

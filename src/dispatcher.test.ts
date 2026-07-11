@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, resolveRunId } from "./dispatcher.ts";
 
 // ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
 
@@ -193,4 +193,27 @@ test("buildVersionNotice: no versions → undefined", () => {
 test("buildVersionNotice: service absent → client line only", () => {
     const n = buildVersionNotice({ client: { latest: "0.22.0" } }, "0.21.3");
     assert.match(n!, /^plurnk client v0\.21\.3 \(update available\)$/);
+});
+
+// ─── resolveRunId: a run is addressable by NAME within its session's world ───
+// Plurnk's machine model (service SPEC §machine-processes): a session holds many
+// runs (conversations over one world); --run selects one by name. Fail-hard: an
+// unknown name is a contract violation, never a fabricated model-run fallback.
+
+test("resolveRunId: undefined name → undefined, and NEVER queries session.runs (the model-run default)", async () => {
+    let called = 0;
+    const rpc = { call: async () => { called++; return { runs: [] }; } };
+    const id = await resolveRunId(rpc, undefined);
+    assert.equal(id, undefined);
+    assert.equal(called, 0, "no --run → no session.runs round-trip");
+});
+
+test("resolveRunId: a named run resolves to its id via session.runs", async () => {
+    const rpc = { call: async (m: string) => { assert.equal(m, "session.runs"); return { runs: [{ id: 10, name: "client-1" }, { id: 42, name: "spike" }] }; } };
+    assert.equal(await resolveRunId(rpc, "spike"), 42);
+});
+
+test("resolveRunId: an unknown run name THROWS — no silent fallback to the model run", async () => {
+    const rpc = { call: async () => ({ runs: [{ id: 10, name: "client-1" }] }) };
+    await assert.rejects(() => resolveRunId(rpc, "ghost"), /--run ghost: no such run in the session/);
 });

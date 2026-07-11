@@ -371,7 +371,7 @@ export const buildVersionNotice = (versions: DiscoverVersions | undefined, clien
 
 // Resolve --run <name> to its id over the action surface (session.runs is scoped
 // to the caller's thread/session). Undefined runName = the module's model-run default.
-const resolveRunId = async (rpc: Caller, runName: string | undefined): Promise<number | undefined> => {
+export const resolveRunId = async (rpc: Caller, runName: string | undefined): Promise<number | undefined> => {
     if (runName === undefined) return undefined;
     const { runs } = await rpc.call("session.runs") as { runs: Array<{ id: number; name: string }> };
     const hit = runs.find((r) => r.name === runName);

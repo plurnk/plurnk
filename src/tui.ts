@@ -49,7 +49,7 @@ interface SessionResult { id: number; name: string }
 // session's mutable handle (a run's name is immutable — no /rename for runs).
 export const VERBS = [
     "help", "models", "sessions", "runs", "log", "model",
-    "yolo", "session", "rename", "root", "run", "stop", "quit",
+    "yolo", "session", "rename", "run", "stop", "quit",
     "pick", "hide", "view", "repo", "drop", "members", "import", "script",
     "auth", "accept", "reject", "cancel", "edit",
 ] as const;
@@ -60,7 +60,6 @@ export const TUI_HELP = [
     "  /yolo                              toggle local auto-accept",
     "  /session [name]                    new session",
     "  /rename <name>                     rename this session (a mutable handle)",
-    "  /root [path]                       set the session's project root (default: cwd)",
     "  /run [name]                        create a new run (session>run>loop>turn>op)",
     "  /pick <glob>                       membership: track file(s) in manifest",
     "  /hide <glob>                       membership: block file(s) from manifest",
@@ -281,14 +280,6 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             const renamed = await rpc.call("session.rename", { name: rest }) as SessionResult;
             ctx.setSession(renamed);
             write(`  session: ${renamed.name}\n`);
-            return;
-        }
-        case "root": {
-            // session.root — late root arrival (#140): heal a rootless session so pending
-            // repo constraints resolve. Bare /root sets cwd; a path resolves against cwd.
-            const target = rest.length === 0 ? process.cwd() : resolve(rest);
-            const rooted = await rpc.call("session.root", { path: target }) as { projectRoot: string | null };
-            write(`  project root: ${rooted.projectRoot ?? "(headless)"}\n`);
             return;
         }
         case "run": {

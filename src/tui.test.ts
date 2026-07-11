@@ -439,12 +439,3 @@ test("lineMode: '...' injection prefix strips without minting mode flags", () =>
     assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
 });
 
-test("handleVerb /root → session.root with the resolved path (bare /root = cwd) — heals a rootless session (#140)", async () => {
-    const calls: Array<{ method: string; params?: object }> = [];
-    const rpc = { call: async (method: string, params?: object) => { calls.push({ method, params }); return { projectRoot: process.cwd() }; } };
-    let out = "";
-    const ctx: VerbContext = { rpc, write: (s: string) => { out += s; }, session: { id: 1, name: "s" }, setSession: () => {}, opts: { yolo: false }, resolveProposal: () => false, importFile: async () => {} } as unknown as VerbContext;
-    await handleVerb("/root", ctx);
-    assert.deepEqual(calls, [{ method: "session.root", params: { path: process.cwd() } }], "bare /root roots at cwd");
-    assert.match(out, /project root: /);
-});

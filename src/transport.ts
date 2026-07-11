@@ -80,7 +80,6 @@ export class BridgeTransport implements Transport {
     #world: string | undefined;   // the session name when it differs from the thread (--run)
     #session: BridgeSessionOpts;
     #h: RunHandlers | null = null;
-    #firstRun = true;
     #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
 
     constructor(target: BridgeTarget, threadId: string, session: BridgeSessionOpts = {}) {
@@ -99,7 +98,7 @@ export class BridgeTransport implements Transport {
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
         let errmsg: string | undefined;
-        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), messages: [], forwardedProps: { ...this.#firstTouchOpts(), action: { kind: method, ...(params ?? {}) } } })) {
+        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), messages: [], forwardedProps: { ...this.#sessionOpts(), action: { kind: method, ...(params ?? {}) } } })) {
             if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                 const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
                 if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
@@ -113,13 +112,12 @@ export class BridgeTransport implements Transport {
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }
 
-    // Session options for the FIRST wire touch of any kind (#140): the module creates
-    // the session on whichever request arrives first — a boot-time rpc (session.prompts)
-    // beat the first run and minted the owner's session ROOTLESS. Whoever gets there
-    // first carries the dressing; consumed once.
-    #firstTouchOpts(): Record<string, unknown> {
-        if (!this.#firstRun) return {};
-        this.#firstRun = false;
+    // Session options on EVERY request (#140, operator ruling): session creation and
+    // its projectRoot are ATOMIC — the module creates from whichever request arrives
+    // first, so every request carries the options (applied at creation, ignored after).
+    // No consumed-once flag, no race: a headless session can only be one on purpose,
+    // and it stays headless forever (root changes are unimplemented by design).
+    #sessionOpts(): Record<string, unknown> {
         return {
             ...(this.#session.projectRoot !== undefined && this.#session.projectRoot !== null ? { projectRoot: this.#session.projectRoot } : {}),
             ...(this.#session.constraints !== undefined && this.#session.constraints.length > 0 ? { constraints: this.#session.constraints } : {}),
@@ -129,10 +127,10 @@ export class BridgeTransport implements Transport {
 
     run(prompt: string, opts: RunOpts): RunHandle {
         const ac = new AbortController();
-        // First wire touch carries session options (#firstTouchOpts — see #140); every
+        // Every request carries session options (#sessionOpts — see #140); every
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
-            ...this.#firstTouchOpts(),
+            ...this.#sessionOpts(),
             ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
             ...(opts.model !== undefined ? { model: opts.model } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
@@ -212,7 +210,6 @@ export class BridgeTransport implements Transport {
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
-        this.#firstRun = true;
         return { id: 0, name: threadId };
     }
 

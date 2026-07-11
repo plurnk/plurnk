@@ -244,7 +244,7 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
 
 // ─── renderLogEntry: user prompt entry (plurnk://prompt/*) ───────────
 
-test("isPromptEntry: classifies plurnk://prompt/* EDITs (the TUI skips them live — the typed line is the record)", () => {
+test("[§cli-what-is-not-rendered] isPromptEntry: classifies plurnk://prompt/* EDITs (the TUI skips them live — the typed line is the record)", () => {
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "prompt/3/1" })), true);
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "/prompt/3/1" })), true, "leading slash (plurnk:///prompt/…) — the real foist shape");
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "manifest.json" })), false);
@@ -407,7 +407,7 @@ test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", ()
 
 // ─── contextGauge (svc#263) ──────────────────────────────────────────
 
-test("contextGauge: occupancy + window → 'ctx N%/Mk'", () => {
+test("[§cli-summary-line-per-looprun] contextGauge: occupancy + window → 'ctx N%/Mk'", () => {
     assert.equal(contextGauge(7360, 49152), " · ctx 15%/49k");
 });
 
@@ -472,7 +472,7 @@ test("renderSummary: pluralizes turns", () => {
 
 // ─── Inline broadcasts + universal status glyph (v0.10.0) ─────────────
 
-test("broadcast: short single-line body inlines after the header", () => {
+test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines after the header", () => {
     const out = renderLogEntry(entry({
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
@@ -510,7 +510,7 @@ test("status glyph: routine 2xx badges NOTHING (no ✅); only notable statuses g
 
 // ─── Coordinate prefix (plurnk-service#208) ───────────────────────────
 
-test("coordinate: zero-padded L/T/S prefix when the wire carries seqs", () => {
+test("[§cli-log-entry-line-format] coordinate: zero-padded L/T/S prefix when the wire carries seqs", () => {
     const out = renderLogEntry(entry({
         op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},

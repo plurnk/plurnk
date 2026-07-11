@@ -24,7 +24,7 @@ const {
 
 // ─── Rendering: discriminator + position + message ───────────────────
 
-test("renderTelemetryEvent: minimal event → '📡 source:kind' on indented line", () => {
+test("[§cli-daemon-telemetry-event-notification][§cli-telemetry-rendering] renderTelemetryEvent: minimal event → '📡 source:kind' on indented line", () => {
     const out = renderTelemetryEvent({ source: "engine:rail", kind: "strike" });
     assert.match(out, /📡 engine:rail:strike/);
     assert.match(out, /^  /);
@@ -160,7 +160,7 @@ test("renderTelemetryEvent: null message handled the same as undefined", () => {
 
 // ─── TelemetryError ───────────────────────────────────────────────────
 
-test("TelemetryError: defaults to exit code 64 (usage)", () => {
+test("[§cli-telemetryerror-for-control-flow] TelemetryError: defaults to exit code 64 (usage)", () => {
     const e = new TelemetryError({ source: "client:flag", kind: "invalid", message: "bad" });
     assert.equal(e.exitCode, 64);
     assert.equal(e.event.source, "client:flag");
@@ -184,7 +184,7 @@ test("TelemetryError: falls back to 'source:kind' when no message", () => {
 
 // ─── Client-side emitters: shape correctness ─────────────────────────
 
-test("clientConnectionRefused includes URL + hints + cause message", () => {
+test("[§cli-errors-and-telemetry][§cli-shape] clientConnectionRefused includes URL + hints + cause message", () => {
     const ev = clientConnectionRefused("ws://127.0.0.1:3044", new Error("ECONNREFUSED"));
     assert.equal(ev.source, "client:connection");
     assert.equal(ev.kind, "refused");
@@ -193,7 +193,7 @@ test("clientConnectionRefused includes URL + hints + cause message", () => {
     assert.ok(Array.isArray(ev.hints) && ev.hints.length > 0);
 });
 
-test("clientFlagInvalid carries flag + value + reason", () => {
+test("[§cli-client-source-events] clientFlagInvalid carries flag + value + reason", () => {
     const ev = clientFlagInvalid("--project-root", "./relative", "must be absolute");
     assert.equal(ev.source, "client:flag");
     assert.equal(ev.kind, "invalid");
@@ -222,7 +222,7 @@ test("clientSubcommandSessionAmbiguous carries count + name", () => {
     assert.match(ev.message as string, /3 sessions/);
 });
 
-test("clientSubcommandUnknownVerb lists available verbs when provided", () => {
+test("[§cli-subcommands] clientSubcommandUnknownVerb lists available verbs when provided", () => {
     const ev = clientSubcommandUnknownVerb("session foo", ["list", "runs"]);
     assert.equal(ev.kind, "unknown_verb");
     assert.match(ev.message as string, /Available: list, runs/);

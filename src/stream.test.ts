@@ -38,7 +38,7 @@ test("StreamTrace: distinct entries each announce once", () => {
     assert.equal(t.event(event(2)), null);
 });
 
-test("StreamTrace: conclusion speaks the waterfall grammar and strips the target echo", () => {
+test("[§cli-stream-event-and-stream-concluded] StreamTrace: conclusion speaks the waterfall grammar and strips the target echo", () => {
     const t = new StreamTrace();
     const line = t.concluded(concluded());
     // Blank op slot between origin and status keeps the code/target columns

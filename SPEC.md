@@ -10,16 +10,17 @@ Specifies what the `plurnk` CLI/TUI client does. Wire protocol is defined upstre
 
 | Term | Meaning |
 |---|---|
-| **daemon** | A running `plurnk-service` process accepting WebSocket JSON-RPC. The client connects to it; it owns all state. |
-| **session** | Daemon-owned long-lived state. Created via `session.create`; identified by an integer id. The TUI auto-creates one at boot. |
-| **loop** | A single `loop.run` invocation against the daemon. May span many model turns; terminates on `SEND[200]` or `SEND[499]` or hitting `maxTurns`. |
+| **daemon** | A running `plurnk-service` process whose in-process AG-UI+ module (`@plurnk/plurnk-agui`) serves HTTP/SSE. The client connects to it; it owns all state. |
+| **session** | The WORLD (service SPEC, machine-processes): one curated workspace, daemon-owned. Selected by NAME, verbatim — the client sends `forwardedProps.plurnk.session` on every run (attach-or-create module-side; a run without a session is rejected 500). |
+| **run** | A conversation over the session's world. The client's thread binds the session's model run; client ops journal in the client run. Addressed by name via `--run` (see §1.1). |
+| **loop** | A single prompt-driven model loop. May span many model turns; terminates on `SEND[200]` or `SEND[499]` or hitting `maxTurns`; the outcome arrives as `CUSTOM plurnk.terminated` on the run's SSE. |
 | **log/entry notification** | Daemon-to-client push: one notification per dispatched op, carrying the action-entry shape (`{op, target, status_rx, rx, ...}`). |
 | **one-shot mode** | `plurnk "prompt"` — single loop.run, render, exit. Unix-tool posture. |
 | **TUI mode** | `plurnk` (no args) — interactive REPL; multiple loop.run invocations per session. |
 
 ---
 
-## §1 Invocation
+## §1 Invocation {§cli-invocation}
 
 ```
 plurnk [options] [prompt...]                # one-shot from positionals
@@ -35,10 +36,10 @@ Options:
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
-| `--session <name>` | string | Resume the named session. See §1.1. Overrides `PLURNK_SESSION`. |
-| `--run <name>` | string | Resume (or create) the named run within the session. Requires `--session`. Overrides `PLURNK_RUN`. See §1.1. |
+| `--session <name>` | string | Resume the named session. See §1.1. Overrides `PLURNK_CLIENT_SESSION`. |
+| `--run <name>` | string | Resume (or create) the named run within the session. Requires `--session`. Overrides `PLURNK_CLIENT_RUN`. See §1.1. |
 | `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
-| `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_PROJECT_ROOT`. |
+| `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
 | `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
@@ -53,34 +54,27 @@ Env:
 
 | Var | Default | Meaning |
 |---|---|---|
-| `PLURNK_WS` | `ws://127.0.0.1:3044` | Daemon WebSocket URL |
-| `PLURNK_SESSION` | _unset_ | Session name to resume. Equivalent to `--session`. |
-| `PLURNK_RUN` | _unset_ | Run name to resume/create. Equivalent to `--run`. Requires `PLURNK_SESSION`. |
+| `PLURNK_HOST` / `PLURNK_PORT` | `127.0.0.1` / `3044` | The daemon's in-process AG-UI+ module — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. `PLURNK_AGUI_URL` overrides the assembled URL; `PLURNK_AGUI_TOKEN` rides as the bearer when set. |
+| `PLURNK_CLIENT_SESSION` | _unset_ | Session name to resume (or create). Equivalent to `--session`. |
+| `PLURNK_CLIENT_RUN` | _unset_ | Run name to resume/create. Equivalent to `--run`. Requires `PLURNK_CLIENT_SESSION`. |
 | `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
-| `PLURNK_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
+| `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
-**Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.example` (the floor plurnk-service ships and copies on first run). All layers optional; the client works with no config at all. The client reads exactly ONE knob from this shared home — `PLURNK_WS` (which daemon to reach) — and ships no `.env.example` of its own; the floor and everything else there are the daemon's.
+**Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.example` (the floor plurnk-service ships and copies on first run). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from this shared home and ships no `.env.example` of its own; the floor and everything else there are the daemon's.
 
-### §1.1 Sessions and runs
+### §1.1 Sessions and runs {§cli-sessions-and-runs}
 
 Sessions and runs are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env.
 
-Resolution at startup (applies to both CLI and TUI modes):
+**The name IS the identity.** The client resolves ONE session name — `--session`/`PLURNK_CLIENT_SESSION`, else the mode default (`cli` one-shot, `tui` REPL) — and sends it VERBATIM as `forwardedProps.plurnk.session` on every run; the name is also the AG-UI `threadId`. The module attaches the session if it exists and creates it with exactly that name if it doesn't — no prefixes, no forged names. The session is required wire-side: a run without one is rejected 500, and the client never relies on a module fallback.
 
-1. **Neither `--session` nor `PLURNK_SESSION` set** → client calls `session.create`. Daemon mints a fresh auto-named session with a fresh auto-named run. This is the default.
-2. **`--session <name>` (or `PLURNK_SESSION`) set, `--run` unset** → client calls `session.list`, filters by name, and `session.attach({id})`. Daemon resumes the session with a new auto-named run.
-3. **Both set** → as above, but `session.attach({id, runName})`. Daemon resumes the run with that name, or creates it if absent (per `plurnk-service` SPEC §13.5).
-4. **`--run` set without `--session`** → usage error (exit 64). Run names are scoped to a session; there's no session to scope into.
-
-Resolution errors:
-
-- **Session name not found** → exit 1 with a clear message. The client never silently creates a session whose name didn't already exist — if you wanted to create one, run without `--session` first.
-- **Multiple sessions share the name** → exit 1. The daemon does not enforce session-name uniqueness today; the client refuses to guess. Pick a unique name.
+- **`--run <name>`** selects a run by name within the session (resolved via `session.runs`; an unknown name fails hard — no silent fallback to the model run). Without `--run`, conversations bind the session's model run.
+- **`--run` set without `--session`** → usage error (exit 64). Run names are scoped to a session; there's no session to scope into.
 
 CLI flag takes precedence over env when both are set.
 
-### §1.2 Model selection
+### §1.2 Model selection {§cli-model-selection}
 
 The daemon registers model aliases via `PLURNK_MODEL_<alias>=<provider>/<model>` env entries at boot, and resolves an active alias for its own provider via `PLURNK_MODEL=<alias>` (also at boot). The client can override on a per-call basis by passing `alias` on `loop.run`.
 
@@ -94,7 +88,7 @@ Resolution at the client:
 
 Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via `providers.list` (RPC; not currently surfaced as a client subcommand).
 
-### §1.3 Project root
+### §1.3 Project root {§cli-project-root}
 
 **Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that session. Stored on `sessions.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "session has no project_root").
 
@@ -107,7 +101,7 @@ Client behavior:
 
 The "inject standing context into every loop" role formerly served by persona is now `--md`/`mdDocs` (§1.4): markdown docs pinned into the session and read at turn 0.
 
-### §1.4 Membership overlay and session-open settings
+### §1.4 Membership overlay and session-open settings {§cli-membership-overlay-and-session-open-settings}
 
 These flags shape what the session sees. The membership overlay flags map to **constraints** (service vocabulary, svc#200); the settings flags map to **session-open settings** (svc#231). All are creation-time / session-level.
 
@@ -128,15 +122,15 @@ Settings are **session-create-only** (no live setter). On `--session` attach, `-
 
 ---
 
-## §2 One-shot mode
+## §2 One-shot mode {§cli-one-shot-mode}
 
 Triggered when a prompt is present from positionals, piped stdin, or both.
 
-### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI)
+### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI) {§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui}
 
 The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
 
-### §2.1 Output channels
+### §2.1 Output channels {§cli-output-channels}
 
 Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_JSON` — not a flag on one output, but two distinct contracts:
 
@@ -157,17 +151,15 @@ Consequence:
 - `plurnk "X" | tool` pipes only the answer.
 - `plurnk --json "X" | jq -r .response` pulls the answer; `… | jq .turns` the structured trace. One document, no stderr archaeology — the CLI is the integration layer, no third-party client needed for basic needs.
 
-### §2.2 Flow
+### §2.2 Flow {§cli-one-shot-flow}
 
-1. Open WebSocket to `PLURNK_WS`.
-2. Resolve session per §1.1 (`session.create` or `session.attach`); write `session:` and `prompt:` lines to stderr.
-3. Subscribe to `log/entry` notifications; per-action trace lines go to stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
-4. `rpc.call("loop.run", { prompt })` → receive `{loopId, turnIds, finalStatus, hitMaxTurns}`.
-5. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
-6. Close WebSocket.
-7. Exit with the appropriate code (§4).
+1. `POST /` (RunAgentInput) to the module — `threadId` = the session name, the prompt as the user message, session + per-run knobs on `forwardedProps.plurnk`.
+2. Consume the SSE: `CUSTOM plurnk.row` events render as per-action trace lines on stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
+3. A proposal arrives as a `prop:*` tool-call and TERMINATES the run (the loop stays paused in-engine); the decision returns as a tool-result message on the next run, where the continued loop streams (terminate-resume). `CUSTOM plurnk.terminated` is authoritative for the outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
+4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
+5. Exit with the appropriate code (§4).
 
-### §2.3 What one-shot mode does NOT do
+### §2.3 What one-shot mode does NOT do {§cli-what-one-shot-mode-does-not-do}
 
 - No interactive prompts during the loop (proposal review prompts are separate; see §6).
 - No `op.parse` (raw DSL) — that's TUI-only.
@@ -175,31 +167,32 @@ Consequence:
 
 ---
 
-## §3 TUI mode
+## §3 TUI mode {§cli-tui-mode}
 
 Triggered when `argv` has no positional prompt.
 
-### §3.1 Flow
+### §3.1 Flow {§cli-tui-flow}
 
-1. Open WebSocket; resolve session per §1.1 (`session.create` or `session.attach`); subscribe to `log/entry`.
-2. Print banner; enter readline loop with the `  <coord>🐹 💬 ✅ 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs. Settled empirically in two rounds: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned; `🐹`/`✅` are plain East-Asian-Wide (width 2 in node and every major terminal) and stay, `💬` (stable-wide) fills the op slot. The `201` is a contract constant (the prompt row is always a 201 EDIT). The `: ` flips to `? ` when an ask-default toggle exists. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
+1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim session on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
+2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND[202]) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is a contract constant (the prompt row is always a 201 EDIT). Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
     - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /yolo /session [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/session [name]` opens a fresh session (rebinds the connection in place, §13.5-rebind), `/sessions` lists; `/run [name]` forks a new run (`run.fork`), `/runs` lists; `/rename <name>` retargets the session's mutable handle (a run's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `session.constrain`/`session.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
-    - Lines starting with `<<` → `rpc.call("op.parse", { text })`. Raw DSL execution; useful for hand-crafted ops.
-    - Lines starting with `!` → `rpc.call("op.exec", { command })`. Daemon-owned shell; proposal-gated like any side effect.
-    - Lines starting with `? ` → `loop.run` with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
-    - Lines starting with `...` → `loop.inject` — speak into a running loop without starting a new one (the "btw" steering case).
-    - Anything else → `rpc.call("loop.run", { prompt })`. Standard prompt-driven loop.
+    - Lines starting with `<<` → the `op.parse` action. Raw DSL execution; useful for hand-crafted ops.
+    - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
+    - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
+    - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
+    - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
+    (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
 4. While a dispatch is in flight, additional input is rejected with a "busy" notice (except `/stop`, `/help`, and a bare `...`/`?`/`:` prompt, which injects).
 5. `Ctrl-C` or `EOF` exits cleanly.
 
-### §3.2 Cancellation
+### §3.2 Cancellation {§cli-cancellation}
 
-`Ctrl-C` during an in-flight dispatch calls `loop.cancel` (plurnk-service SPEC §13.5) — the daemon aborts the run's active drain, the pending `loop.run` resolves with `finalStatus: 499`, and the REPL continues. A second `Ctrl-C` (or `Ctrl-C` while idle) closes the readline interface — the escape hatch for dispatches a drain-cancel can't unblock (`op.parse`).
+`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the REPL continues. A failed cancel SURFACES on the terminal — a stop control that silently does nothing is the worst kind of broken. A second `Ctrl-C` (or `Ctrl-C` while idle) closes the readline interface — the escape hatch for dispatches a drain-cancel can't unblock (`op.parse`). (Dropping a conversation run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 
-### §3.3 `/import` and bracketed paste
+### §3.3 `/import` and bracketed paste {§cli-import-and-bracketed-paste}
 
 `/import <path>` reads a **local** file (co-location law — the client reads its own fs, the daemon never sees the path) and stashes its content into the prompt buffer, reusing the paste machinery (§below): a short marker lands in the line and expands to the full content on submit, framed however you type. Relative paths resolve against cwd; an unreadable file prints an error and is a no-op.
 
@@ -207,12 +200,12 @@ CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 
 
 ---
 
-## §4 Exit codes
+## §4 Exit codes {§cli-exit-codes}
 
 | Code | Meaning |
 |---|---|
 | `0` | Loop terminated successfully (`finalStatus === 200`) |
-| `1` | Runtime error (WebSocket failure, RPC error, daemon crash, etc.) |
+| `1` | Runtime error (module unreachable, action error, daemon crash, etc.) |
 | `2` | Loop hit `maxTurns` safety cap (`hitMaxTurns === true`) |
 | `3` | Loop terminated with cancellation (`finalStatus === 499`, including `--timeout`) |
 | `4` | Loop FAILED (4xx/5xx terminal status other than 499) — failure ≠ cancel, so benchmark stats stay honest |
@@ -222,9 +215,9 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 
 ---
 
-## §5 Rendering
+## §5 Rendering {§cli-rendering}
 
-### §5.1 `log/entry` line format
+### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
 One line per dispatched op. Format (vanilla ANSI, no framework):
 
@@ -240,7 +233,7 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the broadcast too duplicated every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
-### §5.2 Summary line (per `loop.run`)
+### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
 ```
   <tag> · <N> turns · <wall>ms · <tokens> tokens
@@ -248,20 +241,20 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 
 `tag` is a status glyph (✅ for 200, ⏳ for 102 continue, ✋ for 499 cancel, etc.). Color matches status.
 
-### §5.3 What is NOT rendered
+### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
 - The full packet (`turn.packet`). The client never displays the rendered index, log section, or telemetry — those are the model's view, not the user's.
 - Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `<<READ(log://...)>>`.
-- Raw RPC frames. Set `DEBUG=plurnk:rpc` (future) to enable.
+- Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
 - Content fetching from streaming channels — with ONE bounded exception. Streams render coalesced: a single start line on the first `stream/event` (`📡 ⏳ <target>`; growth ticks and per-channel closes are silent) and a single conclusion line in the waterfall grammar (`📡 ✅ 200 <target> "<summary>"`, target echo stripped from the summary, `→ woke loop` only when the wake opened one). On conclusion the client makes one `entry.read` and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`) — at that size the content IS the better optics (a 12-byte exec answer should be visible, not described). Larger outputs remain summary-only; fetching them is the consumer's job. See §8.7.
 
-### §5.4 Broadcast SEND rendering
+### §5.4 Broadcast SEND rendering {§cli-broadcast-send-rendering}
 
 A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's reply to the user. It is content, not telemetry, and the client MUST render the full body verbatim.
 
 TUI mode contract (see TUI.md §3.4.1 for design rationale):
 
-- Header line: `  <origin-glyph> ✉️  <sub-glyph> <status>` — 2-space INDENT matching the trace lines, no PATH. Origin glyph column-aligns across waterfall and broadcast.
+- Header line: two glyph lanes — identity (🐹 client / status-flavored model-send glyph: 💭 102, 💡 200, 💤 202, 🤔 300) then the status code in ONE display column across every line species (blanks reserved, never omitted). 2-space INDENT matching the trace lines, no PATH.
 - Body: a short single-line body (≤80 chars) inlines on the header line after two spaces (nvim convergence); otherwise the body starts on the next line, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
 - Surrounded by one blank line above and one blank line below.
 - Empty body is legal and renders as just the header.
@@ -298,11 +291,11 @@ If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is trea
 
 ---
 
-## §6 Proposal review
+## §6 Proposal review {§cli-proposal-review}
 
 Side-effecting operations (file writes, exec) emit a `loop/proposal` notification when the daemon pauses dispatch awaiting human resolution (per plurnk-service SPEC §13). The client receives the notification, presents the proposal to the user, and sends back `loop.resolve({logEntryId, decision, body?, outcome?})`.
 
-### §6.1 Notification shape
+### §6.1 Notification shape {§cli-notification-shape}
 
 ```ts
 loop/proposal {
@@ -318,7 +311,7 @@ loop/proposal {
 
 **Server-resolved proposals.** When `flags.yolo` (server-side YOLO auto-accept) or `flags.noProposals` (server-side auto-reject) is set, the daemon settles the entry in-process before any human can react — the notification is informational. The client skips review UI entirely and sends no `loop.resolve` (which would race the already-settled proposal). The proposed-then-resolved lifecycle still shows in the `log/entry` waterfall.
 
-### §6.2 Review menu (interactive)
+### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
 When the proposal is not server-resolved (§6.1), a TTY is present, and `--yolo` is not set, the client renders the proposal to stderr and prompts:
 
@@ -340,13 +333,13 @@ Single-keypress menu (raw stdin):
 
 Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. EXEC bodies render plain.
 
-### §6.3 `--yolo` / `PLURNK_YOLO`
+### §6.3 `--yolo` / `PLURNK_YOLO` {§cli-yolo-plurnkyolo}
 
 Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
 
 This is distinct from **server-side YOLO** (`loop.run({flags: {yolo: true}})`, plurnk-service §13.5), where the daemon auto-accepts proposals in-process without client involvement — intended for benchmarks and automation, not routine client UX. The client does not expose a flag for it; its only obligation is the §6.1 suppression: a proposal carrying `flags.yolo` gets no review UI and no `loop.resolve`.
 
-### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals`
+### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals` {§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals}
 
 When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
 
@@ -354,7 +347,7 @@ Because the server is silent by design, **the client owns the explanation** — 
 
 Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`. A user who passes `--flags '{"noProposals":true}'` sets it explicitly; the no-review-channel detection merges with it.
 
-### §6.5 What proposal review does NOT do
+### §6.5 What proposal review does NOT do {§cli-what-proposal-review-does-not-do}
 
 - Concurrent proposals. The daemon pauses one dispatch per proposal; at most one proposal is pending per loop at any time. Client handles them sequentially as they arrive.
 - Patch validation. The client does not parse the udiff. `body` is treated as opaque text for display and (when edited) re-submission.
@@ -362,19 +355,19 @@ Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripte
 
 ---
 
-## §7 Subcommands
+## §7 Subcommands {§cli-subcommands}
 
 Read-only subcommands inspect daemon state without running a loop. They share the same connection and session-resolution machinery as the prompt-driven flow, but skip `loop.run` entirely. All support `--json` for machine-readable output (stdout product per §2.1; trace and errors stay on stderr).
 
 When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
 
-### §7.1 `plurnk models`
+### §7.1 `plurnk models` {§cli-plurnk-models}
 
 Lists registered provider/model aliases via the daemon's `providers.list` RPC. No session is attached (no `requiresInit`).
 
 Default output: a column-aligned table of `alias / provider / model / active`. The `active` column carries a `*` for the alias the daemon resolved as its boot-time `PLURNK_MODEL`. With `--json`: emits `aliases` array verbatim as compact JSON.
 
-### §7.2 `plurnk session list`
+### §7.2 `plurnk session list` {§cli-plurnk-session-list}
 
 Lists sessions on the daemon via `session.list`. No prior attach required.
 
@@ -382,7 +375,7 @@ Default output: a column-aligned table of `name / project_root / created / cost`
 
 With `--json`: emits `sessions` array verbatim.
 
-### §7.3 `plurnk session runs <name>`
+### §7.3 `plurnk session runs <name>` {§cli-plurnk-session-runs-name}
 
 Lists runs within a named session via `session.runs`. Resolves `<name>` to a session id via a `session.list` filter; no attach required. Exits `1` if the name is unknown or ambiguous.
 
@@ -390,7 +383,7 @@ Default output: a column-aligned table of `name / created / cost`. With `--json`
 
 Typical use: discover a run name to pass as `--run` on `plurnk log read`.
 
-### §7.4 `plurnk log read`
+### §7.4 `plurnk log read` {§cli-plurnk-log-read}
 
 Reads log entries from an attached session's run via `log.read`. **Requires `--session <name>`** (exit `64` if unset) — the log is a per-run artifact and the client must know which to read. `--run <name>` selects a specific run within the session (defaults to a fresh auto-named run on attach, which is usually not what you want — pass `--run` when reading historic logs).
 
@@ -408,16 +401,16 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 ### §7.5 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
-- Mutate state (yet). Future write subcommands (e.g. `plurnk session rename`) would be a separate addition.
+- Send prompts or drive loops — the only mutation in the family is `plurnk session rename` (§7.4); everything else is read-only.
 - Honor flags that only matter to loop runs (`--model`, `--yolo`) — those parse without error but have no effect in subcommand mode.
 
 ---
 
-## §8 Errors and telemetry
+## §8 Errors and telemetry {§cli-errors-and-telemetry}
 
 Every user-visible error — client-side flag validation, RPC failures, daemon-pushed runtime signals — uses the same shape: the `TelemetryEvent` envelope from `@plurnk/plurnk-grammar` 0.17.0 (`schema/TelemetryEvent.json`). The client is one speaker among many (grammar, engine rails, schemes, providers); it isn't a passive renderer of *their* errors, it emits its own in the same vocabulary.
 
-### §8.1 Shape
+### §8.1 Shape {§cli-shape}
 
 ```ts
 interface TelemetryEvent {
@@ -432,7 +425,7 @@ interface TelemetryEvent {
 
 `source` follows the pattern `^[a-z]+(:[a-z][a-z0-9-]*)?$`. Daemon producers: `grammar`, `engine:rail`, `scheme:<name>`, `provider:<vendor>`. Client producers: `client:connection`, `client:flag`, `client:subcommand`, `client:proposal`, `client:rpc`, `client:runtime`.
 
-### §8.2 Rendering
+### §8.2 Rendering {§cli-telemetry-rendering}
 
 `renderTelemetryEvent(event)` produces a single multi-line string with:
 
@@ -449,20 +442,20 @@ interface TelemetryEvent {
 - **Snippet** (`event.snippet`, used by grammar:parse_error) renders as a 5-space-indented block; the `N:\t`-prefixed content from the daemon is preserved verbatim.
 - **Hints** are a client-side convention (not in the grammar schema) for actionable nudges — e.g. "Is the daemon running?" on connection refused. They render as dim 5-space-indented continuation lines below the headline.
 
-### §8.3 Channel posture
+### §8.3 Channel posture {§cli-channel-posture}
 
 - **CLI mode**: stderr. Same channel as the log/entry trace per §2.1.
 - **TUI mode**: inline in the waterfall on stdout, with the `\r\x1b[2K` line-wipe prefix so the readline prompt doesn't collide with the rendered event.
 
 In both modes events interleave with `log/entry` trace lines and proposal-review prompts; the glyph is the visual cue that an event is telemetry rather than an action trace.
 
-### §8.4 Client-source events
+### §8.4 Client-source events {§cli-client-source-events}
 
 Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow through the same shape via `src/telemetry.ts` helpers:
 
 | Source | Kind(s) | When |
 |---|---|---|
-| `client:connection` | `refused`, `closed`, `daemon_stale` | WebSocket couldn't open / dropped mid-call / `discover` is missing wire markers this client depends on (daemon older than client) |
+| `client:connection` | `refused`, `closed`, `daemon_stale` | Module unreachable / stream dropped mid-run / `discover` is missing wire markers this client depends on (daemon older than client) |
 | `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
 | `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
 | `client:proposal` | `edits_blocked` | No review channel (non-TTY, no `--yolo`) — loop runs with `noProposals`; client owns the why |
@@ -471,11 +464,11 @@ Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow
 
 Each helper (e.g. `clientConnectionRefused(url, cause)`) builds a well-formed event with kind-specific fields populated. Callers don't hand-shape JSON.
 
-### §8.5 `TelemetryError` for control flow
+### §8.5 `TelemetryError` for control flow {§cli-telemetryerror-for-control-flow}
 
 A `TelemetryError extends Error` class carries an event through normal async error propagation. Deep throws (`attachOrCreateSession`, `resolveProjectRoot`, `parseIntFlag`) wrap a built event; the global catch in `dispatcher.ts` unwraps, renders, and exits with the carried `exitCode` (default 64 for usage errors; override per call). Non-`TelemetryError` throws collapse to a generic `client:runtime:error`.
 
-### §8.6 Daemon `telemetry/event` notification
+### §8.6 Daemon `telemetry/event` notification {§cli-daemon-telemetry-event-notification}
 
 The client subscribes to `telemetry/event` in both modes and routes received events through the same renderer. Notification shape per plurnk-service SPEC §15.1:
 
@@ -491,7 +484,7 @@ Daemon-side producers as of plurnk-service 0.11.0:
 
 Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt the protocol.
 
-### §8.7 `stream/event` and `stream/concluded`
+### §8.7 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
 
 The daemon also broadcasts streaming-channel metadata as `stream/event` and `stream/concluded` notifications (per plurnk-service SPEC §7.1 / §13.6). These are NOT `TelemetryEvent`-shaped — they're plain content-growth signals — but the client uses the same `📡` glyph and rendering channel so the user gets one visual cue for "daemon pushed something."
 
@@ -519,12 +512,12 @@ CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt
 
 ---
 
-## §9 Conformance
+## §9 Conformance {§cli-conformance}
 
 A conforming `plurnk` client:
 
-1. Speaks JSON-RPC 2.0 over WebSocket per plurnk-service SPEC §13.
-2. Connects to the URL in `PLURNK_WS` (or its default).
+1. Speaks AG-UI+ (RunAgentInput over HTTP, AG-UI events + `CUSTOM plurnk.*` over SSE) per the plurnk-agui SPEC.
+2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT` (or `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
 3. Resolves the session per §1.1 (`session.create` by default, or `session.attach` when `--session`/`PLURNK_SESSION` is set); uses the returned session for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping server-resolved proposals (`flags.yolo` / `flags.noProposals`) entirely.

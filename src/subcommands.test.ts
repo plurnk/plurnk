@@ -61,7 +61,7 @@ test("runSessionRename: unknown session → exit 1, no rename attempted", async 
 
 // ─── runModels ────────────────────────────────────────────────────────
 
-test("runModels: table format with aliases", async () => {
+test("[§cli-plurnk-models] runModels: table format with aliases", async () => {
     const { rpc, calls } = fakeRpc({
         "providers.list": {
             aliases: [
@@ -105,7 +105,7 @@ test("runModels: empty list → '[]' in json mode", async () => {
 
 // ─── runSessionList ───────────────────────────────────────────────────
 
-test("runSessionList: table format with sessions", async () => {
+test("[§cli-plurnk-session-list] runSessionList: table format with sessions", async () => {
     const { rpc, calls } = fakeRpc({
         "session.list": {
             sessions: [
@@ -137,7 +137,7 @@ test("runSessionList: empty list → friendly message in table mode", async () =
 
 // ─── runSessionRuns ───────────────────────────────────────────────────
 
-test("runSessionRuns: looks up session by name then calls session.runs with id", async () => {
+test("[§cli-plurnk-session-runs-name] runSessionRuns: looks up session by name then calls session.runs with id", async () => {
     const { rpc, calls } = fakeRpc({
         "session.list": {
             sessions: [
@@ -231,7 +231,7 @@ test("runLogRead: passes no filters when none set, renders trace lines", async (
     assert.match(out, /known:\/\/\/x2/);
 });
 
-test("runLogRead: forwards filter flags as RPC params", async () => {
+test("[§cli-plurnk-log-read] runLogRead: forwards filter flags as RPC params", async () => {
     const { rpc, calls } = fakeRpc({ "log.read": { status: 200, entries: [] } });
     await captureStdout(() => runLogRead(rpc, {
         json: false,

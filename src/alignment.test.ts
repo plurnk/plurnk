@@ -43,7 +43,7 @@ const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     ...over,
 });
 
-test("every line species puts the status code in ONE display column (two glyph lanes, blanks reserved)", () => {
+test("[§cli-rendering] every line species puts the status code in ONE display column (two glyph lanes, blanks reserved)", () => {
     const streams = new StreamTrace();
     const lines: Array<[string, string]> = [
         ["op 200 (blank status lane)", renderLogEntry(entry({}))],

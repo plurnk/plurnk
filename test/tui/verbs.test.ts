@@ -41,7 +41,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("bracketed paste folds to one [paste #N] marker (no per-line submit)", async (t) => {
+    test("[§cli-import-and-bracketed-paste] bracketed paste folds to one [paste #N] marker (no per-line submit)", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {

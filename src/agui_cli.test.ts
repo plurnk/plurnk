@@ -41,7 +41,7 @@ const sink = (over: Partial<CliRunSinks> = {}) => {
     return { io, out, err, resolved };
 };
 
-test("consumeCliRun: terminal broadcast body → stdout (answer), rows → stderr (trace), exit 0", async () => {
+test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broadcast body → stdout (answer), rows → stderr (trace), exit 0", async () => {
     const { io, out, err } = sink();
     const { exitCode } = await consumeCliRun(stream([
         row({ op: "FIND", scheme: "file", pathname: "/x" }),
@@ -62,13 +62,13 @@ test("consumeCliRun: RUN_ERROR carries the finalStatus into the exit code + a ma
     assert.match(err.join(""), /loop terminated 429/);
 });
 
-test("consumeCliRun: a proposal tool-call is reviewed; the decision rides pendingResume", async () => {
+test("[§cli-one-shot-flow] consumeCliRun: a proposal tool-call is reviewed; the decision rides pendingResume", async () => {
     const { io } = sink({ review: async () => ({ decision: "accept", body: "edited" }) });
     const r = await consumeCliRun(stream([...proposalCall(9), { type: "RUN_FINISHED" }]), io);
     assert.deepEqual(r.pendingResume, { logEntryId: 9, decision: "accept", body: "edited" }, "the resume tool-result carries the reviewed decision");
 });
 
-test("consumeCliRun: yolo auto-accepts a proposal without review", async () => {
+test("[§cli-yolo-plurnkyolo] consumeCliRun: yolo auto-accepts a proposal without review", async () => {
     let reviewed = false;
     const { io } = sink({ yolo: true, review: async () => { reviewed = true; return { decision: "accept" }; } });
     const r = await consumeCliRun(stream(proposalCall(3)), io);
@@ -76,7 +76,7 @@ test("consumeCliRun: yolo auto-accepts a proposal without review", async () => {
     assert.deepEqual(r.pendingResume, { logEntryId: 3, decision: "accept" });
 });
 
-test("consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
+test("[§cli-what-one-shot-mode-does-not-do] consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
     const { io } = sink({ noReviewChannel: true });
     const r = await consumeCliRun(stream(proposalCall(4)), io);
     assert.deepEqual(r.pendingResume, { logEntryId: 4, decision: "reject" });
@@ -88,7 +88,7 @@ test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals n
     assert.equal(r.pendingResume, null, "a clean run carries no resume");
 });
 
-test("consumeCliRun: plurnk.telemetry routes to the telemetry sink; generic AG-UI events are ignored", async () => {
+test("[§cli-channel-posture] consumeCliRun: plurnk.telemetry routes to the telemetry sink; generic AG-UI events are ignored", async () => {
     const tele: unknown[] = [];
     const { io, out, err } = sink({ telemetry: (e) => tele.push(e) });
     await consumeCliRun(stream([

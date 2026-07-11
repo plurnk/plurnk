@@ -205,7 +205,7 @@ test("buildJsonError: schemaVersion + error shape + extras", () => {
 
 const { exitCodeForLoop } = await import("./cli.ts");
 
-test("exitCodeForLoop: 200 → 0", () => {
+test("[§cli-exit-codes] exitCodeForLoop: 200 → 0", () => {
     assert.equal(exitCodeForLoop(200, false), 0);
 });
 

@@ -128,6 +128,17 @@ export const lookRewrite = (line: string): string | null =>
         ? line.replace(/^<<LOOK\b/i, "<<READ").replace(/:LOOK(\s*)$/i, ":READ$1")
         : null;
 
+// §2.0 prompt prefixes (converged with nvim's :AI ? / :AI :): `? ` puts mode:"ask"
+// on the wire flags, `: ` forces act, both overriding a --flags base mode; `...`
+// (injection) strips without minting flags. Mode is a per-line habit, never --ask.
+export const lineMode = (trimmed: string, base?: Record<string, unknown>): { flags?: Record<string, unknown>; prompt: string } => {
+    const prefix = trimmed[0];
+    const flags = prefix === "?" || prefix === ":"
+        ? { ...(base ?? {}), mode: prefix === "?" ? "ask" : "act" }
+        : base;
+    return { ...(flags !== undefined ? { flags } : {}), prompt: trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "") };
+};
+
 // Alt-p / Alt-n cycle the <<LOOK target through prior operations (prev/next op).
 // Alt-<letter> (`ESC<letter>`) survives the input pipeline intact — the paste
 // filter always holds a lone ESC and reassembles `ESC<letter>`, the same path the
@@ -860,12 +871,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
                 } else {
                     // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
                     // `: ` = act. Per-line prefix overrides --flags mode.
-                    let lineFlags = opts.loopFlags;
-                    const prefix = trimmed[0];
-                    if (prefix === "?" || prefix === ":") {
-                        lineFlags = { ...(opts.loopFlags ?? {}), mode: prefix === "?" ? "ask" : "act" };
-                    }
-                    const promptText = trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "");
+                    const { flags: lineFlags, prompt: promptText } = lineMode(trimmed, opts.loopFlags);
                     const loopParams: { prompt: string; alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
                     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;   // display label
                     if (opts.model !== undefined) loopParams.model = opts.model;             // #90 client-resolved routing (precedence)
@@ -910,14 +916,17 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
 
         rl.on("SIGINT", () => {
             // First Ctrl-C with a dispatch in flight: cancel the run's active
-            // drain via loop.cancel (plurnk-service §13.5); the pending
-            // loop.run resolves with finalStatus 499 and the REPL continues.
-            // Second Ctrl-C (or idle Ctrl-C) exits — escape hatch for
-            // dispatches a drain-cancel can't unblock (op.parse).
+            // drain via the loop.cancel action; the pending loop resolves with
+            // finalStatus 499 and the REPL continues. Second Ctrl-C (or idle
+            // Ctrl-C) exits — escape hatch for dispatches a drain-cancel can't
+            // unblock (op.parse). A failed cancel SURFACES — a stop button that
+            // silently does nothing is the worst kind of broken.
             if (inFlight && !cancelRequested) {
                 cancelRequested = true;
                 process.stdout.write("\r\x1b[2K  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m\n");
-                void transport.rpc("loop.cancel", { reason: "user_sigint" }).catch(() => {});
+                void transport.rpc("loop.cancel", { reason: "user_sigint" }).catch((err: unknown) => {
+                    process.stdout.write(`\r\x1b[2K  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m\n`);
+                });
                 return;
             }
             rl.close();

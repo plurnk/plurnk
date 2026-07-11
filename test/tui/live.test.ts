@@ -25,7 +25,7 @@ describe("TUI live (model-gated)", () => {
     // 10-minute test budget + 9-minute waits below: dramatically generous so a
     // failure is unambiguously a real hang (svc#265 is fixed — errored loops now
     // broadcast loop/terminated), never "the model was slow." Only daemon-gated.
-    test("mid-loop inject — a line typed during a loop is folded in (loop.inject)", { timeout: 600_000 }, async (t) => {
+    test("[§cli-tui-flow] mid-loop inject — a line typed during a loop is folded in (loop.inject)", { timeout: 600_000 }, async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {

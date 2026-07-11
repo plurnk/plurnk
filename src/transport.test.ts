@@ -34,7 +34,7 @@ const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => 
 };
 const frame = (e: unknown): string => `data: ${JSON.stringify(e)}\n\n`;
 
-test("BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
+test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TEXT_MESSAGE_CONTENT", delta: "generic-ignored" }));
@@ -79,7 +79,7 @@ test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
+test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "RUN_STARTED" })); });
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");

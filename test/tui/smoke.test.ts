@@ -19,7 +19,7 @@ before(async () => {
 after(async () => { await daemon?.cleanup(); });
 
 describe("TUI pty harness", () => {
-    test("banner renders, a verb dispatches, /quit exits clean", async (t) => {
+    test("[§cli-tui-mode] banner renders, a verb dispatches, /quit exits clean", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {

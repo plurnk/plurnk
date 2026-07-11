@@ -10,7 +10,7 @@ import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, 
 
 // ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
 
-test("resolveModelSpec: named alias → concrete provider/model from env", () => {
+test("[§cli-model-selection] resolveModelSpec: named alias → concrete provider/model from env", () => {
     assert.equal(resolveModelSpec("ccp", { PLURNK_MODEL_ccp: "anthropic/claude-x" }), "anthropic/claude-x");
 });
 
@@ -62,7 +62,7 @@ test("resolveLoopFlags: undefined → undefined", () => {
     assert.equal(resolveLoopFlags(undefined), undefined);
 });
 
-test("resolveLoopFlags: JSON passes through verbatim", () => {
+test("[§cli-invocation] resolveLoopFlags: JSON passes through verbatim", () => {
     assert.deepEqual(resolveLoopFlags('{"yolo":true,"noWeb":true}'), { yolo: true, noWeb: true });
 });
 
@@ -84,7 +84,7 @@ test("resolveProjectRoot: empty string → null (explicit headless)", () => {
     assert.equal(resolveProjectRoot(""), null);
 });
 
-test("resolveProjectRoot: absolute path → unchanged", () => {
+test("[§cli-project-root] resolveProjectRoot: absolute path → unchanged", () => {
     assert.equal(resolveProjectRoot("/tmp/work"), "/tmp/work");
 });
 
@@ -105,7 +105,7 @@ test("resolveProjectRoot: bare name → throws", () => {
 
 // ─── buildConstraints (membership overlay, svc#200) ──────────────────
 
-test("buildConstraints: maps --pick/--hide/--view/--repo to service effects in order", () => {
+test("[§cli-membership-overlay-and-session-open-settings] buildConstraints: maps --pick/--hide/--view/--repo to service effects in order", () => {
     const c = buildConstraints({ pick: ["docs/**"], hide: ["*.lock"], view: ["vendor/**", "gen/**"], repo: ["packages/api"] });
     assert.deepEqual(c, [
         { effect: "pick", glob: "docs/**" },
@@ -208,12 +208,12 @@ test("resolveRunId: undefined name → undefined, and NEVER queries session.runs
     assert.equal(called, 0, "no --run → no session.runs round-trip");
 });
 
-test("resolveRunId: a named run resolves to its id via session.runs", async () => {
+test("[§cli-sessions-and-runs] resolveRunId: a named run resolves to its id via session.runs", async () => {
     const rpc = { call: async (m: string) => { assert.equal(m, "session.runs"); return { runs: [{ id: 10, name: "client-1" }, { id: 42, name: "spike" }] }; } };
     assert.equal(await resolveRunId(rpc, "spike"), 42);
 });
 
-test("resolveRunId: an unknown run name THROWS — no silent fallback to the model run", async () => {
+test("[§cli-sessions-and-runs] resolveRunId: an unknown run name THROWS — no silent fallback to the model run", async () => {
     const rpc = { call: async () => ({ runs: [{ id: 10, name: "client-1" }] }) };
     await assert.rejects(() => resolveRunId(rpc, "ghost"), /--run ghost: no such run in the session/);
 });

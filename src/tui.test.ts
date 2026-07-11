@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, lineMode, type VerbContext } from "./tui.ts";
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
 
@@ -297,7 +297,7 @@ test("handleVerb /run with no name → run.fork with no name (auto <parent>-fork
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
 });
 
-test("handleVerb /accept /reject /cancel /edit → resolveProposal(action) — typed no-modifier fallback", async () => {
+test("[§cli-proposal-review][§cli-review-menu-interactive] handleVerb /accept /reject /cancel /edit → resolveProposal(action) — typed no-modifier fallback", async () => {
     for (const action of ["accept", "reject", "cancel", "edit"] as const) {
         const ctx = makeCtx();
         await handleVerb(`/${action}`, ctx);
@@ -419,4 +419,22 @@ test("seedPromptHistory: empty / error → history untouched", async () => {
     const rl2 = { history: ["x"] };
     await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], 1, rl2 as unknown as Parameters<typeof seedPromptHistory>[2]);
     assert.deepEqual(rl2.history, ["x"]);
+});
+
+// §2.0 — mode is a per-line prefix habit (converged with nvim's :AI ? / :AI :),
+// never a --ask flag. THE ask chain the operator audited by hand (2026-07-11):
+// `? ` must put mode:"ask" on the wire flags; this pins the client's half.
+test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] lineMode: '? ' → flags.mode ask; ': ' → act; prefix stripped from the prompt", () => {
+    assert.deepEqual(lineMode("? what is truth"), { flags: { mode: "ask" }, prompt: "what is truth" });
+    assert.deepEqual(lineMode(": do the thing"), { flags: { mode: "act" }, prompt: "do the thing" });
+});
+
+test("lineMode: bare text carries the base flags untouched; prefix mode OVERRIDES the base", () => {
+    assert.deepEqual(lineMode("hello", { yolo: true }), { flags: { yolo: true }, prompt: "hello" });
+    assert.deepEqual(lineMode("? hello", { mode: "act", yolo: true }), { flags: { mode: "ask", yolo: true }, prompt: "hello" });
+    assert.deepEqual(lineMode("plain"), { prompt: "plain" });
+});
+
+test("lineMode: '...' injection prefix strips without minting mode flags", () => {
+    assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
 });

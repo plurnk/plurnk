@@ -26,7 +26,7 @@ const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
 const qProposal = (attrs: object, op = "SEND"): Parameters<typeof questionFromProposal>[0] =>
     ({ logEntryId: 7, loopId: 1, turnId: 1, op, target: { scheme: null, pathname: null }, body: "", attrs, flags: {} });
 
-test("questionFromProposal: SEND with attrs.question → the question + choices", () => {
+test("[§cli-notification-shape] questionFromProposal: SEND with attrs.question → the question + choices", () => {
     assert.deepEqual(questionFromProposal(qProposal({ question: "Which?", choices: ["A", "B"] })), { question: "Which?", choices: ["A", "B"] });
 });
 
@@ -65,7 +65,7 @@ test("renderQuestionMenu: numbers the choices + free-response hint; open questio
 
 // ─── keyToResolution + renderProposalMenu (non-blocking review primitives) ──
 
-test("keyToResolution: a/r/c → accept/reject/cancel; unknown key → null (pass-through)", async () => {
+test("[§cli-review-menu-interactive] keyToResolution: a/r/c → accept/reject/cancel; unknown key → null (pass-through)", async () => {
     const p = proposal({});
     assert.deepEqual(await keyToResolution("a", p), { decision: "accept" });
     assert.deepEqual(await keyToResolution("r", p), { decision: "reject" });
@@ -87,11 +87,11 @@ test("renderProposalMenu: shows the op, target, and the key menu", () => {
 
 // ─── isServerResolved ────────────────────────────────────────────────
 
-test("isServerResolved: flags.yolo → true (server YOLO auto-accepts in-process)", () => {
+test("[§cli-what-proposal-review-does-not-do] isServerResolved: flags.yolo → true (server YOLO auto-accepts in-process)", () => {
     assert.equal(isServerResolved(proposal({ yolo: true })), true);
 });
 
-test("isServerResolved: flags.noProposals → true (server auto-rejects in-process)", () => {
+test("[§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals] isServerResolved: flags.noProposals → true (server auto-rejects in-process)", () => {
     assert.equal(isServerResolved(proposal({ noProposals: true })), true);
 });
 

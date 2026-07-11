@@ -69,7 +69,7 @@ Sessions and runs are daemon-owned. The client only knows their **names** — id
 
 **The name IS the identity.** The client resolves ONE session name — `--session`/`PLURNK_CLIENT_SESSION`, else the mode default (`cli` one-shot, `tui` REPL) — and sends it VERBATIM as `forwardedProps.plurnk.session` on every run; the name is also the AG-UI `threadId`. The module attaches the session if it exists and creates it with exactly that name if it doesn't — no prefixes, no forged names. The session is required wire-side: a run without one is rejected 500, and the client never relies on a module fallback.
 
-- **`--run <name>`** selects a run by name within the session (resolved via `session.runs`; an unknown name fails hard — no silent fallback to the model run). Without `--run`, conversations bind the session's model run.
+- **`--run <name>` names the CONVERSATION** (thread-per-run, svc#366): with a prompt, the run name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--run`, thread == world and conversations bind the session's model run (the default conversation). For read subcommands, `--run` resolves via `session.runs` and an unknown name fails hard — no silent fallback to the model run.
 - **`--run` set without `--session`** → usage error (exit 64). Run names are scoped to a session; there's no session to scope into.
 
 CLI flag takes precedence over env when both are set.

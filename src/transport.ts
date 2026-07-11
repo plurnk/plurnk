@@ -72,11 +72,12 @@ interface LoopAck { loopId?: number; finalStatus?: number; status?: number; erro
 // active loop, events on the open SSE); cancel aborts the SSE (bridge cancels).
 // Session options that ride forwardedProps.plurnk on the thread's FIRST run
 // (§agui-forwarded-props) — the bridge applies them at session.create.
-export interface BridgeSessionOpts { projectRoot?: string | null; constraints?: unknown[]; settings?: object }
+export interface BridgeSessionOpts { session?: string; projectRoot?: string | null; constraints?: unknown[]; settings?: object }
 
 export class BridgeTransport implements Transport {
     #target: BridgeTarget;
     #threadId: string;
+    #world: string | undefined;   // the session name when it differs from the thread (--run)
     #session: BridgeSessionOpts;
     #h: RunHandlers | null = null;
     #firstRun = true;
@@ -85,6 +86,7 @@ export class BridgeTransport implements Transport {
     constructor(target: BridgeTarget, threadId: string, session: BridgeSessionOpts = {}) {
         this.#target = target;
         this.#threadId = threadId;
+        this.#world = session.session;
         this.#session = session;
     }
 
@@ -97,7 +99,7 @@ export class BridgeTransport implements Transport {
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
         let errmsg: string | undefined;
-        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, messages: [], forwardedProps: { action: { kind: method, ...(params ?? {}) } } })) {
+        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), messages: [], forwardedProps: { action: { kind: method, ...(params ?? {}) } } })) {
             if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                 const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
                 if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
@@ -146,7 +148,7 @@ export class BridgeTransport implements Transport {
                 let toolId = "";
                 let toolArgs = "";
                 try {
-                    for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...next, forwardedProps: fp }, ac.signal)) {
+                    for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), ...next, forwardedProps: fp }, ac.signal)) {
                         if (e.type === "RUN_ERROR") {
                             const code = Number((e as { code?: string }).code);
                             errStatus = Number.isFinite(code) && code > 0 ? code : 500;
@@ -198,11 +200,12 @@ export class BridgeTransport implements Transport {
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
     async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
-        // Re-map the threadId: subsequent runs address the bridge's agui-<threadId>
-        // session (lazy-created on the next run, which re-forwards session opts). The
-        // daemon session id is bridge-created, so it's unknown here (0).
+        // Re-map to a fresh WORLD: the thread and the session move together (a /session
+        // switch is a new world + its default conversation; a split thread comes from
+        // --run at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#threadId = threadId;
+        this.#world = undefined;   // thread == world again
         this.#firstRun = true;
         return { id: 0, name: threadId };
     }

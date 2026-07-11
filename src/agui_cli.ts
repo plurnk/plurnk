@@ -142,7 +142,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; session?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
@@ -161,11 +161,11 @@ export const runCliViaBridge = async (
     // tool-call; the decision POSTs as the next segment's tool-result. Accumulate
     // across segments — one logical run, one record.
     let next: { prompt?: string; messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }), io);
     while (result.pendingResume !== null) {
         const r = result.pendingResume;
         next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
-        const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+        const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }), io);
         result = {
             ...seg,
             entries: [...result.entries, ...seg.entries],
@@ -203,7 +203,7 @@ export const runCliViaBridge = async (
 export const runScriptViaBridge = async (
     target: BridgeTarget,
     text: string,
-    opts: { threadId: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; session?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     let parse: { results: Array<{ status: number }> } | null = null;
@@ -225,7 +225,7 @@ export const runScriptViaBridge = async (
         ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
     };
     let next: { messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { messages: [], forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }), io);
     while (result.pendingResume !== null) {
         const r = result.pendingResume;
         next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };

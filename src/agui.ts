@@ -26,7 +26,7 @@ export interface BridgeTarget { bridgeUrl: string; token?: string }
 // signal (its req.on("close") cancels the loop) — hanging up IS cancellation.
 export async function* runViaBridge(
     target: BridgeTarget,
-    run: { threadId: string; prompt?: string; messages?: Array<Record<string, unknown>>; runId?: string; forwardedProps?: Record<string, unknown> },
+    run: { threadId: string; session?: string; prompt?: string; messages?: Array<Record<string, unknown>>; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
     // messages verbatim when given (a terminate-resume tool-result run, an action run);
@@ -41,9 +41,9 @@ export async function* runViaBridge(
             runId: run.runId,
             messages,
             // The session (world) is REQUIRED — a run has no existence without one. The
-            // client resolves ONE session name and IS its threadId (one conversation per
-            // world until #366 splits them); send it verbatim as forwardedProps.plurnk.session.
-            forwardedProps: { plurnk: { session: run.threadId, ...(run.forwardedProps ?? {}) } },
+            // threadId names the CONVERSATION (a run over the world, svc#366); it doubles
+            // as the session name unless the caller splits them (--run: thread ≠ world).
+            forwardedProps: { plurnk: { session: run.session ?? run.threadId, ...(run.forwardedProps ?? {}) } },
         }),
     });
     if (!res.ok || res.body === null) {

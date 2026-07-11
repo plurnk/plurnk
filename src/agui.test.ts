@@ -100,3 +100,13 @@ test("actionViaBridge: a verb rides its own run; the result custom returns verba
     } finally { await mock.close(); }
 });
 
+
+test("[§cli-sessions-and-runs] runViaBridge: an explicit session rides with a DIFFERENT threadId (thread-per-run, svc#366)", async () => {
+    const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
+    try {
+        for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "chat-2", session: "workspace", prompt: "hi" })) void _e;
+        const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { session: string } } };
+        assert.equal(body.threadId, "chat-2", "the thread names the conversation run");
+        assert.equal(body.forwardedProps.plurnk.session, "workspace", "the session names the world — independently");
+    } finally { await mock.close(); }
+});

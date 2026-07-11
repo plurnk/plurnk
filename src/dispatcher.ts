@@ -596,7 +596,9 @@ export const main = async (argv: string[]): Promise<void> => {
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: sessionName ?? "cli", yolo, json, projectRoot });
+            // Thread-per-run (svc#366): --run names the CONVERSATION (the threadId);
+            // --session stays the world. Without --run, thread == world (the model run).
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: runName ?? sessionName ?? "cli", session: sessionName ?? "cli", yolo, json, projectRoot });
             process.exit(code);
         } catch (cause) {
             // The bridge is reachable-but-erroring OR unreachable — surface the real
@@ -615,11 +617,13 @@ export const main = async (argv: string[]): Promise<void> => {
     // rides forwardedProps; PLURNK_AGUI_QUESTIONS gates questions bridge-side.
     // (Per-session constraints/settings over the bridge are a follow-up.)
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
-        const threadId = sessionName ?? "tui";
+        const threadId = runName ?? sessionName ?? "tui";
+        const world = sessionName ?? "tui";
         // Session options ride the thread's first run (forwardedProps.plurnk): the
         // same constraints (--pick/hide/view/repo) + settings the WS path sends on
         // session.create, so a bridge TUI is configured identically.
         const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
+            session: world,
             projectRoot,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),

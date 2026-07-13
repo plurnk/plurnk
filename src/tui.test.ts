@@ -176,6 +176,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
             },
         } as unknown as VerbContext["rpc"],
         opts: { yolo: false, ...opts },
+        resolveModel: (alias: string) => ({ fireslow: "fireworks/deepseek", turboderp: "openai/turboderp" } as Record<string, string>)[alias],
         getSession: () => session,
         setSession: (s) => { session = s; },
         switchSession: async (name) => {
@@ -439,3 +440,18 @@ test("lineMode: '...' injection prefix strips without minting mode flags", () =>
     assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
 });
 
+
+test("[§cli-model-selection] handleVerb /model retargets ROUTING, not just the label — opts.model re-resolves so the next loop actually switches models", async () => {
+    const ctx = makeCtx({}, { modelAlias: "turboderp", model: "openai/turboderp" });
+    await handleVerb("/model fireslow", ctx);
+    assert.equal(ctx.opts.modelAlias, "fireslow", "the display label switched");
+    assert.equal(ctx.opts.model, "fireworks/deepseek", "the ROUTING spec re-resolved — not the stale boot model (which the daemon prefers, #90)");
+    assert.match(ctx.out.join(""), /model: fireslow/);
+});
+
+test("[§cli-model-selection] handleVerb /model to an UNKNOWN alias clears the stale routing spec (daemon resolves the bare alias, never the old model)", async () => {
+    const ctx = makeCtx({}, { modelAlias: "turboderp", model: "openai/turboderp" });
+    await handleVerb("/model mystery", ctx);
+    assert.equal(ctx.opts.modelAlias, "mystery");
+    assert.equal(ctx.opts.model, undefined, "no client resolution → send the bare alias, NOT the previous model's spec");
+});

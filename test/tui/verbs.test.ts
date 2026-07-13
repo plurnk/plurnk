@@ -31,6 +31,17 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
+    test("[§cli-model-selection] /model <alias> switches the model through the live TUI", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("/model turboderp\r"); await tui.waitFor(/model: turboderp/);
+            tui.write("/model fireslow\r");  await tui.waitFor(/model: fireslow/);
+            tui.write("/model\r");            await tui.waitFor(/model: fireslow/);   // sticky — the switch persisted
+        } finally { tui.kill(); }
+    });
+
     test("/session [name] opens a new named session", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);

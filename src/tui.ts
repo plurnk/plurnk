@@ -224,7 +224,11 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
-    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string; autoReadAgents?: boolean };
+    opts: { modelAlias?: string; model?: string; yolo: boolean; projectRoot?: string | null; client?: string; autoReadAgents?: boolean };
+    // Resolve an alias to its client-side "<provider>/<model>" routing spec (#90), so
+    // /model retargets ROUTING, not just the display label. Injected to avoid a cycle
+    // with dispatcher (which owns resolveModelSpec).
+    resolveModel?: (alias: string) => string | undefined;
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
     // Switch to (or create) a named session — transport-agnostic (WS rebind /
@@ -257,6 +261,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "model":
             if (rest.length === 0) { write(`  model: ${opts.modelAlias ?? "(daemon default)"}\n`); return; }
             opts.modelAlias = rest;
+            // Retarget ROUTING too, not just the label: without this the next loop
+            // keeps sending the BOOT model's resolved spec (which the daemon prefers
+            // over the alias, #90) — the switch would be cosmetic.
+            opts.model = ctx.resolveModel?.(rest);
             write(`  model: ${rest}\n`);
             return;
         case "yolo":
@@ -386,7 +394,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 };
 
 export const runTui = async (transport: Transport, session: SessionResult, opts: {
-    modelAlias?: string; model?: string; yolo: boolean;
+    modelAlias?: string; model?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     client?: string;            // #249 — frontend id, carried onto /session-created sessions
@@ -742,7 +750,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live session / opts / stdout / import glue.
     const verbCtx: VerbContext = {
-        rpc: verbRpc, opts,
+        rpc: verbRpc, opts, resolveModel: opts.resolveModel,
         getSession: () => current,
         setSession: (s) => { current = s; },
         switchSession: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client, autoReadAgents: opts.autoReadAgents }),

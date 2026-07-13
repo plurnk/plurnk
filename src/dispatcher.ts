@@ -653,7 +653,7 @@ export const main = async (argv: string[]): Promise<void> => {
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
         });
         const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
-        await runTui(transport, { id: 0, name: threadId }, { modelAlias, model: resolveModelSpec(modelAlias), yolo, loopFlags, maxTurns, projectRoot, client: CLIENT_ID_TUI, autoReadAgents });
+        await runTui(transport, { id: 0, name: threadId }, { modelAlias, model: resolveModelSpec(modelAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, client: CLIENT_ID_TUI, autoReadAgents });
         process.exit(0);
     }
 

@@ -61,7 +61,9 @@ Env:
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
-**Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.example` (the floor plurnk-service ships and copies on first run). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from this shared home and ships no `.env.example` of its own; the floor and everything else there are the daemon's.
+**Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.defaults` (the daemon family's rendered catalog) → the client's own packaged floor (below). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared home; everything else there is the daemon family's.
+
+**The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring ONLY the `PLURNK_CLIENT_*` prefix, and loads it itself SET-IF-UNSET beneath everything above — the one family member the daemon cannot assemble. A knob the operator set is never overridden; a commented knob is documentation, not a value.
 
 ### §1.1 Sessions and runs {§cli-sessions-and-runs}
 

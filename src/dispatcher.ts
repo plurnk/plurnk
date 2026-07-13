@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
 import { buildJsonError } from "./cli.ts";
+import { loadFloor } from "./envdefaults.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge } from "./agui.ts";
@@ -226,9 +227,10 @@ const dieJson = (code: number, kind: string, message: string, extra?: Record<str
 // Env cascade, aligned with plurnk-service's ~/.plurnk layering so the two share
 // one config home. process.loadEnvFile only fills UNSET vars, so loading
 // highest-precedence-first yields:
-//   shell > --env-file > --env-file-if-exists > ./.env > ~/.plurnk/.env > ~/.plurnk/.env.example
-// daemon to reach) — and defaults it sanely when nothing is set. Everything else
-// in ~/.plurnk is the daemon's; the client doesn't ship its own .env.example.
+//   shell > --env-file > --env-file-if-exists > ./.env > ~/.plurnk/.env
+//   > ~/.plurnk/.env.defaults (the daemon family's rendered catalog)
+//   > the client's OWN packaged .env.defaults (#141 — the self-serve floor:
+//     the client is the one member the daemon cannot assemble).
 const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void => {
     const ifExists = (p: string): void => { try { process.loadEnvFile(p); } catch { /* optional layer */ } };
     for (const f of envFiles) {
@@ -239,7 +241,8 @@ const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void =>
     ifExists(".env");
     const home = join(homedir(), ".plurnk");
     ifExists(join(home, ".env"));
-    ifExists(join(home, ".env.example"));
+    ifExists(join(home, ".env.defaults"));
+    loadFloor();
 };
 
 interface SessionResult { id: number; name: string }

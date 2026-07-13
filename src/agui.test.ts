@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaBridge, actionViaBridge } from "./agui.ts";
+import { runViaBridge, actionViaBridge, resolveWorld } from "./agui.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -108,5 +108,31 @@ test("[§cli-sessions-and-runs] runViaBridge: an explicit session rides with a D
         const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { session: string } } };
         assert.equal(body.threadId, "chat-2", "the thread names the conversation run");
         assert.equal(body.forwardedProps.plurnk.session, "workspace", "the session names the world — independently");
+    } finally { await mock.close(); }
+});
+
+test("[§cli-sessions-and-runs] resolveWorld: no --session → the daemon MINTS a fresh session (no 'tui'/'cli' label); the minted name is the world", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "session.create", ok: true, result: { id: 9, name: "session-1783-abc", runId: 3 } } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    try {
+        const name = await resolveWorld({ bridgeUrl: mock.url }, undefined, { projectRoot: "/repo" });
+        assert.equal(name, "session-1783-abc", "the world is the daemon-minted name, never a literal client label");
+        const action = (mock.captured[0].body as { forwardedProps: { plurnk: { action: { kind: string; name?: string; projectRoot?: string } } } }).forwardedProps.plurnk.action;
+        assert.equal(action.kind, "session.create");
+        assert.equal(action.name, undefined, "NO name is sent — the daemon mints a fresh unique one");
+        assert.equal(action.projectRoot, "/repo", "created WITH options — atomic with the root (#140)");
+    } finally { await mock.close(); }
+});
+
+test("[§cli-sessions-and-runs] resolveWorld: an explicit --session short-circuits — no wire touch, name verbatim", async () => {
+    let touched = false;
+    const mock = await bootMock((_req, res) => { touched = true; res.writeHead(200).end(); });
+    try {
+        assert.equal(await resolveWorld({ bridgeUrl: mock.url }, "my-world", { projectRoot: "/x" }), "my-world");
+        assert.equal(touched, false, "a named session never hits the wire to mint");
     } finally { await mock.close(); }
 });

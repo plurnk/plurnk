@@ -437,18 +437,20 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     let aliasCache: string[] = [];
     let activeAlias: string | undefined;
     // The active model's context window (svc#263) — the context-gauge denominator,
-    // null when the provider can't report it. Fetched once with the alias list;
-    // the gauge is approximate if /model later switches off the active default.
-    let activeContextSize: number | null | undefined;
+    // The context-window denominator per alias — /model retargets it (the gauge
+    // must track the SELECTED model, not the boot default). null when a provider
+    // can't report a window.
+    const contextByAlias = new Map<string, number | null>();
     try {
         const r = await transport.rpc("providers.list") as { aliases?: Array<{ alias: string; active?: boolean; contextSize?: number | null }> };
         if (Array.isArray(r.aliases)) {
             aliasCache = r.aliases.map((a) => a.alias);
-            const active = r.aliases.find((a) => a.active);
-            activeAlias = active?.alias;
-            activeContextSize = active?.contextSize;
+            for (const a of r.aliases) contextByAlias.set(a.alias, a.contextSize ?? null);
+            activeAlias = r.aliases.find((a) => a.active)?.alias;
         }
     } catch { /* completion stays empty; header falls back to (daemon default) */ }
+    // The window for whichever model the NEXT loop will use (/model overrides the boot default).
+    const currentContextSize = (): number | null | undefined => contextByAlias.get(opts.modelAlias ?? activeAlias ?? "");
 
     // One header line: version · session · model · help (see buildHeader).
     const header = buildHeader({
@@ -889,7 +891,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
                     usage = t.usage;
                 }
                 const wallMs = Date.now() - start;
-                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, activeContextSize));
+                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, currentContextSize()));
             } catch (cause) {
                 const msg = cause instanceof RunAckError && cause.status === 501
                     ? cause.message + NO_MODEL_HINT

@@ -68,6 +68,22 @@ export async function* runViaBridge(
     }
 }
 
+// Resolve the WORLD (session) name for a conversation. An explicit name (--session)
+// is used verbatim; otherwise the DAEMON mints a fresh, uniquely-named session via a
+// no-name session.create — the paradigm the agui transition regressed into a literal
+// "tui"/"cli" client label. Created WITH its options so creation is atomic with the
+// project root (#140). No wire touch when a name is given.
+export const resolveWorld = async (
+    target: BridgeTarget,
+    sessionName: string | undefined,
+    createParams: Record<string, unknown>,
+): Promise<string> => {
+    if (sessionName !== undefined) return sessionName;
+    const created = await actionViaBridge<{ name: string }>(target, { threadId: "bootstrap", kind: "session.create", params: createParams });
+    if (typeof created?.name !== "string" || created.name.length === 0) throw new Error("session.create returned no name — the daemon failed to mint a session");
+    return created.name;
+};
+
 // AG-UI+ verb surface (§3): a management action rides its own run —
 // forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.
 // Replaces the retired /plurnk/rpc side-channel; the run envelope is the interface.

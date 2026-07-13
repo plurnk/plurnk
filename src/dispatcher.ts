@@ -12,7 +12,7 @@ import { buildJsonError } from "./cli.ts";
 import { loadFloor } from "./envdefaults.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
-import { actionViaBridge } from "./agui.ts";
+import { actionViaBridge, resolveWorld } from "./agui.ts";
 import { runTui } from "./tui.ts";
 import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters, Caller } from "./subcommands.ts";
@@ -111,11 +111,11 @@ is appended after a blank line). With no positionals and a TTY stdin,
 enters the interactive REPL. Read-only subcommands (models / session list /
 log read / read <coord>) inspect daemon state without running a loop.
 
-env (shared ~/.plurnk cascade: ~/.plurnk/.env.example < ~/.plurnk/.env < ./.env
-     < --env-file < shell — same layering as plurnk-service):
-                        ONE knob the client needs; everything else in ~/.plurnk
-                        is the daemon's. Works with no config at all.
-  PLURNK_CLIENT_SESSION        resume a session by name, or create it if none exists
+env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
+     < ~/.plurnk/.env.defaults < the client's packaged .env.defaults floor):
+                        Works with no config at all.
+  PLURNK_CLIENT_SESSION        resume/create a session by name. UNSET = the daemon
+                        mints a fresh, uniquely-named session per invocation.
   PLURNK_CLIENT_RUN            resume (or create) a named run within that session
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
@@ -597,11 +597,30 @@ export const main = async (argv: string[]): Promise<void> => {
     // below is legacy awaiting deletion.
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
+
+    // THE WORLD (session) name. An explicit --session/PLURNK_CLIENT_SESSION names it;
+    // otherwise the daemon mints a fresh, uniquely-named session (resolveWorld) —
+    // never a literal "tui"/"cli". Resolved once, lazily, only when a conversation
+    // needs a world. Minted WITH its options so creation is atomic with the root.
+    let resolvedWorld: string | undefined;
+    const world = async (): Promise<string> => {
+        if (resolvedWorld !== undefined) return resolvedWorld;
+        const constraints = buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] });
+        const settings = await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd());
+        resolvedWorld = await resolveWorld({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, sessionName, {
+            ...(projectRoot !== null ? { projectRoot } : {}),
+            ...(constraints.length > 0 ? { constraints } : {}),
+            ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        });
+        return resolvedWorld;
+    };
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             // Thread-per-run (svc#366): --run names the CONVERSATION (the threadId);
-            // --session stays the world. Without --run, thread == world (the model run).
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: runName ?? sessionName ?? "cli", session: sessionName ?? "cli", yolo, json, projectRoot });
+            // the world is --session, else a fresh daemon-minted session. Without --run,
+            // thread == world (the model run).
+            const w = await world();
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: runName ?? w, session: w, yolo, json, projectRoot });
             process.exit(code);
         } catch (cause) {
             // The bridge is reachable-but-erroring OR unreachable — surface the real
@@ -620,13 +639,15 @@ export const main = async (argv: string[]): Promise<void> => {
     // rides forwardedProps; PLURNK_AGUI_QUESTIONS gates questions bridge-side.
     // (Per-session constraints/settings over the bridge are a follow-up.)
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
-        const threadId = runName ?? sessionName ?? "tui";
-        const world = sessionName ?? "tui";
+        const w = await world();
+        const threadId = runName ?? w;
         // Session options ride the thread's first run (forwardedProps.plurnk): the
         // same constraints (--pick/hide/view/repo) + settings the WS path sends on
-        // session.create, so a bridge TUI is configured identically.
+        // session.create, so a bridge TUI is configured identically. (When the world
+        // was daemon-minted above, it was created WITH these already; a re-send on the
+        // first run is idempotent — the session exists, options apply at creation only.)
         const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
-            session: world,
+            session: w,
             projectRoot,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),

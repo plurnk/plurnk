@@ -629,3 +629,11 @@ test("renderSummary: zero cost omits the $ part", () => {
     assert.match(out, /↑10 ↓5/);
     assert.doesNotMatch(out, /\$/);
 });
+
+test("[§cli-summary-line-per-looprun] contextGauge: the denominator is the SELECTED model's window (a /model switch must retarget it, not pin the boot default)", () => {
+    const byAlias = new Map<string, number | null>([["turboderp", 36000], ["fireslow", 128000]]);
+    // The TUI resolves the denominator from the current alias; assert the gauge reflects it.
+    assert.equal(contextGauge(18000, byAlias.get("turboderp")), " · ctx 50%/36k");
+    assert.equal(contextGauge(18000, byAlias.get("fireslow")), " · ctx 14%/128k");
+    assert.equal(contextGauge(18000, byAlias.get("unknown-alias")), "", "an alias with no known window omits the gauge, never lies with a stale one");
+});

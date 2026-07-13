@@ -27,6 +27,7 @@ export const locateDaemon = async (): Promise<string | null> => {
     // bin/plurnk-service.ts (#183) → src/service.ts (bin: dist/service.js,
     // 2026-06-20). Probe newest-first, keeping the old paths for older checkouts.
     const candidates = [
+        "plurnk-core/src/service.ts",   // monorepo layout (2026-07-12 cutover)
         "src/service.ts",
         "dist/service.js",
         "bin/plurnk-service.ts",

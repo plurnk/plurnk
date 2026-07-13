@@ -1,6 +1,6 @@
 {
   "name": "@plurnk/plurnk",
-  "version": "0.67.2",
+  "version": "0.67.3",
   "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
   "type": "module",
   "license": "MIT",
@@ -43,7 +43,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@plurnk/plurnk-aliases": "0.1.0",
+    "@plurnk/plurnk-aliases": "1.0.0",
     "ws": "^8.21.0"
   }
 }

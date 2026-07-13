@@ -12,6 +12,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, resolve } from "node:path";
+import { access, constants as fsConstants } from "node:fs/promises";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -39,6 +40,12 @@ const bootMockOAuth = (serviceBin: string): Promise<{ proc: ChildProcess; base: 
 before(async () => {
     const bin = await locateDaemon();
     if (bin === null) return;   // no service checkout → suite skips per-test
+    // The mock OAuth server is a DEV-TREE test asset (bin/mock-oauth.ts) — published
+    // tarballs ship dist/ only, so a published-artifact run skips this suite legibly
+    // rather than failing on a helper that was never in the product.
+    const mockPath = resolve(dirname(bin), "../bin/mock-oauth.ts");
+    const present = await access(mockPath, fsConstants.R_OK).then(() => true, () => false);
+    if (!present) return;       // published artifact → suite skips per-test
     const booted = await bootMockOAuth(bin);
     mock = booted.proc;
     daemon = await bootDaemon(bin, { extraEnv: { PLURNK_EXECS_MCP_TESTAUTH: `${booted.base}/mcp` } });

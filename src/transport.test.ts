@@ -177,3 +177,30 @@ test("[§cli-sessions-and-runs] EVERY request carries the session options — cr
         }
     } finally { await mock.close(); }
 });
+
+test("[§cli-model-selection] THE MODEL RIDES EVERY LOOP — not just the first (svc#414 guard: /model must not go cosmetic on run 2+)", async () => {
+    // Two sequential runs on one transport. Session options are first-touch only, but
+    // the model (alias + client-resolved spec) is a PER-LOOP knob and MUST ride every run
+    // — the daemon keeps no sticky session-model, so a missing alias on run 2 = the loop
+    // silently reverting to the daemon default. This is the "all loops send their model
+    // alias" contract, verified deterministically at the choke point.
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        bt.subscribe(collectingHandlers().h);
+        await bt.run("first", { alias: "fireslow", model: "fireworks/deepseek" }).done;
+        await bt.run("second", { alias: "fireslow", model: "fireworks/deepseek" }).done;
+        const runs = mock.captured.filter((c) => (c.body as { messages?: unknown[] }).messages !== undefined && ((c.body as { messages: unknown[] }).messages.length > 0 || (c.body as { forwardedProps?: { plurnk?: { action?: unknown } } }).forwardedProps?.plurnk?.action === undefined));
+        assert.equal(runs.length, 2, "two loops drove");
+        for (const [i, c] of runs.entries()) {
+            const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+            assert.equal(fp.alias, "fireslow", `loop ${i + 1} carries the alias`);
+            assert.equal(fp.model, "fireworks/deepseek", `loop ${i + 1} carries the resolved model — never dropped on a later loop`);
+        }
+    } finally { await mock.close(); }
+});

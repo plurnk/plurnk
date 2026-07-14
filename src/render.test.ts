@@ -630,10 +630,19 @@ test("renderSummary: zero cost omits the $ part", () => {
     assert.doesNotMatch(out, /\$/);
 });
 
-test("[§cli-summary-line-per-looprun] contextGauge: the denominator is the SELECTED model's window (a /model switch must retarget it, not pin the boot default)", () => {
-    const byAlias = new Map<string, number | null>([["turboderp", 36000], ["fireslow", 128000]]);
-    // The TUI resolves the denominator from the current alias; assert the gauge reflects it.
-    assert.equal(contextGauge(18000, byAlias.get("turboderp")), " · ctx 50%/36k");
-    assert.equal(contextGauge(18000, byAlias.get("fireslow")), " · ctx 14%/128k");
-    assert.equal(contextGauge(18000, byAlias.get("unknown-alias")), "", "an alias with no known window omits the gauge, never lies with a stale one");
+test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-loop window (a switched model reports its own; the client never re-derives it)", () => {
+    // The denominator is usage.contextSize from THIS loop — the daemon owns it under the
+    // agnostic ruler. Whatever window the loop ran with is what the gauge shows.
+    assert.equal(contextGauge(18000, 36000), " · ctx 50%/36k");
+    assert.equal(contextGauge(18000, 128000), " · ctx 14%/128k");
+    assert.equal(contextGauge(18000, null), "", "a loop the daemon can't window omits the gauge, never lies with a stale one");
+});
+
+test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.contextSize — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
+    const usage = { promptTokens: 1, completionTokens: 1, costPico: 0, contextTokens: 12000, contextSize: 48000 };
+    // The TUI now passes usage.contextSize as the denominator; the gauge reflects that loop's window.
+    const line = renderSummary(2, 1000, 200, false, usage, usage.contextSize);
+    assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");
+    // A loop whose window the daemon can't report → no gauge (never a stale number).
+    assert.doesNotMatch(renderSummary(2, 1000, 200, false, { ...usage, contextSize: null }, null), /ctx /);
 });

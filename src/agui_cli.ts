@@ -142,11 +142,18 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; session?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; session?: string; alias?: string; model?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
-    const forwardedProps = opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : undefined;
+    // Per-run knobs ride forwardedProps.plurnk — the model must reach the wire (one-shot
+    // used to DROP --model/PLURNK_MODEL and silently run the daemon default).
+    const fp: Record<string, unknown> = {
+        ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
+        ...(opts.model !== undefined ? { model: opts.model } : {}),
+    };
+    const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
     const io = {
         out: (s: string) => process.stdout.write(s),

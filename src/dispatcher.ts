@@ -620,7 +620,7 @@ export const main = async (argv: string[]): Promise<void> => {
             // the world is --session, else a fresh daemon-minted session. Without --run,
             // thread == world (the model run).
             const w = await world();
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: runName ?? w, session: w, yolo, json, projectRoot });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: runName ?? w, session: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), yolo, json, projectRoot });
             process.exit(code);
         } catch (cause) {
             // The bridge is reachable-but-erroring OR unreachable — surface the real

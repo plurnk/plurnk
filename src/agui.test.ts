@@ -136,3 +136,19 @@ test("[§cli-sessions-and-runs] resolveWorld: an explicit --session short-circui
         assert.equal(touched, false, "a named session never hits the wire to mint");
     } finally { await mock.close(); }
 });
+
+test("[§cli-model-selection] runCliViaBridge: --model rides the one-shot wire (alias + resolved model in forwardedProps.plurnk) — no more silent daemon-default", async () => {
+    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    try {
+        await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", session: "w", alias: "fireslow", model: "fireworks/deepseek", yolo: true, json: true, projectRoot: "/repo" });
+        const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+        assert.equal(fp.alias, "fireslow", "the alias reaches the wire");
+        assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");
+    } finally { await mock.close(); }
+});

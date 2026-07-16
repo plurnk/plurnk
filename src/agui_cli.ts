@@ -30,7 +30,7 @@ interface TerminatedValue {
     finalStatus: number;
     hitMaxTurns: boolean;
     turnIds: number[];
-    usage: { promptTokens: number; completionTokens: number; costPico: number; contextTokens: number; contextSize: number | null; meta: Record<string, unknown> };
+    usage: { promptTokens: number; completionTokens: number; costPico: number; contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
 }
 
 export interface CliRunResult {

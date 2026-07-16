@@ -344,24 +344,24 @@ export interface LoopUsage {
     // Context-window occupancy + window, BOTH the daemon's per-loop figures. Under the
     // model-agnostic ruler (§tokenomics-agnostic-ruler, the chars/2 count that lets one
     // session serve many models) the daemon owns the whole budget narrative: contextTokens
-    // is the agnostic occupancy, contextSize is THIS loop's effective window (ctx capped by
+    // is the agnostic occupancy, promptBudget is THIS loop's effective window (ctx capped by
     // the model's real limit). The client renders both from loop/terminated — it does NOT
     // re-derive the window per-alias (a switched model reports its own window here).
     contextTokens?: number;
-    contextSize?: number | null;
+    promptBudget?: number | null;
 }
 
 // Compact token count: 49152 → "49k", 980 → "980". The gauge stays terse.
 const formatK = (n: number): string => n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`;
 
 // Context-% gauge (svc#263): `ctx 15%/49k`. Both figures are the daemon's per-loop
-// usage — numerator contextTokens (agnostic occupancy), denominator contextSize (this
+// usage — numerator contextTokens (agnostic occupancy), denominator promptBudget (this
 // loop's effective window). Omitted — never guessed — when either is absent (a loop
-// whose window the daemon can't report returns contextSize null).
-export const contextGauge = (contextTokens?: number, contextSize?: number | null): string => {
-    if (contextTokens === undefined || contextSize === undefined || contextSize === null || contextSize <= 0) return "";
-    const pct = Math.round((contextTokens / contextSize) * 100);
-    return ` · ctx ${pct}%/${formatK(contextSize)}`;
+// whose window the daemon can't report returns promptBudget null).
+export const contextGauge = (contextTokens?: number, promptBudget?: number | null): string => {
+    if (contextTokens === undefined || promptBudget === undefined || promptBudget === null || promptBudget <= 0) return "";
+    const pct = Math.round((contextTokens / promptBudget) * 100);
+    return ` · ctx ${pct}%/${formatK(promptBudget)}`;
 };
 
 // usage is absent for non-model ops (op.exec / op.parse have no provider
@@ -380,13 +380,13 @@ export const terminalStatusLabel = (status: number): string =>
                         : status === 508 ? "loop detected"
                             : `final ${status}`;
 
-export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage, contextSize?: number | null): string => {
+export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage, promptBudget?: number | null): string => {
     const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(finalStatus);
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
     if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
-        tokenPart += contextGauge(usage.contextTokens, contextSize);
+        tokenPart += contextGauge(usage.contextTokens, promptBudget);
         // Money: loop (this loop's cost) | session (daemon total, svc#254) |
         // remaining (account balance, svc#252). Each only when available — the
         // client renders all three, aggregates none.

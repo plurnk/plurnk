@@ -445,7 +445,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     let aliasCache: string[] = [];
     let activeAlias: string | undefined;
     // Alias list for completion + the header's active default. The context-gauge WINDOW
-    // is NOT derived here — it rides each loop's usage.contextSize from the daemon (which
+    // is NOT derived here — it rides each loop's usage.promptBudget from the daemon (which
     // owns the budget narrative under the agnostic ruler; a switched model reports its own
     // window there). Re-deriving per-alias here was the wrong layer and mis-rendered a
     // model whose provider window is null but whose effective window is the ctx cap.
@@ -896,7 +896,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
                     usage = t.usage;
                 }
                 const wallMs = Date.now() - start;
-                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, usage?.contextSize));
+                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, usage?.promptBudget));
             } catch (cause) {
                 const msg = cause instanceof RunAckError && cause.status === 501
                     ? cause.message + NO_MODEL_HINT

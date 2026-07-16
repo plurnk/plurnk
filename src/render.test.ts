@@ -415,7 +415,7 @@ test("contextGauge: sub-1000 window stays bare (no k)", () => {
     assert.equal(contextGauge(120, 512), " · ctx 23%/512");
 });
 
-test("contextGauge: null/absent contextSize → omitted (never guessed)", () => {
+test("contextGauge: null/absent promptBudget → omitted (never guessed)", () => {
     assert.equal(contextGauge(7360, null), "");
     assert.equal(contextGauge(7360, undefined), "");
     assert.equal(contextGauge(7360, 0), "");
@@ -425,12 +425,12 @@ test("contextGauge: absent contextTokens → omitted", () => {
     assert.equal(contextGauge(undefined, 49152), "");
 });
 
-test("renderSummary: contextTokens + contextSize → gauge appended", () => {
+test("renderSummary: contextTokens + promptBudget → gauge appended", () => {
     const s = renderSummary(1, 500, 200, false, { ...usage(7360, 27), contextTokens: 7360 }, 49152);
     assert.match(s, /ctx 15%\/49k/);
 });
 
-test("renderSummary: no contextSize → no gauge even with contextTokens", () => {
+test("renderSummary: no promptBudget → no gauge even with contextTokens", () => {
     const s = renderSummary(1, 500, 200, false, { ...usage(7360, 27), contextTokens: 7360 });
     assert.doesNotMatch(s, /ctx /);
 });
@@ -631,18 +631,18 @@ test("renderSummary: zero cost omits the $ part", () => {
 });
 
 test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-loop window (a switched model reports its own; the client never re-derives it)", () => {
-    // The denominator is usage.contextSize from THIS loop — the daemon owns it under the
+    // The denominator is usage.promptBudget from THIS loop — the daemon owns it under the
     // agnostic ruler. Whatever window the loop ran with is what the gauge shows.
     assert.equal(contextGauge(18000, 36000), " · ctx 50%/36k");
     assert.equal(contextGauge(18000, 128000), " · ctx 14%/128k");
     assert.equal(contextGauge(18000, null), "", "a loop the daemon can't window omits the gauge, never lies with a stale one");
 });
 
-test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.contextSize — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
-    const usage = { promptTokens: 1, completionTokens: 1, costPico: 0, contextTokens: 12000, contextSize: 48000 };
-    // The TUI now passes usage.contextSize as the denominator; the gauge reflects that loop's window.
-    const line = renderSummary(2, 1000, 200, false, usage, usage.contextSize);
+test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.promptBudget — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
+    const usage = { promptTokens: 1, completionTokens: 1, costPico: 0, contextTokens: 12000, promptBudget: 48000 };
+    // The TUI now passes usage.promptBudget as the denominator; the gauge reflects that loop's window.
+    const line = renderSummary(2, 1000, 200, false, usage, usage.promptBudget);
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");
     // A loop whose window the daemon can't report → no gauge (never a stale number).
-    assert.doesNotMatch(renderSummary(2, 1000, 200, false, { ...usage, contextSize: null }, null), /ctx /);
+    assert.doesNotMatch(renderSummary(2, 1000, 200, false, { ...usage, promptBudget: null }, null), /ctx /);
 });

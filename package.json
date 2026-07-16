@@ -44,7 +44,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@plurnk/plurnk-aliases": "1.0.5",
-    "ws": "^8.21.0"
+    "@plurnk/plurnk-aliases": "1.0.5"
   }
 }

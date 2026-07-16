@@ -46,6 +46,9 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
     const { exitCode } = await consumeCliRun(stream([
         row({ op: "FIND", scheme: "file", pathname: "/x" }),
         terminalSend("Jupiter is the largest planet."),
+        // The real wire ALWAYS emits terminated before RUN_FINISHED; a stream without
+        // it is a dead stream (502, svc#478) — the fixture matches the protocol.
+        { type: "CUSTOM", name: "plurnk.terminated", value: { sessionId: 1, loopId: 1, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } },
         { type: "RUN_FINISHED", threadId: "t", runId: "r" },
     ]), io);
     assert.equal(exitCode, 0);

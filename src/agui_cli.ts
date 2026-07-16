@@ -132,6 +132,10 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             }
         }
     }
+    // A stream that ended with NO terminal truth (no terminated, no RUN_ERROR, no
+    // pending resume) is a DEAD stream — 502, never the initialized 200 (svc#478:
+    // the fabricated-success default made a killed run exit 0 with an empty record).
+    if (terminated === null && pendingResume === null && finalStatus === 200) finalStatus = 502;
     return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, telemetry, response, terminated, modelRunId, pendingResume };
 };
 
@@ -142,7 +146,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; session?: string; alias?: string; model?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; session?: string; alias?: string; model?: string; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
@@ -164,45 +168,81 @@ export const runCliViaBridge = async (
         noReviewChannel,
         review: reviewProposal,
     };
-    // Terminate-resume segments: a client-owned proposal ends the segment as a
-    // tool-call; the decision POSTs as the next segment's tool-result. Accumulate
-    // across segments — one logical run, one record.
-    let next: { prompt?: string; messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }), io);
-    while (result.pendingResume !== null) {
-        const r = result.pendingResume;
-        next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
-        const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }), io);
-        result = {
-            ...seg,
-            entries: [...result.entries, ...seg.entries],
-            telemetry: [...result.telemetry, ...seg.telemetry],
-            response: seg.response.length > 0 ? seg.response : result.response,
-            modelRunId: result.modelRunId ?? seg.modelRunId,
-        };
-    }
-    if (opts.json) {
-        const t = result.terminated;
+    // --timeout <s> (svc#478 — the flag was parsed-and-dead since the agui migration):
+    // at the deadline, fire loop.cancel at the daemon (the loop resolves 499) and, if the
+    // stream still hasn't ended after a grace, abort the SSE locally (hangup is the abort).
+    // Exit 3 with timedOut:true in the record, per SPEC §1.
+    let timedOut = false;
+    const ac = new AbortController();
+    const cancelLoop = async (): Promise<void> => {
+        for await (const e of runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), messages: [], forwardedProps: { action: { kind: "loop.cancel", reason: "client_timeout" } } })) void e;
+    };
+    let graceTimer: NodeJS.Timeout | undefined;
+    const deadline = opts.timeoutSec !== undefined && opts.timeoutSec > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            void cancelLoop().catch(() => { /* the abort below is the backstop */ });
+            graceTimer = setTimeout(() => ac.abort(), 15_000);
+        }, opts.timeoutSec * 1000)
+        : undefined;
+
+    // One record, emitted exactly once — the normal path, the timeout path, and a
+    // SIGTERM flush (a killed client must not lose its --json record) all funnel here.
+    let emitted = false;
+    const emitRecord = (r: CliRunResult): void => {
+        if (!opts.json || emitted) return;
+        emitted = true;
+        const t = r.terminated;
         const doc = buildJsonRecord({
             session: { id: t?.sessionId ?? 0, name: opts.threadId },
             prompt,
-            response: result.response,
-            entries: result.entries,
-            telemetry: result.telemetry,
+            response: r.response,
+            entries: r.entries,
+            telemetry: r.telemetry,
             result: {
                 loopId: t?.loopId ?? 0,
-                modelRunId: result.modelRunId ?? undefined,
+                modelRunId: r.modelRunId ?? undefined,
                 turnIds: t?.turnIds ?? [],
-                finalStatus: t?.finalStatus ?? 200,
+                // NEVER a fabricated 200: a stream that died without terminal truth is 502.
+                finalStatus: t?.finalStatus ?? 502,
                 hitMaxTurns: t?.hitMaxTurns ?? false,
                 usage: t?.usage,
             },
             wallMs: Date.now() - started,
-            timedOut: false,
+            timedOut,
         });
         process.stdout.write(`${JSON.stringify(doc)}\n`);
+    };
+
+    // Terminate-resume segments: a client-owned proposal ends the segment as a
+    // tool-call; the decision POSTs as the next segment's tool-result. Accumulate
+    // across segments — one logical run, one record.
+    let next: { prompt?: string; messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }, ac.signal), io);
+    // A hard kill mid-run must still leave the record behind (svc#478: Harbor's axe
+    // erased the whole document). Best-effort flush of what accumulated so far.
+    const onTerm = (): void => { emitRecord(result); process.exit(143); };
+    process.once("SIGTERM", onTerm);
+    try {
+        while (result.pendingResume !== null) {
+            const r = result.pendingResume;
+            next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+            const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }, ac.signal), io);
+            result = {
+                ...seg,
+                entries: [...result.entries, ...seg.entries],
+                telemetry: [...result.telemetry, ...seg.telemetry],
+                response: seg.response.length > 0 ? seg.response : result.response,
+                modelRunId: result.modelRunId ?? seg.modelRunId,
+            };
+        }
+    } finally {
+        process.removeListener("SIGTERM", onTerm);
+        if (deadline !== undefined) clearTimeout(deadline);
+        if (graceTimer !== undefined) clearTimeout(graceTimer);
     }
-    return result.exitCode;
+    emitRecord(result);
+    return timedOut ? 3 : result.exitCode;
 };
 
 // Script mode over AG-UI+ (one op.parse action; gated ops pause/resume like any run).

@@ -152,3 +152,66 @@ test("[§cli-model-selection] runCliViaBridge: --model rides the one-shot wire (
         assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");
     } finally { await mock.close(); }
 });
+
+test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loop, the record says timedOut, exit is 3 — the flag was parsed-and-dead since the agui migration", async () => {
+    const { runCliViaBridge } = await import("./agui_cli.ts");
+    let cancelSeen = false;
+    let holdOpen: (() => void) | null = null;
+    const mock = await bootMock((req, res) => {
+        const body = (mock.captured[mock.captured.length - 1]?.body ?? {}) as { forwardedProps?: { plurnk?: { action?: { kind?: string } } } };
+        if (body.forwardedProps?.plurnk?.action?.kind === "loop.cancel") {
+            cancelSeen = true;
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "loop.cancel", ok: true, result: { cancelled: true } } }));
+            res.write(frame({ type: "RUN_FINISHED" }));
+            res.end();
+            // The daemon aborts the drain → the held conversation stream terminates 499.
+            if (holdOpen !== null) holdOpen();
+            return;
+        }
+        // The conversation run: one row, then HELD OPEN (a loop that never ends on its own).
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "PLAN" } }));
+        holdOpen = () => {
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 499, hitMaxTurns: false, turnIds: [1] } }));
+            res.write(frame({ type: "RUN_FINISHED" }));
+            res.end();
+        };
+    });
+    const outs: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
+    try {
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", session: "w", timeoutSec: 1, yolo: true, json: true, projectRoot: null });
+        assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
+        assert.equal(code, 3, "timeout exits 3 (cancellation)");
+        const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
+        assert.equal(doc.timedOut, true, "the record says timedOut");
+        assert.equal(doc.finalStatus, 499, "the loop's real cancel status, not a fabricated 200");
+    } finally {
+        (process.stdout as unknown as { write: typeof origWrite }).write = origWrite;
+        await mock.close();
+    }
+});
+
+test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in the json record (svc#478 companion)", async () => {
+    const { runCliViaBridge } = await import("./agui_cli.ts");
+    // The stream dies without terminal truth: no terminated, no RUN_FINISHED.
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "PLAN" } }));
+        res.end();   // abrupt end — no terminal event
+    });
+    const outs: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
+    try {
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", session: "w", yolo: true, json: true, projectRoot: null });
+        const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
+        assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
+        assert.notEqual(code, 0, "the exit code is not success either");
+    } finally {
+        (process.stdout as unknown as { write: typeof origWrite }).write = origWrite;
+        await mock.close();
+    }
+});

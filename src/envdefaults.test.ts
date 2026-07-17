@@ -9,7 +9,7 @@ import { parseDefaults, applyFloor, DEFAULTS_PATH } from "./envdefaults.ts";
 import { readFile } from "node:fs/promises";
 
 test("parseDefaults: KEY=VALUE lines parse; comments and blanks skip; commented knobs are DOCS, not values", () => {
-    const out = parseDefaults("# doc line\nPLURNK_CLIENT_YOLO=0\n\n# PLURNK_CLIENT_RUN=\nPLURNK_CLIENT_JSON=0\n");
+    const out = parseDefaults("# doc line\nPLURNK_CLIENT_YOLO=0\n\n# PLURNK_CLIENT_WORKER=\nPLURNK_CLIENT_JSON=0\n");
     assert.deepEqual(out, { PLURNK_CLIENT_YOLO: "0", PLURNK_CLIENT_JSON: "0" });
 });
 

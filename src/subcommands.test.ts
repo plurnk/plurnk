@@ -40,23 +40,23 @@ const captureStdout = async (fn: () => Promise<unknown>): Promise<string> => {
 
 // ─── runSessionRename ─────────────────────────────────────────────────
 
-test("runSessionRename: resolves by name, attaches, renames the attached session", async () => {
+test("runSessionRename: resolves by name, attaches, renames the attached workspace", async () => {
     const { rpc, calls } = fakeRpc({
-        "session.list": { sessions: [{ id: 7, name: "old", project_root: "/p" }] },
-        "session.attach": { id: 7, name: "old", runId: 8, runName: "r" },
-        "session.rename": { id: 7, name: "new" },
+        "workspace.list": { workspaces: [{ id: 7, name: "old", project_root: "/p" }] },
+        "workspace.attach": { id: 7, name: "old", runId: 8, workerName: "r" },
+        "workspace.rename": { id: 7, name: "new" },
     });
     const code = await captureStdout(async () => assert.equal(await runSessionRename(rpc, "old", "new", { json: false }), 0));
     const seq = calls.map((c) => c.method);
-    assert.deepEqual(seq, ["session.list", "session.attach", "session.rename"]);
-    assert.deepEqual(calls.find((c) => c.method === "session.rename")?.params, { name: "new" });
+    assert.deepEqual(seq, ["workspace.list", "workspace.attach", "workspace.rename"]);
+    assert.deepEqual(calls.find((c) => c.method === "workspace.rename")?.params, { name: "new" });
     assert.match(code, /renamed "old" → "new"/);
 });
 
-test("runSessionRename: unknown session → exit 1, no rename attempted", async () => {
-    const { rpc, calls } = fakeRpc({ "session.list": { sessions: [] } });
+test("runSessionRename: unknown workspace → exit 1, no rename attempted", async () => {
+    const { rpc, calls } = fakeRpc({ "workspace.list": { workspaces: [] } });
     assert.equal(await runSessionRename(rpc, "ghost", "x", { json: false }), 1);
-    assert.equal(calls.some((c) => c.method === "session.rename"), false);
+    assert.equal(calls.some((c) => c.method === "workspace.rename"), false);
 });
 
 // ─── runModels ────────────────────────────────────────────────────────
@@ -105,47 +105,47 @@ test("runModels: empty list → '[]' in json mode", async () => {
 
 // ─── runSessionList ───────────────────────────────────────────────────
 
-test("[§cli-plurnk-session-list] runSessionList: table format with sessions", async () => {
+test("[§cli-plurnk-workspace-list] runSessionList: table format with workspaces", async () => {
     const { rpc, calls } = fakeRpc({
-        "session.list": {
-            sessions: [
+        "workspace.list": {
+            workspaces: [
                 { id: 1, name: "alpha", project_root: "/tmp/work", created_at: "2026-05-26T12:00:00Z", cost_pico: 0 },
                 { id: 2, name: "beta", project_root: null, created_at: "2026-05-26T13:00:00Z", cost_pico: 12_500_000_000 },
             ],
         },
     });
     const out = await captureStdout(() => runSessionList(rpc, { json: false }));
-    assert.equal(calls[0].method, "session.list");
+    assert.equal(calls[0].method, "workspace.list");
     assert.match(out, /alpha/);
     assert.match(out, /\/tmp\/work/);
     assert.match(out, /beta/);
     assert.match(out, /\(headless\)/); // null project_root rendered as "(headless)"
 });
 
-test("runSessionList: --json passes sessions through", async () => {
-    const sessions = [{ id: 1, name: "x", project_root: null, created_at: "now", cost_pico: 0 }];
-    const { rpc } = fakeRpc({ "session.list": { sessions } });
+test("runSessionList: --json passes workspaces through", async () => {
+    const workspaces = [{ id: 1, name: "x", project_root: null, created_at: "now", cost_pico: 0 }];
+    const { rpc } = fakeRpc({ "workspace.list": { workspaces } });
     const out = await captureStdout(() => runSessionList(rpc, { json: true }));
-    assert.deepEqual(JSON.parse(out.trim()), sessions);
+    assert.deepEqual(JSON.parse(out.trim()), workspaces);
 });
 
 test("runSessionList: empty list → friendly message in table mode", async () => {
-    const { rpc } = fakeRpc({ "session.list": { sessions: [] } });
+    const { rpc } = fakeRpc({ "workspace.list": { workspaces: [] } });
     const out = await captureStdout(() => runSessionList(rpc, { json: false }));
-    assert.match(out, /no sessions/);
+    assert.match(out, /no workspaces/);
 });
 
 // ─── runSessionRuns ───────────────────────────────────────────────────
 
-test("[§cli-plurnk-session-runs-name] runSessionRuns: looks up session by name then calls session.runs with id", async () => {
+test("[§cli-plurnk-workspace-workers-name] runSessionRuns: looks up workspace by name then calls workspace.workers with id", async () => {
     const { rpc, calls } = fakeRpc({
-        "session.list": {
-            sessions: [
+        "workspace.list": {
+            workspaces: [
                 { id: 1, name: "alpha", project_root: null, created_at: "t", cost_pico: 0 },
                 { id: 2, name: "beta", project_root: null, created_at: "t", cost_pico: 0 },
             ],
         },
-        "session.runs": {
+        "workspace.workers": {
             runs: [
                 { id: 10, name: "run-1", created_at: "t1", cost_pico: 0 },
                 { id: 11, name: "run-2", created_at: "t2", cost_pico: 500_000_000_000 },
@@ -154,8 +154,8 @@ test("[§cli-plurnk-session-runs-name] runSessionRuns: looks up session by name 
     });
     const out = await captureStdout(() => runSessionRuns(rpc, "beta", { json: false }));
     assert.equal(calls.length, 2);
-    assert.equal(calls[0].method, "session.list");
-    assert.equal(calls[1].method, "session.runs");
+    assert.equal(calls[0].method, "workspace.list");
+    assert.equal(calls[1].method, "workspace.workers");
     assert.deepEqual(calls[1].params, { id: 2 });
     assert.match(out, /run-1/);
     assert.match(out, /run-2/);
@@ -164,15 +164,15 @@ test("[§cli-plurnk-session-runs-name] runSessionRuns: looks up session by name 
 test("runSessionRuns: --json emits runs array", async () => {
     const runs = [{ id: 10, name: "r", created_at: "t", cost_pico: 0 }];
     const { rpc } = fakeRpc({
-        "session.list": { sessions: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
-        "session.runs": { runs },
+        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
+        "workspace.workers": { runs },
     });
     const out = await captureStdout(() => runSessionRuns(rpc, "x", { json: true }));
     assert.deepEqual(JSON.parse(out.trim()), runs);
 });
 
-test("runSessionRuns: unknown session name → exit 1, error on stderr", async () => {
-    const { rpc } = fakeRpc({ "session.list": { sessions: [] } });
+test("runSessionRuns: unknown workspace name → exit 1, error on stderr", async () => {
+    const { rpc } = fakeRpc({ "workspace.list": { workspaces: [] } });
     const errs: string[] = [];
     const original = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((c: string | Uint8Array): boolean => {
@@ -183,13 +183,13 @@ test("runSessionRuns: unknown session name → exit 1, error on stderr", async (
         const code = await runSessionRuns(rpc, "nonexistent", { json: false });
         assert.equal(code, 1);
     } finally { process.stderr.write = original; }
-    assert.match(errs.join(""), /no session named "nonexistent"/);
+    assert.match(errs.join(""), /no workspace named "nonexistent"/);
 });
 
 test("runSessionRuns: ambiguous name → exit 1", async () => {
     const { rpc } = fakeRpc({
-        "session.list": {
-            sessions: [
+        "workspace.list": {
+            workspaces: [
                 { id: 1, name: "dup", project_root: null, created_at: "t", cost_pico: 0 },
                 { id: 2, name: "dup", project_root: null, created_at: "t", cost_pico: 0 },
             ],
@@ -203,10 +203,10 @@ test("runSessionRuns: ambiguous name → exit 1", async () => {
     } finally { process.stderr.write = original; }
 });
 
-test("runSessionRuns: session has no runs → friendly message in table mode", async () => {
+test("runSessionRuns: workspace has no runs → friendly message in table mode", async () => {
     const { rpc } = fakeRpc({
-        "session.list": { sessions: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
-        "session.runs": { runs: [] },
+        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
+        "workspace.workers": { runs: [] },
     });
     const out = await captureStdout(() => runSessionRuns(rpc, "x", { json: false }));
     assert.match(out, /no runs/);

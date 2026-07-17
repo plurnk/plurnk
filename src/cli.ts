@@ -13,11 +13,11 @@ import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts
 import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
-// The assembled loop outcome — loopId/modelRunId from the loop.run ACK,
+// The assembled loop outcome — loopId/modelWorkerId from the loop.run ACK,
 // the rest from the loop/terminated event (svc 0.45.0+ split, see below).
 interface LoopRunResult {
     loopId: number;
-    modelRunId?: number;   // the conversation's run (live on loop.run, svc 0.44.0)
+    modelWorkerId?: number;   // the conversation's run (live on loop.run, svc 0.44.0)
     turnIds: number[];
     finalStatus: number;
     hitMaxTurns: boolean;
@@ -25,12 +25,12 @@ interface LoopRunResult {
     usage?: LoopUsage;
 }
 
-// loop.run is fire-and-forget (svc 0.45.0+): it ACKS {loopId, modelRunId,
+// loop.run is fire-and-forget (svc 0.45.0+): it ACKS {loopId, modelWorkerId,
 // finalStatus:100} and the loop drains async — the outcome rides loop/terminated.
 // `status`/`error` appear only on a synchronous failure (501 no provider, etc.).
 interface LoopAck {
     loopId?: number;
-    modelRunId?: number;
+    modelWorkerId?: number;
     finalStatus?: number;
     status?: number;
     error?: string;
@@ -97,22 +97,22 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
 // The complete client-observed record of one loop run, as a plain object ready
 // to JSON.stringify. Pure → unit-testable without a daemon.
 export const buildJsonRecord = (input: {
-    session: SessionResult; prompt: string; response: string;
+    workspace: SessionResult; prompt: string; response: string;
     entries: LogEntryWire[]; telemetry: TelemetryEvent[];
-    result: { loopId: number; modelRunId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
+    result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
     wallMs: number; timedOut: boolean;
 }): Record<string, unknown> => {
     const turns = groupOpsByTurn(input.entries);
     const doc: Record<string, unknown> = {
         schemaVersion: JSON_SCHEMA_VERSION,
-        session: { id: input.session.id, name: input.session.name },
+        workspace: { id: input.workspace.id, name: input.workspace.name },
         prompt: input.prompt,
         response: input.response,
         finalStatus: input.result.finalStatus,
         hitMaxTurns: input.result.hitMaxTurns,
         timedOut: input.timedOut,
         loopId: input.result.loopId,
-        runId: input.result.modelRunId ?? null,   // the conversation's run, for correlation / `read --run`
+        runId: input.result.modelWorkerId ?? null,   // the conversation's run, for correlation / `read --worker`
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage !== undefined
@@ -167,11 +167,11 @@ export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>
 
 // One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
 export const buildScriptJsonRecord = (input: {
-    session: SessionResult; results: Array<{ status: number }>;
+    workspace: SessionResult; results: Array<{ status: number }>;
     entries: LogEntryWire[]; telemetry: TelemetryEvent[]; wallMs: number;
 }): Record<string, unknown> => ({
     schemaVersion: JSON_SCHEMA_VERSION,
-    session: { id: input.session.id, name: input.session.name },
+    workspace: { id: input.workspace.id, name: input.workspace.name },
     results: input.results,
     turns: groupOpsByTurn(input.entries),
     telemetry: input.telemetry,

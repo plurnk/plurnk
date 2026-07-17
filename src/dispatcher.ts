@@ -32,7 +32,7 @@ import {
 import type { TelemetryEvent } from "./telemetry.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
-// blocks an interactive session because we gate on isTTY upstream.
+// blocks an interactive workspace because we gate on isTTY upstream.
 const readStdin = async (): Promise<string> => {
     let buf = "";
     for await (const chunk of process.stdin) buf += chunk;
@@ -68,14 +68,14 @@ export const resolveModelSpec = (alias: string | undefined, env: NodeJS.ProcessE
     return match !== undefined ? `${match.provider}/${match.model}` : undefined;
 };
 
-// #132 — the client's per-session exec-policy layer: forward the PLURNK_EXECS_*
+// #132 — the client's per-workspace exec-policy layer: forward the PLURNK_EXECS_*
 // enable/disable grammar (PLURNK_EXECS_ONLY, PLURNK_EXECS_<TAG>=0|false) so the
 // daemon intersects it with its own ceiling (service ∧ client — subtractive,
 // can never re-enable a service-disabled tag). Forwarded VERBATIM: the daemon's
 // execs Policy is the single interpreter (pull-don't-copy). EXCLUDES
 // PLURNK_EXECS_MCP_* — those are MCP SERVER configs (URLs, header bearer tokens),
 // not policy, and must never ride the wire. The bare PLURNK_EXECS_MCP tag toggle
-// (no trailing `_`) stays. Session-scoped: a per-session .env carries its own.
+// (no trailing `_`) stays. Workspace-scoped: a per-workspace .env carries its own.
 export const collectExecsPolicy = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => {
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(env)) {
@@ -95,32 +95,32 @@ export const resolveProjectRoot = (raw: string | undefined): string | null => {
     return raw;
 };
 
-const USAGE = `usage: plurnk [--json] [--session <name>] [--run <name>] [--model <alias>] [prompt...]
+const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <alias>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [--json]
-       plurnk session list [--json]
-       plurnk session runs <name> [--json]
-       plurnk session rename <name> <newname> [--json]
-       plurnk log read --session <name> [--run <name>]
+       plurnk workspace list [--json]
+       plurnk workspace workers <name> [--json]
+       plurnk workspace rename <name> <newname> [--json]
+       plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
-       plurnk read <loop>/<turn>/<seq> --session <name> [--run <name>] [--json]
+       plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
 
 Connects to the plurnk-service daemon. Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
-enters the interactive REPL. Read-only subcommands (models / session list /
+enters the interactive REPL. Read-only subcommands (models / workspace list /
 log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
      < ~/.plurnk/.env.defaults < the client's packaged .env.defaults floor):
                         Works with no config at all.
-  PLURNK_CLIENT_SESSION        resume/create a session by name. UNSET = the daemon
-                        mints a fresh, uniquely-named session per invocation.
-  PLURNK_CLIENT_RUN            resume (or create) a named run within that session
+  PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
+                        mints a fresh, uniquely-named workspace per invocation.
+  PLURNK_CLIENT_WORKER            resume (or create) a named run within that workspace
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
                         overrides for this invocation only.
-  PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to session.create as the session's
+  PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
@@ -133,11 +133,11 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
                         instead of raw daemon WS (the exclusive-portal path).
                         PLURNK_AGUI_TOKEN is the bearer if the bridge requires one.
                         Scripts + subcommands stay on the daemon.
-  PLURNK_EXECS_*        per-session exec-runtime policy, sent to the daemon at
-                        session.create (PLURNK_EXECS_ONLY=a,b allowlist;
+  PLURNK_EXECS_*        per-workspace exec-runtime policy, sent to the daemon at
+                        workspace.create (PLURNK_EXECS_ONLY=a,b allowlist;
                         PLURNK_EXECS_<tag>=0 kill one). Subtractive only — the
                         daemon intersects with its ceiling; the client can narrow,
-                        never re-enable. Shares the daemon's grammar; a session's
+                        never re-enable. Shares the daemon's grammar; a workspace's
                         .env carries its own. (MCP server configs are NOT sent.)
 
 options:
@@ -147,17 +147,17 @@ options:
                           telemetry, the answer at .response, usage), stderr
                           silent, errors emitted as {"error":…}. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
-      --session <name>    resume the named session, or create it under that name
+      --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
-                          auto-named session is created. Overrides PLURNK_CLIENT_SESSION.
-      --run <name>        resume (or create) the named run within the session.
-                          Requires --session. Overrides PLURNK_CLIENT_RUN.
+                          auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
+      --worker <name>        resume (or create) the named run within the workspace.
+                          Requires --workspace. Overrides PLURNK_CLIENT_WORKER.
       --model <alias>     model alias to pass on every loop.run. Resolved
                           server-side against PLURNK_MODEL_<alias>. Without
                           this (and PLURNK_MODEL unset), the daemon uses its
                           own boot-time PLURNK_MODEL.
-      --project-root <p>  absolute path. Sent on session.create only; ignored
-                          on --session attach (daemon preserves stored value).
+      --project-root <p>  absolute path. Sent on workspace.create only; ignored
+                          on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
@@ -180,17 +180,17 @@ options:
       --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
       --repo <glob>       membership: track a git repo folder (its ls-files join
                           the manifest), relative to project root. Repeatable.
-      --files-items <n>   session-open preview of the TRACKED-FILE list
+      --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (FIND(file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/run/plurnk) always foists full. Create-time.
-      --md <name=path>    pin a markdown doc into the session (read at turn 0);
+      --md <name=path>    pin a markdown doc into the workspace (read at turn 0);
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
-      --max-commands <n>  ceiling on ops per emission for the session (min with the
+      --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
-      --no-git            deny git membership + telemetry for the session (never
+      --no-git            deny git membership + telemetry for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --no-agents-md      turn off the service's AGENTS.md auto-load for this
-                          session (overrides PLURNK_AGENTS_AUTO). Create-time.
+                          workspace (overrides PLURNK_AGENTS_AUTO). Create-time.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -198,13 +198,13 @@ options:
 
 subcommands:
   models                  list configured model aliases (providers.list)
-  session list            list sessions on the daemon (session.list)
-  session runs <name>     list runs in the named session (session.runs)
-  session rename <a> <b>  rename session <a> to <b> (session.rename — a session's
+  workspace list            list workspaces on the daemon (workspace.list)
+  workspace workers <name>  list workers in the named workspace (workspace.workers)
+  workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; runs are immutable)
-  log read --session ...  read log entries from the named session's run
+  log read --workspace ...  read log entries from the named workspace's run
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
-                          trace, exit by worst op status. Honors --session/--yolo
+                          trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + membership flags. The daemon owns the
                           grammar; the client just feeds the file.
 `;
@@ -247,7 +247,7 @@ const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void =>
 
 interface SessionResult { id: number; name: string }
 
-// Resolve the session by name (via session.list filter) or create a fresh one.
+// Resolve the workspace by name (via workspace.list filter) or create a fresh one.
 // Names are the user-facing handle — ids are internals, not exposed via flags.
 // projectRoot is sent on creation only; attach inherits the daemon-stored value.
 // A membership-overlay constraint (svc#200), service vocabulary: `pick` admits
@@ -267,7 +267,7 @@ export const buildConstraints = (values: {
     ...(values.repo ?? []).map((glob): Constraint => ({ effect: "repo", glob })),
 ];
 
-// Session-open settings. Open-context (svc#231/#286): filesItems REPLACES
+// Workspace-open settings. Open-context (svc#231/#286): filesItems REPLACES
 // PLURNK_FILES_ITEMS (renamed from manifestItems/PLURNK_MANIFEST_ITEMS — it only
 // ever capped the tracked-file list, FIND(file:///**); memory always foists
 // full); mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a collision;
@@ -279,10 +279,10 @@ export interface Settings {
     mdDocs?: Array<{ alias: string; content: string }>;
     maxCommands?: number;
     git?: boolean;
-    client?: string;          // #249 — frontend id, set on every session.create
-    autoReadAgents?: boolean; // #268 — per-session override of the service AGENTS auto-load
-    execs?: Record<string, string>; // #132 — per-session exec-policy layer (PLURNK_EXECS_* forwarded)
-    questions?: boolean;      // svc#346 — enable model→user SEND[300] questions for the session (+ questions.md teaching)
+    client?: string;          // #249 — frontend id, set on every workspace.create
+    autoReadAgents?: boolean; // #268 — per-workspace override of the service AGENTS auto-load
+    execs?: Record<string, string>; // #132 — per-workspace exec-policy layer (PLURNK_EXECS_* forwarded)
+    questions?: boolean;      // svc#346 — enable model→user SEND[300] questions for the workspace (+ questions.md teaching)
 }
 
 export const buildSettings = async (
@@ -290,7 +290,7 @@ export const buildSettings = async (
     cwd: string,
 ): Promise<Settings> => {
     const settings: Settings = {};
-    // svc#346 — enable model→user SEND[300] questions (per-session; the daemon
+    // svc#346 — enable model→user SEND[300] questions (per-workspace; the daemon
     // injects questions.md teaching + intersects its PLURNK_QUESTIONS ceiling).
     // Flag or bare env (shared user intent). The daemon owns refusal when off.
     if (values.questions === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_QUESTIONS ?? "").toLowerCase())) settings.questions = true;
@@ -303,7 +303,7 @@ export const buildSettings = async (
         settings.maxCommands = n;
     }
     if (values["no-git"] === true) settings.git = false;
-    // #268 — pure passthrough of the per-session AGENTS auto-load override (the
+    // #268 — pure passthrough of the per-workspace AGENTS auto-load override (the
     // service does the picking + reading; the client just forces it off here).
     if (values["no-agents-md"] === true) settings.autoReadAgents = false;
     const fi = values["files-items"];
@@ -340,10 +340,10 @@ export const buildSettings = async (
 // marker. The client never does registry IO — it just reads what discover says.
 export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
-// #249 — session-stable frontend id, passed on session.create and forwarded by
+// #249 — workspace-stable frontend id, passed on workspace.create and forwarded by
 // the daemon to the plurnk provider as the Plurnk-Client header (dropped by
 // every other provider). The 'plurnk.nvim/1.4.0' shape; nvim sends its own.
-// #71 — one id per FRONTEND, name/version form, session-stable. CLI and TUI are
+// #71 — one id per FRONTEND, name/version form, workspace-stable. CLI and TUI are
 // distinct frontends of this package (nvim self-ids separately as plurnk.nvim);
 // splitting them lets service telemetry attribute usage per surface.
 export const CLIENT_ID_CLI = `@plurnk/plurnk-cli/${CLIENT_VERSION}`;
@@ -372,13 +372,13 @@ export const buildVersionNotice = (versions: DiscoverVersions | undefined, clien
     return parts.join(", ") + (stale ? " (update available)" : "");
 };
 
-// Resolve --run <name> to its id over the action surface (session.runs is scoped
-// to the caller's thread/session). Undefined runName = the module's model-run default.
-export const resolveRunId = async (rpc: Caller, runName: string | undefined): Promise<number | undefined> => {
-    if (runName === undefined) return undefined;
-    const { runs } = await rpc.call("session.runs") as { runs: Array<{ id: number; name: string }> };
-    const hit = runs.find((r) => r.name === runName);
-    if (hit === undefined) throw new Error(`--run ${runName}: no such run in the session`);
+// Resolve --worker <name> to its id over the action surface (workspace.workers is scoped
+// to the caller's thread/workspace). Undefined workerName = the module's model-run default.
+export const resolveRunId = async (rpc: Caller, workerName: string | undefined): Promise<number | undefined> => {
+    if (workerName === undefined) return undefined;
+    const { runs } = await rpc.call("workspace.workers") as { runs: Array<{ id: number; name: string }> };
+    const hit = runs.find((r) => r.name === workerName);
+    if (hit === undefined) throw new Error(`--worker ${workerName}: no such run in the workspace`);
     return hit.id;
 };
 
@@ -390,8 +390,8 @@ const parseIntFlag = (raw: string | undefined, name: string): number | undefined
 };
 interface SubcommandOpts {
     json: boolean;
-    sessionName?: string;
-    runName?: string;
+    workspaceName?: string;
+    workerName?: string;
     projectRoot: string | null;
     values: Record<string, string | boolean | string[] | undefined>;
 }
@@ -409,20 +409,20 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         return await runModels(rpc, { json: opts.json });
     }
 
-    if (verb === "session") {
+    if (verb === "workspace") {
         if (sub === "list") {
             if (positionals.length > 2) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`session list ${positionals.slice(2).join(" ")}`));
+                throw new TelemetryError(clientSubcommandUnknownVerb(`workspace list ${positionals.slice(2).join(" ")}`));
             }
             return await runSessionList(rpc, { json: opts.json });
         }
-        if (sub === "runs") {
+        if (sub === "workers") {
             const name = positionals[2];
             if (name === undefined) {
-                throw new TelemetryError(clientSubcommandMissingArgument("plurnk session runs", "<name>"));
+                throw new TelemetryError(clientSubcommandMissingArgument("plurnk workspace workers", "<name>"));
             }
             if (positionals.length > 3) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`session runs ${positionals.slice(3).join(" ")}`));
+                throw new TelemetryError(clientSubcommandUnknownVerb(`workspace workers ${positionals.slice(3).join(" ")}`));
             }
             return await runSessionRuns(rpc, name, { json: opts.json });
         }
@@ -430,26 +430,26 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             const name = positionals[2];
             const newName = positionals[3];
             if (name === undefined || newName === undefined) {
-                throw new TelemetryError(clientSubcommandMissingArgument("plurnk session rename", "<name> <newname>"));
+                throw new TelemetryError(clientSubcommandMissingArgument("plurnk workspace rename", "<name> <newname>"));
             }
             if (positionals.length > 4) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`session rename ${positionals.slice(4).join(" ")}`));
+                throw new TelemetryError(clientSubcommandUnknownVerb(`workspace rename ${positionals.slice(4).join(" ")}`));
             }
             return await runSessionRename(rpc, name, newName, { json: opts.json });
         }
-        throw new TelemetryError(clientSubcommandUnknownVerb(`session ${sub ?? "(missing)"}`, ["list", "runs", "rename"]));
+        throw new TelemetryError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
     }
 
     if (verb === "log") {
         if (sub !== "read") {
             throw new TelemetryError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
         }
-        if (opts.sessionName === undefined) {
-            throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--session (or PLURNK_CLIENT_SESSION)"));
+        if (opts.workspaceName === undefined) {
+            throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
         }
-        // The caller's threadId (--session) scopes the action to that session; the
-        // module defaults reads to the conversation (model run); --run pins by name.
-        const filters: LogReadFilters = { ...(await resolveRunId(rpc, opts.runName) !== undefined ? { runId: await resolveRunId(rpc, opts.runName) } : {}) };
+        // The caller's threadId (--workspace) scopes the action to that workspace; the
+        // module defaults reads to the conversation (model run); --worker pins by name.
+        const filters: LogReadFilters = { ...(await resolveRunId(rpc, opts.workerName) !== undefined ? { runId: await resolveRunId(rpc, opts.workerName) } : {}) };
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
         const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
         const sinceId = parseIntFlag(opts.values.since as string | undefined, "--since");
@@ -469,12 +469,12 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         if (positionals.length > 2) {
             throw new TelemetryError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
         }
-        if (opts.sessionName === undefined) {
-            throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--session (or PLURNK_CLIENT_SESSION)"));
+        if (opts.workspaceName === undefined) {
+            throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
         }
         // The coordinate is run-relative; the module defaults to the conversation
-        // (model run) — --run pins by name via params, no connection state.
-        return await runRead(rpc, coord, { json: opts.json, runId: await resolveRunId(rpc, opts.runName) });
+        // (model run) — --worker pins by name via params, no connection state.
+        return await runRead(rpc, coord, { json: opts.json, runId: await resolveRunId(rpc, opts.workerName) });
     }
 
     throw new TelemetryError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
@@ -491,8 +491,8 @@ export const main = async (argv: string[]): Promise<void> => {
             // requires the file, --env-file-if-exists skips a missing one.
             "env-file": { type: "string", multiple: true },
             "env-file-if-exists": { type: "string", multiple: true },
-            session: { type: "string" },
-            run: { type: "string" },
+            workspace: { type: "string" },
+            worker: { type: "string" },
             model: { type: "string" },
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
@@ -505,12 +505,12 @@ export const main = async (argv: string[]): Promise<void> => {
             hide: { type: "string", multiple: true },
             view: { type: "string", multiple: true },
             repo: { type: "string", multiple: true },
-            // session-open settings (svc#231) + tighten-only ceilings (svc#232)
+            // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
             md: { type: "string", multiple: true },
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
-            "no-agents-md": { type: "boolean" },   // #268 — override: AGENTS auto-load off for this session
+            "no-agents-md": { type: "boolean" },   // #268 — override: AGENTS auto-load off for this workspace
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -529,9 +529,9 @@ export const main = async (argv: string[]): Promise<void> => {
     const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_JSON ?? "").toLowerCase());
 
     // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
-    // a known read-only subcommand (models / session / log), we skip stdin
+    // a known read-only subcommand (models / workspace / log), we skip stdin
     // reading and prompt construction entirely.
-    const SUBCOMMANDS = ["models", "session", "log", "read", "script"] as const;
+    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -550,12 +550,12 @@ export const main = async (argv: string[]): Promise<void> => {
     }
 
     // CLI flag overrides env; env overrides nothing.
-    const sessionName = values.session ?? process.env.PLURNK_CLIENT_SESSION;
-    const runName = values.run ?? process.env.PLURNK_CLIENT_RUN;
+    const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
+    const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
-    if (runName !== undefined && sessionName === undefined) {
-        dieWith(64, clientFlagMissingDependency("--run (or PLURNK_CLIENT_RUN)", "--session (or PLURNK_CLIENT_SESSION)"));
+    if (workerName !== undefined && workspaceName === undefined) {
+        dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
     }
 
     // Loop knobs (benchmark surface): --flags JSON passthrough, --ask sugar,
@@ -573,7 +573,7 @@ export const main = async (argv: string[]): Promise<void> => {
     }
 
     // --questions / PLURNK_QUESTIONS is a SESSION setting (settings.questions in
-    // buildSettings), NOT a loop flag — svc#346 ruled it session-scoped (it also
+    // buildSettings), NOT a loop flag — svc#346 ruled it workspace-scoped (it also
     // gates the questions.md teaching, so capability + teaching arrive together).
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
@@ -587,8 +587,8 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // plurnk-agui#1 — CLI one-shot through the exclusive-portal bridge: when
     // PLURNK_AGUI_URL is set, a prompt run rides the bridge (which owns the WS +
-    // session) instead of raw daemon WS. Both text and --json route here now
-    // (plurnk-agui 0.2.1's plurnk.terminated carries sessionId/loopId/turnIds/cost,
+    // workspace) instead of raw daemon WS. Both text and --json route here now
+    // (plurnk-agui 0.2.1's plurnk.terminated carries workspaceId/loopId/turnIds/cost,
     // so the json record matches the WS schema). Scripts + subcommands stay on the
     // daemon. Dual-surface, per the charter.
     // AG-UI+ IS the client surface (service 0.81.0): PLURNK_HOST/PLURNK_PORT point at
@@ -598,8 +598,8 @@ export const main = async (argv: string[]): Promise<void> => {
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
 
-    // THE WORLD (session) name. An explicit --session/PLURNK_CLIENT_SESSION names it;
-    // otherwise the daemon mints a fresh, uniquely-named session (resolveWorld) —
+    // THE WORLD (workspace) name. An explicit --workspace/PLURNK_CLIENT_WORKSPACE names it;
+    // otherwise the daemon mints a fresh, uniquely-named workspace (resolveWorld) —
     // never a literal "tui"/"cli". Resolved once, lazily, only when a conversation
     // needs a world. Minted WITH its options so creation is atomic with the root.
     let resolvedWorld: string | undefined;
@@ -607,7 +607,7 @@ export const main = async (argv: string[]): Promise<void> => {
         if (resolvedWorld !== undefined) return resolvedWorld;
         const constraints = buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] });
         const settings = await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd());
-        resolvedWorld = await resolveWorld({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, sessionName, {
+        resolvedWorld = await resolveWorld({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, workspaceName, {
             ...(projectRoot !== null ? { projectRoot } : {}),
             ...(constraints.length > 0 ? { constraints } : {}),
             ...(Object.keys(settings).length > 0 ? { settings } : {}),
@@ -616,11 +616,11 @@ export const main = async (argv: string[]): Promise<void> => {
     };
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            // Thread-per-run (svc#366): --run names the CONVERSATION (the threadId);
-            // the world is --session, else a fresh daemon-minted session. Without --run,
+            // Thread-per-run (svc#366): --worker names the CONVERSATION (the threadId);
+            // the world is --workspace, else a fresh daemon-minted workspace. Without --worker,
             // thread == world (the model run).
             const w = await world();
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: runName ?? w, session: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot });
             process.exit(code);
         } catch (cause) {
             // The bridge is reachable-but-erroring OR unreachable — surface the real
@@ -633,21 +633,21 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     }
 
-    // TUI through the bridge (no prompt): skip the WS connect + session.create — a
-    // pure-bridge client has no direct daemon WS. The bridge owns the session; we
-    // pass a threadId-named stub (the daemon session id is bridge-created). projectRoot
+    // TUI through the bridge (no prompt): skip the WS connect + workspace.create — a
+    // pure-bridge client has no direct daemon WS. The bridge owns the workspace; we
+    // pass a threadId-named stub (the daemon workspace id is bridge-created). projectRoot
     // rides forwardedProps; PLURNK_AGUI_QUESTIONS gates questions bridge-side.
-    // (Per-session constraints/settings over the bridge are a follow-up.)
+    // (Per-workspace constraints/settings over the bridge are a follow-up.)
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         const w = await world();
-        const threadId = runName ?? w;
-        // Session options ride the thread's first run (forwardedProps.plurnk): the
+        const threadId = workerName ?? w;
+        // Workspace options ride the thread's first run (forwardedProps.plurnk): the
         // same constraints (--pick/hide/view/repo) + settings the WS path sends on
-        // session.create, so a bridge TUI is configured identically. (When the world
+        // workspace.create, so a bridge TUI is configured identically. (When the world
         // was daemon-minted above, it was created WITH these already; a re-send on the
-        // first run is idempotent — the session exists, options apply at creation only.)
+        // first run is idempotent — the workspace exists, options apply at creation only.)
         const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
-            session: w,
+            workspace: w,
             projectRoot,
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
@@ -660,7 +660,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
     // speak the action surface through a structural Caller.
     const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
-    const callerThread = sessionName ?? "cli";
+    const callerThread = workspaceName ?? "cli";
     const caller = { call: (method: string, params?: object) => actionViaBridge<unknown>(target, { threadId: callerThread, kind: method, params }) };
 
     try {
@@ -681,7 +681,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(caller, positionals, {
-                json, sessionName, runName, projectRoot, values,
+                json, workspaceName, workerName, projectRoot, values,
             });
             process.exit(exitCode);
         }

@@ -27,12 +27,12 @@ describe("TUI pty harness", () => {
             await tui.waitFor(/plurnk.*\/help/);
             // 2. A verb keystroke round-trips: /help prints the verb table.
             tui.write("/help\r");
-            const afterHelp = await tui.waitFor(/\/models .*\/sessions/);
+            const afterHelp = await tui.waitFor(/\/models .*\/workspaces/);
             assert.match(afterHelp, /\/yolo/, "help lists the verb surface");
             // 3. /quit closes the REPL with a clean exit code + the resume hint.
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0, "/quit exits 0");
-            assert.match(tui.output(), /resume this session:\s+plurnk --session /, "quit prints the resume one-liner");
+            assert.match(tui.output(), /resume this workspace:\s+plurnk --workspace /, "quit prints the resume one-liner");
         } finally {
             tui.kill();
         }

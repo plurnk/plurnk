@@ -5,7 +5,7 @@
 // entry, plurnk.proposal IS the proposal, …), so the render + verb code is
 // untouched; only the source of the bytes changes.
 //
-// Handlers are PERSISTENT (subscribe once): the WS TUI renders a shared session's
+// Handlers are PERSISTENT (subscribe once): the WS TUI renders a shared workspace's
 // activity — a worker's rows, a second client's loop — even while this REPL is
 // idle, so the notification handlers can't be scoped per-run. run() drives one
 // loop and its `done` resolves with that loop's outcome (for the summary).
@@ -17,14 +17,14 @@ import type { TelemetryEvent } from "./telemetry.ts";
 import { runViaBridge, actionViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
-// plurnk.terminated + sessionId).
+// plurnk.terminated + workspaceId).
 export interface TerminatedInfo {
     loopId?: number;
     finalStatus: number;
     hitMaxTurns: boolean;
     turnIds?: number[];
     usage?: LoopUsage;
-    sessionId?: number | null;
+    workspaceId?: number | null;
 }
 
 // Run-plane events in daemon-notification shapes — the SAME shapes the TUI's
@@ -59,9 +59,9 @@ export interface Transport {
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     onClose(handler: () => void): void;   // WS: the daemon socket dropped. Bridge: no-op (each run is its own SSE).
     shutdown(): void;   // suppress the connection-lost reject on an intentional quit
-    // Switch to (or create) a named session. WS rebinds the connection via
-    // session.create; the bridge re-maps its threadId (the bridge lazy-creates the
-    // session on the next run). Returns the session handle for the header.
+    // Switch to (or create) a named workspace. WS rebinds the connection via
+    // workspace.create; the bridge re-maps its threadId (the bridge lazy-creates the
+    // workspace on the next run). Returns the workspace handle for the header.
     useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string; autoReadAgents?: boolean }): Promise<{ id: number; name: string }>;
 }
 
@@ -70,35 +70,35 @@ interface LoopAck { loopId?: number; finalStatus?: number; status?: number; erro
 // the persistent handlers via un-projection, and `done` resolves with the outcome
 // from plurnk.terminated. inject rides /plurnk/rpc on the SAME thread (reaches the
 // active loop, events on the open SSE); cancel aborts the SSE (bridge cancels).
-// Session options that ride forwardedProps.plurnk on the thread's FIRST run
-// (§agui-forwarded-props) — the bridge applies them at session.create.
-export interface BridgeSessionOpts { session?: string; projectRoot?: string | null; constraints?: unknown[]; settings?: object }
+// Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
+// (§agui-forwarded-props) — the bridge applies them at workspace.create.
+export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; constraints?: unknown[]; settings?: object }
 
 export class BridgeTransport implements Transport {
     #target: BridgeTarget;
     #threadId: string;
-    #world: string | undefined;   // the session name when it differs from the thread (--run)
-    #session: BridgeSessionOpts;
+    #world: string | undefined;   // the workspace name when it differs from the thread (--worker)
+    #workspace: BridgeSessionOpts;
     #h: RunHandlers | null = null;
     #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
 
-    constructor(target: BridgeTarget, threadId: string, session: BridgeSessionOpts = {}) {
+    constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
         this.#target = target;
         this.#threadId = threadId;
-        this.#world = session.session;
-        this.#session = session;
+        this.#world = workspace.workspace;
+        this.#workspace = workspace;
     }
 
     // AG-UI+ dialect: verbs are §3 action runs (the /plurnk/rpc side-channel is dead).
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
     // emitted (a raw-DSL op's rows, telemetry, streams). Feed those through the same
-    // persistent handlers a run uses (the WS socket delivered every session row;
+    // persistent handlers a run uses (the WS socket delivered every workspace row;
     // parity demands the action stream does too — e.g. the Alt-p cycler harvests
     // targets from onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
         let errmsg: string | undefined;
-        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), messages: [], forwardedProps: { ...this.#sessionOpts(), action: { kind: method, ...(params ?? {}) } } })) {
+        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), messages: [], forwardedProps: { ...this.#sessionOpts(), action: { kind: method, ...(params ?? {}) } } })) {
             if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                 const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
                 if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
@@ -112,22 +112,22 @@ export class BridgeTransport implements Transport {
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }
 
-    // Session options on EVERY request (#140, operator ruling): session creation and
+    // Workspace options on EVERY request (#140, operator ruling): workspace creation and
     // its projectRoot are ATOMIC — the module creates from whichever request arrives
     // first, so every request carries the options (applied at creation, ignored after).
-    // No consumed-once flag, no race: a headless session can only be one on purpose,
+    // No consumed-once flag, no race: a headless workspace can only be one on purpose,
     // and it stays headless forever (root changes are unimplemented by design).
     #sessionOpts(): Record<string, unknown> {
         return {
-            ...(this.#session.projectRoot !== undefined && this.#session.projectRoot !== null ? { projectRoot: this.#session.projectRoot } : {}),
-            ...(this.#session.constraints !== undefined && this.#session.constraints.length > 0 ? { constraints: this.#session.constraints } : {}),
-            ...(this.#session.settings !== undefined && Object.keys(this.#session.settings).length > 0 ? { settings: this.#session.settings } : {}),
+            ...(this.#workspace.projectRoot !== undefined && this.#workspace.projectRoot !== null ? { projectRoot: this.#workspace.projectRoot } : {}),
+            ...(this.#workspace.constraints !== undefined && this.#workspace.constraints.length > 0 ? { constraints: this.#workspace.constraints } : {}),
+            ...(this.#workspace.settings !== undefined && Object.keys(this.#workspace.settings).length > 0 ? { settings: this.#workspace.settings } : {}),
         };
     }
 
     run(prompt: string, opts: RunOpts): RunHandle {
         const ac = new AbortController();
-        // Every request carries session options (#sessionOpts — see #140); every
+        // Every request carries workspace options (#sessionOpts — see #140); every
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
             ...this.#sessionOpts(),
@@ -152,7 +152,7 @@ export class BridgeTransport implements Transport {
                 let toolId = "";
                 let toolArgs = "";
                 try {
-                    for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { session: this.#world } : {}), ...next, forwardedProps: fp }, ac.signal)) {
+                    for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), ...next, forwardedProps: fp }, ac.signal)) {
                         if (e.type === "RUN_ERROR") {
                             const code = Number((e as { code?: string }).code);
                             errStatus = Number.isFinite(code) && code > 0 ? code : 500;
@@ -204,9 +204,9 @@ export class BridgeTransport implements Transport {
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
     async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
-        // Re-map to a fresh WORLD: the thread and the session move together (a /session
+        // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
         // switch is a new world + its default conversation; a split thread comes from
-        // --run at invocation, not from this verb). Lazy-created on the next run.
+        // --worker at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again

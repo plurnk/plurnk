@@ -30,7 +30,7 @@ test("resolveModelSpec: alias absent from env → undefined (fall back to bare {
     assert.equal(resolveModelSpec("nope", { PLURNK_MODEL_ccp: "anthropic/claude-x" }), undefined);
 });
 
-// ─── collectExecsPolicy (#132 per-session exec-policy layer) ─────────
+// ─── collectExecsPolicy (#132 per-workspace exec-policy layer) ─────────
 
 test("collectExecsPolicy: forwards the enable/disable grammar", () => {
     assert.deepEqual(
@@ -105,7 +105,7 @@ test("resolveProjectRoot: bare name → throws", () => {
 
 // ─── buildConstraints (membership overlay, svc#200) ──────────────────
 
-test("[§cli-membership-overlay-and-session-open-settings] buildConstraints: maps --pick/--hide/--view/--repo to service effects in order", () => {
+test("[§cli-membership-overlay-and-workspace-open-settings] buildConstraints: maps --pick/--hide/--view/--repo to service effects in order", () => {
     const c = buildConstraints({ pick: ["docs/**"], hide: ["*.lock"], view: ["vendor/**", "gen/**"], repo: ["packages/api"] });
     assert.deepEqual(c, [
         { effect: "pick", glob: "docs/**" },
@@ -116,11 +116,11 @@ test("[§cli-membership-overlay-and-session-open-settings] buildConstraints: map
     ]);
 });
 
-test("buildConstraints: no flags → empty (no constraints param on session.create)", () => {
+test("buildConstraints: no flags → empty (no constraints param on workspace.create)", () => {
     assert.deepEqual(buildConstraints({}), []);
 });
 
-// ─── buildSettings (session-open settings, svc#231) ──────────────────
+// ─── buildSettings (workspace-open settings, svc#231) ──────────────────
 
 test("buildSettings: files-items -1/0/N parse", async () => {
     assert.deepEqual(await buildSettings({ "files-items": "-1" }, "/"), { filesItems: -1 });
@@ -195,25 +195,25 @@ test("buildVersionNotice: service absent → client line only", () => {
     assert.match(n!, /^plurnk client v0\.21\.3 \(update available\)$/);
 });
 
-// ─── resolveRunId: a run is addressable by NAME within its session's world ───
-// Plurnk's machine model (service SPEC §machine-processes): a session holds many
-// runs (conversations over one world); --run selects one by name. Fail-hard: an
+// ─── resolveRunId: a run is addressable by NAME within its workspace's world ───
+// Plurnk's machine model (service SPEC §machine-processes): a workspace holds many
+// runs (conversations over one world); --worker selects one by name. Fail-hard: an
 // unknown name is a contract violation, never a fabricated model-run fallback.
 
-test("resolveRunId: undefined name → undefined, and NEVER queries session.runs (the model-run default)", async () => {
+test("resolveRunId: undefined name → undefined, and NEVER queries workspace.workers (the model-run default)", async () => {
     let called = 0;
     const rpc = { call: async () => { called++; return { runs: [] }; } };
     const id = await resolveRunId(rpc, undefined);
     assert.equal(id, undefined);
-    assert.equal(called, 0, "no --run → no session.runs round-trip");
+    assert.equal(called, 0, "no --worker → no workspace.workers round-trip");
 });
 
-test("[§cli-sessions-and-runs] resolveRunId: a named run resolves to its id via session.runs", async () => {
-    const rpc = { call: async (m: string) => { assert.equal(m, "session.runs"); return { runs: [{ id: 10, name: "client-1" }, { id: 42, name: "spike" }] }; } };
+test("[§cli-workspaces-and-workers] resolveRunId: a named run resolves to its id via workspace.workers", async () => {
+    const rpc = { call: async (m: string) => { assert.equal(m, "workspace.workers"); return { runs: [{ id: 10, name: "client-1" }, { id: 42, name: "spike" }] }; } };
     assert.equal(await resolveRunId(rpc, "spike"), 42);
 });
 
-test("[§cli-sessions-and-runs] resolveRunId: an unknown run name THROWS — no silent fallback to the model run", async () => {
+test("[§cli-workspaces-and-workers] resolveRunId: an unknown run name THROWS — no silent fallback to the model run", async () => {
     const rpc = { call: async () => ({ runs: [{ id: 10, name: "client-1" }] }) };
-    await assert.rejects(() => resolveRunId(rpc, "ghost"), /--run ghost: no such run in the session/);
+    await assert.rejects(() => resolveRunId(rpc, "ghost"), /--worker ghost: no such run in the workspace/);
 });

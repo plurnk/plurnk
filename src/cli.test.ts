@@ -100,7 +100,7 @@ test("isTerminalBroadcast: signal not a number → false", () => {
 // ─── buildJsonRecord (the complete client-observed run record) ────────
 
 const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}): Parameters<typeof buildJsonRecord>[0] => ({
-    session: { id: 12, name: "sess" },
+    workspace: { id: 12, name: "sess" },
     prompt: "what is the capital of France?",
     response: "Paris",
     entries: [
@@ -108,7 +108,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
         entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     telemetry: [{ source: "engine", kind: "note", message: "ok" }],
-    result: { loopId: 7, modelRunId: 39, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 7000000000 } },
+    result: { loopId: 7, modelWorkerId: 39, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 7000000000 } },
     wallMs: 1234, timedOut: false,
     ...over,
 });
@@ -119,9 +119,9 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.response, "Paris");          // the jq -r .response common case
     assert.equal(doc.finalStatus, 200);
     assert.equal(doc.loopId, 7);
-    assert.equal(doc.runId, 39);   // the conversation run, from loop.run's modelRunId
+    assert.equal(doc.runId, 39);   // the conversation run, from loop.run's modelWorkerId
     assert.equal(doc.turnCount, 2);
-    assert.deepEqual(doc.session, { id: 12, name: "sess" });
+    assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
     assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000, contextTokens: null });
 });
 
@@ -162,7 +162,7 @@ test("buildJsonRecord: round-trips through JSON.stringify as one valid document"
 
 test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fields", () => {
     const doc = buildScriptJsonRecord({
-        session: { id: 5, name: "scripted" },
+        workspace: { id: 5, name: "scripted" },
         results: [{ status: 200 }, { status: 404 }],
         entries: [
             entry({ op: "EDIT", origin: "client", scheme: "file", pathname: "/a.md", status_rx: 200, loop_seq: 1, turn_seq: 1, sequence: 1 }),
@@ -172,7 +172,7 @@ test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fie
         wallMs: 42,
     }) as Record<string, unknown>;
     assert.equal(doc.schemaVersion, JSON_SCHEMA_VERSION);
-    assert.deepEqual(doc.session, { id: 5, name: "scripted" });
+    assert.deepEqual(doc.workspace, { id: 5, name: "scripted" });
     assert.deepEqual(doc.results, [{ status: 200 }, { status: 404 }]);
     assert.equal(doc.wallMs, 42);
     // grouped by turn, sharing buildJsonRecord's op shape
@@ -185,7 +185,7 @@ test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fie
 
 test("buildScriptJsonRecord: round-trips through JSON.stringify", () => {
     const s = JSON.stringify(buildScriptJsonRecord({
-        session: { id: 1, name: "s" }, results: [{ status: 200 }], entries: [], telemetry: [], wallMs: 1,
+        workspace: { id: 1, name: "s" }, results: [{ status: 200 }], entries: [], telemetry: [], wallMs: 1,
     }));
     assert.deepEqual(JSON.parse(s).results, [{ status: 200 }]);
 });

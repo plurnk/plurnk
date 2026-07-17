@@ -55,23 +55,23 @@ test("runViaBridge: yields AG-UI events in order, reassembling frames split acro
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: forwardedProps.plurnk ALWAYS carries the session (world) + any options", async () => {
+test("runViaBridge: forwardedProps.plurnk ALWAYS carries the workspace (world) + any options", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         const seen: string[] = [];
         for await (const e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
         assert.deepEqual(seen, ["RUN_FINISHED"]);
-        // The session is REQUIRED and rides verbatim — the client sends its world, never
+        // The workspace is REQUIRED and rides verbatim — the client sends its world, never
         // relying on the module to forge one from the threadId.
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { session: "t", projectRoot: "/x" } });
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "t", projectRoot: "/x" } });
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: even with NO options, the session (world) still rides — it is not optional", async () => {
+test("runViaBridge: even with NO options, the workspace (world) still rides — it is not optional", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "solo", prompt: "hi" })) void _e;
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { session: "solo" } });
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "solo" } });
     } finally { await mock.close(); }
 });
 
@@ -88,52 +88,52 @@ test("runViaBridge: a non-200 run surfaces the bridge error, not a silent hang",
 test("actionViaBridge: a verb rides its own run; the result custom returns verbatim; ok:false throws", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "session.list", ok: true, result: { sessions: [{ id: 1, name: "s" }] } } }) + "\n\n");
+        res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list", ok: true, result: { workspaces: [{ id: 1, name: "s" }] } } }) + "\n\n");
         res.write("data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n");
         res.end();
     });
     try {
-        const out = await actionViaBridge<{ sessions: Array<{ id: number }> }>({ bridgeUrl: mock.url }, { threadId: "t", kind: "session.list" });
-        assert.equal(out.sessions[0].id, 1);
+        const out = await actionViaBridge<{ workspaces: Array<{ id: number }> }>({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" });
+        assert.equal(out.workspaces[0].id, 1);
         const sent = mock.captured[0].body as { forwardedProps: { plurnk: { action: { kind: string } } } };
-        assert.equal(sent.forwardedProps.plurnk.action.kind, "session.list", "the action rides forwardedProps.plurnk.action");
+        assert.equal(sent.forwardedProps.plurnk.action.kind, "workspace.list", "the action rides forwardedProps.plurnk.action");
     } finally { await mock.close(); }
 });
 
 
-test("[§cli-sessions-and-runs] runViaBridge: an explicit session rides with a DIFFERENT threadId (thread-per-run, svc#366)", async () => {
+test("[§cli-workspaces-and-workers] runViaBridge: an explicit workspace rides with a DIFFERENT threadId (thread-per-run, svc#366)", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
-        for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "chat-2", session: "workspace", prompt: "hi" })) void _e;
-        const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { session: string } } };
+        for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
+        const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
         assert.equal(body.threadId, "chat-2", "the thread names the conversation run");
-        assert.equal(body.forwardedProps.plurnk.session, "workspace", "the session names the world — independently");
+        assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the world — independently");
     } finally { await mock.close(); }
 });
 
-test("[§cli-sessions-and-runs] resolveWorld: no --session → the daemon MINTS a fresh session (no 'tui'/'cli' label); the minted name is the world", async () => {
+test("[§cli-workspaces-and-workers] resolveWorld: no --workspace → the daemon MINTS a fresh workspace (no 'tui'/'cli' label); the minted name is the world", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "session.create", ok: true, result: { id: 9, name: "session-1783-abc", runId: 3 } } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.create", ok: true, result: { id: 9, name: "workspace-1783-abc", runId: 3 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
     try {
         const name = await resolveWorld({ bridgeUrl: mock.url }, undefined, { projectRoot: "/repo" });
-        assert.equal(name, "session-1783-abc", "the world is the daemon-minted name, never a literal client label");
+        assert.equal(name, "workspace-1783-abc", "the world is the daemon-minted name, never a literal client label");
         const action = (mock.captured[0].body as { forwardedProps: { plurnk: { action: { kind: string; name?: string; projectRoot?: string } } } }).forwardedProps.plurnk.action;
-        assert.equal(action.kind, "session.create");
+        assert.equal(action.kind, "workspace.create");
         assert.equal(action.name, undefined, "NO name is sent — the daemon mints a fresh unique one");
         assert.equal(action.projectRoot, "/repo", "created WITH options — atomic with the root (#140)");
     } finally { await mock.close(); }
 });
 
-test("[§cli-sessions-and-runs] resolveWorld: an explicit --session short-circuits — no wire touch, name verbatim", async () => {
+test("[§cli-workspaces-and-workers] resolveWorld: an explicit --workspace short-circuits — no wire touch, name verbatim", async () => {
     let touched = false;
     const mock = await bootMock((_req, res) => { touched = true; res.writeHead(200).end(); });
     try {
         assert.equal(await resolveWorld({ bridgeUrl: mock.url }, "my-world", { projectRoot: "/x" }), "my-world");
-        assert.equal(touched, false, "a named session never hits the wire to mint");
+        assert.equal(touched, false, "a named workspace never hits the wire to mint");
     } finally { await mock.close(); }
 });
 
@@ -146,7 +146,7 @@ test("[§cli-model-selection] runCliViaBridge: --model rides the one-shot wire (
         res.end();
     });
     try {
-        await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", session: "w", alias: "fireslow", model: "fireworks/deepseek", yolo: true, json: true, projectRoot: "/repo" });
+        await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", alias: "fireslow", model: "fireworks/deepseek", yolo: true, json: true, projectRoot: "/repo" });
         const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
         assert.equal(fp.alias, "fireslow", "the alias reaches the wire");
         assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");
@@ -182,7 +182,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", session: "w", timeoutSec: 1, yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, json: true, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -206,7 +206,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", session: "w", yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", yolo: true, json: true, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

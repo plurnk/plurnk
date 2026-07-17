@@ -11,12 +11,12 @@ Specifies what the `plurnk` CLI/TUI client does. Wire protocol is defined upstre
 | Term | Meaning |
 |---|---|
 | **daemon** | A running `plurnk-service` process whose in-process AG-UI+ module (`@plurnk/plurnk-agui`) serves HTTP/SSE. The client connects to it; it owns all state. |
-| **session** | The WORLD (service SPEC, machine-processes): one curated workspace, daemon-owned. Selected by NAME, verbatim — the client sends `forwardedProps.plurnk.session` on every run (attach-or-create module-side; a run without a session is rejected 500). |
-| **run** | A conversation over the session's world. The client's thread binds the session's model run; client ops journal in the client run. Addressed by name via `--run` (see §1.1). |
-| **loop** | A single prompt-driven model loop. May span many model turns; terminates on `SEND[200]` or `SEND[499]` or hitting `maxTurns`; the outcome arrives as `CUSTOM plurnk.terminated` on the run's SSE. |
+| **workspace** | The WORLD (service SPEC, machine-processes): one curated workspace, daemon-owned. Selected by NAME, verbatim — the client sends `forwardedProps.plurnk.workspace` on every run (attach-or-create module-side; a worker without a workspace is rejected 500). |
+| **run** | A conversation over the workspace's world. The client's thread binds the workspace's model run; client ops journal in the client run. Addressed by name via `--worker` (see §1.1). |
+| **loop** | A single prompt-driven model loop. May span many model turns; terminates on `SEND[200]` or `SEND[499]` or hitting `maxTurns`; the outcome arrives as `CUSTOM plurnk.terminated` on the worker's SSE. |
 | **log/entry notification** | Daemon-to-client push: one notification per dispatched op, carrying the action-entry shape (`{op, target, status_rx, rx, ...}`). |
 | **one-shot mode** | `plurnk "prompt"` — single loop.run, render, exit. Unix-tool posture. |
-| **TUI mode** | `plurnk` (no args) — interactive REPL; multiple loop.run invocations per session. |
+| **TUI mode** | `plurnk` (no args) — interactive REPL; multiple loop.run invocations per workspace. |
 
 ---
 
@@ -36,45 +36,45 @@ Options:
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
-| `--session <name>` | string | Resume the named session. See §1.1. Overrides `PLURNK_CLIENT_SESSION`. |
-| `--run <name>` | string | Resume (or create) the named run within the session. Requires `--session`. Overrides `PLURNK_CLIENT_RUN`. See §1.1. |
+| `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
+| `--worker <name>` | string | Resume (or create) the named run within the workspace. Requires `--workspace`. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
-| `--project-root <path>` | string | Absolute path passed as `projectRoot` on `session.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
+| `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
-| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation runs). Mode is not a flag — see the prompt prefixes (§2.0). |
+| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation workers). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
-| `--pick <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (the sole source when headless). Maps to a `pick` constraint. Create-time / session-level. See §1.4. |
+| `--pick <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (the sole source when headless). Maps to a `pick` constraint. Create-time / workspace-level. See §1.4. |
 | `--hide <glob>` | string, repeatable | Membership overlay: block file(s) from manifest. Maps to a `hide` constraint. See §1.4. |
 | `--view <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (read-only). Maps to a `view` constraint. See §1.4. |
-| `--manifest-items <n>` | string | Session-open preview: `-1` full / `0` off / `N` first-N items of `plurnk://manifest.json` at turn 0. Create-time only. See §1.4. |
-| `--md <name=path>` | string, repeatable | Pin a markdown doc into the session (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
+| `--manifest-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N items of `plurnk://manifest.json` at turn 0. Create-time only. See §1.4. |
+| `--md <name=path>` | string, repeatable | Pin a markdown doc into the workspace (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
 
 Env:
 
 | Var | Default | Meaning |
 |---|---|---|
 | `PLURNK_HOST` / `PLURNK_PORT` | `127.0.0.1` / `3044` | The daemon's in-process AG-UI+ module — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. `PLURNK_AGUI_URL` overrides the assembled URL; `PLURNK_AGUI_TOKEN` rides as the bearer when set. |
-| `PLURNK_CLIENT_SESSION` | _unset_ | Session name to resume (or create). Equivalent to `--session`. |
-| `PLURNK_CLIENT_RUN` | _unset_ | Run name to resume/create. Equivalent to `--run`. Requires `PLURNK_CLIENT_SESSION`. |
+| `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
+| `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE`. |
 | `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
-| `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as session `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
+| `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 
 **Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.defaults` (the daemon family's rendered catalog) → the client's own packaged floor (below). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared home; everything else there is the daemon family's.
 
 **The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring ONLY the `PLURNK_CLIENT_*` prefix, and loads it itself SET-IF-UNSET beneath everything above — the one family member the daemon cannot assemble. A knob the operator set is never overridden; a commented knob is documentation, not a value.
 
-### §1.1 Sessions and runs {§cli-sessions-and-runs}
+### §1.1 Workspaces and workers {§cli-workspaces-and-workers}
 
-Sessions and runs are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env.
+Workspaces and workers are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env.
 
-**The name IS the identity.** With `--session`/`PLURNK_CLIENT_SESSION`, the client sends that name VERBATIM as `forwardedProps.plurnk.session` on every run (also the AG-UI `threadId`); the module attaches it if it exists, creates it with exactly that name otherwise — no prefixes, no forging. **With NO session, the DAEMON mints a fresh, uniquely-named session** (a no-name `session.create`, created WITH the invocation's options so creation is atomic with the project root) and the client binds to the returned name. A literal client label (`tui`/`cli`) is NEVER a session name — that would collide every unnamed launch into one shared world. The session is required wire-side: a run without one is rejected 500, and the client never relies on a module fallback.
+**The name IS the identity.** With `--workspace`/`PLURNK_CLIENT_WORKSPACE`, the client sends that name VERBATIM as `forwardedProps.plurnk.workspace` on every run (also the AG-UI `threadId`); the module attaches it if it exists, creates it with exactly that name otherwise — no prefixes, no forging. **With NO workspace, the DAEMON mints a fresh, uniquely-named workspace** (a no-name `workspace.create`, created WITH the invocation's options so creation is atomic with the project root) and the client binds to the returned name. A literal client label (`tui`/`cli`) is NEVER a workspace name — that would collide every unnamed launch into one shared world. The workspace is required wire-side: a worker without one is rejected 500, and the client never relies on a module fallback.
 
-**Creation is ATOMIC with the projectRoot.** The client sends its session options (projectRoot/constraints/settings) on EVERY request, so whichever request causes creation creates the session fully formed — there is no window where a session exists undressed. A session created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
+**Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/constraints/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
-- **`--run <name>` names the CONVERSATION** (thread-per-run, svc#366): with a prompt, the run name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--run`, thread == world and conversations bind the session's model run (the default conversation). For read subcommands, `--run` resolves via `session.runs` and an unknown name fails hard — no silent fallback to the model run.
-- **`--run` set without `--session`** → usage error (exit 64). Run names are scoped to a session; there's no session to scope into.
+- **`--worker <name>` names the CONVERSATION** (thread-per-run, svc#366): with a prompt, the worker name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--worker`, thread == world and conversations bind the workspace's model run (the default conversation). For read subcommands, `--worker` resolves via `workspace.workers` and an unknown name fails hard — no silent fallback to the model run.
+- **`--worker` set without `--workspace`** → usage error (exit 64). Run names are scoped to a workspace; there's no workspace to scope into.
 
 CLI flag takes precedence over env when both are set.
 
@@ -94,35 +94,35 @@ Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=
 
 ### §1.3 Project root {§cli-project-root}
 
-**Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that session. Stored on `sessions.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "session has no project_root").
+**Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. Stored on `workspaces.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "workspace has no project_root").
 
 Client behavior:
 
 - Default: `process.cwd()` — the user's current directory.
 - Override: `--project-root <abs-path>` or `PLURNK_PROJECT_ROOT`.
 - Explicit headless: set to empty string (`--project-root=`) → wire as `null`.
-- Sent on `session.create` only. On `--session` attach, the daemon preserves the stored value and the client's flag is silently ignored (no surprise overwrites of a session you're resuming). To change a live session's root, call `session.set_root` directly — not yet surfaced as a client command.
+- Sent on `workspace.create` only. On `--workspace` attach, the daemon preserves the stored value and the client's flag is silently ignored (no surprise overwrites of a workspace you're resuming). To change a live workspace's root, call `workspace.set_root` directly — not yet surfaced as a client command.
 
-The "inject standing context into every loop" role formerly served by persona is now `--md`/`mdDocs` (§1.4): markdown docs pinned into the session and read at turn 0.
+The "inject standing context into every loop" role formerly served by persona is now `--md`/`mdDocs` (§1.4): markdown docs pinned into the workspace and read at turn 0.
 
-### §1.4 Membership overlay and session-open settings {§cli-membership-overlay-and-session-open-settings}
+### §1.4 Membership overlay and workspace-open settings {§cli-membership-overlay-and-workspace-open-settings}
 
-These flags shape what the session sees. The membership overlay flags map to **constraints** (service vocabulary, svc#200); the settings flags map to **session-open settings** (svc#231). All are creation-time / session-level.
+These flags shape what the workspace sees. The membership overlay flags map to **constraints** (service vocabulary, svc#200); the settings flags map to **workspace-open settings** (svc#231). All are creation-time / workspace-level.
 
-**Membership overlay** — repeatable glob flags, sent as `constraints` on `session.create`:
+**Membership overlay** — repeatable glob flags, sent as `constraints` on `workspace.create`:
 
 - `--pick <glob>` → `{effect: "pick", glob}` — track file(s) in manifest (the sole source when headless).
 - `--hide <glob>` → `{effect: "hide", glob}` — block file(s) from manifest.
 - `--view <glob>` → `{effect: "view", glob}` — track file(s) in manifest (read-only).
 
-Seeded atomically at `session.create` so turn-1's manifest is right with no follow-up RPC. On `--session` attach, each constraint is applied **live** via `session.constrain` (session-scoped, re-resolved immediately).
+Seeded atomically at `workspace.create` so turn-1's manifest is right with no follow-up RPC. On `--workspace` attach, each constraint is applied **live** via `workspace.constrain` (workspace-scoped, re-resolved immediately).
 
-**Session-open settings** — sent as `settings` on `session.create`:
+**Workspace-open settings** — sent as `settings` on `workspace.create`:
 
-- `--manifest-items <n>` → `manifestItems`. Controls the `plurnk://manifest.json` preview at turn 0: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_MANIFEST_ITEMS` for the session.
-- `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the session, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
+- `--manifest-items <n>` → `manifestItems`. Controls the `plurnk://manifest.json` preview at turn 0: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_MANIFEST_ITEMS` for the workspace.
+- `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the workspace, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
 
-Settings are **session-create-only** (no live setter). On `--session` attach, `--manifest-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
+Settings are **workspace-create-only** (no live setter). On `--workspace` attach, `--manifest-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
 
 ---
 
@@ -132,7 +132,7 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI) {§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui}
 
-The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
+The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` workers a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
 
 ### §2.1 Output channels {§cli-output-channels}
 
@@ -140,12 +140,12 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 
 **text mode (default):**
 - **stdout** — the body of the *terminal* broadcast SEND (status 200 or 499), per §5.4. Exactly one value per invocation (none if the loop hit maxTurns and never terminated). Intermediate broadcasts (SEND[102] etc.) are protocol mechanics, not the answer, and do NOT appear on stdout.
-- **stderr** — session/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
+- **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** — ONE complete document and nothing else (§5.5): the whole client-observed record of the run — `schemaVersion`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
+- **stdout** — ONE complete document and nothing else (§5.5): the whole client-observed record of the worker — `schemaVersion`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
 - **stderr** — silent.
-- **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
+- **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine workers on. `--json` carries the record, not the content.
 
 Consequence:
 
@@ -157,9 +157,9 @@ Consequence:
 
 ### §2.2 Flow {§cli-one-shot-flow}
 
-1. `POST /` (RunAgentInput) to the module — `threadId` = the session name, the prompt as the user message, session + per-run knobs on `forwardedProps.plurnk`.
+1. `POST /` (RunAgentInput) to the module — `threadId` = the workspace name, the prompt as the user message, workspace + per-run knobs on `forwardedProps.plurnk`.
 2. Consume the SSE: `CUSTOM plurnk.row` events render as per-action trace lines on stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
-3. A proposal arrives as a `prop:*` tool-call and TERMINATES the run (the loop stays paused in-engine); the decision returns as a tool-result message on the next run, where the continued loop streams (terminate-resume). `CUSTOM plurnk.terminated` is authoritative for the outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
+3. A proposal arrives as a `prop:*` tool-call and TERMINATES the worker (the loop stays paused in-engine); the decision returns as a tool-result message on the next run, where the continued loop streams (terminate-resume). `CUSTOM plurnk.terminated` is authoritative for the outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
 5. Exit with the appropriate code (§4).
 
@@ -177,16 +177,16 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.1 Flow {§cli-tui-flow}
 
-1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim session on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
+1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND[202]) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is a contract constant (the prompt row is always a 201 EDIT). Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /sessions /runs /log [n] /model <alias> /yolo /session [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/session [name]` opens a fresh session (rebinds the connection in place, §13.5-rebind), `/sessions` lists; `/run [name]` forks a new run (`run.fork`), `/runs` lists; `/rename <name>` retargets the session's mutable handle (a run's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `session.constrain`/`session.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /yolo /workspace [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the connection in place, §13.5-rebind), `/workspaces` lists; `/run [name]` forks a new run (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
     - Lines starting with `<<` → the `op.parse` action. Raw DSL execution; useful for hand-crafted ops.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
-    (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
+    (Verbs and injections ride §3 action workers on the same AG-UI+ surface — one wire, no side-channel.)
 4. While a dispatch is in flight, additional input is rejected with a "busy" notice (except `/stop`, `/help`, and a bare `...`/`?`/`:` prompt, which injects).
 5. `Ctrl-C` or `EOF` exits cleanly.
 
@@ -345,7 +345,7 @@ This is distinct from **server-side YOLO** (`loop.run({flags: {yolo: true}})`, p
 
 ### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals` {§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals}
 
-When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
+When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client workers the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
 
 Because the server is silent by design, **the client owns the explanation** — it emits `client:proposal:edits_blocked` once at loop start: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)."
 
@@ -361,35 +361,35 @@ Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripte
 
 ## §7 Subcommands {§cli-subcommands}
 
-Read-only subcommands inspect daemon state without running a loop. They share the same connection and session-resolution machinery as the prompt-driven flow, but skip `loop.run` entirely. All support `--json` for machine-readable output (stdout product per §2.1; trace and errors stay on stderr).
+Read-only subcommands inspect daemon state without running a loop. They share the same connection and workspace-resolution machinery as the prompt-driven flow, but skip `loop.run` entirely. All support `--json` for machine-readable output (stdout product per §2.1; trace and errors stay on stderr).
 
 When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
 
 ### §7.1 `plurnk models` {§cli-plurnk-models}
 
-Lists registered provider/model aliases via the daemon's `providers.list` RPC. No session is attached (no `requiresInit`).
+Lists registered provider/model aliases via the daemon's `providers.list` RPC. No workspace is attached (no `requiresInit`).
 
 Default output: a column-aligned table of `alias / provider / model / active`. The `active` column carries a `*` for the alias the daemon resolved as its boot-time `PLURNK_MODEL`. With `--json`: emits `aliases` array verbatim as compact JSON.
 
-### §7.2 `plurnk session list` {§cli-plurnk-session-list}
+### §7.2 `plurnk workspace list` {§cli-plurnk-workspace-list}
 
-Lists sessions on the daemon via `session.list`. No prior attach required.
+Lists workspaces on the daemon via `workspace.list`. No prior attach required.
 
 Default output: a column-aligned table of `name / project_root / created / cost`. Null `project_root` renders as `(headless)`. Cost is formatted from pico-USD to human-readable.
 
-With `--json`: emits `sessions` array verbatim.
+With `--json`: emits `workspaces` array verbatim.
 
-### §7.3 `plurnk session runs <name>` {§cli-plurnk-session-runs-name}
+### §7.3 `plurnk workspace workers <name>` {§cli-plurnk-workspace-workers-name}
 
-Lists runs within a named session via `session.runs`. Resolves `<name>` to a session id via a `session.list` filter; no attach required. Exits `1` if the name is unknown or ambiguous.
+Lists workers within a named workspace via `workspace.workers`. Resolves `<name>` to a workspace id via a `workspace.list` filter; no attach required. Exits `1` if the name is unknown or ambiguous.
 
-Default output: a column-aligned table of `name / created / cost`. With `--json`: emits `runs` array verbatim.
+Default output: a column-aligned table of `name / created / cost`. With `--json`: emits `workers` array verbatim.
 
-Typical use: discover a run name to pass as `--run` on `plurnk log read`.
+Typical use: discover a worker name to pass as `--worker` on `plurnk log read`.
 
 ### §7.4 `plurnk log read` {§cli-plurnk-log-read}
 
-Reads log entries from an attached session's run via `log.read`. **Requires `--session <name>`** (exit `64` if unset) — the log is a per-run artifact and the client must know which to read. `--run <name>` selects a specific run within the session (defaults to a fresh auto-named run on attach, which is usually not what you want — pass `--run` when reading historic logs).
+Reads log entries from an attached workspace's run via `log.read`. **Requires `--workspace <name>`** (exit `64` if unset) — the log is a per-run artifact and the client must know which to read. `--worker <name>` selects a specific run within the workspace (defaults to a fresh auto-named run on attach, which is usually not what you want — pass `--worker` when reading historic logs).
 
 Filter flags (all numeric, all optional):
 
@@ -405,8 +405,8 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 ### §7.5 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
-- Send prompts or drive loops — the only mutation in the family is `plurnk session rename` (§7.4); everything else is read-only.
-- Honor flags that only matter to loop runs (`--model`, `--yolo`) — those parse without error but have no effect in subcommand mode.
+- Send prompts or drive loops — the only mutation in the family is `plurnk workspace rename` (§7.4); everything else is read-only.
+- Honor flags that only matter to loop workers (`--model`, `--yolo`) — those parse without error but have no effect in subcommand mode.
 
 ---
 
@@ -462,7 +462,7 @@ Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow
 | `client:connection` | `refused`, `closed`, `daemon_stale` | Module unreachable / stream dropped mid-run / `discover` is missing wire markers this client depends on (daemon older than client) |
 | `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
 | `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
-| `client:proposal` | `edits_blocked` | No review channel (non-TTY, no `--yolo`) — loop runs with `noProposals`; client owns the why |
+| `client:proposal` | `edits_blocked` | No review channel (non-TTY, no `--yolo`) — loop workers with `noProposals`; client owns the why |
 | `client:rpc` | `error` | Daemon-returned RPC error surfaced verbatim |
 | `client:runtime` | `error` | Generic fallback for unstructured throws |
 
@@ -522,7 +522,7 @@ A conforming `plurnk` client:
 
 1. Speaks AG-UI+ (RunAgentInput over HTTP, AG-UI events + `CUSTOM plurnk.*` over SSE) per the plurnk-agui SPEC.
 2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT` (or `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
-3. Resolves the session per §1.1 (`session.create` by default, or `session.attach` when `--session`/`PLURNK_SESSION` is set); uses the returned session for all subsequent RPCs until disconnect.
+3. Resolves the workspace per §1.1 (`workspace.create` by default, or `workspace.attach` when `--workspace`/`PLURNK_SESSION` is set); uses the returned workspace for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping server-resolved proposals (`flags.yolo` / `flags.noProposals`) entirely.
 6. Subscribes to `telemetry/event` notifications and renders each through the unified telemetry shape per §8.

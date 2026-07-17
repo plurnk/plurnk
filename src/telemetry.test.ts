@@ -203,9 +203,9 @@ test("[§cli-client-source-events] clientFlagInvalid carries flag + value + reas
 });
 
 test("clientFlagMissingDependency message names both flags", () => {
-    const ev = clientFlagMissingDependency("--run", "--session");
+    const ev = clientFlagMissingDependency("--worker", "--workspace");
     assert.equal(ev.kind, "missing_dependency");
-    assert.match(ev.message as string, /--run requires --session/);
+    assert.match(ev.message as string, /--worker requires --workspace/);
 });
 
 test("clientSubcommandSessionNotFound quotes the name in message", () => {
@@ -219,20 +219,20 @@ test("clientSubcommandSessionAmbiguous carries count + name", () => {
     const ev = clientSubcommandSessionAmbiguous("dup", 3);
     assert.equal(ev.kind, "session_ambiguous");
     assert.equal(ev.count, 3);
-    assert.match(ev.message as string, /3 sessions/);
+    assert.match(ev.message as string, /3 workspaces/);
 });
 
 test("[§cli-subcommands] clientSubcommandUnknownVerb lists available verbs when provided", () => {
-    const ev = clientSubcommandUnknownVerb("session foo", ["list", "runs"]);
+    const ev = clientSubcommandUnknownVerb("workspace foo", ["list", "runs"]);
     assert.equal(ev.kind, "unknown_verb");
     assert.match(ev.message as string, /Available: list, runs/);
     assert.deepEqual(ev.available, ["list", "runs"]);
 });
 
 test("clientSubcommandMissingArgument names path + argument", () => {
-    const ev = clientSubcommandMissingArgument("plurnk session runs", "<name>");
+    const ev = clientSubcommandMissingArgument("plurnk workspace runs", "<name>");
     assert.equal(ev.kind, "missing_argument");
-    assert.equal(ev.path, "plurnk session runs");
+    assert.equal(ev.path, "plurnk workspace runs");
     assert.equal(ev.argument, "<name>");
 });
 

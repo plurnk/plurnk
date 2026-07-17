@@ -43,24 +43,24 @@ interface SessionResult { id: number; name: string }
 
 // One verb vocabulary across nvim's :AI/, the TUI, and (where they exist)
 // the argv subcommands. Convergence is policy: divergence needs a reason.
-// Singular = CREATE, plural = LIST: /session makes a new session, /sessions
+// Singular = CREATE, plural = LIST: /workspace makes a new workspace, /workspaces
 // lists them; /run forks a new run, /runs lists them. The old /new was
-// ambiguous (session or run?) and is gone. /rename retargets the current
-// session's mutable handle (a run's name is immutable — no /rename for runs).
+// ambiguous (workspace or run?) and is gone. /rename retargets the current
+// workspace's mutable handle (a run's name is immutable — no /rename for runs).
 export const VERBS = [
-    "help", "models", "sessions", "runs", "log", "model",
-    "yolo", "session", "rename", "run", "stop", "quit",
+    "help", "models", "workspaces", "workers", "log", "model",
+    "yolo", "workspace", "rename", "worker", "stop", "quit",
     "pick", "hide", "view", "repo", "drop", "members", "import", "script",
     "auth", "accept", "reject", "cancel", "edit",
 ] as const;
 
 export const TUI_HELP = [
-    "  /models /sessions /runs /log [n]   inspect",
+    "  /models /workspaces /runs /log [n]   inspect",
     "  /model <alias>                     model for subsequent loops",
     "  /yolo                              toggle local auto-accept",
-    "  /session [name]                    new session",
-    "  /rename <name>                     rename this session (a mutable handle)",
-    "  /run [name]                        create a new run (session>run>loop>turn>op)",
+    "  /workspace [name]                    new workspace",
+    "  /rename <name>                     rename this workspace (a mutable handle)",
+    "  /worker [name]                     create a new worker (workspace>worker>loop>turn>op)",
     "  /pick <glob>                       membership: track file(s) in manifest",
     "  /hide <glob>                       membership: block file(s) from manifest",
     "  /view <glob>                       membership: track file(s) in manifest (read-only)",
@@ -77,8 +77,8 @@ export const TUI_HELP = [
     "  << LOOK(uri)                       off-run READ — inspect a uri for you, not the model",
     "  Alt-p / Alt-n                      cycle <<LOOK through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
-    "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models sessions runs",
-    "                                     log yolo session members stop · Alt-h help",
+    "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
+    "                                     log yolo workspace members stop · Alt-h help",
 ].join("\n") + "\n";
 
 // The non-submitting newline keys, by their raw byte sequence (post paste
@@ -106,8 +106,8 @@ export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK,
 // doesn't change a control code), Ctrl-s is XOFF, Ctrl-i is Tab, and readline
 // owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped (readline word-ops).
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
-    m: "/models", s: "/sessions", R: "/runs", L: "/log",
-    Y: "/yolo", N: "/session", M: "/members", x: "/stop", h: "/help",
+    m: "/models", s: "/workspaces", R: "/runs", L: "/log",
+    Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", h: "/help",
 });
 
 // An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
@@ -193,34 +193,34 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         callback(null, [[], line]);
     };
 
-// Seed readline history from the session's prior prompts (svc#238) so up/down
+// Seed readline history from the workspace's prior prompts (svc#238) so up/down
 // recalls them across restarts. One clean RPC — newest-first, exactly what
-// rl.history wants. Best-effort: a fresh session has none, failures are silent.
-export const seedPromptHistory = async (rpc: VerbCaller, sessionId: number, rl: readline.Interface): Promise<void> => {
+// rl.history wants. Best-effort: a fresh workspace has none, failures are silent.
+export const seedPromptHistory = async (rpc: VerbCaller, workspaceId: number, rl: readline.Interface): Promise<void> => {
     try {
-        // Bridge mode has no client-known session id → omit it (the connection's
-        // attached session answers); WS passes the real id.
-        const params = sessionId > 0 ? { id: sessionId, limit: 100 } : { limit: 100 };
-        const { prompts } = await rpc.call("session.prompts", params) as { prompts?: string[] };
+        // Bridge mode has no client-known workspace id → omit it (the connection's
+        // attached workspace answers); WS passes the real id.
+        const params = workspaceId > 0 ? { id: workspaceId, limit: 100 } : { limit: 100 };
+        const { prompts } = await rpc.call("workspace.prompts", params) as { prompts?: string[] };
         if (Array.isArray(prompts) && prompts.length > 0) (rl as unknown as { history: string[] }).history = prompts;
     } catch { /* history is a convenience; never block the REPL */ }
 };
 
-// The one-line startup banner: version · session · model · help. Pure so the
+// The one-line startup banner: version · workspace · model · help. Pure so the
 // model-label resolution is unit-testable. modelLabel = the client's
 // --model/PLURNK_MODEL when set, else the daemon's active default
 // (providers.list `active`), else an honest fallback.
 export const buildHeader = (opts: {
-    versionNotice?: string; sessionName: string; modelAlias?: string; activeAlias?: string; yolo?: boolean;
+    versionNotice?: string; workspaceName: string; modelAlias?: string; activeAlias?: string; yolo?: boolean;
 }): string => {
     const head = opts.versionNotice ?? "plurnk";
     const modelLabel = opts.modelAlias ?? opts.activeAlias ?? "(daemon default)";
     const yolo = opts.yolo ? " · yolo: on" : "";
-    return `${head} · session: ${opts.sessionName} · model: ${modelLabel}${yolo} · /help`;
+    return `${head} · workspace: ${opts.workspaceName} · model: ${modelLabel}${yolo} · /help`;
 };
 
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
-// (stub rpc, collect writes, fake session/import). Verbs never call loop.run —
+// (stub rpc, collect writes, fake workspace/import). Verbs never call loop.run —
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
@@ -231,8 +231,8 @@ export interface VerbContext {
     resolveModel?: (alias: string) => string | undefined;
     getSession: () => SessionResult;
     setSession: (s: SessionResult) => void;
-    // Switch to (or create) a named session — transport-agnostic (WS rebind /
-    // bridge threadId re-map). Returns the new session handle.
+    // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
+    // bridge threadId re-map). Returns the new workspace handle.
     switchSession: (name: string | undefined) => Promise<SessionResult>;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
@@ -250,8 +250,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(TUI_HELP);
             return;
         case "models": await runModels(rpc, { json: false }); return;
-        case "sessions": await runSessionList(rpc, { json: false }); return;
-        case "runs": await runSessionRuns(rpc, ctx.getSession().name, { json: false }); return;
+        case "workspaces": await runSessionList(rpc, { json: false }); return;
+        case "workers": await runSessionRuns(rpc, ctx.getSession().name, { json: false }); return;
         case "log": {
             const limit = rest.length > 0 ? Number(rest) : undefined;
             const filters = Number.isInteger(limit) && (limit as number) > 0 ? { limit: limit as number } : {};
@@ -271,32 +271,32 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             opts.yolo = !opts.yolo;
             write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
             return;
-        case "session": {
-            // New session — a fresh world. Transport-agnostic: WS rebinds the
+        case "workspace": {
+            // New workspace — a fresh world. Transport-agnostic: WS rebinds the
             // connection in place (service §13.5-rebind); the bridge re-maps its
             // threadId. Name is optional (auto-named/generated) and is a mutable
             // handle (/rename retargets it). client id (#249) + AGENTS override
             // (#268) ride the switch.
             ctx.setSession(await ctx.switchSession(rest.length > 0 ? rest : undefined));
-            write(`  session: ${ctx.getSession().name} (new)\n`);
+            write(`  workspace: ${ctx.getSession().name} (new)\n`);
             return;
         }
         case "rename": {
-            // session.rename — a session's name is a mutable handle on the world
-            // (a run's is not). Mutates the attached session in place. svc#248.
+            // workspace.rename — a workspace's name is a mutable handle on the world
+            // (a run's is not). Mutates the attached workspace in place. svc#248.
             if (rest.length === 0) { write("  usage: /rename <name>\n"); return; }
-            const renamed = await rpc.call("session.rename", { name: rest }) as SessionResult;
+            const renamed = await rpc.call("workspace.rename", { name: rest }) as SessionResult;
             ctx.setSession(renamed);
-            write(`  session: ${renamed.name}\n`);
+            write(`  workspace: ${renamed.name}\n`);
             return;
         }
-        case "run": {
-            // New run — run.fork (svc#248) branches this conversation, optionally
+        case "worker": {
+            // New run — worker.fork (svc#248) branches this conversation, optionally
             // named at instantiation (immutable after). Bind to the fork so the
-            // next prompt speaks there. The session (the world) is unchanged.
-            const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { runId: number; runName: string };
-            await rpc.call("session.attach", { id: ctx.getSession().id, runId: forked.runId });
-            write(`  run: ${forked.runName} (new)\n`);
+            // next prompt speaks there. The workspace (the world) is unchanged.
+            const forked = await rpc.call("worker.fork", rest.length > 0 ? { name: rest } : {}) as { runId: number; workerName: string };
+            await rpc.call("workspace.attach", { id: ctx.getSession().id, runId: forked.runId });
+            write(`  run: ${forked.workerName} (new)\n`);
             return;
         }
         case "pick":
@@ -304,18 +304,18 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "view":
         case "repo": {
             // Membership overlay (svc#200/#242) — service vocabulary, live via
-            // session.constrain (session-scoped, re-resolved immediately).
+            // workspace.constrain (workspace-scoped, re-resolved immediately).
             if (rest.length === 0) { write(`  usage: /${verb} <glob>\n`); return; }
-            await rpc.call("session.constrain", { effect: verb, glob: rest });
+            await rpc.call("workspace.constrain", { effect: verb, glob: rest });
             write(`  ${verb}: ${rest}\n`);
             return;
         }
         case "drop": {
             if (rest.length === 0) { write("  usage: /drop <glob>\n"); return; }
-            const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+            const { constraints } = await rpc.call("workspace.constraints") as { constraints: Array<{ effect: string; glob: string }> };
             const matches = constraints.filter((c) => c.glob === rest);
             if (matches.length === 0) { write(`  no constraint matching ${JSON.stringify(rest)}\n`); return; }
-            for (const c of matches) await rpc.call("session.unconstrain", c);
+            for (const c of matches) await rpc.call("workspace.unconstrain", c);
             write(`  dropped ${matches.length} constraint${matches.length === 1 ? "" : "s"} (${rest})\n`);
             return;
         }
@@ -325,7 +325,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // the rules here (the old behavior) misinforms: rules are deltas,
             // not the universe. The constraint list rides along as a footer —
             // it's what /drop targets, but it is NOT "what the model sees".
-            const { members, hidden } = await rpc.call("session.members") as {
+            const { members, hidden } = await rpc.call("workspace.members") as {
                 members: Array<{ path: string; effect: string }>; hidden: string[];
             };
             const editable = members.filter((m) => m.effect === "member");
@@ -341,7 +341,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
                 if (editable.length <= 40) for (const m of editable) write(`  member  ${m.path}\n`);
                 else write(`  member  …${editable.length} editable files (git-tracked); listing suppressed\n`);
             }
-            const { constraints } = await rpc.call("session.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+            const { constraints } = await rpc.call("workspace.constraints") as { constraints: Array<{ effect: string; glob: string }> };
             write(constraints.length === 0
                 ? "  rules: none (git-tracked files only)\n"
                 : `  rules: ${constraints.map((c) => `${c.effect} ${c.glob}`).join(", ")}\n`);
@@ -393,14 +393,14 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
     }
 };
 
-export const runTui = async (transport: Transport, session: SessionResult, opts: {
+export const runTui = async (transport: Transport, workspace: SessionResult, opts: {
     modelAlias?: string; model?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
-    client?: string;            // #249 — frontend id, carried onto /session-created sessions
-    autoReadAgents?: boolean;   // #268 — AGENTS auto-load override, carried onto /session
+    client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
+    autoReadAgents?: boolean;   // #268 — AGENTS auto-load override, carried onto /workspace
 }): Promise<void> => {
-    let current = session;
+    let current = workspace;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
     let lastLoopSeq = 0;
     // Loop state, hoisted so buildPrompt can show a steer prompt while a loop
@@ -457,9 +457,9 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
         }
     } catch { /* completion stays empty; header falls back to (daemon default) */ }
 
-    // One header line: version · session · model · help (see buildHeader).
+    // One header line: version · workspace · model · help (see buildHeader).
     const header = buildHeader({
-        versionNotice: opts.versionNotice, sessionName: current.name,
+        versionNotice: opts.versionNotice, workspaceName: current.name,
         modelAlias: opts.modelAlias, activeAlias, yolo: opts.yolo,
     });
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
@@ -672,7 +672,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     };
     // The persistent run-plane handlers — one set, wired once, driven by whichever
     // transport is live. Same bodies as the old inline rpc.onNotification handlers;
-    // they render the shared session's activity whether this REPL started the loop
+    // they render the shared workspace's activity whether this REPL started the loop
     // or a worker/second client did (multi-client observability).
     transport.subscribe({
         onEntry: (entry) => {
@@ -745,7 +745,7 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
     const verbRpc = { call: (method: string, params?: object): Promise<unknown> => transport.rpc(method, params) } as VerbCaller;
 
     // Verb dispatch runs through the testable module-level handleVerb; this
-    // context injects the live session / opts / stdout / import glue.
+    // context injects the live workspace / opts / stdout / import glue.
     const verbCtx: VerbContext = {
         rpc: verbRpc, opts, resolveModel: opts.resolveModel,
         getSession: () => current,
@@ -916,8 +916,8 @@ export const runTui = async (transport: Transport, session: SessionResult, opts:
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);
-            // Steal pi's nicety: hand back the one-liner to pick this session up.
-            process.stdout.write(`\n  \x1b[2mresume this session:  plurnk --session ${current.name}\x1b[0m\n`);
+            // Steal pi's nicety: hand back the one-liner to pick this workspace up.
+            process.stdout.write(`\n  \x1b[2mresume this workspace:  plurnk --workspace ${current.name}\x1b[0m\n`);
             resolve();
         });
 

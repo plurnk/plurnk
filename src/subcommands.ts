@@ -1,4 +1,4 @@
-// Read-only subcommands: `plurnk models`, `plurnk session list`, `plurnk log read`.
+// Read-only subcommands: `plurnk models`, `plurnk workspace list`, `plurnk log read`.
 // Each is a thin wrapper around a daemon RPC plus a small renderer; output
 // goes to stdout (the product), trace/errors to stderr — same posture as CLI
 // mode per SPEC.md §2.1.
@@ -54,7 +54,7 @@ export const runModels = async (rpc: Caller, opts: { json: boolean }): Promise<n
     return 0;
 };
 
-// ─── plurnk session list ──────────────────────────────────────────────
+// ─── plurnk workspace list ──────────────────────────────────────────────
 
 interface SessionRow {
     id: number;
@@ -72,16 +72,16 @@ const formatCost = (picoUsd: number): string => {
 };
 
 export const runSessionList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
-    const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
+    const { workspaces } = await rpc.call("workspace.list") as { workspaces: SessionRow[] };
     if (opts.json) {
-        process.stdout.write(`${JSON.stringify(sessions)}\n`);
+        process.stdout.write(`${JSON.stringify(workspaces)}\n`);
         return 0;
     }
-    if (sessions.length === 0) {
-        process.stdout.write("(no sessions; run `plurnk` to create one)\n");
+    if (workspaces.length === 0) {
+        process.stdout.write("(no workspaces; run `plurnk` to create one)\n");
         return 0;
     }
-    const rows = sessions.map((s) => [
+    const rows = workspaces.map((s) => [
         s.name,
         s.project_root ?? "(headless)",
         s.created_at,
@@ -91,7 +91,7 @@ export const runSessionList = async (rpc: Caller, opts: { json: boolean }): Prom
     return 0;
 };
 
-// ─── plurnk session runs <name> ───────────────────────────────────────
+// ─── plurnk workspace runs <name> ───────────────────────────────────────
 
 interface RunRow {
     id: number;
@@ -102,28 +102,28 @@ interface RunRow {
 
 export const runSessionRuns = async (
     rpc: Caller,
-    sessionName: string,
+    workspaceName: string,
     opts: { json: boolean },
 ): Promise<number> => {
-    // Look up the session id by name without attaching — session.runs accepts
+    // Look up the workspace id by name without attaching — workspace.workers accepts
     // an explicit id, so we don't need to spend an attach on a read-only call.
-    const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
-    const matches = sessions.filter((s) => s.name === sessionName);
+    const { workspaces } = await rpc.call("workspace.list") as { workspaces: SessionRow[] };
+    const matches = workspaces.filter((s) => s.name === workspaceName);
     if (matches.length === 0) {
-        report(clientSubcommandSessionNotFound(sessionName));
+        report(clientSubcommandSessionNotFound(workspaceName));
         return 1;
     }
     if (matches.length > 1) {
-        report(clientSubcommandSessionAmbiguous(sessionName, matches.length));
+        report(clientSubcommandSessionAmbiguous(workspaceName, matches.length));
         return 1;
     }
-    const { runs } = await rpc.call("session.runs", { id: matches[0].id }) as { runs: RunRow[] };
+    const { runs } = await rpc.call("workspace.workers", { id: matches[0].id }) as { runs: RunRow[] };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(runs)}\n`);
         return 0;
     }
     if (runs.length === 0) {
-        process.stdout.write(`(session ${JSON.stringify(sessionName)} has no runs)\n`);
+        process.stdout.write(`(workspace ${JSON.stringify(workspaceName)} has no runs)\n`);
         return 0;
     }
     const rows = runs.map((r) => [r.name, r.created_at, formatCost(r.cost_pico)]);
@@ -131,40 +131,40 @@ export const runSessionRuns = async (
     return 0;
 };
 
-// ─── plurnk session rename ────────────────────────────────────────────
+// ─── plurnk workspace rename ────────────────────────────────────────────
 
-// session.rename mutates the ATTACHED session's name (a session is the world;
+// workspace.rename mutates the ATTACHED workspace's name (a workspace is the world;
 // its name is a mutable handle — unlike a run, which is immutable history).
 // Resolve <name> by list, attach, rename. svc#248.
 export const runSessionRename = async (
     rpc: Caller,
-    sessionName: string,
+    workspaceName: string,
     newName: string,
     opts: { json: boolean },
 ): Promise<number> => {
-    const { sessions } = await rpc.call("session.list") as { sessions: SessionRow[] };
-    const matches = sessions.filter((s) => s.name === sessionName);
+    const { workspaces } = await rpc.call("workspace.list") as { workspaces: SessionRow[] };
+    const matches = workspaces.filter((s) => s.name === workspaceName);
     if (matches.length === 0) {
-        report(clientSubcommandSessionNotFound(sessionName));
+        report(clientSubcommandSessionNotFound(workspaceName));
         return 1;
     }
     if (matches.length > 1) {
-        report(clientSubcommandSessionAmbiguous(sessionName, matches.length));
+        report(clientSubcommandSessionAmbiguous(workspaceName, matches.length));
         return 1;
     }
-    await rpc.call("session.attach", { id: matches[0].id });
-    const result = await rpc.call("session.rename", { name: newName }) as { id: number; name: string };
+    await rpc.call("workspace.attach", { id: matches[0].id });
+    const result = await rpc.call("workspace.rename", { name: newName }) as { id: number; name: string };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(result)}\n`);
         return 0;
     }
-    process.stdout.write(`renamed ${JSON.stringify(sessionName)} → ${JSON.stringify(result.name)}\n`);
+    process.stdout.write(`renamed ${JSON.stringify(workspaceName)} → ${JSON.stringify(result.name)}\n`);
     return 0;
 };
 
 // ─── plurnk log read ──────────────────────────────────────────────────
 
-// Caller has already attached the session via attachOrCreateSession; we just
+// Caller has already attached the workspace via attachOrCreateSession; we just
 // call log.read on the attached run. Filters thread through to the RPC.
 
 interface LogReadResult {
@@ -212,7 +212,7 @@ export const runLogRead = async (
 // SINGLE entry's full shape (tx + rx). No fetch-all, no client-side coordinate
 // match — the service owns resolution. The client renders the entry it's handed
 // (picking the meaningful content per op is display logic, the client's job).
-// Run-relative, so target the conversation's run with `--run <model-run>`. Accepts
+// Run-relative, so target the conversation's run with `--worker <model-run>`. Accepts
 // zero-padded display form (03/01/02) or bare (3/1/2) alike.
 export const parseCoord = (raw: string): [number, number, number] | null => {
     const parts = raw.split("/");
@@ -252,7 +252,7 @@ export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean;
     const entry = entries[0];
     if (entry === undefined) {
         process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached run`
-            + ` (the conversation lives in the model run — try --run <model-run>)\n`);
+            + ` (the conversation lives in the model run — try --worker <model-run>)\n`);
         return 4;
     }
     if (opts.json) {

@@ -26,7 +26,7 @@ export interface BridgeTarget { bridgeUrl: string; token?: string }
 // signal (its req.on("close") cancels the loop) — hanging up IS cancellation.
 export async function* runViaBridge(
     target: BridgeTarget,
-    run: { threadId: string; session?: string; prompt?: string; messages?: Array<Record<string, unknown>>; runId?: string; forwardedProps?: Record<string, unknown> },
+    run: { threadId: string; workspace?: string; prompt?: string; messages?: Array<Record<string, unknown>>; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
     // messages verbatim when given (a terminate-resume tool-result run, an action run);
@@ -40,10 +40,10 @@ export async function* runViaBridge(
             threadId: run.threadId,
             runId: run.runId,
             messages,
-            // The session (world) is REQUIRED — a run has no existence without one. The
+            // The workspace (world) is REQUIRED — a run has no existence without one. The
             // threadId names the CONVERSATION (a run over the world, svc#366); it doubles
-            // as the session name unless the caller splits them (--run: thread ≠ world).
-            forwardedProps: { plurnk: { session: run.session ?? run.threadId, ...(run.forwardedProps ?? {}) } },
+            // as the workspace name unless the caller splits them (--worker: thread ≠ world).
+            forwardedProps: { plurnk: { workspace: run.workspace ?? run.threadId, ...(run.forwardedProps ?? {}) } },
         }),
     });
     if (!res.ok || res.body === null) {
@@ -68,19 +68,19 @@ export async function* runViaBridge(
     }
 }
 
-// Resolve the WORLD (session) name for a conversation. An explicit name (--session)
-// is used verbatim; otherwise the DAEMON mints a fresh, uniquely-named session via a
-// no-name session.create — the paradigm the agui transition regressed into a literal
+// Resolve the WORLD (workspace) name for a conversation. An explicit name (--workspace)
+// is used verbatim; otherwise the DAEMON mints a fresh, uniquely-named workspace via a
+// no-name workspace.create — the paradigm the agui transition regressed into a literal
 // "tui"/"cli" client label. Created WITH its options so creation is atomic with the
 // project root (#140). No wire touch when a name is given.
 export const resolveWorld = async (
     target: BridgeTarget,
-    sessionName: string | undefined,
+    workspaceName: string | undefined,
     createParams: Record<string, unknown>,
 ): Promise<string> => {
-    if (sessionName !== undefined) return sessionName;
-    const created = await actionViaBridge<{ name: string }>(target, { threadId: "bootstrap", kind: "session.create", params: createParams });
-    if (typeof created?.name !== "string" || created.name.length === 0) throw new Error("session.create returned no name — the daemon failed to mint a session");
+    if (workspaceName !== undefined) return workspaceName;
+    const created = await actionViaBridge<{ name: string }>(target, { threadId: "bootstrap", kind: "workspace.create", params: createParams });
+    if (typeof created?.name !== "string" || created.name.length === 0) throw new Error("workspace.create returned no name — the daemon failed to mint a workspace");
     return created.name;
 };
 

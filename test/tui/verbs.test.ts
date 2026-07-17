@@ -42,13 +42,13 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("/session [name] opens a new named session", async (t) => {
+    test("/workspace [name] opens a new named workspace", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("/session ptytest\r");
-            await tui.waitFor(/session: ptytest \(new\)/);
+            tui.write("/workspace ptytest\r");
+            await tui.waitFor(/workspace: ptytest \(new\)/);
         } finally { tui.kill(); }
     });
 

@@ -41,7 +41,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "PLAN" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.telemetry", value: { source: "grammar", kind: "parse_error" } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { sessionId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
@@ -53,8 +53,8 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
         assert.equal((seen.telemetry[0] as { source: string }).source, "grammar");
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
-        assert.equal(t.sessionId, 7, "done resolves with the terminated outcome incl. sessionId");
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { session: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "the session (world) + options + per-run knobs ride the first run's forwardedProps");
+        assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "the workspace (world) + options + per-run knobs ride the first run's forwardedProps");
     } finally { await mock.close(); }
 });
 
@@ -91,7 +91,7 @@ test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done res
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new session", async () => {
+test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new workspace", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "old");
@@ -158,17 +158,17 @@ test("BridgeTransport: a stream that dies without terminal truth is an ERROR, ne
     } finally { await mock.close(); }
 });
 
-test("[§cli-sessions-and-runs] EVERY request carries the session options — creation is atomic with the projectRoot whichever request wins (#140, operator ruling)", async () => {
+test("[§cli-workspaces-and-workers] EVERY request carries the workspace options — creation is atomic with the projectRoot whichever request wins (#140, operator ruling)", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "session.prompts", ok: true, result: { prompts: [] } } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.prompts", ok: true, result: { prompts: [] } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } });
-        await bt.rpc("session.prompts", { limit: 50 });   // the TUI's real first touch (seedPromptHistory)
-        await bt.rpc("session.prompts", { limit: 50 });   // and the SECOND — no consumed-once race
+        await bt.rpc("workspace.prompts", { limit: 50 });   // the TUI's real first touch (seedPromptHistory)
+        await bt.rpc("workspace.prompts", { limit: 50 });   // and the SECOND — no consumed-once race
         for (const c of mock.captured) {
             const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
             assert.equal(fp.projectRoot, "/home/user/repo", "projectRoot rides EVERY request — whichever creates, creates rooted");
@@ -179,9 +179,9 @@ test("[§cli-sessions-and-runs] EVERY request carries the session options — cr
 });
 
 test("[§cli-model-selection] THE MODEL RIDES EVERY LOOP — not just the first (svc#414 guard: /model must not go cosmetic on run 2+)", async () => {
-    // Two sequential runs on one transport. Session options are first-touch only, but
+    // Two sequential runs on one transport. Workspace options are first-touch only, but
     // the model (alias + client-resolved spec) is a PER-LOOP knob and MUST ride every run
-    // — the daemon keeps no sticky session-model, so a missing alias on run 2 = the loop
+    // — the daemon keeps no sticky workspace-model, so a missing alias on run 2 = the loop
     // silently reverting to the daemon default. This is the "all loops send their model
     // alias" contract, verified deterministically at the choke point.
     const mock = await bootMock((_req, res) => {

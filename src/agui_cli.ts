@@ -1,5 +1,5 @@
 // CLI one-shot through the plurnk-agui bridge (plurnk-agui#1, migration slice 2):
-// text mode. The bridge owns the WS + session; we POST the run and render the
+// text mode. The bridge owns the WS + workspace; we POST the run and render the
 // AG-UI SSE projection. A FAMILY client renders from CUSTOM plurnk.row (the full
 // wire row) for full fidelity — the generic AG-UI events (TEXT_MESSAGE/…) are for
 // third-party frontends — so this reuses runCli's exact text-mode rendering:
@@ -22,10 +22,10 @@ import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
-// notification + the daemon sessionId, so a bridge-run json record matches the
+// notification + the daemon workspaceId, so a bridge-run json record matches the
 // WS-run schema exactly.
 interface TerminatedValue {
-    sessionId: number | null;
+    workspaceId: number | null;
     loopId: number;
     finalStatus: number;
     hitMaxTurns: boolean;
@@ -42,7 +42,7 @@ export interface CliRunResult {
     telemetry: TelemetryEvent[];
     response: string;
     terminated: TerminatedValue | null;
-    modelRunId: number | null;
+    modelWorkerId: number | null;
 }
 
 export interface CliRunSinks {
@@ -68,7 +68,7 @@ const decideProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<{ log
 
 // Drive a bridge run's AG-UI event stream. Text mode renders to the sinks
 // (stdout = answer, stderr = trace); json mode stays silent and accumulates the
-// full record (entries/telemetry/response/terminated/modelRunId) for the caller
+// full record (entries/telemetry/response/terminated/modelWorkerId) for the caller
 // to emit as ONE document. plurnk.terminated is the authoritative outcome (its
 // finalStatus/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live bridge.
@@ -77,7 +77,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     let hitMaxTurns = false;
     let response = "";
     let terminated: TerminatedValue | null = null;
-    let modelRunId: number | null = null;
+    let modelWorkerId: number | null = null;
     let pendingResume: CliRunResult["pendingResume"] = null;
     let toolId = "";
     let toolArgs = "";
@@ -104,8 +104,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.row") {
             const entry = value as LogEntryWire;
-            const runId = (entry as { run_id?: number }).run_id;
-            if (modelRunId === null && entry.origin === "model" && typeof runId === "number") modelRunId = runId;
+            const runId = (entry as { worker_id?: number }).worker_id;
+            if (modelWorkerId === null && entry.origin === "model" && typeof runId === "number") modelWorkerId = runId;
             if (isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
             if (io.json) { entries.push(entry); continue; }
             io.err(`${formatPlain(entry)}\n`);
@@ -136,17 +136,17 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     // pending resume) is a DEAD stream — 502, never the initialized 200 (svc#478:
     // the fabricated-success default made a killed run exit 0 with an empty record).
     if (terminated === null && pendingResume === null && finalStatus === 200) finalStatus = 502;
-    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, telemetry, response, terminated, modelRunId, pendingResume };
+    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, telemetry, response, terminated, modelWorkerId, pendingResume };
 };
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
 // stderr=trace. json: silent, then ONE buildJsonRecord document on stdout —
-// identical schema to the WS path (plurnk.terminated carries sessionId/loopId/
-// turnIds/cost; modelRunId derived from the rows).
+// identical schema to the WS path (plurnk.terminated carries workspaceId/loopId/
+// turnIds/cost; modelWorkerId derived from the rows).
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; session?: string; alias?: string; model?: string; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; workspace?: string; alias?: string; model?: string; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
@@ -175,7 +175,7 @@ export const runCliViaBridge = async (
     let timedOut = false;
     const ac = new AbortController();
     const cancelLoop = async (): Promise<void> => {
-        for await (const e of runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), messages: [], forwardedProps: { action: { kind: "loop.cancel", reason: "client_timeout" } } })) void e;
+        for await (const e of runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), messages: [], forwardedProps: { action: { kind: "loop.cancel", reason: "client_timeout" } } })) void e;
     };
     let graceTimer: NodeJS.Timeout | undefined;
     const deadline = opts.timeoutSec !== undefined && opts.timeoutSec > 0
@@ -194,14 +194,14 @@ export const runCliViaBridge = async (
         emitted = true;
         const t = r.terminated;
         const doc = buildJsonRecord({
-            session: { id: t?.sessionId ?? 0, name: opts.threadId },
+            workspace: { id: t?.workspaceId ?? 0, name: opts.threadId },
             prompt,
             response: r.response,
             entries: r.entries,
             telemetry: r.telemetry,
             result: {
                 loopId: t?.loopId ?? 0,
-                modelRunId: r.modelRunId ?? undefined,
+                modelWorkerId: r.modelWorkerId ?? undefined,
                 turnIds: t?.turnIds ?? [],
                 // NEVER a fabricated 200: a stream that died without terminal truth is 502.
                 finalStatus: t?.finalStatus ?? 502,
@@ -218,7 +218,7 @@ export const runCliViaBridge = async (
     // tool-call; the decision POSTs as the next segment's tool-result. Accumulate
     // across segments — one logical run, one record.
     let next: { prompt?: string; messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }, ac.signal), io);
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
     // A hard kill mid-run must still leave the record behind (svc#478: Harbor's axe
     // erased the whole document). Best-effort flush of what accumulated so far.
     const onTerm = (): void => { emitRecord(result); process.exit(143); };
@@ -227,13 +227,13 @@ export const runCliViaBridge = async (
         while (result.pendingResume !== null) {
             const r = result.pendingResume;
             next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
-            const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }, ac.signal), io);
+            const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
             result = {
                 ...seg,
                 entries: [...result.entries, ...seg.entries],
                 telemetry: [...result.telemetry, ...seg.telemetry],
                 response: seg.response.length > 0 ? seg.response : result.response,
-                modelRunId: result.modelRunId ?? seg.modelRunId,
+                modelWorkerId: result.modelWorkerId ?? seg.modelWorkerId,
             };
         }
     } finally {
@@ -250,7 +250,7 @@ export const runCliViaBridge = async (
 export const runScriptViaBridge = async (
     target: BridgeTarget,
     text: string,
-    opts: { threadId: string; session?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; workspace?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     let parse: { results: Array<{ status: number }> } | null = null;
@@ -272,7 +272,7 @@ export const runScriptViaBridge = async (
         ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
     };
     let next: { messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { messages: [], forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.session !== undefined ? { session: opts.session } : {}), ...next }), io);
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }), io);
     while (result.pendingResume !== null) {
         const r = result.pendingResume;
         next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };

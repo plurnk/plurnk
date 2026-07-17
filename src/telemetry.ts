@@ -223,16 +223,16 @@ export const clientSubcommandSessionNotFound = (name: string): TelemetryEvent =>
     source: "client:subcommand",
     kind: "session_not_found",
     level: "error",
-    message: `no session named ${JSON.stringify(name)}`,
+    message: `no workspace named ${JSON.stringify(name)}`,
     name,
 });
 
-// `client:subcommand:session_ambiguous` — multiple sessions match.
+// `client:subcommand:session_ambiguous` — multiple workspaces match.
 export const clientSubcommandSessionAmbiguous = (name: string, count: number): TelemetryEvent => ({
     source: "client:subcommand",
     kind: "session_ambiguous",
     level: "error",
-    message: `${count} sessions named ${JSON.stringify(name)}; pick a unique name`,
+    message: `${count} workspaces named ${JSON.stringify(name)}; pick a unique name`,
     name,
     count,
 });

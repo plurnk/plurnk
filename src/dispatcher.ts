@@ -20,6 +20,7 @@ import {
     TelemetryError,
     report,
     clientConnectionRefused,
+    isUnreachable,
     clientDaemonStale,
     clientFlagInvalid,
     clientFlagMissingDependency,
@@ -623,12 +624,14 @@ export const main = async (argv: string[]): Promise<void> => {
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot });
             process.exit(code);
         } catch (cause) {
-            // The bridge is reachable-but-erroring OR unreachable — surface the real
-            // cause (runViaBridge already says "bridge run failed: NNN — …" / "fetch
-            // failed"), NOT the daemon's "no daemon running" boilerplate. json mode
-            // still emits ONE valid document on stdout.
+            // Two distinct failures, two distinct messages: NOTHING LISTENING gets the
+            // onboarding block (no daemon is a first-run moment, not a stack trace);
+            // a bridge that ANSWERED with an error surfaces its real cause — claiming
+            // "no daemon running" over a 500 would lie. json mode still emits ONE
+            // valid document on stdout either way.
             const detail = cause instanceof Error ? cause.message : String(cause);
-            if (json) dieJson(1, "bridge_error", detail, { bridge: bridgeUrl });
+            if (json) dieJson(1, isUnreachable(cause) ? "connection_refused" : "bridge_error", detail, { bridge: bridgeUrl });
+            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
             dieWith(1, clientRuntimeError(new Error(`plurnk-agui bridge (${bridgeUrl}) — ${detail}`)));
         }
     }
@@ -704,7 +707,9 @@ export const main = async (argv: string[]): Promise<void> => {
         }
         // A daemon-rejected RPC arrives as a typed RpcError carrying the failed
         // method and the daemon's code/message — surface it as client:rpc:error.
-        // Anything else is a genuine non-RPC throw: the generic runtime fallback.
+        // Nothing listening at all (subcommands, the TUI boot) gets the onboarding
+        // block; any other genuine throw is the generic runtime fallback.
+        if (isUnreachable(cause)) { report(clientConnectionRefused(bridgeUrl ?? "the daemon", cause)); process.exit(1); }
         report(clientRuntimeError(cause));
         process.exit(1);
     }

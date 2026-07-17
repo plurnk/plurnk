@@ -10,6 +10,7 @@ const {
     renderTelemetryEvent,
     TelemetryError,
     clientConnectionRefused,
+    isUnreachable,
     clientConnectionClosed,
     clientFlagInvalid,
     clientFlagMissingDependency,
@@ -183,6 +184,15 @@ test("TelemetryError: falls back to 'source:kind' when no message", () => {
 });
 
 // ─── Client-side emitters: shape correctness ─────────────────────────
+
+test("[§cli-connection-onboarding] isUnreachable: nothing-listening classes route to onboarding; an answering bridge's error does not", () => {
+    const refused = new TypeError("fetch failed");
+    (refused as { cause?: unknown }).cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3044"), { code: "ECONNREFUSED" });
+    assert.equal(isUnreachable(refused), true, "ECONNREFUSED under fetch failed → onboarding");
+    assert.equal(isUnreachable(new TypeError("fetch failed")), true, "bare fetch failed (undici wrap) → onboarding");
+    assert.equal(isUnreachable(new Error("bridge run failed: 500 — runLoop exploded")), false, "an ANSWERING bridge surfaces its real cause");
+    assert.equal(isUnreachable("not even an error"), false, "non-Error never classifies");
+});
 
 test("[§cli-errors-and-telemetry][§cli-shape] clientConnectionRefused includes URL + hints + cause message", () => {
     const ev = clientConnectionRefused("ws://127.0.0.1:3044", new Error("ECONNREFUSED"));

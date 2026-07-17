@@ -181,6 +181,16 @@ export const clientConnectionRefused = (url: string, cause: unknown): TelemetryE
     ],
 });
 
+// The connection-level failure classes: nothing is LISTENING (vs a bridge that
+// answered with an error, which must surface its real cause). undici wraps them
+// all in a TypeError("fetch failed") with the syscall error as `cause`.
+const UNREACHABLE = /ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|ECONNRESET|EAI_AGAIN/;
+export const isUnreachable = (cause: unknown): boolean => {
+    if (!(cause instanceof Error)) return false;
+    if (UNREACHABLE.test(String((cause.cause as { code?: string } | undefined)?.code ?? ""))) return true;
+    return /fetch failed/i.test(cause.message);
+};
+
 // `client:runtime:error` — generic catch-all for thrown errors we don't have
 // a more specific shape for. Used as a fallback in the global catch.
 export const clientRuntimeError = (cause: unknown): TelemetryEvent => ({

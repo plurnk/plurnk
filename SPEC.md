@@ -445,6 +445,7 @@ interface TelemetryEvent {
 - **Message** appears in quotes after the discriminator/position.
 - **Snippet** (`event.snippet`, used by grammar:parse_error) renders as a 5-space-indented block; the `N:\t`-prefixed content from the daemon is preserved verbatim.
 - **Hints** are a client-side convention (not in the grammar schema) for actionable nudges — e.g. "Is the daemon running?" on connection refused. They render as dim 5-space-indented continuation lines below the headline.
+- **Connection failures route by class** {§cli-connection-onboarding}: NOTHING LISTENING (undici `fetch failed` / ECONNREFUSED-family) surfaces `client:connection:refused` with the onboarding hints (quick-start `npx @plurnk/plurnk-service start`, install line) on every path — prompt, subcommand, TUI boot; json mode reports `kind: "connection_refused"`. A bridge that ANSWERED with an error surfaces its real cause instead — the client never claims "no daemon" over a live daemon's 500.
 
 ### §8.3 Channel posture {§cli-channel-posture}
 

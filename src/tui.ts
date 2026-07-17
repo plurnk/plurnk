@@ -33,20 +33,20 @@ import type { TelemetryEvent } from "./telemetry.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import { runOAuth } from "./auth.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
-import { runModels, runSessionList, runSessionRuns, runLogRead } from "./subcommands.ts";
+import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
 // the outcome on loop/terminated; a synchronous 501/error surfaces immediately)
 // now lives in the Transport (WsTransport's loopId-keyed done, TerminatedInfo).
 
-interface SessionResult { id: number; name: string }
+interface WorkspaceResult { id: number; name: string }
 
 // One verb vocabulary across nvim's :AI/, the TUI, and (where they exist)
 // the argv subcommands. Convergence is policy: divergence needs a reason.
 // Singular = CREATE, plural = LIST: /workspace makes a new workspace, /workspaces
-// lists them; /run forks a new run, /runs lists them. The old /new was
-// ambiguous (workspace or run?) and is gone. /rename retargets the current
-// workspace's mutable handle (a run's name is immutable — no /rename for runs).
+// lists them; /worker forks a new worker, /workers lists them. The old /new was
+// ambiguous (workspace or worker?) and is gone. /rename retargets the current
+// workspace's mutable handle (a worker's name is immutable — no /rename for workers).
 export const VERBS = [
     "help", "models", "workspaces", "workers", "log", "model",
     "yolo", "workspace", "rename", "worker", "stop", "quit",
@@ -229,11 +229,11 @@ export interface VerbContext {
     // /model retargets ROUTING, not just the display label. Injected to avoid a cycle
     // with dispatcher (which owns resolveModelSpec).
     resolveModel?: (alias: string) => string | undefined;
-    getSession: () => SessionResult;
-    setSession: (s: SessionResult) => void;
+    getWorkspace: () => WorkspaceResult;
+    setWorkspace: (s: WorkspaceResult) => void;
     // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
     // bridge threadId re-map). Returns the new workspace handle.
-    switchSession: (name: string | undefined) => Promise<SessionResult>;
+    switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult>;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
     // Resolve the pending proposal (no-op if none) — the typed no-modifier
@@ -250,8 +250,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(TUI_HELP);
             return;
         case "models": await runModels(rpc, { json: false }); return;
-        case "workspaces": await runSessionList(rpc, { json: false }); return;
-        case "workers": await runSessionRuns(rpc, ctx.getSession().name, { json: false }); return;
+        case "workspaces": await runWorkspaceList(rpc, { json: false }); return;
+        case "workers": await runWorkspaceWorkers(rpc, ctx.getWorkspace().name, { json: false }); return;
         case "log": {
             const limit = rest.length > 0 ? Number(rest) : undefined;
             const filters = Number.isInteger(limit) && (limit as number) > 0 ? { limit: limit as number } : {};
@@ -277,26 +277,26 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // threadId. Name is optional (auto-named/generated) and is a mutable
             // handle (/rename retargets it). client id (#249) + AGENTS override
             // (#268) ride the switch.
-            ctx.setSession(await ctx.switchSession(rest.length > 0 ? rest : undefined));
-            write(`  workspace: ${ctx.getSession().name} (new)\n`);
+            ctx.setWorkspace(await ctx.switchWorkspace(rest.length > 0 ? rest : undefined));
+            write(`  workspace: ${ctx.getWorkspace().name} (new)\n`);
             return;
         }
         case "rename": {
             // workspace.rename — a workspace's name is a mutable handle on the world
             // (a run's is not). Mutates the attached workspace in place. svc#248.
             if (rest.length === 0) { write("  usage: /rename <name>\n"); return; }
-            const renamed = await rpc.call("workspace.rename", { name: rest }) as SessionResult;
-            ctx.setSession(renamed);
+            const renamed = await rpc.call("workspace.rename", { name: rest }) as WorkspaceResult;
+            ctx.setWorkspace(renamed);
             write(`  workspace: ${renamed.name}\n`);
             return;
         }
         case "worker": {
-            // New run — worker.fork (svc#248) branches this conversation, optionally
+            // New worker — worker.fork (svc#248) branches this conversation, optionally
             // named at instantiation (immutable after). Bind to the fork so the
             // next prompt speaks there. The workspace (the world) is unchanged.
-            const forked = await rpc.call("worker.fork", rest.length > 0 ? { name: rest } : {}) as { runId: number; workerName: string };
-            await rpc.call("workspace.attach", { id: ctx.getSession().id, runId: forked.runId });
-            write(`  run: ${forked.workerName} (new)\n`);
+            const forked = await rpc.call("worker.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
+            await rpc.call("workspace.attach", { id: ctx.getWorkspace().id, workerId: forked.workerId });
+            write(`  worker: ${forked.workerName} (new)\n`);
             return;
         }
         case "pick":
@@ -393,7 +393,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
     }
 };
 
-export const runTui = async (transport: Transport, workspace: SessionResult, opts: {
+export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
     modelAlias?: string; model?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
@@ -748,9 +748,9 @@ export const runTui = async (transport: Transport, workspace: SessionResult, opt
     // context injects the live workspace / opts / stdout / import glue.
     const verbCtx: VerbContext = {
         rpc: verbRpc, opts, resolveModel: opts.resolveModel,
-        getSession: () => current,
-        setSession: (s) => { current = s; },
-        switchSession: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client, autoReadAgents: opts.autoReadAgents }),
+        getWorkspace: () => current,
+        setWorkspace: (s) => { current = s; },
+        switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client, autoReadAgents: opts.autoReadAgents }),
         write: (text) => { process.stdout.write(text); },
         importFile: async (rest) => {
             const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);

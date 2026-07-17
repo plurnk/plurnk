@@ -104,8 +104,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.row") {
             const entry = value as LogEntryWire;
-            const runId = (entry as { worker_id?: number }).worker_id;
-            if (modelWorkerId === null && entry.origin === "model" && typeof runId === "number") modelWorkerId = runId;
+            const workerId = (entry as { worker_id?: number }).worker_id;
+            if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
             if (isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
             if (io.json) { entries.push(entry); continue; }
             io.err(`${formatPlain(entry)}\n`);

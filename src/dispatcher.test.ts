@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, resolveRunId } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, resolveWorkerId } from "./dispatcher.ts";
 
 // ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
 
@@ -195,25 +195,25 @@ test("buildVersionNotice: service absent → client line only", () => {
     assert.match(n!, /^plurnk client v0\.21\.3 \(update available\)$/);
 });
 
-// ─── resolveRunId: a run is addressable by NAME within its workspace's world ───
+// ─── resolveWorkerId: a run is addressable by NAME within its workspace's world ───
 // Plurnk's machine model (service SPEC §machine-processes): a workspace holds many
-// runs (conversations over one world); --worker selects one by name. Fail-hard: an
+// workers (conversations over one world); --worker selects one by name. Fail-hard: an
 // unknown name is a contract violation, never a fabricated model-run fallback.
 
-test("resolveRunId: undefined name → undefined, and NEVER queries workspace.workers (the model-run default)", async () => {
+test("resolveWorkerId: undefined name → undefined, and NEVER queries workspace.workers (the model-run default)", async () => {
     let called = 0;
-    const rpc = { call: async () => { called++; return { runs: [] }; } };
-    const id = await resolveRunId(rpc, undefined);
+    const rpc = { call: async () => { called++; return { workers: [] }; } };
+    const id = await resolveWorkerId(rpc, undefined);
     assert.equal(id, undefined);
     assert.equal(called, 0, "no --worker → no workspace.workers round-trip");
 });
 
-test("[§cli-workspaces-and-workers] resolveRunId: a named run resolves to its id via workspace.workers", async () => {
-    const rpc = { call: async (m: string) => { assert.equal(m, "workspace.workers"); return { runs: [{ id: 10, name: "client-1" }, { id: 42, name: "spike" }] }; } };
-    assert.equal(await resolveRunId(rpc, "spike"), 42);
+test("[§cli-workspaces-and-workers] resolveWorkerId: a named run resolves to its id via workspace.workers", async () => {
+    const rpc = { call: async (m: string) => { assert.equal(m, "workspace.workers"); return { workers: [{ id: 10, name: "client-1" }, { id: 42, name: "spike" }] }; } };
+    assert.equal(await resolveWorkerId(rpc, "spike"), 42);
 });
 
-test("[§cli-workspaces-and-workers] resolveRunId: an unknown run name THROWS — no silent fallback to the model run", async () => {
-    const rpc = { call: async () => ({ runs: [{ id: 10, name: "client-1" }] }) };
-    await assert.rejects(() => resolveRunId(rpc, "ghost"), /--worker ghost: no such run in the workspace/);
+test("[§cli-workspaces-and-workers] resolveWorkerId: an unknown run name THROWS — no silent fallback to the model run", async () => {
+    const rpc = { call: async () => ({ workers: [{ id: 10, name: "client-1" }] }) };
+    await assert.rejects(() => resolveWorkerId(rpc, "ghost"), /--worker ghost: no such worker in the workspace/);
 });

@@ -13,8 +13,8 @@ const {
     clientConnectionClosed,
     clientFlagInvalid,
     clientFlagMissingDependency,
-    clientSubcommandSessionNotFound,
-    clientSubcommandSessionAmbiguous,
+    clientSubcommandWorkspaceNotFound,
+    clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
     clientSubcommandMissingArgument,
     clientProposalEditsBlocked,
@@ -208,16 +208,16 @@ test("clientFlagMissingDependency message names both flags", () => {
     assert.match(ev.message as string, /--worker requires --workspace/);
 });
 
-test("clientSubcommandSessionNotFound quotes the name in message", () => {
-    const ev = clientSubcommandSessionNotFound("alpha");
-    assert.equal(ev.kind, "session_not_found");
+test("clientSubcommandWorkspaceNotFound quotes the name in message", () => {
+    const ev = clientSubcommandWorkspaceNotFound("alpha");
+    assert.equal(ev.kind, "workspace_not_found");
     assert.equal(ev.name, "alpha");
     assert.match(ev.message as string, /"alpha"/);
 });
 
-test("clientSubcommandSessionAmbiguous carries count + name", () => {
-    const ev = clientSubcommandSessionAmbiguous("dup", 3);
-    assert.equal(ev.kind, "session_ambiguous");
+test("clientSubcommandWorkspaceAmbiguous carries count + name", () => {
+    const ev = clientSubcommandWorkspaceAmbiguous("dup", 3);
+    assert.equal(ev.kind, "workspace_ambiguous");
     assert.equal(ev.count, 3);
     assert.match(ev.message as string, /3 workspaces/);
 });

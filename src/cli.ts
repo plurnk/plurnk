@@ -43,7 +43,7 @@ interface LoopTerminated {
     usage?: LoopUsage;
 }
 
-interface SessionResult { id: number; name: string }
+interface WorkspaceResult { id: number; name: string }
 
 // Exit-code honesty (SPEC §4): a 4xx/5xx loop death is a FAILURE (4), not a
 // user cancellation (3) — benchmark stats must distinguish them.
@@ -97,7 +97,7 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
 // The complete client-observed record of one loop run, as a plain object ready
 // to JSON.stringify. Pure → unit-testable without a daemon.
 export const buildJsonRecord = (input: {
-    workspace: SessionResult; prompt: string; response: string;
+    workspace: WorkspaceResult; prompt: string; response: string;
     entries: LogEntryWire[]; telemetry: TelemetryEvent[];
     result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
     wallMs: number; timedOut: boolean;
@@ -112,7 +112,7 @@ export const buildJsonRecord = (input: {
         hitMaxTurns: input.result.hitMaxTurns,
         timedOut: input.timedOut,
         loopId: input.result.loopId,
-        runId: input.result.modelWorkerId ?? null,   // the conversation's run, for correlation / `read --worker`
+        workerId: input.result.modelWorkerId ?? null,   // the conversation's worker, for correlation / `read --worker`
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage !== undefined
@@ -167,7 +167,7 @@ export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>
 
 // One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
 export const buildScriptJsonRecord = (input: {
-    workspace: SessionResult; results: Array<{ status: number }>;
+    workspace: WorkspaceResult; results: Array<{ status: number }>;
     entries: LogEntryWire[]; telemetry: TelemetryEvent[]; wallMs: number;
 }): Record<string, unknown> => ({
     schemaVersion: JSON_SCHEMA_VERSION,

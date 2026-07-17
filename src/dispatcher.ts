@@ -14,7 +14,7 @@ import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
 import { runTui } from "./tui.ts";
-import { runModels, runSessionList, runSessionRuns, runSessionRename, runLogRead, runRead } from "./subcommands.ts";
+import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters, Caller } from "./subcommands.ts";
 import {
     TelemetryError,
@@ -25,8 +25,8 @@ import {
     clientFlagMissingDependency,
     clientRuntimeError,
     clientSubcommandMissingArgument,
-    clientSubcommandSessionNotFound,
-    clientSubcommandSessionAmbiguous,
+    clientSubcommandWorkspaceNotFound,
+    clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
 } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
@@ -116,7 +116,7 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
                         Works with no config at all.
   PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
                         mints a fresh, uniquely-named workspace per invocation.
-  PLURNK_CLIENT_WORKER            resume (or create) a named run within that workspace
+  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
                         overrides for this invocation only.
@@ -150,7 +150,7 @@ options:
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
                           auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
-      --worker <name>        resume (or create) the named run within the workspace.
+      --worker <name>        resume (or create) the named worker within the workspace.
                           Requires --workspace. Overrides PLURNK_CLIENT_WORKER.
       --model <alias>     model alias to pass on every loop.run. Resolved
                           server-side against PLURNK_MODEL_<alias>. Without
@@ -182,7 +182,7 @@ options:
                           the manifest), relative to project root. Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (FIND(file:///**)): -1 full / 0 off / N first-N. Memory
-                          (known/unknown/run/plurnk) always foists full. Create-time.
+                          (known/unknown/worker/plurnk) always foists full. Create-time.
       --md <name=path>    pin a markdown doc into the workspace (read at turn 0);
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
@@ -201,8 +201,8 @@ subcommands:
   workspace list            list workspaces on the daemon (workspace.list)
   workspace workers <name>  list workers in the named workspace (workspace.workers)
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
-                          name is a mutable handle; runs are immutable)
-  log read --workspace ...  read log entries from the named workspace's run
+                          name is a mutable handle; workers are immutable)
+  log read --workspace ...  read log entries from the named workspace's worker
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + membership flags. The daemon owns the
@@ -245,7 +245,7 @@ const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void =>
     loadFloor();
 };
 
-interface SessionResult { id: number; name: string }
+interface WorkspaceResult { id: number; name: string }
 
 // Resolve the workspace by name (via workspace.list filter) or create a fresh one.
 // Names are the user-facing handle — ids are internals, not exposed via flags.
@@ -373,12 +373,12 @@ export const buildVersionNotice = (versions: DiscoverVersions | undefined, clien
 };
 
 // Resolve --worker <name> to its id over the action surface (workspace.workers is scoped
-// to the caller's thread/workspace). Undefined workerName = the module's model-run default.
-export const resolveRunId = async (rpc: Caller, workerName: string | undefined): Promise<number | undefined> => {
+// to the caller's thread/workspace). Undefined workerName = the module's model-worker default.
+export const resolveWorkerId = async (rpc: Caller, workerName: string | undefined): Promise<number | undefined> => {
     if (workerName === undefined) return undefined;
-    const { runs } = await rpc.call("workspace.workers") as { runs: Array<{ id: number; name: string }> };
-    const hit = runs.find((r) => r.name === workerName);
-    if (hit === undefined) throw new Error(`--worker ${workerName}: no such run in the workspace`);
+    const { workers } = await rpc.call("workspace.workers") as { workers: Array<{ id: number; name: string }> };
+    const hit = workers.find((r) => r.name === workerName);
+    if (hit === undefined) throw new Error(`--worker ${workerName}: no such worker in the workspace`);
     return hit.id;
 };
 
@@ -414,7 +414,7 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             if (positionals.length > 2) {
                 throw new TelemetryError(clientSubcommandUnknownVerb(`workspace list ${positionals.slice(2).join(" ")}`));
             }
-            return await runSessionList(rpc, { json: opts.json });
+            return await runWorkspaceList(rpc, { json: opts.json });
         }
         if (sub === "workers") {
             const name = positionals[2];
@@ -424,7 +424,7 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             if (positionals.length > 3) {
                 throw new TelemetryError(clientSubcommandUnknownVerb(`workspace workers ${positionals.slice(3).join(" ")}`));
             }
-            return await runSessionRuns(rpc, name, { json: opts.json });
+            return await runWorkspaceWorkers(rpc, name, { json: opts.json });
         }
         if (sub === "rename") {
             const name = positionals[2];
@@ -435,7 +435,7 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             if (positionals.length > 4) {
                 throw new TelemetryError(clientSubcommandUnknownVerb(`workspace rename ${positionals.slice(4).join(" ")}`));
             }
-            return await runSessionRename(rpc, name, newName, { json: opts.json });
+            return await runWorkspaceRename(rpc, name, newName, { json: opts.json });
         }
         throw new TelemetryError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
     }
@@ -448,8 +448,8 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
         }
         // The caller's threadId (--workspace) scopes the action to that workspace; the
-        // module defaults reads to the conversation (model run); --worker pins by name.
-        const filters: LogReadFilters = { ...(await resolveRunId(rpc, opts.workerName) !== undefined ? { runId: await resolveRunId(rpc, opts.workerName) } : {}) };
+        // module defaults reads to the conversation (model worker); --worker pins by name.
+        const filters: LogReadFilters = { ...(await resolveWorkerId(rpc, opts.workerName) !== undefined ? { workerId: await resolveWorkerId(rpc, opts.workerName) } : {}) };
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
         const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
         const sinceId = parseIntFlag(opts.values.since as string | undefined, "--since");
@@ -472,9 +472,9 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         if (opts.workspaceName === undefined) {
             throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
         }
-        // The coordinate is run-relative; the module defaults to the conversation
-        // (model run) — --worker pins by name via params, no connection state.
-        return await runRead(rpc, coord, { json: opts.json, runId: await resolveRunId(rpc, opts.workerName) });
+        // The coordinate is worker-relative; the module defaults to the conversation
+        // (model worker) — --worker pins by name via params, no connection state.
+        return await runRead(rpc, coord, { json: opts.json, workerId: await resolveWorkerId(rpc, opts.workerName) });
     }
 
     throw new TelemetryError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
@@ -616,9 +616,9 @@ export const main = async (argv: string[]): Promise<void> => {
     };
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            // Thread-per-run (svc#366): --worker names the CONVERSATION (the threadId);
+            // Thread-per-worker (svc#366): --worker names the CONVERSATION (the threadId);
             // the world is --workspace, else a fresh daemon-minted workspace. Without --worker,
-            // thread == world (the model run).
+            // thread == world (the model worker).
             const w = await world();
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot });
             process.exit(code);

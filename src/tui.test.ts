@@ -177,9 +177,9 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         } as unknown as VerbContext["rpc"],
         opts: { yolo: false, ...opts },
         resolveModel: (alias: string) => ({ fireslow: "fireworks/deepseek", turboderp: "openai/turboderp" } as Record<string, string>)[alias],
-        getSession: () => workspace,
-        setSession: (s) => { workspace = s; },
-        switchSession: async (name) => {
+        getWorkspace: () => workspace,
+        setWorkspace: (s) => { workspace = s; },
+        switchWorkspace: async (name) => {
             calls.push({ method: "workspace.create", params: { name } });
             const r = results["workspace.create"];
             workspace = ((typeof r === "function" ? (r as (p: unknown) => unknown)({ name }) : r) ?? { id: 2, name: name ?? "new" }) as { id: number; name: string };
@@ -267,7 +267,7 @@ test("handleVerb /rename → workspace.rename, adopts the returned name", async 
     const ctx = makeCtx({ "workspace.rename": { id: 1, name: "renamed" } });
     await handleVerb("/rename renamed", ctx);
     assert.deepEqual(ctx.calls, [{ method: "workspace.rename", params: { name: "renamed" } }]);
-    assert.equal(ctx.getSession().name, "renamed");
+    assert.equal(ctx.getWorkspace().name, "renamed");
     assert.match(ctx.out.join(""), /workspace: renamed/);
 });
 
@@ -280,19 +280,19 @@ test("handleVerb /rename with no name → usage, no rpc", async () => {
 
 test("handleVerb /worker [name] → worker.fork (new worker) then binds to it", async () => {
     const ctx = makeCtx({
-        "worker.fork": { runId: 42, workerName: "main-fork" },
-        "workspace.attach": { id: 1, name: "sess", runId: 42, workerName: "main-fork" },
+        "worker.fork": { workerId: 42, workerName: "main-fork" },
+        "workspace.attach": { id: 1, name: "sess", workerId: 42, workerName: "main-fork" },
     });
     await handleVerb("/worker branch-a", ctx);
     assert.deepEqual(ctx.calls[0], { method: "worker.fork", params: { name: "branch-a" } });
-    assert.deepEqual(ctx.calls[1], { method: "workspace.attach", params: { id: 1, runId: 42 } });
-    assert.match(ctx.out.join(""), /run: main-fork \(new\)/);
+    assert.deepEqual(ctx.calls[1], { method: "workspace.attach", params: { id: 1, workerId: 42 } });
+    assert.match(ctx.out.join(""), /worker: main-fork \(new\)/);
 });
 
 test("handleVerb /worker with no name → worker.fork with no name (auto <parent>-fork)", async () => {
     const ctx = makeCtx({
-        "worker.fork": { runId: 42, workerName: "main-fork" },
-        "workspace.attach": { id: 1, name: "sess", runId: 42, workerName: "main-fork" },
+        "worker.fork": { workerId: 42, workerName: "main-fork" },
+        "workspace.attach": { id: 1, name: "sess", workerId: 42, workerName: "main-fork" },
     });
     await handleVerb("/worker", ctx);
     assert.deepEqual(ctx.calls[0], { method: "worker.fork", params: {} });
@@ -326,11 +326,11 @@ test("handleVerb /model <alias> sets it; bare /model shows current", async () =>
     assert.match(ctx.out.join(""), /model: gpt/);
 });
 
-test("handleVerb /workspace → workspace.create (new) + setSession", async () => {
+test("handleVerb /workspace → workspace.create (new) + setWorkspace", async () => {
     const ctx = makeCtx({ "workspace.create": { id: 9, name: "fresh" } });
     await handleVerb("/workspace fresh", ctx);
     assert.deepEqual(ctx.calls[0], { method: "workspace.create", params: { name: "fresh" } });
-    assert.equal(ctx.getSession().name, "fresh");
+    assert.equal(ctx.getWorkspace().name, "fresh");
     assert.match(ctx.out.join(""), /workspace: fresh \(new\)/);
 });
 

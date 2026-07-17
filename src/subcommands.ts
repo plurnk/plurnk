@@ -8,7 +8,7 @@
 export interface Caller { call(method: string, params?: object): Promise<unknown> }
 import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
-import { report, clientSubcommandSessionNotFound, clientSubcommandSessionAmbiguous } from "./telemetry.ts";
+import { report, clientSubcommandWorkspaceNotFound, clientSubcommandWorkspaceAmbiguous } from "./telemetry.ts";
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
@@ -56,7 +56,7 @@ export const runModels = async (rpc: Caller, opts: { json: boolean }): Promise<n
 
 // ─── plurnk workspace list ──────────────────────────────────────────────
 
-interface SessionRow {
+interface WorkspaceRow {
     id: number;
     name: string;
     project_root: string | null;
@@ -71,8 +71,8 @@ const formatCost = (picoUsd: number): string => {
     return `$${usd.toFixed(4)}`;
 };
 
-export const runSessionList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
-    const { workspaces } = await rpc.call("workspace.list") as { workspaces: SessionRow[] };
+export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
+    const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(workspaces)}\n`);
         return 0;
@@ -93,40 +93,40 @@ export const runSessionList = async (rpc: Caller, opts: { json: boolean }): Prom
 
 // ─── plurnk workspace runs <name> ───────────────────────────────────────
 
-interface RunRow {
+interface WorkerRow {
     id: number;
     name: string;
     created_at: string;
     cost_pico: number;
 }
 
-export const runSessionRuns = async (
+export const runWorkspaceWorkers = async (
     rpc: Caller,
     workspaceName: string,
     opts: { json: boolean },
 ): Promise<number> => {
     // Look up the workspace id by name without attaching — workspace.workers accepts
     // an explicit id, so we don't need to spend an attach on a read-only call.
-    const { workspaces } = await rpc.call("workspace.list") as { workspaces: SessionRow[] };
+    const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
     const matches = workspaces.filter((s) => s.name === workspaceName);
     if (matches.length === 0) {
-        report(clientSubcommandSessionNotFound(workspaceName));
+        report(clientSubcommandWorkspaceNotFound(workspaceName));
         return 1;
     }
     if (matches.length > 1) {
-        report(clientSubcommandSessionAmbiguous(workspaceName, matches.length));
+        report(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length));
         return 1;
     }
-    const { runs } = await rpc.call("workspace.workers", { id: matches[0].id }) as { runs: RunRow[] };
+    const { workers } = await rpc.call("workspace.workers", { id: matches[0].id }) as { workers: WorkerRow[] };
     if (opts.json) {
-        process.stdout.write(`${JSON.stringify(runs)}\n`);
+        process.stdout.write(`${JSON.stringify(workers)}\n`);
         return 0;
     }
-    if (runs.length === 0) {
-        process.stdout.write(`(workspace ${JSON.stringify(workspaceName)} has no runs)\n`);
+    if (workers.length === 0) {
+        process.stdout.write(`(workspace ${JSON.stringify(workspaceName)} has no workers)\n`);
         return 0;
     }
-    const rows = runs.map((r) => [r.name, r.created_at, formatCost(r.cost_pico)]);
+    const rows = workers.map((r) => [r.name, r.created_at, formatCost(r.cost_pico)]);
     process.stdout.write(`${renderTable(["name", "created", "cost"], rows)}\n`);
     return 0;
 };
@@ -136,20 +136,20 @@ export const runSessionRuns = async (
 // workspace.rename mutates the ATTACHED workspace's name (a workspace is the world;
 // its name is a mutable handle — unlike a run, which is immutable history).
 // Resolve <name> by list, attach, rename. svc#248.
-export const runSessionRename = async (
+export const runWorkspaceRename = async (
     rpc: Caller,
     workspaceName: string,
     newName: string,
     opts: { json: boolean },
 ): Promise<number> => {
-    const { workspaces } = await rpc.call("workspace.list") as { workspaces: SessionRow[] };
+    const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
     const matches = workspaces.filter((s) => s.name === workspaceName);
     if (matches.length === 0) {
-        report(clientSubcommandSessionNotFound(workspaceName));
+        report(clientSubcommandWorkspaceNotFound(workspaceName));
         return 1;
     }
     if (matches.length > 1) {
-        report(clientSubcommandSessionAmbiguous(workspaceName, matches.length));
+        report(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length));
         return 1;
     }
     await rpc.call("workspace.attach", { id: matches[0].id });
@@ -173,7 +173,7 @@ interface LogReadResult {
 }
 
 export interface LogReadFilters {
-    runId?: number;   // pin a run by id (AG-UI+: no connection state — the pin rides params)
+    workerId?: number;   // pin a run by id (AG-UI+: no connection state — the pin rides params)
     loopId?: number;
     turnId?: number;
     sinceId?: number;
@@ -239,7 +239,7 @@ const extractEntryContent = (entry: LogEntryWire): string | null => {
     return null;
 };
 
-export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean; runId?: number }): Promise<number> => {
+export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean; workerId?: number }): Promise<number> => {
     const parsed = parseCoord(coord);
     if (parsed === null) {
         process.stderr.write("usage: plurnk read <loop>/<turn>/<seq>   (e.g. plurnk read 3/1/2)\n");
@@ -248,11 +248,11 @@ export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean;
     const [loop, turn, seq] = parsed;
     // One clean call (svc#271): the daemon resolves the coordinate, returns the
     // single full entry (tx + rx). No fetch-all, no client-side coordinate match.
-    const { entries } = await rpc.call("log.read", { loopSeq: loop, turnSeq: turn, sequence: seq, ...(opts.runId !== undefined ? { runId: opts.runId } : {}) }) as LogReadResult;
+    const { entries } = await rpc.call("log.read", { loopSeq: loop, turnSeq: turn, sequence: seq, ...(opts.workerId !== undefined ? { workerId: opts.workerId } : {}) }) as LogReadResult;
     const entry = entries[0];
     if (entry === undefined) {
-        process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached run`
-            + ` (the conversation lives in the model run — try --worker <model-run>)\n`);
+        process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached worker`
+            + ` (the conversation lives in the model worker — try --worker <model-worker>)\n`);
         return 4;
     }
     if (opts.json) {

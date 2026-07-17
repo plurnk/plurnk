@@ -218,19 +218,19 @@ export const clientFlagMissingDependency = (flag: string, requires: string): Tel
     requires,
 });
 
-// `client:subcommand:session_not_found` — name resolution failed.
-export const clientSubcommandSessionNotFound = (name: string): TelemetryEvent => ({
+// `client:subcommand:workspace_not_found` — name resolution failed.
+export const clientSubcommandWorkspaceNotFound = (name: string): TelemetryEvent => ({
     source: "client:subcommand",
-    kind: "session_not_found",
+    kind: "workspace_not_found",
     level: "error",
     message: `no workspace named ${JSON.stringify(name)}`,
     name,
 });
 
-// `client:subcommand:session_ambiguous` — multiple workspaces match.
-export const clientSubcommandSessionAmbiguous = (name: string, count: number): TelemetryEvent => ({
+// `client:subcommand:workspace_ambiguous` — multiple workspaces match.
+export const clientSubcommandWorkspaceAmbiguous = (name: string, count: number): TelemetryEvent => ({
     source: "client:subcommand",
-    kind: "session_ambiguous",
+    kind: "workspace_ambiguous",
     level: "error",
     message: `${count} workspaces named ${JSON.stringify(name)}; pick a unique name`,
     name,

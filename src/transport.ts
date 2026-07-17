@@ -98,7 +98,7 @@ export class BridgeTransport implements Transport {
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
         let errmsg: string | undefined;
-        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), messages: [], forwardedProps: { ...this.#sessionOpts(), action: { kind: method, ...(params ?? {}) } } })) {
+        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), messages: [], forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } } })) {
             if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                 const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
                 if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
@@ -117,7 +117,7 @@ export class BridgeTransport implements Transport {
     // first, so every request carries the options (applied at creation, ignored after).
     // No consumed-once flag, no race: a headless workspace can only be one on purpose,
     // and it stays headless forever (root changes are unimplemented by design).
-    #sessionOpts(): Record<string, unknown> {
+    #workspaceOpts(): Record<string, unknown> {
         return {
             ...(this.#workspace.projectRoot !== undefined && this.#workspace.projectRoot !== null ? { projectRoot: this.#workspace.projectRoot } : {}),
             ...(this.#workspace.constraints !== undefined && this.#workspace.constraints.length > 0 ? { constraints: this.#workspace.constraints } : {}),
@@ -127,10 +127,10 @@ export class BridgeTransport implements Transport {
 
     run(prompt: string, opts: RunOpts): RunHandle {
         const ac = new AbortController();
-        // Every request carries workspace options (#sessionOpts — see #140); every
+        // Every request carries workspace options (#workspaceOpts — see #140); every
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
-            ...this.#sessionOpts(),
+            ...this.#workspaceOpts(),
             ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
             ...(opts.model !== undefined ? { model: opts.model } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),

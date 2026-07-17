@@ -119,7 +119,7 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.response, "Paris");          // the jq -r .response common case
     assert.equal(doc.finalStatus, 200);
     assert.equal(doc.loopId, 7);
-    assert.equal(doc.runId, 39);   // the conversation run, from loop.run's modelWorkerId
+    assert.equal(doc.workerId, 39);   // the conversation worker, from loop.run's modelWorkerId
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
     assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000, contextTokens: null });

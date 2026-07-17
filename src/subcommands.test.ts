@@ -43,7 +43,7 @@ const captureStdout = async (fn: () => Promise<unknown>): Promise<string> => {
 test("runWorkspaceRename: resolves by name, attaches, renames the attached workspace", async () => {
     const { rpc, calls } = fakeRpc({
         "workspace.list": { workspaces: [{ id: 7, name: "old", project_root: "/p" }] },
-        "workspace.attach": { id: 7, name: "old", runId: 8, workerName: "r" },
+        "workspace.attach": { id: 7, name: "old", workerId: 8, workerName: "r" },
         "workspace.rename": { id: 7, name: "new" },
     });
     const code = await captureStdout(async () => assert.equal(await runWorkspaceRename(rpc, "old", "new", { json: false }), 0));

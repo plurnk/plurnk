@@ -132,7 +132,7 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI) {§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui}
 
-The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` workers a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
+The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
 
 ### §2.1 Output channels {§cli-output-channels}
 
@@ -145,7 +145,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 **json mode (`--json` / `PLURNK_JSON`):**
 - **stdout** — ONE complete document and nothing else (§5.5): the whole client-observed record of the worker — `schemaVersion`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
 - **stderr** — silent.
-- **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine workers on. `--json` carries the record, not the content.
+- **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
 Consequence:
 
@@ -186,7 +186,7 @@ Triggered when `argv` has no positional prompt.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
-    (Verbs and injections ride §3 action workers on the same AG-UI+ surface — one wire, no side-channel.)
+    (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
 4. While a dispatch is in flight, additional input is rejected with a "busy" notice (except `/stop`, `/help`, and a bare `...`/`?`/`:` prompt, which injects).
 5. `Ctrl-C` or `EOF` exits cleanly.
 
@@ -345,7 +345,7 @@ This is distinct from **server-side YOLO** (`loop.run({flags: {yolo: true}})`, p
 
 ### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals` {§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals}
 
-When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client workers the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
+When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
 
 Because the server is silent by design, **the client owns the explanation** — it emits `client:proposal:edits_blocked` once at loop start: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)."
 

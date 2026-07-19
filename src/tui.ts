@@ -414,7 +414,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let embedding = false;
     let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
-    // waterfall has shown (oldest→newest, e.g. known:///plan.md) feed the Alt-p/
+    // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
     const priorTargets: string[] = [];
     let lookCursor: number | null = null;

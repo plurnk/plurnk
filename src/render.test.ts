@@ -246,10 +246,10 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
 // ─── renderLogEntry: user prompt entry (plurnk://prompt/*) ───────────
 
 test("[§cli-what-is-not-rendered] isPromptEntry: classifies prompt:///loop/N EDITs (the TUI skips them live — the typed line is the record; svc#527)", () => {
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "loop/2" })), true);
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/loop/2" })), true, "leading slash (prompt:///loop/N) — the real foist shape (triple-slash = empty authority)");
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "manifest.json" })), false);
-    assert.equal(isPromptEntry(entry({ op: "READ", scheme: "prompt", pathname: "loop/2" })), false);
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/1/1" })), true);
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/3/2" })), true, "the real foist shape prompt:///<loop>/<turn> — numeric coordinate, verified on the wire as /L/T");
+    assert.equal(isPromptEntry(entry({ op: "READ", scheme: "prompt", pathname: "/1/1" })), false, "a prompt READ is not the foisted write — only the EDIT is skipped");
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "worker", pathname: "/notes.md" })), false, "a worker:/// entry is not a prompt");
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "worker", pathname: "loop/2" })), false, "a worker:/// entry is NOT a prompt");
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "prompt/3/1" })), false, "the retired plurnk:// scheme no longer classifies");
 });
@@ -267,7 +267,7 @@ test("[§cli-what-is-rendered] entryTarget round-trips all four authority faces 
 
 test("renderLogEntry: prompt entry renders as a plain EDIT trace (no speech block — TUI skips it anyway)", () => {
     const out = renderLogEntry(entry({
-        op: "EDIT", origin: "plurnk", scheme: "prompt", pathname: "loop/2",
+        op: "EDIT", origin: "plurnk", scheme: "prompt", pathname: "/1/1",
         status_rx: 201, tx: { body: "What is the capital of France?" },
     }));
     assert.doesNotMatch(out, /^\n/);

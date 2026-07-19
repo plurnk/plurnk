@@ -253,17 +253,17 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     return emphasizeLines(lines, isAnswer);
 };
 
-// The prompt entry (system-origin EDIT against plurnk://prompt/<loop>/<turn>,
-// service SPEC §15). The TUI SKIPS these in the live waterfall: the line the
-// user typed at the readline prompt is already their record, and rendering
+// The prompt entry (system-origin EDIT against prompt:///loop/N — the actor-
+// addressing epic retired plurnk:// and closed the last id-in-pathname, svc#527;
+// self-only, no authority slot). The TUI SKIPS these in the live waterfall: the
+// line the user typed at the readline prompt is already their record, and rendering
 // the broadcast too duplicated every prompt (#198 made it arrive live).
 // Erasing the typed echo instead would mean terminal-width math over
 // emoji/nerdfont prompts — the rabbit hole this client refuses to enter.
 export const isPromptEntry = (entry: LogEntryWire): boolean =>
-    entry.op === "EDIT" && entry.scheme === "plurnk" && /^\/?prompt\//.test(entry.pathname ?? "");
-    // ^ leading slash tolerated: the foist arrives as plurnk:///prompt/<loop>/<turn>
-    // → pathname "/prompt/…"; the old startsWith("prompt/") missed it, so the prompt
-    // rendered TWICE (readline echo + this committed EDIT). The echo is the record.
+    entry.op === "EDIT" && entry.scheme === "prompt" && /^\/?loop\//.test(entry.pathname ?? "");
+    // ^ leading slash tolerated: the foist arrives as prompt:///loop/N → pathname
+    // "/loop/N" (triple-slash = empty authority, self-only). The echo is the record.
 
 // Render a log entry as one waterfall line.
 // Returns the full ANSI-formatted line(s) WITHOUT trailing newline. A

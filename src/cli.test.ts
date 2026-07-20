@@ -28,8 +28,8 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
 // ─── formatPlain ──────────────────────────────────────────────────────
 
 test("formatPlain: directed op with scheme → 'scheme://...'", () => {
-    const s = formatPlain(entry({ op: "EDIT", scheme: "known", pathname: "/x/y", status_rx: 201 }));
-    assert.equal(s, "[201] model EDIT known:///x/y");
+    const s = formatPlain(entry({ op: "EDIT", scheme: "worker", pathname: "/x/y", status_rx: 201 }));
+    assert.equal(s, "[201] model EDIT worker:///x/y");
 });
 
 test("formatPlain: file:// (scheme=null, pathname set) → bare pathname", () => {
@@ -58,8 +58,8 @@ test("formatPlain: hostname + pathname assemble correctly", () => {
 });
 
 test("formatPlain: fragment appended when present", () => {
-    const s = formatPlain(entry({ op: "READ", scheme: "known", pathname: "/d", fragment: "sect", status_rx: 200 }));
-    assert.equal(s, "[200] model READ known:///d#sect");
+    const s = formatPlain(entry({ op: "READ", scheme: "worker", pathname: "/d", fragment: "sect", status_rx: 200 }));
+    assert.equal(s, "[200] model READ worker:///d#sect");
 });
 
 // ─── isTerminalBroadcast ──────────────────────────────────────────────

@@ -134,12 +134,12 @@ test("consumeCliRun: plurnk.terminated is authoritative for the exit code", asyn
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (closeStatus) to the trace", async () => {
     const { io, err } = sink();
     await consumeCliRun(stream([
-        { type: "CUSTOM", name: "plurnk.stream", value: { entryId: 1, target: "exec://p/1/1/1", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
-        { type: "CUSTOM", name: "plurnk.stream", value: { entryId: 1, target: "exec://p/1/1/1", subscriptionId: 1, scheme: "exec", closeStatus: 200, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: "CUSTOM", name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: "CUSTOM", name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", subscriptionId: 1, scheme: "python", closeStatus: 200, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
         { type: "RUN_FINISHED" },
     ]), io);
     const trace = err.join("");
-    assert.match(trace, /exec:\/\/p\/1\/1\/1/, "stream lines traced to stderr");
+    assert.match(trace, /python:\/\/\/1\/1\/1/, "stream lines traced to stderr");
     assert.match(trace, /200/, "the conclusion carries the close status");
 });
 

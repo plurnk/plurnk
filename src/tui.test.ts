@@ -38,7 +38,7 @@ test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", (
 // ─── lookRewrite (<<LOOK → <<READ token swap, rest passed through) ───────
 
 test("lookRewrite: swaps the op token at BOTH ends — open and the :OP terminator", () => {
-    assert.equal(lookRewrite("<<LOOK(known:///plan.md)::LOOK"), "<<READ(known:///plan.md)::READ");
+    assert.equal(lookRewrite("<<LOOK(worker:///plan.md)::LOOK"), "<<READ(worker:///plan.md)::READ");
     assert.equal(lookRewrite("<<LOOK(log:///1/2/3)::LOOK"), "<<READ(log:///1/2/3)::READ");
 });
 

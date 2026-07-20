@@ -137,12 +137,12 @@ test("renderLogEntry: hostname + pathname assembles correctly", () => {
 test("renderLogEntry: fragment appended with '#'", () => {
     const line = renderLogEntry(entry({
         op: "READ",
-        scheme: "known",
+        scheme: "worker",
         pathname: "/doc",
         fragment: "section-2",
         status_rx: 200,
     }));
-    assert.match(line, /known:\/\/\/doc#section-2/);
+    assert.match(line, /worker:\/\/\/doc#section-2/);
 });
 
 test("renderLogEntry: no path at all (both scheme + pathname null) for non-SEND op → no path text", () => {
@@ -358,7 +358,7 @@ test("bold: NO_COLOR build emits no bold (or background) codes", () => {
 // ─── renderLogEntry: trace line shape ─────────────────────────────────
 
 test("renderLogEntry: trace line starts with 2-space indent", () => {
-    const line = renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/x" }));
+    const line = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x" }));
     assert.match(line, /^  /);
 });
 
@@ -369,7 +369,7 @@ test("renderLogEntry: a SEND shows the ACTOR glyph (who's speaking), not the op 
 });
 
 test("renderLogEntry: an operation shows its OP glyph, no origin column", () => {
-    const line = renderLogEntry(entry({ op: "READ", origin: "model", scheme: "known", pathname: "/x", status_rx: 200 }));
+    const line = renderLogEntry(entry({ op: "READ", origin: "model", scheme: "worker", pathname: "/x", status_rx: 200 }));
     assert.ok(line.includes(OP_GLYPHS.READ), `expected 📖 in ${line}`);
     assert.ok(!line.includes(ORIGIN_GLYPHS.model), "op rows drop the origin — the op glyph is self-evidently the agent working");
 });
@@ -518,14 +518,14 @@ test("broadcast: long single-line body breaks to the second line", () => {
 test("status glyph: routine 2xx badges NOTHING (no ✅); only notable statuses glyph", () => {
     assert.doesNotMatch(renderLogEntry(entry({ op: "EDIT", scheme: "unknown", pathname: "/x", status_rx: 201, tx: { body: "p" } })), /✅/);
     assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /❌/);
-    assert.match(renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /❌/);
+    assert.match(renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /❌/);
 });
 
 // ─── Coordinate prefix (plurnk-service#208) ───────────────────────────
 
 test("[§cli-log-entry-line-format] coordinate: zero-padded L/T/S prefix when the wire carries seqs", () => {
     const out = renderLogEntry(entry({
-        op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
+        op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
     }));
     assert.match(out, /01\/02\/03 /);
@@ -533,7 +533,7 @@ test("[§cli-log-entry-line-format] coordinate: zero-padded L/T/S prefix when th
 
 test("coordinate: grows past two digits without truncation", () => {
     const out = renderLogEntry(entry({
-        op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
+        op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
         loop_seq: 7, turn_seq: 104, sequence: 12, rx: {}, tx: {},
     }));
     assert.match(out, /07\/104\/12 /);
@@ -542,7 +542,7 @@ test("coordinate: grows past two digits without truncation", () => {
 test("coordinate: rendered from the wire ordinals, never DB ids", () => {
     // loop_id/turn_id are the DB keys; the prefix uses ONLY loop_seq/turn_seq.
     const out = renderLogEntry(entry({
-        op: "READ", scheme: "known", pathname: "/x", status_rx: 200,
+        op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
         // @ts-expect-error — DB ids are not part of LogEntryWire; ensure
         // they can't leak into the coordinate even if present on the row.
@@ -563,13 +563,13 @@ test("coordinate: broadcasts carry it on the header line", () => {
 // ─── buildExtra: per-op branch coverage ──────────────────────────────
 
 test("renderLogEntry: FIND shows the result count", () => {
-    const out = renderLogEntry(entry({ op: "FIND", scheme: "known", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "a\nb\nc" } }));
+    const out = renderLogEntry(entry({ op: "FIND", scheme: "worker", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "a\nb\nc" } }));
     assert.match(out, /→ 3 results/);
     assert.match(out, /🔍/);
 });
 
 test("renderLogEntry: FIND with one result is singular", () => {
-    const out = renderLogEntry(entry({ op: "FIND", scheme: "known", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "only" } }));
+    const out = renderLogEntry(entry({ op: "FIND", scheme: "worker", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "only" } }));
     assert.match(out, /→ 1 result\b/);
 });
 
@@ -585,13 +585,13 @@ test("renderLogEntry: FIND with missing/empty rx → 0 results", () => {
 });
 
 test("renderLogEntry: COPY shows the destination", () => {
-    const out = renderLogEntry(entry({ op: "COPY", scheme: "known", pathname: "/a", status_rx: 200, tx: { body: { raw: "known://b" } } }));
-    assert.match(out, /→ known:\/\/b/);
+    const out = renderLogEntry(entry({ op: "COPY", scheme: "worker", pathname: "/a", status_rx: 200, tx: { body: { raw: "worker://b" } } }));
+    assert.match(out, /→ worker:\/\/b/);
     assert.match(out, /📋/);
 });
 
 test("renderLogEntry: COPY/MOVE with null body reads (deleted)", () => {
-    const out = renderLogEntry(entry({ op: "MOVE", scheme: "known", pathname: "/a", status_rx: 200, tx: { body: null } }));
+    const out = renderLogEntry(entry({ op: "MOVE", scheme: "worker", pathname: "/a", status_rx: 200, tx: { body: null } }));
     assert.match(out, /\(deleted\)/);
     assert.match(out, /📦/);
 });
@@ -606,7 +606,7 @@ test("renderLogEntry: EXEC shows the command body", () => {
 
 test("renderLogEntry: status classes render without throwing (color branches)", () => {
     for (const status of [102, 202, 301, 404, 500]) {
-        const out = renderLogEntry(entry({ op: "READ", scheme: "known", pathname: "/x", status_rx: status, rx: {} }));
+        const out = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x", status_rx: status, rx: {} }));
         assert.match(out, new RegExp(String(status)), `status ${status} appears`);
     }
 });

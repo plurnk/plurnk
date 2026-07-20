@@ -72,7 +72,7 @@ test("renderTelemetryEvent: snippet rendered as indented block below headline", 
     const out = renderTelemetryEvent({
         source: "grammar",
         kind: "parse_error",
-        snippet: "2:\t<<EDIT(known://foo:\n3:\t^",
+        snippet: "2:\t<<EDIT(worker://foo:\n3:\t^",
     });
     const lines = out.split("\n");
     assert.equal(lines.length, 3);

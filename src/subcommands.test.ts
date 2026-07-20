@@ -216,7 +216,7 @@ test("runWorkspaceWorkers: workspace has no workers → friendly message in tabl
 
 const entry = (id: number, op = "READ"): unknown => ({
     id, op, suffix: "", origin: "model", signal: null,
-    scheme: "known", pathname: `/x${id}`, hostname: null, fragment: null,
+    scheme: "worker", pathname: `/x${id}`, hostname: null, fragment: null,
     status_rx: 200, tx: null, rx: null,
 });
 
@@ -227,8 +227,8 @@ test("runLogRead: passes no filters when none set, renders trace lines", async (
     const out = await captureStdout(() => runLogRead(rpc, { json: false, filters: {} }));
     assert.equal(calls[0].method, "log.read");
     assert.deepEqual(calls[0].params, {});
-    assert.match(out, /known:\/\/\/x1/);
-    assert.match(out, /known:\/\/\/x2/);
+    assert.match(out, /worker:\/\/\/x1/);
+    assert.match(out, /worker:\/\/\/x2/);
 });
 
 test("[§cli-plurnk-log-read] runLogRead: forwards filter flags as RPC params", async () => {

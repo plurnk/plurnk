@@ -8,13 +8,13 @@ process.env.NO_COLOR = "1";
 const { default: StreamTrace, inlineable, renderInline } = await import("./stream.ts");
 
 const event = (entryId: number, over: Partial<{ channel: string; state: string; contentLength: number }> = {}) => ({
-    entryId, target: "exec://python/1/2/1", channel: "stdout", state: "active", contentLength: 12,
+    entryId, target: "python:///1/2/1", channel: "stdout", state: "active", contentLength: 12,
     loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 
 const concluded = (over: Partial<{ closeStatus: number; summary: string; wakeAction: string }> = {}) => ({
-    entryId: 1, target: "exec://python/1/2/1", subscriptionId: 1, scheme: "exec",
-    closeStatus: 200, summary: "exec://python/1/2/1 completed (exit 0); stdout=12 bytes, stderr=0 bytes",
+    entryId: 1, target: "python:///1/2/1", subscriptionId: 1, scheme: "python",
+    closeStatus: 200, summary: "python:///1/2/1 completed (exit 0); stdout=12 bytes, stderr=0 bytes",
     wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 
@@ -25,7 +25,7 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     // Blank op slot (2sp) + blank code slot (3sp) hold the waterfall columns:
     // Two lanes (identity · status): `📡 ⏳ ... target` — the in-flight line holds a
     // dim 3-dot reserve in the code column.
-    assert.match(first, /📡 ⏳ \.{3} exec:\/\/python\/1\/2\/1/);
+    assert.match(first, /📡 ⏳ \.{3} python:\/\/\/1\/2\/1/);
     assert.match(first, /^  01\/02\/01 /, "start line carries the wire coordinate");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
@@ -45,10 +45,10 @@ test("[§cli-stream-event-and-stream-concluded] StreamTrace: conclusion speaks t
     // aligned with op rows (📡 has no op glyph).
     // Routine 200 conclusion badges no ✅ now (blank status slot); code + target stay aligned.
     assert.doesNotMatch(line, /✅/);
-    assert.match(line, /📡.*200 exec:\/\/python\/1\/2\/1/);
+    assert.match(line, /📡.*200 python:\/\/\/1\/2\/1/);
     assert.match(line, /^  01\/02\/01 /, "conclusion line carries the wire coordinate");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
-    assert.doesNotMatch(line, /exec:\/\/python\/1\/2\/1 completed/);
+    assert.doesNotMatch(line, /python:\/\/\/1\/2\/1 completed/);
     assert.doesNotMatch(line, /no-op-active-loop/);
 });
 

@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFile, mkdtemp } from "node:fs/promises";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, lineMode, type VerbContext } from "./tui.ts";
@@ -368,8 +368,9 @@ test("handleVerb /import with no path → usage, no importFile", async () => {
 
 // ─── /script (run a .plk file → op.parse) ────────────────────────────
 
-test("handleVerb /script <path> → reads the file, ships its DSL to op.parse, summarizes", async () => {
+test("handleVerb /script <path> → reads the file, ships its DSL to op.parse, summarizes", async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "plk-"));
+    t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "go.plk");
     await writeFile(file, "<<EDIT(file://a.md):hi:EDIT\n<<READ(file://a.md):READ\n");
     const ctx = makeCtx({ "op.parse": { results: [{ status: 200 }, { status: 200 }] } });
@@ -380,8 +381,9 @@ test("handleVerb /script <path> → reads the file, ships its DSL to op.parse, s
     assert.match(ctx.out.join(""), /script: 2 ops ok/);
 });
 
-test("handleVerb /script surfaces the worst op status", async () => {
+test("handleVerb /script surfaces the worst op status", async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "plk-"));
+    t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "bad.plk");
     await writeFile(file, "<<READ(file://gone.md):READ\n");
     const ctx = makeCtx({ "op.parse": { results: [{ status: 404 }] } });

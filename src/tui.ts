@@ -676,6 +676,22 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // transport is live. Same bodies as the old inline rpc.onNotification handlers;
     // they render the shared workspace's activity whether this REPL started the loop
     // or a worker/second client did (multi-client observability).
+    const handleTelemetry = (event: TelemetryEvent): void => {
+        // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
+        if (event.source === "engine:turn") return;
+        // The producer throttles embed_progress to coarse milestones. Show each one:
+        // a large first workspace is doing valuable semantic-index work, not hanging.
+        // The 🧮 prompt slot remains the between-milestones liveness signal.
+        if (event.source === "engine:derivation" && event.kind === "embed_progress") {
+            const phase = typeof event.phase === "string" ? event.phase : null;
+            embedding = phase === "preparing"
+                || (phase !== "complete" && phase !== "failed" && Number(event.completed) < Number(event.total));
+            printAbove(renderTelemetryEvent(event));
+            return;
+        }
+        printAbove(renderTelemetryEvent(event));
+    };
+
     transport.subscribe({
         onEntry: (entry) => {
             if (entry.loop_seq > lastLoopSeq) lastLoopSeq = entry.loop_seq;
@@ -689,20 +705,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             hibernating = entry.op === "SEND" && entry.signal === 202;
             printAbove(renderLogEntry(entry));
         },
-        onTelemetry: (event) => {
-            // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
-            if (event.source === "engine:turn") return;
-            // The producer throttles embed_progress to coarse milestones. Show each one:
-            // a large first workspace is doing valuable semantic-index work, not hanging.
-            // The 🧮 prompt slot remains the between-milestones liveness signal.
-            if (event.source === "engine:derivation" && event.kind === "embed_progress") {
-                const active = Number(event.completed) < Number(event.total);
-                embedding = active;
-                printAbove(renderTelemetryEvent(event));
-                return;
-            }
-            printAbove(renderTelemetryEvent(event));
-        },
+        onTelemetry: handleTelemetry,
         onStream: (payload) => {
             // One channel for the lifecycle: concluded carries closeStatus, a start
             // event carries state. One start line, one conclusion line, tiny outputs inlined.
@@ -746,6 +749,35 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // from the run's own done (below).
         onTerminated: () => { hibernating = false; },
     });
+
+    // Startup warming begins while AG-UI is still establishing the workspace, before a
+    // request-scoped SSE exists. Poll the engine's latest structured state until terminal;
+    // later /repo actions stay on their own SSE until warming completes and stream live events.
+    let lastDerivationState = "";
+    let derivationPoll: ReturnType<typeof setInterval> | null = null;
+    const pollDerivation = async (): Promise<void> => {
+        try {
+            const { status } = await transport.rpc<{ status: TelemetryEvent | null }>("workspace.derivation");
+            if (status === null) {
+                if (derivationPoll !== null) clearInterval(derivationPoll);
+                derivationPoll = null;
+                return;
+            }
+            const signature = JSON.stringify(status);
+            if (signature !== lastDerivationState) {
+                lastDerivationState = signature;
+                handleTelemetry({ ...status, source: "engine:derivation", kind: "embed_progress" });
+            }
+            if (status.phase === "complete" || status.phase === "failed") {
+                if (derivationPoll !== null) clearInterval(derivationPoll);
+                derivationPoll = null;
+            }
+        } catch {
+            // A real connection failure is surfaced by the transport's normal close path.
+        }
+    };
+    derivationPoll = setInterval(() => { void pollDerivation(); }, 1_000);
+    void pollDerivation();
 
     // Verbs + read-only subcommands call rpc.call(...) only; route that through the
     // live transport (WS, or the bridge's management plane over /plurnk/rpc). A
@@ -921,6 +953,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
         rl.on("close", () => {
             shuttingDown = true;   // intentional teardown — the rpc.close that follows isn't a "lost connection"
+            if (derivationPoll !== null) clearInterval(derivationPoll);
             transport.shutdown();  // suppress the transport's connection-lost reject on an intentional quit
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);

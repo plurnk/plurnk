@@ -31,6 +31,7 @@ import {
     clientSubcommandUnknownVerb,
 } from "./telemetry.ts";
 import type { TelemetryEvent } from "./telemetry.ts";
+import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive workspace because we gate on isTTY upstream.
@@ -144,6 +145,7 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
 
 options:
   -h, --help              print this message and exit
+  -v, --version           print executable provenance and exit
       --json              json OUTPUT MODE: one complete structured document on
                           stdout (the whole client-observed record — turns/ops,
                           telemetry, the answer at .response, usage), stderr
@@ -490,6 +492,7 @@ export const main = async (argv: string[]): Promise<void> => {
         allowPositionals: true,
         options: {
             help: { type: "boolean", short: "h" },
+            version: { type: "boolean", short: "v" },
             json: { type: "boolean" },
             // Node-native env layering (mirrors plurnk-service): --env-file
             // requires the file, --env-file-if-exists skips a missing one.
@@ -525,6 +528,11 @@ export const main = async (argv: string[]): Promise<void> => {
     });
 
     if (values.help) { process.stdout.write(USAGE); process.exit(0); }
+    const buildInfo = await getBuildInfo();
+    if (values.version) {
+        process.stdout.write(`${formatBuildInfo(buildInfo)}\n`);
+        process.exit(0);
+    }
 
     // Shared ~/.plurnk env cascade (after parse so --env-file flags participate).
     loadEnvCascade((values["env-file"] as string[] | undefined) ?? [], (values["env-file-if-exists"] as string[] | undefined) ?? []);
@@ -532,6 +540,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
     const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_JSON ?? "").toLowerCase());
+    if (!json) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
 
     // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
     // a known read-only subcommand (models / workspace / log), we skip stdin

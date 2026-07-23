@@ -692,10 +692,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onTelemetry: (event) => {
             // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
             if (event.source === "engine:turn") return;
-            // embed_progress toggles the 🧮 slot; repaint only on the edge.
+            // The producer throttles embed_progress to coarse milestones. Show each one:
+            // a large first workspace is doing valuable semantic-index work, not hanging.
+            // The 🧮 prompt slot remains the between-milestones liveness signal.
             if (event.source === "engine:derivation" && event.kind === "embed_progress") {
                 const active = Number(event.completed) < Number(event.total);
-                if (active !== embedding) { embedding = active; repromptPreserving(); }
+                embedding = active;
+                printAbove(renderTelemetryEvent(event));
                 return;
             }
             printAbove(renderTelemetryEvent(event));

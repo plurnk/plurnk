@@ -44,8 +44,8 @@ const readStdin = async (): Promise<string> => {
 // any flag the daemon wires lands without a client release). Mode is NOT a
 // flag here: ask/act ride the prompt-prefix habit (`? text` / `: text`),
 // converged across nvim, TUI, and the one-shot CLI.
-export const resolveLoopFlags = (rawJson: string | undefined): Record<string, unknown> | undefined => {
-    if (rawJson === undefined) return undefined;
+export const resolveLoopFlags = (rawJson: string | undefined, auto = false): Record<string, unknown> | undefined => {
+    if (rawJson === undefined) return auto ? { auto: true } : undefined;
     let parsed: unknown;
     try { parsed = JSON.parse(rawJson); } catch {
         throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
@@ -53,7 +53,7 @@ export const resolveLoopFlags = (rawJson: string | undefined): Record<string, un
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
     }
-    return parsed as Record<string, unknown>;
+    return { ...(parsed as Record<string, unknown>), ...(auto ? { auto: true } : {}) };
 };
 
 // #90 — resolve a model alias to a concrete "<provider>/<model>" from the CLIENT's
@@ -125,6 +125,7 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
+  PLURNK_AUTO                  when truthy, keep proposal authority inside the loop.
                         Client-side only — proposals still go through the wire.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
   PLURNK_QUESTIONS      when truthy, let the model ask you via SEND[300] (shared
@@ -163,8 +164,10 @@ options:
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_CLIENT_YOLO.
+      --auto              keep proposal authority inside the loop; proposals
+                          resolve automatically without a client review round-trip.
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
-                          (e.g. '{"yolo":true}' for server-side YOLO in
+                          (e.g. '{"auto":true}' for unattended
                           benchmark/automation runs).
       --questions         let the model ask you (SEND[300]) when it needs a
                           decision — multiple choice with a free-response escape,
@@ -497,6 +500,7 @@ export const main = async (argv: string[]): Promise<void> => {
             model: { type: "string" },
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
+            auto: { type: "boolean" },
             flags: { type: "string" },
             questions: { type: "boolean" },   // --questions: allow the model to ask via SEND[300]
             "max-turns": { type: "string" },
@@ -565,7 +569,8 @@ export const main = async (argv: string[]): Promise<void> => {
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
-        loopFlags = resolveLoopFlags(values.flags);
+        const auto = values.auto === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_AUTO ?? "").toLowerCase());
+        loopFlags = resolveLoopFlags(values.flags, auto);
         maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
         timeoutSec = parseIntFlag(values.timeout, "--timeout");
     } catch (cause) {

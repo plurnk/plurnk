@@ -87,8 +87,8 @@ test("renderProposalMenu: shows the op, target, and the key menu", () => {
 
 // ─── isServerResolved ────────────────────────────────────────────────
 
-test("[§cli-what-proposal-review-does-not-do] isServerResolved: flags.yolo → true (server YOLO auto-accepts in-process)", () => {
-    assert.equal(isServerResolved(proposal({ yolo: true })), true);
+test("[§cli-what-proposal-review-does-not-do] isServerResolved: flags.auto → true (loop resolves in-process)", () => {
+    assert.equal(isServerResolved(proposal({ auto: true })), true);
 });
 
 test("[§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals] isServerResolved: flags.noProposals → true (server auto-rejects in-process)", () => {
@@ -97,7 +97,7 @@ test("[§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals] isServerRe
 
 test("isServerResolved: plain flags → false (client review proceeds)", () => {
     assert.equal(isServerResolved(proposal({})), false);
-    assert.equal(isServerResolved(proposal({ yolo: false, noProposals: false })), false);
+    assert.equal(isServerResolved(proposal({ auto: false, noProposals: false })), false);
     assert.equal(isServerResolved(proposal({ noWeb: true, noInteraction: true })), false);
 });
 

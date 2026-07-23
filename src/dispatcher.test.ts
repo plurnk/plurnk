@@ -63,7 +63,12 @@ test("resolveLoopFlags: undefined → undefined", () => {
 });
 
 test("[§cli-invocation] resolveLoopFlags: JSON passes through verbatim", () => {
-    assert.deepEqual(resolveLoopFlags('{"yolo":true,"noWeb":true}'), { yolo: true, noWeb: true });
+    assert.deepEqual(resolveLoopFlags('{"auto":true,"noWeb":true}'), { auto: true, noWeb: true });
+});
+
+test("[§cli-invocation] resolveLoopFlags: --auto is canonical sugar and wins the raw bag", () => {
+    assert.deepEqual(resolveLoopFlags(undefined, true), { auto: true });
+    assert.deepEqual(resolveLoopFlags('{"auto":false,"noWeb":true}', true), { auto: true, noWeb: true });
 });
 
 test("resolveLoopFlags: malformed JSON throws", () => {
@@ -71,7 +76,7 @@ test("resolveLoopFlags: malformed JSON throws", () => {
 });
 
 test("resolveLoopFlags: non-object JSON throws", () => {
-    assert.throws(() => resolveLoopFlags('["yolo"]'), /JSON object/);
+    assert.throws(() => resolveLoopFlags('["auto"]'), /JSON object/);
 });
 
 // ─── resolveProjectRoot ──────────────────────────────────────────────

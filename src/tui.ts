@@ -619,7 +619,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Cross-restart up/down history from the daemon (svc#238) — non-blocking.
     void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, current.id, rl);
 
-    // Proposal lifecycle — NON-BLOCKING. Server-resolved (flags.yolo/noProposals)
+    // Proposal lifecycle — NON-BLOCKING. Server-resolved (flags.auto/noProposals)
     // settle in-process → skip. --yolo auto-accepts. A real
     // proposal renders its menu and parks as `pendingProposal` (queue beyond),
     // WITHOUT pausing readline or grabbing stdin: resolve via a single key

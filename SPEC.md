@@ -41,7 +41,8 @@ Options:
 | `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
-| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"yolo":true}'` for server-side YOLO in benchmark/automation workers). Mode is not a flag — see the prompt prefixes (§2.0). |
+| `--auto` | flag | Keep proposal authority inside the loop (`flags.auto=true`); no client review/resume round-trip. |
+| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"auto":true}'` for automation workers). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
 | `--pick <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (the sole source when headless). Maps to a `pick` constraint. Create-time / workspace-level. See §1.4. |
@@ -60,6 +61,7 @@ Env:
 | `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
+| `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
 
 **Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.defaults` (the daemon family's rendered catalog) → the client's own packaged floor (below). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared home; everything else there is the daemon family's.
 
@@ -309,11 +311,11 @@ loop/proposal {
     target: { scheme: string | null, pathname: string | null },
     body: string,                 // udiff for EDIT; command summary for EXEC
     attrs: object,                // scheme-specific payload (opaque to client)
-    flags: object,                // loop's persisted flags ({yolo, noProposals, ...})
+    flags: object,                // loop's persisted flags ({auto, noProposals, ...})
 }
 ```
 
-**Server-resolved proposals.** When `flags.yolo` (server-side YOLO auto-accept) or `flags.noProposals` (server-side auto-reject) is set, the daemon settles the entry in-process before any human can react — the notification is informational. The client skips review UI entirely and sends no `loop.resolve` (which would race the already-settled proposal). The proposed-then-resolved lifecycle still shows in the `log/entry` waterfall.
+**Service-resolved proposals.** When `flags.auto` or `flags.noProposals` is set, the service settles the entry before any human can react—the notification is informational. The client skips review UI and sends no `loop.resolve`.
 
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
@@ -341,7 +343,7 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 
 Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
 
-This is distinct from **server-side YOLO** (`loop.run({flags: {yolo: true}})`, plurnk-service §13.5), where the daemon auto-accepts proposals in-process without client involvement — intended for benchmarks and automation, not routine client UX. The client does not expose a flag for it; its only obligation is the §6.1 suppression: a proposal carrying `flags.yolo` gets no review UI and no `loop.resolve`.
+This is distinct from **loop auto** (`--auto`, `loop.run({flags:{auto:true}})`), where proposal authority never crosses into client review. A proposal carrying `flags.auto` gets no review UI and no `loop.resolve`.
 
 ### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals` {§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals}
 
@@ -406,7 +408,7 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 
 - Send prompts. They never call `loop.run`.
 - Send prompts or drive loops — the only mutation in the family is `plurnk workspace rename` (§7.4); everything else is read-only.
-- Honor flags that only matter to loop workers (`--model`, `--yolo`) — those parse without error but have no effect in subcommand mode.
+- Honor flags that only matter to loop workers (`--model`, `--yolo`, `--auto`) — those parse without error but have no effect in subcommand mode.
 
 ---
 
@@ -525,7 +527,7 @@ A conforming `plurnk` client:
 2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT` (or `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
 3. Resolves the workspace per §1.1 (`workspace.create` by default, or `workspace.attach` when `--workspace`/`PLURNK_SESSION` is set); uses the returned workspace for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
-5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping server-resolved proposals (`flags.yolo` / `flags.noProposals`) entirely.
+5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping service-resolved proposals (`flags.auto` / `flags.noProposals`) entirely.
 6. Subscribes to `telemetry/event` notifications and renders each through the unified telemetry shape per §8.
 7. Maps `loop.run` results to exit codes per §4.
 8. Emits its own user-visible errors as `TelemetryEvent` (source `client:*`) routed through the same renderer per §8.

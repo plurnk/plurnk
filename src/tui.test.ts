@@ -441,7 +441,7 @@ test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] lineMode: '?
 });
 
 test("lineMode: bare text carries the base flags untouched; prefix mode OVERRIDES the base", () => {
-    assert.deepEqual(lineMode("hello", { yolo: true }), { flags: { yolo: true }, prompt: "hello" });
+    assert.deepEqual(lineMode("hello", { auto: true }), { flags: { auto: true }, prompt: "hello" });
     assert.deepEqual(lineMode("? hello", { mode: "act", yolo: true }), { flags: { mode: "ask", yolo: true }, prompt: "hello" });
     assert.deepEqual(lineMode("plain"), { prompt: "plain" });
 });

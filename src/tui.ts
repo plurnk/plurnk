@@ -206,17 +206,18 @@ export const seedPromptHistory = async (rpc: VerbCaller, workspaceId: number, rl
     } catch { /* history is a convenience; never block the REPL */ }
 };
 
-// The one-line startup banner: version · workspace · model · help. Pure so the
+// The one-line startup banner: version · workspace [· worker] · model · help. Pure so the
 // model-label resolution is unit-testable. modelLabel = the client's
 // --model/PLURNK_MODEL when set, else the daemon's active default
 // (providers.list `active`), else an honest fallback.
 export const buildHeader = (opts: {
-    versionNotice?: string; workspaceName: string; modelAlias?: string; activeAlias?: string; yolo?: boolean;
+    versionNotice?: string; workspaceName: string; workerName?: string; modelAlias?: string; activeAlias?: string; yolo?: boolean;
 }): string => {
     const head = opts.versionNotice ?? "plurnk";
+    const worker = opts.workerName !== undefined ? ` · worker: ${opts.workerName}` : "";
     const modelLabel = opts.modelAlias ?? opts.activeAlias ?? "(daemon default)";
     const yolo = opts.yolo ? " · yolo: on" : "";
-    return `${head} · workspace: ${opts.workspaceName} · model: ${modelLabel}${yolo} · /help`;
+    return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${yolo} · /help`;
 };
 
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
@@ -397,6 +398,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     modelAlias?: string; model?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
+    workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
     autoReadAgents?: boolean;   // #268 — AGENTS auto-load override, carried onto /workspace
 }): Promise<void> => {
@@ -457,9 +459,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
     } catch { /* completion stays empty; header falls back to (daemon default) */ }
 
-    // One header line: version · workspace · model · help (see buildHeader).
+    // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
-        versionNotice: opts.versionNotice, workspaceName: current.name,
+        versionNotice: opts.versionNotice, workspaceName: current.name, workerName: opts.workerName,
         modelAlias: opts.modelAlias, activeAlias, yolo: opts.yolo,
     });
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);

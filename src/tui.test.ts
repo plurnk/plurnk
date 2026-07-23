@@ -159,6 +159,14 @@ test("buildHeader: yolo on → shows 'yolo: on'; off/unset → no yolo segment",
     assert.doesNotMatch(buildHeader({ workspaceName: "sess" }), /yolo/);
 });
 
+test("buildHeader: workerName present → shown between workspace and model; absent → omitted", () => {
+    assert.equal(
+        buildHeader({ workspaceName: "plurnk", workerName: "meta", activeAlias: "jennifer" }),
+        "plurnk · workspace: plurnk · worker: meta · model: jennifer · /help",
+    );
+    assert.doesNotMatch(buildHeader({ workspaceName: "plurnk" }), /worker/);
+});
+
 interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {

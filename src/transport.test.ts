@@ -138,9 +138,41 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: resolve without a paused run fails hard (terminate-resume contract)", async () => {
+test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronously from onProposal", async () => {
+    let call = 0;
+    const mock = await bootMock((_req, res) => {
+        call += 1;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        if (call === 1) {
+            res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:575", toolCallName: "request_approval" }));
+            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:575", delta: JSON.stringify({ op: "EXEC", target: null, body: "gh issue view 573" }) }));
+            res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:575" }));
+            res.write(frame({ type: "RUN_FINISHED" }));
+        } else {
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [2] } }));
+            res.write(frame({ type: "RUN_FINISHED" }));
+        }
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h } = collectingHandlers();
+        bt.subscribe({
+            ...h,
+            onProposal: (p) => { void bt.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" }); },
+        });
+        const t = await bt.run("exec it", {}).done;
+        assert.equal(t.finalStatus, 200, "immediate yolo resolution resumes and finishes the loop");
+        assert.equal(call, 2, "the proposal segment is followed by one resume segment");
+        const resume = mock.captured[1].body as { messages: Array<{ role: string; toolCallId: string; content: string }> };
+        assert.equal(resume.messages[0].toolCallId, "prop:575");
+        assert.deepEqual(JSON.parse(resume.messages[0].content), { decision: "accept" });
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport: resolve without a delivered proposal fails hard (terminate-resume contract)", async () => {
     const bt = new BridgeTransport({ bridgeUrl: "http://127.0.0.1:1" }, "th");
-    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /without a paused proposal run/);
+    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /without a delivered proposal/);
 });
 
 test("BridgeTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {

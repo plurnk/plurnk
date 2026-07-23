@@ -598,6 +598,14 @@ export const main = async (argv: string[]): Promise<void> => {
     // below is legacy awaiting deletion.
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
+    let workspaceOptionsPromise: Promise<{ constraints: Constraint[]; settings: Settings }> | undefined;
+    const workspaceOptions = (): Promise<{ constraints: Constraint[]; settings: Settings }> => {
+        workspaceOptionsPromise ??= (async () => ({
+            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
+            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
+        }))();
+        return workspaceOptionsPromise;
+    };
 
     // THE WORLD (workspace) name. An explicit --workspace/PLURNK_CLIENT_WORKSPACE names it;
     // otherwise the daemon mints a fresh, uniquely-named workspace (resolveWorld) —
@@ -606,8 +614,7 @@ export const main = async (argv: string[]): Promise<void> => {
     let resolvedWorld: string | undefined;
     const world = async (): Promise<string> => {
         if (resolvedWorld !== undefined) return resolvedWorld;
-        const constraints = buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] });
-        const settings = await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd());
+        const { constraints, settings } = await workspaceOptions();
         resolvedWorld = await resolveWorld({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, workspaceName, {
             ...(projectRoot !== null ? { projectRoot } : {}),
             ...(constraints.length > 0 ? { constraints } : {}),
@@ -621,7 +628,8 @@ export const main = async (argv: string[]): Promise<void> => {
             // the world is --workspace, else a fresh daemon-minted workspace. Without --worker,
             // thread == world (the model worker).
             const w = await world();
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot });
+            const { constraints, settings } = await workspaceOptions();
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             process.exit(code);
         } catch (cause) {
             // Two distinct failures, two distinct messages: NOTHING LISTENING gets the
@@ -644,6 +652,7 @@ export const main = async (argv: string[]): Promise<void> => {
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         const w = await world();
         const threadId = workerName ?? w;
+        const { constraints, settings } = await workspaceOptions();
         // Workspace options ride the thread's first run (forwardedProps.plurnk): the
         // same constraints (--pick/hide/view/repo) + settings the WS path sends on
         // workspace.create, so a bridge TUI is configured identically. (When the world
@@ -652,8 +661,8 @@ export const main = async (argv: string[]): Promise<void> => {
         const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
             workspace: w,
             projectRoot,
-            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
-            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
+            constraints,
+            settings,
         });
         const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
         await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, autoReadAgents });

@@ -146,7 +146,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; alias?: string; model?: string; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; workspace?: string; alias?: string; model?: string; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
@@ -154,6 +154,8 @@ export const runCliViaBridge = async (
     // used to DROP --model/PLURNK_MODEL and silently run the daemon default).
     const fp: Record<string, unknown> = {
         ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.constraints !== undefined && opts.constraints.length > 0 ? { constraints: opts.constraints } : {}),
+        ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
         ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
         ...(opts.model !== undefined ? { model: opts.model } : {}),
     };

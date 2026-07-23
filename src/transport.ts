@@ -149,6 +149,7 @@ export class BridgeTransport implements Transport {
             let fp = forwardedProps;
             for (;;) {
                 let pausedProp: number | null = null;
+                let proposalResolution: Promise<{ logEntryId: number; decision: string; body?: string }> | null = null;
                 let toolId = "";
                 let toolArgs = "";
                 try {
@@ -164,6 +165,7 @@ export class BridgeTransport implements Transport {
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
                             pausedProp = Number(toolId.slice(5));
                             const a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                            proposalResolution = new Promise((resolve) => { this.#pendingResolve = resolve; });
                             this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs, staleClobberRisk: a.staleClobberRisk } as unknown as ProposalParams);
                         } else if (e.type === "CUSTOM") {
                             const t = this.#dispatch(e);
@@ -180,8 +182,9 @@ export class BridgeTransport implements Transport {
                     // ends without terminal truth is a broken wire — 502, never 200.
                     return { finalStatus: errStatus > 0 ? errStatus : 502, hitMaxTurns: false };
                 }
+                if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
                 // Paused: hold done open until the client resolves, then resume with the tool-result.
-                const r = await new Promise<{ logEntryId: number; decision: string; body?: string }>((res) => { this.#pendingResolve = res; });
+                const r = await proposalResolution;
                 next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
                 fp = undefined;
             }
@@ -198,7 +201,7 @@ export class BridgeTransport implements Transport {
         // Terminate-resume: the decision releases the paused run loop, which POSTs the
         // tool-result resume. No paused run = a contract violation — fail hard.
         const pending = this.#pendingResolve;
-        if (pending === null) throw new Error("resolve without a paused proposal run (terminate-resume contract)");
+        if (pending === null) throw new Error("resolve without a delivered proposal (terminate-resume contract)");
         this.#pendingResolve = null;
         pending(r);
     }

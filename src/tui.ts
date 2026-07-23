@@ -731,7 +731,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
             if (isServerResolved(p)) return;
-            if (opts.yolo) { void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" }).catch(() => {}); return; }
+            if (opts.yolo) {
+                void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
+                    .catch((cause) => printAbove(`  \x1b[31mauto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
+                return;
+            }
             proposalQueue.push(p);
             showNextProposal();
         },

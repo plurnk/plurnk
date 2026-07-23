@@ -151,6 +151,8 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
             workspace: "w",
             alias: "fireslow",
             model: "fireworks/deepseek",
+            flags: { yolo: true },
+            maxTurns: 7,
             yolo: true,
             json: true,
             projectRoot: "/repo",
@@ -163,6 +165,8 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
         assert.deepEqual(fp.settings, { autoReadAgents: false }, "workspace settings reach the wire");
         assert.equal(fp.alias, "fireslow", "the alias reaches the wire");
         assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");
+        assert.deepEqual(fp.flags, { yolo: true }, "loop flags reach the wire");
+        assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
     } finally { await mock.close(); }
 });
 

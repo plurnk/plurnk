@@ -146,7 +146,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; alias?: string; model?: string; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
+    opts: { threadId: string; workspace?: string; alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
@@ -158,6 +158,8 @@ export const runCliViaBridge = async (
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
         ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
         ...(opts.model !== undefined ? { model: opts.model } : {}),
+        ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
+        ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
     };
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();

@@ -629,7 +629,7 @@ export const main = async (argv: string[]): Promise<void> => {
             // thread == world (the model worker).
             const w = await world();
             const { constraints, settings } = await workspaceOptions();
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             process.exit(code);
         } catch (cause) {
             // Two distinct failures, two distinct messages: NOTHING LISTENING gets the

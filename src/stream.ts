@@ -1,5 +1,5 @@
 // Stream trace rendering for plurnk-service's stream/event and
-// stream/concluded broadcasts (plurnk-service SPEC §7.1 / §13.6).
+// plurnk.stream events projected by the AG-UI+ interface.
 //
 // Optics discipline (v0.12.0): a 12-byte exec used to produce four raw
 // metadata lines and never show its output. Now: ONE start line per

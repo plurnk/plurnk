@@ -156,7 +156,7 @@ export const report = (event: TelemetryEvent): void => {
 
 // `client:connection:daemon_stale` — discover is missing wire markers this
 // client depends on; the daemon predates the client (clients track HEAD per
-// service SPEC §13.9).
+// the daemon compatibility manifest).
 export const clientDaemonStale = (missing: string[]): TelemetryEvent => ({
     source: "client:connection",
     kind: "daemon_stale",

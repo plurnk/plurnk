@@ -274,7 +274,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         case "workspace": {
             // New workspace — a fresh world. Transport-agnostic: WS rebinds the
-            // connection in place (service §13.5-rebind); the bridge re-maps its
+            // client context in place; the transport re-maps its
             // threadId. Name is optional (auto-named/generated) and is a mutable
             // handle (/rename retargets it). client id (#249) + AGENTS override
             // (#268) ride the switch.

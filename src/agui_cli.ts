@@ -141,7 +141,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
 // stderr=trace. json: silent, then ONE buildJsonRecord document on stdout —
-// identical schema to the WS path (plurnk.terminated carries workspaceId/loopId/
+// identical schema in both CLI modes (plurnk.terminated carries workspaceId/loopId/
 // turnIds/cost; modelWorkerId derived from the rows).
 export const runCliViaBridge = async (
     target: BridgeTarget,

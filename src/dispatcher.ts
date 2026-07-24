@@ -608,7 +608,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // daemon. Dual-surface, per the charter.
     // AG-UI+ IS the client surface (service 0.81.0): PLURNK_HOST/PLURNK_PORT point at
     // the daemon's in-process module. PLURNK_AGUI_URL remains an explicit override
-    // (a remote portal); otherwise the canonical legend is the default — the WS path
+    // (a remote portal); otherwise the canonical legend is the default — ordinary AG-UI+
     // below is legacy awaiting deletion.
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
@@ -671,7 +671,7 @@ export const main = async (argv: string[]): Promise<void> => {
         const threadId = workerName ?? w;
         const { constraints, settings } = await workspaceOptions();
         // Workspace options ride the thread's first run (forwardedProps.plurnk): the
-        // same constraints (--pick/hide/view/repo) + settings the WS path sends on
+        // same constraints (--pick/hide/view/repo) + settings every AG-UI+ run sends on
         // workspace.create, so a bridge TUI is configured identically. (When the world
         // was daemon-minted above, it was created WITH these already; a re-send on the
         // first run is idempotent — the workspace exists, options apply at creation only.)

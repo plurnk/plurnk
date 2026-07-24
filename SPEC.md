@@ -1,8 +1,11 @@
 # @plurnk/plurnk — Client SPEC
 
-Specifies what the `plurnk` CLI/TUI client does. Wire protocol is defined upstream in [plurnk-service SPEC §13](https://github.com/plurnk/plurnk-service/blob/main/SPEC.md); this document does NOT redefine it.
+Specifies what the `plurnk` CLI/TUI client does. The external protocol is
+defined by [`@plurnk/plurnk-agui`](https://github.com/plurnk/plurnk-service/tree/main/plurnk-agui);
+this document does not redefine it.
 
-`TUI.md` is the design rationale doc — narrative form, decisions and reasoning. `SPEC.md` (this file) is the contract: what the client guarantees, what its exit codes mean, what it renders.
+`TUI.md` records terminal design rationale. This file is the client contract:
+what it guarantees, what its exit codes mean, and what it renders.
 
 ---
 
@@ -92,7 +95,7 @@ Resolution at the client:
 
 `PLURNK_MODEL` is shared with the daemon process; env vars represent user-level preferences, not per-process namespaces. Both processes reading the same name for the same intent is the point.
 
-Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via `providers.list` (RPC; not currently surfaced as a client subcommand).
+Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via the `providers.list` action.
 
 ### §1.3 Project root {§cli-project-root}
 
@@ -182,7 +185,7 @@ Triggered when `argv` has no positional prompt.
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND[202]) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is a contract constant (the prompt row is always a 201 EDIT). Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /yolo /workspace [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the connection in place, §13.5-rebind), `/workspaces` lists; `/run [name]` forks a new run (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /yolo /workspace [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/run [name]` forks a new run (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
     - Lines starting with `<<` → the `op.parse` action. Raw DSL execution; useful for hand-crafted ops.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -233,9 +236,9 @@ One line per dispatched op. Format (vanilla ANSI, no framework):
 
 Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/❌ from the outcome; SENDs glyph their signal — ✋/💥/⏳ carry meaning; 4xx and 5xx share ❌, nvim-converged: one failure signal in the alignment column, the colored status carries the class). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent).
 
-**Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. Log entries carry it on the wire (§13, loop_seq/turn_seq/sequence); the readline prompt shows the coordinate the typed line WILL get — the next loop's foist EDIT at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's `loop_seq`/`turn_seq`/`sequence` on the wire (plurnk-service#224), read straight from the payload (never reconstructed from the URI). A stream without a coordinate (a non-exec streaming scheme) renders without one.
+**Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's foist EDIT at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 
-**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 (ops) · ⏳ ✅ 💤 🤔 💥 ✋ ❌ (status). Op glyphs and origin glyphs are defined in `TUI.md §4`. Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
+**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 (ops) · ⏳ ✅ 💤 🤔 💥 ✋ ❌ (status). Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the broadcast too duplicated every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
@@ -258,7 +261,7 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 
 A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's reply to the user. It is content, not telemetry, and the client MUST render the full body verbatim.
 
-TUI mode contract (see TUI.md §3.4.1 for design rationale):
+TUI mode contract:
 
 - Header line: two glyph lanes — identity (🐹 client / status-flavored model-send glyph: 💭 102, 💡 200, 💤 202, 🤔 300) then the status code in ONE display column across every line species (blanks reserved, never omitted). 2-space INDENT matching the trace lines, no PATH.
 - Body: a short single-line body (≤80 chars) inlines on the header line after two spaces (nvim convergence); otherwise the body starts on the next line, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
@@ -299,7 +302,7 @@ If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is trea
 
 ## §6 Proposal review {§cli-proposal-review}
 
-Side-effecting operations (file writes, exec) emit a `loop/proposal` notification when the daemon pauses dispatch awaiting human resolution (per plurnk-service SPEC §13). The client receives the notification, presents the proposal to the user, and sends back `loop.resolve({logEntryId, decision, body?, outcome?})`.
+Side-effecting operations (file writes, exec) emit a `plurnk.proposal` event when the daemon pauses dispatch awaiting human resolution. The client presents the proposal and resumes the run with the selected decision.
 
 ### §6.1 Notification shape {§cli-notification-shape}
 
@@ -369,7 +372,7 @@ When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatc
 
 ### §7.1 `plurnk models` {§cli-plurnk-models}
 
-Lists registered provider/model aliases via the daemon's `providers.list` RPC. No workspace is attached (no `requiresInit`).
+Lists registered provider/model aliases via the daemon's `providers.list` action. No workspace is attached.
 
 Default output: a column-aligned table of `alias / provider / model / active`. The `active` column carries a `*` for the alias the daemon resolved as its boot-time `PLURNK_MODEL`. With `--json`: emits `aliases` array verbatim as compact JSON.
 
@@ -500,7 +503,7 @@ Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt t
 
 ### §8.7 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
 
-The daemon also broadcasts streaming-channel metadata as `stream/event` and `stream/concluded` notifications (per plurnk-service SPEC §7.1 / §13.6). These are NOT `TelemetryEvent`-shaped — they're plain content-growth signals — but the client uses the same `📡` glyph and rendering channel so the user gets one visual cue for "daemon pushed something."
+The daemon also projects streaming-channel metadata as `plurnk.stream` events. These are not `TelemetryEvent`-shaped — they are content-growth signals — but the client uses the same `📡` glyph and rendering channel so the user gets one visual cue for "daemon pushed something."
 
 ```
 stream/event     { entryId, target, channel, state, contentLength }

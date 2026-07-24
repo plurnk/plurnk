@@ -644,7 +644,10 @@ export const main = async (argv: string[]): Promise<void> => {
             const w = await world();
             const { constraints, settings } = await workspaceOptions();
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
-            process.exit(code);
+            // Let Node drain stdout before termination. A forced exit truncated large
+            // --json records mid-string when telemetry made the pipe exceed its buffer.
+            process.exitCode = code;
+            return;
         } catch (cause) {
             // Two distinct failures, two distinct messages: NOTHING LISTENING gets the
             // onboarding block (no daemon is a first-run moment, not a stack trace);
@@ -680,7 +683,8 @@ export const main = async (argv: string[]): Promise<void> => {
         });
         const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
         await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, autoReadAgents });
-        process.exit(0);
+        process.exitCode = 0;
+        return;
     }
 
     // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
@@ -702,14 +706,16 @@ export const main = async (argv: string[]): Promise<void> => {
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
             const exitCode = await runScriptViaBridge(target, text, { threadId: callerThread, yolo, json, projectRoot });
-            process.exit(exitCode);
+            process.exitCode = exitCode;
+            return;
         }
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(caller, positionals, {
                 json, workspaceName, workerName, projectRoot, values,
             });
-            process.exit(exitCode);
+            process.exitCode = exitCode;
+            return;
         }
 
         // Reaching here is a dispatcher bug: prompts + the TUI ride the bridge

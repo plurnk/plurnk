@@ -22,7 +22,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget } from "./render.ts";
+import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
@@ -415,6 +415,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // prompt never shifts. Pure state, no timer — repainted on state change.
     let embedding = false;
     let embeddingPercent: number | null = null;
+    let searchFetching = false;
+    let searchPercent: number | null = null;
     let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
@@ -503,12 +505,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // TWO lanes exactly, same as every waterfall row (identity · status), so the
         // prompt sits flush in the ladder. All glyphs are same-width palette members;
         // swapping in place keeps the columns and the readline cursor stable.
-        const busy = inFlight || embedding;
-        const origin = embedding ? "🧮" : "🐹";
+        const busy = inFlight || embedding || searchFetching;
+        const origin = embedding ? "🧮" : searchFetching ? "🔎" : "🐹";
         const status = busy ? (inFlight && hibernating ? "💤" : "⏳") : "  ";
         const yolo = opts.yolo ? "🔥" : "  ";
-        const position = embedding && embeddingPercent !== null
-            ? progressLabel(embeddingPercent)
+        const activePercent = embedding ? embeddingPercent : searchFetching ? searchPercent : null;
+        const position = activePercent !== null
+            ? progressLabel(activePercent)
             : coordLabel(lastLoopSeq + 1, 1, 1);
         return `${yolo}${position}${origin} ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
@@ -698,6 +701,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             repromptPreserving();
             return;
         }
+        // Search acquisition is the same compact lifecycle shape: update the
+        // fixed-width prompt gauge, never append one telemetry line per tick.
+        if (event.kind === "search_progress" && typeof event.source === "string" && event.source.startsWith("exec:")) {
+            searchFetching = event.phase !== "complete" && event.phase !== "failed";
+            const percent = Number(event.percent);
+            searchPercent = searchFetching && Number.isFinite(percent) ? percent : null;
+            repromptPreserving();
+            return;
+        }
         printAbove(renderTelemetryEvent(event));
     };
 
@@ -707,6 +719,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // The typed line at the prompt is the user's record — rendering the
             // prompt broadcast too would duplicate it (see isPromptEntry).
             if (isPromptEntry(entry)) return;
+            if (isEntryMaterialization(entry)) return;
             // Record this op's REAL target URI for the Alt-p/Alt-n <<LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);

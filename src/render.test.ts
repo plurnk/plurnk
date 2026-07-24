@@ -16,6 +16,7 @@ const {
     renderSummary,
     contextGauge,
     progressLabel,
+    isEntryMaterialization,
     isPromptEntry,
     entryTarget,
     OP_GLYPHS,
@@ -543,6 +544,14 @@ test("coordinate: grows past two digits without truncation", () => {
 test("active-prompt progress occupies the coordinate's eight visible cells", () => {
     assert.equal(progressLabel(42), "     42% ");
     assert.equal(progressLabel(100), "    100% ");
+});
+
+test("entry materialization narration is recognized from hydrated or JSON attrs", () => {
+    const base = { origin: "plurnk", op: "EDIT" } as Partial<LogEntryWire>;
+    assert.equal(isEntryMaterialization(entry({ ...base, attrs: { kind: "entry_materialized" } })), true);
+    assert.equal(isEntryMaterialization(entry({ ...base, attrs: JSON.stringify({ kind: "entry_materialized" }) })), true);
+    assert.equal(isEntryMaterialization(entry({ ...base, attrs: "{bad json" })), false);
+    assert.equal(isEntryMaterialization(entry({ ...base, origin: "model", attrs: { kind: "entry_materialized" } })), false);
 });
 
 test("coordinate: rendered from the wire ordinals, never DB ids", () => {

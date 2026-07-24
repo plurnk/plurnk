@@ -483,6 +483,13 @@ The client subscribes to `telemetry/event` in both modes and routes received eve
 telemetry/event { loopId: number, event: TelemetryEvent }
 ```
 
+Two aggregate progress kinds are interactive edge state rather than waterfall history:
+`engine:derivation/embed_progress` replaces the prompt coordinate with indexing percent,
+and `exec:*/search_progress` does the same with search-acquisition percent. Their terminal
+phase restores the real coordinate. The client does not append milestone lines, and it
+does not live-render `origin=plurnk`, `op=EDIT`, `attrs.kind=entry_materialized` rows;
+those machine narrations remain durable and inspectable through the log.
+
 Daemon-side producers as of plurnk-service 0.11.0:
 - `grammar:parse_error` — model emitted invalid DSL; `position: ContentOffset`, `snippet: string` with offending content.
 - `engine:rail:strike` / `cycle` / `sudden_death` / `no_ops` / `max_commands_exceeded` — engine-rail signals during loop.run; structured fields only, no human-readable message.

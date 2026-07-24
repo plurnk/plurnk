@@ -146,12 +146,25 @@ export interface LogEntryWire {
     status_rx: number;
     tx: unknown;
     rx: unknown;
+    attrs?: unknown;
     // Logical coordinate (the model's log://L/T/S address) — every wire
     // log entry carries it (loops⋈turns JOIN, plurnk-service #208).
     loop_seq: number;
     turn_seq: number;
     sequence: number;
 }
+
+// Machine acquisition is durable ambience, not a live action trace. It remains
+// available through log/replay; interactive clients collapse it into the
+// producer's aggregate progress signal instead of redrawing once per page.
+export const isEntryMaterialization = (entry: LogEntryWire): boolean => {
+    const attrs = typeof entry.attrs === "string"
+        ? (() => { try { return JSON.parse(entry.attrs) as unknown; } catch { return null; } })()
+        : entry.attrs;
+    return entry.origin === "plurnk"
+        && entry.op === "EDIT"
+        && (attrs as { kind?: unknown } | null)?.kind === "entry_materialized";
+};
 
 // `01/02/03 ` coordinate label — zero-padded to two digits minimum for
 // alignment zen, growing naturally past 99. Every waterfall line carries

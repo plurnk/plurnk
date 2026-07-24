@@ -161,6 +161,12 @@ export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): 
     const p = (n: number): string => String(n).padStart(2, "0");
     return `${DIM}${p(loopSeq)}/${p(turnSeq)}/${p(sequence)}${RESET} `;
 };
+
+// The active prompt temporarily uses its fixed-width coordinate slot as an
+// indexing gauge. Eight visible cells exactly match `01/01/01`; the trailing
+// separator remains identical, so readline's cursor math never shifts.
+export const progressLabel = (percent: number): string =>
+    `${DIM}${`${Math.max(0, Math.min(100, Math.trunc(percent)))}%`.padStart(8, " ")}${RESET} `;
 const coordPrefix = (entry: LogEntryWire): string =>
     coordLabel(entry.loop_seq, entry.turn_seq, entry.sequence);
 

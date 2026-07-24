@@ -22,7 +22,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, entryTarget } from "./render.ts";
+import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
@@ -414,6 +414,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // loop OR embedding is active. Glyphs when active, blanks when not, so the
     // prompt never shifts. Pure state, no timer — repainted on state change.
     let embedding = false;
+    let embeddingPercent: number | null = null;
     let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
@@ -506,7 +507,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const origin = embedding ? "🧮" : "🐹";
         const status = busy ? (inFlight && hibernating ? "💤" : "⏳") : "  ";
         const yolo = opts.yolo ? "🔥" : "  ";
-        return `${yolo}${coordLabel(lastLoopSeq + 1, 1, 1)}${origin} ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        const position = embedding && embeddingPercent !== null
+            ? progressLabel(embeddingPercent)
+            : coordLabel(lastLoopSeq + 1, 1, 1);
+        return `${yolo}${position}${origin} ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -679,14 +683,19 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const handleTelemetry = (event: TelemetryEvent): void => {
         // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
         if (event.source === "engine:turn") return;
-        // The producer throttles embed_progress to coarse milestones. Show each one:
-        // a large first workspace is doing valuable semantic-index work, not hanging.
-        // The 🧮 prompt slot remains the between-milestones liveness signal.
+        // Indexing progress is ephemeral prompt state, not an append-only waterfall
+        // record. The coordinate slot becomes a fixed-width percentage while warm,
+        // then returns to the next real L/T/S coordinate on completion.
         if (event.source === "engine:derivation" && event.kind === "embed_progress") {
             const phase = typeof event.phase === "string" ? event.phase : null;
             embedding = phase === "preparing"
                 || (phase !== "complete" && phase !== "failed" && Number(event.completed) < Number(event.total));
-            printAbove(renderTelemetryEvent(event));
+            const completed = Number(event.completed);
+            const total = Number(event.total);
+            embeddingPercent = embedding && Number.isFinite(completed) && Number.isFinite(total) && total > 0
+                ? Math.floor((completed / total) * 100)
+                : null;
+            repromptPreserving();
             return;
         }
         printAbove(renderTelemetryEvent(event));

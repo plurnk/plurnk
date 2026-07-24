@@ -15,6 +15,7 @@ const {
     renderLogEntry,
     renderSummary,
     contextGauge,
+    progressLabel,
     isPromptEntry,
     entryTarget,
     OP_GLYPHS,
@@ -537,6 +538,11 @@ test("coordinate: grows past two digits without truncation", () => {
         loop_seq: 7, turn_seq: 104, sequence: 12, rx: {}, tx: {},
     }));
     assert.match(out, /07\/104\/12 /);
+});
+
+test("active-prompt progress occupies the coordinate's eight visible cells", () => {
+    assert.equal(progressLabel(42), "     42% ");
+    assert.equal(progressLabel(100), "    100% ");
 });
 
 test("coordinate: rendered from the wire ordinals, never DB ids", () => {

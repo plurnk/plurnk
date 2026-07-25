@@ -11,6 +11,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     op: "READ",
     suffix: "",
     origin: "model",
+    worker_id: 39,
     signal: null,
     loop_seq: 1,
     turn_seq: 1,
@@ -144,6 +145,18 @@ test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate +
     assert.equal(doc.turns[1].ops[0].target, null);
 });
 
+test("buildJsonRecord: ambient rows from another worker never enter this run's turns", () => {
+    const own = entry({ worker_id: 39, op: "SEND", signal: 200, turn_seq: 2 });
+    const child = entry({ worker_id: 40, op: "SEND", signal: 499, turn_seq: 9 });
+    const doc = buildJsonRecord(recordInput({ entries: [own, child] })) as {
+        workerId: number;
+        turns: Array<{ turn: number; ops: Array<Record<string, unknown>> }>;
+    };
+    assert.equal(doc.workerId, 39);
+    assert.deepEqual(doc.turns.map(({ turn }) => turn), [2]);
+    assert.equal(doc.turns[0].ops[0].signal, 200);
+});
+
 test("buildJsonRecord: no usage → usage null; reason carried only when present", () => {
     const noUsage = buildJsonRecord(recordInput({ result: { loopId: 1, turnIds: [1], finalStatus: 499, hitMaxTurns: false, reason: "client_timeout" } })) as Record<string, unknown>;
     assert.equal(noUsage.usage, null);
@@ -257,4 +270,3 @@ test("completer: plain text completes nothing", async () => {
     const [hits] = await complete(() => ["gemma"], "what is france");
     assert.equal(hits.length, 0);
 });
-

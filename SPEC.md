@@ -148,7 +148,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** — ONE complete document and nothing else (§5.5): the whole client-observed record of the worker — `schemaVersion`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
+- **stdout** — ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop — `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 

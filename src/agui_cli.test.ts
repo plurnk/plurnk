@@ -20,7 +20,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: "CUSTOM", name: "plurnk.row", value: entry(e) });
 const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: "CUSTOM", name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
@@ -129,6 +129,17 @@ test("consumeCliRun: plurnk.terminated is authoritative for the exit code", asyn
         terminated({ finalStatus: 499, turnIds: [] }),
     ]), io);
     assert.equal(exitCode, 3, "499 cancel → exit 3 (exitCodeForLoop)");
+});
+
+test("consumeCliRun: a child worker's terminal SEND cannot replace the run response", async () => {
+    const { io } = sink({ json: true });
+    const result = await consumeCliRun(stream([
+        rowRun({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
+        rowRun({ op: "SEND", signal: 499, tx: { body: { raw: "child cancelled" } } }, 12),
+        terminated({ workerId: 11 }),
+        { type: "RUN_FINISHED" },
+    ]), io);
+    assert.equal(result.response, "parent answer");
 });
 
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (closeStatus) to the trace", async () => {

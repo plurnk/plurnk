@@ -26,6 +26,7 @@ type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
 // WS-run schema exactly.
 interface TerminatedValue {
     workspaceId: number | null;
+    workerId: number;
     loopId: number;
     finalStatus: number;
     hitMaxTurns: boolean;
@@ -106,7 +107,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const entry = value as LogEntryWire;
             const workerId = (entry as { worker_id?: number }).worker_id;
             if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
-            if (isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
+            const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
+            if (belongsToRun && isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
             if (io.json) { entries.push(entry); continue; }
             io.err(`${formatPlain(entry)}\n`);
             if (isTerminalBroadcast(entry) && response.length > 0) io.out(`${response}\n`);
@@ -205,7 +207,7 @@ export const runCliViaBridge = async (
             telemetry: r.telemetry,
             result: {
                 loopId: t?.loopId ?? 0,
-                modelWorkerId: r.modelWorkerId ?? undefined,
+                modelWorkerId: t?.workerId ?? r.modelWorkerId ?? undefined,
                 turnIds: t?.turnIds ?? [],
                 // NEVER a fabricated 200: a stream that died without terminal truth is 502.
                 finalStatus: t?.finalStatus ?? 502,

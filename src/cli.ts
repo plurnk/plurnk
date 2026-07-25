@@ -102,7 +102,10 @@ export const buildJsonRecord = (input: {
     result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
     wallMs: number; timedOut: boolean;
 }): Record<string, unknown> => {
-    const turns = groupOpsByTurn(input.entries);
+    const entries = input.result.modelWorkerId === undefined
+        ? input.entries
+        : input.entries.filter((entry) => (entry as { worker_id?: unknown }).worker_id === input.result.modelWorkerId);
+    const turns = groupOpsByTurn(entries);
     const doc: Record<string, unknown> = {
         schemaVersion: JSON_SCHEMA_VERSION,
         workspace: { id: input.workspace.id, name: input.workspace.name },

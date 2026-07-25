@@ -135,6 +135,7 @@ const buildExtra = (entry: LogEntryWire): string => {
 
 export interface LogEntryWire {
     id: number;
+    worker_id?: number;
     op: string;
     suffix: string;
     origin: string;

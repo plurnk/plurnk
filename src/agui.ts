@@ -2,16 +2,16 @@
 // terminal clients (plurnk-agui#1: CLI first, then TUI). A migrated client stops
 // speaking raw WS to the daemon and instead POSTs a run to the bridge and
 // consumes the AG-UI SSE projection. This module is that transport, mirroring the
-// reference frontend (demo/index.html): POST / for a run, POST /resolve for a
-// stopped-world proposal, POST /plurnk/rpc for the management escape hatch.
+// standard AG-UI HTTP/SSE transport: POST / for runs, including interrupt
+// resolution through RunAgentInput.resume.
 //
 // Pure transport: it yields the daemon-authoritative AG-UI events; rendering (the
 // waterfall, proposals, the gauge) stays with each client. plurnk fidelity rides
 // the CUSTOM plurnk.* events (esp. plurnk.row — the full wire row).
 
-// AG-UI event: a tagged union on `type`; consumers switch on it. Kept open — the
-// bridge owns the vocabulary, we render what arrives (customs included).
-export interface AguiEvent { type: string; [k: string]: unknown }
+import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
+
+export type AguiEvent = AGUIEvent;
 
 const jsonHeaders = (token?: string): Record<string, string> => ({
     "content-type": "application/json",
@@ -26,20 +26,23 @@ export interface BridgeTarget { bridgeUrl: string; token?: string }
 // signal (its req.on("close") cancels the loop) — hanging up IS cancellation.
 export async function* runViaBridge(
     target: BridgeTarget,
-    run: { threadId: string; workspace?: string; prompt?: string; messages?: Array<Record<string, unknown>>; runId?: string; forwardedProps?: Record<string, unknown> },
+    run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
-    // messages verbatim when given (a terminate-resume tool-result run, an action run);
-    // else the prompt as the user message. AG-UI+ dialect (§agui-plus).
-    const messages = run.messages ?? (run.prompt !== undefined ? [{ role: "user", content: run.prompt }] : []);
+    const messages: RunAgentInput["messages"] = run.messages
+        ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
     const res = await fetch(new URL("/", target.bridgeUrl), {
         method: "POST",
         headers: jsonHeaders(target.token),
         signal,   // abort ⇒ drop the SSE ⇒ the bridge cancels the loop (its req.on close)
         body: JSON.stringify({
             threadId: run.threadId,
-            runId: run.runId,
+            runId: run.runId ?? crypto.randomUUID(),
+            state: {},
             messages,
+            tools: [],
+            context: [],
+            ...(run.resume !== undefined ? { resume: run.resume } : {}),
             // The workspace (world) is REQUIRED — a run has no existence without one. The
             // threadId names the CONVERSATION (a run over the world, svc#366); it doubles
             // as the workspace name unless the caller splits them (--worker: thread ≠ world).

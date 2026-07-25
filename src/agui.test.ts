@@ -50,8 +50,15 @@ test("runViaBridge: yields AG-UI events in order, reassembling frames split acro
         assert.deepEqual(types, ["RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"]);
         assert.equal(text, "Jupiter.");
         assert.equal(mock.captured[0].url, "/");
-        assert.deepEqual((mock.captured[0].body as { messages: unknown }).messages, [{ role: "user", content: "largest planet?" }]);
-        assert.equal((mock.captured[0].body as { threadId: string }).threadId, "t");
+        const body = mock.captured[0].body as { threadId: string; runId: string; state: unknown; messages: Array<{ id: string; role: string; content: string }>; tools: unknown[]; context: unknown[] };
+        assert.equal(body.threadId, "t");
+        assert.ok(body.runId.length > 0);
+        assert.deepEqual(body.state, {});
+        assert.deepEqual(body.tools, []);
+        assert.deepEqual(body.context, []);
+        assert.equal(body.messages[0].role, "user");
+        assert.equal(body.messages[0].content, "largest planet?");
+        assert.ok(body.messages[0].id.length > 0);
     } finally { await mock.close(); }
 });
 

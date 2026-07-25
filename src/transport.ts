@@ -89,7 +89,7 @@ export class BridgeTransport implements Transport {
         this.#workspace = workspace;
     }
 
-    // AG-UI+ dialect: verbs are §3 action runs (the /plurnk/rpc side-channel is dead).
+    // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
     // emitted (a raw-DSL op's rows, telemetry, streams). Feed those through the same
     // persistent handlers a run uses (the WS socket delivered every workspace row;
@@ -137,19 +137,20 @@ export class BridgeTransport implements Transport {
             ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
-        // AG-UI+ terminate-resume (§agui-plus): a stopped-world ends the run as a
+        // AG-UI interrupt/resume: a stopped-world ends the run as a
         // request_approval/request_user_input TOOL_CALL (the loop stays paused
-        // in-engine). resolve() supplies the decision; we POST the tool-result as the
+        // in-engine). resolve() supplies the decision; we POST a standard resume as the
         // resume run and keep consuming — done spans the whole pause/resume chain, so
         // the TUI's seam contract never changes.
         const done = (async (): Promise<TerminatedInfo> => {
             let terminated: TerminatedInfo | null = null;
             let errStatus = 0;
-            let next: { prompt?: string; messages?: Array<Record<string, unknown>> } = { prompt };
+            let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }> } = { prompt };
             let fp = forwardedProps;
             for (;;) {
                 let pausedProp: number | null = null;
                 let proposalResolution: Promise<{ logEntryId: number; decision: string; body?: string }> | null = null;
+                let interrupted = false;
                 let toolId = "";
                 let toolArgs = "";
                 try {
@@ -157,6 +158,10 @@ export class BridgeTransport implements Transport {
                         if (e.type === "RUN_ERROR") {
                             const code = Number((e as { code?: string }).code);
                             errStatus = Number.isFinite(code) && code > 0 ? code : 500;
+                        } else if (e.type === "RUN_FINISHED") {
+                            const outcome = e.outcome;
+                            interrupted = outcome?.type === "interrupt"
+                                && outcome.interrupts.some((interrupt) => interrupt.id === toolId || interrupt.toolCallId === toolId);
                         } else if (e.type === "TOOL_CALL_START") {
                             toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
                             toolArgs = "";
@@ -177,15 +182,18 @@ export class BridgeTransport implements Transport {
                     throw err;
                 }
                 if (terminated !== null) return terminated;
+                if (pausedProp !== null && !interrupted) throw new Error("proposal tool call ended without a matching AG-UI interrupt outcome");
                 if (pausedProp === null) {
                     // NO fabricated success (fabrication audit, 2026-07-11): a stream that
                     // ends without terminal truth is a broken wire — 502, never 200.
                     return { finalStatus: errStatus > 0 ? errStatus : 502, hitMaxTurns: false };
                 }
                 if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
-                // Paused: hold done open until the client resolves, then resume with the tool-result.
+                // Paused: hold done open until the client resolves, then resume the interrupt.
                 const r = await proposalResolution;
-                next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+                next = r.decision === "cancel"
+                    ? { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "cancelled" }] }
+                    : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
                 fp = undefined;
             }
         })();
@@ -199,9 +207,9 @@ export class BridgeTransport implements Transport {
     }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> {
         // Terminate-resume: the decision releases the paused run loop, which POSTs the
-        // tool-result resume. No paused run = a contract violation — fail hard.
+        // standard resume. No paused run = a contract violation — fail hard.
         const pending = this.#pendingResolve;
-        if (pending === null) throw new Error("resolve without a delivered proposal (terminate-resume contract)");
+        if (pending === null) throw new Error("resolve without a delivered AG-UI interrupt");
         this.#pendingResolve = null;
         pending(r);
     }

@@ -112,7 +112,7 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
             res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EDIT", target: { scheme: "file", pathname: "a.ts" }, body: "diff" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:42", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
             res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
             res.write(frame({ type: "RUN_FINISHED" }));
@@ -131,10 +131,8 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
         await bt.resolve({ logEntryId: 42, decision: "accept", body: "edited" });
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
-        const resume = mock.captured[1].body as { messages: Array<{ role: string; toolCallId: string; content: string }> };
-        assert.equal(resume.messages[0].role, "tool");
-        assert.equal(resume.messages[0].toolCallId, "prop:42");
-        assert.deepEqual(JSON.parse(resume.messages[0].content), { decision: "accept", body: "edited" }, "the tool-result carries the decision + edited body");
+        const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
+        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", body: "edited" } }], "the standard resume carries the decision + edited body");
     } finally { await mock.close(); }
 });
 
@@ -147,7 +145,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:575", toolCallName: "request_approval" }));
             res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:575", delta: JSON.stringify({ op: "EXEC", target: null, body: "gh issue view 573" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:575" }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:575", reason: "tool_call", toolCallId: "prop:575" }] } }));
         } else {
             res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [2] } }));
             res.write(frame({ type: "RUN_FINISHED" }));
@@ -164,15 +162,14 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
         const t = await bt.run("exec it", {}).done;
         assert.equal(t.finalStatus, 200, "immediate yolo resolution resumes and finishes the loop");
         assert.equal(call, 2, "the proposal segment is followed by one resume segment");
-        const resume = mock.captured[1].body as { messages: Array<{ role: string; toolCallId: string; content: string }> };
-        assert.equal(resume.messages[0].toolCallId, "prop:575");
-        assert.deepEqual(JSON.parse(resume.messages[0].content), { decision: "accept" });
+        const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
+        assert.deepEqual(resume.resume, [{ interruptId: "prop:575", status: "resolved", payload: { decision: "accept" } }]);
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: resolve without a delivered proposal fails hard (terminate-resume contract)", async () => {
+test("BridgeTransport: resolve without a delivered interrupt fails hard", async () => {
     const bt = new BridgeTransport({ bridgeUrl: "http://127.0.0.1:1" }, "th");
-    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /without a delivered proposal/);
+    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /without a delivered AG-UI interrupt/);
 });
 
 test("BridgeTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {

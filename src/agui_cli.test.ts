@@ -5,6 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventType } from "@ag-ui/core";
 import { consumeCliRun, type CliRunSinks } from "./agui_cli.ts";
 import type { AguiEvent } from "./agui.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -17,17 +18,18 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     status_rx: 200, tx: null, rx: null, ...o,
 });
 
-const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: "CUSTOM", name: "plurnk.row", value: entry(e) });
-const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: "CUSTOM", name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
+const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
+const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
 const proposalCall = (logEntryId: number, args: Record<string, unknown> = {}): AguiEvent[] => [
-    { type: "TOOL_CALL_START", toolCallId: `prop:${logEntryId}`, toolCallName: "request_approval" },
-    { type: "TOOL_CALL_ARGS", toolCallId: `prop:${logEntryId}`, delta: JSON.stringify({ op: "EDIT", target: {}, body: "diff", attrs: {}, ...args }) },
-    { type: "TOOL_CALL_END", toolCallId: `prop:${logEntryId}` },
+    { type: EventType.TOOL_CALL_START, toolCallId: `prop:${logEntryId}`, toolCallName: "request_approval" },
+    { type: EventType.TOOL_CALL_ARGS, toolCallId: `prop:${logEntryId}`, delta: JSON.stringify({ op: "EDIT", target: {}, body: "diff", attrs: {}, ...args }) },
+    { type: EventType.TOOL_CALL_END, toolCallId: `prop:${logEntryId}` },
+    { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "interrupt", interrupts: [{ id: `prop:${logEntryId}`, reason: "tool_call", toolCallId: `prop:${logEntryId}` }] } },
 ];
 
 const sink = (over: Partial<CliRunSinks> = {}) => {
@@ -48,8 +50,8 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
         terminalSend("Jupiter is the largest planet."),
         // The real wire ALWAYS emits terminated before RUN_FINISHED; a stream without
         // it is a dead stream (502, svc#478) — the fixture matches the protocol.
-        { type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 1, loopId: 1, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } },
-        { type: "RUN_FINISHED", threadId: "t", runId: "r" },
+        { type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 1, loopId: 1, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" },
     ]), io);
     assert.equal(exitCode, 0);
     assert.equal(out.join(""), "Jupiter is the largest planet.\n", "only the answer on stdout");
@@ -59,7 +61,7 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
 test("consumeCliRun: RUN_ERROR carries the finalStatus into the exit code + a maxTurns read", async () => {
     const { io, err } = sink();
     const { exitCode } = await consumeCliRun(stream([
-        { type: "RUN_ERROR", message: "loop terminated 429 (maxTurns)", code: "429" },
+        { type: EventType.RUN_ERROR, message: "loop terminated 429 (maxTurns)", code: "429" },
     ]), io);
     assert.equal(exitCode, 2, "maxTurns → exit 2");
     assert.match(err.join(""), /loop terminated 429/);
@@ -67,7 +69,7 @@ test("consumeCliRun: RUN_ERROR carries the finalStatus into the exit code + a ma
 
 test("[§cli-one-shot-flow] consumeCliRun: a proposal tool-call is reviewed; the decision rides pendingResume", async () => {
     const { io } = sink({ review: async () => ({ decision: "accept", body: "edited" }) });
-    const r = await consumeCliRun(stream([...proposalCall(9), { type: "RUN_FINISHED" }]), io);
+    const r = await consumeCliRun(stream(proposalCall(9)), io);
     assert.deepEqual(r.pendingResume, { logEntryId: 9, decision: "accept", body: "edited" }, "the resume tool-result carries the reviewed decision");
 });
 
@@ -87,7 +89,7 @@ test("[§cli-what-one-shot-mode-does-not-do] consumeCliRun: no review channel re
 
 test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals never reach the wire)", async () => {
     const { io } = sink();
-    const r = await consumeCliRun(stream([terminated(), { type: "RUN_FINISHED" }]), io);
+    const r = await consumeCliRun(stream([terminated(), { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } }]), io);
     assert.equal(r.pendingResume, null, "a clean run carries no resume");
 });
 
@@ -95,9 +97,9 @@ test("[§cli-channel-posture] consumeCliRun: plurnk.telemetry routes to the tele
     const tele: unknown[] = [];
     const { io, out, err } = sink({ telemetry: (e) => tele.push(e) });
     await consumeCliRun(stream([
-        { type: "TEXT_MESSAGE_CONTENT", messageId: "1", delta: "ignored-generic" },
-        { type: "CUSTOM", name: "plurnk.telemetry", value: { source: "engine", kind: "note", level: "info" } },
-        { type: "RUN_FINISHED" },
+        { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "1", delta: "ignored-generic" },
+        { type: EventType.CUSTOM, name: "plurnk.telemetry", value: { source: "engine", kind: "note", level: "info" } },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(tele.length, 1, "telemetry captured");
     assert.equal(out.join(""), "", "generic TEXT_MESSAGE not rendered by the family client");
@@ -111,7 +113,7 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
         rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
         terminated({ workspaceId: 512, loopId: 9, turnIds: [1, 2, 3], usage: { promptTokens: 20, completionTokens: 8, costPico: 4200, contextTokens: 20, promptBudget: 6848, meta: {} } }),
-        { type: "RUN_FINISHED" },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "", "json mode: silent stdout");
     assert.equal(err.join(""), "", "json mode: silent stderr");
@@ -137,7 +139,7 @@ test("consumeCliRun: a child worker's terminal SEND cannot replace the run respo
         rowRun({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
         rowRun({ op: "SEND", signal: 499, tx: { body: { raw: "child cancelled" } } }, 12),
         terminated({ workerId: 11 }),
-        { type: "RUN_FINISHED" },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(result.response, "parent answer");
 });
@@ -145,9 +147,9 @@ test("consumeCliRun: a child worker's terminal SEND cannot replace the run respo
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (closeStatus) to the trace", async () => {
     const { io, err } = sink();
     await consumeCliRun(stream([
-        { type: "CUSTOM", name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
-        { type: "CUSTOM", name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", subscriptionId: 1, scheme: "python", closeStatus: 200, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
-        { type: "RUN_FINISHED" },
+        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", subscriptionId: 1, scheme: "python", closeStatus: 200, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     const trace = err.join("");
     assert.match(trace, /python:\/\/\/1\/1\/1/, "stream lines traced to stderr");
@@ -161,7 +163,7 @@ test("runScript segments: a run with NO parse result must not report success", a
     // and the CALLER-visible marker (parse missing) is testable via the sink.
     let fired = false;
     const { io } = sink({ onActionResult: () => { fired = true; } });
-    const r = await consumeCliRun(stream([{ type: "RUN_FINISHED" }]), io);
+    const r = await consumeCliRun(stream([{ type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } }]), io);
     assert.equal(fired, false);
     assert.equal(r.pendingResume, null);
 });

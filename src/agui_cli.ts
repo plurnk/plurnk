@@ -37,7 +37,7 @@ interface TerminatedValue {
 export interface CliRunResult {
     exitCode: number;
     // Terminate-resume: set when the segment ended on a client-owned proposal
-    // tool-call — the caller POSTs this as the resume run's tool-result.
+    // tool-call — the caller POSTs this as the next run's standard resume.
     pendingResume: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string } | null;
     entries: LogEntryWire[];
     telemetry: TelemetryEvent[];
@@ -57,8 +57,8 @@ export interface CliRunSinks {
     onActionResult?: (v: { kind: string; ok: boolean; result?: unknown; error?: string }) => void;
 }
 
-// Decide a stopped-world proposal (AG-UI+ terminate-resume): the run segment ended
-// on the tool-call; the decision returns as the resume run's tool-result. A
+// Decide a stopped-world proposal: the AG-UI run ended
+// on the tool-call; the decision returns as the next run's resume payload. A
 // tool-call strictly means client-owned (the module filters server-yolo/noProposals).
 const decideProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }> => {
     if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept" };
@@ -82,6 +82,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     let pendingResume: CliRunResult["pendingResume"] = null;
     let toolId = "";
     let toolArgs = "";
+    const interrupts = new Set<string>();
     const entries: LogEntryWire[] = [];
     const telemetry: TelemetryEvent[] = [];
     const streams = new StreamTrace();
@@ -91,6 +92,13 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             finalStatus = Number.isFinite(code) && code > 0 ? code : 500;
             hitMaxTurns = /maxTurns/.test(String((e as { message?: string }).message ?? ""));
             if (!io.json) io.err(`${String((e as { message?: string }).message ?? "")}\n`);
+            continue;
+        }
+        if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
+            for (const interrupt of e.outcome.interrupts) {
+                interrupts.add(interrupt.id);
+                if (interrupt.toolCallId !== undefined) interrupts.add(interrupt.toolCallId);
+            }
             continue;
         }
         if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
@@ -133,6 +141,10 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                 }
             }
         }
+    }
+    if (pendingResume !== null && !interrupts.has(`prop:${pendingResume.logEntryId}`)) {
+        pendingResume = null;
+        finalStatus = 502;
     }
     // A stream that ended with NO terminal truth (no terminated, no RUN_ERROR, no
     // pending resume) is a DEAD stream — 502, never the initialized 200 (svc#478:
@@ -221,9 +233,9 @@ export const runCliViaBridge = async (
     };
 
     // Terminate-resume segments: a client-owned proposal ends the segment as a
-    // tool-call; the decision POSTs as the next segment's tool-result. Accumulate
+    // tool-call; the decision POSTs as the next segment's resume. Accumulate
     // across segments — one logical run, one record.
-    let next: { prompt?: string; messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
+    let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
     let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
     // A hard kill mid-run must still leave the record behind (svc#478: Harbor's axe
     // erased the whole document). Best-effort flush of what accumulated so far.
@@ -232,7 +244,9 @@ export const runCliViaBridge = async (
     try {
         while (result.pendingResume !== null) {
             const r = result.pendingResume;
-            next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+            next = r.decision === "cancel"
+                ? { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "cancelled" }] }
+                : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
             const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
             result = {
                 ...seg,
@@ -277,11 +291,13 @@ export const runScriptViaBridge = async (
         action: { kind: "op.parse", text },
         ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
     };
-    let next: { messages?: Array<Record<string, unknown>>; forwardedProps?: Record<string, unknown> } = { messages: [], forwardedProps };
+    let next: { resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { forwardedProps };
     let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }), io);
     while (result.pendingResume !== null) {
         const r = result.pendingResume;
-        next = { messages: [{ role: "tool", toolCallId: `prop:${r.logEntryId}`, content: JSON.stringify({ decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) }) }] };
+        next = r.decision === "cancel"
+            ? { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "cancelled" }] }
+            : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
         result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
     }
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse

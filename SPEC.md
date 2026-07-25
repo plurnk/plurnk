@@ -164,7 +164,7 @@ Consequence:
 
 1. `POST /` (RunAgentInput) to the module — `threadId` = the workspace name, the prompt as the user message, workspace + per-run knobs on `forwardedProps.plurnk`.
 2. Consume the SSE: `CUSTOM plurnk.row` events render as per-action trace lines on stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
-3. A proposal arrives as a `prop:*` tool-call and TERMINATES the worker (the loop stays paused in-engine); the decision returns as a tool-result message on the next run, where the continued loop streams (terminate-resume). `CUSTOM plurnk.terminated` is authoritative for the outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
+3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. `CUSTOM plurnk.terminated` is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
 5. Exit with the appropriate code (§4).
 

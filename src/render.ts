@@ -187,6 +187,10 @@ const coordPrefix = (entry: LogEntryWire): string =>
 const BOLD = code("1");
 const ITALIC = code("3");
 
+// A common model-authored inline-math spelling with an exact terminal glyph.
+// This is typographic normalization, not a claim of general LaTeX support.
+const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "→");
+
 // Heuristic: body looks like markdown if it carries any of the structural markers.
 // False positives on plain text containing isolated `*` or `_` are avoided by requiring
 // paired markers or line-anchored constructs.
@@ -223,8 +227,9 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     if (!prettify) return typeof raw === "string" ? raw : "";
     if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
     if (typeof raw !== "string") return "";
-    if (looksLikeMarkdown(raw)) return renderMarkdown(raw);
-    return raw;
+    const prose = normalizeProse(raw);
+    if (looksLikeMarkdown(prose)) return renderMarkdown(prose);
+    return prose;
 };
 
 // Bold the model's ANSWER. The model's terminal SEND (200 done / 499 cancelled

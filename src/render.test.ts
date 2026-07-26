@@ -644,6 +644,12 @@ test("extractSendBody prettify: plain text (no markdown markers) passes through"
     assert.equal(extractSendBody({ body: { raw: "just words", json: null } }, true), "just words");
 });
 
+test("extractSendBody prettify: conventional inline right arrow renders as its terminal glyph", () => {
+    const raw = "loading $\\rightarrow$ running";
+    assert.equal(extractSendBody({ body: { raw, json: null } }, true), "loading → running");
+    assert.equal(extractSendBody({ body: { raw, json: null } }, false), raw, "CLI output remains verbatim");
+});
+
 // ─── renderSummary: usage token part ─────────────────────────────────
 
 test("renderSummary: usage renders ↑prompt ↓completion and cost", () => {

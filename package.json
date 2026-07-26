@@ -51,6 +51,6 @@
         "@plurnk/plurnk-aliases": "^1.2.0"
     },
     "plurnk": {
-        "builtAgainst": "1.2.0"
+        "builtAgainst": "1.3.6"
     }
 }

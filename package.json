@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk",
-    "version": "0.71.3",
+    "version": "0.71.4",
     "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
     "type": "module",
     "license": "MIT",
@@ -30,13 +30,14 @@
         "build:info": "node scripts/write-build-info.mjs",
         "build": "npm run build:dist && npm run build:info",
         "prepare": "git config core.hooksPath .githooks && npm run build",
-        "prepublishOnly": "npm run test && npm audit --audit-level=high && npm run deps:fresh",
+        "prepublishOnly": "npm run test && npm audit --audit-level=high && npm run deps:fresh && npm run test:composition",
         "test:tui": "node --test --test-timeout=600000 --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
         "build:global:install": "npm run build && npm install -g .",
         "build:global:uninstall": "npm uninstall -g @plurnk/plurnk",
         "build:local:install": "node scripts/install-sandbox.mjs install",
         "build:local:uninstall": "node scripts/install-sandbox.mjs uninstall",
-        "test:installation": "node scripts/test-installation.mjs"
+        "test:installation": "node scripts/test-installation.mjs",
+        "test:composition": "node scripts/test-composition.mjs"
     },
     "devDependencies": {
         "@types/node": "^26.1.1",

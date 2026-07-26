@@ -32,12 +32,17 @@ const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => 
     const port = (server.address() as { port: number }).port;
     return { url: `http://127.0.0.1:${port}`, captured, close: () => new Promise<void>((r) => server.close(() => r())) };
 };
-const frame = (e: unknown): string => `data: ${JSON.stringify(e)}\n\n`;
+const frame = (event: Record<string, unknown>): string => {
+    const lifecycle = event.type === "RUN_STARTED" || event.type === "RUN_FINISHED"
+        ? { threadId: "th", runId: "r", ...event }
+        : event;
+    return `data: ${JSON.stringify(lifecycle)}\n\n`;
+};
 
 test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "TEXT_MESSAGE_CONTENT", delta: "generic-ignored" }));
+        res.write(frame({ type: "TEXT_MESSAGE_CONTENT", messageId: "generic", delta: "generic-ignored" }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "PLAN" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.telemetry", value: { source: "grammar", kind: "parse_error" } }));

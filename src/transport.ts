@@ -181,6 +181,10 @@ export class BridgeTransport implements Transport {
                     if (ac.signal.aborted) return terminated ?? { finalStatus: 499, hitMaxTurns: false };
                     throw err;
                 }
+                // HttpAgent reports abort through the event stream and then completes;
+                // cancellation is therefore observed here rather than necessarily in
+                // the catch path. The transport contract remains a clean 499 outcome.
+                if (ac.signal.aborted) return terminated ?? { finalStatus: 499, hitMaxTurns: false };
                 if (terminated !== null) return terminated;
                 if (pausedProp !== null && !interrupted) throw new Error("proposal tool call ended without a matching AG-UI interrupt outcome");
                 if (pausedProp === null) {

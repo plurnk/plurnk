@@ -27,7 +27,12 @@ const sse = (res: ServerResponse, frames: string[]) => {
     for (const f of frames) res.write(f);
     res.end();
 };
-const frame = (e: unknown): string => `data: ${JSON.stringify(e)}\n\n`;
+const frame = (event: Record<string, unknown>): string => {
+    const lifecycle = event.type === "RUN_STARTED" || event.type === "RUN_FINISHED"
+        ? { threadId: "t", runId: "r", ...event }
+        : event;
+    return `data: ${JSON.stringify(lifecycle)}\n\n`;
+};
 
 test("runViaBridge: yields AG-UI events in order, reassembling frames split across chunks", async () => {
     const tm = frame({ type: "TEXT_MESSAGE_START", messageId: "1", role: "assistant" });
@@ -87,7 +92,38 @@ test("runViaBridge: a non-200 run surfaces the bridge error, not a silent hang",
     try {
         await assert.rejects(
             async () => { for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
-            /bridge run failed: 401.*bearer token required/,
+            /HTTP 401:.*bearer token required/,
+        );
+    } finally { await mock.close(); }
+});
+
+test("runViaBridge: the standard transport handles comments, CRLF, split chunks, and multiline data", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(": keepalive\r\n\r");
+        res.write("\ndata: {\"type\":\"RUN_STARTED\",\r\n");
+        res.write("data: \"threadId\":\"t\",\"runId\":\"r\"}\r\n\r\n");
+        res.end();
+    });
+    try {
+        const seen: string[] = [];
+        for await (const event of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) seen.push(event.type);
+        assert.deepEqual(seen, ["RUN_STARTED"]);
+    } finally { await mock.close(); }
+});
+
+test("runViaBridge: malformed AG-UI events fail at the standard client boundary", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ type: "RUN_FINISHED" })}\n\n`);
+        res.end();
+    });
+    try {
+        await assert.rejects(
+            async () => {
+                for await (const _event of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _event;
+            },
+            /threadId|runId/,
         );
     } finally { await mock.close(); }
 });

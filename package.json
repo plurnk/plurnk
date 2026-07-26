@@ -45,6 +45,7 @@
         "typescript": "^7.0.2"
     },
     "dependencies": {
+        "@ag-ui/client": "^0.0.57",
         "@ag-ui/core": "^0.0.57",
         "@plurnk/plurnk-aliases": "^1.2.0"
     },

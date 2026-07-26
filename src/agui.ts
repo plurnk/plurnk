@@ -5,18 +5,15 @@
 // standard AG-UI HTTP/SSE transport: POST / for runs, including interrupt
 // resolution through RunAgentInput.resume.
 //
-// Pure transport: it yields the daemon-authoritative AG-UI events; rendering (the
-// waterfall, proposals, the gauge) stays with each client. plurnk fidelity rides
-// the CUSTOM plurnk.* events (esp. plurnk.row — the full wire row).
+// The official HttpAgent owns HTTP/SSE parsing and AG-UI event verification.
+// This adapter only preserves the client's async-iterator surface; rendering
+// (waterfall, proposals, gauge) stays local. Plurnk fidelity rides CUSTOM
+// plurnk.* events (especially plurnk.row, the full wire row).
 
+import { HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
 
 export type AguiEvent = AGUIEvent;
-
-const jsonHeaders = (token?: string): Record<string, string> => ({
-    "content-type": "application/json",
-    ...(token !== undefined && token.length > 0 ? { authorization: `Bearer ${token}` } : {}),
-});
 
 export interface BridgeTarget { bridgeUrl: string; token?: string }
 
@@ -31,43 +28,62 @@ export async function* runViaBridge(
 ): AsyncGenerator<AguiEvent> {
     const messages: RunAgentInput["messages"] = run.messages
         ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
-    const res = await fetch(new URL("/", target.bridgeUrl), {
-        method: "POST",
-        headers: jsonHeaders(target.token),
-        signal,   // abort ⇒ drop the SSE ⇒ the bridge cancels the loop (its req.on close)
-        body: JSON.stringify({
-            threadId: run.threadId,
-            runId: run.runId ?? crypto.randomUUID(),
-            state: {},
-            messages,
-            tools: [],
-            context: [],
-            ...(run.resume !== undefined ? { resume: run.resume } : {}),
-            // The workspace (world) is REQUIRED — a run has no existence without one. The
-            // threadId names the CONVERSATION (a run over the world, svc#366); it doubles
-            // as the workspace name unless the caller splits them (--worker: thread ≠ world).
-            forwardedProps: { plurnk: { workspace: run.workspace ?? run.threadId, ...(run.forwardedProps ?? {}) } },
-        }),
+    const agent = new HttpAgent({
+        url: new URL("/", target.bridgeUrl).href,
+        headers: target.token !== undefined && target.token.length > 0
+            ? { authorization: `Bearer ${target.token}` }
+            : {},
     });
-    if (!res.ok || res.body === null) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(`bridge run failed: ${res.status}${detail.length > 0 ? ` — ${detail}` : ""}`);
-    }
-    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        // SSE frames are `data: <json>\n\n`; accumulate until a full frame is buffered
-        // (a chunk can split a frame), then parse each complete one.
-        let sep: number;
-        while ((sep = buf.indexOf("\n\n")) !== -1) {
-            const frame = buf.slice(0, sep);
-            buf = buf.slice(sep + 2);
-            if (frame.startsWith("data: ")) yield JSON.parse(frame.slice(6)) as AguiEvent;
+    const input: RunAgentInput = {
+        threadId: run.threadId,
+        runId: run.runId ?? crypto.randomUUID(),
+        state: {},
+        messages,
+        tools: [],
+        context: [],
+        ...(run.resume !== undefined ? { resume: run.resume } : {}),
+        // The workspace (world) is REQUIRED — a run has no existence without one. The
+        // threadId names the CONVERSATION; it doubles as the workspace unless split.
+        forwardedProps: { plurnk: { workspace: run.workspace ?? run.threadId, ...(run.forwardedProps ?? {}) } },
+    };
+    type QueueItem =
+        | { kind: "event"; event: AguiEvent }
+        | { kind: "error"; error: unknown }
+        | { kind: "done" };
+    const queue: QueueItem[] = [];
+    let wake: (() => void) | null = null;
+    const push = (item: QueueItem) => {
+        queue.push(item);
+        wake?.();
+        wake = null;
+    };
+    const onAbort = () => agent.abortRun();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const subscription = agent.run(input).subscribe({
+        // HttpAgent verifies each BaseEvent at the SDK boundary; AGUIEvent is
+        // @ag-ui/core's narrower discriminated view of that validated value.
+        next: (event) => push({ kind: "event", event: event as AguiEvent }),
+        error: (error) => push({ kind: "error", error }),
+        complete: () => push({ kind: "done" }),
+    });
+    if (signal?.aborted) onAbort();
+    try {
+        for (;;) {
+            if (queue.length === 0) await new Promise<void>((resolve) => { wake = resolve; });
+            const item = queue.shift()!;
+            if (item.kind === "event") {
+                yield item.event;
+                continue;
+            }
+            if (item.kind === "error") {
+                throw item.error instanceof Error ? item.error : new Error(String(item.error));
+            }
+            return;
         }
+    } finally {
+        signal?.removeEventListener("abort", onAbort);
+        subscription.unsubscribe();
+        agent.abortRun();
     }
 }
 

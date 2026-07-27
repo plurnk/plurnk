@@ -22,7 +22,7 @@ client.
 
 The waterfall is intentionally compact: a logical coordinate, actor, operation,
 status, and target identify each row. Model broadcasts render as full response
-blocks rather than telemetry rows. Indexing and search progress update the
+blocks rather than diagnostic rows. Indexing and search progress update the
 active prompt instead of appending an event for every milestone.
 
 The renderer uses width-stable glyphs and respects `NO_COLOR`. Avoid glyphs

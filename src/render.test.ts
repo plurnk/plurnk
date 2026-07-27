@@ -256,7 +256,7 @@ test("[§cli-what-is-not-rendered] isPromptEntry: classifies prompt:///loop/N ED
     assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "prompt/3/1" })), false, "the retired plurnk:// scheme no longer classifies");
 });
 
-test("[§cli-what-is-rendered] entryTarget round-trips all four authority faces raw — the <<LOOK re-address source, no synthesis (svc#527)", () => {
+test("[§cli-log-entry-line-format] entryTarget round-trips all four authority faces raw — the <<LOOK re-address source, no synthesis (svc#527)", () => {
     // core sends the addressable form as-typed on `hostname`; entryTarget renders it verbatim
     // so <<LOOK can re-address it. commons=empty, self=~, named, kernel=plurnk — each a valid
     // worker:// address; the face is the raw URI, legible AND round-trippable (one source).
@@ -388,7 +388,7 @@ test("renderLogEntry: unknown op → '?' glyph", () => {
 
 // ─── renderSummary ────────────────────────────────────────────────────
 
-const usage = (p: number, c: number, cost = 0) => ({ promptTokens: p, completionTokens: c, costPico: cost });
+const usage = (p: number, c: number, cost = 0) => ({ promptTokens: p, completionTokens: c, costUsd: cost });
 
 test("renderSummary: success → 'done'", () => {
     const s = renderSummary(1, 500, 200, false, usage(10, 5));
@@ -415,7 +415,7 @@ test("renderSummary: an unmapped non-200 still falls back to 'final <N>'", () =>
 });
 
 test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", () => {
-    const s = renderSummary(2, 500, 200, false, usage(1200, 345, 420000000));
+    const s = renderSummary(2, 500, 200, false, usage(1200, 345, 0.00042));
     assert.match(s, /↑1200 ↓345/);
     assert.match(s, /loop \$0\.0004/);
 });
@@ -461,15 +461,9 @@ test("renderSummary: no usage (non-model op) omits the token part", () => {
     assert.doesNotMatch(s, /↑|tokens/);
 });
 
-test("renderSummary: loop / workspace / remaining — each only when available (svc#254/#252)", () => {
-    const all = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costPico: 420000000, sessionCostPico: 12_560_000_000_000, balancePico: 198_530_000_000_000 });
-    assert.match(all, /loop \$0\.0004/);
-    assert.match(all, /workspace \$12\.56/);     // daemon's authoritative total
-    assert.match(all, /remaining \$198\.53/);  // account balance
-    // Neither pushed → only the loop cost shows; workspace/remaining stay dark.
-    const loopOnly = renderSummary(1, 100, 200, false, usage(10, 5, 420000000));
-    assert.match(loopOnly, /loop \$/);
-    assert.doesNotMatch(loopOnly, /workspace|remaining/);
+test("renderSummary renders the loop's standard USD cost without unit conversion", () => {
+    const summary = renderSummary(1, 100, 200, false, usage(10, 5, 0.0042));
+    assert.match(summary, /loop \$0\.0042/);
 });
 
 test("renderSummary: wall time in seconds when ≥1000ms", () => {
@@ -653,13 +647,13 @@ test("extractSendBody prettify: conventional inline right arrow renders as its t
 // ─── renderSummary: usage token part ─────────────────────────────────
 
 test("renderSummary: usage renders ↑prompt ↓completion and cost", () => {
-    const out = renderSummary(3, 850, 200, false, { promptTokens: 100, completionTokens: 50, costPico: 500_000_000_000 });
+    const out = renderSummary(3, 850, 200, false, { promptTokens: 100, completionTokens: 50, costUsd: 0.5 });
     assert.match(out, /↑100 ↓50/);
     assert.match(out, /\$0\.5000/);
 });
 
 test("renderSummary: zero cost omits the $ part", () => {
-    const out = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costPico: 0 });
+    const out = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costUsd: 0 });
     assert.match(out, /↑10 ↓5/);
     assert.doesNotMatch(out, /\$/);
 });
@@ -673,7 +667,7 @@ test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-lo
 });
 
 test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.promptBudget — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
-    const usage = { promptTokens: 1, completionTokens: 1, costPico: 0, contextTokens: 12000, promptBudget: 48000 };
+    const usage = { promptTokens: 1, completionTokens: 1, costUsd: 0, contextTokens: 12000, promptBudget: 48000 };
     // The TUI now passes usage.promptBudget as the denominator; the gauge reflects that loop's window.
     const line = renderSummary(2, 1000, 200, false, usage, usage.promptBudget);
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");

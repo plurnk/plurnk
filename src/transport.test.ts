@@ -8,12 +8,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { BridgeTransport, type RunHandlers } from "./transport.ts";
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; telemetry: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], telemetry: [], terminated: [] };
+    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], notices: [], terminated: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
         onProposal: (p) => seen.proposals.push(p),
         onStream: (s) => seen.streams.push(s),
-        onTelemetry: (t) => seen.telemetry.push(t),
+        onNotice: (notice) => seen.notices.push(notice),
         onTerminated: (t) => seen.terminated.push(t),
     };
     return { h, seen };
@@ -45,7 +45,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "TEXT_MESSAGE_CONTENT", messageId: "generic", delta: "generic-ignored" }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "PLAN" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.telemetry", value: { source: "grammar", kind: "parse_error" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
@@ -56,7 +56,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         bt.subscribe(h);
         const t = await bt.run("largest planet?", { alias: "opus" }).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
-        assert.equal((seen.telemetry[0] as { source: string }).source, "grammar");
+        assert.equal((seen.notices[0] as { source: string }).source, "grammar");
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "the workspace (world) + options + per-run knobs ride the first run's forwardedProps");

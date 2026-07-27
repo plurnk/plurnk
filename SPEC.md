@@ -148,7 +148,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** — ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop — `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `telemetry`, `usage`, exit metadata. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion", "error": {kind, message, …}}` — valid JSON either way, paired with the exit code.
+- **stdout** — ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop — `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `notices`, `usage`, exit metadata. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":2, "error": ProblemDetails}` — valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -252,14 +252,14 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
-- The full packet (`turn.packet`). The client never displays the rendered index, log section, or telemetry — those are the model's view, not the user's.
+- The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
 - Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `<<READ(log://...)>>`.
 - Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
 - Content fetching from streaming channels — with ONE bounded exception. Streams render coalesced: a single start line on the first `stream/event` (`📡 ⏳ <target>`; growth ticks and per-channel closes are silent) and a single conclusion line in the waterfall grammar (`📡 ✅ 200 <target> "<summary>"`, target echo stripped from the summary, `→ woke loop` only when the wake opened one). On conclusion the client makes one `entry.read` and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`) — at that size the content IS the better optics (a 12-byte exec answer should be visible, not described). Larger outputs remain summary-only; fetching them is the consumer's job. See §8.7.
 
 ### §5.4 Broadcast SEND rendering {§cli-broadcast-send-rendering}
 
-A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's reply to the user. It is content, not telemetry, and the client MUST render the full body verbatim.
+A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's reply to the user. It is content, not a diagnostic, and the client MUST render the full body verbatim.
 
 TUI mode contract:
 
@@ -380,7 +380,7 @@ Default output: a column-aligned table of `alias / provider / model / active`. T
 
 Lists workspaces on the daemon via `workspace.list`. No prior attach required.
 
-Default output: a column-aligned table of `name / project_root / created / cost`. Null `project_root` renders as `(headless)`. Cost is formatted from pico-USD to human-readable.
+Default output: a column-aligned table of `name / project_root / created / cost`. Null `project_root` renders as `(headless)`. Cost is the daemon's standard USD value.
 
 With `--json`: emits `workspaces` array verbatim.
 
@@ -415,95 +415,97 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 
 ---
 
-## §8 Errors and telemetry {§cli-errors-and-telemetry}
+## §8 Problems and Notices {§cli-problems-and-notices}
 
-Every user-visible error — client-side flag validation, RPC failures, daemon-pushed runtime signals — uses the same shape: the `TelemetryEvent` envelope from `@plurnk/plurnk-grammar` 0.17.0 (`schema/TelemetryEvent.json`). The client is one speaker among many (grammar, engine rails, schemes, providers); it isn't a passive renderer of *their* errors, it emits its own in the same vocabulary.
+The client has two product-level diagnostic contracts, not one generic event
+envelope:
 
-### §8.1 Shape {§cli-shape}
+- An RFC 9457 Problem is failure truth. Client-owned flag, connection,
+  subcommand, RPC, and runtime failures use `{type, title, status, detail}` plus
+  useful extensions. Daemon operation failures remain durable log results; the
+  client does not recreate them as push events.
+- A Notice is a transient, nonterminal observation. It may describe progress or
+  a non-fatal degradation, but it cannot determine success, failure, scheduling,
+  recovery, or exit status.
+
+Both are open to domain-specific extension fields. Shared rendering is a UI
+choice, not a shared semantic envelope.
+
+### §8.1 Failure shape and control flow {§cli-problem-control-flow}
 
 ```ts
-interface TelemetryEvent {
-    source: string;           // lowercase, optionally colon-namespaced
-    kind: string;             // discriminator within source
-    message?: string | null;  // optional terse string
-    position?: ContentOffset | LogCoordinate | null;
-    hints?: string[];         // client-side convention; rendered as continuation lines
-    [key: string]: unknown;   // open at the kind-specific field layer
+interface ProblemDetails {
+    type: string;       // stable absolute problem-type URI
+    title: string;
+    status: number;     // 400–599
+    detail: string;
+    instance?: string;
+    [extension: string]: unknown;
 }
 ```
 
-`source` follows the pattern `^[a-z]+(:[a-z][a-z0-9-]*)?$`. Daemon producers: `grammar`, `engine:rail`, `scheme:<name>`, `provider:<vendor>`. Client producers: `client:connection`, `client:flag`, `client:subcommand`, `client:proposal`, `client:rpc`, `client:runtime`.
+Client problem types live under
+`https://problems.plurnk.dev/client/<owner>/<kind>`. Helpers in
+`src/diagnostics.ts` own the stable type, status, detail, and recovery fields;
+callers do not hand-shape failure JSON. `ProblemError` carries an exact Problem
+through async control flow together with its process exit code. Unstructured
+throws become `client/runtime/error` Problems.
 
-### §8.2 Rendering {§cli-telemetry-rendering}
+In JSON output, a failure is
+`{"schemaVersion":2,"error":<ProblemDetails>}`. Text mode renders the same
+Problem to stderr. A bridge that answered with a failure surfaces that failure;
+only connection-level failures receive the “no daemon” onboarding hints.
+{§cli-connection-onboarding}
 
-`renderTelemetryEvent(event)` produces a single multi-line string with:
+### §8.2 Notice shape and transport
+
+```ts
+interface Notice {
+    source: string;
+    kind: string;
+    level: "error" | "warn" | "info";
+    message?: string | null;
+    position?: ContentOffset | LogCoordinate | null;
+    [extension: string]: unknown;
+}
+```
+
+AG-UI projects daemon `notice/event {loopId, notice}` notifications as
+`CUSTOM plurnk.notice`. The client consumes that event name only. Notices
+interleave with trace lines in text mode and accumulate under `notices` in the
+version-2 JSON record.
+
+Two progress Notices are interactive edge state rather than waterfall history:
+`engine:derivation/embed_progress` replaces the prompt coordinate with indexing
+percent, and `exec:*/search_progress` does the same with search-acquisition
+percent. Their terminal phase restores the real coordinate. The client does not
+append every tick, nor live-render durable `entry_materialized` narration.
+
+Client `daemon_stale` and `edits_blocked` observations are also Notices because
+they advise without terminating an operation. Client failures are Problems.
+
+### §8.3 Rendering and channel posture {§cli-notice-rendering} {§cli-channel-posture}
+
+`renderDiagnostic(diagnostic)` renders either contract without converting one
+into the other:
 
 ```
-  📡 <source>:<kind> [<position>] ["<message>"]
+  📡 <source>:<kind> [<position>] ["<detail-or-message>"]
        <snippet lines, if any>
        <hint lines, if any>
 ```
 
-- **2-space indent** matches the trace-line waterfall (§5.1).
-- **📡 glyph** is the universal telemetry marker; it sits in the same column as the op-glyph slot on trace lines.
-- **Position** renders inline as `L<line> col<column>` for `ContentOffset`, `<coordinate>` (with `(op)` suffix when present) for `LogCoordinate`.
-- **Message** appears in quotes after the discriminator/position.
-- **Snippet** (`event.snippet`, used by grammar:parse_error) renders as a 5-space-indented block; the `N:\t`-prefixed content from the daemon is preserved verbatim.
-- **Hints** are a client-side convention (not in the grammar schema) for actionable nudges — e.g. "Is the daemon running?" on connection refused. They render as dim 5-space-indented continuation lines below the headline.
-- **Connection failures route by class** {§cli-connection-onboarding}: NOTHING LISTENING (undici `fetch failed` / ECONNREFUSED-family) surfaces `client:connection:refused` with the onboarding hints (quick-start `npx @plurnk/plurnk-service start`, install line) on every path — prompt, subcommand, TUI boot; json mode reports `kind: "connection_refused"`. A bridge that ANSWERED with an error surfaces its real cause instead — the client never claims "no daemon" over a live daemon's 500.
+Problems render red. Notices use their required producer-owned `level`; the
+client never infers severity from `kind`. `ContentOffset` renders as
+`L<line> col<column>` and `LogCoordinate` as its coordinate plus optional op.
+CLI mode writes diagnostics to stderr. TUI mode inserts them into the waterfall
+without colliding with the active prompt.
 
-### §8.3 Channel posture {§cli-channel-posture}
+### §8.4 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
 
-- **CLI mode**: stderr. Same channel as the log/entry trace per §2.1.
-- **TUI mode**: inline in the waterfall on stdout, with the `\r\x1b[2K` line-wipe prefix so the readline prompt doesn't collide with the rendered event.
-
-In both modes events interleave with `log/entry` trace lines and proposal-review prompts; the glyph is the visual cue that an event is telemetry rather than an action trace.
-
-### §8.4 Client-source events {§cli-client-source-events}
-
-Client-side errors that previously surfaced as ad-hoc `plurnk:` strings now flow through the same shape via `src/telemetry.ts` helpers:
-
-| Source | Kind(s) | When |
-|---|---|---|
-| `client:connection` | `refused`, `closed`, `daemon_stale` | Module unreachable / stream dropped mid-run / `discover` is missing wire markers this client depends on (daemon older than client) |
-| `client:flag` | `invalid`, `missing_dependency` | Flag value malformed / requires another flag |
-| `client:subcommand` | `session_not_found`, `session_ambiguous`, `unknown_verb`, `missing_argument` | Subcommand dispatch / validation |
-| `client:proposal` | `edits_blocked` | No review channel (non-TTY, no `--yolo`) — loop workers with `noProposals`; client owns the why |
-| `client:rpc` | `error` | Daemon-returned RPC error surfaced verbatim |
-| `client:runtime` | `error` | Generic fallback for unstructured throws |
-
-Each helper (e.g. `clientConnectionRefused(url, cause)`) builds a well-formed event with kind-specific fields populated. Callers don't hand-shape JSON.
-
-### §8.5 `TelemetryError` for control flow {§cli-telemetryerror-for-control-flow}
-
-A `TelemetryError extends Error` class carries an event through normal async error propagation. Deep throws (`attachOrCreateSession`, `resolveProjectRoot`, `parseIntFlag`) wrap a built event; the global catch in `dispatcher.ts` unwraps, renders, and exits with the carried `exitCode` (default 64 for usage errors; override per call). Non-`TelemetryError` throws collapse to a generic `client:runtime:error`.
-
-### §8.6 Daemon `telemetry/event` notification {§cli-daemon-telemetry-event-notification}
-
-The client subscribes to `telemetry/event` in both modes and routes received events through the same renderer. Notification shape per plurnk-service SPEC §15.1:
-
-```
-telemetry/event { loopId: number, event: TelemetryEvent }
-```
-
-Two aggregate progress kinds are interactive edge state rather than waterfall history:
-`engine:derivation/embed_progress` replaces the prompt coordinate with indexing percent,
-and `exec:*/search_progress` does the same with search-acquisition percent. Their terminal
-phase restores the real coordinate. The client does not append milestone lines, and it
-does not live-render `origin=plurnk`, `op=EDIT`, `attrs.kind=entry_materialized` rows;
-those machine narrations remain durable and inspectable through the log.
-
-Daemon-side producers as of plurnk-service 0.11.0:
-- `grammar:parse_error` — model emitted invalid DSL; `position: ContentOffset`, `snippet: string` with offending content.
-- `engine:rail:strike` / `cycle` / `sudden_death` / `no_ops` / `max_commands_exceeded` — engine-rail signals during loop.run; structured fields only, no human-readable message.
-- `engine:rail:action_failure` — `position: LogCoordinate`, optional scheme-emitted error.
-- `engine:rail:budget_overflow` — assembled packet exceeded the budget ceiling; `hidden: [{scheme, count}]` lists the entries the grinder moved out of the window (plurnk-service §14.4).
-
-Future producers (`scheme:<name>`, `provider:<vendor>`) land as siblings adopt the protocol.
-
-### §8.7 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
-
-The daemon also projects streaming-channel metadata as `plurnk.stream` events. These are not `TelemetryEvent`-shaped — they are content-growth signals — but the client uses the same `📡` glyph and rendering channel so the user gets one visual cue for "daemon pushed something."
+The daemon also projects streaming-channel metadata as `plurnk.stream` events.
+Streams are content lifecycle, not Problems or Notices. The client merely uses
+the same `📡` glyph so daemon-pushed activity has one visual lane.
 
 ```
 stream/event     { entryId, target, channel, state, contentLength }
@@ -520,12 +522,12 @@ stream/concluded { entryId, target, subscriptionId, scheme, closeStatus, summary
 
 CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt-wipe prefix. **The client does not fetch the actual streamed content** — that's not the CLI's job. Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.
 
-### §8.8 What this is NOT
+### §8.5 Boundaries
 
-- **Severity filtering** — the kind discriminator IS the signal. No `--verbose` / `--quiet-telemetry` flag in v0.4.0; add when volume bites.
-- **Categorization or interpretation** — per the dumb-client principle, the client doesn't decide that `engine:rail:strike` means "your model is in trouble" or rewrite messages for readability. Producer-side intelligence stands.
-- **Replacement for exit codes** — SPEC §4 exit codes remain orthogonal. The event renders; the exit code propagates.
-- **Telemetry transport** — events render to the user; they do NOT get re-shipped anywhere else. The daemon-side `packet.user.telemetry.events[]` (what the model sees) is separate from the client-side notification stream.
+- A Notice is not a replacement for a failed durable result or an exit code.
+- A Problem is not progress and does not travel on `plurnk.notice`.
+- Stream activity is not a diagnostic envelope.
+- Observability export is outside the client product protocol.
 
 ---
 
@@ -538,9 +540,9 @@ A conforming `plurnk` client:
 3. Resolves the workspace per §1.1 (`workspace.create` by default, or `workspace.attach` when `--workspace`/`PLURNK_SESSION` is set); uses the returned workspace for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Subscribes to `loop/proposal` notifications and resolves each via `loop.resolve` per §6, skipping service-resolved proposals (`flags.auto` / `flags.noProposals`) entirely.
-6. Subscribes to `telemetry/event` notifications and renders each through the unified telemetry shape per §8.
+6. Consumes `CUSTOM plurnk.notice` and renders each Notice per §8.
 7. Maps `loop.run` results to exit codes per §4.
-8. Emits its own user-visible errors as `TelemetryEvent` (source `client:*`) routed through the same renderer per §8.
+8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.
 
 ---
 

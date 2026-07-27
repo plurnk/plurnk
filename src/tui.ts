@@ -28,8 +28,8 @@ import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
 import { BridgeTransport, RunAckError, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
-import { renderTelemetryEvent, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./telemetry.ts";
-import type { TelemetryEvent } from "./telemetry.ts";
+import { renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
+import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import { runOAuth } from "./auth.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -683,18 +683,18 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // transport is live. Same bodies as the old inline rpc.onNotification handlers;
     // they render the shared workspace's activity whether this REPL started the loop
     // or a worker/second client did (multi-client observability).
-    const handleTelemetry = (event: TelemetryEvent): void => {
+    const handleNotice = (notice: Notice): void => {
         // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
-        if (event.source === "engine:turn") return;
+        if (notice.source === "engine:turn") return;
         // Indexing progress is ephemeral prompt state, not an append-only waterfall
         // record. The coordinate slot becomes a fixed-width percentage while warm,
         // then returns to the next real L/T/S coordinate on completion.
-        if (event.source === "engine:derivation" && event.kind === "embed_progress") {
-            const phase = typeof event.phase === "string" ? event.phase : null;
+        if (notice.source === "engine:derivation" && notice.kind === "embed_progress") {
+            const phase = typeof notice.phase === "string" ? notice.phase : null;
             embedding = phase === "preparing"
-                || (phase !== "complete" && phase !== "failed" && Number(event.completed) < Number(event.total));
-            const completed = Number(event.completed);
-            const total = Number(event.total);
+                || (phase !== "complete" && phase !== "failed" && Number(notice.completed) < Number(notice.total));
+            const completed = Number(notice.completed);
+            const total = Number(notice.total);
             embeddingPercent = embedding && Number.isFinite(completed) && Number.isFinite(total) && total > 0
                 ? Math.floor((completed / total) * 100)
                 : null;
@@ -702,15 +702,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             return;
         }
         // Search acquisition is the same compact lifecycle shape: update the
-        // fixed-width prompt gauge, never append one telemetry line per tick.
-        if (event.kind === "search_progress" && typeof event.source === "string" && event.source.startsWith("exec:")) {
-            searchFetching = event.phase !== "complete" && event.phase !== "failed";
-            const percent = Number(event.percent);
+        // fixed-width prompt gauge, never append one notice line per tick.
+        if (notice.kind === "search_progress" && notice.source.startsWith("exec:")) {
+            searchFetching = notice.phase !== "complete" && notice.phase !== "failed";
+            const percent = Number(notice.percent);
             searchPercent = searchFetching && Number.isFinite(percent) ? percent : null;
             repromptPreserving();
             return;
         }
-        printAbove(renderTelemetryEvent(event));
+        printAbove(renderDiagnostic(notice));
     };
 
     transport.subscribe({
@@ -727,7 +727,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             hibernating = entry.op === "SEND" && entry.signal === 202;
             printAbove(renderLogEntry(entry));
         },
-        onTelemetry: handleTelemetry,
+        onNotice: handleNotice,
         onStream: (payload) => {
             // One channel for the lifecycle: concluded carries closeStatus, a start
             // event carries state. One start line, one conclusion line, tiny outputs inlined.
@@ -779,7 +779,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let derivationPoll: ReturnType<typeof setInterval> | null = null;
     const pollDerivation = async (): Promise<void> => {
         try {
-            const { status } = await transport.rpc<{ status: TelemetryEvent | null }>("workspace.derivation");
+            const { status } = await transport.rpc<{ status: Notice | null }>("workspace.derivation");
             if (status === null) {
                 if (derivationPoll !== null) clearInterval(derivationPoll);
                 derivationPoll = null;
@@ -788,7 +788,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const signature = JSON.stringify(status);
             if (signature !== lastDerivationState) {
                 lastDerivationState = signature;
-                handleTelemetry({ ...status, source: "engine:derivation", kind: "embed_progress" });
+                handleNotice({ ...status, source: "engine:derivation", kind: "embed_progress" });
             }
             if (status.phase === "complete" || status.phase === "failed") {
                 if (derivationPoll !== null) clearInterval(derivationPoll);

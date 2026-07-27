@@ -109,8 +109,8 @@ test("[§cli-plurnk-workspace-list] runWorkspaceList: table format with workspac
     const { rpc, calls } = fakeRpc({
         "workspace.list": {
             workspaces: [
-                { id: 1, name: "alpha", project_root: "/tmp/work", created_at: "2026-05-26T12:00:00Z", cost_pico: 0 },
-                { id: 2, name: "beta", project_root: null, created_at: "2026-05-26T13:00:00Z", cost_pico: 12_500_000_000 },
+                { id: 1, name: "alpha", project_root: "/tmp/work", created_at: "2026-05-26T12:00:00Z", cost_usd: 0 },
+                { id: 2, name: "beta", project_root: null, created_at: "2026-05-26T13:00:00Z", cost_usd: 0.0125 },
             ],
         },
     });
@@ -123,7 +123,7 @@ test("[§cli-plurnk-workspace-list] runWorkspaceList: table format with workspac
 });
 
 test("runWorkspaceList: --json passes workspaces through", async () => {
-    const workspaces = [{ id: 1, name: "x", project_root: null, created_at: "now", cost_pico: 0 }];
+    const workspaces = [{ id: 1, name: "x", project_root: null, created_at: "now", cost_usd: 0 }];
     const { rpc } = fakeRpc({ "workspace.list": { workspaces } });
     const out = await captureStdout(() => runWorkspaceList(rpc, { json: true }));
     assert.deepEqual(JSON.parse(out.trim()), workspaces);
@@ -141,14 +141,14 @@ test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up worksp
     const { rpc, calls } = fakeRpc({
         "workspace.list": {
             workspaces: [
-                { id: 1, name: "alpha", project_root: null, created_at: "t", cost_pico: 0 },
-                { id: 2, name: "beta", project_root: null, created_at: "t", cost_pico: 0 },
+                { id: 1, name: "alpha", project_root: null, created_at: "t", cost_usd: 0 },
+                { id: 2, name: "beta", project_root: null, created_at: "t", cost_usd: 0 },
             ],
         },
         "workspace.workers": {
             workers: [
-                { id: 10, name: "run-1", created_at: "t1", cost_pico: 0 },
-                { id: 11, name: "run-2", created_at: "t2", cost_pico: 500_000_000_000 },
+                { id: 10, name: "run-1", created_at: "t1", cost_usd: 0 },
+                { id: 11, name: "run-2", created_at: "t2", cost_usd: 0.5 },
             ],
         },
     });
@@ -162,9 +162,9 @@ test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up worksp
 });
 
 test("runWorkspaceWorkers: --json emits workers array", async () => {
-    const workers = [{ id: 10, name: "r", created_at: "t", cost_pico: 0 }];
+    const workers = [{ id: 10, name: "r", created_at: "t", cost_usd: 0 }];
     const { rpc } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
+        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_usd: 0 }] },
         "workspace.workers": { workers },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "x", { json: true }));
@@ -190,8 +190,8 @@ test("runWorkspaceWorkers: ambiguous name → exit 1", async () => {
     const { rpc } = fakeRpc({
         "workspace.list": {
             workspaces: [
-                { id: 1, name: "dup", project_root: null, created_at: "t", cost_pico: 0 },
-                { id: 2, name: "dup", project_root: null, created_at: "t", cost_pico: 0 },
+                { id: 1, name: "dup", project_root: null, created_at: "t", cost_usd: 0 },
+                { id: 2, name: "dup", project_root: null, created_at: "t", cost_usd: 0 },
             ],
         },
     });
@@ -205,7 +205,7 @@ test("runWorkspaceWorkers: ambiguous name → exit 1", async () => {
 
 test("runWorkspaceWorkers: workspace has no workers → friendly message in table mode", async () => {
     const { rpc } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_pico: 0 }] },
+        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_usd: 0 }] },
         "workspace.workers": { workers: [] },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "x", { json: false }));

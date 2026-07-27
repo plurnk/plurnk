@@ -8,7 +8,7 @@
 export interface Caller { call(method: string, params?: object): Promise<unknown> }
 import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
-import { report, clientSubcommandWorkspaceNotFound, clientSubcommandWorkspaceAmbiguous } from "./telemetry.ts";
+import { report, clientSubcommandWorkspaceNotFound, clientSubcommandWorkspaceAmbiguous } from "./diagnostics.ts";
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
@@ -61,14 +61,13 @@ interface WorkspaceRow {
     name: string;
     project_root: string | null;
     created_at: string;
-    cost_pico: number;
+    cost_usd: number;
 }
 
-const formatCost = (picoUsd: number): string => {
-    if (picoUsd === 0) return "0";
-    const usd = picoUsd / 1e12;
-    if (usd < 0.01) return `$${(usd * 100).toFixed(4)}¢`;
-    return `$${usd.toFixed(4)}`;
+const formatCost = (costUsd: number): string => {
+    if (costUsd === 0) return "0";
+    if (costUsd < 0.01) return `${(costUsd * 100).toFixed(4)}¢`;
+    return `$${costUsd.toFixed(4)}`;
 };
 
 export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
@@ -85,7 +84,7 @@ export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Pr
         s.name,
         s.project_root ?? "(headless)",
         s.created_at,
-        formatCost(s.cost_pico),
+        formatCost(s.cost_usd),
     ]);
     process.stdout.write(`${renderTable(["name", "project_root", "created", "cost"], rows)}\n`);
     return 0;
@@ -97,7 +96,7 @@ interface WorkerRow {
     id: number;
     name: string;
     created_at: string;
-    cost_pico: number;
+    cost_usd: number;
 }
 
 export const runWorkspaceWorkers = async (
@@ -126,7 +125,7 @@ export const runWorkspaceWorkers = async (
         process.stdout.write(`(workspace ${JSON.stringify(workspaceName)} has no workers)\n`);
         return 0;
     }
-    const rows = workers.map((r) => [r.name, r.created_at, formatCost(r.cost_pico)]);
+    const rows = workers.map((r) => [r.name, r.created_at, formatCost(r.cost_usd)]);
     process.stdout.write(`${renderTable(["name", "created", "cost"], rows)}\n`);
     return 0;
 };

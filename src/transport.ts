@@ -13,7 +13,7 @@
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
-import type { TelemetryEvent } from "./telemetry.ts";
+import type { Notice } from "./diagnostics.ts";
 import { runViaBridge, actionViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
@@ -33,7 +33,7 @@ export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
     onProposal: (p: ProposalParams) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
-    onTelemetry: (event: TelemetryEvent) => void;
+    onNotice: (notice: Notice) => void;
     onQuiesced?: (payload: unknown) => void;
     onTerminated: (t: TerminatedInfo) => void;
 }
@@ -91,7 +91,7 @@ export class BridgeTransport implements Transport {
 
     // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
-    // emitted (a raw-DSL op's rows, telemetry, streams). Feed those through the same
+    // emitted (a raw-DSL op's rows, notices, streams). Feed those through the same
     // persistent handlers a run uses (the WS socket delivered every workspace row;
     // parity demands the action stream does too — e.g. the Alt-p cycler harvests
     // targets from onEntry).
@@ -235,7 +235,7 @@ export class BridgeTransport implements Transport {
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.row") this.#h?.onEntry(value as LogEntryWire);
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
-        else if (name === "plurnk.telemetry") this.#h?.onTelemetry(value as TelemetryEvent);
+        else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
         else if (name === "plurnk.terminated") { const t = value as TerminatedInfo; this.#h?.onTerminated(t); return t; }
         return null;

@@ -5,17 +5,15 @@
 // third-party frontends — so this reuses runCli's exact text-mode rendering:
 // stdout = the terminal broadcast body (the answer), stderr = the per-row trace.
 //
-// json mode is NOT routed here yet: the Translator's terminated projection drops
-// costPico/loopId, so a faithful json record needs bridge-side enrichment (mine
-// to add as owner) — until then json rides the daemon (dual-surface, per charter).
+// JSON mode uses the terminal projection's complete loop identity and usage.
 
 import process from "node:process";
 import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
-import { report } from "./telemetry.ts";
-import type { TelemetryEvent } from "./telemetry.ts";
+import { report } from "./diagnostics.ts";
+import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
@@ -31,7 +29,7 @@ interface TerminatedValue {
     finalStatus: number;
     hitMaxTurns: boolean;
     turnIds: number[];
-    usage: { promptTokens: number; completionTokens: number; costPico: number; contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
+    usage: { promptTokens: number; completionTokens: number; costUsd: number; contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
 }
 
 export interface CliRunResult {
@@ -40,7 +38,7 @@ export interface CliRunResult {
     // tool-call — the caller POSTs this as the next run's standard resume.
     pendingResume: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string } | null;
     entries: LogEntryWire[];
-    telemetry: TelemetryEvent[];
+    notices: Notice[];
     response: string;
     terminated: TerminatedValue | null;
     modelWorkerId: number | null;
@@ -49,7 +47,7 @@ export interface CliRunResult {
 export interface CliRunSinks {
     out: (s: string) => void;   // stdout — the answer (text mode)
     err: (s: string) => void;   // stderr — the trace (text mode)
-    telemetry: (e: TelemetryEvent) => void;
+    notice: (notice: Notice) => void;
     json: boolean;              // json mode: stay silent, accumulate; the caller emits ONE doc
     yolo: boolean;
     noReviewChannel: boolean;
@@ -69,7 +67,7 @@ const decideProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<{ log
 
 // Drive a bridge run's AG-UI event stream. Text mode renders to the sinks
 // (stdout = answer, stderr = trace); json mode stays silent and accumulates the
-// full record (entries/telemetry/response/terminated/modelWorkerId) for the caller
+// full record (entries/notices/response/terminated/modelWorkerId) for the caller
 // to emit as ONE document. plurnk.terminated is the authoritative outcome (its
 // finalStatus/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live bridge.
@@ -84,7 +82,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     let toolArgs = "";
     const interrupts = new Set<string>();
     const entries: LogEntryWire[] = [];
-    const telemetry: TelemetryEvent[] = [];
+    const notices: Notice[] = [];
     const streams = new StreamTrace();
     for await (const e of events) {
         if (e.type === "RUN_ERROR") {
@@ -126,8 +124,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             hitMaxTurns = terminated.hitMaxTurns;
         } else if (name === "plurnk.action.result") {
             io.onActionResult?.(value as { kind: string; ok: boolean; result?: unknown; error?: string });
-        } else if (name === "plurnk.telemetry") {
-            if (io.json) telemetry.push(value as TelemetryEvent); else io.telemetry(value as TelemetryEvent);
+        } else if (name === "plurnk.notice") {
+            if (io.json) notices.push(value as Notice); else io.notice(value as Notice);
         } else if (name === "plurnk.stream") {
             // plurnk.stream carries the whole lifecycle: a concluded payload has
             // closeStatus; a start/event payload has state. (json: streams aren't in
@@ -150,7 +148,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     // pending resume) is a DEAD stream — 502, never the initialized 200 (svc#478:
     // the fabricated-success default made a killed run exit 0 with an empty record).
     if (terminated === null && pendingResume === null && finalStatus === 200) finalStatus = 502;
-    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, telemetry, response, terminated, modelWorkerId, pendingResume };
+    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, notices, response, terminated, modelWorkerId, pendingResume };
 };
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
@@ -180,7 +178,7 @@ export const runCliViaBridge = async (
     const io = {
         out: (s: string) => process.stdout.write(s),
         err: (s: string) => process.stderr.write(s),
-        telemetry: (e: Parameters<typeof report>[0]) => report(e),
+        notice: (notice: Parameters<typeof report>[0]) => report(notice),
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,
@@ -216,7 +214,7 @@ export const runCliViaBridge = async (
             prompt,
             response: r.response,
             entries: r.entries,
-            telemetry: r.telemetry,
+            notices: r.notices,
             result: {
                 loopId: t?.loopId ?? 0,
                 modelWorkerId: t?.workerId ?? r.modelWorkerId ?? undefined,
@@ -251,7 +249,7 @@ export const runCliViaBridge = async (
             result = {
                 ...seg,
                 entries: [...result.entries, ...seg.entries],
-                telemetry: [...result.telemetry, ...seg.telemetry],
+                notices: [...result.notices, ...seg.notices],
                 response: seg.response.length > 0 ? seg.response : result.response,
                 modelWorkerId: result.modelWorkerId ?? seg.modelWorkerId,
             };
@@ -277,7 +275,7 @@ export const runScriptViaBridge = async (
     const io: CliRunSinks = {
         out: (s) => process.stdout.write(s),
         err: (s) => process.stderr.write(s),
-        telemetry: (e) => report(e),
+        notice: (notice) => report(notice),
         json: opts.json, yolo: opts.yolo, noReviewChannel,
         review: reviewProposal,
         onActionResult: (v) => {

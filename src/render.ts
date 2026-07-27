@@ -247,7 +247,7 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
         .join("\n");
 };
 
-// Broadcast SEND (model → user) — multi-line block, content not telemetry.
+// Broadcast SEND (model → user) — multi-line block, content rather than a Notice.
 // Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
 // body indents further (5 spaces) so it visually nests under the speaker.
 const renderBroadcast = (entry: LogEntryWire): string => {
@@ -361,13 +361,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 export interface LoopUsage {
     promptTokens: number;
     completionTokens: number;
-    costPico: number;
-    // Workspace lifetime total in pico-USD — the DAEMON's authoritative cascade
-    // (svc#254), pushed on the wire. The client renders it, never aggregates it
-    // (runs fork + multiple clients ⇒ no client sees every turn). Staged slot.
-    sessionCostPico?: number;
-    // Account balance in pico-USD, when the provider reports it (svc#252). Staged.
-    balancePico?: number;
+    costUsd: number;
     // Context-window occupancy + window, BOTH the daemon's per-loop figures. Under the
     // model-agnostic ruler (§tokenomics-agnostic-ruler, the chars/2 count that lets one
     // workspace serve many models) the daemon owns the whole budget narrative: contextTokens
@@ -414,12 +408,7 @@ export const renderSummary = (turns: number, wallMs: number, finalStatus: number
     if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
         tokenPart += contextGauge(usage.contextTokens, promptBudget);
-        // Money: loop (this loop's cost) | workspace (daemon total, svc#254) |
-        // remaining (account balance, svc#252). Each only when available — the
-        // client renders all three, aggregates none.
-        if (usage.costPico > 0) tokenPart += ` · loop $${(usage.costPico / 1e12).toFixed(4)}`;
-        if (usage.sessionCostPico !== undefined) tokenPart += ` · workspace $${(usage.sessionCostPico / 1e12).toFixed(2)}`;
-        if (usage.balancePico !== undefined) tokenPart += ` · remaining $${(usage.balancePico / 1e12).toFixed(2)}`;
+        if (usage.costUsd > 0) tokenPart += ` · loop $${usage.costUsd.toFixed(4)}`;
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

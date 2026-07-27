@@ -34,7 +34,7 @@ plurnk models | session list | log read …      # read-only subcommands
 plurnk --help                                  # full flag list
 ```
 
-**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `telemetry` + `usage`), stderr silent, errors as `{"error":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
+**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `notices` + `usage`), stderr silent, failures as RFC 9457 Problems under `{"error":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
 
 **Line language** (converged across the TUI, the CLI prefixes, and plurnk.nvim's `:AI`):
 

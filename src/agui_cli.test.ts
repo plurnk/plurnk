@@ -21,7 +21,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costPico: 42, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.0042, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
@@ -35,7 +35,7 @@ const proposalCall = (logEntryId: number, args: Record<string, unknown> = {}): A
 const sink = (over: Partial<CliRunSinks> = {}) => {
     const out: string[] = [], err: string[] = [], resolved: unknown[] = [];
     const io: CliRunSinks = {
-        out: (s) => out.push(s), err: (s) => err.push(s), telemetry: () => {},
+        out: (s) => out.push(s), err: (s) => err.push(s), notice: () => {},
         json: false, yolo: false, noReviewChannel: false,
         review: async () => ({ decision: "accept" } as Resolution),
         ...over,
@@ -93,15 +93,15 @@ test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals n
     assert.equal(r.pendingResume, null, "a clean run carries no resume");
 });
 
-test("[§cli-channel-posture] consumeCliRun: plurnk.telemetry routes to the telemetry sink; generic AG-UI events are ignored", async () => {
-    const tele: unknown[] = [];
-    const { io, out, err } = sink({ telemetry: (e) => tele.push(e) });
+test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice sink; generic AG-UI events are ignored", async () => {
+    const notices: unknown[] = [];
+    const { io, out, err } = sink({ notice: (notice) => notices.push(notice) });
     await consumeCliRun(stream([
         { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "1", delta: "ignored-generic" },
-        { type: EventType.CUSTOM, name: "plurnk.telemetry", value: { source: "engine", kind: "note", level: "info" } },
+        { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine", kind: "note", level: "info" } },
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
-    assert.equal(tele.length, 1, "telemetry captured");
+    assert.equal(notices.length, 1, "Notice captured");
     assert.equal(out.join(""), "", "generic TEXT_MESSAGE not rendered by the family client");
     assert.equal(err.join(""), "", "no row → no trace");
 });
@@ -112,7 +112,7 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
         rowRun({ op: "PLAN", origin: "model" }, 42),
         rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
-        terminated({ workspaceId: 512, loopId: 9, turnIds: [1, 2, 3], usage: { promptTokens: 20, completionTokens: 8, costPico: 4200, contextTokens: 20, promptBudget: 6848, meta: {} } }),
+        terminated({ workspaceId: 512, loopId: 9, turnIds: [1, 2, 3], usage: { promptTokens: 20, completionTokens: 8, costUsd: 0.0042, contextTokens: 20, promptBudget: 6848, meta: {} } }),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "", "json mode: silent stdout");
@@ -122,7 +122,7 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
     assert.equal(res.response, "Jupiter.", "terminal broadcast captured");
     assert.equal(res.modelWorkerId, 42, "modelWorkerId derived from the first model row's worker_id");
     assert.equal(res.terminated?.workspaceId, 512, "workspaceId from plurnk.terminated");
-    assert.equal(res.terminated?.usage.costPico, 4200, "cost from plurnk.terminated");
+    assert.equal(res.terminated?.usage.costUsd, 0.0042, "standard USD cost from plurnk.terminated");
 });
 
 test("consumeCliRun: plurnk.terminated is authoritative for the exit code", async () => {

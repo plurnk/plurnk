@@ -17,11 +17,11 @@ import { runTui } from "./tui.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters, Caller } from "./subcommands.ts";
 import {
-    TelemetryError,
+    ProblemError,
     report,
     clientConnectionRefused,
     isUnreachable,
-    clientDaemonStale,
+    clientProblem,
     clientFlagInvalid,
     clientFlagMissingDependency,
     clientRuntimeError,
@@ -29,8 +29,8 @@ import {
     clientSubcommandWorkspaceNotFound,
     clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
-} from "./telemetry.ts";
-import type { TelemetryEvent } from "./telemetry.ts";
+} from "./diagnostics.ts";
+import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
@@ -49,10 +49,10 @@ export const resolveLoopFlags = (rawJson: string | undefined, auto = false): Rec
     if (rawJson === undefined) return auto ? { auto: true } : undefined;
     let parsed: unknown;
     try { parsed = JSON.parse(rawJson); } catch {
-        throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
+        throw new ProblemError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
     }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new TelemetryError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
+        throw new ProblemError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
     }
     return { ...(parsed as Record<string, unknown>), ...(auto ? { auto: true } : {}) };
 };
@@ -93,7 +93,7 @@ export const collectExecsPolicy = (env: NodeJS.ProcessEnv = process.env): Record
 export const resolveProjectRoot = (raw: string | undefined): string | null => {
     if (raw === undefined) return process.cwd();
     if (raw.length === 0) return null;
-    if (!isAbsolute(raw)) throw new TelemetryError(clientFlagInvalid("--project-root", raw, "must be an absolute path"));
+    if (!isAbsolute(raw)) throw new ProblemError(clientFlagInvalid("--project-root", raw, "must be an absolute path"));
     return raw;
 };
 
@@ -148,8 +148,8 @@ options:
   -v, --version           print executable provenance and exit
       --json              json OUTPUT MODE: one complete structured document on
                           stdout (the whole client-observed record — turns/ops,
-                          telemetry, the answer at .response, usage), stderr
-                          silent, errors emitted as {"error":…}. Drill into one
+                          notices, the answer at .response, usage), stderr
+                          silent, Problems emitted as {"error":…}. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
@@ -193,7 +193,7 @@ options:
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
-      --no-git            deny git membership + telemetry for the workspace (never
+      --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --no-agents-md      turn off the service's AGENTS.md auto-load for this
                           workspace (overrides PLURNK_AGENTS_AUTO). Create-time.
@@ -215,18 +215,15 @@ subcommands:
                           grammar; the client just feeds the file.
 `;
 
-// Render a telemetry event to stderr and exit. Single egress point so every
-// fatal client signal uses the unified shape from telemetry.ts.
-const dieWith = (code: number, event: TelemetryEvent): never => {
-    report(event);
+// Render a Problem to stderr and exit.
+const dieWith = (code: number, problem: ProblemDetails): never => {
+    report(problem);
     process.exit(code);
 };
 
-// json-mode failure: a valid JSON error document on stdout (the consumer's
-// parser never chokes), paired with a non-zero exit. The json counterpart of
-// dieWith — text mode narrates errors to stderr, json mode emits structured.
-const dieJson = (code: number, kind: string, message: string, extra?: Record<string, unknown>): never => {
-    process.stdout.write(`${JSON.stringify(buildJsonError(kind, message, extra))}\n`);
+// JSON mode embeds the exact RFC 9457 Problem document rendered in text mode.
+const dieJson = (code: number, problem: ProblemDetails): never => {
+    process.stdout.write(`${JSON.stringify(buildJsonError(problem))}\n`);
     process.exit(code);
 };
 
@@ -304,7 +301,7 @@ export const buildSettings = async (
     if (mc !== undefined) {
         const n = Number(mc);
         if (!Number.isInteger(n) || n < 1) {
-            throw new TelemetryError(clientFlagInvalid("--max-commands", mc, "must be a positive integer"));
+            throw new ProblemError(clientFlagInvalid("--max-commands", mc, "must be a positive integer"));
         }
         settings.maxCommands = n;
     }
@@ -316,7 +313,7 @@ export const buildSettings = async (
     if (fi !== undefined) {
         const n = Number(fi);
         if (!Number.isInteger(n) || n < -1) {
-            throw new TelemetryError(clientFlagInvalid("--files-items", fi, "must be -1 (full), 0 (off), or a positive integer"));
+            throw new ProblemError(clientFlagInvalid("--files-items", fi, "must be -1 (full), 0 (off), or a positive integer"));
         }
         settings.filesItems = n;
     }
@@ -325,14 +322,14 @@ export const buildSettings = async (
         const mdDocs: Array<{ alias: string; content: string }> = [];
         for (const spec of mdSpecs) {
             const eq = spec.indexOf("=");
-            if (eq <= 0) throw new TelemetryError(clientFlagInvalid("--md", spec, "must be NAME=path"));
+            if (eq <= 0) throw new ProblemError(clientFlagInvalid("--md", spec, "must be NAME=path"));
             const alias = spec.slice(0, eq);
             const raw = spec.slice(eq + 1);
             const abs = isAbsolute(raw) ? raw : resolve(cwd, raw);
             try {
                 mdDocs.push({ alias, content: await readFile(abs, "utf8") });
             } catch (cause) {
-                throw new TelemetryError(clientFlagInvalid("--md", spec, `file not readable: ${cause instanceof Error ? cause.message : String(cause)}`));
+                throw new ProblemError(clientFlagInvalid("--md", spec, `file not readable: ${cause instanceof Error ? cause.message : String(cause)}`));
             }
         }
         settings.mdDocs = mdDocs;
@@ -351,7 +348,7 @@ export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json")
 // every other provider). The 'plurnk.nvim/1.4.0' shape; nvim sends its own.
 // #71 — one id per FRONTEND, name/version form, workspace-stable. CLI and TUI are
 // distinct frontends of this package (nvim self-ids separately as plurnk.nvim);
-// splitting them lets service telemetry attribute usage per surface.
+// splitting them lets the service attribute usage per surface.
 export const CLIENT_ID_CLI = `@plurnk/plurnk-cli/${CLIENT_VERSION}`;
 export const CLIENT_ID_TUI = `@plurnk/plurnk-tui/${CLIENT_VERSION}`;
 
@@ -391,7 +388,7 @@ export const resolveWorkerId = async (rpc: Caller, workerName: string | undefine
 const parseIntFlag = (raw: string | undefined, name: string): number | undefined => {
     if (raw === undefined) return undefined;
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0) throw new TelemetryError(clientFlagInvalid(name, raw, "must be a non-negative integer"));
+    if (!Number.isInteger(n) || n < 0) throw new ProblemError(clientFlagInvalid(name, raw, "must be a non-negative integer"));
     return n;
 };
 interface SubcommandOpts {
@@ -410,7 +407,7 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
 
     if (verb === "models") {
         if (positionals.length > 1) {
-            throw new TelemetryError(clientSubcommandUnknownVerb(`models ${positionals.slice(1).join(" ")}`));
+            throw new ProblemError(clientSubcommandUnknownVerb(`models ${positionals.slice(1).join(" ")}`));
         }
         return await runModels(rpc, { json: opts.json });
     }
@@ -418,17 +415,17 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
     if (verb === "workspace") {
         if (sub === "list") {
             if (positionals.length > 2) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`workspace list ${positionals.slice(2).join(" ")}`));
+                throw new ProblemError(clientSubcommandUnknownVerb(`workspace list ${positionals.slice(2).join(" ")}`));
             }
             return await runWorkspaceList(rpc, { json: opts.json });
         }
         if (sub === "workers") {
             const name = positionals[2];
             if (name === undefined) {
-                throw new TelemetryError(clientSubcommandMissingArgument("plurnk workspace workers", "<name>"));
+                throw new ProblemError(clientSubcommandMissingArgument("plurnk workspace workers", "<name>"));
             }
             if (positionals.length > 3) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`workspace workers ${positionals.slice(3).join(" ")}`));
+                throw new ProblemError(clientSubcommandUnknownVerb(`workspace workers ${positionals.slice(3).join(" ")}`));
             }
             return await runWorkspaceWorkers(rpc, name, { json: opts.json });
         }
@@ -436,22 +433,22 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             const name = positionals[2];
             const newName = positionals[3];
             if (name === undefined || newName === undefined) {
-                throw new TelemetryError(clientSubcommandMissingArgument("plurnk workspace rename", "<name> <newname>"));
+                throw new ProblemError(clientSubcommandMissingArgument("plurnk workspace rename", "<name> <newname>"));
             }
             if (positionals.length > 4) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`workspace rename ${positionals.slice(4).join(" ")}`));
+                throw new ProblemError(clientSubcommandUnknownVerb(`workspace rename ${positionals.slice(4).join(" ")}`));
             }
             return await runWorkspaceRename(rpc, name, newName, { json: opts.json });
         }
-        throw new TelemetryError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
+        throw new ProblemError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
     }
 
     if (verb === "log") {
         if (sub !== "read") {
-            throw new TelemetryError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
+            throw new ProblemError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
         }
         if (opts.workspaceName === undefined) {
-            throw new TelemetryError(clientFlagMissingDependency("plurnk log read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
+            throw new ProblemError(clientFlagMissingDependency("plurnk log read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
         }
         // The caller's threadId (--workspace) scopes the action to that workspace; the
         // module defaults reads to the conversation (model worker); --worker pins by name.
@@ -470,20 +467,20 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
     if (verb === "read") {
         const coord = positionals[1];
         if (coord === undefined) {
-            throw new TelemetryError(clientSubcommandMissingArgument("plurnk read", "<loop>/<turn>/<seq>"));
+            throw new ProblemError(clientSubcommandMissingArgument("plurnk read", "<loop>/<turn>/<seq>"));
         }
         if (positionals.length > 2) {
-            throw new TelemetryError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
+            throw new ProblemError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
         }
         if (opts.workspaceName === undefined) {
-            throw new TelemetryError(clientFlagMissingDependency("plurnk read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
+            throw new ProblemError(clientFlagMissingDependency("plurnk read", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
         }
         // The coordinate is worker-relative; the module defaults to the conversation
         // (model worker) — --worker pins by name via params, no connection state.
         return await runRead(rpc, coord, { json: opts.json, workerId: await resolveWorkerId(rpc, opts.workerName) });
     }
 
-    throw new TelemetryError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
+    throw new ProblemError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
 };
 
 export const main = async (argv: string[]): Promise<void> => {
@@ -558,7 +555,9 @@ export const main = async (argv: string[]): Promise<void> => {
             ? `${positionalPrompt}\n\n${stdinPrompt}`
             : positionalPrompt || stdinPrompt;
         if (json && prompt.length === 0) {
-            if (values.json === true) dieJson(64, "usage", "--json needs a prompt (CLI mode only)", { flag: "--json" });
+            if (values.json === true) {
+                dieJson(64, clientProblem("usage", "prompt_required", 400, "--json needs a prompt (CLI mode only)", { flag: "--json" }));
+            }
             // PLURNK_CLIENT_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
         }
     }
@@ -583,7 +582,7 @@ export const main = async (argv: string[]): Promise<void> => {
         maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
         timeoutSec = parseIntFlag(values.timeout, "--timeout");
     } catch (cause) {
-        if (cause instanceof TelemetryError) dieWith(cause.exitCode, cause.event);
+        if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
         dieWith(64, clientRuntimeError(cause));
     }
 
@@ -595,7 +594,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const projectRoot: string | null = (() => {
         try { return resolveProjectRoot(projectRootRaw); }
         catch (cause) {
-            if (cause instanceof TelemetryError) return dieWith(cause.exitCode, cause.event);
+            if (cause instanceof ProblemError) return dieWith(cause.exitCode, cause.problem);
             return dieWith(64, clientRuntimeError(cause));
         }
     })();
@@ -645,7 +644,7 @@ export const main = async (argv: string[]): Promise<void> => {
             const { constraints, settings } = await workspaceOptions();
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             // Let Node drain stdout before termination. A forced exit truncated large
-            // --json records mid-string when telemetry made the pipe exceed its buffer.
+            // --json records mid-string when notices made the pipe exceed its buffer.
             process.exitCode = code;
             return;
         } catch (cause) {
@@ -655,7 +654,12 @@ export const main = async (argv: string[]): Promise<void> => {
             // "no daemon running" over a 500 would lie. json mode still emits ONE
             // valid document on stdout either way.
             const detail = cause instanceof Error ? cause.message : String(cause);
-            if (json) dieJson(1, isUnreachable(cause) ? "connection_refused" : "bridge_error", detail, { bridge: bridgeUrl });
+            if (json) {
+                const problem = isUnreachable(cause)
+                    ? clientConnectionRefused(bridgeUrl, cause)
+                    : clientProblem("bridge", "error", 502, detail, { bridge: bridgeUrl });
+                dieJson(1, problem);
+            }
             if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
             dieWith(1, clientRuntimeError(new Error(`plurnk-agui bridge (${bridgeUrl}) — ${detail}`)));
         }
@@ -699,10 +703,10 @@ export const main = async (argv: string[]): Promise<void> => {
         if (subcommand === "script") {
             const filePath = positionals[1];
             if (filePath === undefined) {
-                throw new TelemetryError(clientSubcommandMissingArgument("plurnk script", "<file.plk>"));
+                throw new ProblemError(clientSubcommandMissingArgument("plurnk script", "<file.plk>"));
             }
             if (positionals.length > 2) {
-                throw new TelemetryError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
+                throw new ProblemError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
             const exitCode = await runScriptViaBridge(target, text, { threadId: callerThread, yolo, json, projectRoot });
@@ -725,13 +729,12 @@ export const main = async (argv: string[]): Promise<void> => {
         // json mode: a structured error document on stdout (valid JSON even on
         // failure), paired with the right exit code. Text mode narrates to stderr.
         if (json) {
-            const kind = cause instanceof TelemetryError ? cause.event.kind : "runtime_error";
-            const extra = undefined;
-            const code = cause instanceof TelemetryError ? cause.exitCode : 1;
-            dieJson(code, kind, cause instanceof Error ? cause.message : String(cause), extra);
+            const problem = cause instanceof ProblemError ? cause.problem : clientRuntimeError(cause);
+            const code = cause instanceof ProblemError ? cause.exitCode : 1;
+            dieJson(code, problem);
         }
-        if (cause instanceof TelemetryError) {
-            report(cause.event);
+        if (cause instanceof ProblemError) {
+            report(cause.problem);
             process.exit(cause.exitCode);
         }
         // A daemon-rejected RPC arrives as a typed RpcError carrying the failed

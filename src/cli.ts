@@ -7,8 +7,8 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { extractSendBody, contextGauge } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
-import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./telemetry.ts";
-import type { TelemetryEvent } from "./telemetry.ts";
+import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
+import type { Notice, ProblemDetails } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -58,11 +58,11 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
 // output: stdout carries ONE complete structured document and nothing else,
 // stderr stays silent. The CLI becomes the integration layer — shell out,
 // parse, no third-party client needed. The document is the complete
-// CLIENT-OBSERVED record (every turn's ops with target/status, telemetry, the
+// CLIENT-OBSERVED record (every turn's ops with target/status, notices, the
 // answer, usage) — NOT op CONTENT: under co-location the consumer is on the
 // same filesystem and can `plurnk read L/T/S` any entry on demand, the same
 // OPEN/FOLD discipline the engine runs on. Bump on any breaking schema change.
-export const JSON_SCHEMA_VERSION = 1;
+export const JSON_SCHEMA_VERSION = 2;
 
 const entryTarget = (e: LogEntryWire): string | null => {
     if (e.pathname === null) return null;
@@ -98,7 +98,7 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
 // to JSON.stringify. Pure → unit-testable without a daemon.
 export const buildJsonRecord = (input: {
     workspace: WorkspaceResult; prompt: string; response: string;
-    entries: LogEntryWire[]; telemetry: TelemetryEvent[];
+    entries: LogEntryWire[]; notices: Notice[];
     result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
     wallMs: number; timedOut: boolean;
 }): Record<string, unknown> => {
@@ -119,10 +119,10 @@ export const buildJsonRecord = (input: {
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage !== undefined
-            ? { promptTokens: input.result.usage.promptTokens, completionTokens: input.result.usage.completionTokens, costPico: input.result.usage.costPico, contextTokens: input.result.usage.contextTokens ?? null }
+            ? { promptTokens: input.result.usage.promptTokens, completionTokens: input.result.usage.completionTokens, costUsd: input.result.usage.costUsd, contextTokens: input.result.usage.contextTokens ?? null }
             : null,
         turns,
-        telemetry: input.telemetry,
+        notices: input.notices,
     };
     if (input.result.reason !== undefined) doc.reason = input.result.reason;
     return doc;
@@ -130,9 +130,9 @@ export const buildJsonRecord = (input: {
 
 // In json mode, even a failure emits valid JSON on stdout — the consumer's
 // parser never chokes. Pairs with a non-zero exit code (both channels).
-export const buildJsonError = (kind: string, message: string, extra?: Record<string, unknown>): Record<string, unknown> => ({
+export const buildJsonError = (problem: ProblemDetails): Record<string, unknown> => ({
     schemaVersion: JSON_SCHEMA_VERSION,
-    error: { kind, message, ...(extra ?? {}) },
+    error: problem,
 });
 
 export const formatPlain = (entry: LogEntryWire): string => {
@@ -171,13 +171,13 @@ export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>
 // One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
 export const buildScriptJsonRecord = (input: {
     workspace: WorkspaceResult; results: Array<{ status: number }>;
-    entries: LogEntryWire[]; telemetry: TelemetryEvent[]; wallMs: number;
+    entries: LogEntryWire[]; notices: Notice[]; wallMs: number;
 }): Record<string, unknown> => ({
     schemaVersion: JSON_SCHEMA_VERSION,
     workspace: { id: input.workspace.id, name: input.workspace.name },
     results: input.results,
     turns: groupOpsByTurn(input.entries),
-    telemetry: input.telemetry,
+    notices: input.notices,
     wallMs: input.wallMs,
 });
 

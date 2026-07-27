@@ -79,12 +79,14 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         `PLURNK_PORT=${port}`,
         "PLURNK_WS_PORT=0",
         `OPENAI_BASE_URL=${process.env.OPENAI_BASE_URL ?? "http://127.0.0.1:11435"}`,
+        "PLURNK_SERVICE_EMBED_DISABLE=1",
         `PLURNK_EMBED_WORKERS=${process.env.PLURNK_EMBED_WORKERS ?? "2"}`,
         ...Object.entries(opts.extraEnv ?? {}).map(([k, v]) => `${k}=${v}`),
     ].join("\n");
     const overridesPath = join(dirname(dbPath), "test.env");
     await writeFile(overridesPath, `${overrides}\n`);
     const args = [
+        "--conditions=plurnk-dev",
         binPath,
         ...(daemonEnv !== null ? [`--env-file=${daemonEnv}`] : []),
         `--env-file=${overridesPath}`,

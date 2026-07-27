@@ -108,8 +108,8 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
         entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1 }),
         entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
-    telemetry: [{ source: "engine", kind: "note", message: "ok" }],
-    result: { loopId: 7, modelWorkerId: 39, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 7000000000 } },
+    notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
+    result: { loopId: 7, modelWorkerId: 39, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costUsd: 0.007 } },
     wallMs: 1234, timedOut: false,
     ...over,
 });
@@ -123,14 +123,14 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.workerId, 39);   // the conversation worker, from loop.run's modelWorkerId
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
-    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 7000000000, contextTokens: null });
+    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costUsd: 0.007, contextTokens: null });
 });
 
 test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge numerator)", () => {
     const doc = buildJsonRecord(recordInput({
-        result: { loopId: 7, turnIds: [1], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costPico: 0, contextTokens: 7360 } },
+        result: { loopId: 7, turnIds: [1], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costUsd: 0, contextTokens: 7360 } },
     })) as Record<string, unknown>;
-    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costPico: 0, contextTokens: 7360 });
+    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costUsd: 0, contextTokens: 7360 });
 });
 
 test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate + target", () => {
@@ -168,12 +168,12 @@ test("buildJsonRecord: round-trips through JSON.stringify as one valid document"
     const s = JSON.stringify(buildJsonRecord(recordInput()));
     const parsed = JSON.parse(s);
     assert.equal(parsed.response, "Paris");
-    assert.equal(parsed.telemetry[0].source, "engine");
+    assert.equal(parsed.notices[0].source, "engine");
 });
 
 // ─── buildScriptJsonRecord (`plurnk script foo.plk` record) ───────────
 
-test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fields", () => {
+test("buildScriptJsonRecord: results + turn-grouped ops + Notices, no loop fields", () => {
     const doc = buildScriptJsonRecord({
         workspace: { id: 5, name: "scripted" },
         results: [{ status: 200 }, { status: 404 }],
@@ -181,7 +181,7 @@ test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fie
             entry({ op: "EDIT", origin: "client", scheme: "file", pathname: "/a.md", status_rx: 200, loop_seq: 1, turn_seq: 1, sequence: 1 }),
             entry({ op: "READ", origin: "client", scheme: "file", pathname: "/gone.md", status_rx: 404, loop_seq: 1, turn_seq: 2, sequence: 1 }),
         ],
-        telemetry: [{ source: "scheme", kind: "not_found", message: "no /gone.md" }],
+        notices: [{ source: "scheme", kind: "degraded", level: "warn", message: "no /gone.md" }],
         wallMs: 42,
     }) as Record<string, unknown>;
     assert.equal(doc.schemaVersion, JSON_SCHEMA_VERSION);
@@ -198,18 +198,24 @@ test("buildScriptJsonRecord: results + turn-grouped ops + telemetry, no loop fie
 
 test("buildScriptJsonRecord: round-trips through JSON.stringify", () => {
     const s = JSON.stringify(buildScriptJsonRecord({
-        workspace: { id: 1, name: "s" }, results: [{ status: 200 }], entries: [], telemetry: [], wallMs: 1,
+        workspace: { id: 1, name: "s" }, results: [{ status: 200 }], entries: [], notices: [], wallMs: 1,
     }));
     assert.deepEqual(JSON.parse(s).results, [{ status: 200 }]);
 });
 
 // ─── buildJsonError (json mode fails as valid JSON too) ───────────────
 
-test("buildJsonError: schemaVersion + error shape + extras", () => {
-    const e = buildJsonError("rpc_error", "loop.run rejected", { method: "loop.run" }) as { schemaVersion: number; error: Record<string, unknown> };
+test("buildJsonError embeds the exact RFC 9457 Problem", () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/client/rpc/error",
+        title: "Error",
+        status: 502,
+        detail: "loop.run rejected",
+        method: "loop.run",
+    };
+    const e = buildJsonError(problem) as { schemaVersion: number; error: Record<string, unknown> };
     assert.equal(e.schemaVersion, JSON_SCHEMA_VERSION);
-    assert.equal(e.error.kind, "rpc_error");
-    assert.equal(e.error.message, "loop.run rejected");
+    assert.deepEqual(e.error, problem);
     assert.equal(e.error.method, "loop.run");
     JSON.parse(JSON.stringify(e)); // must be valid JSON
 });

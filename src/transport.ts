@@ -27,6 +27,16 @@ export interface TerminatedInfo {
     workspaceId?: number | null;
 }
 
+export interface BranchBatchEvent {
+    workspaceId?: number;
+    batchId: number;
+    state: "queued" | "running" | "completed" | "failed" | "recovery_required";
+    branch?: string;
+    completed?: number;
+    total?: number;
+    problem?: { detail?: string };
+}
+
 // Run-plane events in daemon-notification shapes — the SAME shapes the TUI's
 // existing handlers consume, so they work unchanged under either transport.
 export interface RunHandlers {
@@ -34,6 +44,7 @@ export interface RunHandlers {
     onProposal: (p: ProposalParams) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
     onNotice: (notice: Notice) => void;
+    onBranchBatch: (event: BranchBatchEvent) => void;
     onQuiesced?: (payload: unknown) => void;
     onTerminated: (t: TerminatedInfo) => void;
 }
@@ -236,6 +247,7 @@ export class BridgeTransport implements Transport {
         if (name === "plurnk.row") this.#h?.onEntry(value as LogEntryWire);
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
+        else if (name === "plurnk.branch_batch") this.#h?.onBranchBatch(value as BranchBatchEvent);
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
         else if (name === "plurnk.terminated") { const t = value as TerminatedInfo; this.#h?.onTerminated(t); return t; }
         return null;

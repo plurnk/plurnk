@@ -8,12 +8,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { BridgeTransport, type RunHandlers } from "./transport.ts";
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], notices: [], terminated: [] };
+    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], notices: [], branches: [], terminated: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
         onProposal: (p) => seen.proposals.push(p),
         onStream: (s) => seen.streams.push(s),
         onNotice: (notice) => seen.notices.push(notice),
+        onBranchBatch: (event) => seen.branches.push(event),
         onTerminated: (t) => seen.terminated.push(t),
     };
     return { h, seen };
@@ -46,6 +47,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "PLAN" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.branch_batch", value: { batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
@@ -57,6 +59,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         const t = await bt.run("largest planet?", { alias: "opus" }).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
         assert.equal((seen.notices[0] as { source: string }).source, "grammar");
+        assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "the workspace (world) + options + per-run knobs ride the first run's forwardedProps");

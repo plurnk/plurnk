@@ -481,6 +481,13 @@ percent, and `exec:*/search_progress` does the same with search-acquisition
 percent. Their terminal phase restores the real coordinate. The client does not
 append every tick, nor live-render durable `entry_materialized` narration.
 
+Serialized Git branch batches arrive separately as `CUSTOM
+plurnk.branch_batch`, preserving the daemon's full lifecycle payload. Queued and
+running transitions replace the prompt actor with 🌿 and show aggregate
+completion in the coordinate slot. Completion and failure clear that state and
+append one summary; `recovery_required` remains visible and appends one
+operator-facing error. Per-child progress never becomes waterfall spam.
+
 Client `daemon_stale` and `edits_blocked` observations are also Notices because
 they advise without terminating an operation. Client failures are Problems.
 

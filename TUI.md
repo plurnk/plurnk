@@ -23,7 +23,9 @@ client.
 The waterfall is intentionally compact: a logical coordinate, actor, operation,
 status, and target identify each row. Model broadcasts render as full response
 blocks rather than diagnostic rows. Indexing and search progress update the
-active prompt instead of appending an event for every milestone.
+active prompt instead of appending an event for every milestone. Serialized
+branch batches use the same compact treatment: 🌿 plus aggregate progress while
+active, followed by one completion, failure, or recovery line.
 
 The renderer uses width-stable glyphs and respects `NO_COLOR`. Avoid glyphs
 whose variation selectors produce inconsistent terminal widths. Rendering

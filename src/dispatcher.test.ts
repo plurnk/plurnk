@@ -110,14 +110,13 @@ test("resolveProjectRoot: bare name → throws", () => {
 
 // ─── buildConstraints (membership overlay, svc#200) ──────────────────
 
-test("[§cli-membership-overlay-and-workspace-open-settings] buildConstraints: maps --pick/--hide/--view/--repo to service effects in order", () => {
-    const c = buildConstraints({ pick: ["docs/**"], hide: ["*.lock"], view: ["vendor/**", "gen/**"], repo: ["packages/api"] });
+test("[§cli-membership-overlay-and-workspace-open-settings] buildConstraints: maps --pick/--hide/--view to service effects in order", () => {
+    const c = buildConstraints({ pick: ["docs/**"], hide: ["*.lock"], view: ["vendor/**", "gen/**"] });
     assert.deepEqual(c, [
         { effect: "pick", glob: "docs/**" },
         { effect: "hide", glob: "*.lock" },
         { effect: "view", glob: "vendor/**" },
         { effect: "view", glob: "gen/**" },
-        { effect: "repo", glob: "packages/api" },
     ]);
 });
 

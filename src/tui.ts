@@ -26,7 +26,7 @@ import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
-import { BridgeTransport, RunAckError, type Transport } from "./transport.ts";
+import { BridgeTransport, RunAckError, type BranchBatchEvent, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
@@ -50,7 +50,7 @@ interface WorkspaceResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "workspaces", "workers", "log", "model",
     "yolo", "workspace", "rename", "worker", "stop", "quit",
-    "pick", "hide", "view", "repo", "drop", "members", "import", "script",
+    "pick", "hide", "view", "drop", "members", "import", "script",
     "auth", "accept", "reject", "cancel", "edit",
 ] as const;
 
@@ -64,8 +64,7 @@ export const TUI_HELP = [
     "  /pick <glob>                       membership: track file(s) in manifest",
     "  /hide <glob>                       membership: block file(s) from manifest",
     "  /view <glob>                       membership: track file(s) in manifest (read-only)",
-    "  /repo <glob>                       membership: track a git repo folder",
-    "  /drop <glob>                       membership: remove tracking rules for file(s), remove git tracking for folder",
+    "  /drop <glob>                       membership: remove a matching rule",
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /script <path>                     run a .plk file (its DSL → op.parse)",
@@ -302,9 +301,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "pick":
         case "hide":
-        case "view":
-        case "repo": {
-            // Membership overlay (svc#200/#242) — service vocabulary, live via
+        case "view": {
+            // Membership overlay — service vocabulary, live via
             // workspace.constrain (workspace-scoped, re-resolved immediately).
             if (rest.length === 0) { write(`  usage: /${verb} <glob>\n`); return; }
             await rpc.call("workspace.constrain", { effect: verb, glob: rest });
@@ -332,7 +330,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             const editable = members.filter((m) => m.effect === "member");
             const view = members.filter((m) => m.effect === "view");
             if (members.length === 0 && hidden.length === 0) {
-                write("  the model's universe is empty — no members (/pick a file or /repo a folder)\n");
+                write("  the model's universe is empty — no Git members or /pick rules\n");
             } else {
                 write(`  the model's universe: ${members.length} file${members.length === 1 ? "" : "s"}`
                     + ` — ${editable.length} editable, ${view.length} read-only`
@@ -417,6 +415,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let embeddingPercent: number | null = null;
     let searchFetching = false;
     let searchPercent: number | null = null;
+    let branchBatch: BranchBatchEvent | null = null;
     let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
     // <<LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
@@ -505,11 +504,23 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // TWO lanes exactly, same as every waterfall row (identity · status), so the
         // prompt sits flush in the ladder. All glyphs are same-width palette members;
         // swapping in place keeps the columns and the readline cursor stable.
-        const busy = inFlight || embedding || searchFetching;
-        const origin = embedding ? "🧮" : searchFetching ? "🔎" : "🐹";
-        const status = busy ? (inFlight && hibernating ? "💤" : "⏳") : "  ";
+        const busy = inFlight || embedding || searchFetching || branchBatch !== null;
+        const origin = embedding ? "🧮" : searchFetching ? "🔎" : branchBatch !== null ? "🌿" : "🐹";
+        const status = branchBatch?.state === "recovery_required"
+            ? "❌"
+            : busy ? (inFlight && hibernating && branchBatch === null ? "💤" : "⏳") : "  ";
         const yolo = opts.yolo ? "🔥" : "  ";
-        const activePercent = embedding ? embeddingPercent : searchFetching ? searchPercent : null;
+        const branchCompleted = Number(branchBatch?.completed);
+        const branchTotal = Number(branchBatch?.total);
+        const branchPercent = branchBatch !== null
+            && Number.isFinite(branchCompleted)
+            && Number.isFinite(branchTotal)
+            && branchTotal > 0
+            ? Math.floor((branchCompleted / branchTotal) * 100)
+            : null;
+        const activePercent = embedding ? embeddingPercent
+            : searchFetching ? searchPercent
+            : branchPercent;
         const position = activePercent !== null
             ? progressLabel(activePercent)
             : coordLabel(lastLoopSeq + 1, 1, 1);
@@ -712,6 +723,25 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
         printAbove(renderDiagnostic(notice));
     };
+    const handleBranchBatch = (event: BranchBatchEvent): void => {
+        let rendered = false;
+        if (event.state === "completed") {
+            branchBatch = null;
+            printAbove(`  🌿 branch batch ${event.batchId} complete (${event.completed ?? event.total ?? 0}/${event.total ?? event.completed ?? 0})`);
+            rendered = true;
+        } else if (event.state === "failed") {
+            branchBatch = null;
+            printAbove(`  \x1b[31m❌ branch batch ${event.batchId} failed: ${event.problem?.detail ?? "branch preflight failed"}\x1b[0m`);
+            rendered = true;
+        } else {
+            branchBatch = event;
+            if (event.state === "recovery_required") {
+                printAbove(`  \x1b[31m❌ branch batch ${event.batchId} requires recovery: ${event.problem?.detail ?? "inspect the workspace Git state"}\x1b[0m`);
+                rendered = true;
+            }
+        }
+        if (!rendered) repromptPreserving();
+    };
 
     transport.subscribe({
         onEntry: (entry) => {
@@ -728,6 +758,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             printAbove(renderLogEntry(entry));
         },
         onNotice: handleNotice,
+        onBranchBatch: handleBranchBatch,
         onStream: (payload) => {
             // One channel for the lifecycle: concluded carries closeStatus, a start
             // event carries state. One start line, one conclusion line, tiny outputs inlined.
@@ -774,7 +805,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Startup warming begins while AG-UI is still establishing the workspace, before a
     // request-scoped SSE exists. Poll the engine's latest structured state until terminal;
-    // later /repo actions stay on their own SSE until warming completes and stream live events.
+    // Later membership actions stay on their own SSE while warming streams live events.
     let lastDerivationState = "";
     let derivationPoll: ReturnType<typeof setInterval> | null = null;
     const pollDerivation = async (): Promise<void> => {

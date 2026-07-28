@@ -202,7 +202,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
 
 // ─── membership verbs (svc#200) ──────────────────────────────────────
 
-for (const verb of ["pick", "hide", "view", "repo"] as const) {
+for (const verb of ["pick", "hide", "view"] as const) {
     test(`handleVerb /${verb} → workspace.constrain {effect:${verb}, glob}`, async () => {
         const ctx = makeCtx();
         await handleVerb(`/${verb} src/**`, ctx);

@@ -199,12 +199,12 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
             yolo: true,
             json: true,
             projectRoot: "/repo",
-            constraints: [{ effect: "repo", glob: "**" }],
+            constraints: [{ effect: "pick", glob: "docs/**" }],
             settings: { autoReadAgents: false },
         });
         const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
         assert.equal(fp.projectRoot, "/repo", "the project root reaches the wire");
-        assert.deepEqual(fp.constraints, [{ effect: "repo", glob: "**" }], "the repository forest reaches the wire");
+        assert.deepEqual(fp.constraints, [{ effect: "pick", glob: "docs/**" }], "membership constraints reach the wire");
         assert.deepEqual(fp.settings, { autoReadAgents: false }, "workspace settings reach the wire");
         assert.equal(fp.alias, "fireslow", "the alias reaches the wire");
         assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");

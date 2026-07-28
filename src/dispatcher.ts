@@ -184,8 +184,6 @@ options:
                           source when headless). Repeatable.
       --hide <glob>       membership: block file(s) from manifest. Repeatable.
       --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
-      --repo <glob>       membership: track a git repo folder (its ls-files join
-                          the manifest), relative to project root. Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (FIND(file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
@@ -256,18 +254,15 @@ interface WorkspaceResult { id: number; name: string }
 // A membership-overlay constraint (svc#200), service vocabulary: `pick` admits
 // a file git misses (the sole source when headless), `hide` drops a tracked
 // match, `view` admits a member read-only.
-export interface Constraint { effect: "pick" | "hide" | "view" | "repo"; glob: string }
+export interface Constraint { effect: "pick" | "hide" | "view"; glob: string }
 
-// Map the repeatable membership flags (--pick/--hide/--view/--repo) to
-// constraints. repo (svc#242) declares a git repo folder (its ls-files join
-// membership), addressed relative to the project root.
+// Map repeatable membership flags to workspace constraints.
 export const buildConstraints = (values: {
-    pick?: string[]; hide?: string[]; view?: string[]; repo?: string[];
+    pick?: string[]; hide?: string[]; view?: string[];
 }): Constraint[] => [
     ...(values.pick ?? []).map((glob): Constraint => ({ effect: "pick", glob })),
     ...(values.hide ?? []).map((glob): Constraint => ({ effect: "hide", glob })),
     ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
-    ...(values.repo ?? []).map((glob): Constraint => ({ effect: "repo", glob })),
 ];
 
 // Workspace-open settings. Open-context (svc#231/#286): filesItems REPLACES
@@ -505,11 +500,10 @@ export const main = async (argv: string[]): Promise<void> => {
             questions: { type: "boolean" },   // --questions: allow the model to ask via SEND[300]
             "max-turns": { type: "string" },
             timeout: { type: "string" },
-            // membership overlay (svc#200/#242) — repeatable globs; service vocabulary
+            // membership overlay — repeatable globs; service vocabulary
             pick: { type: "string", multiple: true },
             hide: { type: "string", multiple: true },
             view: { type: "string", multiple: true },
-            repo: { type: "string", multiple: true },
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
             md: { type: "string", multiple: true },
@@ -614,7 +608,7 @@ export const main = async (argv: string[]): Promise<void> => {
     let workspaceOptionsPromise: Promise<{ constraints: Constraint[]; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ constraints: Constraint[]; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
-            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[]; repo?: string[] }),
+            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
         }))();
         return workspaceOptionsPromise;
@@ -675,7 +669,7 @@ export const main = async (argv: string[]): Promise<void> => {
         const threadId = workerName ?? w;
         const { constraints, settings } = await workspaceOptions();
         // Workspace options ride the thread's first run (forwardedProps.plurnk): the
-        // same constraints (--pick/hide/view/repo) + settings every AG-UI+ run sends on
+        // Same constraints (--pick/hide/view) + settings every AG-UI+ run sends on
         // workspace.create, so a bridge TUI is configured identically. (When the world
         // was daemon-minted above, it was created WITH these already; a re-send on the
         // first run is idempotent — the workspace exists, options apply at creation only.)

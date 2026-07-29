@@ -21,7 +21,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.0042, contextTokens: 10, promptBudget: 6848, meta: {} }, ...over } });
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.0042, contextTokens: 10, promptBudget: 6848, meta: {} }, result: { status: 200 }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
@@ -50,7 +50,7 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
         terminalSend("Jupiter is the largest planet."),
         // The real wire ALWAYS emits terminated before RUN_FINISHED; a stream without
         // it is a dead stream (502, svc#478) — the fixture matches the protocol.
-        { type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 1, loopId: 1, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } },
+        { type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 1, loopId: 1, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } },
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" },
     ]), io);
     assert.equal(exitCode, 0);
@@ -58,19 +58,60 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
     assert.ok(err.length >= 2, "every row traced to stderr");
 });
 
-test("consumeCliRun: RUN_ERROR carries the finalStatus into the exit code + a maxTurns read", async () => {
+test("consumeCliRun: RUN_ERROR without the exact Problem is a transport contract failure", async () => {
     const { io, err } = sink();
-    const { exitCode } = await consumeCliRun(stream([
+    const result = await consumeCliRun(stream([
         { type: EventType.RUN_ERROR, message: "loop terminated 429 (maxTurns)", code: "429" },
     ]), io);
-    assert.equal(exitCode, 2, "maxTurns → exit 2");
-    assert.match(err.join(""), /loop terminated 429/);
+    assert.equal(result.exitCode, 4);
+    assert.equal(result.problem?.type, "https://problems.plurnk.dev/client/transport/problem-missing");
+    assert.match(err.join(""), /required Problem Details/);
+    assert.doesNotMatch(err.join(""), /maxTurns/, "the client does not reconstruct failure truth from lossy RUN_ERROR fields");
+});
+
+test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERROR cannot encode", async () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/engine/generation/invalid-emission-exhausted",
+        title: "Invalid emission exhausted",
+        status: 500,
+        detail: "The model did not emit a valid turn in three attempts.",
+        attempts: 3,
+        recovery: "Use a model that can emit the required turn structure.",
+        retryable: false,
+    };
+    const { io } = sink({ json: true });
+    const result = await consumeCliRun(stream([
+        { type: EventType.CUSTOM, name: "plurnk.problem", value: problem },
+        { type: EventType.RUN_ERROR, message: problem.detail, code: problem.type },
+    ]), io);
+    assert.equal(result.exitCode, 4);
+    assert.deepEqual(result.problem, problem);
 });
 
 test("[§cli-one-shot-flow] consumeCliRun: a proposal tool-call is reviewed; the decision rides pendingResume", async () => {
     const { io } = sink({ review: async () => ({ decision: "accept", body: "edited" }) });
     const r = await consumeCliRun(stream(proposalCall(9)), io);
     assert.deepEqual(r.pendingResume, { logEntryId: 9, decision: "accept", body: "edited" }, "the resume tool-result carries the reviewed decision");
+});
+
+test("consumeCliRun: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
+    const { io } = sink({ json: true });
+    const events = proposalCall(9).slice(0, -1);
+    const result = await consumeCliRun(stream(events), io);
+    assert.equal(result.pendingResume, null);
+    assert.equal(result.problem?.type, "https://problems.plurnk.dev/client/transport/interrupt-mismatch");
+    assert.equal(result.problem?.logEntryId, 9);
+});
+
+test("consumeCliRun: malformed proposal arguments return an exact Problem", async () => {
+    const { io } = sink({ json: true });
+    const result = await consumeCliRun(stream([
+        { type: EventType.TOOL_CALL_START, toolCallId: "prop:12", toolCallName: "request_approval" },
+        { type: EventType.TOOL_CALL_ARGS, toolCallId: "prop:12", delta: "{" },
+        { type: EventType.TOOL_CALL_END, toolCallId: "prop:12" },
+    ]), io);
+    assert.equal(result.problem?.type, "https://problems.plurnk.dev/client/transport/proposal-invalid");
+    assert.equal(result.problem?.logEntryId, 12);
 });
 
 test("[§cli-yolo-plurnkyolo] consumeCliRun: yolo auto-accepts a proposal without review", async () => {
@@ -99,6 +140,7 @@ test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice 
     await consumeCliRun(stream([
         { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "1", delta: "ignored-generic" },
         { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine", kind: "note", level: "info" } },
+        terminated(),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(notices.length, 1, "Notice captured");
@@ -128,7 +170,18 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
 test("consumeCliRun: plurnk.terminated is authoritative for the exit code", async () => {
     const { io } = sink();
     const { exitCode } = await consumeCliRun(stream([
-        terminated({ finalStatus: 499, turnIds: [] }),
+        terminated({
+            turnIds: [],
+            result: {
+                status: 499,
+                problem: {
+                    type: "https://problems.plurnk.dev/lifecycle/cancel/loop-cancelled",
+                    title: "Loop cancelled",
+                    status: 499,
+                    detail: "The loop was cancelled.",
+                },
+            },
+        }),
     ]), io);
     assert.equal(exitCode, 3, "499 cancel → exit 3 (exitCodeForLoop)");
 });

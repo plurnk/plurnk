@@ -17,9 +17,12 @@ const {
     clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
     clientSubcommandMissingArgument,
+    clientSubcommandCoordinateInvalid,
+    clientSubcommandEntryNotFound,
     clientProposalEditsBlocked,
     clientRuntimeError,
     clientRpcError,
+    clientTransportTerminalMissing,
 } = await import("./diagnostics.ts");
 
 test("[§cli-notice-rendering] renderDiagnostic renders a minimal Notice discriminator", () => {
@@ -86,6 +89,15 @@ test("renderDiagnostic colors Problems red", async () => {
     assert.doesNotMatch(out, /\x1b\[2m"failed"/);
 });
 
+test("renderDiagnostic renders a Problem's producer-owned recovery once", () => {
+    const out = renderDiagnostic({
+        ...clientRuntimeError("The request failed."),
+        recovery: "Retry after restoring the connection.",
+    });
+    assert.match(out, /"The request failed\."/);
+    assert.match(out, /^     Retry after restoring the connection\.$/m);
+});
+
 test("renderDiagnostic uses producer-owned Notice severity", async () => {
     process.env.NO_COLOR = "0";
     const module = await freshDiagnostics("notice-colors");
@@ -122,6 +134,18 @@ test("ProblemError exit code can be overridden", () => {
     assert.equal(error.exitCode, 1);
 });
 
+test("ProblemError rejects a typed but invalid Problem at the control-flow boundary", () => {
+    assert.throws(
+        () => new ProblemError({
+            type: "relative",
+            title: "",
+            status: 200,
+            detail: "",
+        }),
+        /invalid RFC 9457 Problem Details/,
+    );
+});
+
 test("[§cli-connection-onboarding] isUnreachable only classifies connection-level failures", () => {
     const refused = new TypeError("fetch failed");
     (refused as { cause?: unknown }).cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3044"), { code: "ECONNREFUSED" });
@@ -153,7 +177,7 @@ test("clientFlagInvalid preserves actionable extensions on its Problem", () => {
 
 test("clientFlagMissingDependency names both flags", () => {
     const problem = clientFlagMissingDependency("--worker", "--workspace");
-    assert.equal(problem.kind, "missing_dependency");
+    assert.equal(problem.kind, "missing-dependency");
     assert.match(problem.detail, /--worker requires --workspace/);
 });
 
@@ -171,10 +195,17 @@ test("workspace lookup Problems carry their structured facts", () => {
 test("[§cli-subcommands] subcommand Problems preserve recovery facts", () => {
     const unknown = clientSubcommandUnknownVerb("workspace foo", ["list", "workers"]);
     const missing = clientSubcommandMissingArgument("plurnk workspace workers", "<name>");
+    const coordinate = clientSubcommandCoordinateInvalid("bad");
+    const entry = clientSubcommandEntryNotFound("3/1/2", 9);
     assert.match(unknown.detail, /Available: list, workers/);
     assert.deepEqual(unknown.available, ["list", "workers"]);
     assert.equal(missing.path, "plurnk workspace workers");
     assert.equal(missing.argument, "<name>");
+    assert.equal(coordinate.coordinate, "bad");
+    assert.match(coordinate.recovery as string, /<loop>\/<turn>\/<sequence>/);
+    assert.equal(entry.coordinate, "3/1/2");
+    assert.equal(entry.workerId, 9);
+    assert.match(entry.recovery as string, /worker/);
 });
 
 test("clientProposalEditsBlocked remains a transient Notice", () => {
@@ -197,4 +228,10 @@ test("RPC, runtime, and connection failures are Problems", () => {
     assert.equal(runtime.detail, "a string");
     assert.equal(closed.status, 502);
     assert.match(closed.detail, /connection closed/);
+});
+
+test("a missing terminal cannot recommend replaying a possibly completed run", () => {
+    const problem = clientTransportTerminalMissing();
+    assert.equal(problem.status, 502);
+    assert.equal(problem.retryable, false);
 });

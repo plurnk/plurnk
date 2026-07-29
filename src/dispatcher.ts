@@ -29,6 +29,7 @@ import {
     clientSubcommandWorkspaceNotFound,
     clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
+    clientWorkerNotFound,
 } from "./diagnostics.ts";
 import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
@@ -149,7 +150,7 @@ options:
       --json              json OUTPUT MODE: one complete structured document on
                           stdout (the whole client-observed record — turns/ops,
                           notices, the answer at .response, usage), stderr
-                          silent, Problems emitted as {"error":…}. Drill into one
+                          silent, Problems emitted under "problem". Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
@@ -376,7 +377,7 @@ export const resolveWorkerId = async (rpc: Caller, workerName: string | undefine
     if (workerName === undefined) return undefined;
     const { workers } = await rpc.call("workspace.workers") as { workers: Array<{ id: number; name: string }> };
     const hit = workers.find((r) => r.name === workerName);
-    if (hit === undefined) throw new Error(`--worker ${workerName}: no such worker in the workspace`);
+    if (hit === undefined) throw new ProblemError(clientWorkerNotFound(workerName));
     return hit.id;
 };
 
@@ -550,7 +551,7 @@ export const main = async (argv: string[]): Promise<void> => {
             : positionalPrompt || stdinPrompt;
         if (json && prompt.length === 0) {
             if (values.json === true) {
-                dieJson(64, clientProblem("usage", "prompt_required", 400, "--json needs a prompt (CLI mode only)", { flag: "--json" }));
+                dieJson(64, clientProblem("usage", "prompt-required", 400, "--json needs a prompt (CLI mode only)", { flag: "--json" }));
             }
             // PLURNK_CLIENT_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
         }
@@ -647,6 +648,10 @@ export const main = async (argv: string[]): Promise<void> => {
             // a bridge that ANSWERED with an error surfaces its real cause — claiming
             // "no daemon running" over a 500 would lie. json mode still emits ONE
             // valid document on stdout either way.
+            if (cause instanceof ProblemError) {
+                if (json) dieJson(cause.exitCode, cause.problem);
+                dieWith(cause.exitCode, cause.problem);
+            }
             const detail = cause instanceof Error ? cause.message : String(cause);
             if (json) {
                 const problem = isUnreachable(cause)

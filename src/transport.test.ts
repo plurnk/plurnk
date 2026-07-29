@@ -6,14 +6,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { BridgeTransport, type RunHandlers } from "./transport.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], notices: [], branches: [], terminated: [] };
+    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], notices: [], problems: [], branches: [], terminated: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
         onProposal: (p) => seen.proposals.push(p),
         onStream: (s) => seen.streams.push(s),
         onNotice: (notice) => seen.notices.push(notice),
+        onProblem: (problem) => seen.problems.push(problem),
         onBranchBatch: (event) => seen.branches.push(event),
         onTerminated: (t) => seen.terminated.push(t),
     };
@@ -48,7 +50,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.branch_batch", value: { batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
@@ -63,6 +65,105 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "the workspace (world) + options + per-run knobs ride the first run's forwardedProps");
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport: plurnk.problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/engine/rails/max-turns",
+        title: "Max turns",
+        status: 429,
+        detail: "The configured turn ceiling is exhausted.",
+        maximumTurns: 8,
+        retryable: false,
+    };
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.problem", value: problem }));
+        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h, seen } = collectingHandlers();
+        bt.subscribe(h);
+        const result = await bt.run("go", {}).done;
+        assert.equal(result.finalStatus, 429);
+        assert.deepEqual(seen.problems, [problem]);
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport: RUN_ERROR without the exact Problem returns a client contract Problem", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "RUN_ERROR", message: "loop terminated 429", code: "429" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h } = collectingHandlers();
+        bt.subscribe(h);
+        const result = await bt.run("go", {}).done;
+        assert.equal(result.finalStatus, 502);
+        assert.equal(result.result.problem?.type, "https://problems.plurnk.dev/client/transport/problem-missing");
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth", async () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/lifecycle/cancel/loop-cancelled",
+        title: "Loop cancelled",
+        status: 499,
+        detail: "The loop was cancelled.",
+        retryable: false,
+    };
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({
+            type: "CUSTOM",
+            name: "plurnk.terminated",
+            value: {
+                workspaceId: 7,
+                loopId: 3,
+                hitMaxTurns: false,
+                turnIds: [1],
+                result: { status: problem.status, problem },
+            },
+        }));
+        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h, seen } = collectingHandlers();
+        bt.subscribe(h);
+        const result = await bt.run("go", {}).done;
+        assert.equal(result.finalStatus, 499);
+        assert.deepEqual(result.result, { status: 499, problem });
+        assert.deepEqual(seen.problems, [problem]);
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport.rpc: an action failure throws its exact Problem", async () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/agui/action/unknown-action",
+        title: "Unknown action",
+        status: 404,
+        detail: "Unknown action 'missing'.",
+        retryable: false,
+    };
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "missing", ok: false, problem } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        await assert.rejects(
+            () => bt.rpc("missing"),
+            (error: unknown) => error instanceof ProblemError && error.problem.type === problem.type,
+        );
     } finally { await mock.close(); }
 });
 
@@ -100,7 +201,7 @@ test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done res
 });
 
 test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new workspace", async () => {
-    const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
+    const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "old");
         const s = await bt.useSession("new-thread", {});
@@ -122,7 +223,7 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
             res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:42", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
         }
         res.end();
@@ -144,6 +245,43 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
     } finally { await mock.close(); }
 });
 
+test("BridgeTransport: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
+        res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EDIT", target: {}, body: "diff" }) }));
+        res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h, seen } = collectingHandlers();
+        bt.subscribe(h);
+        const result = await bt.run("edit it", {}).done;
+        assert.equal(result.finalStatus, 502);
+        assert.equal(result.result.problem?.type, "https://problems.plurnk.dev/client/transport/interrupt-mismatch");
+        assert.deepEqual(seen.problems, [result.result.problem]);
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport: malformed proposal arguments return an exact Problem", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
+        res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: "{" }));
+        res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h, seen } = collectingHandlers();
+        bt.subscribe(h);
+        const result = await bt.run("edit it", {}).done;
+        assert.equal(result.result.problem?.type, "https://problems.plurnk.dev/client/transport/proposal-invalid");
+        assert.deepEqual(seen.problems, [result.result.problem]);
+    } finally { await mock.close(); }
+});
+
 test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronously from onProposal", async () => {
     let call = 0;
     const mock = await bootMock((_req, res) => {
@@ -155,7 +293,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:575" }));
             res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:575", reason: "tool_call", toolCallId: "prop:575" }] } }));
         } else {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [2] } }));
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
         }
         res.end();
@@ -223,7 +361,7 @@ test("[§cli-model-selection] THE MODEL RIDES EVERY LOOP — not just the first 
     // alias" contract, verified deterministically at the choke point.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });

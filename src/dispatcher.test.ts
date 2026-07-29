@@ -219,5 +219,10 @@ test("[§cli-workspaces-and-workers] resolveWorkerId: a named run resolves to it
 
 test("[§cli-workspaces-and-workers] resolveWorkerId: an unknown run name THROWS — no silent fallback to the model run", async () => {
     const rpc = { call: async () => ({ workers: [{ id: 10, name: "client-1" }] }) };
-    await assert.rejects(() => resolveWorkerId(rpc, "ghost"), /--worker ghost: no such worker in the workspace/);
+    await assert.rejects(
+        () => resolveWorkerId(rpc, "ghost"),
+        (error: unknown) => error instanceof Error
+            && "problem" in error
+            && (error as { problem: { type?: unknown } }).problem.type === "https://problems.plurnk.dev/client/worker/not-found",
+    );
 });

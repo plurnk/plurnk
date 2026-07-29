@@ -148,7 +148,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** — ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop — `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `notices`, `usage`, exit metadata. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":2, "error": ProblemDetails}` — valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `notices`, `usage`, exit metadata. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":3, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -424,6 +424,13 @@ envelope:
   subcommand, RPC, and runtime failures use `{type, title, status, detail}` plus
   useful extensions. Daemon operation failures remain durable log results; the
   client does not recreate them as push events.
+- Incoming Problems remain exact. The client accepts them from
+  `application/problem+json`, `CUSTOM plurnk.problem`, failed
+  `plurnk.action.result` events, and `plurnk.terminated.result.problem`.
+  `plurnk.terminated.result` is the terminal wire truth; the client's
+  `finalStatus` JSON field is its projection of `result.status`, not a daemon
+  field. `RUN_ERROR` is the standard terminal signal, not a source from which
+  to reconstruct a Problem.
 - A Notice is a transient, nonterminal observation. It may describe progress or
   a non-fatal degradation, but it cannot determine success, failure, scheduling,
   recovery, or exit status.
@@ -452,8 +459,8 @@ through async control flow together with its process exit code. Unstructured
 throws become `client/runtime/error` Problems.
 
 In JSON output, a failure is
-`{"schemaVersion":2,"error":<ProblemDetails>}`. Text mode renders the same
-Problem to stderr. A bridge that answered with a failure surfaces that failure;
+`{"schemaVersion":3,"problem":<ProblemDetails>}`. Text mode renders the same
+Problem's title, detail, and optional recovery to stderr. A bridge that answered with a failure surfaces that failure;
 only connection-level failures receive the “no daemon” onboarding hints.
 {§cli-connection-onboarding}
 

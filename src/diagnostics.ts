@@ -6,6 +6,13 @@
 // They share a renderer, not a semantic envelope. Per SPEC.md §8.
 
 import process from "node:process";
+import {
+    Problems,
+    Validator,
+    type ProblemDetails,
+} from "@plurnk/plurnk-contracts";
+
+export type { ProblemDetails } from "@plurnk/plurnk-contracts";
 
 export interface ContentOffset {
     type: "content-offset";
@@ -20,15 +27,6 @@ export interface LogCoordinate {
 }
 
 export type Position = ContentOffset | LogCoordinate;
-
-export interface ProblemDetails {
-    type: string;
-    title: string;
-    status: number;
-    detail: string;
-    instance?: string;
-    [key: string]: unknown;
-}
 
 export interface Notice {
     source: string;
@@ -47,8 +45,9 @@ export class ProblemError extends Error {
     readonly exitCode: number;
 
     constructor(problem: ProblemDetails, exitCode: number = 64) {
-        super(problem.detail);
-        this.problem = problem;
+        const exact = Validator.assertProblemDetails(problem);
+        super(exact.detail);
+        this.problem = exact;
         this.exitCode = exitCode;
         this.name = "ProblemError";
     }
@@ -132,10 +131,17 @@ const renderHints = (diagnostic: Diagnostic): string => {
         .join("\n");
 };
 
+const renderRecovery = (diagnostic: Diagnostic): string => {
+    if (!isProblem(diagnostic) || typeof diagnostic.recovery !== "string") return "";
+    return `     ${DIM}${diagnostic.recovery}${RESET}`;
+};
+
 export const renderDiagnostic = (diagnostic: Diagnostic): string => {
     const parts = [renderHeadline(diagnostic)];
     const snippet = renderSnippet(diagnostic);
     if (snippet.length > 0) parts.push(snippet);
+    const recovery = renderRecovery(diagnostic);
+    if (recovery.length > 0) parts.push(recovery);
     const hints = renderHints(diagnostic);
     if (hints.length > 0) parts.push(hints);
     return parts.join("\n");
@@ -145,28 +151,23 @@ export const report = (diagnostic: Diagnostic): void => {
     process.stderr.write(`${renderDiagnostic(diagnostic)}\n`);
 };
 
-const titleFor = (kind: string): string =>
-    kind
-        .split(/[-_]/u)
-        .filter((part) => part.length > 0)
-        .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
-        .join(" ");
-
 export const clientProblem = (
     owner: string,
-    kind: string,
+    code: string,
     status: number,
     detail: string,
     extensions: Record<string, unknown> = {},
-): ProblemDetails => ({
-    type: `https://problems.plurnk.dev/client/${owner}/${kind.replaceAll("_", "-")}`,
-    title: titleFor(kind),
+): ProblemDetails => Problems.create(
+    `client:${owner}`,
+    code,
     status,
     detail,
-    source: `client:${owner}`,
-    kind,
-    ...extensions,
-});
+    {
+        source: `client:${owner}`,
+        kind: code,
+        ...extensions,
+    },
+);
 
 export const clientDaemonStale = (missing: string[]): Notice => ({
     source: "client:connection",
@@ -208,19 +209,92 @@ export const clientRuntimeError = (cause: unknown): ProblemDetails =>
 export const clientConnectionClosed = (cause: unknown): ProblemDetails =>
     clientProblem("connection", "closed", 502, cause instanceof Error ? cause.message : String(cause));
 
+export const clientTransportCancelled = (): ProblemDetails =>
+    clientProblem("transport", "cancelled", 499, "The client cancelled the active run.", {
+        stage: "transport",
+        retryable: false,
+    });
+
+export const clientTransportTerminalMissing = (): ProblemDetails =>
+    clientProblem("transport", "terminal-missing", 502, "The AG-UI stream ended before reporting the run outcome.", {
+        stage: "transport",
+        retryable: false,
+    });
+
+export const clientTransportProblemMissing = (): ProblemDetails =>
+    clientProblem("transport", "problem-missing", 502, "The AG-UI stream reported a failed run without its required Problem Details.", {
+        stage: "transport",
+        retryable: false,
+    });
+
+export const clientTransportProblemInvalid = (cause: unknown): ProblemDetails =>
+    clientProblem("transport", "problem-invalid", 502, "The AG-UI stream contained invalid Problem Details.", {
+        stage: "transport",
+        reason: cause instanceof Error ? cause.message : String(cause),
+        retryable: false,
+    });
+
+export const clientTransportResultInvalid = (cause: unknown): ProblemDetails =>
+    clientProblem("transport", "result-invalid", 502, "The AG-UI stream contained an invalid operation result.", {
+        stage: "transport",
+        reason: cause instanceof Error ? cause.message : String(cause),
+        retryable: false,
+    });
+
+export const clientTransportInterruptMismatch = (logEntryId: number): ProblemDetails =>
+    clientProblem("transport", "interrupt-mismatch", 502, `Proposal ${logEntryId} ended without its matching AG-UI interrupt outcome.`, {
+        stage: "proposal-resolution",
+        logEntryId,
+        retryable: false,
+    });
+
+export const clientTransportProposalInvalid = (logEntryId: number, cause: unknown): ProblemDetails =>
+    clientProblem("transport", "proposal-invalid", 502, `Proposal ${logEntryId} contained invalid JSON arguments.`, {
+        stage: "proposal-resolution",
+        logEntryId,
+        reason: cause instanceof Error ? cause.message : String(cause),
+        retryable: false,
+    });
+
+export const clientActionResultInvalid = (reason: string): ProblemDetails =>
+    clientProblem("action", "result-invalid", 502, "The AG-UI action result did not satisfy the Plurnk action-result contract.", {
+        stage: "action-result",
+        reason,
+        retryable: false,
+    });
+
+export const clientActionResultMissing = (kind: string): ProblemDetails =>
+    clientProblem("action", "result-missing", 502, `Action '${kind}' ended without a plurnk.action.result event.`, {
+        stage: "action-result",
+        action: kind,
+        retryable: false,
+    });
+
+export const clientWorkspaceNameMissing = (): ProblemDetails =>
+    clientProblem("workspace", "name-missing", 502, "workspace.create completed without a non-empty workspace name.", {
+        stage: "action-result",
+        retryable: false,
+    });
+
+export const clientWorkerNotFound = (name: string): ProblemDetails =>
+    clientProblem("worker", "not-found", 404, `No worker named ${JSON.stringify(name)} exists in the workspace.`, {
+        name,
+        retryable: false,
+    });
+
 export const clientFlagInvalid = (flag: string, value: string, reason: string): ProblemDetails =>
     clientProblem("flag", "invalid", 400, reason, { flag, value });
 
 export const clientFlagMissingDependency = (flag: string, requires: string): ProblemDetails =>
-    clientProblem("flag", "missing_dependency", 400, `${flag} requires ${requires}`, { flag, requires });
+    clientProblem("flag", "missing-dependency", 400, `${flag} requires ${requires}`, { flag, requires });
 
 export const clientSubcommandWorkspaceNotFound = (name: string): ProblemDetails =>
-    clientProblem("subcommand", "workspace_not_found", 404, `no workspace named ${JSON.stringify(name)}`, { name });
+    clientProblem("subcommand", "workspace-not-found", 404, `no workspace named ${JSON.stringify(name)}`, { name });
 
 export const clientSubcommandWorkspaceAmbiguous = (name: string, count: number): ProblemDetails =>
     clientProblem(
         "subcommand",
-        "workspace_ambiguous",
+        "workspace-ambiguous",
         409,
         `${count} workspaces named ${JSON.stringify(name)}; pick a unique name`,
         { name, count },
@@ -229,7 +303,7 @@ export const clientSubcommandWorkspaceAmbiguous = (name: string, count: number):
 export const clientSubcommandUnknownVerb = (path: string, available?: string[]): ProblemDetails =>
     clientProblem(
         "subcommand",
-        "unknown_verb",
+        "unknown-verb",
         400,
         available !== undefined && available.length > 0
             ? `unknown subcommand '${path}'. Available: ${available.join(", ")}`
@@ -238,7 +312,34 @@ export const clientSubcommandUnknownVerb = (path: string, available?: string[]):
     );
 
 export const clientSubcommandMissingArgument = (path: string, argument: string): ProblemDetails =>
-    clientProblem("subcommand", "missing_argument", 400, `${path}: missing ${argument}`, { path, argument });
+    clientProblem("subcommand", "missing-argument", 400, `${path}: missing ${argument}`, { path, argument });
+
+export const clientSubcommandCoordinateInvalid = (coordinate: string): ProblemDetails =>
+    clientProblem(
+        "subcommand",
+        "coordinate-invalid",
+        400,
+        `Log coordinate ${JSON.stringify(coordinate)} is not three non-negative integers in loop/turn/sequence order.`,
+        {
+            coordinate,
+            recovery: "Use <loop>/<turn>/<sequence>.",
+            retryable: false,
+        },
+    );
+
+export const clientSubcommandEntryNotFound = (coordinate: string, workerId?: number): ProblemDetails =>
+    clientProblem(
+        "subcommand",
+        "entry-not-found",
+        404,
+        `No log entry exists at coordinate ${coordinate} for the selected worker.`,
+        {
+            coordinate,
+            ...(workerId === undefined ? {} : { workerId }),
+            recovery: "Select the worker that owns the conversation or use an existing coordinate.",
+            retryable: false,
+        },
+    );
 
 export const clientProposalEditsBlocked = (): Notice => ({
     source: "client:proposal",

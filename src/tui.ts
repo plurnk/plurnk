@@ -26,14 +26,22 @@ import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
-import { BridgeTransport, RunAckError, type BranchBatchEvent, type Transport } from "./transport.ts";
+import { BridgeTransport, type BranchBatchEvent, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
-import { renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
+import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import { runOAuth } from "./auth.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
+
+export const renderTuiFailure = (cause: unknown): string => {
+    if (cause instanceof ProblemError) {
+        return renderDiagnostic(cause.problem)
+            + (cause.problem.status === 501 ? NO_MODEL_HINT : "");
+    }
+    return `  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`;
+};
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
 // the outcome on loop/terminated; a synchronous 501/error surfaces immediately)
@@ -658,7 +666,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             await transport.resolve({ logEntryId: p.logEntryId, ...resolution });
         } catch (cause) {
-            process.stdout.write(`  \x1b[31mresolve failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
+            process.stdout.write(`${renderTuiFailure(cause)}\n`);
         }
         showNextProposal();
         reprompt();
@@ -675,7 +683,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             resolution = (await keyToResolution("e", p)) ?? { decision: "cancel", outcome: "edit_failed" };
         } catch (cause) {
-            process.stdout.write(`  \x1b[31medit failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
+            process.stdout.write(`${renderTuiFailure(cause)}\n`);
             resolution = { decision: "cancel", outcome: "edit_error" };
         } finally {
             process.stdin.setRawMode?.(true);
@@ -758,6 +766,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             printAbove(renderLogEntry(entry));
         },
         onNotice: handleNotice,
+        onProblem: (problem) => printAbove(renderDiagnostic(problem)),
         onBranchBatch: handleBranchBatch,
         onStream: (payload) => {
             // One channel for the lifecycle: concluded carries closeStatus, a start
@@ -869,7 +878,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             try {
                 if (await handleVerb(verb, verbCtx) === "quit") { rl.close(); return; }
             } catch (cause) {
-                process.stdout.write(`  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m\n`);
+                process.stdout.write(`${renderTuiFailure(cause)}\n`);
             }
             reprompt();
         })();
@@ -918,8 +927,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 try {
                     if (await handleVerb(trimmed, verbCtx) === "quit") { rl.close(); return; }
                 } catch (cause) {
-                    const msg = cause instanceof Error ? cause.message : String(cause);
-                    process.stdout.write(`  \x1b[31merror: ${msg}\x1b[0m\n`);
+                    process.stdout.write(`${renderTuiFailure(cause)}\n`);
                 }
                 reprompt();
                 return;
@@ -981,8 +989,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
                     if (openPaths.length > 0) loopParams.openPaths = openPaths;
                     // The transport owns the ack→terminated bridge; done resolves
-                    // with the loop's outcome. A synchronous ACK failure surfaces as
-                    // RunAckError (caught below; 501 gets the .env pointer, #120).
+                    // with the loop's outcome. A pre-stream HTTP failure surfaces as
+                    // an exact ProblemError (caught below; 501 gets the .env pointer).
                     const t = await transport.run(promptText, loopParams).done;
                     finalStatus = t.finalStatus;
                     hitMaxTurns = t.hitMaxTurns;
@@ -992,10 +1000,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 const wallMs = Date.now() - start;
                 printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, usage?.promptBudget));
             } catch (cause) {
-                const msg = cause instanceof RunAckError && cause.status === 501
-                    ? cause.message + NO_MODEL_HINT
-                    : cause instanceof Error ? cause.message : String(cause);
-                printAbove(`  \x1b[31merror: ${msg}\x1b[0m`);
+                printAbove(renderTuiFailure(cause));
             } finally {
                 inFlight = false;
                 cancelRequested = false;

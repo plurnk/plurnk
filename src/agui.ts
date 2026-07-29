@@ -1,7 +1,5 @@
-// The Node consumer of the plurnk-agui bridge — the migration substrate for the
-// terminal clients (plurnk-agui#1: CLI first, then TUI). A migrated client stops
-// speaking raw WS to the daemon and instead POSTs a run to the bridge and
-// consumes the AG-UI SSE projection. This module is that transport, mirroring the
+// The Node consumer of the plurnk-agui bridge. Terminal clients POST a run to
+// the bridge and consume the AG-UI SSE projection. This module mirrors the
 // standard AG-UI HTTP/SSE transport: POST / for runs, including interrupt
 // resolution through RunAgentInput.resume.
 //
@@ -12,10 +10,71 @@
 
 import { HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
+import {
+    Validator,
+    type OperationResult,
+    type ProblemDetails,
+} from "@plurnk/plurnk-contracts";
+import {
+    clientActionResultInvalid,
+    clientActionResultMissing,
+    clientTransportProblemInvalid,
+    clientTransportResultInvalid,
+    clientWorkspaceNameMissing,
+    ProblemError,
+} from "./diagnostics.ts";
 
 export type AguiEvent = AGUIEvent;
 
 export interface BridgeTarget { bridgeUrl: string; token?: string }
+
+export type ActionOutcome<T = unknown> =
+    | { kind: string; ok: true; result?: T }
+    | { kind: string; ok: false; problem: ProblemDetails };
+
+export const problemDetails = (value: unknown): ProblemDetails => {
+    try {
+        return Validator.assertProblemDetails(value as ProblemDetails);
+    } catch (cause) {
+        throw new ProblemError(clientTransportProblemInvalid(cause));
+    }
+};
+
+export const operationResult = (value: unknown): OperationResult => {
+    try {
+        return Validator.assertOperationResult(value as OperationResult);
+    } catch (cause) {
+        throw new ProblemError(clientTransportResultInvalid(cause));
+    }
+};
+
+const problemFetch = async (url: string, requestInit: RequestInit): Promise<Response> => {
+    const response = await fetch(url, requestInit);
+    if (response.ok || response.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/problem+json") {
+        return response;
+    }
+    const problem = problemDetails(await response.clone().json());
+    throw new ProblemError(problem);
+};
+
+export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {
+    if (value === null || typeof value !== "object") {
+        throw new ProblemError(clientActionResultInvalid("The event value is not an object."));
+    }
+    const outcome = value as { kind?: unknown; ok?: unknown; result?: T; problem?: unknown };
+    if (typeof outcome.kind !== "string" || outcome.kind.length === 0) {
+        throw new ProblemError(clientActionResultInvalid("The event does not contain a non-empty kind."));
+    }
+    if (outcome.ok === true) return { kind: outcome.kind, ok: true, result: outcome.result };
+    if (outcome.ok === false) {
+        return {
+            kind: outcome.kind,
+            ok: false,
+            problem: problemDetails(outcome.problem),
+        };
+    }
+    throw new ProblemError(clientActionResultInvalid("The event does not contain a boolean ok."));
+};
 
 // Run one turn through the bridge, async-yielding each AG-UI event until the
 // bridge ends the stream (it does so after RUN_FINISHED / RUN_ERROR). Breaking
@@ -30,6 +89,7 @@ export async function* runViaBridge(
         ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
     const agent = new HttpAgent({
         url: new URL("/", target.bridgeUrl).href,
+        fetch: problemFetch,
         headers: target.token !== undefined && target.token.length > 0
             ? { authorization: `Bearer ${target.token}` }
             : {},
@@ -99,7 +159,9 @@ export const resolveWorld = async (
 ): Promise<string> => {
     if (workspaceName !== undefined) return workspaceName;
     const created = await actionViaBridge<{ name: string }>(target, { threadId: "bootstrap", kind: "workspace.create", params: createParams });
-    if (typeof created?.name !== "string" || created.name.length === 0) throw new Error("workspace.create returned no name — the daemon failed to mint a workspace");
+    if (typeof created?.name !== "string" || created.name.length === 0) {
+        throw new ProblemError(clientWorkspaceNameMissing());
+    }
     return created.name;
 };
 
@@ -112,10 +174,10 @@ export const actionViaBridge = async <T = unknown>(
 ): Promise<T> => {
     for await (const e of runViaBridge(target, { threadId: req.threadId, messages: [], forwardedProps: { action: { kind: req.kind, ...(req.params ?? {}) } } })) {
         if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
-            const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
-            if (!v.ok) throw new Error(`action ${req.kind} failed: ${v.error ?? "unknown"}`);
+            const v = actionOutcome<T>((e as { value?: unknown }).value);
+            if (!v.ok) throw new ProblemError(v.problem);
             return v.result as T;
         }
     }
-    throw new Error(`action ${req.kind}: the run ended without a plurnk.action.result`);
+    throw new ProblemError(clientActionResultMissing(req.kind));
 };

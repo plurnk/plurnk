@@ -13,36 +13,6 @@ import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts
 import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 
-// The assembled loop outcome — loopId/modelWorkerId from the loop.run ACK,
-// the rest from the loop/terminated event (svc 0.45.0+ split, see below).
-interface LoopRunResult {
-    loopId: number;
-    modelWorkerId?: number;   // the conversation's run (live on loop.run, svc 0.44.0)
-    turnIds: number[];
-    finalStatus: number;
-    hitMaxTurns: boolean;
-    reason?: string;
-    usage?: LoopUsage;
-}
-
-// loop.run is fire-and-forget (svc 0.45.0+): it ACKS {loopId, modelWorkerId,
-// finalStatus:100} and the loop drains async — the outcome rides loop/terminated.
-// `status`/`error` appear only on a synchronous failure (501 no provider, etc.).
-interface LoopAck {
-    loopId?: number;
-    modelWorkerId?: number;
-    finalStatus?: number;
-    status?: number;
-    error?: string;
-}
-interface LoopTerminated {
-    loopId: number;
-    turnIds: number[];
-    finalStatus: number;
-    hitMaxTurns: boolean;
-    usage?: LoopUsage;
-}
-
 interface WorkspaceResult { id: number; name: string }
 
 // Exit-code honesty (SPEC §4): a 4xx/5xx loop death is a FAILURE (4), not a
@@ -62,7 +32,7 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
 // answer, usage) — NOT op CONTENT: under co-location the consumer is on the
 // same filesystem and can `plurnk read L/T/S` any entry on demand, the same
 // OPEN/FOLD discipline the engine runs on. Bump on any breaking schema change.
-export const JSON_SCHEMA_VERSION = 2;
+export const JSON_SCHEMA_VERSION = 3;
 
 const entryTarget = (e: LogEntryWire): string | null => {
     if (e.pathname === null) return null;
@@ -99,7 +69,7 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
 export const buildJsonRecord = (input: {
     workspace: WorkspaceResult; prompt: string; response: string;
     entries: LogEntryWire[]; notices: Notice[];
-    result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage };
+    result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage; problem?: ProblemDetails };
     wallMs: number; timedOut: boolean;
 }): Record<string, unknown> => {
     const entries = input.result.modelWorkerId === undefined
@@ -125,6 +95,7 @@ export const buildJsonRecord = (input: {
         notices: input.notices,
     };
     if (input.result.reason !== undefined) doc.reason = input.result.reason;
+    if (input.result.problem !== undefined) doc.problem = input.result.problem;
     return doc;
 };
 
@@ -132,7 +103,7 @@ export const buildJsonRecord = (input: {
 // parser never chokes. Pairs with a non-zero exit code (both channels).
 export const buildJsonError = (problem: ProblemDetails): Record<string, unknown> => ({
     schemaVersion: JSON_SCHEMA_VERSION,
-    error: problem,
+    problem,
 });
 
 export const formatPlain = (entry: LogEntryWire): string => {

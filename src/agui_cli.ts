@@ -1,4 +1,4 @@
-// CLI one-shot through the plurnk-agui bridge (plurnk-agui#1, migration slice 2):
+// CLI one-shot through the plurnk-agui bridge:
 // text mode. The bridge owns the WS + workspace; we POST the run and render the
 // AG-UI SSE projection. A FAMILY client renders from CUSTOM plurnk.row (the full
 // wire row) for full fidelity — the generic AG-UI events (TEXT_MESSAGE/…) are for
@@ -12,10 +12,21 @@ import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } fr
 import { extractSendBody } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
-import { report } from "./diagnostics.ts";
+import {
+    ProblemError,
+    clientActionResultMissing,
+    clientTransportInterruptMismatch,
+    clientTransportProblemMissing,
+    clientTransportProposalInvalid,
+    clientTransportTerminalMissing,
+    renderDiagnostic,
+    report,
+} from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
+import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 
 type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
 
@@ -26,10 +37,10 @@ interface TerminatedValue {
     workspaceId: number | null;
     workerId: number;
     loopId: number;
-    finalStatus: number;
     hitMaxTurns: boolean;
     turnIds: number[];
     usage: { promptTokens: number; completionTokens: number; costUsd: number; contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
+    result: OperationResult;
 }
 
 export interface CliRunResult {
@@ -42,6 +53,7 @@ export interface CliRunResult {
     response: string;
     terminated: TerminatedValue | null;
     modelWorkerId: number | null;
+    problem: ProblemDetails | null;
 }
 
 export interface CliRunSinks {
@@ -52,7 +64,7 @@ export interface CliRunSinks {
     yolo: boolean;
     noReviewChannel: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
-    onActionResult?: (v: { kind: string; ok: boolean; result?: unknown; error?: string }) => void;
+    onActionResult?: (v: ActionOutcome) => void;
 }
 
 // Decide a stopped-world proposal: the AG-UI run ended
@@ -69,7 +81,7 @@ const decideProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<{ log
 // (stdout = answer, stderr = trace); json mode stays silent and accumulates the
 // full record (entries/notices/response/terminated/modelWorkerId) for the caller
 // to emit as ONE document. plurnk.terminated is the authoritative outcome (its
-// finalStatus/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
+// result.status/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live bridge.
 export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRunSinks): Promise<CliRunResult> => {
     let finalStatus = 200;
@@ -78,6 +90,10 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     let terminated: TerminatedValue | null = null;
     let modelWorkerId: number | null = null;
     let pendingResume: CliRunResult["pendingResume"] = null;
+    let problem: ProblemDetails | null = null;
+    let problemReported = false;
+    let sawRunError = false;
+    let sawActionResult = false;
     let toolId = "";
     let toolArgs = "";
     const interrupts = new Set<string>();
@@ -86,10 +102,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     const streams = new StreamTrace();
     for await (const e of events) {
         if (e.type === "RUN_ERROR") {
-            const code = Number((e as { code?: string }).code);
-            finalStatus = Number.isFinite(code) && code > 0 ? code : 500;
-            hitMaxTurns = /maxTurns/.test(String((e as { message?: string }).message ?? ""));
-            if (!io.json) io.err(`${String((e as { message?: string }).message ?? "")}\n`);
+            sawRunError = true;
             continue;
         }
         if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
@@ -102,8 +115,16 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
         if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) { toolArgs += String((e as { delta?: unknown }).delta ?? ""); continue; }
         if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
-            const a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
-            pendingResume = await decideProposal({ logEntryId: Number(toolId.slice(5)), ...a } as unknown as BridgeProposal, io);
+            const logEntryId = Number(toolId.slice(5));
+            let a: Record<string, unknown>;
+            try {
+                a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+            } catch (cause) {
+                problem = clientTransportProposalInvalid(logEntryId, cause);
+                finalStatus = problem.status;
+                continue;
+            }
+            pendingResume = await decideProposal({ logEntryId, ...a } as unknown as BridgeProposal, io);
             continue;
         }
         if (e.type !== "CUSTOM") continue;   // generic vocab is for third-party frontends
@@ -119,11 +140,25 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             io.err(`${formatPlain(entry)}\n`);
             if (isTerminalBroadcast(entry) && response.length > 0) io.out(`${response}\n`);
         } else if (name === "plurnk.terminated") {
-            terminated = value as TerminatedValue;
-            finalStatus = terminated.finalStatus;   // authoritative outcome
+            const raw = value as TerminatedValue;
+            terminated = { ...raw, result: operationResult(raw.result) };
+            finalStatus = terminated.result.status;
             hitMaxTurns = terminated.hitMaxTurns;
+            problem = terminated.result.problem ?? problem;
+            if (!io.json && terminated.result.problem !== undefined && !problemReported) {
+                io.err(`${renderDiagnostic(terminated.result.problem)}\n`);
+                problemReported = true;
+            }
         } else if (name === "plurnk.action.result") {
-            io.onActionResult?.(value as { kind: string; ok: boolean; result?: unknown; error?: string });
+            sawActionResult = true;
+            io.onActionResult?.(actionOutcome(value));
+        } else if (name === "plurnk.problem") {
+            problem = problemDetails(value);
+            finalStatus = problem.status;
+            if (!io.json) {
+                io.err(`${renderDiagnostic(problem)}\n`);
+                problemReported = true;
+            }
         } else if (name === "plurnk.notice") {
             if (io.json) notices.push(value as Notice); else io.notice(value as Notice);
         } else if (name === "plurnk.stream") {
@@ -141,14 +176,21 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         }
     }
     if (pendingResume !== null && !interrupts.has(`prop:${pendingResume.logEntryId}`)) {
+        problem = clientTransportInterruptMismatch(pendingResume.logEntryId);
         pendingResume = null;
-        finalStatus = 502;
+        finalStatus = problem.status;
     }
     // A stream that ended with NO terminal truth (no terminated, no RUN_ERROR, no
     // pending resume) is a DEAD stream — 502, never the initialized 200 (svc#478:
     // the fabricated-success default made a killed run exit 0 with an empty record).
-    if (terminated === null && pendingResume === null && finalStatus === 200) finalStatus = 502;
-    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, notices, response, terminated, modelWorkerId, pendingResume };
+    if (terminated === null && pendingResume === null && problem === null && !sawActionResult) {
+        problem = sawRunError ? clientTransportProblemMissing() : clientTransportTerminalMissing();
+        finalStatus = problem.status;
+    }
+    if (!io.json && problem !== null && !problemReported) {
+        io.err(`${renderDiagnostic(problem)}\n`);
+    }
+    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, notices, response, terminated, modelWorkerId, pendingResume, problem };
 };
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
@@ -220,9 +262,10 @@ export const runCliViaBridge = async (
                 modelWorkerId: t?.workerId ?? r.modelWorkerId ?? undefined,
                 turnIds: t?.turnIds ?? [],
                 // NEVER a fabricated 200: a stream that died without terminal truth is 502.
-                finalStatus: t?.finalStatus ?? 502,
+                finalStatus: t?.result.status ?? 502,
                 hitMaxTurns: t?.hitMaxTurns ?? false,
                 usage: t?.usage,
+                problem: t?.result?.problem ?? r.problem ?? undefined,
             },
             wallMs: Date.now() - started,
             timedOut,
@@ -252,6 +295,7 @@ export const runCliViaBridge = async (
                 notices: [...result.notices, ...seg.notices],
                 response: seg.response.length > 0 ? seg.response : result.response,
                 modelWorkerId: result.modelWorkerId ?? seg.modelWorkerId,
+                problem: seg.problem ?? result.problem,
             };
         }
     } finally {
@@ -280,7 +324,7 @@ export const runScriptViaBridge = async (
         review: reviewProposal,
         onActionResult: (v) => {
             if (v.kind !== "op.parse") return;
-            if (!v.ok) throw new Error(`op.parse failed: ${v.error ?? "unknown"}`);
+            if (!v.ok) throw new ProblemError(v.problem);
             parse = v.result as { results: Array<{ status: number }> };
         },
     };
@@ -300,7 +344,7 @@ export const runScriptViaBridge = async (
     }
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.
-    if (parse === null) throw new Error("script: the op.parse result never arrived — the run ended without it");
+    if (parse === null) throw new ProblemError(clientActionResultMissing("op.parse"));
     const results = (parse as { results: Array<{ status: number }> }).results;
     const worst = results.reduce((w, r) => (r.status > w ? r.status : w), 0);
     const exitCode = worst >= 400 ? 4 : 0;

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead, parseCoord } from "./subcommands.ts";
 import type { Caller } from "./subcommands.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 interface RecordedCall { method: string; params: unknown }
 
@@ -53,9 +54,18 @@ test("runWorkspaceRename: resolves by name, attaches, renames the attached works
     assert.match(code, /renamed "old" → "new"/);
 });
 
-test("runWorkspaceRename: unknown workspace → exit 1, no rename attempted", async () => {
+test("runWorkspaceRename: unknown workspace throws the exact public Problem", async () => {
     const { rpc, calls } = fakeRpc({ "workspace.list": { workspaces: [] } });
-    assert.equal(await runWorkspaceRename(rpc, "ghost", "x", { json: false }), 1);
+    await assert.rejects(
+        runWorkspaceRename(rpc, "ghost", "x", { json: false }),
+        (error: unknown) => {
+            assert.ok(error instanceof ProblemError);
+            assert.equal(error.exitCode, 1);
+            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/workspace-not-found");
+            assert.equal(error.problem.name, "ghost");
+            return true;
+        },
+    );
     assert.equal(calls.some((c) => c.method === "workspace.rename"), false);
 });
 
@@ -171,22 +181,21 @@ test("runWorkspaceWorkers: --json emits workers array", async () => {
     assert.deepEqual(JSON.parse(out.trim()), workers);
 });
 
-test("runWorkspaceWorkers: unknown workspace name → exit 1, error on stderr", async () => {
+test("runWorkspaceWorkers: unknown workspace name throws the exact public Problem", async () => {
     const { rpc } = fakeRpc({ "workspace.list": { workspaces: [] } });
-    const errs: string[] = [];
-    const original = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((c: string | Uint8Array): boolean => {
-        errs.push(typeof c === "string" ? c : Buffer.from(c).toString("utf8"));
-        return true;
-    }) as typeof process.stderr.write;
-    try {
-        const code = await runWorkspaceWorkers(rpc, "nonexistent", { json: false });
-        assert.equal(code, 1);
-    } finally { process.stderr.write = original; }
-    assert.match(errs.join(""), /no workspace named "nonexistent"/);
+    await assert.rejects(
+        runWorkspaceWorkers(rpc, "nonexistent", { json: false }),
+        (error: unknown) => {
+            assert.ok(error instanceof ProblemError);
+            assert.equal(error.exitCode, 1);
+            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/workspace-not-found");
+            assert.equal(error.problem.name, "nonexistent");
+            return true;
+        },
+    );
 });
 
-test("runWorkspaceWorkers: ambiguous name → exit 1", async () => {
+test("runWorkspaceWorkers: ambiguous name throws the exact public Problem", async () => {
     const { rpc } = fakeRpc({
         "workspace.list": {
             workspaces: [
@@ -195,12 +204,16 @@ test("runWorkspaceWorkers: ambiguous name → exit 1", async () => {
             ],
         },
     });
-    const original = process.stderr.write.bind(process.stderr);
-    process.stderr.write = (() => true) as typeof process.stderr.write;
-    try {
-        const code = await runWorkspaceWorkers(rpc, "dup", { json: false });
-        assert.equal(code, 1);
-    } finally { process.stderr.write = original; }
+    await assert.rejects(
+        runWorkspaceWorkers(rpc, "dup", { json: false }),
+        (error: unknown) => {
+            assert.ok(error instanceof ProblemError);
+            assert.equal(error.exitCode, 1);
+            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/workspace-ambiguous");
+            assert.equal(error.problem.count, 2);
+            return true;
+        },
+    );
 });
 
 test("runWorkspaceWorkers: workspace has no workers → friendly message in table mode", async () => {
@@ -293,15 +306,31 @@ test("runRead: a SEND's tx body IS reachable by coordinate (the svc#271 fix); ze
     assert.match(out, /Paris/);   // the tx body — NOT a "{status:200}" receipt (the op.read regression)
 });
 
-test("runRead: no entry at the coordinate → exit 4 with a model-run hint", async () => {
+test("runRead: no entry at the coordinate throws an exact 404 Problem", async () => {
     const { rpc } = fakeRpc({ "log.read": { status: 200, entries: [] } });
-    const code = await runRead(rpc, "3/1/2", { json: false });
-    assert.equal(code, 4);
+    await assert.rejects(
+        runRead(rpc, "3/1/2", { json: false }),
+        (error: unknown) => {
+            assert.ok(error instanceof ProblemError);
+            assert.equal(error.exitCode, 4);
+            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/entry-not-found");
+            assert.equal(error.problem.coordinate, "3/1/2");
+            return true;
+        },
+    );
 });
 
-test("runRead: malformed coordinate → exit 64, never hits the wire", async () => {
+test("runRead: malformed coordinate throws an exact 400 Problem and never hits the wire", async () => {
     const { rpc, calls } = fakeRpc({});
-    const code = await runRead(rpc, "nope", { json: false });
-    assert.equal(code, 64);
+    await assert.rejects(
+        runRead(rpc, "nope", { json: false }),
+        (error: unknown) => {
+            assert.ok(error instanceof ProblemError);
+            assert.equal(error.exitCode, 64);
+            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/coordinate-invalid");
+            assert.equal(error.problem.coordinate, "nope");
+            return true;
+        },
+    );
     assert.equal(calls.length, 0);
 });

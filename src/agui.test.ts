@@ -5,7 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaBridge, actionViaBridge, resolveWorld } from "./agui.ts";
+import { runViaBridge, actionViaBridge, operationResult, problemDetails, resolveWorld } from "./agui.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -33,6 +34,19 @@ const frame = (event: Record<string, unknown>): string => {
         : event;
     return `data: ${JSON.stringify(lifecycle)}\n\n`;
 };
+
+test("AG-UI validators map invalid Problems and results to exact client Problems", () => {
+    assert.throws(
+        () => problemDetails({ status: 500 }),
+        (error: unknown) => error instanceof ProblemError
+            && error.problem.type === "https://problems.plurnk.dev/client/transport/problem-invalid",
+    );
+    assert.throws(
+        () => operationResult({ status: 500 }),
+        (error: unknown) => error instanceof ProblemError
+            && error.problem.type === "https://problems.plurnk.dev/client/transport/result-invalid",
+    );
+});
 
 test("runViaBridge: yields AG-UI events in order, reassembling frames split across chunks", async () => {
     const tm = frame({ type: "TEXT_MESSAGE_START", messageId: "1", role: "assistant" });
@@ -87,12 +101,31 @@ test("runViaBridge: even with NO options, the workspace (world) still rides — 
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: a non-200 run surfaces the bridge error, not a silent hang", async () => {
-    const mock = await bootMock((_req, res) => res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: "bearer token required" })));
+test("runViaBridge: a PLURNK HTTP failure preserves exact Problem Details", async () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/agui/http/bearer-token-required",
+        title: "Bearer token required",
+        status: 401,
+        detail: "A bearer token is required.",
+        retryable: false,
+    };
+    const mock = await bootMock((_req, res) => res.writeHead(401, { "content-type": "application/problem+json" }).end(JSON.stringify(problem)));
     try {
         await assert.rejects(
             async () => { for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
-            /HTTP 401:.*bearer token required/,
+            (error: unknown) => error instanceof ProblemError
+                && error.problem.type === problem.type
+                && error.problem.retryable === problem.retryable,
+        );
+    } finally { await mock.close(); }
+});
+
+test("runViaBridge: a foreign non-Problem HTTP failure remains an AG-UI transport error", async () => {
+    const mock = await bootMock((_req, res) => res.writeHead(502, { "content-type": "text/plain" }).end("relay failed"));
+    try {
+        await assert.rejects(
+            async () => { for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
+            /HTTP 502:.*relay failed/,
         );
     } finally { await mock.close(); }
 });
@@ -128,7 +161,7 @@ test("runViaBridge: malformed AG-UI events fail at the standard client boundary"
     } finally { await mock.close(); }
 });
 
-test("actionViaBridge: a verb rides its own run; the result custom returns verbatim; ok:false throws", async () => {
+test("actionViaBridge: a verb rides its own run and returns its result verbatim", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list", ok: true, result: { workspaces: [{ id: 1, name: "s" }] } } }) + "\n\n");
@@ -143,6 +176,54 @@ test("actionViaBridge: a verb rides its own run; the result custom returns verba
     } finally { await mock.close(); }
 });
 
+test("actionViaBridge: an action failure throws the exact validated Problem", async () => {
+    const problem = {
+        type: "https://problems.plurnk.dev/agui/action/unknown-action",
+        title: "Unknown action",
+        status: 404,
+        detail: "Unknown action 'missing'.",
+        recovery: "Use an advertised action.",
+        retryable: false,
+    };
+    const mock = await bootMock((_req, res) => sse(res, [
+        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "missing", ok: false, problem } }),
+        frame({ type: "RUN_FINISHED" }),
+    ]));
+    try {
+        await assert.rejects(
+            () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "missing" }),
+            (error: unknown) => error instanceof ProblemError
+                && error.problem.type === problem.type
+                && error.problem.recovery === problem.recovery,
+        );
+    } finally { await mock.close(); }
+});
+
+test("actionViaBridge: a missing action result throws an exact client Problem", async () => {
+    const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
+    try {
+        await assert.rejects(
+            () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
+            (error: unknown) => error instanceof ProblemError
+                && error.problem.type === "https://problems.plurnk.dev/client/action/result-missing"
+                && error.problem.action === "workspace.list",
+        );
+    } finally { await mock.close(); }
+});
+
+test("actionViaBridge: a malformed action result throws an exact client Problem", async () => {
+    const mock = await bootMock((_req, res) => sse(res, [
+        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list" } }),
+        frame({ type: "RUN_FINISHED" }),
+    ]));
+    try {
+        await assert.rejects(
+            () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
+            (error: unknown) => error instanceof ProblemError
+                && error.problem.type === "https://problems.plurnk.dev/client/action/result-invalid",
+        );
+    } finally { await mock.close(); }
+});
 
 test("[§cli-workspaces-and-workers] runViaBridge: an explicit workspace rides with a DIFFERENT threadId (thread-per-run, svc#366)", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
@@ -180,11 +261,25 @@ test("[§cli-workspaces-and-workers] resolveWorld: an explicit --workspace short
     } finally { await mock.close(); }
 });
 
+test("resolveWorld: a missing minted name throws an exact client Problem", async () => {
+    const mock = await bootMock((_req, res) => sse(res, [
+        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.create", ok: true, result: { id: 9 } } }),
+        frame({ type: "RUN_FINISHED" }),
+    ]));
+    try {
+        await assert.rejects(
+            () => resolveWorld({ bridgeUrl: mock.url }, undefined, { projectRoot: "/repo" }),
+            (error: unknown) => error instanceof ProblemError
+                && error.problem.type === "https://problems.plurnk.dev/client/workspace/name-missing",
+        );
+    } finally { await mock.close(); }
+});
+
 test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and model selection ride forwardedProps.plurnk", async () => {
     const { runCliViaBridge } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 200, hitMaxTurns: false, turnIds: [1] } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
@@ -233,7 +328,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "PLAN" } }));
         holdOpen = () => {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { finalStatus: 499, hitMaxTurns: false, turnIds: [1] } }));
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.dev/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
             res.end();
         };

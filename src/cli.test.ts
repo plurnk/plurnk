@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
+import { clientFlagInvalid } from "./diagnostics.ts";
 import type { LogEntryWire } from "./render.ts";
 
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -164,6 +165,20 @@ test("buildJsonRecord: no usage → usage null; reason carried only when present
     assert.ok(!("reason" in (buildJsonRecord(recordInput()) as Record<string, unknown>)));
 });
 
+test("buildJsonRecord preserves the exact terminal Problem", () => {
+    const problem = clientFlagInvalid("--project-root", "./relative", "must be absolute");
+    const doc = buildJsonRecord(recordInput({
+        result: {
+            loopId: 7,
+            turnIds: [1],
+            finalStatus: problem.status,
+            hitMaxTurns: false,
+            problem,
+        },
+    })) as { problem: unknown };
+    assert.equal(doc.problem, problem);
+});
+
 test("buildJsonRecord: round-trips through JSON.stringify as one valid document", () => {
     const s = JSON.stringify(buildJsonRecord(recordInput()));
     const parsed = JSON.parse(s);
@@ -213,10 +228,11 @@ test("buildJsonError embeds the exact RFC 9457 Problem", () => {
         detail: "loop.run rejected",
         method: "loop.run",
     };
-    const e = buildJsonError(problem) as { schemaVersion: number; error: Record<string, unknown> };
+    const e = buildJsonError(problem) as { schemaVersion: number; problem: Record<string, unknown> };
     assert.equal(e.schemaVersion, JSON_SCHEMA_VERSION);
-    assert.deepEqual(e.error, problem);
-    assert.equal(e.error.method, "loop.run");
+    assert.deepEqual(e.problem, problem);
+    assert.equal(e.problem.method, "loop.run");
+    assert.equal("error" in e, false);
     JSON.parse(JSON.stringify(e)); // must be valid JSON
 });
 

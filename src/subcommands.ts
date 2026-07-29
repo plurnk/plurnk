@@ -8,7 +8,13 @@
 export interface Caller { call(method: string, params?: object): Promise<unknown> }
 import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
-import { report, clientSubcommandWorkspaceNotFound, clientSubcommandWorkspaceAmbiguous } from "./diagnostics.ts";
+import {
+    ProblemError,
+    clientSubcommandCoordinateInvalid,
+    clientSubcommandEntryNotFound,
+    clientSubcommandWorkspaceAmbiguous,
+    clientSubcommandWorkspaceNotFound,
+} from "./diagnostics.ts";
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
@@ -109,12 +115,10 @@ export const runWorkspaceWorkers = async (
     const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
     const matches = workspaces.filter((s) => s.name === workspaceName);
     if (matches.length === 0) {
-        report(clientSubcommandWorkspaceNotFound(workspaceName));
-        return 1;
+        throw new ProblemError(clientSubcommandWorkspaceNotFound(workspaceName), 1);
     }
     if (matches.length > 1) {
-        report(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length));
-        return 1;
+        throw new ProblemError(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length), 1);
     }
     const { workers } = await rpc.call("workspace.workers", { id: matches[0].id }) as { workers: WorkerRow[] };
     if (opts.json) {
@@ -144,12 +148,10 @@ export const runWorkspaceRename = async (
     const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
     const matches = workspaces.filter((s) => s.name === workspaceName);
     if (matches.length === 0) {
-        report(clientSubcommandWorkspaceNotFound(workspaceName));
-        return 1;
+        throw new ProblemError(clientSubcommandWorkspaceNotFound(workspaceName), 1);
     }
     if (matches.length > 1) {
-        report(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length));
-        return 1;
+        throw new ProblemError(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length), 1);
     }
     await rpc.call("workspace.attach", { id: matches[0].id });
     const result = await rpc.call("workspace.rename", { name: newName }) as { id: number; name: string };
@@ -241,8 +243,7 @@ const extractEntryContent = (entry: LogEntryWire): string | null => {
 export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean; workerId?: number }): Promise<number> => {
     const parsed = parseCoord(coord);
     if (parsed === null) {
-        process.stderr.write("usage: plurnk read <loop>/<turn>/<seq>   (e.g. plurnk read 3/1/2)\n");
-        return 64;
+        throw new ProblemError(clientSubcommandCoordinateInvalid(coord), 64);
     }
     const [loop, turn, seq] = parsed;
     // One clean call (svc#271): the daemon resolves the coordinate, returns the
@@ -250,9 +251,10 @@ export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean;
     const { entries } = await rpc.call("log.read", { loopSeq: loop, turnSeq: turn, sequence: seq, ...(opts.workerId !== undefined ? { workerId: opts.workerId } : {}) }) as LogReadResult;
     const entry = entries[0];
     if (entry === undefined) {
-        process.stderr.write(`no entry at ${loop}/${turn}/${seq} in the attached worker`
-            + ` (the conversation lives in the model worker — try --worker <model-worker>)\n`);
-        return 4;
+        throw new ProblemError(
+            clientSubcommandEntryNotFound(`${loop}/${turn}/${seq}`, opts.workerId),
+            4,
+        );
     }
     if (opts.json) {
         process.stdout.write(`${JSON.stringify({ schemaVersion: JSON_SCHEMA_VERSION, coord: `${loop}/${turn}/${seq}`, entry })}\n`);

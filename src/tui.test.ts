@@ -7,7 +7,19 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, lineMode, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, lineMode, renderTuiFailure, type VerbContext } from "./tui.ts";
+import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
+
+test("renderTuiFailure preserves exact Problem fields and recovery", () => {
+    const problem = {
+        ...clientRuntimeError("The action failed."),
+        recovery: "Correct the action and retry.",
+    };
+    const out = renderTuiFailure(new ProblemError(problem));
+    assert.match(out, /client:runtime:error/);
+    assert.match(out, /The action failed\./);
+    assert.match(out, /Correct the action and retry\./);
+});
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
 

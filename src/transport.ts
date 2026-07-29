@@ -1,6 +1,5 @@
-// The TUI's transport seam (plurnk-agui#1, Phase B/C): one interface, two impls —
-// the raw daemon WS (today) and the AG-UI bridge — so tui.ts becomes
-// transport-agnostic. The bridge impl UN-projects AG-UI `plurnk.*` customs back to
+// The TUI's transport seam. The AG-UI bridge un-projects `plurnk.*` custom
+// events back to
 // the daemon-notification shapes the TUI already renders (plurnk.row IS the wire
 // entry, plurnk.proposal IS the proposal, …), so the render + verb code is
 // untouched; only the source of the bytes changes.
@@ -14,7 +13,17 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { Notice } from "./diagnostics.ts";
-import { runViaBridge, actionViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import {
+    ProblemError,
+    clientTransportCancelled,
+    clientTransportInterruptMismatch,
+    clientTransportProblemMissing,
+    clientTransportProposalInvalid,
+    clientTransportTerminalMissing,
+    type ProblemDetails,
+} from "./diagnostics.ts";
+import type { OperationResult } from "@plurnk/plurnk-contracts";
+import { runViaBridge, actionViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
 // plurnk.terminated + workspaceId).
@@ -25,6 +34,7 @@ export interface TerminatedInfo {
     turnIds?: number[];
     usage?: LoopUsage;
     workspaceId?: number | null;
+    result: OperationResult;
 }
 
 export interface BranchBatchEvent {
@@ -44,16 +54,10 @@ export interface RunHandlers {
     onProposal: (p: ProposalParams) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
     onNotice: (notice: Notice) => void;
+    onProblem?: (problem: ProblemDetails) => void;
     onBranchBatch: (event: BranchBatchEvent) => void;
     onQuiesced?: (payload: unknown) => void;
     onTerminated: (t: TerminatedInfo) => void;
-}
-
-// A synchronous ACK error (501 no-provider, etc.) surfaced from run() with its
-// status attached, so the caller can add the right hint (e.g. the .env pointer).
-export class RunAckError extends Error {
-    status?: number;
-    constructor(message: string, status?: number) { super(message); this.status = status; }
 }
 
 export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
@@ -76,11 +80,10 @@ export interface Transport {
     useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string; autoReadAgents?: boolean }): Promise<{ id: number; name: string }>;
 }
 
-interface LoopAck { loopId?: number; finalStatus?: number; status?: number; error?: string }
 // ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
 // the persistent handlers via un-projection, and `done` resolves with the outcome
-// from plurnk.terminated. inject rides /plurnk/rpc on the SAME thread (reaches the
-// active loop, events on the open SSE); cancel aborts the SSE (bridge cancels).
+// from plurnk.terminated. inject rides an action run on the same thread (reaching
+// the active loop); cancel aborts the SSE (the bridge cancels).
 // Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
 // (§agui-forwarded-props) — the bridge applies them at workspace.create.
 export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; constraints?: unknown[]; settings?: object }
@@ -108,16 +111,16 @@ export class BridgeTransport implements Transport {
     // targets from onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
-        let errmsg: string | undefined;
+        let problem: ProblemDetails | undefined;
         for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), messages: [], forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } } })) {
             if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
-                const v = (e as unknown as { value: { ok: boolean; result?: T; error?: string } }).value;
-                if (v.ok) result = v.result; else errmsg = v.error ?? "action failed";
+                const v = actionOutcome<T>((e as { value?: unknown }).value);
+                if (v.ok) result = v.result; else problem = v.problem;
                 continue;
             }
             if (e.type === "CUSTOM") this.#dispatch(e);
         }
-        if (errmsg !== undefined) throw new Error(`action ${method} failed: ${errmsg}`);
+        if (problem !== undefined) throw new ProblemError(problem);
         return result as T;
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
@@ -155,7 +158,8 @@ export class BridgeTransport implements Transport {
         // the TUI's seam contract never changes.
         const done = (async (): Promise<TerminatedInfo> => {
             let terminated: TerminatedInfo | null = null;
-            let errStatus = 0;
+            let sawRunError = false;
+            let runProblem: ProblemDetails | null = null;
             let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }> } = { prompt };
             let fp = forwardedProps;
             for (;;) {
@@ -167,8 +171,7 @@ export class BridgeTransport implements Transport {
                 try {
                     for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), ...next, forwardedProps: fp }, ac.signal)) {
                         if (e.type === "RUN_ERROR") {
-                            const code = Number((e as { code?: string }).code);
-                            errStatus = Number.isFinite(code) && code > 0 ? code : 500;
+                            sawRunError = true;
                         } else if (e.type === "RUN_FINISHED") {
                             const outcome = e.outcome;
                             interrupted = outcome?.type === "interrupt"
@@ -180,28 +183,70 @@ export class BridgeTransport implements Transport {
                             toolArgs += String((e as { delta?: unknown }).delta ?? "");
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
                             pausedProp = Number(toolId.slice(5));
-                            const a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                            let a: Record<string, unknown>;
+                            try {
+                                a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                            } catch (cause) {
+                                const problem = clientTransportProposalInvalid(pausedProp, cause);
+                                this.#h?.onProblem?.(problem);
+                                return {
+                                    finalStatus: problem.status,
+                                    hitMaxTurns: false,
+                                    result: operationResult({ status: problem.status, problem }),
+                                };
+                            }
                             proposalResolution = new Promise((resolve) => { this.#pendingResolve = resolve; });
                             this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs, staleClobberRisk: a.staleClobberRisk } as unknown as ProposalParams);
                         } else if (e.type === "CUSTOM") {
                             const t = this.#dispatch(e);
                             if (t !== null) terminated = t;
+                            if ((e as { name?: unknown }).name === "plurnk.problem") {
+                                runProblem = problemDetails((e as { value?: unknown }).value);
+                            }
                         }
                     }
                 } catch (err) {
-                    if (ac.signal.aborted) return terminated ?? { finalStatus: 499, hitMaxTurns: false };
+                    if (ac.signal.aborted) {
+                        const problem = clientTransportCancelled();
+                        return terminated ?? {
+                            finalStatus: problem.status,
+                            hitMaxTurns: false,
+                            result: operationResult({ status: problem.status, problem }),
+                        };
+                    }
                     throw err;
                 }
                 // HttpAgent reports abort through the event stream and then completes;
                 // cancellation is therefore observed here rather than necessarily in
                 // the catch path. The transport contract remains a clean 499 outcome.
-                if (ac.signal.aborted) return terminated ?? { finalStatus: 499, hitMaxTurns: false };
+                if (ac.signal.aborted) {
+                    const problem = clientTransportCancelled();
+                    return terminated ?? {
+                        finalStatus: problem.status,
+                        hitMaxTurns: false,
+                        result: operationResult({ status: problem.status, problem }),
+                    };
+                }
                 if (terminated !== null) return terminated;
-                if (pausedProp !== null && !interrupted) throw new Error("proposal tool call ended without a matching AG-UI interrupt outcome");
+                if (pausedProp !== null && !interrupted) {
+                    const problem = clientTransportInterruptMismatch(pausedProp);
+                    this.#h?.onProblem?.(problem);
+                    return {
+                        finalStatus: problem.status,
+                        hitMaxTurns: false,
+                        result: operationResult({ status: problem.status, problem }),
+                    };
+                }
                 if (pausedProp === null) {
                     // NO fabricated success (fabrication audit, 2026-07-11): a stream that
                     // ends without terminal truth is a broken wire — 502, never 200.
-                    return { finalStatus: errStatus > 0 ? errStatus : 502, hitMaxTurns: false };
+                    const problem = runProblem
+                        ?? (sawRunError ? clientTransportProblemMissing() : clientTransportTerminalMissing());
+                    return {
+                        finalStatus: problem.status,
+                        hitMaxTurns: false,
+                        result: operationResult({ status: problem.status, problem }),
+                    };
                 }
                 if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
                 // Paused: hold done open until the client resolves, then resume the interrupt.
@@ -247,9 +292,17 @@ export class BridgeTransport implements Transport {
         if (name === "plurnk.row") this.#h?.onEntry(value as LogEntryWire);
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
+        else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));
         else if (name === "plurnk.branch_batch") this.#h?.onBranchBatch(value as BranchBatchEvent);
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
-        else if (name === "plurnk.terminated") { const t = value as TerminatedInfo; this.#h?.onTerminated(t); return t; }
+        else if (name === "plurnk.terminated") {
+            const raw = value as Omit<TerminatedInfo, "finalStatus"> & { finalStatus?: unknown };
+            const result = operationResult(raw.result);
+            const t: TerminatedInfo = { ...raw, result, finalStatus: result.status };
+            if (t.result.problem !== undefined) this.#h?.onProblem?.(t.result.problem);
+            this.#h?.onTerminated(t);
+            return t;
+        }
         return null;
     }
 }

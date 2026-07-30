@@ -287,12 +287,15 @@ export interface Settings {
 export const buildSettings = async (
     values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean },
     cwd: string,
+    env: NodeJS.ProcessEnv = process.env,
 ): Promise<Settings> => {
     const settings: Settings = {};
+    const execs = collectExecsPolicy(env);
+    if (Object.keys(execs).length > 0) settings.execs = execs;
     // svc#346 — enable model→user SEND[300] questions (per-workspace; the daemon
     // injects questions.md teaching + intersects its PLURNK_QUESTIONS ceiling).
     // Flag or bare env (shared user intent). The daemon owns refusal when off.
-    if (values.questions === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_QUESTIONS ?? "").toLowerCase())) settings.questions = true;
+    if (values.questions === true || ["1", "true", "yes", "on"].includes((env.PLURNK_QUESTIONS ?? "").toLowerCase())) settings.questions = true;
     const mc = values["max-commands"];
     if (mc !== undefined) {
         const n = Number(mc);

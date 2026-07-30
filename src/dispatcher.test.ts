@@ -54,6 +54,17 @@ test("collectExecsPolicy: ignores unrelated env; nothing set → empty map", () 
     assert.deepEqual(collectExecsPolicy({ PLURNK_WS: "ws://x", PATH: "/usr/bin" }), {});
 });
 
+test("buildSettings carries the client executor policy into workspace creation", async () => {
+    assert.deepEqual(
+        await buildSettings({}, "/", {
+            PLURNK_EXECS_ONLY: "atlas",
+            PLURNK_EXECS_SH: "0",
+            PLURNK_MCP_ATLAS: "node",
+        }),
+        { execs: { PLURNK_EXECS_ONLY: "atlas", PLURNK_EXECS_SH: "0" } },
+    );
+});
+
 // ─── resolveLoopFlags ────────────────────────────────────────────────
 // Mode is NOT a flag: ask/act ride the prompt prefix (`? `/`: `), the
 // habit converged across nvim, TUI, and the one-shot CLI.

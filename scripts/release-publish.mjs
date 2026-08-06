@@ -151,10 +151,11 @@ if (!targetServed) {
     await writeFile(PACKAGE_FILE, `${JSON.stringify(manifest, null, 4)}\n`);
 
     await run("npm", [
-        "install", "--package-lock-only", "--prefer-online", "--no-audit", "--no-fund",
+        "update", "--package-lock-only", "--prefer-online", "--no-audit", "--no-fund",
     ], { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
     await runVisible("npm", ["ci", "--prefer-online", "--no-audit", "--no-fund"]);
     assertProjection(await readProjection());
+    await runVisible("npm", ["run", "deps:fresh"]);
 
     const dirty = await statusLines();
     if (unexpectedReleaseFiles(dirty).length > 0) {

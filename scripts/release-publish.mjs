@@ -30,6 +30,14 @@ const output = async (command, commandArgs) => (await run(command, commandArgs, 
     maxBuffer: 64 * 1024 * 1024,
 })).stdout.trim();
 
+const statusLines = async () => (await run("git", ["status", "--porcelain"], {
+    cwd: ROOT,
+    maxBuffer: 64 * 1024 * 1024,
+})).stdout.split(/\r?\n/).filter(Boolean);
+
+const releaseFiles = new Set(["package.json", "package-lock.json"]);
+const unexpectedReleaseFiles = (lines) => lines.filter((line) => !releaseFiles.has(line.slice(3)));
+
 const runVisible = (command, commandArgs, options = {}) => new Promise((accept, reject) => {
     const child = spawn(command, commandArgs, {
         cwd: ROOT,
@@ -51,13 +59,18 @@ const registryManifest = async (name, version) => JSON.parse(
     await output("npm", ["view", `${name}@${version}`, "--json"]),
 );
 
-const assertCanonicalSource = async () => {
+const assertCanonicalSource = async ({ allowPrepared = false } = {}) => {
     const origin = await output("git", ["remote", "get-url", "origin"]);
     if (origin !== CANONICAL_ORIGIN) throw new Error(`client origin is not canonical: ${origin}`);
     const branch = await output("git", ["branch", "--show-current"]);
     if (branch !== "main") throw new Error(`client release requires main, got ${branch || "detached HEAD"}`);
-    const dirty = await output("git", ["status", "--porcelain"]);
-    if (dirty !== "") throw new Error(`client release requires a clean committed candidate:\n${dirty}`);
+    const dirty = await statusLines();
+    if (dirty.length > 0) {
+        if (!allowPrepared || unexpectedReleaseFiles(dirty).length > 0) {
+            throw new Error(`client release requires a clean committed candidate:\n${dirty.join("\n")}`);
+        }
+        assertProjection(await readProjection());
+    }
     await output("git", ["fetch", "origin", "main"]);
     const [behind, ahead] = (await output("git", ["rev-list", "--left-right", "--count", "origin/main...HEAD"]))
         .split(/\s+/).map(Number);
@@ -103,9 +116,9 @@ const assertProjection = ({ manifest, lock }) => {
     }
 };
 
-await assertCanonicalSource();
 const clientVersions = await registryVersions(CLIENT_PACKAGE);
 const targetServed = clientVersions.includes(clientVersion);
+await assertCanonicalSource({ allowPrepared: !targetServed });
 
 if (checkOnly) {
     if (targetServed) {
@@ -143,29 +156,30 @@ if (!targetServed) {
     await runVisible("npm", ["ci", "--prefer-online", "--no-audit", "--no-fund"]);
     assertProjection(await readProjection());
 
-    const dirty = (await output("git", ["status", "--porcelain"])).split("\n").filter(Boolean);
-    const changed = new Set(dirty.map((line) => line.slice(3)));
-    if ([...changed].some((file) => !["package.json", "package-lock.json"].includes(file))) {
+    const dirty = await statusLines();
+    if (unexpectedReleaseFiles(dirty).length > 0) {
         throw new Error(`client release preparation changed unexpected files:\n${dirty.join("\n")}`);
     }
-    await output("git", ["add", "--", "package.json", "package-lock.json"]);
-    const identity = process.env.POSSUMTECH_AGENT_IDENTITY;
-    if (!/^[a-z][a-zA-Z0-9_]{0,39}$/.test(identity ?? "")) {
-        throw new Error("POSSUMTECH_AGENT_IDENTITY is required to author the client release stamp");
+    if (dirty.length > 0) {
+        await output("git", ["add", "--", "package.json", "package-lock.json"]);
+        const identity = process.env.POSSUMTECH_AGENT_IDENTITY;
+        if (!/^[a-z][a-zA-Z0-9_]{0,39}$/.test(identity ?? "")) {
+            throw new Error("POSSUMTECH_AGENT_IDENTITY is required to author the client release stamp");
+        }
+        const committerEmail = await output("git", ["config", "user.email"]);
+        const separator = committerEmail.lastIndexOf("@");
+        if (separator <= 0) throw new Error(`git user.email is not an address: ${committerEmail}`);
+        await run("git", ["commit", "-S", "-m", `chore(release): publish ${clientVersion} against platform ${platformVersion}`], {
+            cwd: ROOT,
+            env: {
+                ...process.env,
+                GIT_AUTHOR_NAME: identity,
+                GIT_AUTHOR_EMAIL: `${committerEmail.slice(0, separator)}+${identity}${committerEmail.slice(separator)}`,
+            },
+            maxBuffer: 64 * 1024 * 1024,
+        });
+        await runVisible("git", ["push", "origin", "main"]);
     }
-    const committerEmail = await output("git", ["config", "user.email"]);
-    const separator = committerEmail.lastIndexOf("@");
-    if (separator <= 0) throw new Error(`git user.email is not an address: ${committerEmail}`);
-    await run("git", ["commit", "-S", "-m", `chore(release): publish ${clientVersion} against platform ${platformVersion}`], {
-        cwd: ROOT,
-        env: {
-            ...process.env,
-            GIT_AUTHOR_NAME: identity,
-            GIT_AUTHOR_EMAIL: `${committerEmail.slice(0, separator)}+${identity}${committerEmail.slice(separator)}`,
-        },
-        maxBuffer: 64 * 1024 * 1024,
-    });
-    await runVisible("git", ["push", "origin", "main"]);
     await assertCanonicalSource();
 
     const publishEnv = {

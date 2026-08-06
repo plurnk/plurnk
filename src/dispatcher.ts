@@ -71,19 +71,22 @@ export const resolveModelSpec = (alias: string | undefined, env: NodeJS.ProcessE
     return match !== undefined ? `${match.provider}/${match.model}` : undefined;
 };
 
-// #132 — the client's per-workspace exec-policy layer: forward the PLURNK_EXECS_*
+// #132 — the client's per-workspace exec-policy layer: forward the closed
 // enable/disable grammar (PLURNK_EXECS_ONLY, PLURNK_EXECS_<TAG>=0|false) so the
 // daemon intersects it with its own ceiling (service ∧ client — subtractive,
-// can never re-enable a service-disabled tag). Forwarded VERBATIM: the daemon's
-// execs Policy is the single interpreter (pull-don't-copy). EXCLUDES
-// PLURNK_EXECS_MCP_* — those are MCP SERVER configs (URLs, header bearer tokens),
-// not policy, and must never ride the wire. The bare PLURNK_EXECS_MCP tag toggle
-// (no trailing `_`) stays. Workspace-scoped: a per-workspace .env carries its own.
+// can never re-enable a service-disabled tag). The key grammar is the executor
+// contract's canonical lowercase URI-scheme tag syntax, matched case-insensitively
+// for environment convention. Plugin configuration under the same broad prefix
+// is not policy and must never ride the wire. Values are forwarded verbatim; the
+// daemon's execs Policy remains the interpreter. Workspace-scoped: a per-workspace
+// .env carries its own.
+const EXECS_POLICY_KEY = /^PLURNK_EXECS_(?:ONLY|[A-Z][A-Z0-9+.-]*)$/i;
+
 export const collectExecsPolicy = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => {
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(env)) {
         if (v === undefined) continue;
-        if (!k.startsWith("PLURNK_EXECS_") || k.startsWith("PLURNK_EXECS_MCP_")) continue;
+        if (!EXECS_POLICY_KEY.test(k)) continue;
         out[k] = v;
     }
     return out;
@@ -137,9 +140,10 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
                         instead of raw daemon WS (the exclusive-portal path).
                         PLURNK_AGUI_TOKEN is the bearer if the bridge requires one.
                         Scripts + subcommands stay on the daemon.
-  PLURNK_EXECS_*        per-workspace exec-runtime policy, sent to the daemon at
-                        workspace.create (PLURNK_EXECS_ONLY=a,b allowlist;
-                        PLURNK_EXECS_<tag>=0 kill one). Subtractive only — the
+  PLURNK_EXECS_ONLY /   per-workspace exec-runtime policy, sent to the daemon at
+  PLURNK_EXECS_<tag>    workspace.create (ONLY=a,b allowlist; <tag>=0 kills one).
+                        Plugin configuration with longer underscore suffixes is
+                        never forwarded. Subtractive only — the
                         daemon intersects with its ceiling; the client can narrow,
                         never re-enable. Shares the daemon's grammar; a workspace's
                         .env carries its own. (MCP server configs are NOT sent.)

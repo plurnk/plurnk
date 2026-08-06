@@ -65,6 +65,7 @@ Env:
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
+| `PLURNK_EXECS_ONLY` / `PLURNK_EXECS_<tag>` | _unset_ | Create-time workspace executor policy. The client forwards only the closed allowlist/runtime-tag grammar; plugin configuration sharing the broad prefix is not workspace policy and never crosses the wire. |
 
 **Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.defaults` (the daemon family's rendered catalog) → the client's own packaged floor (below). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared home; everything else there is the daemon family's.
 
@@ -126,6 +127,7 @@ Seeded atomically at `workspace.create` so turn-1's manifest is right with no fo
 
 - `--manifest-items <n>` → `manifestItems`. Controls the `plurnk://manifest.json` preview at turn 0: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_MANIFEST_ITEMS` for the workspace.
 - `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the workspace, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
+- Executor policy → `execs` (`Record<string, string>`). Only `PLURNK_EXECS_ONLY` and `PLURNK_EXECS_<canonical-runtime-tag>` are admitted, case-insensitively. Values remain verbatim for daemon-owned interpretation; unrelated executor/plugin configuration is excluded.
 
 Settings are **workspace-create-only** (no live setter). On `--workspace` attach, `--manifest-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
 

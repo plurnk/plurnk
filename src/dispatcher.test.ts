@@ -39,14 +39,17 @@ test("collectExecsPolicy: forwards the enable/disable grammar", () => {
     );
 });
 
-test("collectExecsPolicy: NEVER forwards PLURNK_EXECS_MCP_* server configs/secrets", () => {
+test("collectExecsPolicy: forwards only the runtime-policy key grammar", () => {
     const out = collectExecsPolicy({
         PLURNK_EXECS_ONLY: "search",
+        plurnk_execs_node: "0",
+        PLURNK_EXECS_SEARCH_ENGINES: "brave",
+        PLURNK_EXECS_ERROR_DETAIL_LIMIT: "1024",
         PLURNK_EXECS_MCP_NOTION: "https://notion.example/mcp",
         PLURNK_EXECS_MCP_NOTION_HEADERS: '{"Authorization":"Bearer sk-secret"}',
         PLURNK_EXECS_MCP_INSTALL: "0",
     });
-    assert.deepEqual(out, { PLURNK_EXECS_ONLY: "search" });
+    assert.deepEqual(out, { PLURNK_EXECS_ONLY: "search", plurnk_execs_node: "0" });
     assert.ok(!JSON.stringify(out).includes("secret"), "no bearer token leaks onto the wire");
 });
 

@@ -333,7 +333,7 @@ test("BridgeTransport: a stream that dies without terminal truth is an ERROR, ne
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] EVERY request carries the workspace options — creation is atomic with the projectRoot whichever request wins (#140, operator ruling)", async () => {
+test("[§cli-workspaces-and-workers] EVERY request carries the workspace options — creation is atomic with the projectRoot whichever request wins (#140)", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.prompts", ok: true, result: { prompts: [] } } }));

@@ -126,7 +126,7 @@ export class BridgeTransport implements Transport {
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }
 
-    // Workspace options on EVERY request (#140, operator ruling): workspace creation and
+    // Workspace options on every request (#140): workspace creation and
     // its projectRoot are ATOMIC — the module creates from whichever request arrives
     // first, so every request carries the options (applied at creation, ignored after).
     // No consumed-once flag, no race: a headless workspace can only be one on purpose,

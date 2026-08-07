@@ -33,7 +33,7 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
 // and error families. Specific codes before ranges. Every glyph is EAW width-2,
 // VS16-free (column-stable). The COLOR (colorForStatus) carries the class; the
 // glyph carries the state. Converged with plurnk.nvim's STATUS_GLYPHS.
-// Model-SEND lane-1 (operator ruling 2026-07-10): the STATE is the identity — the
+// Model-SEND lane 1: the state is the identity, so the
 // constant 🤖 retired. 102 thinking-on, 200 the answer, 202 parked, 300 a question;
 // failures keep the shared error glyphs. All plane-1/EAW-wide, VS16-free.
 export const modelSendGlyph = (status: number): string => {
@@ -252,8 +252,8 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // body indents further (5 spaces) so it visually nests under the speaker.
 const renderBroadcast = (entry: LogEntryWire): string => {
     // TWO lanes. The user speaking keeps the 🐹 identity + a status lane; the MODEL
-    // speaking carries its state AS lane 1 (💭 102 / 💡 200 / 💤 202 / 🤔 300 —
-    // operator ruling) with lane 2 held as a reserved blank.
+    // speaking carries its state as lane 1: 💭 102 / 💡 200 / 💤 202 / 🤔 300,
+    // with lane 2 held as a reserved blank.
     const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
     const idGlyph = entry.origin === "model" ? modelSendGlyph(signal) : (ORIGIN_GLYPHS[entry.origin] ?? "?");
     const subGlyph = entry.origin === "model" ? "  " : sendSubGlyph(signal);

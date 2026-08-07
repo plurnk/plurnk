@@ -173,7 +173,7 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bo
     assert.doesNotMatch(out, /\n$/);
     assert.ok(!out.includes("\n"), `short broadcast inlines to one line, got: ${JSON.stringify(out)}`);
     assert.match(out, /Hello\./);
-    assert.match(out, /💡/);  // the answer state IS the identity (operator ruling)
+    assert.match(out, /💡/);  // the answer state is the identity
 });
 
 test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, still no surrounding blanks", () => {
@@ -261,9 +261,9 @@ test("[§cli-log-entry-line-format] entryTarget round-trips all four authority f
     // so <<LOOK can re-address it. commons=empty, self=~, named, kernel=plurnk — each a valid
     // worker:// address; the face is the raw URI, legible AND round-trippable (one source).
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: null, pathname: "/plan.md" })), "worker:///plan.md", "empty authority = commons, verbatim");
-    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "~", pathname: "/plan.md" })), "worker://~/plan.md", "~ = self, kept literal (owner ruling)");
+    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "~", pathname: "/plan.md" })), "worker://~/plan.md", "~ = self, kept literal");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "extract-host", pathname: "/plan.md" })), "worker://extract-host/plan.md", "named worker verbatim");
-    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare (owner ruling)");
+    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare");
     assert.equal(entryTarget(entry({ scheme: "prompt", hostname: null, pathname: "/loop/2" })), "prompt:///loop/2", "prompt self-only, no authority slot");
 });
 

@@ -168,14 +168,6 @@ test("buildSettings: --md missing file → throws not readable", async () => {
     await assert.rejects(buildSettings({ md: ["X=/no/such/file.md"] }, "/"), /not readable/);
 });
 
-test("buildSettings: --no-agents-md → autoReadAgents false (svc#268 override passthrough)", async () => {
-    assert.equal((await buildSettings({ "no-agents-md": true }, "/")).autoReadAgents, false);
-});
-
-test("buildSettings: no --no-agents-md → autoReadAgents unset (env default wins)", async () => {
-    assert.equal((await buildSettings({}, "/")).autoReadAgents, undefined);
-});
-
 test("buildSettings: empty → {}", async () => {
     assert.deepEqual(await buildSettings({}, "/"), {});
 });

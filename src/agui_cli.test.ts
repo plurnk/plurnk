@@ -197,11 +197,11 @@ test("consumeCliRun: a child worker's terminal SEND cannot replace the run respo
     assert.equal(result.response, "parent answer");
 });
 
-test("consumeCliRun: plurnk.stream routes start (state) and conclusion (closeStatus) to the trace", async () => {
+test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) to the trace", async () => {
     const { io, err } = sink();
     await consumeCliRun(stream([
         { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
-        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1", subscriptionId: 1, scheme: "python", closeStatus: 200, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, workerId: 7, target: "python:///1/1/1", subscriptionId: 1, scheme: "python", result: { status: 200 }, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     const trace = err.join("");

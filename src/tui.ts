@@ -31,7 +31,6 @@ import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
-import { runOAuth } from "./auth.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
 
@@ -56,15 +55,15 @@ interface WorkspaceResult { id: number; name: string }
 // ambiguous (workspace or worker?) and is gone. /rename retargets the current
 // workspace's mutable handle (a worker's name is immutable — no /rename for workers).
 export const VERBS = [
-    "help", "models", "workspaces", "workers", "log", "model",
+    "help", "models", "workspaces", "workers", "log", "model", "child",
     "yolo", "workspace", "rename", "worker", "stop", "quit",
     "pick", "hide", "view", "drop", "members", "import", "script",
-    "auth", "accept", "reject", "cancel", "edit",
+    "accept", "reject", "cancel", "edit",
 ] as const;
 
 export const TUI_HELP = [
-    "  /models /workspaces /runs /log [n]   inspect",
-    "  /model <alias>                     model for subsequent loops",
+    "  /models /workspaces /workers /log [n]   inspect",
+    "  /model <alias> · /child <alias|inherit>   parent and child models",
     "  /yolo                              toggle local auto-accept",
     "  /workspace [name]                    new workspace",
     "  /rename <name>                     rename this workspace (a mutable handle)",
@@ -76,7 +75,6 @@ export const TUI_HELP = [
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /script <path>                     run a .plk file (its DSL → op.parse)",
-    "  /auth <target>                     OAuth an auth-protected exec (e.g. notion) via device code",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -113,7 +111,7 @@ export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK,
 // doesn't change a control code), Ctrl-s is XOFF, Ctrl-i is Tab, and readline
 // owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped (readline word-ops).
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
-    m: "/models", s: "/workspaces", R: "/runs", L: "/log",
+    m: "/models", s: "/workspaces", R: "/workers", L: "/log",
     Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", h: "/help",
 });
 
@@ -125,15 +123,10 @@ export const altShortcut = (forward: string): string | null => {
     return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
 };
 
-// `<<LOOK…::LOOK` is a CLIENT pseudo-op — "READ, but for me instead of the model".
-// The grammar (plurnk-grammar plurnk.md §Operations) terminates a statement with its
-// own op name (`<<OP…:body:OP`), so a faithful rewrite swaps BOTH ends LOOK→READ and passes
-// [signal](target)<sel>:body through untouched — the daemon only ever sees a real
-// READ. `\b` keeps `<<LOOKUP` from matching. null when the line isn't a LOOK.
-export const lookRewrite = (line: string): string | null =>
-    /^<<LOOK\b/i.test(line)
-        ? line.replace(/^<<LOOK\b/i, "<<READ").replace(/:LOOK(\s*)$/i, ":READ$1")
-        : null;
+// Recognize the client-only LOOK surface so it can be routed to `op.look`.
+// The AG-UI observation action owns validation and the single LOOK→READ rewrite.
+export const lookStatement = (line: string): string | null =>
+    /^<<LOOK\b/i.test(line) ? line : null;
 
 // §2.0 prompt prefixes (converged with nvim's :AI ? / :AI :): `? ` puts mode:"ask"
 // on the wire flags, `: ` forces act, both overriding a --flags base mode; `...`
@@ -170,7 +163,7 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
     return { verb: m?.[1] ?? "", rest: (m?.[2] ?? "").trim() };
 };
 
-// readline completer — verbs after `/`, model aliases after `/model `.
+// readline completer — verbs after `/`, model aliases after `/model ` or `/child `.
 // Plain readline machinery only; no screen takeover, no terminal hell.
 // readline's async completer form (arity 2 → async). Verb/alias completion
 // answers synchronously; path positions read the local fs (co-location law)
@@ -182,9 +175,12 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
             callback(null, [VERBS.map((v) => `/${v}`).filter((v) => v.startsWith(line)), line]);
             return;
         }
-        const aliasFrag = line.match(/^\/model\s+(\S*)$/);
+        const aliasFrag = line.match(/^\/(model|child)\s+(\S*)$/);
         if (aliasFrag) {
-            callback(null, [getAliases().filter((a) => a.startsWith(aliasFrag[1])), aliasFrag[1]]);
+            const candidates = aliasFrag[1] === "child"
+                ? ["inherit", ...getAliases().filter((alias) => alias !== "inherit")]
+                : getAliases();
+            callback(null, [candidates.filter((a) => a.startsWith(aliasFrag[2])), aliasFrag[2]]);
             return;
         }
         const op = dslOpPartial(line);
@@ -232,7 +228,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
-    opts: { modelAlias?: string; model?: string; yolo: boolean; projectRoot?: string | null; client?: string; autoReadAgents?: boolean };
+    opts: { modelAlias?: string; model?: string; childAlias?: string | null; childModel?: string; yolo: boolean; projectRoot?: string | null; client?: string };
     // Resolve an alias to its client-side "<provider>/<model>" routing spec (#90), so
     // /model retargets ROUTING, not just the display label. Injected to avoid a cycle
     // with dispatcher (which owns resolveModelSpec).
@@ -274,6 +270,17 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // over the alias, #90) — the switch would be cosmetic.
             opts.model = ctx.resolveModel?.(rest);
             write(`  model: ${rest}\n`);
+            return;
+        case "child":
+            if (rest.length === 0) { write(`  child: ${opts.childAlias ?? "inherit"}\n`); return; }
+            if (rest === "inherit") {
+                opts.childAlias = null;
+                opts.childModel = undefined;
+            } else {
+                opts.childAlias = rest;
+                opts.childModel = ctx.resolveModel?.(rest);
+            }
+            write(`  child: ${rest}\n`);
             return;
         case "yolo":
             opts.yolo = !opts.yolo;
@@ -379,16 +386,6 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // Typed no-modifier fallback for the a/e/r/c proposal review keys.
             await ctx.resolveProposal(verb as "accept" | "reject" | "cancel" | "edit");
             return;
-        case "auth": {
-            // #116 — the OAuth device-grant leg: authorize → print URL + code →
-            // poll to authorized. Blocks the REPL while polling (Ctrl-C exits); the
-            // service half is stateless, we own the poll loop + expiry bound.
-            const target = rest.trim();
-            if (target.length === 0) { write("  \x1b[2musage: /auth <target>  (the exec needing auth, e.g. notion)\x1b[0m"); return; }
-            const r = await runOAuth(rpc, target, { print: write });
-            write(`  ${r.ok ? "✅" : "❌"} ${r.message}`);
-            return;
-        }
         case "stop":
             await rpc.call("loop.cancel", { reason: "user_stop" });
             return;
@@ -401,12 +398,11 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 };
 
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
-    modelAlias?: string; model?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
+    modelAlias?: string; model?: string; childAlias?: string | null; childModel?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
-    autoReadAgents?: boolean;   // #268 — AGENTS auto-load override, carried onto /workspace
 }): Promise<void> => {
     let current = workspace;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
@@ -591,14 +587,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         setLine(`<<LOOK(${priorTargets[lookCursor]})::LOOK`);
     };
 
-    // `<<LOOK(uri)` already rewritten (op token LOOK→READ) to a READ statement.
-    // LOOK is a PURE QUERY: op.look (plurnk-service#283, shipped v0.57.0) runs READ's
-    // full resolver but writes NO log entry — so the model never sees it and there's no
-    // run to manage. Run on the main connection (the conversation run, so log:/// resolves
-    // run-relative against the right run). Render the content; no op, no harvest. Trust
-    // the contract: status is required, content is `string | null` (svc ReadResult).
-    const runLook = async (readText: string): Promise<number> => {
-        const r = await transport.rpc("op.look", { text: readText }) as { status: number; content: string | null };
+    // LOOK is a pure query: AG-UI validates and rewrites the original statement, then
+    // resolves READ without writing a log entry. Run it on the conversation connection
+    // so run-relative targets resolve against the right run.
+    const runLook = async (lookText: string): Promise<number> => {
+        const r = await transport.rpc("op.look", { text: lookText }) as { status: number; content: string | null };
         const content = r.content ?? "";
         printAbove(content.length > 0 ? content : `  \x1b[2m(look ${r.status}: no content)\x1b[0m`);
         return r.status;
@@ -769,14 +762,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
         onBranchBatch: handleBranchBatch,
         onStream: (payload) => {
-            // One channel for the lifecycle: concluded carries closeStatus, a start
+            // One channel for the lifecycle: concluded carries its exact result, a start
             // event carries state. One start line, one conclusion line, tiny outputs inlined.
-            if (typeof (payload as { closeStatus?: unknown }).closeStatus === "number") {
+            if (typeof (payload as { result?: { status?: unknown } }).result?.status === "number") {
                 const p = payload as StreamConcludedPayload;
                 printAbove(streams.concluded(p));
-                // #116 — a 401 close offers the device-grant flow (run /auth <scheme>).
-                if (p.closeStatus === 401) printAbove(`  🔒 ${p.scheme} needs authorization — run \x1b[1m/auth ${p.scheme}\x1b[0m`);
-                void transport.rpc("entry.read", { target: p.target }).then((r) => {
+                void transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
                     const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
                     for (const name of ["stdout", "stderr"]) {
                         const content = channels[name]?.content;
@@ -853,7 +844,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         rpc: verbRpc, opts, resolveModel: opts.resolveModel,
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
-        switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client, autoReadAgents: opts.autoReadAgents }),
+        switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client }),
         write: (text) => { process.stdout.write(text); },
         importFile: async (rest) => {
             const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);
@@ -963,7 +954,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             let usage: LoopUsage | undefined;
 
             try {
-                const lookText = trimmed.startsWith("<<") ? lookRewrite(trimmed) : null;
+                const lookText = trimmed.startsWith("<<") ? lookStatement(trimmed) : null;
                 if (lookText !== null) {
                     // <<LOOK: off-run READ on the side connection — for me, not the model.
                     finalStatus = await runLook(lookText);
@@ -981,9 +972,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
                     // `: ` = act. Per-line prefix overrides --flags mode.
                     const { flags: lineFlags, prompt: promptText } = lineMode(trimmed, opts.loopFlags);
-                    const loopParams: { prompt: string; alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
+                    const loopParams: { prompt: string; alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
                     if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;   // display label
                     if (opts.model !== undefined) loopParams.model = opts.model;             // #90 client-resolved routing (precedence)
+                    if (opts.childAlias !== undefined) loopParams.childAlias = opts.childAlias;
+                    if (opts.childModel !== undefined) loopParams.childModel = opts.childModel;
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
@@ -1016,6 +1009,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             process.stdout.write("\x1b[?2004l");
             process.stdin.off("data", onStdin);
             process.stdin.setRawMode?.(false);
+            process.stdin.pause();
             // Steal pi's nicety: hand back the one-liner to pick this workspace up.
             process.stdout.write(`\n  \x1b[2mresume this workspace:  plurnk --workspace ${current.name}\x1b[0m\n`);
             resolve();

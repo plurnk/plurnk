@@ -278,19 +278,13 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     return emphasizeLines(lines, isAnswer);
 };
 
-// The prompt entry (system-origin EDIT against prompt:///loop/N — the actor-
-// addressing epic retired plurnk:// and closed the last id-in-pathname, svc#527;
-// self-only, no authority slot). The TUI SKIPS these in the live waterfall: the
-// line the user typed at the readline prompt is already their record, and rendering
-// the broadcast too duplicated every prompt (#198 made it arrive live).
+// The TUI skips actionless prompt rows in the live waterfall: the line the
+// user typed at the readline prompt is already their record, and rendering
+// the broadcast too would duplicate every prompt.
 // Erasing the typed echo instead would mean terminal-width math over
 // emoji/nerdfont prompts — the rabbit hole this client refuses to enter.
 export const isPromptEntry = (entry: LogEntryWire): boolean =>
-    entry.op === "EDIT" && entry.scheme === "prompt";
-    // The prompt scheme is self-identifying — svc#527 gave the frame its OWN scheme
-    // (prompt:///<loop>/<turn>, self-only, empty authority; verified on the wire as
-    // pathname "/1/1" — "loop/N" in the docs is the loop NUMBER, not a literal). The
-    // foisted user-prompt EDIT is skipped live; the readline echo is the record.
+    entry.op === "prompt" && entry.scheme === "prompt";
 
 // Render a log entry as one waterfall line.
 // Returns the full ANSI-formatted line(s) WITHOUT trailing newline. A

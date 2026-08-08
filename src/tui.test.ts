@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookRewrite, cycleKey, cycleCoord, lineMode, renderTuiFailure, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, type VerbContext } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {
@@ -30,7 +30,7 @@ test("altShortcut: lowercase mnemonics map (nvim's lowercase: m, s, x)", () => {
 });
 
 test("altShortcut: CASE matches nvim — capitals are distinct (R/L/Y/N/M)", () => {
-    assert.equal(altShortcut("\x1bR"), "/runs");      // nvim <leader>aR
+    assert.equal(altShortcut("\x1bR"), "/workers");   // nvim <leader>aR
     assert.equal(altShortcut("\x1bM"), "/members");   // nvim <leader>aM
     assert.equal(altShortcut("\x1bY"), "/yolo");      // nvim <leader>aY
     // lowercase of a capital-mnemonic is NOT mapped — case is significant.
@@ -47,27 +47,27 @@ test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", (
     assert.equal(altShortcut("\x1b"), null);    // bare ESC
 });
 
-// ─── lookRewrite (<<LOOK → <<READ token swap, rest passed through) ───────
+// ─── lookStatement (recognition for op.look routing) ─────────────────────
 
-test("lookRewrite: swaps the op token at BOTH ends — open and the :OP terminator", () => {
-    assert.equal(lookRewrite("<<LOOK(worker:///plan.md)::LOOK"), "<<READ(worker:///plan.md)::READ");
-    assert.equal(lookRewrite("<<LOOK(log:///1/2/3)::LOOK"), "<<READ(log:///1/2/3)::READ");
+test("lookStatement: preserves the exact opening and terminator", () => {
+    assert.equal(lookStatement("<<LOOK(worker:///plan.md)::LOOK"), "<<LOOK(worker:///plan.md)::LOOK");
+    assert.equal(lookStatement("<<LOOK(log:///1/2/3)::LOOK"), "<<LOOK(log:///1/2/3)::LOOK");
 });
 
-test("lookRewrite: passes [tags](target)<N,M>:body through, swaps only the op", () => {
-    assert.equal(lookRewrite("<<LOOK[2](a.ts)<1,40>::LOOK"), "<<READ[2](a.ts)<1,40>::READ");
-    assert.equal(lookRewrite("<<LOOK(users.json):$.name:LOOK"), "<<READ(users.json):$.name:READ");
+test("lookStatement: preserves tags, target, selection, and body", () => {
+    assert.equal(lookStatement("<<LOOK[2](a.ts)<1,40>::LOOK"), "<<LOOK[2](a.ts)<1,40>::LOOK");
+    assert.equal(lookStatement("<<LOOK(users.json):$.name:LOOK"), "<<LOOK(users.json):$.name:LOOK");
 });
 
-test("lookRewrite: case-insensitive in, uppercase READ out", () => {
-    assert.equal(lookRewrite("<<look(a.md)::look"), "<<READ(a.md)::READ");
+test("lookStatement: recognizes case-insensitively without normalizing", () => {
+    assert.equal(lookStatement("<<look(a.md)::look"), "<<look(a.md)::look");
 });
 
-test("lookRewrite: a non-LOOK op (incl. the LOOKUP false-friend) → null", () => {
-    assert.equal(lookRewrite("<<READ(a.md)::READ"), null);
-    assert.equal(lookRewrite("<<EDIT(a.md):x:EDIT"), null);
-    assert.equal(lookRewrite("<<LOOKUP(a.md)::LOOKUP"), null);   // \b guards the boundary
-    assert.equal(lookRewrite("plain prompt"), null);
+test("lookStatement: rejects non-LOOK operations and the LOOKUP false friend", () => {
+    assert.equal(lookStatement("<<READ(a.md)::READ"), null);
+    assert.equal(lookStatement("<<EDIT(a.md):x:EDIT"), null);
+    assert.equal(lookStatement("<<LOOKUP(a.md)::LOOKUP"), null);
+    assert.equal(lookStatement("plain prompt"), null);
 });
 
 // ─── cycleKey (Alt-p/Alt-n → LOOK prior-op cycler) ───────────────────────
@@ -344,6 +344,19 @@ test("handleVerb /model <alias> sets it; bare /model shows current", async () =>
     assert.equal(ctx.opts.modelAlias, "gpt");
     await handleVerb("/model", ctx);
     assert.match(ctx.out.join(""), /model: gpt/);
+});
+
+test("[§cli-child-provider-selection] handleVerb /child selects, reports, and clears to inherit", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/child fireslow", ctx);
+    assert.equal(ctx.opts.childAlias, "fireslow");
+    assert.equal(ctx.opts.childModel, "fireworks/deepseek");
+    await handleVerb("/child", ctx);
+    assert.match(ctx.out.join(""), /child: fireslow/);
+    await handleVerb("/child inherit", ctx);
+    assert.equal(ctx.opts.childAlias, null);
+    assert.equal(ctx.opts.childModel, undefined);
+    assert.match(ctx.out.join(""), /child: inherit/);
 });
 
 test("handleVerb /workspace → workspace.create (new) + setWorkspace", async () => {

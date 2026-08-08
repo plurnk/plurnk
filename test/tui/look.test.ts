@@ -43,9 +43,8 @@ describe("TUI <<LOOK (off-run inspection)", () => {
         }
     });
 
-    // The client rewrites <<LOOK→<<READ and calls op.look (plurnk-service#283,
-    // shipped v0.57.0) on the main connection — a non-logging read, so the body
-    // renders for the human with no log entry the model would see.
+    // The client sends LOOK unchanged to op.look. AG-UI admits and rewrites it
+    // once for a non-logging read, so no corresponding entry reaches the model.
     test("submitting <<LOOK harvests and renders the entry content off-run", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--yolo"]);

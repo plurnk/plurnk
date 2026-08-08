@@ -126,6 +126,8 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
                         overrides for this invocation only.
+  PLURNK_MODEL_CHILD    optional WORK/FORK provider alias. Unset = inherit the
+                        spawning loop's provider; interactive /child overrides.
   PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
@@ -198,8 +200,6 @@ options:
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
-      --no-agents-md      turn off the service's AGENTS.md auto-load for this
-                          workspace (overrides PLURNK_AGENTS_AUTO). Create-time.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
@@ -283,13 +283,12 @@ export interface Settings {
     maxCommands?: number;
     git?: boolean;
     client?: string;          // #249 — frontend id, set on every workspace.create
-    autoReadAgents?: boolean; // #268 — per-workspace override of the service AGENTS auto-load
     execs?: Record<string, string>; // #132 — per-workspace exec-policy layer (PLURNK_EXECS_* forwarded)
     questions?: boolean;      // svc#346 — enable model→user SEND[300] questions for the workspace (+ questions.md teaching)
 }
 
 export const buildSettings = async (
-    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean },
+    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; questions?: boolean },
     cwd: string,
     env: NodeJS.ProcessEnv = process.env,
 ): Promise<Settings> => {
@@ -309,9 +308,6 @@ export const buildSettings = async (
         settings.maxCommands = n;
     }
     if (values["no-git"] === true) settings.git = false;
-    // #268 — pure passthrough of the per-workspace AGENTS auto-load override (the
-    // service does the picking + reading; the client just forces it off here).
-    if (values["no-agents-md"] === true) settings.autoReadAgents = false;
     const fi = values["files-items"];
     if (fi !== undefined) {
         const n = Number(fi);
@@ -517,7 +513,6 @@ export const main = async (argv: string[]): Promise<void> => {
             md: { type: "string", multiple: true },
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
-            "no-agents-md": { type: "boolean" },   // #268 — override: AGENTS auto-load off for this workspace
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -568,6 +563,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
+    const childAlias = process.env.PLURNK_MODEL_CHILD;
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
     if (workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
@@ -617,7 +613,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceOptions = (): Promise<{ constraints: Constraint[]; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
-            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; "no-agents-md"?: boolean; questions?: boolean }, process.cwd()),
+            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; questions?: boolean }, process.cwd()),
         }))();
         return workspaceOptionsPromise;
     };
@@ -644,7 +640,7 @@ export const main = async (argv: string[]): Promise<void> => {
             // thread == world (the model worker).
             const w = await world();
             const { constraints, settings } = await workspaceOptions();
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(childAlias !== undefined ? { childAlias } : {}), ...(resolveModelSpec(childAlias) !== undefined ? { childModel: resolveModelSpec(childAlias) } : {}), ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             // Let Node drain stdout before termination. A forced exit truncated large
             // --json records mid-string when notices made the pipe exceed its buffer.
             process.exitCode = code;
@@ -691,8 +687,7 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints,
             settings,
         });
-        const autoReadAgents = values["no-agents-md"] === true ? false : undefined;
-        await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, autoReadAgents });
+        await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), childAlias, childModel: resolveModelSpec(childAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI });
         process.exitCode = 0;
         return;
     }

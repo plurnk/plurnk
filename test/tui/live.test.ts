@@ -30,11 +30,11 @@ describe("TUI live (model-gated)", () => {
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            // Anything multi-step keeps the loop alive a beat; we inject on the
-            // FIRST trace (the prompt foist) — the widest in-flight window, since
-            // a fast model can finish a short loop before the keystroke lands.
+            // Anything multi-step keeps the loop alive a beat. Inject as soon as
+            // the TUI displays its deterministic in-flight status; durable prompt
+            // rows are deliberately suppressed because readline already shows them.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
-            await tui.waitFor(/plurnk:\/\/\/prompt\/\d+\/1/, 540_000);  // the foist → loop in-flight
+            await tui.waitFor(/⏳/, 540_000);
             tui.write("btw keep the summary short\r");
             await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop.run)
         } finally { tui.kill(); }

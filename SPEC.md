@@ -62,6 +62,7 @@ Env:
 | `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
 | `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE`. |
 | `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
+| `PLURNK_MODEL_CHILD` | _unset_ | Default WORK/FORK provider alias; unset means inherit the spawning loop's provider. See §1.2. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
@@ -97,6 +98,14 @@ Resolution at the client:
 `PLURNK_MODEL` is shared with the daemon process; env vars represent user-level preferences, not per-process namespaces. Both processes reading the same name for the same intent is the point.
 
 Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via the `providers.list` action.
+
+### §1.2.1 Child provider selection {§cli-child-provider-selection}
+
+Child selection is the same per-run posture.
+`PLURNK_MODEL_CHILD` supplies the initial explicit alias; otherwise the policy is
+inherit. Bare `/child` reports it, `/child <alias>` selects and resolves it like
+`/model`, and `/child inherit` sends explicit inheritance. Every subsequent
+loop carries that selection beside its parent model selection.
 
 ### §1.3 Project root {§cli-project-root}
 
@@ -139,7 +148,7 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI) {§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui}
 
-The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by closeStatus (0/3/4). A prefix wins over a `--flags` mode.
+The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). A prefix wins over a `--flags` mode.
 
 ### §2.1 Output channels {§cli-output-channels}
 
@@ -185,9 +194,9 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow {§cli-tui-flow}
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
-2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND[202]) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is a contract constant (the prompt row is always a 201 EDIT). Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
+2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND[202]) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is an input-affordance constant, not the service's durable prompt-row operation or status. Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /yolo /workspace [name] /run [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/run [name]` forks a new run (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and `/model` aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /child <alias|inherit> /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and provider aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **DSL ops** (`<<RE` → `<<READ`), and DSL target paths.
     - Lines starting with `<<` → the `op.parse` action. Raw DSL execution; useful for hand-crafted ops.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -238,11 +247,11 @@ One line per dispatched op. Format (vanilla ANSI, no framework):
 
 Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/❌ from the outcome; SENDs glyph their signal — ✋/💥/⏳ carry meaning; 4xx and 5xx share ❌, nvim-converged: one failure signal in the alignment column, the colored status carries the class). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent).
 
-**Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's foist EDIT at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
+**Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's actionless `prompt` row at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 
 **Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 (ops) · ⏳ ✅ 💤 🤔 💥 ✋ ❌ (status). Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
 
-**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The prompt entry (the engine's system-origin `EDIT` against `plurnk://prompt/<loop>/<turn>` — plurnk-service SPEC §15) is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the broadcast too duplicated every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
+**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
@@ -524,15 +533,15 @@ Streams are content lifecycle, not Problems or Notices. The client merely uses
 the same `📡` glyph so daemon-pushed activity has one visual lane.
 
 ```
-stream/event     { entryId, target, channel, state, contentLength }
-stream/concluded { entryId, target, subscriptionId, scheme, closeStatus, summary, wakeAction, wakeLoopId? }
+stream/event     { entryId, workerId, target, channel, state, contentLength }
+stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction, wakeLoopId? }
 ```
 
-`target` is the entry's URI (`scheme://pathname`, plurnk-service #179) — clients route on it without an entryId→URI lookup. Rendering is coalesced per §5.3:
+`workerId` is the entry-read perspective and `target` is the entry's URI (`scheme://pathname`). Rendering is coalesced per §5.3:
 
 ```
   📡 ⏳ exec://python/1/2/1
-  📡 ✅ 200 exec://python/1/2/1 "completed (exit 0); stdout=12 bytes, stderr=0 bytes"
+  📡    200 exec://python/1/2/1 "completed (exit 0); stdout=12 bytes, stderr=0 bytes"
      Ulaanbaatar
 ```
 
@@ -565,7 +574,7 @@ A conforming `plurnk` client:
 ## §10 Out of scope
 
 - Multi-daemon connections. One client, one daemon.
-- Authentication / TLS. Local-loopback only; auth is a plurnk-service concern with its own design pass.
+- Interactive provider authentication. It belongs to third-party MCP tooling, not this client.
 - Direct provider access. The client never talks to OpenAI/Anthropic/etc.; the daemon owns provider integration.
 - Direct grammar parsing. The client emits raw DSL only via `op.parse` (which delegates to the daemon's parser); it does not parse locally.
 

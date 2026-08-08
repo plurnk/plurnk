@@ -289,20 +289,24 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
             workspace: "w",
             alias: "fireslow",
             model: "fireworks/deepseek",
+            childAlias: "firefast",
+            childModel: "fireworks/qwen",
             flags: { auto: true },
             maxTurns: 7,
             yolo: true,
             json: true,
             projectRoot: "/repo",
             constraints: [{ effect: "pick", glob: "docs/**" }],
-            settings: { autoReadAgents: false },
+            settings: { filesItems: 0 },
         });
         const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
         assert.equal(fp.projectRoot, "/repo", "the project root reaches the wire");
         assert.deepEqual(fp.constraints, [{ effect: "pick", glob: "docs/**" }], "membership constraints reach the wire");
-        assert.deepEqual(fp.settings, { autoReadAgents: false }, "workspace settings reach the wire");
+        assert.deepEqual(fp.settings, { filesItems: 0 }, "workspace settings reach the wire");
         assert.equal(fp.alias, "fireslow", "the alias reaches the wire");
         assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");
+        assert.equal(fp.childAlias, "firefast", "the child alias reaches the wire");
+        assert.equal(fp.childModel, "fireworks/qwen", "the resolved child routing spec reaches the wire");
         assert.deepEqual(fp.flags, { auto: true }, "loop flags reach the wire");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
     } finally { await mock.close(); }

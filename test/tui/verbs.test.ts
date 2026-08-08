@@ -64,10 +64,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("/pick → /members reflects the rule; /drop removes it", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        // --no-agents-md: the daemon auto-picks AGENTS.md (svc#268, PLURNK_AGENTS_AUTO=1
-        // in the service .env), which would seed a standing `pick AGENTS.md` rule and
-        // pollute the assertions below. Opt out so this test owns the full rule set.
-        const tui = spawnTui(daemon.url, ["--no-agents-md"]);
+        const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("/pick *.xyz\r"); await tui.waitFor(/pick: \*\.xyz/);
@@ -98,5 +95,17 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             tui.write(`/import ${file}\r`);
             await tui.waitFor(/\[paste #\d+ \+\d+ lines\]/);
         } finally { tui.kill(); await rm(dir, { recursive: true, force: true }); }
+    });
+
+    test("a concluded client EXEC reads inline output from the notified entry owner", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--yolo"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("! printf '\\157\\167\\156\\145\\162\\055\\162\\145\\141\\144\\055\\064\\062'\r");
+            await tui.waitFor(/owner-read-42/, 15_000);
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+        } finally { tui.kill(); }
     });
 });

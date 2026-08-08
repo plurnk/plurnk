@@ -245,18 +245,17 @@ test("renderLogEntry: broadcast SEND with empty body → header only, no body li
     assert.ok(!out.includes("\n"), `expected single line, got: ${JSON.stringify(out)}`);
 });
 
-// ─── renderLogEntry: user prompt entry (plurnk://prompt/*) ───────────
+// ─── user prompt entries ─────────────────────────────────────────────
 
-test("[§cli-what-is-not-rendered] isPromptEntry: classifies prompt:///loop/N EDITs (the TUI skips them live — the typed line is the record; svc#527)", () => {
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/1/1" })), true);
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/3/2" })), true, "the real foist shape prompt:///<loop>/<turn> — numeric coordinate, verified on the wire as /L/T");
-    assert.equal(isPromptEntry(entry({ op: "READ", scheme: "prompt", pathname: "/1/1" })), false, "a prompt READ is not the foisted write — only the EDIT is skipped");
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "worker", pathname: "/notes.md" })), false, "a worker:/// entry is not a prompt");
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "worker", pathname: "loop/2" })), false, "a worker:/// entry is NOT a prompt");
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "plurnk", pathname: "prompt/3/1" })), false, "the retired plurnk:// scheme no longer classifies");
+test("[§cli-what-is-not-rendered] isPromptEntry classifies only the service's actionless prompt row", () => {
+    assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "prompt", pathname: "/1/1" })), true);
+    assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "prompt", pathname: "/3/2" })), true);
+    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/1/1" })), false, "the obsolete synthetic EDIT shape is not tolerated");
+    assert.equal(isPromptEntry(entry({ op: "READ", scheme: "prompt", pathname: "/1/1" })), false);
+    assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "worker", pathname: "/notes.md" })), false);
 });
 
-test("[§cli-log-entry-line-format] entryTarget round-trips all four authority faces raw — the <<LOOK re-address source, no synthesis (svc#527)", () => {
+test("[§cli-log-entry-line-format] entryTarget round-trips all four authority faces raw — the <<LOOK re-address source, no synthesis", () => {
     // core sends the addressable form as-typed on `hostname`; entryTarget renders it verbatim
     // so <<LOOK can re-address it. commons=empty, self=~, named, kernel=plurnk — each a valid
     // worker:// address; the face is the raw URI, legible AND round-trippable (one source).
@@ -267,13 +266,13 @@ test("[§cli-log-entry-line-format] entryTarget round-trips all four authority f
     assert.equal(entryTarget(entry({ scheme: "prompt", hostname: null, pathname: "/loop/2" })), "prompt:///loop/2", "prompt self-only, no authority slot");
 });
 
-test("renderLogEntry: prompt entry renders as a plain EDIT trace (no speech block — TUI skips it anyway)", () => {
+test("renderLogEntry does not reinterpret an actionless prompt as EDIT", () => {
     const out = renderLogEntry(entry({
-        op: "EDIT", origin: "plurnk", scheme: "prompt", pathname: "/1/1",
-        status_rx: 201, tx: { body: "What is the capital of France?" },
+        op: "prompt", origin: "plurnk", scheme: "prompt", pathname: "/1/1",
+        status_rx: 200, rx: { content: "What is the capital of France?" },
     }));
     assert.doesNotMatch(out, /^\n/);
-    assert.match(out, /📝/);
+    assert.doesNotMatch(out, /📝/);
 });
 
 test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {

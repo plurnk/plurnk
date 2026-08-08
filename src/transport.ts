@@ -20,6 +20,7 @@ import {
     clientTransportProblemMissing,
     clientTransportProposalInvalid,
     clientTransportTerminalMissing,
+    clientActionResultMissing,
     type ProblemDetails,
 } from "./diagnostics.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
@@ -64,7 +65,7 @@ export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
 
 // loop.run knobs. The bridge run endpoint reads alias/model/flags/maxTurns from
 // forwardedProps.plurnk (agui 0.2.4); WS passes them straight to loop.run.
-export interface RunOpts { alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] }
+export interface RunOpts { alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] }
 
 export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
@@ -77,7 +78,7 @@ export interface Transport {
     // Switch to (or create) a named workspace. WS rebinds the connection via
     // workspace.create; the bridge re-maps its threadId (the bridge lazy-creates the
     // workspace on the next run). Returns the workspace handle for the header.
-    useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string; autoReadAgents?: boolean }): Promise<{ id: number; name: string }>;
+    useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string }): Promise<{ id: number; name: string }>;
 }
 
 // ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
@@ -112,16 +113,68 @@ export class BridgeTransport implements Transport {
     async rpc<T>(method: string, params?: object): Promise<T> {
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
-        for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), messages: [], forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } } })) {
-            if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
-                const v = actionOutcome<T>((e as { value?: unknown }).value);
-                if (v.ok) result = v.result; else problem = v.problem;
-                continue;
+        let sawResult = false;
+        let next: { messages?: []; forwardedProps?: Record<string, unknown>; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }> } = {
+            messages: [],
+            forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } },
+        };
+        for (;;) {
+            let pausedProp: number | null = null;
+            let proposalResolution: Promise<{ logEntryId: number; decision: string; body?: string }> | null = null;
+            let interrupted = false;
+            let toolId = "";
+            let toolArgs = "";
+            for await (const e of runViaBridge(this.#target, {
+                threadId: this.#threadId,
+                ...(this.#world !== undefined ? { workspace: this.#world } : {}),
+                ...next,
+            })) {
+                if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
+                    const v = actionOutcome<T>((e as { value?: unknown }).value);
+                    sawResult = true;
+                    if (v.ok) result = v.result; else problem = v.problem;
+                    continue;
+                }
+                if (e.type === "TOOL_CALL_START") {
+                    toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
+                    toolArgs = "";
+                    continue;
+                }
+                if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) {
+                    toolArgs += String((e as { delta?: unknown }).delta ?? "");
+                    continue;
+                }
+                if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
+                    pausedProp = Number(toolId.slice(5));
+                    let args: Record<string, unknown>;
+                    try {
+                        args = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                    } catch (cause) {
+                        const invalid = clientTransportProposalInvalid(pausedProp, cause);
+                        this.#h?.onProblem?.(invalid);
+                        throw new ProblemError(invalid);
+                    }
+                    proposalResolution = new Promise((resolve) => { this.#pendingResolve = resolve; });
+                    this.#h?.onProposal({ logEntryId: pausedProp, op: args.op, target: args.target, body: args.body, attrs: args.attrs, staleClobberRisk: args.staleClobberRisk } as unknown as ProposalParams);
+                    continue;
+                }
+                if (e.type === "RUN_FINISHED") {
+                    interrupted = e.outcome?.type === "interrupt"
+                        && e.outcome.interrupts.some((interrupt) => interrupt.id === toolId || interrupt.toolCallId === toolId);
+                    continue;
+                }
+                if (e.type === "CUSTOM") this.#dispatch(e);
             }
-            if (e.type === "CUSTOM") this.#dispatch(e);
+            if (problem !== undefined) throw new ProblemError(problem);
+            if (sawResult) return result as T;
+            if (pausedProp === null) throw new ProblemError(clientActionResultMissing(method));
+            if (!interrupted) throw new ProblemError(clientTransportInterruptMismatch(pausedProp));
+            if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
+            const resolution = await proposalResolution;
+            next = resolution.decision === "cancel"
+                ? { resume: [{ interruptId: `prop:${resolution.logEntryId}`, status: "cancelled" }] }
+                : { resume: [{ interruptId: `prop:${resolution.logEntryId}`, status: "resolved", payload: { decision: resolution.decision, ...(resolution.body !== undefined ? { body: resolution.body } : {}) } }] };
         }
-        if (problem !== undefined) throw new ProblemError(problem);
-        return result as T;
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void { /* the SSE is aborted per-run; nothing persistent to suppress */ }
@@ -147,6 +200,8 @@ export class BridgeTransport implements Transport {
             ...this.#workspaceOpts(),
             ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
             ...(opts.model !== undefined ? { model: opts.model } : {}),
+            ...(opts.childAlias !== undefined ? { childAlias: opts.childAlias } : {}),
+            ...(opts.childModel !== undefined ? { childModel: opts.childModel } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
             ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
         };

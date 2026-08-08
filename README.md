@@ -41,7 +41,7 @@ plurnk --help                                  # full flag list
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/models /sessions /runs /log /model /yolo /session [name] /run [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>` |
+| `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>` |
 | `<<…>>` | raw plurnk DSL (`op.parse`) |
 | `! cmd` | exec via the daemon |
 | `... text` | inject into the running loop (or just type — a mid-loop prompt steers) |
@@ -50,7 +50,7 @@ Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and DSL ops (
 
 **Key flags:** `--model <alias>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
 
-**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.defaults` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell.
+**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` / `PLURNK_MODEL_CHILD` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.defaults` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell.
 
 ## what plurnk is
 

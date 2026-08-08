@@ -31,6 +31,7 @@ describe("TUI pty harness", () => {
             assert.match(afterHelp, /\/yolo/, "help lists the verb surface");
             // 3. /quit closes the REPL with a clean exit code + the resume hint.
             tui.write("/quit\r");
+            await tui.waitFor(/resume this workspace:\s+plurnk --workspace /);
             assert.equal(await tui.exited, 0, "/quit exits 0");
             assert.match(tui.output(), /resume this workspace:\s+plurnk --workspace /, "quit prints the resume one-liner");
         } finally {

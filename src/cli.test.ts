@@ -288,6 +288,12 @@ test("completer: /model completes aliases", async () => {
     assert.equal(frag, "g");
 });
 
+test("completer: /child completes inherit and aliases", async () => {
+    const [hits, frag] = await complete(() => ["gemma", "gpt-mini"], "/child i");
+    assert.deepEqual(hits, ["inherit"]);
+    assert.equal(frag, "i");
+});
+
 test("completer: plain text completes nothing", async () => {
     const [hits] = await complete(() => ["gemma"], "what is france");
     assert.equal(hits.length, 0);

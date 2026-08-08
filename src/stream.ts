@@ -11,6 +11,7 @@
 // optics when it's two lines long.
 
 import process from "node:process";
+import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { coordLabel } from "./render.ts";
 
 const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
@@ -33,7 +34,8 @@ interface StreamCoord {
 
 export interface StreamEventPayload extends StreamCoord {
     entryId: number;
-    target: string;         // entry URI (scheme://pathname) — plurnk-service #179
+    workerId: number;       // owning worker and entry.read perspective
+    target: string;         // entry URI (scheme://pathname)
     channel: string;
     state: string;          // static | active | closed | errored
     contentLength: number;
@@ -41,12 +43,13 @@ export interface StreamEventPayload extends StreamCoord {
 
 export interface StreamConcludedPayload extends StreamCoord {
     entryId: number;
-    target: string;         // entry URI (scheme://pathname) — plurnk-service #179
+    workerId: number;
+    target: string;         // entry URI (scheme://pathname)
     subscriptionId: number;
     scheme: string;
-    closeStatus: number;
+    result: OperationResult;
     summary: string;
-    wakeAction: string;     // no-op-active-loop | opened-loop | skipped-aborted | skipped-no-provider
+    wakeAction: string;     // resumed-loop | no-op-active-loop | no-loop | skipped-aborted | skipped-cancelled
     wakeLoopId?: number;
 }
 
@@ -87,16 +90,17 @@ export default class StreamTrace {
 
     // One conclusion line in the waterfall grammar. The daemon's summary
     // leads with the target we already printed — strip the echo. Wake is
-    // engine bookkeeping except when it actually opened a loop.
+    // engine bookkeeping except when it resumed the parked loop.
     concluded(ev: StreamConcludedPayload): string {
         this.#started.delete(ev.entryId);
+        const status = ev.result.status;
         let summary = ev.summary ?? "";
         if (summary.startsWith(ev.target)) summary = summary.slice(ev.target.length).replace(/^\s+/, "");
-        const wake = ev.wakeAction === "opened-loop" ? " → woke loop" : "";
+        const wake = ev.wakeAction === "resumed-loop" ? " → resumed loop" : "";
         const parts = [
             STREAM_GLYPH,   // lane 1: identity (the stream)
-            statusGlyph(ev.closeStatus),   // lane 2: status (reserved blank on 2xx)
-            `${statusColor(ev.closeStatus)}${ev.closeStatus}${RESET}`,
+            statusGlyph(status),   // lane 2: status (reserved blank on 2xx)
+            `${statusColor(status)}${status}${RESET}`,
             ev.target,
         ];
         let line = `  ${streamCoord(ev)}${parts.join(" ")}`;

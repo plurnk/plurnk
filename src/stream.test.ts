@@ -8,15 +8,18 @@ process.env.NO_COLOR = "1";
 const { default: StreamTrace, inlineable, renderInline } = await import("./stream.ts");
 
 const event = (entryId: number, over: Partial<{ channel: string; state: string; contentLength: number }> = {}) => ({
-    entryId, target: "python:///1/2/1", channel: "stdout", state: "active", contentLength: 12,
+    entryId, workerId: 7, target: "python:///1/2/1", channel: "stdout", state: "active", contentLength: 12,
     loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 
-const concluded = (over: Partial<{ closeStatus: number; summary: string; wakeAction: string }> = {}) => ({
-    entryId: 1, target: "python:///1/2/1", subscriptionId: 1, scheme: "python",
-    closeStatus: 200, summary: "python:///1/2/1 completed (exit 0); stdout=12 bytes, stderr=0 bytes",
-    wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
-});
+const concluded = (over: Partial<{ status: number; summary: string; wakeAction: string }> = {}) => {
+    const { status = 200, ...rest } = over;
+    return {
+        entryId: 1, workerId: 7, target: "python:///1/2/1", subscriptionId: 1, scheme: "python",
+        result: { status }, summary: "python:///1/2/1 completed (exit 0); stdout=12 bytes, stderr=0 bytes",
+        wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 2, sequence: 1, ...rest,
+    };
+};
 
 test("StreamTrace: first event announces the stream, every later tick is silent", () => {
     const t = new StreamTrace();
@@ -52,10 +55,10 @@ test("[§cli-stream-event-and-stream-concluded] StreamTrace: conclusion speaks t
     assert.doesNotMatch(line, /no-op-active-loop/);
 });
 
-test("StreamTrace: only opened-loop wakes are user-visible", () => {
+test("StreamTrace: only resumed-loop wakes are user-visible", () => {
     const t = new StreamTrace();
-    assert.match(t.concluded(concluded({ wakeAction: "opened-loop" })), /→ woke loop$/);
-    assert.doesNotMatch(t.concluded(concluded({ wakeAction: "skipped-aborted", closeStatus: 499 })), /woke/);
+    assert.match(t.concluded(concluded({ wakeAction: "resumed-loop" })), /→ resumed loop$/);
+    assert.doesNotMatch(t.concluded(concluded({ wakeAction: "skipped-aborted", status: 499 })), /resumed/);
 });
 
 test("StreamTrace: a stream can re-announce after its conclusion", () => {
@@ -67,8 +70,8 @@ test("StreamTrace: a stream can re-announce after its conclusion", () => {
 
 test("StreamTrace: failure conclusion gets the failure glyph", () => {
     const t = new StreamTrace();
-    assert.match(t.concluded(concluded({ closeStatus: 500, summary: "boom" })), /❌ 500/);
-    assert.match(t.concluded(concluded({ closeStatus: 499, summary: "" })), /✋ 499/);
+    assert.match(t.concluded(concluded({ status: 500, summary: "boom" })), /❌ 500/);
+    assert.match(t.concluded(concluded({ status: 499, summary: "" })), /✋ 499/);
 });
 
 test("inlineable: short one-or-two-line content only", () => {
@@ -86,7 +89,7 @@ test("renderInline: indents under the conclusion; stderr is marked", () => {
 
 test("StreamTrace: a stream without a coordinate renders without one", () => {
     const t = new StreamTrace();
-    const line = t.event({ entryId: 9, target: "sse://feed", channel: "data", state: "active", contentLength: 5 });
+    const line = t.event({ entryId: 9, workerId: 7, target: "sse://feed", channel: "data", state: "active", contentLength: 5 });
     assert.ok(line !== null);
     assert.doesNotMatch(line, /\d\d\/\d\d\/\d\d/);
     assert.match(line, /📡 ⏳ \.{3} sse:\/\/feed/);

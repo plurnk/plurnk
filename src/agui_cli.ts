@@ -163,10 +163,10 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             if (io.json) notices.push(value as Notice); else io.notice(value as Notice);
         } else if (name === "plurnk.stream") {
             // plurnk.stream carries the whole lifecycle: a concluded payload has
-            // closeStatus; a start/event payload has state. (json: streams aren't in
+            // its exact result; a start/event payload has state. (json: streams aren't in
             // the record — content is fetched on demand via `read L/T/S`.)
             if (!io.json) {
-                if (typeof (value as { closeStatus?: unknown }).closeStatus === "number") {
+                if (typeof (value as { result?: { status?: unknown } }).result?.status === "number") {
                     io.err(`${streams.concluded(value as StreamConcludedPayload)}\n`);
                 } else {
                     const line = streams.event(value as StreamEventPayload);
@@ -200,7 +200,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; alias?: string; model?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
+    opts: { threadId: string; workspace?: string; alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
@@ -212,6 +212,8 @@ export const runCliViaBridge = async (
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
         ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
         ...(opts.model !== undefined ? { model: opts.model } : {}),
+        ...(opts.childAlias !== undefined ? { childAlias: opts.childAlias } : {}),
+        ...(opts.childModel !== undefined ? { childModel: opts.childModel } : {}),
         ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
     };

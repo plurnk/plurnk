@@ -52,8 +52,8 @@ test("[§cli-rendering] every line species puts the status code in ONE display c
         ["model SEND 102", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 102, status_rx: 102, tx: { body: { raw: "thinking on" } } }))],
         ["model SEND 200 (answer)", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: "pong" } } }))],
         ["user SEND 201 (prompt row)", renderLogEntry(entry({ op: "SEND", origin: "client", signal: 201, status_rx: 201, tx: { body: { raw: "hi" } } }))],
-        ["stream concluded 200", streams.concluded({ entryId: 9, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", closeStatus: 200, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
-        ["stream concluded 499", streams.concluded({ entryId: 9, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", closeStatus: 499, summary: "cancelled", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
+        ["stream concluded 200", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
+        ["stream concluded 499", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 499, problem: { type: "https://problems.plurnk.dev/client/stream/cancelled", title: "Cancelled", status: 499, detail: "The stream was cancelled." } }, summary: "cancelled", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
     ];
     const cols = lines.map(([label, line]) => {
         const first = stripAnsi(line).split("\n")[0];

@@ -33,6 +33,7 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
+import type { OperationResult } from "@plurnk/plurnk-contracts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -482,13 +483,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // the row identity. 🐹 (U+1F439, the brand head — was the generic 👤
     // U+1F464) and ✅ (U+2705) are plain East-Asian-Wide single code points —
     // width 2 in node AND every major terminal, no VS16 — so they stay; the
-    // 201 is the contract constant (the prompt row is always a 201 EDIT);
+    // 201 is the input-affordance constant;
     // 💬 (U+1F4AC, stable-wide) fills the op slot the toxic ✉️ vacated.
     // Policy: VS16/ambiguous glyphs are banned from the ENTIRE palette
     // (render.ts) — stable widths are also what make columns align.
     // The prompt is the user's row, coordinate-prefixed like every other
-    // waterfall line (§5.1). The coordinate is the one the typed line will
-    // get: the prompt becomes the next loop's foist EDIT at <next>/01/01.
+    // waterfall line (§5.1). The coordinate is the next actionless prompt row.
     // lastLoopSeq tracks the highest loop the waterfall has shown; the next
     // prompt is one beyond it. Plain-ASCII coordinate — width-safe.
     // The prompt is the SAME whether or not a loop is running — kept alive above
@@ -590,11 +590,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // LOOK is a pure query: AG-UI validates and rewrites the original statement, then
     // resolves READ without writing a log entry. Run it on the conversation connection
     // so run-relative targets resolve against the right run.
-    const runLook = async (lookText: string): Promise<number> => {
-        const r = await transport.rpc("op.look", { text: lookText }) as { status: number; content: string | null };
+    const runLook = async (lookText: string): Promise<OperationResult> => {
+        const r = await transport.rpc("op.look", { text: lookText }) as OperationResult & { content: string | null };
         const content = r.content ?? "";
         printAbove(content.length > 0 ? content : `  \x1b[2m(look ${r.status}: no content)\x1b[0m`);
-        return r.status;
+        return r;
     };
 
     // Multi-line composition. The non-submitting newline keys insert a single ↵
@@ -949,7 +949,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             reprompt();
             const start = Date.now();
             let turnCount = 0;
-            let finalStatus = 0;
+            let terminalResult: OperationResult = { status: 0 };
             let hitMaxTurns = false;
             let usage: LoopUsage | undefined;
 
@@ -957,17 +957,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 const lookText = trimmed.startsWith("<<") ? lookStatement(trimmed) : null;
                 if (lookText !== null) {
                     // <<LOOK: off-run READ on the side connection — for me, not the model.
-                    finalStatus = await runLook(lookText);
+                    terminalResult = await runLook(lookText);
                 } else if (trimmed.startsWith("<<")) {
                     // Raw DSL: send to op.parse
-                    const result = await transport.rpc("op.parse", { text: trimmed }) as { results: Array<{ status: number }> };
-                    finalStatus = result.results[result.results.length - 1]?.status ?? 0;
+                    const result = await transport.rpc("op.parse", { text: trimmed }) as { results: OperationResult[] };
+                    terminalResult = result.results[result.results.length - 1] ?? { status: 0 };
                 } else if (trimmed.startsWith("!")) {
                     // `! cmd` — exec via the daemon (proposal-gated like any
                     // side effect; output streams as stream/event traces).
                     const command = trimmed.replace(/^!+\s*/, "");
-                    const result = await transport.rpc("op.exec", { command }) as { status: number };
-                    finalStatus = result.status;
+                    terminalResult = await transport.rpc("op.exec", { command }) as OperationResult;
                 } else {
                     // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
                     // `: ` = act. Per-line prefix overrides --flags mode.
@@ -985,13 +984,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     // with the loop's outcome. A pre-stream HTTP failure surfaces as
                     // an exact ProblemError (caught below; 501 gets the .env pointer).
                     const t = await transport.run(promptText, loopParams).done;
-                    finalStatus = t.finalStatus;
+                    terminalResult = t.result;
                     hitMaxTurns = t.hitMaxTurns;
                     turnCount = t.turnIds?.length ?? 0;
                     usage = t.usage;
                 }
                 const wallMs = Date.now() - start;
-                printAbove(renderSummary(turnCount, wallMs, finalStatus, hitMaxTurns, usage, usage?.promptBudget));
+                printAbove(renderSummary(turnCount, wallMs, terminalResult, hitMaxTurns, usage, usage?.promptBudget));
             } catch (cause) {
                 printAbove(renderTuiFailure(cause));
             } finally {

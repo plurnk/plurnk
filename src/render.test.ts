@@ -388,33 +388,57 @@ test("renderLogEntry: unknown op → '?' glyph", () => {
 // ─── renderSummary ────────────────────────────────────────────────────
 
 const usage = (p: number, c: number, cost = 0) => ({ promptTokens: p, completionTokens: c, costUsd: cost });
+const terminalResult = (status: number, type?: string) => status >= 400 ? {
+    status,
+    problem: {
+        type: type ?? `https://problems.plurnk.dev/test/status-${status}`,
+        title: `Status ${status}`,
+        status,
+        detail: `Terminal status ${status}`,
+    },
+} : { status };
 
 test("renderSummary: success → 'done'", () => {
-    const s = renderSummary(1, 500, 200, false, usage(10, 5));
+    const s = renderSummary(1, 500, terminalResult(200), false, usage(10, 5));
     assert.match(s, /done/);
     assert.match(s, /1 turn /);
 });
 
 test("renderSummary: maxTurns flag wins over finalStatus", () => {
-    const s = renderSummary(50, 18200, 200, true, usage(100, 50));
+    const s = renderSummary(50, 18200, terminalResult(200), true, usage(100, 50));
     assert.match(s, /maxTurns/);
     assert.doesNotMatch(s, /done/);
 });
 
 test("renderSummary: differentiated terminal codes get distinct labels (#70)", () => {
-    assert.match(renderSummary(3, 1000, 499, false, usage(10, 5)), /cancelled/);
-    assert.match(renderSummary(3, 1000, 413, false, usage(10, 5)), /budget overflow/);
-    assert.match(renderSummary(3, 1000, 429, false, usage(10, 5)), /turn ceiling/);
-    assert.match(renderSummary(3, 1000, 500, false, usage(10, 5)), /strike-out/);
-    assert.match(renderSummary(3, 1000, 508, false, usage(10, 5)), /loop detected/);
+    assert.match(renderSummary(3, 1000, terminalResult(499), false, usage(10, 5)), /cancelled/);
+    assert.match(renderSummary(3, 1000, terminalResult(413), false, usage(10, 5)), /budget overflow/);
+    assert.match(renderSummary(3, 1000, terminalResult(429), false, usage(10, 5)), /turn ceiling/);
+    assert.match(renderSummary(3, 1000, terminalResult(500, "https://problems.plurnk.dev/engine/rails/strike-threshold"), false, usage(10, 5)), /strike-out/);
+    assert.match(renderSummary(3, 1000, terminalResult(508), false, usage(10, 5)), /loop detected/);
+});
+
+test("renderSummary: status 500 is a strike-out only for the rail Problem (#7)", () => {
+    const invalidEmission = {
+        status: 500,
+        problem: {
+            type: "https://problems.plurnk.dev/engine/generation/invalid-emission-exhausted",
+            title: "Invalid emission exhausted",
+            status: 500,
+            detail: "No valid PLAN...SEND turn was received after 3 emission attempts.",
+        },
+    };
+    const line = renderSummary(0, 83, invalidEmission, false, usage(10, 5));
+    assert.match(line, /invalid emission/);
+    assert.doesNotMatch(line, /strike-out/);
 });
 
 test("renderSummary: an unmapped non-200 still falls back to 'final <N>'", () => {
-    assert.match(renderSummary(3, 1000, 418, false, usage(10, 5)), /final 418/);
+    assert.match(renderSummary(3, 1000, terminalResult(418), false, usage(10, 5)), /final 418/);
 });
 
 test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", () => {
-    const s = renderSummary(2, 500, 200, false, usage(1200, 345, 0.00042));
+    const s = renderSummary(2, 500, terminalResult(200), false, usage(1200, 345, 0.00042));
     assert.match(s, /↑1200 ↓345/);
     assert.match(s, /loop \$0\.0004/);
 });
@@ -440,42 +464,42 @@ test("contextGauge: absent contextTokens → omitted", () => {
 });
 
 test("renderSummary: contextTokens + promptBudget → gauge appended", () => {
-    const s = renderSummary(1, 500, 200, false, { ...usage(7360, 27), contextTokens: 7360 }, 49152);
+    const s = renderSummary(1, 500, terminalResult(200), false, { ...usage(7360, 27), contextTokens: 7360 }, 49152);
     assert.match(s, /ctx 15%\/49k/);
 });
 
 test("renderSummary: no promptBudget → no gauge even with contextTokens", () => {
-    const s = renderSummary(1, 500, 200, false, { ...usage(7360, 27), contextTokens: 7360 });
+    const s = renderSummary(1, 500, terminalResult(200), false, { ...usage(7360, 27), contextTokens: 7360 });
     assert.doesNotMatch(s, /ctx /);
 });
 
 test("renderSummary: usage without cost omits the cost segment", () => {
-    const s = renderSummary(1, 100, 200, false, usage(10, 5));
+    const s = renderSummary(1, 100, terminalResult(200), false, usage(10, 5));
     assert.match(s, /↑10 ↓5/);
     assert.doesNotMatch(s, /\$/);
 });
 
 test("renderSummary: no usage (non-model op) omits the token part", () => {
-    const s = renderSummary(0, 50, 201, false);
+    const s = renderSummary(0, 50, terminalResult(201), false);
     assert.doesNotMatch(s, /↑|tokens/);
 });
 
 test("renderSummary renders the loop's standard USD cost without unit conversion", () => {
-    const summary = renderSummary(1, 100, 200, false, usage(10, 5, 0.0042));
+    const summary = renderSummary(1, 100, terminalResult(200), false, usage(10, 5, 0.0042));
     assert.match(summary, /loop \$0\.0042/);
 });
 
 test("renderSummary: wall time in seconds when ≥1000ms", () => {
-    assert.match(renderSummary(1, 1234, 200, false, usage(1, 1)), /1\.23s/);
+    assert.match(renderSummary(1, 1234, terminalResult(200), false, usage(1, 1)), /1\.23s/);
 });
 
 test("renderSummary: wall time in ms when <1000", () => {
-    assert.match(renderSummary(1, 250, 200, false, usage(1, 1)), /250ms/);
+    assert.match(renderSummary(1, 250, terminalResult(200), false, usage(1, 1)), /250ms/);
 });
 
 test("renderSummary: pluralizes turns", () => {
-    assert.match(renderSummary(2, 500, 200, false, usage(1, 1)), /2 turns/);
-    assert.match(renderSummary(1, 500, 200, false, usage(1, 1)), /1 turn /);
+    assert.match(renderSummary(2, 500, terminalResult(200), false, usage(1, 1)), /2 turns/);
+    assert.match(renderSummary(1, 500, terminalResult(200), false, usage(1, 1)), /1 turn /);
 });
 
 // ─── Inline broadcasts + universal status glyph (v0.10.0) ─────────────
@@ -646,13 +670,13 @@ test("extractSendBody prettify: conventional inline right arrow renders as its t
 // ─── renderSummary: usage token part ─────────────────────────────────
 
 test("renderSummary: usage renders ↑prompt ↓completion and cost", () => {
-    const out = renderSummary(3, 850, 200, false, { promptTokens: 100, completionTokens: 50, costUsd: 0.5 });
+    const out = renderSummary(3, 850, terminalResult(200), false, { promptTokens: 100, completionTokens: 50, costUsd: 0.5 });
     assert.match(out, /↑100 ↓50/);
     assert.match(out, /\$0\.5000/);
 });
 
 test("renderSummary: zero cost omits the $ part", () => {
-    const out = renderSummary(1, 100, 200, false, { promptTokens: 10, completionTokens: 5, costUsd: 0 });
+    const out = renderSummary(1, 100, terminalResult(200), false, { promptTokens: 10, completionTokens: 5, costUsd: 0 });
     assert.match(out, /↑10 ↓5/);
     assert.doesNotMatch(out, /\$/);
 });
@@ -668,8 +692,8 @@ test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-lo
 test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.promptBudget — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
     const usage = { promptTokens: 1, completionTokens: 1, costUsd: 0, contextTokens: 12000, promptBudget: 48000 };
     // The TUI now passes usage.promptBudget as the denominator; the gauge reflects that loop's window.
-    const line = renderSummary(2, 1000, 200, false, usage, usage.promptBudget);
+    const line = renderSummary(2, 1000, terminalResult(200), false, usage, usage.promptBudget);
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");
     // A loop whose window the daemon can't report → no gauge (never a stale number).
-    assert.doesNotMatch(renderSummary(2, 1000, 200, false, { ...usage, promptBudget: null }, null), /ctx /);
+    assert.doesNotMatch(renderSummary(2, 1000, terminalResult(200), false, { ...usage, promptBudget: null }, null), /ctx /);
 });

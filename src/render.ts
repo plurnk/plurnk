@@ -1,6 +1,8 @@
 // Glyph palette + line formatting for the TUI log waterfall.
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
+import type { OperationResult } from "@plurnk/plurnk-contracts";
+
 // Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
 // (width 2 in node and every major terminal); VS16 variation-selector
 // sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely after
@@ -382,21 +384,28 @@ export const contextGauge = (contextTokens?: number, promptBudget?: number | nul
 // usage is absent for non-model ops (op.exec / op.parse have no provider
 // call) — those render no token part. It is NOT a fallback for missing
 // data: a model loop always carries real usage (plurnk-service #197).
-// Terminal loop status → label. plurnk-service 0.42.0 split the flat 499 into
-// distinct verdicts (#70): 499 is the model/actor give-up or external KILL/cancel;
-// 413/429/500/508 are ENGINE verdicts the model never emits. Labelled so a
-// ceiling (413/429) reads differently from an abandonment (500/508), not "final N".
-export const terminalStatusLabel = (status: number): string =>
-    status === 200 ? "done"
+const STRIKE_THRESHOLD = "https://problems.plurnk.dev/engine/rails/strike-threshold";
+const INVALID_EMISSION_EXHAUSTED = "https://problems.plurnk.dev/engine/generation/invalid-emission-exhausted";
+
+// The status class is not the verdict. Preserve the exact terminal Problem so
+// unrelated engine failures do not masquerade as rail strike-outs.
+export const terminalStatusLabel = (result: OperationResult): string => {
+    const status = result.status ?? 0;
+    if (status === 500) {
+        if (result.problem?.type === STRIKE_THRESHOLD) return "strike-out";
+        if (result.problem?.type === INVALID_EMISSION_EXHAUSTED) return "invalid emission";
+        return "failed";
+    }
+    return status === 200 ? "done"
         : status === 413 ? "budget overflow"
             : status === 429 ? "turn ceiling"
                 : status === 499 ? "cancelled"
-                    : status === 500 ? "strike-out"
-                        : status === 508 ? "loop detected"
-                            : `final ${status}`;
+                    : status === 508 ? "loop detected"
+                        : `final ${status}`;
+};
 
-export const renderSummary = (turns: number, wallMs: number, finalStatus: number, hitMaxTurns: boolean, usage?: LoopUsage, promptBudget?: number | null): string => {
-    const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(finalStatus);
+export const renderSummary = (turns: number, wallMs: number, result: OperationResult, hitMaxTurns: boolean, usage?: LoopUsage, promptBudget?: number | null): string => {
+    const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(result);
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
     if (usage !== undefined) {

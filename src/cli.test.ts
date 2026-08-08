@@ -110,7 +110,31 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
         entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
-    result: { loopId: 7, modelWorkerId: 39, turnIds: [1, 2], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costUsd: 0.007 } },
+    result: {
+        loopId: 7,
+        modelWorkerId: 39,
+        turnIds: [1, 2],
+        finalStatus: 200,
+        hitMaxTurns: false,
+        usage: {
+            promptTokens: 456,
+            completionTokens: 12,
+            costUsd: 0.007,
+            projectedCostUsd: 0.009,
+            costs: [{ kind: "estimated", usd: "0.009", source: "catalog" }],
+            accounting: {
+                scopeId: "scope-7",
+                status: "settled",
+                charge: {
+                    kind: "authoritative",
+                    amount: { amount: "0.007", currency: "USD" },
+                    usdEquivalent: "0.007",
+                    source: "provider ledger",
+                },
+                evaluatedAt: "2026-08-08T12:01:00Z",
+            },
+        },
+    },
     wallMs: 1234, timedOut: false,
     ...over,
 });
@@ -124,14 +148,42 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.workerId, 39);   // the conversation worker, from loop.run's modelWorkerId
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
-    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costUsd: 0.007, contextTokens: null });
+    assert.deepEqual(doc.usage, {
+        promptTokens: 456,
+        completionTokens: 12,
+        costUsd: 0.007,
+        projectedCostUsd: 0.009,
+        costs: [{ kind: "estimated", usd: "0.009", source: "catalog" }],
+        accounting: {
+            scopeId: "scope-7",
+            status: "settled",
+            charge: {
+                kind: "authoritative",
+                amount: { amount: "0.007", currency: "USD" },
+                usdEquivalent: "0.007",
+                source: "provider ledger",
+            },
+            evaluatedAt: "2026-08-08T12:01:00Z",
+        },
+        contextTokens: null,
+        promptBudget: null,
+    });
 });
 
 test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge numerator)", () => {
     const doc = buildJsonRecord(recordInput({
-        result: { loopId: 7, turnIds: [1], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costUsd: 0, contextTokens: 7360 } },
+        result: { loopId: 7, turnIds: [1], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costUsd: 0, projectedCostUsd: null, costs: [], accounting: null, contextTokens: 7360 } },
     })) as Record<string, unknown>;
-    assert.deepEqual(doc.usage, { promptTokens: 456, completionTokens: 12, costUsd: 0, contextTokens: 7360 });
+    assert.deepEqual(doc.usage, {
+        promptTokens: 456,
+        completionTokens: 12,
+        costUsd: 0,
+        projectedCostUsd: null,
+        costs: [],
+        accounting: null,
+        contextTokens: 7360,
+        promptBudget: null,
+    });
 });
 
 test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate + target", () => {

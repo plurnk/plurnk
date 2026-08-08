@@ -10,7 +10,7 @@
 import process from "node:process";
 import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody } from "./render.ts";
-import type { LogEntryWire } from "./render.ts";
+import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import {
     ProblemError,
@@ -39,7 +39,7 @@ interface TerminatedValue {
     loopId: number;
     hitMaxTurns: boolean;
     turnIds: number[];
-    usage: { promptTokens: number; completionTokens: number; costUsd: number; contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
+    usage: LoopUsage & { contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
     result: OperationResult;
 }
 

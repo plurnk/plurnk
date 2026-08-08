@@ -21,7 +21,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.0042, contextTokens: 10, promptBudget: 6848, meta: {} }, result: { status: 200 }, ...over } });
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.0042, projectedCostUsd: 0.0042, costs: [{ kind: "estimated", usd: "0.0042", source: "fixture" }], accounting: null, contextTokens: 10, promptBudget: 6848, meta: {} }, result: { status: 200 }, ...over } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
@@ -154,7 +154,22 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
         rowRun({ op: "PLAN", origin: "model" }, 42),
         rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
-        terminated({ workspaceId: 512, loopId: 9, turnIds: [1, 2, 3], usage: { promptTokens: 20, completionTokens: 8, costUsd: 0.0042, contextTokens: 20, promptBudget: 6848, meta: {} } }),
+        terminated({
+            workspaceId: 512,
+            loopId: 9,
+            turnIds: [1, 2, 3],
+            usage: {
+                promptTokens: 20,
+                completionTokens: 8,
+                costUsd: null,
+                projectedCostUsd: 0.0042,
+                costs: [{ kind: "estimated", usd: "0.0042", source: "catalog" }],
+                accounting: { scopeId: "scope-9", status: "pending", reason: "provider ledger pending" },
+                contextTokens: 20,
+                promptBudget: 6848,
+                meta: {},
+            },
+        }),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "", "json mode: silent stdout");
@@ -164,7 +179,13 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
     assert.equal(res.response, "Jupiter.", "terminal broadcast captured");
     assert.equal(res.modelWorkerId, 42, "modelWorkerId derived from the first model row's worker_id");
     assert.equal(res.terminated?.workspaceId, 512, "workspaceId from plurnk.terminated");
-    assert.equal(res.terminated?.usage.costUsd, 0.0042, "standard USD cost from plurnk.terminated");
+    assert.equal(res.terminated?.usage.costUsd, null, "unknown money stays unknown");
+    assert.equal(res.terminated?.usage.projectedCostUsd, 0.0042, "projection remains separately named");
+    assert.deepEqual(res.terminated?.usage.accounting, {
+        scopeId: "scope-9",
+        status: "pending",
+        reason: "provider ledger pending",
+    });
 });
 
 test("consumeCliRun: plurnk.terminated is authoritative for the exit code", async () => {

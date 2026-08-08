@@ -67,10 +67,11 @@ interface WorkspaceRow {
     name: string;
     project_root: string | null;
     created_at: string;
-    cost_usd: number;
+    cost_usd: number | null;
 }
 
-const formatCost = (costUsd: number): string => {
+const formatCost = (costUsd: number | null): string => {
+    if (costUsd === null) return "unknown";
     if (costUsd === 0) return "0";
     if (costUsd < 0.01) return `${(costUsd * 100).toFixed(4)}¢`;
     return `$${costUsd.toFixed(4)}`;
@@ -102,7 +103,7 @@ interface WorkerRow {
     id: number;
     name: string;
     created_at: string;
-    cost_usd: number;
+    cost_usd: number | null;
 }
 
 export const runWorkspaceWorkers = async (

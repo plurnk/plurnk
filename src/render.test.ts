@@ -387,7 +387,14 @@ test("renderLogEntry: unknown op → '?' glyph", () => {
 
 // ─── renderSummary ────────────────────────────────────────────────────
 
-const usage = (p: number, c: number, cost = 0) => ({ promptTokens: p, completionTokens: c, costUsd: cost });
+const usage = (p: number, c: number, cost = 0) => ({
+    promptTokens: p,
+    completionTokens: c,
+    costUsd: cost,
+    projectedCostUsd: null,
+    costs: [],
+    accounting: null,
+});
 const terminalResult = (status: number, type?: string) => status >= 400 ? {
     status,
     problem: {
@@ -670,15 +677,27 @@ test("extractSendBody prettify: conventional inline right arrow renders as its t
 // ─── renderSummary: usage token part ─────────────────────────────────
 
 test("renderSummary: usage renders ↑prompt ↓completion and cost", () => {
-    const out = renderSummary(3, 850, terminalResult(200), false, { promptTokens: 100, completionTokens: 50, costUsd: 0.5 });
+    const out = renderSummary(3, 850, terminalResult(200), false, usage(100, 50, 0.5));
     assert.match(out, /↑100 ↓50/);
     assert.match(out, /\$0\.5000/);
 });
 
 test("renderSummary: zero cost omits the $ part", () => {
-    const out = renderSummary(1, 100, terminalResult(200), false, { promptTokens: 10, completionTokens: 5, costUsd: 0 });
+    const out = renderSummary(1, 100, terminalResult(200), false, usage(10, 5));
     assert.match(out, /↑10 ↓5/);
     assert.doesNotMatch(out, /\$/);
+});
+
+test("renderSummary: unknown money remains pending and labels its projection", () => {
+    const out = renderSummary(1, 100, terminalResult(200), false, {
+        promptTokens: 10,
+        completionTokens: 5,
+        costUsd: null,
+        projectedCostUsd: 0.0042,
+        costs: [{ kind: "estimated", usd: "0.0042", source: "fixture" }],
+        accounting: null,
+    });
+    assert.match(out, /cost pending \(est \$0\.0042\)/);
 });
 
 test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-loop window (a switched model reports its own; the client never re-derives it)", () => {
@@ -690,7 +709,7 @@ test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-lo
 });
 
 test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.promptBudget — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
-    const usage = { promptTokens: 1, completionTokens: 1, costUsd: 0, contextTokens: 12000, promptBudget: 48000 };
+    const usage = { promptTokens: 1, completionTokens: 1, costUsd: 0, projectedCostUsd: null, costs: [], accounting: null, contextTokens: 12000, promptBudget: 48000 };
     // The TUI now passes usage.promptBudget as the denominator; the gauge reflects that loop's window.
     const line = renderSummary(2, 1000, terminalResult(200), false, usage, usage.promptBudget);
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");

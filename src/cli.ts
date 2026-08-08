@@ -32,7 +32,7 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
 // answer, usage) — NOT op CONTENT: under co-location the consumer is on the
 // same filesystem and can `plurnk read L/T/S` any entry on demand, the same
 // OPEN/FOLD discipline the engine runs on. Bump on any breaking schema change.
-export const JSON_SCHEMA_VERSION = 3;
+export const JSON_SCHEMA_VERSION = 4;
 
 const entryTarget = (e: LogEntryWire): string | null => {
     if (e.pathname === null) return null;
@@ -89,7 +89,16 @@ export const buildJsonRecord = (input: {
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage !== undefined
-            ? { promptTokens: input.result.usage.promptTokens, completionTokens: input.result.usage.completionTokens, costUsd: input.result.usage.costUsd, contextTokens: input.result.usage.contextTokens ?? null }
+            ? {
+                promptTokens: input.result.usage.promptTokens,
+                completionTokens: input.result.usage.completionTokens,
+                costUsd: input.result.usage.costUsd,
+                projectedCostUsd: input.result.usage.projectedCostUsd,
+                costs: input.result.usage.costs,
+                accounting: input.result.usage.accounting,
+                contextTokens: input.result.usage.contextTokens ?? null,
+                promptBudget: input.result.usage.promptBudget ?? null,
+            }
             : null,
         turns,
         notices: input.notices,

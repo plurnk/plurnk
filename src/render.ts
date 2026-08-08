@@ -1,7 +1,7 @@
 // Glyph palette + line formatting for the TUI log waterfall.
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
-import type { OperationResult } from "@plurnk/plurnk-contracts";
+import type { OperationResult, ProviderCost } from "@plurnk/plurnk-contracts";
 
 // Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
 // (width 2 in node and every major terminal); VS16 variation-selector
@@ -357,7 +357,23 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 export interface LoopUsage {
     promptTokens: number;
     completionTokens: number;
-    costUsd: number;
+    costUsd: number | null;
+    projectedCostUsd: number | null;
+    costs: ProviderCost[];
+    accounting: null | {
+        scopeId: string;
+        status: "open";
+    } | {
+        scopeId: string;
+        status: "pending";
+        reason: string;
+        evaluatedAt?: string;
+    } | {
+        scopeId: string;
+        status: "settled";
+        charge: Extract<ProviderCost, { kind: "authoritative" }>;
+        evaluatedAt: string;
+    };
     // Context-window occupancy + window, BOTH the daemon's per-loop figures. Under the
     // model-agnostic ruler (§tokenomics-agnostic-ruler, the chars/2 count that lets one
     // workspace serve many models) the daemon owns the whole budget narrative: contextTokens
@@ -411,7 +427,14 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
     if (usage !== undefined) {
         tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
         tokenPart += contextGauge(usage.contextTokens, promptBudget);
-        if (usage.costUsd > 0) tokenPart += ` · loop $${usage.costUsd.toFixed(4)}`;
+        if (usage.costUsd !== null && usage.costUsd > 0) {
+            tokenPart += ` · loop $${usage.costUsd.toFixed(4)}`;
+        } else if (usage.costUsd === null) {
+            tokenPart += " · cost pending";
+            if (usage.projectedCostUsd !== null) {
+                tokenPart += ` (est $${usage.projectedCostUsd.toFixed(4)})`;
+            }
+        }
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
 };

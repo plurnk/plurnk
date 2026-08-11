@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
 import { clientFlagInvalid } from "./diagnostics.ts";
-import type { LogEntryWire } from "./render.ts";
+import type { LogEntryWire, LoopUsage } from "./render.ts";
 
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1,
@@ -101,6 +101,27 @@ test("isTerminalBroadcast: signal not a number → false", () => {
 
 // ─── buildJsonRecord (the complete client-observed run record) ────────
 
+const accountedUsage: LoopUsage = {
+    accounting: {
+        requests: [{
+            provider: "provider:test",
+            model: "test",
+            outcome: "response",
+            usage: { inputTokens: 456, outputTokens: 12, totalTokens: 468 },
+            cost: {
+                kind: "charged",
+                amount: { amount: "0.007", currency: "USD" },
+                source: "provider ledger",
+            },
+        }],
+        usage: { inputTokens: 456, outputTokens: 12 },
+        costUsd: "0.007",
+    },
+    contextTokens: null,
+    promptBudget: null,
+    meta: {},
+};
+
 const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}): Parameters<typeof buildJsonRecord>[0] => ({
     workspace: { id: 12, name: "sess" },
     prompt: "what is the capital of France?",
@@ -116,24 +137,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
         turnIds: [1, 2],
         finalStatus: 200,
         hitMaxTurns: false,
-        usage: {
-            promptTokens: 456,
-            completionTokens: 12,
-            costUsd: 0.007,
-            projectedCostUsd: 0.009,
-            costs: [{ kind: "estimated", usd: "0.009", source: "catalog" }],
-            accounting: {
-                scopeId: "scope-7",
-                status: "settled",
-                charge: {
-                    kind: "authoritative",
-                    amount: { amount: "0.007", currency: "USD" },
-                    usdEquivalent: "0.007",
-                    source: "provider ledger",
-                },
-                evaluatedAt: "2026-08-08T12:01:00Z",
-            },
-        },
+        usage: accountedUsage,
     },
     wallMs: 1234, timedOut: false,
     ...over,
@@ -148,41 +152,37 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.workerId, 39);   // the conversation worker, from loop.run's modelWorkerId
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
-    assert.deepEqual(doc.usage, {
-        promptTokens: 456,
-        completionTokens: 12,
-        costUsd: 0.007,
-        projectedCostUsd: 0.009,
-        costs: [{ kind: "estimated", usd: "0.009", source: "catalog" }],
-        accounting: {
-            scopeId: "scope-7",
-            status: "settled",
-            charge: {
-                kind: "authoritative",
-                amount: { amount: "0.007", currency: "USD" },
-                usdEquivalent: "0.007",
-                source: "provider ledger",
-            },
-            evaluatedAt: "2026-08-08T12:01:00Z",
-        },
-        contextTokens: null,
-        promptBudget: null,
-    });
+    assert.deepEqual(doc.usage, accountedUsage, "JSON preserves the cardinal accounting envelope verbatim");
 });
 
 test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge numerator)", () => {
     const doc = buildJsonRecord(recordInput({
-        result: { loopId: 7, turnIds: [1], finalStatus: 200, hitMaxTurns: false, usage: { promptTokens: 456, completionTokens: 12, costUsd: 0, projectedCostUsd: null, costs: [], accounting: null, contextTokens: 7360 } },
+        result: {
+            loopId: 7,
+            turnIds: [1],
+            finalStatus: 200,
+            hitMaxTurns: false,
+            usage: {
+                accounting: {
+                    requests: [],
+                    usage: { inputTokens: 0, outputTokens: 0 },
+                    costUsd: "0",
+                },
+                contextTokens: 7360,
+                promptBudget: null,
+                meta: {},
+            },
+        },
     })) as Record<string, unknown>;
     assert.deepEqual(doc.usage, {
-        promptTokens: 456,
-        completionTokens: 12,
-        costUsd: 0,
-        projectedCostUsd: null,
-        costs: [],
-        accounting: null,
+        accounting: {
+            requests: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            costUsd: "0",
+        },
         contextTokens: 7360,
         promptBudget: null,
+        meta: {},
     });
 });
 

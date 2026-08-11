@@ -119,8 +119,8 @@ test("[§cli-plurnk-workspace-list] runWorkspaceList: table format with workspac
     const { rpc, calls } = fakeRpc({
         "workspace.list": {
             workspaces: [
-                { id: 1, name: "alpha", project_root: "/tmp/work", created_at: "2026-05-26T12:00:00Z", cost_usd: 0 },
-                { id: 2, name: "beta", project_root: null, created_at: "2026-05-26T13:00:00Z", cost_usd: 0.0125 },
+                { id: 1, name: "alpha", project_root: "/tmp/work", created_at: "2026-05-26T12:00:00Z" },
+                { id: 2, name: "beta", project_root: null, created_at: "2026-05-26T13:00:00Z" },
             ],
         },
     });
@@ -130,10 +130,11 @@ test("[§cli-plurnk-workspace-list] runWorkspaceList: table format with workspac
     assert.match(out, /\/tmp\/work/);
     assert.match(out, /beta/);
     assert.match(out, /\(headless\)/); // null project_root rendered as "(headless)"
+    assert.doesNotMatch(out, /cost/, "workspace directory does not invent an accounting rollup");
 });
 
 test("runWorkspaceList: --json passes workspaces through", async () => {
-    const workspaces = [{ id: 1, name: "x", project_root: null, created_at: "now", cost_usd: 0 }];
+    const workspaces = [{ id: 1, name: "x", project_root: null, created_at: "now" }];
     const { rpc } = fakeRpc({ "workspace.list": { workspaces } });
     const out = await captureStdout(() => runWorkspaceList(rpc, { json: true }));
     assert.deepEqual(JSON.parse(out.trim()), workspaces);
@@ -151,14 +152,14 @@ test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up worksp
     const { rpc, calls } = fakeRpc({
         "workspace.list": {
             workspaces: [
-                { id: 1, name: "alpha", project_root: null, created_at: "t", cost_usd: 0 },
-                { id: 2, name: "beta", project_root: null, created_at: "t", cost_usd: 0 },
+                { id: 1, name: "alpha", project_root: null, created_at: "t" },
+                { id: 2, name: "beta", project_root: null, created_at: "t" },
             ],
         },
         "workspace.workers": {
             workers: [
-                { id: 10, name: "run-1", created_at: "t1", cost_usd: 0 },
-                { id: 11, name: "run-2", created_at: "t2", cost_usd: 0.5 },
+                { id: 10, name: "run-1", created_at: "t1" },
+                { id: 11, name: "run-2", created_at: "t2" },
             ],
         },
     });
@@ -169,12 +170,13 @@ test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up worksp
     assert.deepEqual(calls[1].params, { id: 2 });
     assert.match(out, /run-1/);
     assert.match(out, /run-2/);
+    assert.doesNotMatch(out, /cost/, "worker directory does not invent an accounting rollup");
 });
 
 test("runWorkspaceWorkers: --json emits workers array", async () => {
-    const workers = [{ id: 10, name: "r", created_at: "t", cost_usd: 0 }];
+    const workers = [{ id: 10, name: "r", created_at: "t" }];
     const { rpc } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_usd: 0 }] },
+        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t" }] },
         "workspace.workers": { workers },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "x", { json: true }));
@@ -199,8 +201,8 @@ test("runWorkspaceWorkers: ambiguous name throws the exact public Problem", asyn
     const { rpc } = fakeRpc({
         "workspace.list": {
             workspaces: [
-                { id: 1, name: "dup", project_root: null, created_at: "t", cost_usd: 0 },
-                { id: 2, name: "dup", project_root: null, created_at: "t", cost_usd: 0 },
+                { id: 1, name: "dup", project_root: null, created_at: "t" },
+                { id: 2, name: "dup", project_root: null, created_at: "t" },
             ],
         },
     });
@@ -218,7 +220,7 @@ test("runWorkspaceWorkers: ambiguous name throws the exact public Problem", asyn
 
 test("runWorkspaceWorkers: workspace has no workers → friendly message in table mode", async () => {
     const { rpc } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t", cost_usd: 0 }] },
+        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t" }] },
         "workspace.workers": { workers: [] },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "x", { json: false }));

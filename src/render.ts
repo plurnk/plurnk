@@ -1,7 +1,7 @@
 // Glyph palette + line formatting for the TUI log waterfall.
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
-import type { OperationResult, ProviderCost } from "@plurnk/plurnk-contracts";
+import type { OperationResult } from "@plurnk/plurnk-contracts";
 
 // Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
 // (width 2 in node and every major terminal); VS16 variation-selector
@@ -355,24 +355,17 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 };
 
 export interface LoopUsage {
-    promptTokens: number;
-    completionTokens: number;
-    costUsd: number | null;
-    projectedCostUsd: number | null;
-    costs: ProviderCost[];
-    accounting: null | {
-        scopeId: string;
-        status: "open";
-    } | {
-        scopeId: string;
-        status: "pending";
-        reason: string;
-        evaluatedAt?: string;
-    } | {
-        scopeId: string;
-        status: "settled";
-        charge: Extract<ProviderCost, { kind: "authoritative" }>;
-        evaluatedAt: string;
+    // A deliberately narrow projection of the contracts-owned accounting schema.
+    // This client renders aggregate input/output and exact USD without becoming a
+    // second schema or accounting implementation; JSON output preserves the whole
+    // envelope received from plurnk.terminated.
+    accounting: {
+        requests: readonly unknown[];
+        usage: {
+            inputTokens?: number;
+            outputTokens?: number;
+        } | null;
+        costUsd: string | null;
     };
     // Context-window occupancy + window, BOTH the daemon's per-loop figures. Under the
     // model-agnostic ruler (§tokenomics-agnostic-ruler, the chars/2 count that lets one
@@ -380,8 +373,9 @@ export interface LoopUsage {
     // is the agnostic occupancy, promptBudget is THIS loop's effective window (ctx capped by
     // the model's real limit). The client renders both from loop/terminated — it does NOT
     // re-derive the window per-alias (a switched model reports its own window here).
-    contextTokens?: number;
-    promptBudget?: number | null;
+    contextTokens: number | null;
+    promptBudget: number | null;
+    meta: Record<string, unknown>;
 }
 
 // Compact token count: 49152 → "49k", 980 → "980". The gauge stays terse.
@@ -391,8 +385,9 @@ const formatK = (n: number): string => n >= 1000 ? `${Math.round(n / 1000)}k` : 
 // usage — numerator contextTokens (agnostic occupancy), denominator promptBudget (this
 // loop's effective window). Omitted — never guessed — when either is absent (a loop
 // whose window the daemon can't report returns promptBudget null).
-export const contextGauge = (contextTokens?: number, promptBudget?: number | null): string => {
-    if (contextTokens === undefined || promptBudget === undefined || promptBudget === null || promptBudget <= 0) return "";
+export const contextGauge = (contextTokens?: number | null, promptBudget?: number | null): string => {
+    if (contextTokens === undefined || contextTokens === null
+        || promptBudget === undefined || promptBudget === null || promptBudget <= 0) return "";
     const pct = Math.round((contextTokens / promptBudget) * 100);
     return ` · ctx ${pct}%/${formatK(promptBudget)}`;
 };
@@ -420,20 +415,21 @@ export const terminalStatusLabel = (result: OperationResult): string => {
                         : `final ${status}`;
 };
 
-export const renderSummary = (turns: number, wallMs: number, result: OperationResult, hitMaxTurns: boolean, usage?: LoopUsage, promptBudget?: number | null): string => {
+const isZeroDecimal = (value: string): boolean => /^0(?:\.0+)?$/.test(value);
+
+export const renderSummary = (turns: number, wallMs: number, result: OperationResult, hitMaxTurns: boolean, usage?: LoopUsage): string => {
     const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(result);
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
     if (usage !== undefined) {
-        tokenPart = ` · ↑${usage.promptTokens} ↓${usage.completionTokens}`;
-        tokenPart += contextGauge(usage.contextTokens, promptBudget);
-        if (usage.costUsd !== null && usage.costUsd > 0) {
-            tokenPart += ` · loop $${usage.costUsd.toFixed(4)}`;
-        } else if (usage.costUsd === null) {
-            tokenPart += " · cost pending";
-            if (usage.projectedCostUsd !== null) {
-                tokenPart += ` (est $${usage.projectedCostUsd.toFixed(4)})`;
-            }
+        const aggregate = usage.accounting.usage;
+        tokenPart = ` · ↑${aggregate?.inputTokens ?? "?"} ↓${aggregate?.outputTokens ?? "?"}`;
+        tokenPart += contextGauge(usage.contextTokens, usage.promptBudget);
+        const costUsd = usage.accounting.costUsd;
+        if (costUsd !== null && !isZeroDecimal(costUsd)) {
+            tokenPart += ` · loop $${costUsd}`;
+        } else if (costUsd === null && usage.accounting.requests.length > 0) {
+            tokenPart += " · loop $unknown";
         }
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;

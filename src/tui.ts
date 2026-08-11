@@ -990,7 +990,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     usage = t.usage;
                 }
                 const wallMs = Date.now() - start;
-                printAbove(renderSummary(turnCount, wallMs, terminalResult, hitMaxTurns, usage, usage?.promptBudget));
+                printAbove(renderSummary(turnCount, wallMs, terminalResult, hitMaxTurns, usage));
             } catch (cause) {
                 printAbove(renderTuiFailure(cause));
             } finally {

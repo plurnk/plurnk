@@ -387,13 +387,15 @@ test("renderLogEntry: unknown op → '?' glyph", () => {
 
 // ─── renderSummary ────────────────────────────────────────────────────
 
-const usage = (p: number, c: number, cost = 0) => ({
-    promptTokens: p,
-    completionTokens: c,
-    costUsd: cost,
-    projectedCostUsd: null,
-    costs: [],
-    accounting: null,
+const usage = (inputTokens: number, outputTokens: number, costUsd = "0") => ({
+    accounting: {
+        requests: [{ provider: "provider:test", model: "test", outcome: "response" }],
+        usage: { inputTokens, outputTokens },
+        costUsd,
+    },
+    contextTokens: null,
+    promptBudget: null,
+    meta: {},
 });
 const terminalResult = (status: number, type?: string) => status >= 400 ? {
     status,
@@ -444,10 +446,10 @@ test("renderSummary: an unmapped non-200 still falls back to 'final <N>'", () =>
     assert.match(renderSummary(3, 1000, terminalResult(418), false, usage(10, 5)), /final 418/);
 });
 
-test("renderSummary: real usage renders ↑prompt ↓completion + loop cost", () => {
-    const s = renderSummary(2, 500, terminalResult(200), false, usage(1200, 345, 0.00042));
+test("renderSummary: real usage renders conventional input/output + exact loop cost", () => {
+    const s = renderSummary(2, 500, terminalResult(200), false, usage(1200, 345, "0.00042"));
     assert.match(s, /↑1200 ↓345/);
-    assert.match(s, /loop \$0\.0004/);
+    assert.match(s, /loop \$0\.00042/);
 });
 
 // ─── contextGauge (svc#263) ──────────────────────────────────────────
@@ -471,7 +473,7 @@ test("contextGauge: absent contextTokens → omitted", () => {
 });
 
 test("renderSummary: contextTokens + promptBudget → gauge appended", () => {
-    const s = renderSummary(1, 500, terminalResult(200), false, { ...usage(7360, 27), contextTokens: 7360 }, 49152);
+    const s = renderSummary(1, 500, terminalResult(200), false, { ...usage(7360, 27), contextTokens: 7360, promptBudget: 49152 });
     assert.match(s, /ctx 15%\/49k/);
 });
 
@@ -491,8 +493,8 @@ test("renderSummary: no usage (non-model op) omits the token part", () => {
     assert.doesNotMatch(s, /↑|tokens/);
 });
 
-test("renderSummary renders the loop's standard USD cost without unit conversion", () => {
-    const summary = renderSummary(1, 100, terminalResult(200), false, usage(10, 5, 0.0042));
+test("renderSummary renders the loop's exact USD decimal without unit conversion", () => {
+    const summary = renderSummary(1, 100, terminalResult(200), false, usage(10, 5, "0.0042"));
     assert.match(summary, /loop \$0\.0042/);
 });
 
@@ -676,10 +678,10 @@ test("extractSendBody prettify: conventional inline right arrow renders as its t
 
 // ─── renderSummary: usage token part ─────────────────────────────────
 
-test("renderSummary: usage renders ↑prompt ↓completion and cost", () => {
-    const out = renderSummary(3, 850, terminalResult(200), false, usage(100, 50, 0.5));
+test("renderSummary: usage renders input/output and exact cost", () => {
+    const out = renderSummary(3, 850, terminalResult(200), false, usage(100, 50, "0.5"));
     assert.match(out, /↑100 ↓50/);
-    assert.match(out, /\$0\.5000/);
+    assert.match(out, /\$0\.5/);
 });
 
 test("renderSummary: zero cost omits the $ part", () => {
@@ -688,16 +690,18 @@ test("renderSummary: zero cost omits the $ part", () => {
     assert.doesNotMatch(out, /\$/);
 });
 
-test("renderSummary: unknown money remains pending and labels its projection", () => {
+test("renderSummary: unknown money remains unknown and preserves physical evidence", () => {
     const out = renderSummary(1, 100, terminalResult(200), false, {
-        promptTokens: 10,
-        completionTokens: 5,
-        costUsd: null,
-        projectedCostUsd: 0.0042,
-        costs: [{ kind: "estimated", usd: "0.0042", source: "fixture" }],
-        accounting: null,
+        accounting: {
+            requests: [{ provider: "provider:test", model: "test", outcome: "response", cost: { kind: "unknown" } }],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            costUsd: null,
+        },
+        contextTokens: null,
+        promptBudget: null,
+        meta: {},
     });
-    assert.match(out, /cost pending \(est \$0\.0042\)/);
+    assert.match(out, /loop \$unknown/);
 });
 
 test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-loop window (a switched model reports its own; the client never re-derives it)", () => {
@@ -709,10 +713,9 @@ test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-lo
 });
 
 test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.promptBudget — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
-    const usage = { promptTokens: 1, completionTokens: 1, costUsd: 0, projectedCostUsd: null, costs: [], accounting: null, contextTokens: 12000, promptBudget: 48000 };
-    // The TUI now passes usage.promptBudget as the denominator; the gauge reflects that loop's window.
-    const line = renderSummary(2, 1000, terminalResult(200), false, usage, usage.promptBudget);
+    const loopUsage = { ...usage(1, 1), contextTokens: 12000, promptBudget: 48000 };
+    const line = renderSummary(2, 1000, terminalResult(200), false, loopUsage);
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");
     // A loop whose window the daemon can't report → no gauge (never a stale number).
-    assert.doesNotMatch(renderSummary(2, 1000, terminalResult(200), false, { ...usage, promptBudget: null }, null), /ctx /);
+    assert.doesNotMatch(renderSummary(2, 1000, terminalResult(200), false, { ...loopUsage, promptBudget: null }), /ctx /);
 });

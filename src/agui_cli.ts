@@ -39,7 +39,7 @@ interface TerminatedValue {
     loopId: number;
     hitMaxTurns: boolean;
     turnIds: number[];
-    usage: LoopUsage & { contextTokens: number; promptBudget: number | null; meta: Record<string, unknown> };
+    usage: LoopUsage;
     result: OperationResult;
 }
 

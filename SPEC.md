@@ -159,7 +159,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `notices`, `usage`, exit metadata. Usage keeps exact nullable `costUsd`, separately named `projectedCostUsd`, and scope accounting evidence distinct. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":4, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal}]}]`, `notices`, `usage`, exit metadata. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; context occupancy, prompt budget, and provider metadata remain sibling fields. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":5, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -256,10 +256,11 @@ Width-tolerant; no fixed column widths. The status code drives color; EVERY line
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
 ```
-  <tag> · <N> turns · <wall>ms · <tokens> tokens
+  <tag> · <N> turns · <wall>ms · ↑<input> ↓<output> [· ctx <percent>/<budget>] [· loop $<exact-usd|unknown>]
 ```
 
 `tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; exhausted invalid emission is `invalid emission`, and another 500 is `failed`.
+Input and output are the conventional aggregate fields from the daemon's accounting envelope. Missing token quantities render as `?`; exact zero cost is omitted; a nonzero exact decimal is rendered without floating-point conversion; and a physical request with incomplete monetary evidence renders `$unknown`.
 
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
@@ -391,7 +392,7 @@ Default output: a column-aligned table of `alias / provider / model / active`. T
 
 Lists workspaces on the daemon via `workspace.list`. No prior attach required.
 
-Default output: a column-aligned table of `name / project_root / created / cost`. Null `project_root` renders as `(headless)`. Cost is the daemon's standard USD value.
+Default output: a column-aligned table of `name / project_root / created`. Null `project_root` renders as `(headless)`. Physical provider-request accounting is not denormalized into this directory view.
 
 With `--json`: emits `workspaces` array verbatim.
 
@@ -399,7 +400,7 @@ With `--json`: emits `workspaces` array verbatim.
 
 Lists workers within a named workspace via `workspace.workers`. Resolves `<name>` to a workspace id via a `workspace.list` filter; no attach required. Exits `1` if the name is unknown or ambiguous.
 
-Default output: a column-aligned table of `name / created / cost`. With `--json`: emits `workers` array verbatim.
+Default output: a column-aligned table of `name / created`. With `--json`: emits `workers` array verbatim. Physical provider-request accounting is not denormalized into this directory view.
 
 Typical use: discover a worker name to pass as `--worker` on `plurnk log read`.
 
@@ -470,7 +471,7 @@ through async control flow together with its process exit code. Unstructured
 throws become `client/runtime/error` Problems.
 
 In JSON output, a failure is
-`{"schemaVersion":4,"problem":<ProblemDetails>}`. Text mode renders the same
+`{"schemaVersion":5,"problem":<ProblemDetails>}`. Text mode renders the same
 Problem's title, detail, and optional recovery to stderr. A bridge that answered with a failure surfaces that failure;
 only connection-level failures receive the “no daemon” onboarding hints.
 {§cli-connection-onboarding}

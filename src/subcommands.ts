@@ -67,15 +67,7 @@ interface WorkspaceRow {
     name: string;
     project_root: string | null;
     created_at: string;
-    cost_usd: number | null;
 }
-
-const formatCost = (costUsd: number | null): string => {
-    if (costUsd === null) return "unknown";
-    if (costUsd === 0) return "0";
-    if (costUsd < 0.01) return `${(costUsd * 100).toFixed(4)}¢`;
-    return `$${costUsd.toFixed(4)}`;
-};
 
 export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
     const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
@@ -91,9 +83,8 @@ export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Pr
         s.name,
         s.project_root ?? "(headless)",
         s.created_at,
-        formatCost(s.cost_usd),
     ]);
-    process.stdout.write(`${renderTable(["name", "project_root", "created", "cost"], rows)}\n`);
+    process.stdout.write(`${renderTable(["name", "project_root", "created"], rows)}\n`);
     return 0;
 };
 
@@ -103,7 +94,6 @@ interface WorkerRow {
     id: number;
     name: string;
     created_at: string;
-    cost_usd: number | null;
 }
 
 export const runWorkspaceWorkers = async (
@@ -130,8 +120,8 @@ export const runWorkspaceWorkers = async (
         process.stdout.write(`(workspace ${JSON.stringify(workspaceName)} has no workers)\n`);
         return 0;
     }
-    const rows = workers.map((r) => [r.name, r.created_at, formatCost(r.cost_usd)]);
-    process.stdout.write(`${renderTable(["name", "created", "cost"], rows)}\n`);
+    const rows = workers.map((r) => [r.name, r.created_at]);
+    process.stdout.write(`${renderTable(["name", "created"], rows)}\n`);
     return 0;
 };
 

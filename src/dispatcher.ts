@@ -135,8 +135,9 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
   PLURNK_AUTO                  when truthy, keep proposal authority inside the loop.
                         Client-side only — proposals still go through the wire.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
-  PLURNK_QUESTIONS      when truthy, let the model ask you via SEND[300] (shared
-                        intent — the daemon reads it too). --questions overrides.
+  PLURNK_QUESTIONS      when truthy, let the model ask you via a SEND carrying
+                        signal 300 (shared intent — the daemon reads it too).
+                        --questions overrides.
   PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
                         set, a one-shot (text AND --json) runs THROUGH the bridge
                         instead of raw daemon WS (the exclusive-portal path).
@@ -178,10 +179,10 @@ options:
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
                           (e.g. '{"auto":true}' for unattended
                           benchmark/automation runs).
-      --questions         let the model ask you (SEND[300]) when it needs a
+      --questions         let the model ask you with SEND signal 300 when it needs a
                           decision — multiple choice with a free-response escape,
                           or an open question. Off by default. Overrides
-                          PLURNK_QUESTIONS. (Requires a daemon that emits SEND[300].)
+                          PLURNK_QUESTIONS. (Requires a daemon that emits that signal.)
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
@@ -192,7 +193,7 @@ options:
       --hide <glob>       membership: block file(s) from manifest. Repeatable.
       --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
-                          (FIND(file:///**)): -1 full / 0 off / N first-N. Memory
+                          (## FIND1 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
       --md <name=path>    pin a markdown doc into the workspace (read at turn 0);
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
@@ -272,7 +273,7 @@ export const buildConstraints = (values: {
 
 // Workspace-open settings. Open-context (svc#231/#286): filesItems REPLACES
 // PLURNK_FILES_ITEMS (renamed from manifestItems/PLURNK_MANIFEST_ITEMS — it only
-// ever capped the tracked-file list, FIND(file:///**); memory always foists
+// ever capped the tracked-file list (`## FIND1 (file:///**)`); memory always foists
 // full); mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a collision;
 // content read from the LOCAL fs — co-location law). Ceilings (svc#232,
 // most-restrictive-wins): maxCommands min()s PLURNK_MAX_COMMANDS; git:false ANDs
@@ -284,7 +285,7 @@ export interface Settings {
     git?: boolean;
     client?: string;          // #249 — frontend id, set on every workspace.create
     execs?: Record<string, string>; // #132 — per-workspace exec-policy layer (PLURNK_EXECS_* forwarded)
-    questions?: boolean;      // svc#346 — enable model→user SEND[300] questions for the workspace (+ questions.md teaching)
+    questions?: boolean;      // svc#346 — enable model→user SEND signal 300 questions for the workspace (+ questions.md teaching)
 }
 
 export const buildSettings = async (
@@ -295,7 +296,7 @@ export const buildSettings = async (
     const settings: Settings = {};
     const execs = collectExecsPolicy(env);
     if (Object.keys(execs).length > 0) settings.execs = execs;
-    // svc#346 — enable model→user SEND[300] questions (per-workspace; the daemon
+    // svc#346 — enable model→user SEND signal 300 questions (per-workspace; the daemon
     // injects questions.md teaching + intersects its PLURNK_QUESTIONS ceiling).
     // Flag or bare env (shared user intent). The daemon owns refusal when off.
     if (values.questions === true || ["1", "true", "yes", "on"].includes((env.PLURNK_QUESTIONS ?? "").toLowerCase())) settings.questions = true;
@@ -501,7 +502,7 @@ export const main = async (argv: string[]): Promise<void> => {
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
             flags: { type: "string" },
-            questions: { type: "boolean" },   // --questions: allow the model to ask via SEND[300]
+            questions: { type: "boolean" },   // --questions: allow the model to ask via SEND signal 300
             "max-turns": { type: "string" },
             timeout: { type: "string" },
             // membership overlay — repeatable globs; service vocabulary

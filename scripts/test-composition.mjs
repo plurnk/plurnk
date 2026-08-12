@@ -73,7 +73,7 @@ try {
         maxBuffer: 64 * 1024 * 1024,
     });
 
-    const response = "<|PLAN>Verify the packed client and service compose.<PLAN|>\n<|SEND[200]>composition ok<SEND|>";
+    const response = "# PLAN1\nVerify the packed client and service compose.\n\n## SEND1 [200]\ncomposition ok";
     model = createServer((req, res) => {
         modelRequests.push(`${req.method} ${req.url}`);
         if (req.method === "GET" && req.url === "/v1/models") {

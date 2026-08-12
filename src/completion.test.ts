@@ -6,7 +6,7 @@ import { writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
+import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 
 test("pathPartial: membership verbs expose their glob arg", () => {
     assert.equal(pathPartial("/pick src/comp"), "src/comp");
@@ -84,27 +84,36 @@ test("pathPartial: @file completes after a word-boundary @, ignores emails", () 
     assert.equal(pathPartial("mail me@example.com"), null);
 });
 
-test("dslOpPartial: only matches a <| line still typing an op name", () => {
-    assert.equal(dslOpPartial("<|RE"), "RE");
-    assert.equal(dslOpPartial("<|"), "");
+test("dslOpPartial: distinguishes the PLAN H1 from operation H2 headings", () => {
+    assert.deepEqual(dslOpPartial("# PL"), { level: 1, typed: "PL" });
+    assert.deepEqual(dslOpPartial("## RE"), { level: 2, typed: "RE" });
+    assert.deepEqual(dslOpPartial("## "), { level: 2, typed: "" });
     assert.equal(dslOpPartial("explain this"), null);
-    assert.equal(dslOpPartial("<|READ(x)>y<READ|>"), null);
+    assert.equal(dslOpPartial("## READ1 (x)"), null);
 });
 
-test("completeOps: case-insensitive, returns <|OP tokens", () => {
-    const [hits, partial] = completeOps("re");
-    assert.deepEqual(hits, ["<|READ"]);
-    assert.equal(partial, "<|re");
-    assert.equal(completeOps("")[0].length, 14);   // 13 daemon ops + the LOOK client pseudo-op
+test("completeOps: emits the canonical lane-1 heading at the right level", () => {
+    assert.deepEqual(completeOps({ level: 1, typed: "pl" }), [["# PLAN1"], "# pl"]);
+    assert.deepEqual(completeOps({ level: 2, typed: "re" }), [["## READ1"], "## re"]);
+    assert.equal(completeOps({ level: 2, typed: "" })[0].length, 13);   // 12 daemon H2 ops + LOOK
 });
 
-test("completeOps: <|LOOK (client pseudo-op) completes alongside the daemon ops", () => {
-    assert.deepEqual(completeOps("lo")[0], ["<|LOOK"]);
+test("completeOps: LOOK completes alongside daemon H2 operations", () => {
+    assert.deepEqual(completeOps({ level: 2, typed: "lo" })[0], ["## LOOK1"]);
 });
 
-test("pathPartial: DSL target path inside <|OP(...), scheme stripped", () => {
-    assert.equal(pathPartial("<|READ(src/fo"), "src/fo");
-    assert.equal(pathPartial("<|READ(file://src/fo"), "src/fo");
-    assert.equal(pathPartial("<|EDIT[tag](docs/re"), "docs/re");
-    assert.equal(pathPartial("<|READ(src/foo.ts)>x<READ|>"), null);
+test("pathPartial: DSL target path inside a canonical H2 heading, scheme stripped", () => {
+    assert.equal(pathPartial("## READ1 (src/fo"), "src/fo");
+    assert.equal(pathPartial("## READ1 (file://src/fo"), "src/fo");
+    assert.equal(pathPartial("## EDIT1 [tag] (docs/re"), "docs/re");
+    assert.equal(pathPartial("## READ1 (src/foo.ts)"), null);
+});
+
+test("dslStatement: routes only known PLURNK heading prefixes", () => {
+    assert.equal(dslStatement("# PLAN1\nthink\n\n## SEND1 [200]\ndone"), "# PLAN1\nthink\n\n## SEND1 [200]\ndone");
+    assert.equal(dslStatement("## EDIT1 (a.md)\nbody"), "## EDIT1 (a.md)\nbody");
+    assert.equal(dslStatement("## LOOK_lane (a.md)"), "## LOOK_lane (a.md)");
+    assert.equal(dslStatement("# Notes"), null);
+    assert.equal(dslStatement("## Results"), null);
+    assert.equal(dslStatement("plain prompt"), null);
 });

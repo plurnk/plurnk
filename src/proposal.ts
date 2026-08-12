@@ -121,13 +121,13 @@ export const renderProposalMenu = (params: ProposalParams): string => {
         + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
 };
 
-// ─── SEND[300] questions (plurnk-service#346) ────────────────────────
+// ─── SEND signal 300 questions (plurnk-service#346) ──────────────────
 // A question rides the SAME proposal lifecycle (world-stopped; answer via
 // loop.resolve `body`), but renders + collects differently: a numbered menu the
 // user picks by typing, always with a free-response escape. attrs carries
 // { question, choices } (choices absent/empty = open question).
 
-// Is this proposal a SEND[300] question? Returns its shape, or null (a normal op
+// Is this proposal a SEND signal 300 question? Returns its shape, or null (a normal op
 // proposal → the a/e/r/c path). Choices default to [] (open question).
 export const questionFromProposal = (params: ProposalParams): { question: string; choices: string[] } | null => {
     if (params.op !== "SEND") return null;

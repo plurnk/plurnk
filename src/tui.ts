@@ -3,8 +3,8 @@
 //
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
 //   /verb [args]   command verbs (see VERBS); never call loop.run
-//   <| raw DSL     op.parse
-//   <|LOOK(uri)|>  off-run READ — inspect a uri's content for ME, not the model
+//   # PLAN / ## OP raw DSL through op.parse
+//   ## LOOK1 (uri) off-run READ — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         ask — loop.run with flags.mode="ask"
@@ -19,7 +19,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import PasteFilter from "./paste.ts";
 import { extractOpenPaths } from "./openpaths.ts";
-import { pathPartial, completePath, dslOpPartial, completeOps } from "./completion.ts";
+import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
@@ -79,9 +79,9 @@ export const TUI_HELP = [
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
-    "  <| raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
-    "  <|LOOK(uri)|>                     off-run READ — inspect a uri for you, not the model",
-    "  Alt-p / Alt-n                      cycle <|LOOK through prior operations' targets",
+    "  # PLAN1 / ## OP1                  raw PLURNK (op.parse)",
+    "  ## LOOK1 (uri)                    off-run READ — inspect a uri for you, not the model",
+    "  Alt-p / Alt-n                     cycle ## LOOK1 through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
     "                                     log yolo workspace members stop · Alt-h help",
@@ -127,7 +127,7 @@ export const altShortcut = (forward: string): string | null => {
 // Recognize the client-only LOOK surface so it can be routed to `op.look`.
 // The AG-UI observation action owns validation and the single LOOK→READ rewrite.
 export const lookStatement = (line: string): string | null =>
-    /^<\|LOOK\b/i.test(line) ? line : null;
+    line.startsWith("## LOOK") ? line : null;
 
 // §2.0 prompt prefixes (converged with nvim's :AI ? / :AI :): `? ` puts mode:"ask"
 // on the wire flags, `: ` forces act, both overriding a --flags base mode; `...`
@@ -140,7 +140,7 @@ export const lineMode = (trimmed: string, base?: Record<string, unknown>): { fla
     return { ...(flags !== undefined ? { flags } : {}), prompt: trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "") };
 };
 
-// Alt-p / Alt-n cycle the <|LOOK target through prior operations (prev/next op).
+// Alt-p / Alt-n cycle the LOOK target through prior operations (prev/next op).
 // Alt-<letter> (`ESC<letter>`) survives the input pipeline intact — the paste
 // filter always holds a lone ESC and reassembles `ESC<letter>`, the same path the
 // Alt verb shortcuts use — whereas a Shift-Up CSI (`ESC[1;2A`) fragments at `ESC[1`
@@ -421,8 +421,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let searchFetching = false;
     let searchPercent: number | null = null;
     let branchBatch: BranchBatchEvent | null = null;
-    let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
-    // <|LOOK off-run inspection: the REAL target URIs of prior operations the
+    let hibernating = false;   // the loop parked on SEND signal 202 (awaiting streams/workers)
+    // LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
     const priorTargets: string[] = [];
@@ -504,7 +504,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // Status rides the prompt's OWN glyphs — no prepended gutter, so the row
         // never shifts and stays column-aligned with the waterfall. The origin
         // 🐹→🧮 while embeddings warm; the status lane shows ⏳ (💤 if the loop is
-        // parked on a SEND[202]) while busy, and holds a RESERVED BLANK when idle —
+        // parked on SEND signal 202) while busy, and holds a RESERVED BLANK when idle —
         // TWO lanes exactly, same as every waterfall row (identity · status), so the
         // prompt sits flush in the ladder. All glyphs are same-width palette members;
         // swapping in place keeps the columns and the readline cursor stable.
@@ -579,12 +579,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
 
     // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
-    // `<|LOOK(<that uri>)|>` line into the buffer — an editable starting point
+    // `## LOOK1 (<that uri>)` line into the buffer — an editable starting point
     // (hand-edit before Enter). Nothing to cycle → leave the line be.
     const cycleLook = (dir: "up" | "down"): void => {
         lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine(`<|LOOK(${priorTargets[lookCursor]})|>`);
+        setLine(`## LOOK1 (${priorTargets[lookCursor]})`);
     };
 
     // LOOK is a pure query: AG-UI validates and rewrites the original statement, then
@@ -612,7 +612,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // handlers are forward-declared (assigned once verbCtx exists).
     let pendingProposal: ProposalParams | null = null;
     let onProposalKey: (key: string) => void = () => {};
-    // A pending SEND[300] question (#346): answered by TYPING (a number picks a
+    // A pending SEND signal 300 question (#346): answered by TYPING (a number picks a
     // choice; anything else is free response), NOT the a/e/r/c keypress path —
     // free response needs text. The line handler intercepts while this is set.
     let pendingQuestion: { logEntryId: number; choices: string[] } | null = null;
@@ -751,10 +751,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // prompt broadcast too would duplicate it (see isPromptEntry).
             if (isPromptEntry(entry)) return;
             if (isEntryMaterialization(entry)) return;
-            // Record this op's REAL target URI for the Alt-p/Alt-n <|LOOK cycler.
+            // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);
-            // A model SEND[202] parks the loop → 💤; anything else → ⏳.
+            // A model SEND carrying signal 202 parks the loop → 💤; anything else → ⏳.
             hibernating = entry.op === "SEND" && entry.signal === 202;
             printAbove(renderLogEntry(entry));
         },
@@ -780,7 +780,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         },
         onProposal: (p) => {
-            // SEND[300] question FIRST — even a yolo loop stops the world for a human;
+            // SEND signal 300 question FIRST — even a yolo loop stops the world for a human;
             // the line handler resolves it from the next typed line.
             const q = questionFromProposal(p);
             if (q !== null) {
@@ -879,7 +879,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     return new Promise<void>((resolve) => {
         rl.on("line", async (line) => {
-            // A pending SEND[300] question consumes the typed line as its answer,
+            // A pending SEND signal 300 question consumes the typed line as its answer,
             // BEFORE any verb/prompt/inject handling (#346): a number picks a
             // choice, anything else is free response. Empty → re-ask (don't
             // resolve with nothing). Resolves the world-stopped proposal via body.
@@ -929,7 +929,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // steering case (loop.inject, #193), NOT a conflict — inject it
                 // into the live loop. (Raw DSL / exec are separate client-run
                 // ops; keep them out of a running conversation for now.)
-                if (trimmed.startsWith("<|") || trimmed.startsWith("!")) {
+                if (dslStatement(trimmed) !== null || trimmed.startsWith("!")) {
                     printAbove("  \x1b[2m(loop running — /stop before a client op)\x1b[0m");
                     return;
                 }
@@ -954,13 +954,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             let usage: LoopUsage | undefined;
 
             try {
-                const lookText = trimmed.startsWith("<|") ? lookStatement(trimmed) : null;
+                const statementText = dslStatement(trimmed);
+                const lookText = statementText !== null ? lookStatement(statementText) : null;
                 if (lookText !== null) {
-                    // <|LOOK: off-run READ on the side connection — for me, not the model.
+                    // LOOK: off-run READ on the side connection — for me, not the model.
                     terminalResult = await runLook(lookText);
-                } else if (trimmed.startsWith("<|")) {
+                } else if (statementText !== null) {
                     // Raw DSL: send to op.parse
-                    const result = await transport.rpc("op.parse", { text: trimmed }) as { results: OperationResult[] };
+                    const result = await transport.rpc("op.parse", { text: statementText }) as { results: OperationResult[] };
                     terminalResult = result.results[result.results.length - 1] ?? { status: 0 };
                 } else if (trimmed.startsWith("!")) {
                     // `! cmd` — exec via the daemon (proposal-gated like any

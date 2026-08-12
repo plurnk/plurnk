@@ -113,7 +113,7 @@ export const formatPlain = (entry: LogEntryWire): string => {
             ? `${entry.scheme}://${entry.hostname ?? ""}${entry.pathname}${entry.fragment !== null ? `#${entry.fragment}` : ""}`
             : entry.pathname;
     }
-    const sub = entry.op === "SEND" && typeof entry.signal === "number" ? `[${entry.signal}]` : "";
+    const sub = entry.op === "SEND" && typeof entry.signal === "number" ? ` [${entry.signal}]` : "";
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op}${sub} ${path}`.trim();
     // PLAN's reasoning rides tx.body (a plain string) — surface it like the TUI/nvim
     // do, so a one-shot run shows what the model planned, not a bare op name.
@@ -126,8 +126,8 @@ export const formatPlain = (entry: LogEntryWire): string => {
     return line;
 };
 
-// Per plurnk-service Engine.ts, only SEND[200] and SEND[499] terminate a loop.
-// Intermediate broadcasts (SEND[102] etc.) are protocol mechanics, not the answer.
+// Per plurnk-service Engine.ts, only broadcast SENDs carrying signal 200 or 499
+// terminate a loop. Intermediate broadcasts are protocol mechanics, not the answer.
 // Broadcast = no target at all (both scheme AND pathname null), to distinguish
 // from a SEND directed at file:// which has scheme=null but pathname set.
 export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>

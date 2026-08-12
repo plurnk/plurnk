@@ -21,7 +21,7 @@ const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     flags,
 });
 
-// ─── SEND[300] questions (#346) ──────────────────────────────────────
+// ─── SEND signal 300 questions (#346) ────────────────────────────────
 
 const qProposal = (attrs: object, op = "SEND"): Parameters<typeof questionFromProposal>[0] =>
     ({ logEntryId: 7, loopId: 1, turnId: 1, op, target: { scheme: null, pathname: null }, body: "", attrs, flags: {} });

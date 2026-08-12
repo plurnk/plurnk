@@ -17,33 +17,57 @@ export const pathPartial = (line: string): string | null => {
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);
     if (at) return at[1];
-    // DSL target path inside an unclosed `<|OP(...`: strip a leading scheme://
+    // DSL target path inside an unclosed `## OP1 (...`: strip a leading scheme://
     // and complete the path part. Bare/file:// resolve against the fs; other
     // schemes (worker://, log://, …) simply find nothing — harmless.
-    const target = line.match(/^<\|\w+(?:\[[^\]]*\])?\(([^)]*)$/);
+    const target = line.match(DSL_TARGET_PARTIAL);
     if (target) return target[1].replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
     return null;
 };
 
-// The plurnk DSL operations (plurnk-grammar plurnk.md §Operations).
-const OPS = ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "WORK", "FORK", "SEND"] as const;
+// The model-facing H2 operations. PLAN owns H1 and is deliberately separate.
+const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "WORK", "FORK", "SEND"] as const;
 
-// Client pseudo-op: `<|LOOK(target)|>` rewrites to `<|READ(target)|>` on a side run
+// Client pseudo-op: `## LOOK1 (target)` rewrites to READ on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The
 // daemon never sees "LOOK" — but it completes like a real op so the surface rhymes.
 const CLIENT_OPS = ["LOOK"] as const;
+const H2_OPS = [...OPS, ...CLIENT_OPS] as const;
+const H2_OP_ALTERNATION = H2_OPS.join("|");
+const H2_DSL_PREFIX = new RegExp(`^## (?:${H2_OP_ALTERNATION})`);
+const DSL_TARGET_PARTIAL = new RegExp(
+    `^## (?:${H2_OP_ALTERNATION})[A-Za-z0-9_]*(?: \\[[^\\]\\n]*\\])? \\(([^)\\n]*)$`,
+);
 
-// DSL op-name completion: a raw `<|` line with the op being typed; null
-// otherwise. (Target-path completion inside `<|OP(...)` is future work.)
-export const dslOpPartial = (line: string): string | null => {
-    const m = line.match(/^<\|(\w*)$/);
-    return m ? m[1] : null;
+// Coarse dispatch classification only. The daemon remains the grammar owner
+// and returns exact diagnostics for malformed headings/modifiers/bodies.
+export const dslStatement = (text: string): string | null =>
+    text.startsWith("# PLAN") || H2_DSL_PREFIX.test(text) ? text : null;
+
+export interface DslOpPartial {
+    level: 1 | 2;
+    typed: string;
+}
+
+// A heading whose operation name is still being typed. The completion surface
+// emits the taught lane (`1`); arbitrary suffixes remain the daemon parser's
+// tolerance and do not need a completion matrix.
+export const dslOpPartial = (line: string): DslOpPartial | null => {
+    const h1 = line.match(/^# ([A-Za-z]*)$/);
+    if (h1) return { level: 1, typed: h1[1] };
+    const h2 = line.match(/^## ([A-Za-z]*)$/);
+    return h2 ? { level: 2, typed: h2[1] } : null;
 };
 
-// Complete a partially-typed op into `<|OP` tokens (case-insensitive input).
-export const completeOps = (typed: string): [string[], string] => {
+// Complete a partially typed heading into the canonical lane-1 form.
+export const completeOps = ({ level, typed }: DslOpPartial): [string[], string] => {
     const up = typed.toUpperCase();
-    return [[...OPS, ...CLIENT_OPS].filter((o) => o.startsWith(up)).map((o) => `<|${o}`), `<|${typed}`];
+    const prefix = level === 1 ? "# " : "## ";
+    const operations: readonly string[] = level === 1 ? ["PLAN"] : H2_OPS;
+    return [
+        operations.filter((operation) => operation.startsWith(up)).map((operation) => `${prefix}${operation}1`),
+        `${prefix}${typed}`,
+    ];
 };
 
 // Complete a filesystem path partial against the local fs. Returns

@@ -46,7 +46,7 @@ test("formatPlain: no target at all → no trailing path", () => {
 
 test("formatPlain: SEND with numeric signal → '[N]' sub", () => {
     const s = formatPlain(entry({ op: "SEND", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
-    assert.equal(s, "[200] model SEND[200]");
+    assert.equal(s, "[200] model SEND [200]");
 });
 
 test("formatPlain: SEND without numeric signal → no sub", () => {

@@ -67,14 +67,14 @@ test("renderDiagnostic renders producer snippets and hints below the headline", 
         source: "grammar",
         kind: "parse_advisory",
         level: "warn",
-        snippet: "2:\t<|EDIT(worker://foo\n3:\t^",
-        hints: ["close the EDIT body"],
+        snippet: "2:\t## EDIT1 (worker://foo\n3:\t               ^",
+        hints: ["close the EDIT target"],
     });
     const lines = out.split("\n");
     assert.equal(lines.length, 4);
     assert.match(lines[1], /^     2:/);
     assert.match(lines[2], /^     3:/);
-    assert.match(lines[3], /^     close the EDIT body/);
+    assert.match(lines[3], /^     close the EDIT target/);
 });
 
 const freshDiagnostics = async (tag: string): Promise<typeof import("./diagnostics.ts")> =>

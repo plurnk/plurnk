@@ -42,11 +42,11 @@ plurnk --help                                  # full flag list
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
 | `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>` |
-| `<|…|>` | raw plurnk DSL (`op.parse`) |
+| `# PLAN1` / `## OP1` | raw PLURNK (`op.parse`) |
 | `! cmd` | exec via the daemon |
 | `... text` | inject into the running loop (or just type — a mid-loop prompt steers) |
 
-Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and DSL ops (`<|RE`→`<|READ`). Multi-line paste folds to one prompt.
+Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and PLURNK headings (`## RE`→`## READ1`). Multi-line paste folds to one prompt.
 
 **Key flags:** `--model <alias>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
 
@@ -57,15 +57,21 @@ Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and DSL ops (
 The model emits operations in a compact grammar; the daemon executes them, persists state, and the client renders the trace:
 
 ```
-<|EDIT[france,europe](known://countries/france/capital)>Paris<EDIT|>
-<|SEND[200]>Paris<SEND|>
+# PLAN1
+Update the known capital, then answer.
+
+## EDIT1 [france,europe] (known://countries/france/capital)
+Paris
+
+## SEND1 [200]
+Paris
 ```
 
-Multi-turn loops emerge from the structure — `SEND[102]` continues, `SEND[200]` terminates — fancy agent behavior on weak models via grammar rather than raw capability. See [plurnk-service](https://github.com/plurnk/plurnk-service).
+Multi-turn loops emerge from the structure — `## SEND1 [102]` continues, `## SEND1 [200]` terminates — fancy agent behavior on weak models via grammar rather than raw capability. See [plurnk-service](https://github.com/plurnk/plurnk-service).
 
 ## exit codes (CLI mode)
 
-`0` success (`SEND[200]`) · `1` runtime error · `2` maxTurns cap · `3` cancelled (`SEND[499]` / `--timeout`) · `4` loop failed (4xx/5xx final) · `64` usage error.
+`0` success (`## SEND1 [200]`) · `1` runtime error · `2` maxTurns cap · `3` cancelled (`## SEND1 [499]` / `--timeout`) · `4` loop failed (4xx/5xx final) · `64` usage error.
 
 ## license
 

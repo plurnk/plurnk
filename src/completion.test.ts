@@ -84,27 +84,27 @@ test("pathPartial: @file completes after a word-boundary @, ignores emails", () 
     assert.equal(pathPartial("mail me@example.com"), null);
 });
 
-test("dslOpPartial: only matches a << line still typing an op name", () => {
-    assert.equal(dslOpPartial("<<RE"), "RE");
-    assert.equal(dslOpPartial("<<"), "");
+test("dslOpPartial: only matches a <| line still typing an op name", () => {
+    assert.equal(dslOpPartial("<|RE"), "RE");
+    assert.equal(dslOpPartial("<|"), "");
     assert.equal(dslOpPartial("explain this"), null);
-    assert.equal(dslOpPartial("<<READ(x):y:READ"), null);
+    assert.equal(dslOpPartial("<|READ(x)>y<READ|>"), null);
 });
 
-test("completeOps: case-insensitive, returns <<OP tokens", () => {
+test("completeOps: case-insensitive, returns <|OP tokens", () => {
     const [hits, partial] = completeOps("re");
-    assert.deepEqual(hits, ["<<READ"]);
-    assert.equal(partial, "<<re");
-    assert.equal(completeOps("")[0].length, 12);   // 11 daemon ops + the LOOK client pseudo-op
+    assert.deepEqual(hits, ["<|READ"]);
+    assert.equal(partial, "<|re");
+    assert.equal(completeOps("")[0].length, 14);   // 13 daemon ops + the LOOK client pseudo-op
 });
 
-test("completeOps: <<LOOK (client pseudo-op) completes alongside the daemon ops", () => {
-    assert.deepEqual(completeOps("lo")[0], ["<<LOOK"]);
+test("completeOps: <|LOOK (client pseudo-op) completes alongside the daemon ops", () => {
+    assert.deepEqual(completeOps("lo")[0], ["<|LOOK"]);
 });
 
-test("pathPartial: DSL target path inside <<OP(...), scheme stripped", () => {
-    assert.equal(pathPartial("<<READ(src/fo"), "src/fo");
-    assert.equal(pathPartial("<<READ(file://src/fo"), "src/fo");
-    assert.equal(pathPartial("<<EDIT[tag](docs/re"), "docs/re");
-    assert.equal(pathPartial("<<READ(src/foo.ts):x:READ"), null);
+test("pathPartial: DSL target path inside <|OP(...), scheme stripped", () => {
+    assert.equal(pathPartial("<|READ(src/fo"), "src/fo");
+    assert.equal(pathPartial("<|READ(file://src/fo"), "src/fo");
+    assert.equal(pathPartial("<|EDIT[tag](docs/re"), "docs/re");
+    assert.equal(pathPartial("<|READ(src/foo.ts)>x<READ|>"), null);
 });

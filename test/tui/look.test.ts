@@ -28,11 +28,11 @@ describe("TUI LOOK (off-run inspection)", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             // Seed an op whose target the cycler can surface (--yolo accepts the EDIT proposal).
-            tui.write("## EDIT1 (worker:///plan.md)↵look-probe-42\r");
+            tui.write("## EDIT0 (worker:///plan.md)↵look-probe-42\r");
             await tui.waitFor(/final 2\d\d/, 45_000);  // cold-boot embedding derivation (svc: first op warms ~70 entries)   // op COMPLETED → priorTargets populated (not just the echo)
             // Alt-p (ESC p) → the newest prior op's REAL uri, templated as a LOOK line.
             tui.write("\x1bp");
-            await tui.waitFor(/## LOOK1 \(worker:\/\/\/plan\.md\)/);
+            await tui.waitFor(/## LOOK0 \(worker:\/\/\/plan\.md\)/);
             // Alt-p left the templated LOOK line in the buffer — clear it (Ctrl-U)
             // so /quit is a clean verb, not appended to the template.
             tui.write("\x15");
@@ -50,12 +50,12 @@ describe("TUI LOOK (off-run inspection)", () => {
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("## EDIT1 (worker:///note.md)↵look-harvest-99\r");
+            tui.write("## EDIT0 (worker:///note.md)↵look-harvest-99\r");
             await tui.waitFor(/final 2\d\d/, 45_000);  // cold-boot embedding derivation (svc: first op warms ~70 entries)
             // op.look resolves the target and returns content with NO log entry.
             // Anchor past the LOOK echo so we match the HARVEST, not the typed line.
-            tui.write("## LOOK1 (worker:///note.md)\r");
-            await tui.waitFor(/## LOOK1 \(worker:\/\/\/note\.md\)[\s\S]*look-harvest-99/);
+            tui.write("## LOOK0 (worker:///note.md)\r");
+            await tui.waitFor(/## LOOK0 \(worker:\/\/\/note\.md\)[\s\S]*look-harvest-99/);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {

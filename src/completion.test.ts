@@ -89,29 +89,29 @@ test("dslOpPartial: distinguishes the PLAN H1 from operation H2 headings", () =>
     assert.deepEqual(dslOpPartial("## RE"), { level: 2, typed: "RE" });
     assert.deepEqual(dslOpPartial("## "), { level: 2, typed: "" });
     assert.equal(dslOpPartial("explain this"), null);
-    assert.equal(dslOpPartial("## READ1 (x)"), null);
+    assert.equal(dslOpPartial("## READ0 (x)"), null);
 });
 
-test("completeOps: emits the canonical lane-1 heading at the right level", () => {
-    assert.deepEqual(completeOps({ level: 1, typed: "pl" }), [["# PLAN1"], "# pl"]);
-    assert.deepEqual(completeOps({ level: 2, typed: "re" }), [["## READ1"], "## re"]);
+test("completeOps: emits the canonical lane-0 heading at the right level", () => {
+    assert.deepEqual(completeOps({ level: 1, typed: "pl" }), [["# PLAN0"], "# pl"]);
+    assert.deepEqual(completeOps({ level: 2, typed: "re" }), [["## READ0"], "## re"]);
     assert.equal(completeOps({ level: 2, typed: "" })[0].length, 13);   // 12 daemon H2 ops + LOOK
 });
 
 test("completeOps: LOOK completes alongside daemon H2 operations", () => {
-    assert.deepEqual(completeOps({ level: 2, typed: "lo" })[0], ["## LOOK1"]);
+    assert.deepEqual(completeOps({ level: 2, typed: "lo" })[0], ["## LOOK0"]);
 });
 
 test("pathPartial: DSL target path inside a canonical H2 heading, scheme stripped", () => {
-    assert.equal(pathPartial("## READ1 (src/fo"), "src/fo");
-    assert.equal(pathPartial("## READ1 (file://src/fo"), "src/fo");
-    assert.equal(pathPartial("## EDIT1 [tag] (docs/re"), "docs/re");
-    assert.equal(pathPartial("## READ1 (src/foo.ts)"), null);
+    assert.equal(pathPartial("## READ0 (src/fo"), "src/fo");
+    assert.equal(pathPartial("## READ0 (file://src/fo"), "src/fo");
+    assert.equal(pathPartial("## EDIT0 [tag] (docs/re"), "docs/re");
+    assert.equal(pathPartial("## READ0 (src/foo.ts)"), null);
 });
 
 test("dslStatement: routes only known PLURNK heading prefixes", () => {
-    assert.equal(dslStatement("# PLAN1\nthink\n\n## SEND1 [200]\ndone"), "# PLAN1\nthink\n\n## SEND1 [200]\ndone");
-    assert.equal(dslStatement("## EDIT1 (a.md)\nbody"), "## EDIT1 (a.md)\nbody");
+    assert.equal(dslStatement("# PLAN0\nthink\n\n## SEND0 [200]\ndone"), "# PLAN0\nthink\n\n## SEND0 [200]\ndone");
+    assert.equal(dslStatement("## EDIT0 (a.md)\nbody"), "## EDIT0 (a.md)\nbody");
     assert.equal(dslStatement("## LOOK_lane (a.md)"), "## LOOK_lane (a.md)");
     assert.equal(dslStatement("# Notes"), null);
     assert.equal(dslStatement("## Results"), null);

@@ -50,13 +50,13 @@ test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", (
 // ─── lookStatement (recognition for op.look routing) ─────────────────────
 
 test("lookStatement: preserves the exact heading", () => {
-    assert.equal(lookStatement("## LOOK1 (worker:///plan.md)"), "## LOOK1 (worker:///plan.md)");
-    assert.equal(lookStatement("## LOOK1 (log:///1/2/3)"), "## LOOK1 (log:///1/2/3)");
+    assert.equal(lookStatement("## LOOK0 (worker:///plan.md)"), "## LOOK0 (worker:///plan.md)");
+    assert.equal(lookStatement("## LOOK0 (log:///1/2/3)"), "## LOOK0 (log:///1/2/3)");
 });
 
 test("lookStatement: preserves signal, target, scope, and body", () => {
-    assert.equal(lookStatement("## LOOK1 [2] (a.ts) <1,40>"), "## LOOK1 [2] (a.ts) <1,40>");
-    assert.equal(lookStatement("## LOOK1 (users.json)\n$.name"), "## LOOK1 (users.json)\n$.name");
+    assert.equal(lookStatement("## LOOK0 [2] (a.ts) <1,40>"), "## LOOK0 [2] (a.ts) <1,40>");
+    assert.equal(lookStatement("## LOOK0 (users.json)\n$.name"), "## LOOK0 (users.json)\n$.name");
 });
 
 test("lookStatement: keeps suffix tolerance but not a second case grammar", () => {
@@ -65,8 +65,8 @@ test("lookStatement: keeps suffix tolerance but not a second case grammar", () =
 });
 
 test("lookStatement: rejects non-LOOK operations; trailing word characters are a legal suffix", () => {
-    assert.equal(lookStatement("## READ1 (a.md)"), null);
-    assert.equal(lookStatement("## EDIT1 (a.md)\nx"), null);
+    assert.equal(lookStatement("## READ0 (a.md)"), null);
+    assert.equal(lookStatement("## EDIT0 (a.md)\nx"), null);
     assert.equal(lookStatement("## LOOKUP (a.md)"), "## LOOKUP (a.md)");
     assert.equal(lookStatement("plain prompt"), null);
 });
@@ -406,12 +406,12 @@ test("handleVerb /script <path> → reads the file, ships its DSL to op.parse, s
     const dir = await mkdtemp(join(tmpdir(), "plk-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "go.plk");
-    await writeFile(file, "## EDIT1 (file://a.md)\nhi\n\n## READ1 (file://a.md)\n");
+    await writeFile(file, "## EDIT0 (file://a.md)\nhi\n\n## READ0 (file://a.md)\n");
     const ctx = makeCtx({ "op.parse": { results: [{ status: 200 }, { status: 200 }] } });
     await handleVerb(`/script ${file}`, ctx);
     const parse = ctx.calls.find((c) => c.method === "op.parse");
     assert.ok(parse, "op.parse was called");
-    assert.match((parse!.params as { text: string }).text, /## EDIT1 \(file:\/\/a\.md\)/);   // raw file text, unparsed by the client
+    assert.match((parse!.params as { text: string }).text, /## EDIT0 \(file:\/\/a\.md\)/);   // raw file text, unparsed by the client
     assert.match(ctx.out.join(""), /script: 2 ops ok/);
 });
 
@@ -419,7 +419,7 @@ test("handleVerb /script surfaces the worst op status", async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "plk-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "bad.plk");
-    await writeFile(file, "## READ1 (file://gone.md)\n");
+    await writeFile(file, "## READ0 (file://gone.md)\n");
     const ctx = makeCtx({ "op.parse": { results: [{ status: 404 }] } });
     await handleVerb(`/script ${file}`, ctx);
     assert.match(ctx.out.join(""), /script: 1 op, worst status 404/);

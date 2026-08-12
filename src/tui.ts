@@ -4,7 +4,7 @@
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
 //   /verb [args]   command verbs (see VERBS); never call loop.run
 //   # PLAN / ## OP raw DSL through op.parse
-//   ## LOOK1 (uri) off-run READ — inspect a uri's content for ME, not the model
+//   ## LOOK0 (uri) off-run READ — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         ask — loop.run with flags.mode="ask"
@@ -79,9 +79,9 @@ export const TUI_HELP = [
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
-    "  # PLAN1 / ## OP1                  raw PLURNK (op.parse)",
-    "  ## LOOK1 (uri)                    off-run READ — inspect a uri for you, not the model",
-    "  Alt-p / Alt-n                     cycle ## LOOK1 through prior operations' targets",
+    "  # PLAN0 / ## OP0                  raw PLURNK (op.parse)",
+    "  ## LOOK0 (uri)                    off-run READ — inspect a uri for you, not the model",
+    "  Alt-p / Alt-n                     cycle ## LOOK0 through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
     "                                     log yolo workspace members stop · Alt-h help",
@@ -579,12 +579,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
 
     // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
-    // `## LOOK1 (<that uri>)` line into the buffer — an editable starting point
+    // `## LOOK0 (<that uri>)` line into the buffer — an editable starting point
     // (hand-edit before Enter). Nothing to cycle → leave the line be.
     const cycleLook = (dir: "up" | "down"): void => {
         lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine(`## LOOK1 (${priorTargets[lookCursor]})`);
+        setLine(`## LOOK0 (${priorTargets[lookCursor]})`);
     };
 
     // LOOK is a pure query: AG-UI validates and rewrites the original statement, then

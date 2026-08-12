@@ -193,7 +193,7 @@ options:
       --hide <glob>       membership: block file(s) from manifest. Repeatable.
       --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
-                          (## FIND1 (file:///**)): -1 full / 0 off / N first-N. Memory
+                          (## FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
       --md <name=path>    pin a markdown doc into the workspace (read at turn 0);
                           merges with operator PLURNK_MD_*. Repeatable. Create-time.
@@ -273,7 +273,7 @@ export const buildConstraints = (values: {
 
 // Workspace-open settings. Open-context (svc#231/#286): filesItems REPLACES
 // PLURNK_FILES_ITEMS (renamed from manifestItems/PLURNK_MANIFEST_ITEMS — it only
-// ever capped the tracked-file list (`## FIND1 (file:///**)`); memory always foists
+// ever capped the tracked-file list (`## FIND0 (file:///**)`); memory always foists
 // full); mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a collision;
 // content read from the LOCAL fs — co-location law). Ceilings (svc#232,
 // most-restrictive-wins): maxCommands min()s PLURNK_MAX_COMMANDS; git:false ANDs

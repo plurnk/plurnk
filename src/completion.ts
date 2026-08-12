@@ -17,7 +17,7 @@ export const pathPartial = (line: string): string | null => {
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);
     if (at) return at[1];
-    // DSL target path inside an unclosed `## OP1 (...`: strip a leading scheme://
+    // DSL target path inside an unclosed `## OP0 (...`: strip a leading scheme://
     // and complete the path part. Bare/file:// resolve against the fs; other
     // schemes (worker://, log://, …) simply find nothing — harmless.
     const target = line.match(DSL_TARGET_PARTIAL);
@@ -28,7 +28,7 @@ export const pathPartial = (line: string): string | null => {
 // The model-facing H2 operations. PLAN owns H1 and is deliberately separate.
 const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "WORK", "FORK", "SEND"] as const;
 
-// Client pseudo-op: `## LOOK1 (target)` rewrites to READ on a side run
+// Client pseudo-op: `## LOOK0 (target)` rewrites to READ on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The
 // daemon never sees "LOOK" — but it completes like a real op so the surface rhymes.
 const CLIENT_OPS = ["LOOK"] as const;
@@ -50,7 +50,7 @@ export interface DslOpPartial {
 }
 
 // A heading whose operation name is still being typed. The completion surface
-// emits the taught lane (`1`); arbitrary suffixes remain the daemon parser's
+// emits the taught lane (`0`); arbitrary suffixes remain the daemon parser's
 // tolerance and do not need a completion matrix.
 export const dslOpPartial = (line: string): DslOpPartial | null => {
     const h1 = line.match(/^# ([A-Za-z]*)$/);
@@ -59,13 +59,13 @@ export const dslOpPartial = (line: string): DslOpPartial | null => {
     return h2 ? { level: 2, typed: h2[1] } : null;
 };
 
-// Complete a partially typed heading into the canonical lane-1 form.
+// Complete a partially typed heading into the canonical lane-0 form.
 export const completeOps = ({ level, typed }: DslOpPartial): [string[], string] => {
     const up = typed.toUpperCase();
     const prefix = level === 1 ? "# " : "## ";
     const operations: readonly string[] = level === 1 ? ["PLAN"] : H2_OPS;
     return [
-        operations.filter((operation) => operation.startsWith(up)).map((operation) => `${prefix}${operation}1`),
+        operations.filter((operation) => operation.startsWith(up)).map((operation) => `${prefix}${operation}0`),
         `${prefix}${typed}`,
     ];
 };

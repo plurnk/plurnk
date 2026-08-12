@@ -17,33 +17,33 @@ export const pathPartial = (line: string): string | null => {
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);
     if (at) return at[1];
-    // DSL target path inside an unclosed `<<OP(...`: strip a leading scheme://
+    // DSL target path inside an unclosed `<|OP(...`: strip a leading scheme://
     // and complete the path part. Bare/file:// resolve against the fs; other
     // schemes (worker://, log://, …) simply find nothing — harmless.
-    const target = line.match(/^<<\w+(?:\[[^\]]*\])?\(([^)]*)$/);
+    const target = line.match(/^<\|\w+(?:\[[^\]]*\])?\(([^)]*)$/);
     if (target) return target[1].replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
     return null;
 };
 
 // The plurnk DSL operations (plurnk-grammar plurnk.md §Operations).
-const OPS = ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "SEND"] as const;
+const OPS = ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "WORK", "FORK", "SEND"] as const;
 
-// Client pseudo-op: `<<LOOK(target)` rewrites to `<<READ(target)` on a side run
+// Client pseudo-op: `<|LOOK(target)|>` rewrites to `<|READ(target)|>` on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The
 // daemon never sees "LOOK" — but it completes like a real op so the surface rhymes.
 const CLIENT_OPS = ["LOOK"] as const;
 
-// DSL op-name completion: a raw `<<` line with the op being typed; null
-// otherwise. (Target-path completion inside `<<OP(...)` is future work.)
+// DSL op-name completion: a raw `<|` line with the op being typed; null
+// otherwise. (Target-path completion inside `<|OP(...)` is future work.)
 export const dslOpPartial = (line: string): string | null => {
-    const m = line.match(/^<<(\w*)$/);
+    const m = line.match(/^<\|(\w*)$/);
     return m ? m[1] : null;
 };
 
-// Complete a partially-typed op into `<<OP` tokens (case-insensitive input).
+// Complete a partially-typed op into `<|OP` tokens (case-insensitive input).
 export const completeOps = (typed: string): [string[], string] => {
     const up = typed.toUpperCase();
-    return [[...OPS, ...CLIENT_OPS].filter((o) => o.startsWith(up)).map((o) => `<<${o}`), `<<${typed}`];
+    return [[...OPS, ...CLIENT_OPS].filter((o) => o.startsWith(up)).map((o) => `<|${o}`), `<|${typed}`];
 };
 
 // Complete a filesystem path partial against the local fs. Returns

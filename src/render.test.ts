@@ -255,9 +255,9 @@ test("[§cli-what-is-not-rendered] isPromptEntry classifies only the service's a
     assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "worker", pathname: "/notes.md" })), false);
 });
 
-test("[§cli-log-entry-line-format] entryTarget round-trips all four authority faces raw — the <<LOOK re-address source, no synthesis", () => {
+test("[§cli-log-entry-line-format] entryTarget round-trips all four authority faces raw — the <|LOOK re-address source, no synthesis", () => {
     // core sends the addressable form as-typed on `hostname`; entryTarget renders it verbatim
-    // so <<LOOK can re-address it. commons=empty, self=~, named, kernel=plurnk — each a valid
+    // so <|LOOK can re-address it. commons=empty, self=~, named, kernel=plurnk — each a valid
     // worker:// address; the face is the raw URI, legible AND round-trippable (one source).
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: null, pathname: "/plan.md" })), "worker:///plan.md", "empty authority = commons, verbatim");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "~", pathname: "/plan.md" })), "worker://~/plan.md", "~ = self, kept literal");

@@ -67,7 +67,7 @@ test("renderDiagnostic renders producer snippets and hints below the headline", 
         source: "grammar",
         kind: "parse_advisory",
         level: "warn",
-        snippet: "2:\t<<EDIT(worker://foo:\n3:\t^",
+        snippet: "2:\t<|EDIT(worker://foo\n3:\t^",
         hints: ["close the EDIT body"],
     });
     const lines = out.split("\n");

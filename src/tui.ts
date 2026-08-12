@@ -3,8 +3,8 @@
 //
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
 //   /verb [args]   command verbs (see VERBS); never call loop.run
-//   << raw DSL     op.parse
-//   << LOOK(uri)   off-run READ — inspect a uri's content for ME, not the model
+//   <| raw DSL     op.parse
+//   <|LOOK(uri)|>  off-run READ — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         ask — loop.run with flags.mode="ask"
@@ -79,9 +79,9 @@ export const TUI_HELP = [
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
-    "  << raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
-    "  << LOOK(uri)                       off-run READ — inspect a uri for you, not the model",
-    "  Alt-p / Alt-n                      cycle <<LOOK through prior operations' targets",
+    "  <| raw DSL    ! cmd (exec)    ... inject    ? ask    : act",
+    "  <|LOOK(uri)|>                     off-run READ — inspect a uri for you, not the model",
+    "  Alt-p / Alt-n                      cycle <|LOOK through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
     "                                     log yolo workspace members stop · Alt-h help",
@@ -127,7 +127,7 @@ export const altShortcut = (forward: string): string | null => {
 // Recognize the client-only LOOK surface so it can be routed to `op.look`.
 // The AG-UI observation action owns validation and the single LOOK→READ rewrite.
 export const lookStatement = (line: string): string | null =>
-    /^<<LOOK\b/i.test(line) ? line : null;
+    /^<\|LOOK\b/i.test(line) ? line : null;
 
 // §2.0 prompt prefixes (converged with nvim's :AI ? / :AI :): `? ` puts mode:"ask"
 // on the wire flags, `: ` forces act, both overriding a --flags base mode; `...`
@@ -140,7 +140,7 @@ export const lineMode = (trimmed: string, base?: Record<string, unknown>): { fla
     return { ...(flags !== undefined ? { flags } : {}), prompt: trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "") };
 };
 
-// Alt-p / Alt-n cycle the <<LOOK target through prior operations (prev/next op).
+// Alt-p / Alt-n cycle the <|LOOK target through prior operations (prev/next op).
 // Alt-<letter> (`ESC<letter>`) survives the input pipeline intact — the paste
 // filter always holds a lone ESC and reassembles `ESC<letter>`, the same path the
 // Alt verb shortcuts use — whereas a Shift-Up CSI (`ESC[1;2A`) fragments at `ESC[1`
@@ -422,7 +422,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let searchPercent: number | null = null;
     let branchBatch: BranchBatchEvent | null = null;
     let hibernating = false;   // the loop parked on a SEND[202] (awaiting streams/workers)
-    // <<LOOK off-run inspection: the REAL target URIs of prior operations the
+    // <|LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
     const priorTargets: string[] = [];
@@ -579,12 +579,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
 
     // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
-    // `<<LOOK(<that uri>)::LOOK` line into the buffer — an editable starting point
+    // `<|LOOK(<that uri>)|>` line into the buffer — an editable starting point
     // (hand-edit before Enter). Nothing to cycle → leave the line be.
     const cycleLook = (dir: "up" | "down"): void => {
         lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine(`<<LOOK(${priorTargets[lookCursor]})::LOOK`);
+        setLine(`<|LOOK(${priorTargets[lookCursor]})|>`);
     };
 
     // LOOK is a pure query: AG-UI validates and rewrites the original statement, then
@@ -751,7 +751,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // prompt broadcast too would duplicate it (see isPromptEntry).
             if (isPromptEntry(entry)) return;
             if (isEntryMaterialization(entry)) return;
-            // Record this op's REAL target URI for the Alt-p/Alt-n <<LOOK cycler.
+            // Record this op's REAL target URI for the Alt-p/Alt-n <|LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);
             // A model SEND[202] parks the loop → 💤; anything else → ⏳.
@@ -929,7 +929,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // steering case (loop.inject, #193), NOT a conflict — inject it
                 // into the live loop. (Raw DSL / exec are separate client-run
                 // ops; keep them out of a running conversation for now.)
-                if (trimmed.startsWith("<<") || trimmed.startsWith("!")) {
+                if (trimmed.startsWith("<|") || trimmed.startsWith("!")) {
                     printAbove("  \x1b[2m(loop running — /stop before a client op)\x1b[0m");
                     return;
                 }
@@ -954,11 +954,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             let usage: LoopUsage | undefined;
 
             try {
-                const lookText = trimmed.startsWith("<<") ? lookStatement(trimmed) : null;
+                const lookText = trimmed.startsWith("<|") ? lookStatement(trimmed) : null;
                 if (lookText !== null) {
-                    // <<LOOK: off-run READ on the side connection — for me, not the model.
+                    // <|LOOK: off-run READ on the side connection — for me, not the model.
                     terminalResult = await runLook(lookText);
-                } else if (trimmed.startsWith("<<")) {
+                } else if (trimmed.startsWith("<|")) {
                     // Raw DSL: send to op.parse
                     const result = await transport.rpc("op.parse", { text: trimmed }) as { results: OperationResult[] };
                     terminalResult = result.results[result.results.length - 1] ?? { status: 0 };

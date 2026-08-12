@@ -296,7 +296,7 @@ export const isPromptEntry = (entry: LogEntryWire): boolean =>
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
 // the bare pathname when scheme is null (the daemon's file:// shortcut). null
 // when the entry has no path at all (a broadcast SEND). One source for both the
-// waterfall render and the <<LOOK cycler — no synthesis, render what the daemon sent.
+// waterfall render and the <|LOOK cycler — no synthesis, render what the daemon sent.
 export const entryTarget = (entry: LogEntryWire): string | null => {
     if (entry.pathname === null) return null;
     return entry.scheme !== null

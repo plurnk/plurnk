@@ -15,7 +15,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", suffix: "", origin: "model", signal: null,
     loop_seq: 1, turn_seq: 1, sequence: 1,
     scheme: null, pathname: null, hostname: null, fragment: null,
-    status_rx: 200, tx: null, rx: null, ...o,
+    status_rx: 200, tx: null, rx: null, tags: [], ...o,
 });
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });

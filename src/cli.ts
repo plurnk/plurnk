@@ -58,6 +58,7 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
             coord: entryCoord(e), op: e.op, origin: e.origin,
             target: entryTarget(e), status: e.status_rx,
             signal: typeof e.signal === "number" ? e.signal : null,
+            tags: e.tags,
         });
         byTurn.set(e.turn_seq, ops);
     }

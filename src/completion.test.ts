@@ -105,7 +105,7 @@ test("completeOps: LOOK completes alongside daemon H2 operations", () => {
 test("pathPartial: DSL target path inside a canonical H2 heading, scheme stripped", () => {
     assert.equal(pathPartial("## READ0 (src/fo"), "src/fo");
     assert.equal(pathPartial("## READ0 (file://src/fo"), "src/fo");
-    assert.equal(pathPartial("## EDIT0 [tag] (docs/re"), "docs/re");
+    assert.equal(pathPartial("## EDIT0 [+tag] (docs/re"), "docs/re");
     assert.equal(pathPartial("## READ0 (src/foo.ts)"), null);
 });
 

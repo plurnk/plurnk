@@ -40,6 +40,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     status_rx: 200,
     tx: null,
     rx: null,
+    tags: [],
     loop_seq: 1,
     turn_seq: 1,
     sequence: 1,

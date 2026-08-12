@@ -24,6 +24,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     status_rx: 200,
     tx: null,
     rx: null,
+    tags: [],
     ...overrides,
 });
 
@@ -127,7 +128,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
     prompt: "what is the capital of France?",
     response: "Paris",
     entries: [
-        entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1 }),
+        entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1, tags: ["init", "research"] }),
         entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
@@ -191,7 +192,7 @@ test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate +
     assert.equal(doc.turns.length, 2);
     assert.equal(doc.turns[0].turn, 1);
     assert.deepEqual(doc.turns[0].ops[0], {
-        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, signal: null,
+        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, signal: null, tags: ["init", "research"],
     });
     // the terminal SEND keeps its numeric signal
     assert.equal(doc.turns[1].ops[0].signal, 200);
@@ -258,7 +259,7 @@ test("buildScriptJsonRecord: results + turn-grouped ops + Notices, no loop field
     // grouped by turn, sharing buildJsonRecord's op shape
     const turns = doc.turns as Array<{ turn: number; ops: Array<Record<string, unknown>> }>;
     assert.equal(turns.length, 2);
-    assert.deepEqual(turns[0].ops[0], { coord: "01/01/01", op: "EDIT", origin: "client", target: "file:///a.md", status: 200, signal: null });
+    assert.deepEqual(turns[0].ops[0], { coord: "01/01/01", op: "EDIT", origin: "client", target: "file:///a.md", status: 200, signal: null, tags: [] });
     // no loop-only fields leak in (it's a straight-line script, no model)
     assert.ok(!("response" in doc) && !("loopId" in doc) && !("usage" in doc));
 });

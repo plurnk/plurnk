@@ -39,7 +39,7 @@ const codeColumn = (line: string): number => {
 const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     id: 1, loop_seq: 1, turn_seq: 1, sequence: 5, op: "READ", suffix: "", origin: "model",
     signal: null, scheme: "file", pathname: "/x", hostname: null, fragment: null,
-    tx: { body: "b" }, rx: "ok", status_rx: 200,
+    tx: { body: "b" }, rx: "ok", status_rx: 200, tags: [],
     ...over,
 });
 

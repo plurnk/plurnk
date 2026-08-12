@@ -60,7 +60,7 @@ The model emits operations in a compact grammar; the daemon executes them, persi
 # PLAN0
 Update the known capital, then answer.
 
-## EDIT0 [france,europe] (known://countries/france/capital)
+## EDIT0 [+france,+europe] (known://countries/france/capital)
 Paris
 
 ## SEND0 [200]

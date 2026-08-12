@@ -150,6 +150,7 @@ export interface LogEntryWire {
     tx: unknown;
     rx: unknown;
     attrs?: unknown;
+    tags: string[];
     // Logical coordinate (the model's log://L/T/S address) — every wire
     // log entry carries it (loops⋈turns JOIN, plurnk-service #208).
     loop_seq: number;

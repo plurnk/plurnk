@@ -95,7 +95,8 @@ test("dslOpPartial: distinguishes the PLAN H1 from operation H2 headings", () =>
 test("completeOps: emits the canonical lane-0 heading at the right level", () => {
     assert.deepEqual(completeOps({ level: 1, typed: "pl" }), [["# PLAN0"], "# pl"]);
     assert.deepEqual(completeOps({ level: 2, typed: "re" }), [["## READ0"], "## re"]);
-    assert.equal(completeOps({ level: 2, typed: "" })[0].length, 13);   // 12 daemon H2 ops + LOOK
+    assert.deepEqual(completeOps({ level: 2, typed: "ba" })[0], ["## BARE0"]);
+    assert.equal(completeOps({ level: 2, typed: "" })[0].length, 14);   // 13 daemon H2 ops + LOOK
 });
 
 test("completeOps: LOOK completes alongside daemon H2 operations", () => {
@@ -112,6 +113,7 @@ test("pathPartial: DSL target path inside a canonical H2 heading, scheme strippe
 test("dslStatement: routes only known PLURNK heading prefixes", () => {
     assert.equal(dslStatement("# PLAN0\nthink\n\n## SEND0 [200]\ndone"), "# PLAN0\nthink\n\n## SEND0 [200]\ndone");
     assert.equal(dslStatement("## EDIT0 (a.md)\nbody"), "## EDIT0 (a.md)\nbody");
+    assert.equal(dslStatement("## BARE0\nWhat is the capital of Germany?"), "## BARE0\nWhat is the capital of Germany?");
     assert.equal(dslStatement("## LOOK_lane (a.md)"), "## LOOK_lane (a.md)");
     assert.equal(dslStatement("# Notes"), null);
     assert.equal(dslStatement("## Results"), null);

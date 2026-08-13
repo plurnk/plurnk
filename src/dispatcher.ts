@@ -126,7 +126,7 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
   PLURNK_MODEL          model alias to use for every loop.run on this invocation.
                         Shared with the daemon (user-level preference). --model
                         overrides for this invocation only.
-  PLURNK_MODEL_CHILD    optional WORK/FORK provider alias. Unset = inherit the
+  PLURNK_MODEL_CHILD    optional WORK/FORK/BARE provider alias. Unset = inherit the
                         spawning loop's provider; interactive /child overrides.
   PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.

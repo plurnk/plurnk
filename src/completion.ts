@@ -26,7 +26,7 @@ export const pathPartial = (line: string): string | null => {
 };
 
 // The model-facing H2 operations. PLAN owns H1 and is deliberately separate.
-const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "WORK", "FORK", "SEND"] as const;
+const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND"] as const;
 
 // Client pseudo-op: `## LOOK0 (target)` rewrites to READ on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The

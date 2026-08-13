@@ -381,6 +381,12 @@ test("renderLogEntry: includes op glyph", () => {
     assert.ok(line.includes(OP_GLYPHS.FIND));
 });
 
+test("renderLogEntry: BARE has an isolated-inference glyph", () => {
+    const line = renderLogEntry(entry({ op: "BARE" }));
+    assert.ok(line.includes(OP_GLYPHS.BARE));
+    assert.doesNotMatch(line, /\?/);
+});
+
 test("renderLogEntry: unknown op → '?' glyph", () => {
     const line = renderLogEntry(entry({ op: "WHATEVER" }));
     assert.match(line, /\?/);

@@ -20,6 +20,7 @@ export const OP_GLYPHS: Record<string, string> = {
     FOLD: "➖",
     SEND: "💬",
     EXEC: "🔧",
+    BARE: "🔮",
     PLAN: "🧠",   // the model's per-turn reasoning (grammar 0.70 leads every turn with PLAN)
 };
 

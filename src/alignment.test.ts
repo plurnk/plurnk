@@ -47,6 +47,7 @@ test("[§cli-rendering] every line species puts the status code in ONE display c
     const streams = new StreamTrace();
     const lines: Array<[string, string]> = [
         ["op 200 (blank status lane)", renderLogEntry(entry({}))],
+        ["BARE 200 (isolated inference)", renderLogEntry(entry({ op: "BARE" }))],
         ["op 404 (glyph status lane)", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
         ["exec 202 (parked)", renderLogEntry(entry({ op: "EXEC", status_rx: 202, signal: 202 }))],
         ["model SEND 102", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 102, status_rx: 102, tx: { body: { raw: "thinking on" } } }))],

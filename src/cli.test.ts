@@ -21,6 +21,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     pathname: null,
     hostname: null,
     fragment: null,
+    lineMarker: null,
     status_rx: 200,
     tx: null,
     rx: null,
@@ -63,6 +64,17 @@ test("formatPlain: hostname + pathname assemble correctly", () => {
 test("formatPlain: fragment appended when present", () => {
     const s = formatPlain(entry({ op: "READ", scheme: "worker", pathname: "/d", fragment: "sect", status_rx: 200 }));
     assert.equal(s, "[200] model READ worker:///d#sect");
+});
+
+test("formatPlain: preserves numeric and hash scopes after the target", () => {
+    assert.equal(
+        formatPlain(entry({ pathname: "evaluator/functions.go", lineMarker: { marks: [480, 530] } })),
+        "[200] model READ evaluator/functions.go <480,530>",
+    );
+    assert.equal(
+        formatPlain(entry({ op: "EDIT", pathname: "evaluator/functions.go", lineMarker: { marks: ["@Xb59M", "@KPohD"] } })),
+        "[200] model EDIT evaluator/functions.go <@Xb59M,@KPohD>",
+    );
 });
 
 // ─── isTerminalBroadcast ──────────────────────────────────────────────
@@ -128,7 +140,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
     prompt: "what is the capital of France?",
     response: "Paris",
     entries: [
-        entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1, tags: ["init", "research"] }),
+        entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", lineMarker: { marks: [4, 12] }, status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1, tags: ["init", "research"] }),
         entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
@@ -192,7 +204,7 @@ test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate +
     assert.equal(doc.turns.length, 2);
     assert.equal(doc.turns[0].turn, 1);
     assert.deepEqual(doc.turns[0].ops[0], {
-        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, signal: null, tags: ["init", "research"],
+        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, scope: [4, 12], signal: null, tags: ["init", "research"],
     });
     // the terminal SEND keeps its numeric signal
     assert.equal(doc.turns[1].ops[0].signal, 200);
@@ -259,7 +271,7 @@ test("buildScriptJsonRecord: results + turn-grouped ops + Notices, no loop field
     // grouped by turn, sharing buildJsonRecord's op shape
     const turns = doc.turns as Array<{ turn: number; ops: Array<Record<string, unknown>> }>;
     assert.equal(turns.length, 2);
-    assert.deepEqual(turns[0].ops[0], { coord: "01/01/01", op: "EDIT", origin: "client", target: "file:///a.md", status: 200, signal: null, tags: [] });
+    assert.deepEqual(turns[0].ops[0], { coord: "01/01/01", op: "EDIT", origin: "client", target: "file:///a.md", status: 200, scope: null, signal: null, tags: [] });
     // no loop-only fields leak in (it's a straight-line script, no model)
     assert.ok(!("response" in doc) && !("loopId" in doc) && !("usage" in doc));
 });

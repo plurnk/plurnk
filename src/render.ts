@@ -147,6 +147,7 @@ export interface LogEntryWire {
     pathname: string | null;
     hostname: string | null;
     fragment: string | null;
+    lineMarker: { marks: Array<number | string> } | null;
     status_rx: number;
     tx: unknown;
     rx: unknown;
@@ -306,6 +307,9 @@ export const entryTarget = (entry: LogEntryWire): string | null => {
         : entry.pathname;
 };
 
+export const entryScope = (entry: LogEntryWire): string | null =>
+    entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;
+
 export const renderLogEntry = (entry: LogEntryWire): string => {
     // Broadcast SEND has no path at all (both scheme AND pathname null).
     // A SEND directed at file:// would have scheme=null but pathname set —
@@ -334,6 +338,8 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // shortcut) and we render the bare path.
     const target = entryTarget(entry);
     const pathText = target !== null ? `${CYAN}${target}${RESET}` : "";
+    const scope = entryScope(entry);
+    const scopeText = scope !== null ? `${CYAN}${scope}${RESET}` : "";
 
     const extra = buildExtra(entry);
 
@@ -341,6 +347,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // code · target · extra. subGlyph is ALWAYS pushed so the code column is stable.
     const parts = [idGlyph, subGlyph, statusText];
     if (pathText.length > 0) parts.push(pathText);
+    if (scopeText.length > 0) parts.push(scopeText);
     if (extra.length > 0) parts.push(extra);
 
     // PLAN carries the model's reasoning as a plain string in tx.body (NOT the

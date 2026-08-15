@@ -159,7 +159,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; context occupancy, prompt budget, and provider metadata remain sibling fields. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":5, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; context occupancy, prompt budget, and provider metadata remain sibling fields. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":5, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -242,10 +242,11 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 One line per dispatched op. Format (vanilla ANSI, no framework):
 
 ```
-  <origin> <op-glyph> <status-glyph> <status> <target>  <body-preview>
+  <origin> <op-glyph> <status-glyph> <status> <target> <scope>  <body-preview>
 ```
 
 Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/❌ from the outcome; SENDs glyph their signal — ✋/💥/⏳ carry meaning; 4xx and 5xx share ❌, nvim-converged: one failure signal in the alignment column, the colored status carries the class). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent).
+The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 
 **Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's actionless `prompt` row at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 
@@ -417,7 +418,7 @@ Filter flags (all numeric, all optional):
 | `--since <id>` | `sinceId` | Entries with id > sinceId (incremental fetch) |
 | `--limit <n>` | `limit` | Cap entries (daemon default 100, max 1000) |
 
-Default output: one trace line per entry, same format as CLI-mode trace (`[<status>] <origin> <op>[<sub>] <path>`). With `--json`: emits `entries` array verbatim.
+Default output: one trace line per entry, same format as CLI-mode trace (`[<status>] <origin> <op>[<sub>] <path> <scope>`). The scope is omitted when the operation has no line marker. With `--json`: emits `entries` array verbatim.
 
 ### §7.5 What subcommands do NOT do
 

@@ -37,6 +37,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     pathname: null,
     hostname: null,
     fragment: null,
+    lineMarker: null,
     status_rx: 200,
     tx: null,
     rx: null,
@@ -265,6 +266,15 @@ test("[§cli-log-entry-line-format] entryTarget round-trips all four authority f
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "extract-host", pathname: "/plan.md" })), "worker://extract-host/plan.md", "named worker verbatim");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare");
     assert.equal(entryTarget(entry({ scheme: "prompt", hostname: null, pathname: "/loop/2" })), "prompt:///loop/2", "prompt self-only, no authority slot");
+});
+
+test("[§cli-log-entry-line-format] renderLogEntry preserves the operation scope", () => {
+    const out = renderLogEntry(entry({
+        scheme: null,
+        pathname: "evaluator/functions.go",
+        lineMarker: { marks: ["@Xb59M", "@KPohD"] },
+    }));
+    assert.match(out, /evaluator\/functions\.go <@Xb59M,@KPohD>/);
 });
 
 test("renderLogEntry does not reinterpret an actionless prompt as EDIT", () => {

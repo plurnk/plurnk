@@ -159,7 +159,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
 
 **json mode (`--json` / `PLURNK_JSON`):**
-- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; context occupancy, prompt budget, and provider metadata remain sibling fields. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":5, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same OPEN/FOLD discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -257,7 +257,7 @@ The target and scope are omitted independently when absent; a present scope rend
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
 ```
-  <tag> · <N> turns · <wall>ms · ↑<input> ↓<output> [· ctx <percent>/<budget>] [· loop $<exact-usd|unknown>]
+  <tag> · <N> turns · <wall>ms · ↑<input> ↓<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<exact-usd|unknown>]
 ```
 
 `tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; exhausted invalid emission is `invalid emission`, and another 500 is `failed`.
@@ -472,7 +472,7 @@ through async control flow together with its process exit code. Unstructured
 throws become `client/runtime/error` Problems.
 
 In JSON output, a failure is
-`{"schemaVersion":5,"problem":<ProblemDetails>}`. Text mode renders the same
+`{"schemaVersion":6,"problem":<ProblemDetails>}`. Text mode renders the same
 Problem's title, detail, and optional recovery to stderr. A bridge that answered with a failure surfaces that failure;
 only connection-level failures receive the “no daemon” onboarding hints.
 {§cli-connection-onboarding}

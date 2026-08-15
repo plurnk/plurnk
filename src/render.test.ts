@@ -14,6 +14,7 @@ const {
     extractSendBody,
     renderLogEntry,
     renderSummary,
+    curationGauge,
     contextGauge,
     progressLabel,
     isEntryMaterialization,
@@ -410,8 +411,10 @@ const usage = (inputTokens: number, outputTokens: number, costUsd = "0") => ({
         usage: { inputTokens, outputTokens },
         costUsd,
     },
+    curationWeight: null,
+    curationBudget: null,
     contextTokens: null,
-    promptBudget: null,
+    contextCapacity: null,
     meta: {},
 });
 const terminalResult = (status: number, type?: string) => status >= 400 ? {
@@ -469,7 +472,11 @@ test("renderSummary: real usage renders conventional input/output + exact loop c
     assert.match(s, /loop \$0\.00042/);
 });
 
-// ─── contextGauge (svc#263) ──────────────────────────────────────────
+// ─── dimensionally independent terminal gauges ───────────────────────
+
+test("[§cli-summary-line-per-looprun] curationGauge: weight + budget → 'cur N%/Mk'", () => {
+    assert.equal(curationGauge(12000, 48000), " · cur 25%/48k");
+});
 
 test("[§cli-summary-line-per-looprun] contextGauge: occupancy + window → 'ctx N%/Mk'", () => {
     assert.equal(contextGauge(7360, 49152), " · ctx 15%/49k");
@@ -479,7 +486,7 @@ test("contextGauge: sub-1000 window stays bare (no k)", () => {
     assert.equal(contextGauge(120, 512), " · ctx 23%/512");
 });
 
-test("contextGauge: null/absent promptBudget → omitted (never guessed)", () => {
+test("contextGauge: null/absent contextCapacity → omitted (never guessed)", () => {
     assert.equal(contextGauge(7360, null), "");
     assert.equal(contextGauge(7360, undefined), "");
     assert.equal(contextGauge(7360, 0), "");
@@ -489,12 +496,19 @@ test("contextGauge: absent contextTokens → omitted", () => {
     assert.equal(contextGauge(undefined, 49152), "");
 });
 
-test("renderSummary: contextTokens + promptBudget → gauge appended", () => {
-    const s = renderSummary(1, 500, terminalResult(200), false, { ...usage(7360, 27), contextTokens: 7360, promptBudget: 49152 });
+test("renderSummary: curation and context gauges remain distinct", () => {
+    const s = renderSummary(1, 500, terminalResult(200), false, {
+        ...usage(7360, 27),
+        curationWeight: 12000,
+        curationBudget: 48000,
+        contextTokens: 7360,
+        contextCapacity: 49152,
+    });
+    assert.match(s, /cur 25%\/48k/);
     assert.match(s, /ctx 15%\/49k/);
 });
 
-test("renderSummary: no promptBudget → no gauge even with contextTokens", () => {
+test("renderSummary: no contextCapacity → no context gauge even with contextTokens", () => {
     const s = renderSummary(1, 500, terminalResult(200), false, { ...usage(7360, 27), contextTokens: 7360 });
     assert.doesNotMatch(s, /ctx /);
 });
@@ -714,25 +728,32 @@ test("renderSummary: unknown money remains unknown and preserves physical eviden
             usage: { inputTokens: 10, outputTokens: 5 },
             costUsd: null,
         },
+        curationWeight: null,
+        curationBudget: null,
         contextTokens: null,
-        promptBudget: null,
+        contextCapacity: null,
         meta: {},
     });
     assert.match(out, /loop \$unknown/);
 });
 
-test("[§cli-summary-line-per-looprun] contextGauge: renders the daemon's per-loop window (a switched model reports its own; the client never re-derives it)", () => {
-    // The denominator is usage.promptBudget from THIS loop — the daemon owns it under the
-    // agnostic ruler. Whatever window the loop ran with is what the gauge shows.
+test("[§cli-summary-line-per-looprun] contextGauge renders the daemon's request-matched physical capacity", () => {
     assert.equal(contextGauge(18000, 36000), " · ctx 50%/36k");
     assert.equal(contextGauge(18000, 128000), " · ctx 14%/128k");
     assert.equal(contextGauge(18000, null), "", "a loop the daemon can't window omits the gauge, never lies with a stale one");
 });
 
-test("[§cli-summary-line-per-looprun] renderSummary: the ctx window is the loop's OWN usage.promptBudget — realignment to the daemon's per-loop figure (n/2 refactor)", () => {
-    const loopUsage = { ...usage(1, 1), contextTokens: 12000, promptBudget: 48000 };
+test("[§cli-summary-line-per-looprun] renderSummary takes both gauge denominators from the terminal envelope", () => {
+    const loopUsage = {
+        ...usage(1, 1),
+        curationWeight: 18000,
+        curationBudget: 36000,
+        contextTokens: 12000,
+        contextCapacity: 48000,
+    };
     const line = renderSummary(2, 1000, terminalResult(200), false, loopUsage);
+    assert.match(line, /cur 50%\/36k/);
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");
     // A loop whose window the daemon can't report → no gauge (never a stale number).
-    assert.doesNotMatch(renderSummary(2, 1000, terminalResult(200), false, { ...loopUsage, promptBudget: null }), /ctx /);
+    assert.doesNotMatch(renderSummary(2, 1000, terminalResult(200), false, { ...loopUsage, contextCapacity: null }), /ctx /);
 });

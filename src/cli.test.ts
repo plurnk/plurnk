@@ -130,8 +130,10 @@ const accountedUsage: LoopUsage = {
         usage: { inputTokens: 456, outputTokens: 12 },
         costUsd: "0.007",
     },
+    curationWeight: null,
+    curationBudget: null,
     contextTokens: null,
-    promptBudget: null,
+    contextCapacity: null,
     meta: {},
 };
 
@@ -168,7 +170,7 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.deepEqual(doc.usage, accountedUsage, "JSON preserves the cardinal accounting envelope verbatim");
 });
 
-test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge numerator)", () => {
+test("buildJsonRecord: usage preserves independent curation and context gauges", () => {
     const doc = buildJsonRecord(recordInput({
         result: {
             loopId: 7,
@@ -181,8 +183,10 @@ test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge n
                     usage: { inputTokens: 0, outputTokens: 0 },
                     costUsd: "0",
                 },
+                curationWeight: 12000,
+                curationBudget: 48000,
                 contextTokens: 7360,
-                promptBudget: null,
+                contextCapacity: 49152,
                 meta: {},
             },
         },
@@ -193,8 +197,10 @@ test("buildJsonRecord: usage carries contextTokens when present (svc#263 gauge n
             usage: { inputTokens: 0, outputTokens: 0 },
             costUsd: "0",
         },
+        curationWeight: 12000,
+        curationBudget: 48000,
         contextTokens: 7360,
-        promptBudget: null,
+        contextCapacity: 49152,
         meta: {},
     });
 });

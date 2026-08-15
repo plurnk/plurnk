@@ -32,7 +32,7 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
 // answer, usage) — NOT op CONTENT: under co-location the consumer is on the
 // same filesystem and can `plurnk read L/T/S` any entry on demand, the same
 // OPEN/FOLD discipline the engine runs on. Bump on any breaking schema change.
-export const JSON_SCHEMA_VERSION = 5;
+export const JSON_SCHEMA_VERSION = 6;
 
 // The logical L/T/S coordinate — the address `plurnk read` takes.
 const entryCoord = (e: LogEntryWire): string => {

@@ -453,11 +453,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // marks the boot-time default `active`).
     let aliasCache: string[] = [];
     let activeAlias: string | undefined;
-    // Alias list for completion + the header's active default. The context-gauge WINDOW
-    // is NOT derived here — it rides each loop's usage.promptBudget from the daemon (which
-    // owns the budget narrative under the agnostic ruler; a switched model reports its own
-    // window there). Re-deriving per-alias here was the wrong layer and mis-rendered a
-    // model whose provider window is null but whose effective window is the ctx cap.
+    // Alias list for completion + the header's active default. Both terminal gauges
+    // ride the loop usage envelope; this client never reconstructs curation policy or
+    // physical input capacity from ambient alias metadata.
     try {
         const r = await transport.rpc("providers.list") as { aliases?: Array<{ alias: string; active?: boolean }> };
         if (Array.isArray(r.aliases)) {

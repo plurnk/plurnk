@@ -376,30 +376,31 @@ export interface LoopUsage {
         } | null;
         costUsd: string | null;
     };
-    // Context-window occupancy + window, BOTH the daemon's per-loop figures. Under the
-    // model-agnostic ruler (§tokenomics-agnostic-ruler, the chars/2 count that lets one
-    // workspace serve many models) the daemon owns the whole budget narrative: contextTokens
-    // is the agnostic occupancy, promptBudget is THIS loop's effective window (ctx capped by
-    // the model's real limit). The client renders both from loop/terminated — it does NOT
-    // re-derive the window per-alias (a switched model reports its own window here).
+    // The daemon reports curation pressure and physical request occupancy as two
+    // independent gauges. The client renders them verbatim and never compares
+    // model-independent weight with provider tokens.
+    curationWeight: number | null;
+    curationBudget: number | null;
     contextTokens: number | null;
-    promptBudget: number | null;
+    contextCapacity: number | null;
     meta: Record<string, unknown>;
 }
 
 // Compact token count: 49152 → "49k", 980 → "980". The gauge stays terse.
 const formatK = (n: number): string => n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`;
 
-// Context-% gauge (svc#263): `ctx 15%/49k`. Both figures are the daemon's per-loop
-// usage — numerator contextTokens (agnostic occupancy), denominator promptBudget (this
-// loop's effective window). Omitted — never guessed — when either is absent (a loop
-// whose window the daemon can't report returns promptBudget null).
-export const contextGauge = (contextTokens?: number | null, promptBudget?: number | null): string => {
-    if (contextTokens === undefined || contextTokens === null
-        || promptBudget === undefined || promptBudget === null || promptBudget <= 0) return "";
-    const pct = Math.round((contextTokens / promptBudget) * 100);
-    return ` · ctx ${pct}%/${formatK(promptBudget)}`;
+const gauge = (label: "cur" | "ctx", used?: number | null, capacity?: number | null): string => {
+    if (used === undefined || used === null
+        || capacity === undefined || capacity === null || capacity <= 0) return "";
+    const pct = Math.round((used / capacity) * 100);
+    return ` · ${label} ${pct}%/${formatK(capacity)}`;
 };
+
+export const curationGauge = (weight?: number | null, budget?: number | null): string =>
+    gauge("cur", weight, budget);
+
+export const contextGauge = (tokens?: number | null, capacity?: number | null): string =>
+    gauge("ctx", tokens, capacity);
 
 // usage is absent for non-model ops (op.exec / op.parse have no provider
 // call) — those render no token part. It is NOT a fallback for missing
@@ -433,7 +434,8 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
     if (usage !== undefined) {
         const aggregate = usage.accounting.usage;
         tokenPart = ` · ↑${aggregate?.inputTokens ?? "?"} ↓${aggregate?.outputTokens ?? "?"}`;
-        tokenPart += contextGauge(usage.contextTokens, usage.promptBudget);
+        tokenPart += curationGauge(usage.curationWeight, usage.curationBudget);
+        tokenPart += contextGauge(usage.contextTokens, usage.contextCapacity);
         const costUsd = usage.accounting.costUsd;
         if (costUsd !== null && !isZeroDecimal(costUsd)) {
             tokenPart += ` · loop $${costUsd}`;

@@ -39,8 +39,10 @@ const loopUsage = (costUsd: string | null = "0.0042") => ({
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
         costUsd,
     },
+    curationWeight: 20,
+    curationBudget: 6848,
     contextTokens: 10,
-    promptBudget: 6848,
+    contextCapacity: 65536,
     meta: {},
 });
 const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: loopUsage(), result: { status: 200 }, ...over } });
@@ -192,8 +194,10 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
                     usage: { inputTokens: 20, outputTokens: 8, totalTokens: 28 },
                     costUsd: null,
                 },
+                curationWeight: 40,
+                curationBudget: 6848,
                 contextTokens: 20,
-                promptBudget: 6848,
+                contextCapacity: 65536,
                 meta: {},
             },
         }),

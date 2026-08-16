@@ -9,12 +9,12 @@ import { isAbsolute, resolve } from "node:path";
 
 // Detect a path-seeking partial in the line up to the cursor; null if the
 // cursor isn't in a path position. One case per call site: membership globs,
-// definition files, `@file`, and PLURNK targets all remain client-local paths.
+// MCP option files, `@file`, and PLURNK targets all remain client-local paths.
 export const pathPartial = (line: string): string | null => {
     const verb = line.match(/^\/(?:pick|hide|view|drop|import|script)\s+(\S*)$/);
     if (verb) return verb[1];
-    const mcpDefinition = line.match(/^\/mcp\s+replace\s+(\S*)$/);
-    if (mcpDefinition) return mcpDefinition[1];
+    const mcpOptions = line.match(/^\/mcp\s+add\s+\S+\s+\S+\s+(\S*)$/);
+    if (mcpOptions) return mcpOptions[1];
     // @file: a path reference anywhere in a prompt (word-boundary @ to dodge
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);

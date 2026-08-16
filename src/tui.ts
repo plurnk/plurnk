@@ -77,8 +77,9 @@ export const TUI_HELP = [
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /script <path>                     run a .plk file (its DSL → op.parse)",
-    "  /mcp [definition.json]             list or attach workspace MCP servers",
-    "       replace <file> · detach/reconnect <name> · oauth <name> <callback-url>",
+    "  /mcp                              list available workspace MCP servers",
+    "       add <alias> <target> [options.json] · enable/disable/remove <alias>",
+    "       oauth <alias> <callback-url>",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -190,10 +191,9 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         const mcpFrag = line.match(/^\/mcp\s+(\S*)$/);
         if (mcpFrag) {
             const fragment = mcpFrag[1];
-            const commands = ["replace", "detach", "reconnect", "oauth"]
+            const commands = ["add", "enable", "disable", "remove", "oauth"]
                 .filter((command) => command.startsWith(fragment));
-            void completePath(fragment, cwd).then(([paths]) =>
-                callback(null, [[...commands, ...paths], fragment]));
+            callback(null, [commands, fragment]);
             return;
         }
         const op = dslOpPartial(line);

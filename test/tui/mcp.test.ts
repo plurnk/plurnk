@@ -15,6 +15,7 @@ let definitions = "";
 let currentDefinition = "";
 let legacyDefinition = "";
 let currentCall = "";
+let legacyTarget = "";
 
 before(async () => {
     const bin = await locateDaemon();
@@ -23,6 +24,7 @@ before(async () => {
     const currentFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/echo-server.mjs");
     const legacyFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/legacy-server.mjs");
     const deprecatedCommand = process.env.PLURNK_TEST_DEPRECATED_MCP_BIN;
+    legacyTarget = deprecatedCommand ?? process.execPath;
     try {
         await Promise.all([
             access(currentFixture),
@@ -37,17 +39,11 @@ before(async () => {
     currentCall = join(definitions, "call-current.plk");
     await Promise.all([
         writeFile(currentDefinition, JSON.stringify({
-            name: "current",
-            transport: "stdio",
-            command: process.execPath,
             args: [currentFixture],
             tools: ["echo"],
             read: ["echo"],
         })),
         writeFile(legacyDefinition, JSON.stringify({
-            name: "legacy",
-            transport: "stdio",
-            command: deprecatedCommand ?? process.execPath,
             args: deprecatedCommand === undefined ? [legacyFixture] : [],
         })),
         writeFile(currentCall, [
@@ -74,28 +70,28 @@ describe("TUI workspace MCP dogfood", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
 
-            tui.write(`/mcp ${currentDefinition}\r`);
-            await tui.waitFor(/attached: current \(connected\)/, 20_000);
+            tui.write(`/mcp add current ${process.execPath} "${currentDefinition}"\r`);
+            await tui.waitFor(/added: current \(connected\)/, 20_000);
 
             tui.write(`/script ${currentCall}\r`);
             const used = await tui.waitFor(/script: 2 ops ok/, 20_000);
             assert.match(used, /200 echo/);
 
             tui.write("/mcp\r");
-            await tui.waitFor(/current\s+connected\s+stdio\s+1\/2 tools/, 20_000);
+            await tui.waitFor(/current\s+connected\s+stdio[\s\S]*1\/2 tools/, 20_000);
 
-            tui.write("/mcp reconnect current\r");
-            await tui.waitFor(/reconnected: current \(connected\)/, 20_000);
+            tui.write("/mcp disable current\r");
+            await tui.waitFor(/disabled: current \(disabled\)/, 20_000);
 
-            tui.write(`/mcp replace ${currentDefinition}\r`);
-            await tui.waitFor(/replaced: current \(connected\)/, 20_000);
+            tui.write("/mcp enable current\r");
+            await tui.waitFor(/enabled: current \(connected\)/, 20_000);
 
-            tui.write(`/mcp ${legacyDefinition}\r`);
+            tui.write(`/mcp add legacy ${legacyTarget} "${legacyDefinition}"\r`);
             const rejected = await tui.waitFor(/Protocol revision unsupported[\s\S]*upgrade or replace the legacy endpoint/i, 20_000);
             assert.match(rejected, /required revision 2026-07-28 through server\/discover/);
 
-            tui.write("/mcp detach current\r");
-            await tui.waitFor(/detached: current/, 20_000);
+            tui.write("/mcp remove current\r");
+            await tui.waitFor(/removed: current/, 20_000);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {

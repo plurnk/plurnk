@@ -365,10 +365,10 @@ test("completer: /child completes inherit and aliases", async () => {
     assert.equal(frag, "i");
 });
 
-test("completer: /mcp offers management verbs and definition files", async () => {
-    const [verbs, fragment] = await complete(() => [], "/mcp re");
-    assert.deepEqual(verbs.filter((verb) => verb === "replace" || verb === "reconnect"), ["replace", "reconnect"]);
-    assert.equal(fragment, "re");
+test("completer: /mcp offers the alias lifecycle verbs", async () => {
+    const [verbs, fragment] = await complete(() => [], "/mcp en");
+    assert.deepEqual(verbs, ["enable"]);
+    assert.equal(fragment, "en");
 });
 
 test("completer: plain text completes nothing", async () => {

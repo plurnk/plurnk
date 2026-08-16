@@ -8,9 +8,10 @@ interface ActionCaller {
 }
 
 type McpServerSummary = {
-    name?: unknown;
+    alias?: unknown;
     state?: unknown;
     transport?: unknown;
+    target?: unknown;
     enabledTools?: unknown;
     tools?: unknown;
 };
@@ -21,56 +22,100 @@ type McpMutationResult = {
     server?: McpServerSummary;
 };
 
-const readDefinition = async (path: string): Promise<unknown> => {
+const readOptions = async (path: string): Promise<unknown> => {
     const absolute = resolve(path);
     let text: string;
     try {
         text = await readFile(absolute, "utf8");
     } catch (cause) {
-        throw new Error(`MCP definition not readable: ${absolute}`, { cause });
+        throw new Error(`MCP options not readable: ${absolute}`, { cause });
     }
     try {
         return JSON.parse(text) as unknown;
     } catch (cause) {
-        throw new Error(`MCP definition is not valid JSON: ${absolute}`, { cause });
+        throw new Error(`MCP options are not valid JSON: ${absolute}`, { cause });
     }
 };
 
-const definitionName = (definition: unknown): string =>
-    typeof definition === "object"
-        && definition !== null
-        && "name" in definition
-        && typeof definition.name === "string"
-        ? definition.name
-        : "<name>";
+const argumentsOf = (source: string): string[] | null => {
+    const values: string[] = [];
+    let value = "";
+    let quote: "\"" | "'" | null = null;
+    let escaped = false;
+    let started = false;
+    for (const character of source) {
+        if (escaped) {
+            value += character;
+            escaped = false;
+            started = true;
+            continue;
+        }
+        if (character === "\\") {
+            escaped = true;
+            started = true;
+            continue;
+        }
+        if (quote !== null) {
+            if (character === quote) quote = null;
+            else value += character;
+            started = true;
+            continue;
+        }
+        if (character === "\"" || character === "'") {
+            quote = character;
+            started = true;
+            continue;
+        }
+        if (/\s/u.test(character)) {
+            if (started) {
+                values.push(value);
+                value = "";
+                started = false;
+            }
+            continue;
+        }
+        value += character;
+        started = true;
+    }
+    if (escaped || quote !== null) return null;
+    if (started) values.push(value);
+    return values;
+};
 
 const renderServer = (server: McpServerSummary): string => {
-    const name = typeof server.name === "string" ? server.name : "(unnamed)";
+    const alias = typeof server.alias === "string" ? server.alias : "(unnamed)";
     const state = typeof server.state === "string" ? server.state : "unknown";
     const transport = typeof server.transport === "string" ? server.transport : "unknown";
+    const target = typeof server.target === "string" ? `  ${server.target}` : "";
     const available = Array.isArray(server.tools) ? server.tools.length : null;
     const enabled = Array.isArray(server.enabledTools) ? server.enabledTools.length : null;
-    const count = enabled === null ? available : available === null ? String(enabled) : `${enabled}/${available}`;
-    const tools = count === null ? "" : `  ${count} tool${count === 1 ? "" : "s"}`;
-    return `  ${name}  ${state}  ${transport}${tools}\n`;
+    const count = enabled === null
+        ? available === null ? null : String(available)
+        : available === null ? String(enabled) : `${enabled}/${available}`;
+    const tools = count === null ? "" : `  ${count} tools`;
+    return `  ${alias}  ${state}  ${transport}${target}${tools}\n`;
 };
 
 const renderMutation = (
     result: McpMutationResult,
-    verb: "attached" | "replaced" | "reconnected" | "authorized",
-    nameHint: string,
+    verb: "added" | "enabled" | "disabled" | "authorized",
+    aliasHint: string,
     write: (text: string) => void,
 ): void => {
     if (result.status === 202) {
         const url = result.authorization?.url;
         if (typeof url !== "string") throw new Error("MCP authorization response omitted its URL.");
         write(`  authorization required: ${url}\n`);
-        write(`  complete: /mcp oauth ${nameHint} <callback-url>\n`);
+        write(`  complete: /mcp oauth ${aliasHint} <callback-url>\n`);
         return;
     }
-    const name = typeof result.server?.name === "string" ? result.server.name : nameHint;
+    const alias = typeof result.server?.alias === "string" ? result.server.alias : aliasHint;
     const state = typeof result.server?.state === "string" ? ` (${result.server.state})` : "";
-    write(`  ${verb}: ${name}${state}\n`);
+    write(`  ${verb}: ${alias}${state}\n`);
+};
+
+const usage = (write: (text: string) => void): void => {
+    write("  usage: /mcp [add <alias> <target> [options.json] | enable|disable|remove <alias> | oauth <alias> <callback-url>]\n");
 };
 
 export const handleMcp = async (
@@ -86,36 +131,58 @@ export const handleMcp = async (
         return;
     }
 
-    if (rest === "replace" || rest.startsWith("replace ")) {
-        const path = rest.slice("replace".length).trim();
-        if (path.length === 0) { write("  usage: /mcp replace <definition.json>\n"); return; }
-        const server = await readDefinition(path);
-        const result = await rpc.call("workspace.mcp.replace", { server }) as McpMutationResult;
-        renderMutation(result, "replaced", definitionName(server), write);
-        return;
-    }
+    const args = argumentsOf(rest);
+    if (args === null || args.length === 0) { usage(write); return; }
+    const [command, alias] = args;
 
-    for (const action of ["detach", "reconnect"] as const) {
-        if (rest === action || rest.startsWith(`${action} `)) {
-            const name = rest.slice(action.length).trim();
-            if (!/^\S+$/.test(name)) { write(`  usage: /mcp ${action} <name>\n`); return; }
-            const result = await rpc.call(`workspace.mcp.${action}`, { name }) as McpMutationResult;
-            if (action === "detach") write(`  detached: ${name}\n`);
-            else renderMutation(result, "reconnected", name, write);
+    if (command === "add") {
+        if (args.length < 3 || args.length > 4 || alias.length === 0 || args[2].length === 0) {
+            write("  usage: /mcp add <alias> <target> [options.json]\n");
             return;
         }
-    }
-
-    if (rest === "oauth" || rest.startsWith("oauth ")) {
-        const match = rest.match(/^oauth\s+(\S+)\s+(\S+)$/);
-        if (!match) { write("  usage: /mcp oauth <name> <callback-url>\n"); return; }
-        const [, name, callbackUrl] = match;
-        const result = await rpc.call("workspace.mcp.oauth.complete", { name, callbackUrl }) as McpMutationResult;
-        renderMutation(result, "authorized", name, write);
+        const [, , target, path] = args;
+        const options = path === undefined ? undefined : await readOptions(path);
+        const result = await rpc.call("workspace.mcp.add", {
+            alias,
+            target,
+            ...(options === undefined ? {} : { options }),
+        }) as McpMutationResult;
+        renderMutation(result, "added", alias, write);
         return;
     }
 
-    const server = await readDefinition(rest);
-    const result = await rpc.call("workspace.mcp.attach", { server }) as McpMutationResult;
-    renderMutation(result, "attached", definitionName(server), write);
+    if (command === "enable" || command === "disable") {
+        if (args.length !== 2 || alias.length === 0) {
+            write(`  usage: /mcp ${command} <alias>\n`);
+            return;
+        }
+        const result = await rpc.call(`workspace.mcp.${command}`, { alias }) as McpMutationResult;
+        renderMutation(result, command === "enable" ? "enabled" : "disabled", alias, write);
+        return;
+    }
+
+    if (command === "remove") {
+        if (args.length !== 2 || alias.length === 0) {
+            write("  usage: /mcp remove <alias>\n");
+            return;
+        }
+        await rpc.call("workspace.mcp.remove", { alias });
+        write(`  removed: ${alias}\n`);
+        return;
+    }
+
+    if (command === "oauth") {
+        if (args.length !== 3 || alias.length === 0 || args[2].length === 0) {
+            write("  usage: /mcp oauth <alias> <callback-url>\n");
+            return;
+        }
+        const result = await rpc.call("workspace.mcp.oauth.complete", {
+            alias,
+            callbackUrl: args[2],
+        }) as McpMutationResult;
+        renderMutation(result, "authorized", alias, write);
+        return;
+    }
+
+    usage(write);
 };

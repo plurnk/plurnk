@@ -444,14 +444,14 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
     const ctx = makeCtx({
         "workspace.mcp.list": {
             servers: [
-                { name: "gitea", state: "connected", transport: "http", tools: ["issue_read", "issue_search"] },
+                { name: "gitea", state: "connected", transport: "http", enabledTools: ["issue_read"], tools: ["issue_read", "issue_search"] },
                 { name: "local", state: "connected", transport: "stdio", tools: [] },
             ],
         },
     });
     await handleVerb("/mcp", ctx);
     assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: undefined }]);
-    assert.match(ctx.out.join(""), /gitea\s+connected\s+http\s+2 tools/);
+    assert.match(ctx.out.join(""), /gitea\s+connected\s+http\s+1\/2 tools/);
     assert.match(ctx.out.join(""), /local\s+connected\s+stdio\s+0 tools/);
 });
 

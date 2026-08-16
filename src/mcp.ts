@@ -11,6 +11,7 @@ type McpServerSummary = {
     name?: unknown;
     state?: unknown;
     transport?: unknown;
+    enabledTools?: unknown;
     tools?: unknown;
 };
 
@@ -47,9 +48,10 @@ const renderServer = (server: McpServerSummary): string => {
     const name = typeof server.name === "string" ? server.name : "(unnamed)";
     const state = typeof server.state === "string" ? server.state : "unknown";
     const transport = typeof server.transport === "string" ? server.transport : "unknown";
-    const tools = Array.isArray(server.tools)
-        ? `  ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}`
-        : "";
+    const available = Array.isArray(server.tools) ? server.tools.length : null;
+    const enabled = Array.isArray(server.enabledTools) ? server.enabledTools.length : null;
+    const count = enabled === null ? available : available === null ? String(enabled) : `${enabled}/${available}`;
+    const tools = count === null ? "" : `  ${count} tool${count === 1 ? "" : "s"}`;
     return `  ${name}  ${state}  ${transport}${tools}\n`;
 };
 

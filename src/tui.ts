@@ -34,6 +34,7 @@ import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
+import { handleMcp } from "./mcp.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -58,7 +59,7 @@ interface WorkspaceResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "workspaces", "workers", "log", "model", "child",
     "yolo", "workspace", "rename", "worker", "stop", "quit",
-    "pick", "hide", "view", "drop", "members", "import", "script",
+    "pick", "hide", "view", "drop", "members", "import", "script", "mcp",
     "accept", "reject", "cancel", "edit",
 ] as const;
 
@@ -76,6 +77,8 @@ export const TUI_HELP = [
     "  /members                           the model's resolved file universe (+ rules)",
     "  /import <path>                     dump a local file's content into the prompt",
     "  /script <path>                     run a .plk file (its DSL → op.parse)",
+    "  /mcp [definition.json]             list or attach workspace MCP servers",
+    "       replace <file> · detach/reconnect <name> · oauth <name> <callback-url>",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -182,6 +185,15 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
                 ? ["inherit", ...getAliases().filter((alias) => alias !== "inherit")]
                 : getAliases();
             callback(null, [candidates.filter((a) => a.startsWith(aliasFrag[2])), aliasFrag[2]]);
+            return;
+        }
+        const mcpFrag = line.match(/^\/mcp\s+(\S*)$/);
+        if (mcpFrag) {
+            const fragment = mcpFrag[1];
+            const commands = ["replace", "detach", "reconnect", "oauth"]
+                .filter((command) => command.startsWith(fragment));
+            void completePath(fragment, cwd).then(([paths]) =>
+                callback(null, [[...commands, ...paths], fragment]));
             return;
         }
         const op = dslOpPartial(line);
@@ -378,6 +390,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             const { results } = await rpc.call("op.parse", { text }) as { results: Array<{ status: number }> };
             const worst = results.reduce((w, r) => (r.status > w ? r.status : w), 0);
             write(`  script: ${results.length} op${results.length === 1 ? "" : "s"}${worst >= 400 ? `, worst status ${worst}` : " ok"}\n`);
+            return;
+        }
+        case "mcp": {
+            await handleMcp(rest, rpc, write);
             return;
         }
         case "accept":

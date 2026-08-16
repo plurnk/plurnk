@@ -196,7 +196,7 @@ Triggered when `argv` has no positional prompt.
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND carrying signal 202) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is an input-affordance constant, not the service's durable prompt-row operation or status. Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /child <alias|inherit> /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4) and `/import <path>` (§3.3). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and provider aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import` and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /child <alias|inherit> /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and provider aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, MCP definition-file positions, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -217,6 +217,28 @@ CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 
 `/import <path>` reads a **local** file (co-location law — the client reads its own fs, the daemon never sees the path) and stashes its content into the prompt buffer, reusing the paste machinery (§below): a short marker lands in the line and expands to the full content on submit, framed however you type. Relative paths resolve against cwd; an unreadable file prints an error and is a no-op.
 
 **Bracketed paste.** A multi-line paste must become ONE prompt, not one `loop.run` per line. The client filters stdin through a paste filter and feeds readline a `PassThrough`, buffering the paste between the terminal's `?2004` markers so the whole block submits as a single prompt. Stream plumbing only — no cursor/width math.
+
+### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
+
+MCP management is a thin projection of the daemon's workspace actions. The
+client reads and JSON-decodes a selected local definition file, but the daemon
+owns `McpServerDefinition` validation, connection behavior, persistence, and
+exact Problem Details. Symbolic credential references remain unchanged.
+
+| Input | AG-UI+ action |
+|---|---|
+| `/mcp` | `workspace.mcp.list` |
+| `/mcp <definition.json>` | `workspace.mcp.attach {server}` |
+| `/mcp replace <definition.json>` | `workspace.mcp.replace {server}` |
+| `/mcp detach <name>` | `workspace.mcp.detach {name}` |
+| `/mcp reconnect <name>` | `workspace.mcp.reconnect {name}` |
+| `/mcp oauth <name> <callback-url>` | `workspace.mcp.oauth.complete {name, callbackUrl}` |
+
+An attachment or replacement requiring interactive authorization prints the
+authorization URL and exact `/mcp oauth …` completion command. Invalid or
+unreadable local JSON fails before dispatch; daemon Problems—including an
+unsupported MCP protocol revision—cross the existing diagnostic path without
+rewriting or retry.
 
 ---
 

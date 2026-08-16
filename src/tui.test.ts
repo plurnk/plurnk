@@ -438,6 +438,23 @@ test("handleVerb /script on a missing file → throws (fail-hard, surfaced by th
     assert.equal(ctx.calls.length, 0);   // never reaches op.parse
 });
 
+// ─── /mcp (workspace MCP lifecycle through AG-UI+) ───────────────────
+
+test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", async () => {
+    const ctx = makeCtx({
+        "workspace.mcp.list": {
+            servers: [
+                { name: "gitea", state: "connected", transport: "http", tools: ["issue_read", "issue_search"] },
+                { name: "local", state: "connected", transport: "stdio", tools: [] },
+            ],
+        },
+    });
+    await handleVerb("/mcp", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: undefined }]);
+    assert.match(ctx.out.join(""), /gitea\s+connected\s+http\s+2 tools/);
+    assert.match(ctx.out.join(""), /local\s+connected\s+stdio\s+0 tools/);
+});
+
 // ─── seedPromptHistory (svc#238) ─────────────────────────────────────
 
 test("seedPromptHistory: seeds rl.history from workspace.prompts (newest-first)", async () => {

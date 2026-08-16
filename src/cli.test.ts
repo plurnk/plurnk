@@ -365,6 +365,12 @@ test("completer: /child completes inherit and aliases", async () => {
     assert.equal(frag, "i");
 });
 
+test("completer: /mcp offers management verbs and definition files", async () => {
+    const [verbs, fragment] = await complete(() => [], "/mcp re");
+    assert.deepEqual(verbs.filter((verb) => verb === "replace" || verb === "reconnect"), ["replace", "reconnect"]);
+    assert.equal(fragment, "re");
+});
+
 test("completer: plain text completes nothing", async () => {
     const [hits] = await complete(() => ["gemma"], "what is france");
     assert.equal(hits.length, 0);

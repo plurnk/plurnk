@@ -21,8 +21,12 @@ before(async () => {
     const serviceRoot = resolve(process.cwd(), "../plurnk-service");
     const currentFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/echo-server.mjs");
     const legacyFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/legacy-server.mjs");
+    const deprecatedCommand = process.env.PLURNK_TEST_DEPRECATED_MCP_BIN;
     try {
-        await Promise.all([access(currentFixture), access(legacyFixture)]);
+        await Promise.all([
+            access(currentFixture),
+            access(deprecatedCommand ?? legacyFixture),
+        ]);
     } catch {
         return;
     }
@@ -41,8 +45,8 @@ before(async () => {
         writeFile(legacyDefinition, JSON.stringify({
             name: "legacy",
             transport: "stdio",
-            command: process.execPath,
-            args: [legacyFixture],
+            command: deprecatedCommand ?? process.execPath,
+            args: deprecatedCommand === undefined ? [legacyFixture] : [],
         })),
     ]);
     daemon = await bootDaemon(bin);

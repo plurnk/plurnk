@@ -86,7 +86,7 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
     const overridesPath = join(dirname(dbPath), "test.env");
     await writeFile(overridesPath, `${overrides}\n`);
     const args = [
-        "--conditions=plurnk-dev",
+        ...(binPath.endsWith(".ts") ? ["--conditions=plurnk-dev"] : []),
         binPath,
         ...(daemonEnv !== null ? [`--env-file=${daemonEnv}`] : []),
         `--env-file=${overridesPath}`,

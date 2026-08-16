@@ -14,6 +14,7 @@ let daemon: Daemon | null = null;
 let definitions = "";
 let currentDefinition = "";
 let legacyDefinition = "";
+let currentCall = "";
 
 before(async () => {
     const bin = await locateDaemon();
@@ -33,6 +34,7 @@ before(async () => {
     definitions = await mkdtemp(join(tmpdir(), "plurnk-mcp-client-"));
     currentDefinition = join(definitions, "current server.json");
     legacyDefinition = join(definitions, "legacy server.json");
+    currentCall = join(definitions, "call-current.plk");
     await Promise.all([
         writeFile(currentDefinition, JSON.stringify({
             name: "current",
@@ -48,6 +50,14 @@ before(async () => {
             command: deprecatedCommand ?? process.execPath,
             args: deprecatedCommand === undefined ? [legacyFixture] : [],
         })),
+        writeFile(currentCall, [
+            "# PLAN0",
+            "Call the attached current MCP tool through the installed daemon.",
+            "",
+            "## EXEC0 [current] (echo)",
+            '{"message":"installed daemon current peer"}',
+            "",
+        ].join("\n")),
     ]);
     daemon = await bootDaemon(bin);
 });
@@ -66,6 +76,10 @@ describe("TUI workspace MCP dogfood", () => {
 
             tui.write(`/mcp ${currentDefinition}\r`);
             await tui.waitFor(/attached: current \(connected\)/, 20_000);
+
+            tui.write(`/script ${currentCall}\r`);
+            const used = await tui.waitFor(/script: 2 ops ok/, 20_000);
+            assert.match(used, /200 echo/);
 
             tui.write("/mcp\r");
             await tui.waitFor(/current\s+connected\s+stdio\s+1\/2 tools/, 20_000);

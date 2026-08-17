@@ -241,7 +241,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
-    opts: { modelAlias?: string; model?: string; childAlias?: string | null; childModel?: string; yolo: boolean; projectRoot?: string | null; client?: string };
+    opts: { modelAlias?: string; model?: string; childAlias?: string | null; childModel?: string; yolo: boolean; projectRoot?: string | null; client?: string; mcpConfiguration?: Readonly<Record<string, string>> };
     // Resolve an alias to its client-side "<provider>/<model>" routing spec (#90), so
     // /model retargets ROUTING, not just the display label. Injected to avoid a cycle
     // with dispatcher (which owns resolveModelSpec).
@@ -393,7 +393,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "mcp": {
-            await handleMcp(rest, rpc, write);
+            await handleMcp(rest, rpc, write, { overlay: opts.mcpConfiguration });
             return;
         }
         case "accept":
@@ -420,6 +420,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
+    mcpConfiguration?: Readonly<Record<string, string>>;
 }): Promise<void> => {
     let current = workspace;
     // Highest loop_seq the waterfall has shown — the next prompt is one beyond.

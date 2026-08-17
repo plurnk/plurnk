@@ -7,6 +7,10 @@ interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
 
+export interface McpClientConfiguration {
+    readonly overlay?: Readonly<Record<string, string>>;
+}
+
 type McpServerSummary = {
     alias?: unknown;
     state?: unknown;
@@ -115,30 +119,32 @@ const renderMutation = (
 };
 
 const usage = (write: (text: string) => void): void => {
-    write("  usage: /mcp [add <alias> <target> [options.json] | enable|disable|remove <alias> | oauth <alias> <callback-url>]\n");
+    write("  usage: /mcp [add <alias> <target> [options.json] | enable <alias> [options.json] | disable|remove <alias> | oauth <alias> <callback-url>]\n");
 };
 
 export const handleMcp = async (
-    rest: string,
+    input: string | readonly string[],
     rpc: ActionCaller,
     write: (text: string) => void,
-): Promise<void> => {
-    if (rest.length === 0) {
-        const result = await rpc.call("workspace.mcp.list") as { servers?: unknown };
+    configuration: McpClientConfiguration = {},
+): Promise<unknown | null> => {
+    const overlay = { ...configuration.overlay };
+    if (input.length === 0) {
+        const result = await rpc.call("workspace.mcp.list", { overlay }) as { servers?: unknown };
         if (!Array.isArray(result.servers)) throw new Error("workspace.mcp.list returned an invalid result.");
         if (result.servers.length === 0) write("  MCP servers: none\n");
         else for (const server of result.servers) write(renderServer(server as McpServerSummary));
-        return;
+        return result;
     }
 
-    const args = argumentsOf(rest);
-    if (args === null || args.length === 0) { usage(write); return; }
+    const args = typeof input === "string" ? argumentsOf(input) : [...input];
+    if (args === null || args.length === 0) { usage(write); return null; }
     const [command, alias] = args;
 
     if (command === "add") {
         if (args.length < 3 || args.length > 4 || alias.length === 0 || args[2].length === 0) {
             write("  usage: /mcp add <alias> <target> [options.json]\n");
-            return;
+            return null;
         }
         const [, , target, path] = args;
         const options = path === undefined ? undefined : await readOptions(path);
@@ -148,41 +154,57 @@ export const handleMcp = async (
             ...(options === undefined ? {} : { options }),
         }) as McpMutationResult;
         renderMutation(result, "added", alias, write);
-        return;
+        return result;
     }
 
-    if (command === "enable" || command === "disable") {
-        if (args.length !== 2 || alias.length === 0) {
-            write(`  usage: /mcp ${command} <alias>\n`);
-            return;
+    if (command === "enable") {
+        if (args.length < 2 || args.length > 3 || alias.length === 0) {
+            write("  usage: /mcp enable <alias> [options.json]\n");
+            return null;
         }
-        const result = await rpc.call(`workspace.mcp.${command}`, { alias }) as McpMutationResult;
-        renderMutation(result, command === "enable" ? "enabled" : "disabled", alias, write);
-        return;
+        const options = args[2] === undefined ? undefined : await readOptions(args[2]);
+        const result = await rpc.call("workspace.mcp.enable", {
+            alias,
+            overlay,
+            ...(options === undefined ? {} : { options }),
+        }) as McpMutationResult;
+        renderMutation(result, "enabled", alias, write);
+        return result;
+    }
+
+    if (command === "disable") {
+        if (args.length !== 2 || alias.length === 0) {
+            write("  usage: /mcp disable <alias>\n");
+            return null;
+        }
+        const result = await rpc.call("workspace.mcp.disable", { alias }) as McpMutationResult;
+        renderMutation(result, "disabled", alias, write);
+        return result;
     }
 
     if (command === "remove") {
         if (args.length !== 2 || alias.length === 0) {
             write("  usage: /mcp remove <alias>\n");
-            return;
+            return null;
         }
-        await rpc.call("workspace.mcp.remove", { alias });
+        const result = await rpc.call("workspace.mcp.remove", { alias });
         write(`  removed: ${alias}\n`);
-        return;
+        return result;
     }
 
     if (command === "oauth") {
         if (args.length !== 3 || alias.length === 0 || args[2].length === 0) {
             write("  usage: /mcp oauth <alias> <callback-url>\n");
-            return;
+            return null;
         }
         const result = await rpc.call("workspace.mcp.oauth.complete", {
             alias,
             callbackUrl: args[2],
         }) as McpMutationResult;
         renderMutation(result, "authorized", alias, write);
-        return;
+        return result;
     }
 
     usage(write);
+    return null;
 };

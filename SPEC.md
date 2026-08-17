@@ -224,16 +224,29 @@ MCP management is a thin projection of the daemon's workspace actions. The
 client tokenizes quoted alias/target arguments and JSON-decodes an optional
 local options file, but the daemon owns normalization, schema validation,
 connection behavior, persistence, and exact Problem Details. Symbolic
-credential references remain unchanged.
+credential references remain unchanged. After resolving the ordinary client
+environment cascade, the client projects string-valued `PLURNK_MCP_*`
+declarations as one raw `McpConfigurationOverlay`; it excludes
+`PLURNK_MCP_ENABLED`, `PLURNK_MCP_CONNECT_TIMEOUT`, and
+`PLURNK_MCP_REQUEST_TIMEOUT`, and interprets no server, transport, companion,
+or credential semantics. Merely listing configuration never activates or
+persists a server.
 
-| Input | AG-UI+ action |
+The interactive and positional forms share one tokenizer-independent command
+handler. `plurnk mcp …` requires `--workspace` or
+`PLURNK_CLIENT_WORKSPACE`; `--json` emits the unmodified successful action
+result.
+
+| TUI / CLI input | AG-UI+ action |
 |---|---|
-| `/mcp` | `workspace.mcp.list` |
+| `/mcp` / `plurnk mcp` | `workspace.mcp.list {overlay}` |
 | `/mcp add <alias> <target> [options.json]` | `workspace.mcp.add {alias, target, options?}` |
-| `/mcp enable <alias>` | `workspace.mcp.enable {alias}` |
+| `/mcp enable <alias> [options.json]` | `workspace.mcp.enable {alias, overlay, options?}` |
 | `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
 | `/mcp oauth <alias> <callback-url>` | `workspace.mcp.oauth.complete {alias, callbackUrl}` |
+
+Every slash-command row also admits the same arguments after `plurnk mcp`.
 
 An add or enable requiring interactive authorization prints the
 authorization URL and exact `/mcp oauth …` completion command. Invalid or

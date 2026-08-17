@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, resolveWorkerId } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId } from "./dispatcher.ts";
 
 // ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
 
@@ -55,6 +55,23 @@ test("collectExecsPolicy: forwards only the runtime-policy key grammar", () => {
 
 test("collectExecsPolicy: ignores unrelated env; nothing set → empty map", () => {
     assert.deepEqual(collectExecsPolicy({ PLURNK_WS: "ws://x", PATH: "/usr/bin" }), {});
+});
+
+test("collectMcpConfiguration carries raw declarations and excludes service controls", () => {
+    assert.deepEqual(collectMcpConfiguration({
+        PLURNK_MCP_GITEA: "gitea-mcp",
+        PLURNK_MCP_GITEA_ARGS: '["plurnk_pk"]',
+        PLURNK_MCP_gitea_tools: '["issue_read"]',
+        PLURNK_MCP_ENABLED: '["gitea"]',
+        PLURNK_MCP_connect_timeout: "1",
+        PLURNK_MCP_REQUEST_TIMEOUT: "2",
+        GITEA_TOKEN: "secret",
+    }), {
+        PLURNK_MCP_GITEA: "gitea-mcp",
+        PLURNK_MCP_GITEA_ARGS: '["plurnk_pk"]',
+        PLURNK_MCP_gitea_tools: '["issue_read"]',
+    });
+    assert.deepEqual(collectMcpConfiguration({ PATH: "/usr/bin" }), {});
 });
 
 test("buildSettings carries the client executor policy into workspace creation", async () => {

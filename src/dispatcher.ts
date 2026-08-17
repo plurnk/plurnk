@@ -14,6 +14,7 @@ import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
 import { runTui } from "./tui.ts";
+import { handleMcp } from "./mcp.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters, Caller } from "./subcommands.ts";
 import {
@@ -92,6 +93,25 @@ export const collectExecsPolicy = (env: NodeJS.ProcessEnv = process.env): Record
     return out;
 };
 
+const MCP_CONFIGURATION_PREFIX = "PLURNK_MCP_";
+const MCP_SERVICE_CONTROLS = new Set([
+    "PLURNK_MCP_CONNECT_TIMEOUT",
+    "PLURNK_MCP_REQUEST_TIMEOUT",
+    "PLURNK_MCP_ENABLED",
+]);
+
+export const collectMcpConfiguration = (
+    env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> => {
+    const configuration: Record<string, string> = {};
+    for (const [key, value] of Object.entries(env)) {
+        if (value === undefined || !key.startsWith(MCP_CONFIGURATION_PREFIX)) continue;
+        if (MCP_SERVICE_CONTROLS.has(key.toUpperCase())) continue;
+        configuration[key] = value;
+    }
+    return configuration;
+};
+
 // projectRoot resolution: empty string = explicit headless (null on wire);
 // otherwise must be an absolute path. Caller passes cwd as default.
 export const resolveProjectRoot = (raw: string | undefined): string | null => {
@@ -110,6 +130,8 @@ const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--
        plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
+       plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
+                   | disable|remove <alias> | oauth <alias> <callback-url>]
 
 Connects to the plurnk-service daemon. Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
@@ -149,7 +171,10 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
                         never forwarded. Subtractive only — the
                         daemon intersects with its ceiling; the client can narrow,
                         never re-enable. Shares the daemon's grammar; a workspace's
-                        .env carries its own. (MCP server configs are NOT sent.)
+                        .env carries its own.
+  PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
+                        Service controls do not. The daemon owns parsing,
+                        activation, persistence, and credential expansion.
 
 options:
   -h, --help              print this message and exit
@@ -213,6 +238,7 @@ subcommands:
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
+  mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + membership flags. The daemon owns the
@@ -397,6 +423,7 @@ interface SubcommandOpts {
     workerName?: string;
     projectRoot: string | null;
     values: Record<string, string | boolean | string[] | undefined>;
+    mcpConfiguration: Readonly<Record<string, string>>;
 }
 
 // Dispatch a positional-driven subcommand over the action surface. Returns the
@@ -441,6 +468,24 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             return await runWorkspaceRename(rpc, name, newName, { json: opts.json });
         }
         throw new ProblemError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
+    }
+
+    if (verb === "mcp") {
+        if (opts.workspaceName === undefined) {
+            throw new ProblemError(clientFlagMissingDependency(
+                "plurnk mcp",
+                "--workspace (or PLURNK_CLIENT_WORKSPACE)",
+            ));
+        }
+        const result = await handleMcp(
+            positionals.slice(1),
+            rpc,
+            opts.json ? () => undefined : (text) => process.stdout.write(text),
+            { overlay: opts.mcpConfiguration },
+        );
+        if (result === null) return 64;
+        if (opts.json) process.stdout.write(`${JSON.stringify(result)}\n`);
+        return 0;
     }
 
     if (verb === "log") {
@@ -531,6 +576,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // Shared ~/.plurnk env cascade (after parse so --env-file flags participate).
     loadEnvCascade((values["env-file"] as string[] | undefined) ?? [], (values["env-file-if-exists"] as string[] | undefined) ?? []);
+    const mcpConfiguration = collectMcpConfiguration(process.env);
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
@@ -540,7 +586,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
     // a known read-only subcommand (models / workspace / log), we skip stdin
     // reading and prompt construction entirely.
-    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script"] as const;
+    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -688,7 +734,7 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints,
             settings,
         });
-        await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), childAlias, childModel: resolveModelSpec(childAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI });
+        await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), childAlias, childModel: resolveModelSpec(childAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, mcpConfiguration });
         process.exitCode = 0;
         return;
     }
@@ -718,7 +764,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(caller, positionals, {
-                json, workspaceName, workerName, projectRoot, values,
+                json, workspaceName, workerName, projectRoot, values, mcpConfiguration,
             });
             process.exitCode = exitCode;
             return;

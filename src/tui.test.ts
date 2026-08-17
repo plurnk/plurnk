@@ -450,7 +450,7 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
         },
     });
     await handleVerb("/mcp", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: undefined }]);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: { overlay: {} } }]);
     assert.match(ctx.out.join(""), /gitea\s+connected\s+http\s+1\/2 tools/);
     assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+0 tools/);
 });

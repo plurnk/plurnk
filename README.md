@@ -28,6 +28,8 @@ The client is a pure AG-UI+ consumer: it POSTs runs/actions to the daemon's modu
 plurnk "what is the capital of France?"      # one-shot — bare answer on stdout
 plurnk --json "…" | jq -r .response            # json mode: ONE complete record document
 plurnk read 3/1/2 --json                       # drill into one op by L/T/S coordinate
+plurnk --workspace project mcp                 # list cold and enabled MCP servers
+plurnk --workspace project mcp enable gitea    # activate project-specialized config
 cat notes.md | plurnk "summarize this"        # piped stdin (appended)
 plurnk                                         # interactive TUI (no args, a TTY)
 plurnk models | session list | log read …      # read-only subcommands
@@ -41,7 +43,7 @@ plurnk --help                                  # full flag list
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp` and `/mcp add|enable|disable|remove` |
+| `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp` and `/mcp add|enable|disable|remove|oauth` |
 | `# PLAN0` / `## OP0` | raw PLURNK (`op.parse`) |
 | `! cmd` | exec via the daemon |
 | `... text` | inject into the running loop (or just type — a mid-loop prompt steers) |
@@ -50,7 +52,7 @@ Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and PLURNK he
 
 **Key flags:** `--model <alias>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
 
-**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` / `PLURNK_MODEL_CHILD` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.defaults` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell.
+**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` / `PLURNK_MODEL_CHILD` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.defaults` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell. Project-local `PLURNK_MCP_*` declarations accompany `/mcp` and `plurnk mcp enable`; the daemon remains their sole parser and activation owner.
 
 ## what plurnk is
 

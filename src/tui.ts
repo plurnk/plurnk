@@ -241,11 +241,14 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
-    opts: { modelAlias?: string; model?: string; childAlias?: string | null; childModel?: string; yolo: boolean; projectRoot?: string | null; client?: string; mcpConfiguration?: Readonly<Record<string, string>> };
-    // Resolve an alias to its client-side "<provider>/<model>" routing spec (#90), so
-    // /model retargets ROUTING, not just the display label. Injected to avoid a cycle
-    // with dispatcher (which owns resolveModelSpec).
-    resolveModel?: (alias: string) => string | undefined;
+    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string; mcpConfiguration?: Readonly<Record<string, string>> };
+    // The worker's durable model truth ({§worker-model-selection}): the server's
+    // resolved specs, updated by the set verbs. The display label AND the routing
+    // both come from the server; the client never reasserts a model per loop.
+    model: ResolvedModelSpec | null;
+    spawnModel: ResolvedModelSpec | null;
+    setModel: (spec: ResolvedModelSpec | null) => void;
+    setSpawnModel: (spec: ResolvedModelSpec | null) => void;
     getWorkspace: () => WorkspaceResult;
     setWorkspace: (s: WorkspaceResult) => void;
     // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
@@ -257,6 +260,8 @@ export interface VerbContext {
     // fallback for the a/e/r/c review keys. `edit` opens $EDITOR.
     resolveProposal: (action: "accept" | "reject" | "cancel" | "edit") => Promise<void>;
 }
+
+export interface ResolvedModelSpec { alias: string; provider: string; model: string }
 
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
     const { verb, rest } = parseSlash(line);
@@ -276,24 +281,29 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "model":
-            if (rest.length === 0) { write(`  model: ${opts.modelAlias ?? "(daemon default)"}\n`); return; }
-            opts.modelAlias = rest;
-            // Retarget ROUTING too, not just the label: without this the next loop
-            // keeps sending the BOOT model's resolved spec (which the daemon prefers
-            // over the alias, #90) — the switch would be cosmetic.
-            opts.model = ctx.resolveModel?.(rest);
-            write(`  model: ${rest}\n`);
+            if (rest.length === 0) { write(`  model: ${ctx.model?.alias ?? "(daemon default)"}\n`); return; }
+            // {§worker-model-selection} — /model is a server-backed durable selection:
+            // the daemon resolves and persists onto the conversation worker; nothing
+            // client-local rides the next loop.
+            try {
+                ctx.setModel(await rpc.call("worker.model.set", { alias: rest }) as ResolvedModelSpec);
+                write(`  model: ${rest}\n`);
+            } catch (cause) {
+                write(`  model set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+            }
             return;
         case "child":
-            if (rest.length === 0) { write(`  child: ${opts.childAlias ?? "inherit"}\n`); return; }
-            if (rest === "inherit") {
-                opts.childAlias = null;
-                opts.childModel = undefined;
-            } else {
-                opts.childAlias = rest;
-                opts.childModel = ctx.resolveModel?.(rest);
+            if (rest.length === 0) { write(`  child: ${ctx.spawnModel?.alias ?? "inherit"}\n`); return; }
+            try {
+                // {§worker-model-selection} — inherit IS the server action (alias null
+                // clears the override); the daemon returns null for it.
+                ctx.setSpawnModel(rest === "inherit"
+                    ? await rpc.call("worker.child.set", { alias: null }) as ResolvedModelSpec | null
+                    : await rpc.call("worker.child.set", { alias: rest }) as ResolvedModelSpec);
+                write(`  child: ${rest}\n`);
+            } catch (cause) {
+                write(`  child set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
             }
-            write(`  child: ${rest}\n`);
             return;
         case "yolo":
             opts.yolo = !opts.yolo;
@@ -415,7 +425,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 };
 
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
-    modelAlias?: string; model?: string; childAlias?: string | null; childModel?: string; resolveModel?: (alias: string) => string | undefined; yolo: boolean;
+    // The explicit --model alias for this invocation ({§worker-model-selection}):
+    // an explicit flag persistently selects the worker at startup; an inherited
+    // PLURNK_MODEL value is the daemon's own default and is never reasserted.
+    modelAlias?: string; modelExplicit?: boolean; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
@@ -481,10 +494,27 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
     } catch { /* completion stays empty; header falls back to (daemon default) */ }
 
+    // {§worker-model-selection} — the worker owns the model. Read the server truth
+    // for the header and the /model /child display; an EXPLICIT --model persists
+    // onto the worker at startup (a one-time durable selection, not a per-loop
+    // reassertion). An inherited PLURNK_MODEL env value is the daemon's own seed.
+    let workerModel: ResolvedModelSpec | null = null;
+    let workerSpawnModel: ResolvedModelSpec | null = null;
+    try {
+        const m = await transport.rpc("worker.model.get") as { model: ResolvedModelSpec | null; spawnModel: ResolvedModelSpec | null };
+        workerModel = m.model ?? null;
+        workerSpawnModel = m.spawnModel ?? null;
+    } catch { /* model header falls back to the daemon default label */ }
+    if (opts.modelExplicit === true && opts.modelAlias !== undefined) {
+        try {
+            workerModel = await transport.rpc("worker.model.set", { alias: opts.modelAlias }) as ResolvedModelSpec;
+        } catch { /* the first loop fails loudly if the alias is unresolvable */ }
+    }
+
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
         versionNotice: opts.versionNotice, workspaceName: current.name, workerName: opts.workerName,
-        modelAlias: opts.modelAlias, activeAlias, yolo: opts.yolo,
+        modelAlias: workerModel?.alias ?? opts.modelAlias, activeAlias, yolo: opts.yolo,
     });
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
 
@@ -856,7 +886,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live workspace / opts / stdout / import glue.
     const verbCtx: VerbContext = {
-        rpc: verbRpc, opts, resolveModel: opts.resolveModel,
+        rpc: verbRpc, opts,
+        get model(): ResolvedModelSpec | null { return workerModel; },
+        get spawnModel(): ResolvedModelSpec | null { return workerSpawnModel; },
+        setModel: (spec) => { workerModel = spec; },
+        setSpawnModel: (spec) => { workerSpawnModel = spec; },
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client }),
@@ -987,11 +1021,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
                     // `: ` = act. Per-line prefix overrides --flags mode.
                     const { flags: lineFlags, prompt: promptText } = lineMode(trimmed, opts.loopFlags);
-                    const loopParams: { prompt: string; alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
-                    if (opts.modelAlias !== undefined) loopParams.alias = opts.modelAlias;   // display label
-                    if (opts.model !== undefined) loopParams.model = opts.model;             // #90 client-resolved routing (precedence)
-                    if (opts.childAlias !== undefined) loopParams.childAlias = opts.childAlias;
-                    if (opts.childModel !== undefined) loopParams.childModel = opts.childModel;
+                    // {§worker-model-selection} — no model selector rides the loop: the
+                    // worker owns the model; /model and /child persisted it server-side.
+                    const loopParams: { prompt: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)

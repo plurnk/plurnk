@@ -200,20 +200,17 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
+    opts: { threadId: string; workspace?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
-    // Per-run knobs ride forwardedProps.plurnk — the model must reach the wire (one-shot
-    // used to DROP --model/PLURNK_MODEL and silently run the daemon default).
+    // Workspace options ride forwardedProps.plurnk — the model must NOT: the
+    // worker owns the model ({§worker-model-selection}), and an explicit --model
+    // was already persisted by the dispatcher before this run.
     const fp: Record<string, unknown> = {
         ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.constraints !== undefined && opts.constraints.length > 0 ? { constraints: opts.constraints } : {}),
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
-        ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
-        ...(opts.model !== undefined ? { model: opts.model } : {}),
-        ...(opts.childAlias !== undefined ? { childAlias: opts.childAlias } : {}),
-        ...(opts.childModel !== undefined ? { childModel: opts.childModel } : {}),
         ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
     };

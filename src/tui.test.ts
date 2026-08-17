@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, type VerbContext } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {
@@ -188,6 +188,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const imports: string[] = [];
     const resolved: string[] = [];
     let workspace = { id: 1, name: "sess" };
+    const modelState = { model: null as ResolvedModelSpec | null, spawnModel: null as ResolvedModelSpec | null };
     return {
         rpc: {
             call: async (method: string, params?: unknown) => {
@@ -197,7 +198,10 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
             },
         } as unknown as VerbContext["rpc"],
         opts: { yolo: false, ...opts },
-        resolveModel: (alias: string) => ({ fireslow: "fireworks/deepseek", turboderp: "openai/turboderp" } as Record<string, string>)[alias],
+        get model() { return modelState.model; },
+        get spawnModel() { return modelState.spawnModel; },
+        setModel: (spec) => { modelState.model = spec; },
+        setSpawnModel: (spec) => { modelState.spawnModel = spec; },
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
         switchWorkspace: async (name) => {
@@ -339,25 +343,37 @@ test("handleVerb /yolo → toggles opts.yolo and reports", async () => {
     assert.equal(ctx.opts.yolo, false);
 });
 
-test("handleVerb /model <alias> sets it; bare /model shows current", async () => {
-    const ctx = makeCtx();
+test("{§worker-model-selection}: handleVerb /model sets server-side and mirrors the resolved spec; bare /model shows it", async () => {
+    const ctx = makeCtx({ "worker.model.set": { alias: "gpt", provider: "openai", model: "gpt-4" } });
     await handleVerb("/model gpt", ctx);
-    assert.equal(ctx.opts.modelAlias, "gpt");
+    assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { alias: "gpt" } });
+    assert.deepEqual(ctx.model, { alias: "gpt", provider: "openai", model: "gpt-4" }, "the server-resolved spec is the display truth");
     await handleVerb("/model", ctx);
     assert.match(ctx.out.join(""), /model: gpt/);
 });
 
-test("[§cli-child-provider-selection] handleVerb /child selects, reports, and clears to inherit", async () => {
-    const ctx = makeCtx();
+test("{§worker-model-selection}: handleVerb /child persists the override and inherit clears it", async () => {
+    const ctx = makeCtx({
+        "worker.child.set": (p: unknown) => (p as { alias: string | null }).alias === null
+            ? null
+            : { alias: "fireslow", provider: "fireworks", model: "deepseek" },
+    });
     await handleVerb("/child fireslow", ctx);
-    assert.equal(ctx.opts.childAlias, "fireslow");
-    assert.equal(ctx.opts.childModel, "fireworks/deepseek");
+    assert.deepEqual(ctx.calls[0], { method: "worker.child.set", params: { alias: "fireslow" } });
+    assert.equal(ctx.spawnModel?.alias, "fireslow");
     await handleVerb("/child", ctx);
     assert.match(ctx.out.join(""), /child: fireslow/);
     await handleVerb("/child inherit", ctx);
-    assert.equal(ctx.opts.childAlias, null);
-    assert.equal(ctx.opts.childModel, undefined);
+    assert.deepEqual(ctx.calls[1], { method: "worker.child.set", params: { alias: null } });
+    assert.equal(ctx.spawnModel, null);
     assert.match(ctx.out.join(""), /child: inherit/);
+});
+
+test("{§worker-model-selection}: a failed /model surfaces the server's rejection", async () => {
+    const ctx = makeCtx({ "worker.model.set": () => { throw new Error("No provider is configured for this worker."); } });
+    await handleVerb("/model mystery", ctx);
+    assert.equal(ctx.model, null, "the failed set changes nothing client-side");
+    assert.match(ctx.out.join(""), /model set failed: No provider is configured/);
 });
 
 test("handleVerb /workspace → workspace.create (new) + setWorkspace", async () => {
@@ -493,18 +509,3 @@ test("lineMode: '...' injection prefix strips without minting mode flags", () =>
     assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
 });
 
-
-test("[§cli-model-selection] handleVerb /model retargets ROUTING, not just the label — opts.model re-resolves so the next loop actually switches models", async () => {
-    const ctx = makeCtx({}, { modelAlias: "turboderp", model: "openai/turboderp" });
-    await handleVerb("/model fireslow", ctx);
-    assert.equal(ctx.opts.modelAlias, "fireslow", "the display label switched");
-    assert.equal(ctx.opts.model, "fireworks/deepseek", "the ROUTING spec re-resolved — not the stale boot model (which the daemon prefers, #90)");
-    assert.match(ctx.out.join(""), /model: fireslow/);
-});
-
-test("[§cli-model-selection] handleVerb /model to an UNKNOWN alias clears the stale routing spec (daemon resolves the bare alias, never the old model)", async () => {
-    const ctx = makeCtx({}, { modelAlias: "turboderp", model: "openai/turboderp" });
-    await handleVerb("/model mystery", ctx);
-    assert.equal(ctx.opts.modelAlias, "mystery");
-    assert.equal(ctx.opts.model, undefined, "no client resolution → send the bare alias, NOT the previous model's spec");
-});

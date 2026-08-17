@@ -287,10 +287,6 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "w",
             workspace: "w",
-            alias: "fireslow",
-            model: "fireworks/deepseek",
-            childAlias: "firefast",
-            childModel: "fireworks/qwen",
             flags: { auto: true },
             maxTurns: 7,
             yolo: true,
@@ -303,10 +299,10 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
         assert.equal(fp.projectRoot, "/repo", "the project root reaches the wire");
         assert.deepEqual(fp.constraints, [{ effect: "pick", glob: "docs/**" }], "membership constraints reach the wire");
         assert.deepEqual(fp.settings, { filesItems: 0 }, "workspace settings reach the wire");
-        assert.equal(fp.alias, "fireslow", "the alias reaches the wire");
-        assert.equal(fp.model, "fireworks/deepseek", "the client-resolved routing spec reaches the wire (#90)");
-        assert.equal(fp.childAlias, "firefast", "the child alias reaches the wire");
-        assert.equal(fp.childModel, "fireworks/qwen", "the resolved child routing spec reaches the wire");
+        assert.equal(fp.alias, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
+        assert.equal(fp.model, undefined);
+        assert.equal(fp.childAlias, undefined);
+        assert.equal(fp.childModel, undefined);
         assert.deepEqual(fp.flags, { auto: true }, "loop flags reach the wire");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
     } finally { await mock.close(); }

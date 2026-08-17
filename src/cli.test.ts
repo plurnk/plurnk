@@ -46,6 +46,11 @@ test("formatPlain: no target at all → no trailing path", () => {
     assert.equal(s, "[200] model SHOW");
 });
 
+test("formatPlain: a durable annotation labels the operation without its comment delimiters", () => {
+    const s = formatPlain(entry({ op: "EXEC", tx: { annotation: "Lists issues", body: "{}" } }));
+    assert.equal(s, "[200] model EXEC — Lists issues");
+});
+
 test("formatPlain: SEND with numeric signal → '[N]' sub", () => {
     const s = formatPlain(entry({ op: "SEND", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
     assert.equal(s, "[200] model SEND [200]");

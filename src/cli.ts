@@ -4,7 +4,7 @@
 // body lands on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { extractSendBody, contextGauge, entryScope, entryTarget } from "./render.ts";
+import { extractSendBody, contextGauge, entryAnnotation, entryScope, entryTarget } from "./render.ts";
 import { reviewProposal, isServerResolved } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -47,12 +47,14 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
     const byTurn = new Map<number, Array<Record<string, unknown>>>();
     for (const e of entries) {
         const ops = byTurn.get(e.turn_seq) ?? [];
+        const annotation = entryAnnotation(e);
         ops.push({
             coord: entryCoord(e), op: e.op, origin: e.origin,
             target: entryTarget(e), status: e.status_rx,
             scope: e.lineMarker?.marks ?? null,
             signal: typeof e.signal === "number" ? e.signal : null,
             tags: e.tags,
+            ...(annotation === null ? {} : { annotation }),
         });
         byTurn.set(e.turn_seq, ops);
     }
@@ -107,6 +109,8 @@ export const formatPlain = (entry: LogEntryWire): string => {
     const address = [path, scope].filter((part) => part !== null && part.length > 0).join(" ");
     const sub = entry.op === "SEND" && typeof entry.signal === "number" ? ` [${entry.signal}]` : "";
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op}${sub} ${address}`.trim();
+    const annotation = entryAnnotation(entry);
+    if (annotation !== null) line += ` — ${annotation}`;
     // PLAN's reasoning rides tx.body (a plain string) — surface it like the TUI/nvim
     // do, so a one-shot run shows what the model planned, not a bare op name.
     if (entry.op === "PLAN") {

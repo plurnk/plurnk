@@ -278,11 +278,12 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 One line per dispatched op. Format (vanilla ANSI, no framework):
 
 ```
-  <origin> <op-glyph> <status-glyph> <status> <target> <scope>  <body-preview>
+  <origin> <op-glyph> <status-glyph> <status> <target> <scope>  <body-preview> [— <annotation>]
 ```
 
 Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/❌ from the outcome; SENDs glyph their signal — ✋/💥/⏳ carry meaning; 4xx and 5xx share ❌, nvim-converged: one failure signal in the alignment column, the colored status carries the class). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent).
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
+A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
 **Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's actionless `prompt` row at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 

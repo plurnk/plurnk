@@ -35,6 +35,7 @@ import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { handleMcp } from "./mcp.ts";
+import { handleSkills } from "./skills.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -80,6 +81,8 @@ export const TUI_HELP = [
     "  /mcp                              list available workspace MCP servers",
     "       add <alias> <target> [options.json] · enable/disable/remove <alias>",
     "       oauth <alias> <callback-url>",
+    "  /skills                           list workspace Agent Skills",
+    "       add <name> <path-to-SKILL.md> · remove <name>",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -192,6 +195,14 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         if (mcpFrag) {
             const fragment = mcpFrag[1];
             const commands = ["add", "enable", "disable", "remove", "oauth"]
+                .filter((command) => command.startsWith(fragment));
+            callback(null, [commands, fragment]);
+            return;
+        }
+        const skillsFrag = line.match(/^\/skills\s+(\S*)$/);
+        if (skillsFrag) {
+            const fragment = skillsFrag[1];
+            const commands = ["add", "remove"]
                 .filter((command) => command.startsWith(fragment));
             callback(null, [commands, fragment]);
             return;
@@ -404,6 +415,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "mcp": {
             await handleMcp(rest, rpc, write, { overlay: opts.mcpConfiguration });
+            return;
+        }
+        case "skills": {
+            await handleSkills(rest, write, opts.projectRoot);
             return;
         }
         case "accept":

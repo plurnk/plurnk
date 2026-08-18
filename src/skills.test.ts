@@ -63,3 +63,26 @@ test("skills requires a project root", async () => {
     const h = harness();
     await assert.rejects(() => handleSkills([], h.write, null), /project root/);
 });
+
+test("skills install copies local skill folders, optionally one named skill", async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "plurnk-skills-"));
+    const source = await mkdtemp(join(tmpdir(), "plurnk-skill-source-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    t.after(() => rm(source, { recursive: true, force: true }));
+    await (await import("node:fs/promises")).mkdir(join(source, "skills", "grep"), { recursive: true });
+    await writeFile(join(source, "skills", "grep", "SKILL.md"), "---\nname: grep\ndescription: Find text\n---\nbody");
+    await (await import("node:fs/promises")).mkdir(join(source, "skills", "review"), { recursive: true });
+    await writeFile(join(source, "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Check diffs\n---\nbody");
+
+    const h = harness();
+    await handleSkills(["install", source], h.write, root);
+    assert.match(h.out.join(""), /installed: (grep|review), (grep|review)/);
+
+    const one = harness();
+    await handleSkills(["install", source, "--skill", "review"], one.write, root);
+    assert.match(one.out.join(""), /installed: review/);
+
+    const missing = harness();
+    await handleSkills(["install", source, "--skill", "absent"], missing.write, root);
+    assert.match(missing.out.join(""), /no skill named absent/);
+});

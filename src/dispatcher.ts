@@ -300,16 +300,14 @@ export const buildConstraints = (values: {
     ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
 ];
 
-// Workspace-open settings. Open-context (svc#231/#286): filesItems REPLACES
-// PLURNK_FILES_ITEMS (renamed from manifestItems/PLURNK_MANIFEST_ITEMS — it only
-// ever capped the tracked-file list (`## FIND0 (file:///**)`); memory always foists
-// full); mdDocs UNIONS with the operator's PLURNK_MD_* (client wins a collision;
-// content read from the LOCAL fs — co-location law). Ceilings (svc#232,
-// most-restrictive-wins): maxCommands min()s PLURNK_MAX_COMMANDS; git:false ANDs
-// PLURNK_GIT_ALLOWED (deny-only, never re-enables).
+// Workspace-open settings. Open-context: filesItems REPLACES PLURNK_FILES_ITEMS
+// (it only ever capped the tracked-file list; memory always foists full).
+// The mdDocs channel is retired — operator reference material is skills under
+// the workspace skills/ tree ({§skills-materialization} in the service SPEC).
+// Ceilings (svc#232, most-restrictive-wins): maxCommands min()s
+// PLURNK_MAX_COMMANDS; git:false ANDs PLURNK_GIT_ALLOWED (deny-only).
 export interface Settings {
     filesItems?: number;
-    mdDocs?: Array<{ alias: string; content: string }>;
     maxCommands?: number;
     git?: boolean;
     client?: string;          // #249 — frontend id, set on every workspace.create
@@ -317,7 +315,7 @@ export interface Settings {
 }
 
 export const buildSettings = async (
-    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean },
+    values: { "files-items"?: string; "max-commands"?: string; "no-git"?: boolean },
     cwd: string,
     env: NodeJS.ProcessEnv = process.env,
 ): Promise<Settings> => {
@@ -340,23 +338,6 @@ export const buildSettings = async (
             throw new ProblemError(clientFlagInvalid("--files-items", fi, "must be -1 (full), 0 (off), or a positive integer"));
         }
         settings.filesItems = n;
-    }
-    const mdSpecs = values.md ?? [];
-    if (mdSpecs.length > 0) {
-        const mdDocs: Array<{ alias: string; content: string }> = [];
-        for (const spec of mdSpecs) {
-            const eq = spec.indexOf("=");
-            if (eq <= 0) throw new ProblemError(clientFlagInvalid("--md", spec, "must be NAME=path"));
-            const alias = spec.slice(0, eq);
-            const raw = spec.slice(eq + 1);
-            const abs = isAbsolute(raw) ? raw : resolve(cwd, raw);
-            try {
-                mdDocs.push({ alias, content: await readFile(abs, "utf8") });
-            } catch (cause) {
-                throw new ProblemError(clientFlagInvalid("--md", spec, `file not readable: ${cause instanceof Error ? cause.message : String(cause)}`));
-            }
-        }
-        settings.mdDocs = mdDocs;
     }
     return settings;
 };
@@ -554,7 +535,7 @@ export const main = async (argv: string[]): Promise<void> => {
             view: { type: "string", multiple: true },
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
-            md: { type: "string", multiple: true },
+
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
             // log read filters

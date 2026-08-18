@@ -168,22 +168,8 @@ test("buildSettings: files-items rejects < -1 and non-integer", async () => {
     await assert.rejects(buildSettings({ "files-items": "x" }, "/"), /must be/);
 });
 
-test("buildSettings: --md NAME=path reads local file → {alias, content}", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "plurnk-md-"));
-    try {
-        await writeFile(join(dir, "policy.md"), "# Policy\nBe terse.", "utf8");
-        const s = await buildSettings({ md: [`POLICY=${join(dir, "policy.md")}`] }, "/");
-        assert.deepEqual(s.mdDocs, [{ alias: "POLICY", content: "# Policy\nBe terse." }]);
-    } finally { await rm(dir, { recursive: true, force: true }); }
-});
 
-test("buildSettings: --md without '=' → throws NAME=path", async () => {
-    await assert.rejects(buildSettings({ md: ["nopath"] }, "/"), /NAME=path/);
-});
 
-test("buildSettings: --md missing file → throws not readable", async () => {
-    await assert.rejects(buildSettings({ md: ["X=/no/such/file.md"] }, "/"), /not readable/);
-});
 
 test("buildSettings: empty → {}", async () => {
     assert.deepEqual(await buildSettings({}, "/"), {});

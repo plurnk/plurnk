@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, isServerResolved, renderProposalMenu, keyToResolution, questionFromProposal, renderQuestionMenu, answerForLine } = await import("./proposal.ts");
+const { renderBody, formatTarget, isServerResolved, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, answerForQuestion } = await import("./proposal.ts");
 
 const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     logEntryId: 1,
@@ -21,37 +21,31 @@ const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     flags,
 });
 
-// ─── SEND signal 300 questions (#346) ────────────────────────────────
+// ─── request-user-input questions ({§question-tool}) ─────────────────
+// The body's MCP2 form-elicitation shape drives the menu + the typed answer.
 
-const qProposal = (attrs: object, op = "SEND"): Parameters<typeof questionFromProposal>[0] =>
-    ({ logEntryId: 7, loopId: 1, turnId: 1, op, target: { scheme: null, pathname: null }, body: "", attrs, flags: {} });
-
-test("[§cli-notification-shape] questionFromProposal: SEND with attrs.question → the question + choices", () => {
-    assert.deepEqual(questionFromProposal(qProposal({ question: "Which?", choices: ["A", "B"] })), { question: "Which?", choices: ["A", "B"] });
+test("questionChoices: the schema's single-property enum choices surface", () => {
+    assert.deepEqual(questionChoices({ properties: { branch: { type: "string", enum: ["main", "feat/x"] } } }), ["main", "feat/x"]);
+    assert.deepEqual(questionChoices({ properties: {} }), []);
+    assert.deepEqual(questionChoices({}), []);
 });
 
-test("questionFromProposal: no choices → open question (empty choices)", () => {
-    assert.deepEqual(questionFromProposal(qProposal({ question: "Your name?" })), { question: "Your name?", choices: [] });
+test("answerForQuestion: a digit picks that enum choice into the content object", () => {
+    const schema = { properties: { branch: { type: "string", enum: ["main", "feat/x"] } } };
+    assert.deepEqual(answerForQuestion("2", schema), { branch: "feat/x" });
+    assert.deepEqual(answerForQuestion("1", schema), { branch: "main" });
 });
 
-test("questionFromProposal: a non-SEND op, or no attrs.question → null (normal proposal)", () => {
-    assert.equal(questionFromProposal(qProposal({ question: "x" }, "EDIT")), null);
-    assert.equal(questionFromProposal(qProposal({})), null);
+test("answerForQuestion: free text lands the single property's value; empty → null", () => {
+    const schema = { properties: { branch: { type: "string", enum: ["main"] } } };
+    assert.deepEqual(answerForQuestion("anything at all", schema), { branch: "anything at all" });
+    assert.equal(answerForQuestion("   ", schema), null);
 });
 
-test("answerForLine: a digit in range picks that choice's text", () => {
-    assert.equal(answerForLine("2", ["A", "B", "C"]), "B");
-    assert.equal(answerForLine(" 1 ", ["A", "B"]), "A");
-});
-
-test("answerForLine: out-of-range or non-numeric is free response (reject the premise)", () => {
-    assert.equal(answerForLine("9", ["A", "B"]), "9");
-    assert.equal(answerForLine("actually, neither", ["A", "B"]), "actually, neither");
-    assert.equal(answerForLine("3", []), "3");   // open question — everything is free text
-});
-
-test("answerForLine: empty line → null (re-ask, don't resolve with nothing)", () => {
-    assert.equal(answerForLine("   ", ["A"]), null);
+test("answerForQuestion: a multi-property schema expects raw JSON content", () => {
+    const schema = { properties: { a: { type: "string" }, b: { type: "string" } } };
+    assert.deepEqual(answerForQuestion('{"a":"x","b":"y"}', schema), { a: "x", b: "y" });
+    assert.equal(answerForQuestion("not json", schema), null);
 });
 
 test("renderQuestionMenu: numbers the choices + free-response hint; open question just prompts", () => {

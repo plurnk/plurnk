@@ -121,20 +121,50 @@ export const renderProposalMenu = (params: ProposalParams): string => {
         + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
 };
 
-// ─── SEND signal 300 questions (plurnk-service#346) ──────────────────
-// A question rides the SAME proposal lifecycle (world-stopped; answer via
-// loop.resolve `body`), but renders + collects differently: a numbered menu the
-// user picks by typing, always with a free-response escape. attrs carries
-// { question, choices } (choices absent/empty = open question).
+// ─── request-user-input questions ({§question-tool}) ──────────────────
+// The question tool's body is the MCP2 form-elicitation shape — { message,
+// requestedSchema } — and the answer is the standard ElicitResult payload
+// { action, content }. The client renders the message plus the schema's
+// single-property enum choices as a numbered menu with a free-response escape.
 
-// Is this proposal a SEND signal 300 question? Returns its shape, or null (a normal op
-// proposal → the a/e/r/c path). Choices default to [] (open question).
-export const questionFromProposal = (params: ProposalParams): { question: string; choices: string[] } | null => {
-    if (params.op !== "SEND") return null;
-    const a = params.attrs as { question?: unknown; choices?: unknown } | null;
-    if (a === null || typeof a !== "object" || typeof a.question !== "string") return null;
-    const choices = Array.isArray(a.choices) ? a.choices.filter((c): c is string => typeof c === "string") : [];
-    return { question: a.question, choices };
+// The schema's single-property enum choices, if any. Multi-property or
+// non-enum schemas yield [] (the user types a JSON answer).
+export const questionChoices = (schema: Record<string, unknown>): string[] => {
+    const properties = schema.properties;
+    if (typeof properties !== "object" || properties === null) return [];
+    const keys = Object.keys(properties);
+    if (keys.length !== 1) return [];
+    const property = (properties as Record<string, Record<string, unknown>>)[keys[0]!];
+    const enums = property?.enum;
+    return Array.isArray(enums) ? enums.filter((c): c is string => typeof c === "string") : [];
+};
+
+// Map a typed line to the standard answer payload for a single-property schema:
+// a digit picks that enum choice; anything else is the property's free-text
+// value. Multi-property schemas expect raw JSON. Empty → null (re-prompt).
+export const answerForQuestion = (line: string, schema: Record<string, unknown>): Record<string, unknown> | null => {
+    const t = line.trim();
+    if (t.length === 0) return null;
+    const properties = schema.properties;
+    if (typeof properties !== "object" || properties === null) return null;
+    const keys = Object.keys(properties);
+    const choices = questionChoices(schema);
+    if (keys.length === 1) {
+        const key = keys[0]!;
+        const n = Number(t);
+        const value = choices.length > 0 && Number.isInteger(n) && n >= 1 && n <= choices.length
+            ? choices[n - 1]
+            : t;
+        return { [key]: value };
+    }
+    try {
+        const parsed = JSON.parse(t) as unknown;
+        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+            ? parsed as Record<string, unknown>
+            : null;
+    } catch {
+        return null;
+    }
 };
 
 // The question menu: the question, numbered choices, and the always-present
@@ -146,17 +176,6 @@ export const renderQuestionMenu = (question: string, choices: string[]): string 
         ? `${DIM}  type 1–${choices.length} to pick, or type your own answer (Free Response)${RESET} `
         : `${DIM}  type your answer${RESET} `);
     return lines.join("\n");
-};
-
-// Map a typed line to the answer: a digit 1..N picks that choice's text; anything
-// else is free response (rejecting the premise / an open answer). Empty → null
-// (caller re-prompts rather than resolving with nothing).
-export const answerForLine = (line: string, choices: string[]): string | null => {
-    const t = line.trim();
-    if (t.length === 0) return null;
-    const n = Number(t);
-    if (Number.isInteger(n) && n >= 1 && n <= choices.length) return choices[n - 1];
-    return t;
 };
 
 // Map a single review key to a resolution. `e` runs $EDITOR (async — caller

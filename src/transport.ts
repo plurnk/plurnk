@@ -53,6 +53,7 @@ export interface BranchBatchEvent {
 export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
     onProposal: (p: ProposalParams) => void;
+    onInteraction?: (i: { interactionId: number; message: string; responseSchema: Record<string, unknown> }) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
@@ -65,7 +66,7 @@ export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
 
 // loop.run knobs. The bridge run endpoint reads alias/model/flags/maxTurns from
 // forwardedProps.plurnk (agui 0.2.4); WS passes them straight to loop.run.
-export interface RunOpts { alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] }
+export interface RunOpts { alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[]; requestUserInput?: boolean }
 
 export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
@@ -73,6 +74,7 @@ export interface Transport {
     run(prompt: string, opts: RunOpts): RunHandle;
     inject(prompt: string): Promise<void>;
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
+    resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void>;
     onClose(handler: () => void): void;   // WS: the daemon socket dropped. Bridge: no-op (each run is its own SSE).
     shutdown(): void;   // suppress the connection-lost reject on an intentional quit
     // Switch to (or create) a named workspace. WS rebinds the connection via
@@ -96,6 +98,7 @@ export class BridgeTransport implements Transport {
     #workspace: BridgeSessionOpts;
     #h: RunHandlers | null = null;
     #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
+    #pendingInteractionResolve: ((r: Record<string, unknown> | "cancel") => void) | null = null;
 
     constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
         this.#target = target;
@@ -204,6 +207,7 @@ export class BridgeTransport implements Transport {
             ...(opts.childModel !== undefined ? { childModel: opts.childModel } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
             ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
+            ...(opts.requestUserInput !== undefined ? { requestUserInput: opts.requestUserInput } : {}),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
         // AG-UI interrupt/resume: a stopped-world ends the run as a
@@ -219,7 +223,9 @@ export class BridgeTransport implements Transport {
             let fp = forwardedProps;
             for (;;) {
                 let pausedProp: number | null = null;
+                let pausedInteraction: number | null = null;
                 let proposalResolution: Promise<{ logEntryId: number; decision: string; body?: string }> | null = null;
+                let interactionResolution: Promise<Record<string, unknown> | "cancel"> | null = null;
                 let interrupted = false;
                 let toolId = "";
                 let toolArgs = "";
@@ -234,8 +240,28 @@ export class BridgeTransport implements Transport {
                         } else if (e.type === "TOOL_CALL_START") {
                             toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
                             toolArgs = "";
-                        } else if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) {
+                        } else if (e.type === "TOOL_CALL_ARGS" && (toolId.startsWith("prop:") || toolId.startsWith("int:"))) {
                             toolArgs += String((e as { delta?: unknown }).delta ?? "");
+                        } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("int:")) {
+                            pausedInteraction = Number(toolId.slice(4));
+                            let a: Record<string, unknown>;
+                            try {
+                                a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                            } catch (cause) {
+                                const problem = clientTransportProposalInvalid(pausedInteraction, cause);
+                                this.#h?.onProblem?.(problem);
+                                return {
+                                    finalStatus: problem.status,
+                                    hitMaxTurns: false,
+                                    result: operationResult({ status: problem.status, problem }),
+                                };
+                            }
+                            interactionResolution = new Promise((resolve) => { this.#pendingInteractionResolve = resolve; });
+                            this.#h?.onInteraction?.({
+                                interactionId: pausedInteraction,
+                                message: typeof a.message === "string" ? a.message : "Provide the requested input.",
+                                responseSchema: (a.requestedSchema ?? {}) as Record<string, unknown>,
+                            });
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
                             pausedProp = Number(toolId.slice(5));
                             let a: Record<string, unknown>;
@@ -283,8 +309,8 @@ export class BridgeTransport implements Transport {
                     };
                 }
                 if (terminated !== null) return terminated;
-                if (pausedProp !== null && !interrupted) {
-                    const problem = clientTransportInterruptMismatch(pausedProp);
+                if ((pausedProp !== null || pausedInteraction !== null) && !interrupted) {
+                    const problem = clientTransportInterruptMismatch(pausedProp ?? pausedInteraction ?? -1);
                     this.#h?.onProblem?.(problem);
                     return {
                         finalStatus: problem.status,
@@ -302,6 +328,15 @@ export class BridgeTransport implements Transport {
                         hitMaxTurns: false,
                         result: operationResult({ status: problem.status, problem }),
                     };
+                }
+                if (proposalResolution === null && interactionResolution === null) throw new Error("paused run ended without a resolution channel");
+                if (interactionResolution !== null && pausedInteraction !== null) {
+                    const a = await interactionResolution;
+                    next = a === "cancel"
+                        ? { resume: [{ interruptId: `int:${pausedInteraction}`, status: "cancelled" }] }
+                        : { resume: [{ interruptId: `int:${pausedInteraction}`, status: "resolved", payload: a }] };
+                    fp = undefined;
+                    continue;
                 }
                 if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
                 // Paused: hold done open until the client resolves, then resume the interrupt.
@@ -327,6 +362,12 @@ export class BridgeTransport implements Transport {
         if (pending === null) throw new Error("resolve without a delivered AG-UI interrupt");
         this.#pendingResolve = null;
         pending(r);
+    }
+    async resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void> {
+        const pending = this.#pendingInteractionResolve;
+        if (pending === null) throw new Error("resolveInteraction without a delivered interaction interrupt");
+        this.#pendingInteractionResolve = null;
+        pending(payload);
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
     async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {

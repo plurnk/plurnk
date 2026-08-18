@@ -158,9 +158,9 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
   PLURNK_AUTO                  when truthy, keep proposal authority inside the loop.
                         Client-side only — proposals still go through the wire.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
-  PLURNK_QUESTIONS      when truthy, let the model ask you via a SEND carrying
-                        signal 300 (shared intent — the daemon reads it too).
-                        --questions overrides.
+  PLURNK_REQUEST_USER_INPUT  when truthy, the conversation worker may ask you
+                        through the question tool. TUI/nvim default on; the
+                        one-shot CLI defaults off. --request_user_input overrides.
   PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
                         set, a one-shot (text AND --json) runs THROUGH the bridge
                         instead of raw daemon WS (the exclusive-portal path).
@@ -206,10 +206,11 @@ options:
       --flags <json>      raw LoopFlags JSON passthrough on every loop.run
                           (e.g. '{"auto":true}' for unattended
                           benchmark/automation runs).
-      --questions         let the model ask you with SEND signal 300 when it needs a
-                          decision — multiple choice with a free-response escape,
-                          or an open question. Off by default. Overrides
-                          PLURNK_QUESTIONS. (Requires a daemon that emits that signal.)
+      --request_user_input  let the model ask you through the question tool when it
+                          needs a decision (multiple choice with a free-response
+                          escape, or an open question). Off by default for the
+                          one-shot CLI; on by default for the TUI. Overrides
+                          PLURNK_REQUEST_USER_INPUT.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
@@ -313,21 +314,16 @@ export interface Settings {
     git?: boolean;
     client?: string;          // #249 — frontend id, set on every workspace.create
     execs?: Record<string, string>; // #132 — per-workspace exec-policy layer (PLURNK_EXECS_* forwarded)
-    questions?: boolean;      // svc#346 — enable model→user SEND signal 300 questions for the workspace (+ questions.md teaching)
 }
 
 export const buildSettings = async (
-    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; questions?: boolean },
+    values: { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean },
     cwd: string,
     env: NodeJS.ProcessEnv = process.env,
 ): Promise<Settings> => {
     const settings: Settings = {};
     const execs = collectExecsPolicy(env);
     if (Object.keys(execs).length > 0) settings.execs = execs;
-    // svc#346 — enable model→user SEND signal 300 questions (per-workspace; the daemon
-    // injects questions.md teaching + intersects its PLURNK_QUESTIONS ceiling).
-    // Flag or bare env (shared user intent). The daemon owns refusal when off.
-    if (values.questions === true || ["1", "true", "yes", "on"].includes((env.PLURNK_QUESTIONS ?? "").toLowerCase())) settings.questions = true;
     const mc = values["max-commands"];
     if (mc !== undefined) {
         const n = Number(mc);
@@ -549,7 +545,7 @@ export const main = async (argv: string[]): Promise<void> => {
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
             flags: { type: "string" },
-            questions: { type: "boolean" },   // --questions: allow the model to ask via SEND signal 300
+            "request-user-input": { type: "boolean" },   // --request_user_input: the worker may ask through the question tool
             "max-turns": { type: "string" },
             timeout: { type: "string" },
             // membership overlay — repeatable globs; service vocabulary
@@ -612,6 +608,11 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
+    // {§worker-settings} — the worker's request-user-input rule: TUI/nvim default on,
+    // the one-shot CLI defaults off; the explicit flag always wins, then the env.
+    const requestUserInputEnv = ["1", "true", "yes", "on"].includes((process.env.PLURNK_REQUEST_USER_INPUT ?? "").toLowerCase());
+    const requestUserInputCli = values["request-user-input"] === true || (values["request-user-input"] === undefined && requestUserInputEnv);
+    const requestUserInputTui = values["request-user-input"] ?? (requestUserInputEnv || true);
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
     if (workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
@@ -632,9 +633,10 @@ export const main = async (argv: string[]): Promise<void> => {
         dieWith(64, clientRuntimeError(cause));
     }
 
-    // --questions / PLURNK_QUESTIONS is a SESSION setting (settings.questions in
-    // buildSettings), NOT a loop flag — svc#346 ruled it workspace-scoped (it also
-    // gates the questions.md teaching, so capability + teaching arrive together).
+    // --request_user_input / PLURNK_REQUEST_USER_INPUT is the worker's own
+    // behavioral rule ({§worker-settings}): it rides the run's forwardedProps, the
+    // AG-UI thread binding persists it on the conversation worker, and it stays
+    // flippable between loops via worker.settings.set.
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
     const projectRoot: string | null = (() => {
@@ -661,7 +663,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceOptions = (): Promise<{ constraints: Constraint[]; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
             constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
-            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean; questions?: boolean }, process.cwd()),
+            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
         }))();
         return workspaceOptionsPromise;
     };
@@ -695,7 +697,7 @@ export const main = async (argv: string[]): Promise<void> => {
             if (values.model !== undefined && modelAlias !== undefined) {
                 await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, kind: "worker.model.set", params: { alias: modelAlias } });
             }
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, requestUserInput: requestUserInputCli, ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             // Let Node drain stdout before termination. A forced exit truncated large
             // --json records mid-string when notices made the pipe exceed its buffer.
             process.exitCode = code;
@@ -725,7 +727,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // TUI through the bridge (no prompt): skip the WS connect + workspace.create — a
     // pure-bridge client has no direct daemon WS. The bridge owns the workspace; we
     // pass a threadId-named stub (the daemon workspace id is bridge-created). projectRoot
-    // rides forwardedProps; PLURNK_AGUI_QUESTIONS gates questions bridge-side.
+    // rides forwardedProps.
     // (Per-workspace constraints/settings over the bridge are a follow-up.)
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         const w = await world();
@@ -742,7 +744,7 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints,
             settings,
         });
-        await runTui(transport, { id: 0, name: w }, { modelAlias, modelExplicit: values.model !== undefined, yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, mcpConfiguration });
+        await runTui(transport, { id: 0, name: w }, { modelAlias, modelExplicit: values.model !== undefined, requestUserInput: requestUserInputTui, yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, mcpConfiguration });
         process.exitCode = 0;
         return;
     }

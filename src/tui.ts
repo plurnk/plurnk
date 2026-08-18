@@ -25,7 +25,7 @@ export interface VerbCaller { call(method: string, params?: object): Promise<unk
 import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, isServerResolved, questionFromProposal, renderQuestionMenu, answerForLine } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, isServerResolved, renderQuestionMenu, questionChoices, answerForQuestion } from "./proposal.ts";
 import { BridgeTransport, type BranchBatchEvent, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -428,7 +428,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // The explicit --model alias for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup; an inherited
     // PLURNK_MODEL value is the daemon's own default and is never reasserted.
-    modelAlias?: string; modelExplicit?: boolean; yolo: boolean;
+    modelAlias?: string; modelExplicit?: boolean; requestUserInput?: boolean; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
@@ -657,10 +657,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // handlers are forward-declared (assigned once verbCtx exists).
     let pendingProposal: ProposalParams | null = null;
     let onProposalKey: (key: string) => void = () => {};
-    // A pending SEND signal 300 question (#346): answered by TYPING (a number picks a
-    // choice; anything else is free response), NOT the a/e/r/c keypress path —
-    // free response needs text. The line handler intercepts while this is set.
-    let pendingQuestion: { logEntryId: number; choices: string[] } | null = null;
+    // A pending request-user-input question ({§question-tool}): answered by TYPING
+    // (a number picks an enum choice; anything else is free response), NOT the
+    // a/e/r/c keypress path — free response needs text. The line handler
+    // intercepts while this is set.
+    let pendingQuestion: { interactionId: number; schema: Record<string, unknown> } | null = null;
     let dispatchShortcut: (verb: string) => void = () => {};
     const onStdin = (chunk: Buffer): void => {
         const forward = paste.feed(chunk.toString("utf8"));
@@ -825,15 +826,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         },
         onProposal: (p) => {
-            // SEND signal 300 question FIRST — even a yolo loop stops the world for a human;
-            // the line handler resolves it from the next typed line.
-            const q = questionFromProposal(p);
-            if (q !== null) {
-                pendingQuestion = { logEntryId: p.logEntryId, choices: q.choices };
-                printAbove(renderQuestionMenu(q.question, q.choices));
-                reprompt();
-                return;
-            }
             if (isServerResolved(p)) return;
             if (opts.yolo) {
                 void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
@@ -842,6 +834,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
             proposalQueue.push(p);
             showNextProposal();
+        },
+        onInteraction: (i) => {
+            // The question tool paused its loop: render the standard message + the
+            // schema's single-property enum choices; the line handler resolves the
+            // typed answer back into the paused run.
+            pendingQuestion = { interactionId: i.interactionId, schema: i.responseSchema };
+            printAbove(renderQuestionMenu(i.message, questionChoices(i.responseSchema)));
+            reprompt();
         },
         // A loop terminating just clears the parked glyph; the summary is rendered
         // from the run's own done (below).
@@ -928,16 +928,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     return new Promise<void>((resolve) => {
         rl.on("line", async (line) => {
-            // A pending SEND signal 300 question consumes the typed line as its answer,
-            // BEFORE any verb/prompt/inject handling (#346): a number picks a
-            // choice, anything else is free response. Empty → re-ask (don't
-            // resolve with nothing). Resolves the world-stopped proposal via body.
+            // A pending request-user-input question consumes the typed line as its
+            // answer, BEFORE any verb/prompt/inject handling: a number picks an
+            // enum choice, anything else is free response (or raw JSON for a
+            // multi-property schema). Empty → re-ask. Resolves the paused run with
+            // the standard ElicitResult payload.
             if (pendingQuestion !== null) {
-                const body = answerForLine(line, pendingQuestion.choices);
-                if (body === null) { reprompt(); return; }
-                const { logEntryId } = pendingQuestion;
+                const content = answerForQuestion(line, pendingQuestion.schema);
+                if (content === null) { reprompt(); return; }
+                const { interactionId } = pendingQuestion;
                 pendingQuestion = null;
-                await transport.resolve({ logEntryId, decision: "accept", body })
+                await transport.resolveInteraction(interactionId, { action: "accept", content })
                     .catch((e) => printAbove(`  \x1b[31manswer failed: ${e instanceof Error ? e.message : String(e)}\x1b[0m`));
                 reprompt();
                 return;
@@ -1023,7 +1024,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const { flags: lineFlags, prompt: promptText } = lineMode(trimmed, opts.loopFlags);
                     // {§worker-model-selection} — no model selector rides the loop: the
                     // worker owns the model; /model and /child persisted it server-side.
-                    const loopParams: { prompt: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[] } = { prompt: promptText };
+                    const loopParams: { prompt: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[]; requestUserInput?: boolean } = { prompt: promptText, requestUserInput: opts.requestUserInput !== false };
                     if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)

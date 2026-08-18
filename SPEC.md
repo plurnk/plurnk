@@ -87,25 +87,26 @@ CLI flag takes precedence over env when both are set.
 
 ### §1.2 Model selection {§cli-model-selection}
 
-The daemon registers model aliases via `PLURNK_MODEL_<alias>=<provider>/<model>` env entries at boot, and resolves an active alias for its own provider via `PLURNK_MODEL=<alias>` (also at boot). The client can override on a per-call basis by passing `alias` on `loop.run`.
+The daemon registers model aliases via `PLURNK_MODEL_<alias>=<provider>/<model>` env entries at boot, and resolves an active alias for its own provider via `PLURNK_MODEL=<alias>` (also at boot). The worker owns the model ({§worker-model-selection}); the client persists selections server-side and never reasserts a model on every loop.
 
 Resolution at the client:
 
-- `--model <alias>` set → pass `alias` on every `loop.run` from this invocation.
-- `--model` unset, `PLURNK_MODEL` set → pass `PLURNK_MODEL` on every `loop.run`.
-- Neither set → omit `alias`; daemon falls back to its own boot-time provider.
+- `--model <alias>` set → one `worker.model.set` before the first loop of this invocation, then no per-loop selector.
+- `--model` unset, `PLURNK_MODEL` set → send nothing; the value is the daemon's own seed/default.
+- Neither set → send nothing; the worker's durable model (or the daemon default) runs.
 
 `PLURNK_MODEL` is shared with the daemon process; env vars represent user-level preferences, not per-process namespaces. Both processes reading the same name for the same intent is the point.
 
-Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via the `providers.list` action.
+The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the worker's durable model. Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via the `providers.list` action.
 
 ### §1.2.1 Child provider selection {§cli-child-provider-selection}
 
-Child selection is the same per-run posture for WORK, FORK, and BARE calls.
-`PLURNK_MODEL_CHILD` supplies the initial explicit alias; otherwise the policy is
-inherit. Bare `/child` reports it, `/child <alias>` selects and resolves it like
-`/model`, and `/child inherit` sends explicit inheritance. Every subsequent
-loop carries that selection beside its parent model selection.
+Child selection is the same durable posture for WORK, FORK, and BARE calls.
+`PLURNK_MODEL_CHILD` seeds the worker's spawn override (the daemon reads its own
+env); otherwise the policy is inherit. Bare `/child` reports the worker's
+persisted override, `/child <alias>` persists it via `worker.child.set`, and
+`/child inherit` sends `alias: null` (clearing the override). The client sends
+no child selector on loops.
 
 ### §1.3 Project root {§cli-project-root}
 
@@ -278,11 +279,12 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 One line per dispatched op. Format (vanilla ANSI, no framework):
 
 ```
-  <origin> <op-glyph> <status-glyph> <status> <target> <scope>  <body-preview>
+  <origin> <op-glyph> <status-glyph> <status> <target> <scope>  <body-preview> [— <annotation>]
 ```
 
 Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/❌ from the outcome; SENDs glyph their signal — ✋/💥/⏳ carry meaning; 4xx and 5xx share ❌, nvim-converged: one failure signal in the alignment column, the colored status carries the class). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent).
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
+A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
 **Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's actionless `prompt` row at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 

@@ -145,10 +145,11 @@ env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
   PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
                         mints a fresh, uniquely-named workspace per invocation.
   PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace
-  PLURNK_MODEL          model alias to use for every loop.run on this invocation.
-                        Shared with the daemon (user-level preference). --model
-                        overrides for this invocation only.
-  PLURNK_MODEL_CHILD    optional WORK/FORK/BARE provider alias. Unset = inherit the
+  PLURNK_MODEL          model alias seeded onto the conversation worker at startup
+                        when --model is unset. Shared with the daemon (user-level
+                        preference); --model persists the worker's selection.
+  PLURNK_MODEL_CHILD    optional WORK/FORK/BARE spawn override (the daemon reads
+                        its own env and seeds the worker). Unset = inherit the
                         spawning loop's provider; interactive /child overrides.
   PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.
@@ -189,10 +190,11 @@ options:
                           auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
                           Requires --workspace. Overrides PLURNK_CLIENT_WORKER.
-      --model <alias>     model alias to pass on every loop.run. Resolved
+      --model <alias>     persistently select the conversation worker's model
+                          before the first loop (worker.model.set). Resolved
                           server-side against PLURNK_MODEL_<alias>. Without
-                          this (and PLURNK_MODEL unset), the daemon uses its
-                          own boot-time PLURNK_MODEL.
+                          this (and PLURNK_MODEL unset), the worker's durable
+                          model or the daemon's boot-time default runs.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
@@ -610,7 +612,6 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
-    const childAlias = process.env.PLURNK_MODEL_CHILD;
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
     if (workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
@@ -687,7 +688,14 @@ export const main = async (argv: string[]): Promise<void> => {
             // thread == world (the model worker).
             const w = await world();
             const { constraints, settings } = await workspaceOptions();
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(modelAlias !== undefined ? { alias: modelAlias } : {}), ...(resolveModelSpec(modelAlias) !== undefined ? { model: resolveModelSpec(modelAlias) } : {}), ...(childAlias !== undefined ? { childAlias } : {}), ...(resolveModelSpec(childAlias) !== undefined ? { childModel: resolveModelSpec(childAlias) } : {}), ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
+            // {§worker-model-selection} — an explicit --model is a durable selection:
+            // persist it onto the conversation worker before the run, then run WITHOUT
+            // a per-loop model selector (the worker owns the model). An inherited
+            // PLURNK_MODEL value is the daemon's own default and is never reasserted.
+            if (values.model !== undefined && modelAlias !== undefined) {
+                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, kind: "worker.model.set", params: { alias: modelAlias } });
+            }
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             // Let Node drain stdout before termination. A forced exit truncated large
             // --json records mid-string when notices made the pipe exceed its buffer.
             process.exitCode = code;
@@ -734,7 +742,7 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints,
             settings,
         });
-        await runTui(transport, { id: 0, name: w }, { modelAlias, model: resolveModelSpec(modelAlias), childAlias, childModel: resolveModelSpec(childAlias), resolveModel: (a: string) => resolveModelSpec(a), yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, mcpConfiguration });
+        await runTui(transport, { id: 0, name: w }, { modelAlias, modelExplicit: values.model !== undefined, yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, mcpConfiguration });
         process.exitCode = 0;
         return;
     }

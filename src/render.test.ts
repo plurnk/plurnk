@@ -160,6 +160,24 @@ test("renderLogEntry: no path at all (both scheme + pathname null) for non-SEND 
     assert.doesNotMatch(line, /:\/\//);
 });
 
+test("renderLogEntry: a durable annotation renders as sanitized plain text", () => {
+    const line = renderLogEntry(entry({
+        op: "EXEC",
+        tx: { annotation: "Lists **issues**\u001b[31m", body: "{}" },
+    }));
+    assert.match(line, /— Lists \*\*issues\*\*/);
+    assert.doesNotMatch(line, /\u001b\[31m/);
+});
+
+test("renderLogEntry: a broadcast SEND retains its annotation on the header", () => {
+    const out = renderLogEntry(entry({
+        op: "SEND",
+        signal: 200,
+        tx: { annotation: "Answer ready", body: { raw: "Paris", json: null } },
+    }));
+    assert.match(out, /200 — Answer ready Paris/);
+});
+
 // ─── renderLogEntry: broadcast SEND ──────────────────────────────────
 
 test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bold line, NO surrounding blanks", () => {

@@ -1,6 +1,7 @@
 // Glyph palette + line formatting for the TUI log waterfall.
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
+import { stripVTControlCharacters } from "node:util";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 
 // Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
@@ -160,6 +161,21 @@ export interface LogEntryWire {
     sequence: number;
 }
 
+export const entryAnnotation = (entry: LogEntryWire): string | null => {
+    const tx = typeof entry.tx === "string"
+        ? (() => { try { return JSON.parse(entry.tx) as unknown; } catch { return null; } })()
+        : entry.tx;
+    const raw = tx !== null && typeof tx === "object"
+        ? (tx as { annotation?: unknown }).annotation
+        : null;
+    if (typeof raw !== "string") return null;
+    const plain = stripVTControlCharacters(raw)
+        .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim();
+    return plain.length === 0 ? null : plain;
+};
+
 // Machine acquisition is durable ambience, not a live action trace. It remains
 // available through log/replay; interactive clients collapse it into the
 // producer's aggregate progress signal instead of redrawing once per page.
@@ -264,7 +280,9 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const subGlyph = entry.origin === "model" ? "  " : sendSubGlyph(signal);
     const statusText = `${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}`;
 
-    const header = `  ${coordPrefix(entry)}${[idGlyph, subGlyph, statusText].join(" ")}`;
+    const annotation = entryAnnotation(entry);
+    const header = `  ${coordPrefix(entry)}${[idGlyph, subGlyph, statusText].join(" ")}`
+        + (annotation === null ? "" : ` ${DIM}— ${annotation}${RESET}`);
 
     const body = extractSendBody(entry.tx, /* prettify */ true);
     const multiLine = body.includes("\n");
@@ -349,6 +367,8 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     if (pathText.length > 0) parts.push(pathText);
     if (scopeText.length > 0) parts.push(scopeText);
     if (extra.length > 0) parts.push(extra);
+    const annotation = entryAnnotation(entry);
+    if (annotation !== null) parts.push(`${DIM}— ${annotation}${RESET}`);
 
     // PLAN carries the model's reasoning as a plain string in tx.body (NOT the
     // SEND {raw,json} shape) — surface it dimmed, newlines collapsed, so the

@@ -459,8 +459,6 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
         const costUsd = usage.accounting.costUsd;
         if (costUsd !== null && !isZeroDecimal(costUsd)) {
             tokenPart += ` · loop $${costUsd}`;
-        } else if (costUsd === null && usage.accounting.requests.length > 0) {
-            tokenPart += " · loop $unknown";
         }
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;

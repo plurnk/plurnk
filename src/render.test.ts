@@ -739,7 +739,7 @@ test("renderSummary: zero cost omits the $ part", () => {
     assert.doesNotMatch(out, /\$/);
 });
 
-test("renderSummary: unknown money remains unknown and preserves physical evidence", () => {
+test("renderSummary: unavailable money is omitted, never a gross $unknown", () => {
     const out = renderSummary(1, 100, terminalResult(200), false, {
         accounting: {
             requests: [{ provider: "provider:test", model: "test", outcome: "response", cost: { kind: "unknown" } }],
@@ -752,7 +752,8 @@ test("renderSummary: unknown money remains unknown and preserves physical eviden
         contextCapacity: null,
         meta: {},
     });
-    assert.match(out, /loop \$unknown/);
+    assert.match(out, /↑10 ↓5/, "physical evidence still renders");
+    assert.doesNotMatch(out, /\$/, "no cost segment at all when the price is not available");
 });
 
 test("[§cli-summary-line-per-looprun] contextGauge renders the daemon's request-matched physical capacity", () => {

@@ -4,8 +4,7 @@
 
 import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { isAbsolute, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
 import { buildJsonError } from "./cli.ts";
@@ -34,6 +33,7 @@ import {
 } from "./diagnostics.ts";
 import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
+import { userConfigFile } from "./paths.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive workspace because we gate on isTTY upstream.
@@ -139,8 +139,8 @@ is appended after a blank line). With no positionals and a TTY stdin,
 enters the interactive REPL. Read-only subcommands (models / workspace list /
 log read / read <coord>) inspect daemon state without running a loop.
 
-env (cascade, highest first: shell < --env-file < ./.env < ~/.plurnk/.env
-     < ~/.plurnk/.env.defaults < the client's packaged .env.defaults floor):
+env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
+     < ./.env < repeated --env-file flags (last wins) < shell):
                         Works with no config at all.
   PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
                         mints a fresh, uniquely-named workspace per invocation.
@@ -260,24 +260,51 @@ const dieJson = (code: number, problem: ProblemDetails): never => {
     process.exit(code);
 };
 
-// Env cascade, aligned with plurnk-service's ~/.plurnk layering so the two share
-// one config home. process.loadEnvFile only fills UNSET vars, so loading
+// Env cascade, aligned with plurnk-service's XDG config so the two share one
+// file. process.loadEnvFile only fills UNSET vars, so loading
 // highest-precedence-first yields:
-//   shell > --env-file > --env-file-if-exists > ./.env > ~/.plurnk/.env
-//   > ~/.plurnk/.env.defaults (the daemon family's rendered catalog)
+//   shell > --env-file > --env-file-if-exists > ./.env
+//   > $XDG_CONFIG_HOME/plurnk/.env
 //   > the client's OWN packaged .env.defaults (#141 — the self-serve floor:
 //     the client is the one member the daemon cannot assemble).
-const loadEnvCascade = (envFiles: string[], envFilesIfExists: string[]): void => {
-    const ifExists = (p: string): void => { try { process.loadEnvFile(p); } catch { /* optional layer */ } };
-    for (const f of envFiles) {
-        try { process.loadEnvFile(f); }
-        catch { dieWith(64, clientFlagInvalid("--env-file", f, "file not found")); }
+export interface ExplicitEnvFile {
+    readonly path: string;
+    readonly required: boolean;
+}
+
+export const orderedEnvFiles = (args: readonly string[]): ExplicitEnvFile[] => {
+    const files: ExplicitEnvFile[] = [];
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index]!;
+        if (arg === "--") break;
+        for (const [flag, required] of [["--env-file", true], ["--env-file-if-exists", false]] as const) {
+            if (arg === flag) {
+                const path = args[index + 1];
+                if (path !== undefined) files.push({ path, required });
+                index += 1;
+                break;
+            }
+            if (arg.startsWith(`${flag}=`)) files.push({ path: arg.slice(flag.length + 1), required });
+        }
     }
-    for (const f of envFilesIfExists) ifExists(f);
+    return files;
+};
+
+export const loadEnvCascade = (
+    explicitFiles: readonly ExplicitEnvFile[],
+    userConfig: string = userConfigFile(),
+): void => {
+    const ifExists = (p: string): void => { try { process.loadEnvFile(p); } catch { /* optional layer */ } };
+    for (const { path, required } of explicitFiles.toReversed()) {
+        if (!required) {
+            ifExists(path);
+            continue;
+        }
+        try { process.loadEnvFile(path); }
+        catch { dieWith(64, clientFlagInvalid("--env-file", path, "file not found")); }
+    }
     ifExists(".env");
-    const home = join(homedir(), ".plurnk");
-    ifExists(join(home, ".env"));
-    ifExists(join(home, ".env.defaults"));
+    ifExists(userConfig);
     loadFloor();
 };
 
@@ -303,7 +330,7 @@ export const buildConstraints = (values: {
 // Workspace-open settings. Open-context: filesItems REPLACES PLURNK_FILES_ITEMS
 // (it only ever capped the tracked-file list; memory always foists full).
 // The mdDocs channel is retired — operator reference material is skills under
-// the workspace skills/ tree ({§skills-materialization} in the service SPEC).
+// the workspace .agents/skills tree ({§skills-materialization} in the service SPEC).
 // Ceilings (svc#232, most-restrictive-wins): maxCommands min()s
 // PLURNK_MAX_COMMANDS; git:false ANDs PLURNK_GIT_ALLOWED (deny-only).
 export interface Settings {
@@ -553,8 +580,8 @@ export const main = async (argv: string[]): Promise<void> => {
         process.exit(0);
     }
 
-    // Shared ~/.plurnk env cascade (after parse so --env-file flags participate).
-    loadEnvCascade((values["env-file"] as string[] | undefined) ?? [], (values["env-file-if-exists"] as string[] | undefined) ?? []);
+    // Shared XDG user env cascade (after parse so --env-file flags participate).
+    loadEnvCascade(orderedEnvFiles(argv.slice(2)));
     const mcpConfiguration = collectMcpConfiguration(process.env);
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would

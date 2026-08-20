@@ -1,46 +1,35 @@
-// Thin operator projection of workspace Agent Skills management. The client
-// reads and writes the workspace's skills/ directory directly; the daemon
-// republishes the worker://plurnk/skills/ surface on its next workspace
-// refresh, so changes are discoverable by the model from the following turn.
+// Project-facing projection of the universal Agent Skills package manager.
+// Plurnk owns neither its registry nor its installation format: this wrapper
+// fixes the target to the shared `.agents/skills` convention and leaves source
+// resolution, lock metadata, updates, and removal to the standard CLI.
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { resolve } from "node:path";
+import { promisify, stripVTControlCharacters } from "node:util";
 
 const execFileP = promisify(execFile);
 
-const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export interface SkillsCommandResult {
+    stdout: string;
+    stderr: string;
+}
 
-const skillsDir = (projectRoot: string | null | undefined): string => {
-    if (projectRoot === null || projectRoot === undefined || projectRoot.length === 0) {
-        throw new Error("skills require a workspace project root");
-    }
-    return join(resolve(projectRoot), "skills");
-};
+export type SkillsRunner = (
+    args: readonly string[],
+    cwd: string,
+) => Promise<SkillsCommandResult>;
 
-const requireName = (name: string): string => {
-    if (!NAME_PATTERN.test(name)) {
-        throw new Error(`skill name '${name}' must match ${NAME_PATTERN.source}`);
-    }
-    return name;
-};
-
-const frontmatter = (raw: string): { name: string | null; description: string | null } => {
-    const lines = raw.replace(/\r\n/gu, "\n").split("\n");
-    let name: string | null = null;
-    let description: string | null = null;
-    if (lines[0]?.trim() === "---") {
-        for (let index = 1; index < lines.length; index += 1) {
-            const line = lines[index]!.trimEnd();
-            if (line === "---") break;
-            const key = /^([a-z]+):\s*(.*)$/u.exec(line.trim());
-            if (key?.[1] === "name" && key[2]!.length > 0) name = key[2]!;
-            else if (key?.[1] === "description" && key[2]!.length > 0) description = key[2]!;
-        }
-    }
-    return { name, description };
+const runSkills: SkillsRunner = async (args, cwd) => {
+    const { stdout, stderr } = await execFileP(
+        "npx",
+        ["--yes", "skills", ...args],
+        {
+            cwd,
+            env: { ...process.env, NO_COLOR: "1" },
+            maxBuffer: 4 * 1024 * 1024,
+        },
+    );
+    return { stdout, stderr };
 };
 
 const argumentsOf = (source: string): string[] | null => {
@@ -89,148 +78,81 @@ const argumentsOf = (source: string): string[] | null => {
 };
 
 const usage = (write: (text: string) => void): void => {
-    write("  usage: /skills\n");
-    write("         /skills add <name> <path-to-SKILL.md>\n");
-    write("         /skills install <owner/repo|git-url|local-path> [--skill <name>]\n");
-    write("         /skills remove <name>\n");
+    write("  usage: /skills [list [--global]]\n");
+    write("         /skills add <source> [--skill <name> ...] [--global]\n");
+    write("         /skills remove <name> ... [--global]\n");
+    write("         /skills find <query>\n");
+    write("         /skills update [name ...] [--global]\n");
 };
 
-// npx-skills-compatible sources: `owner/repo` (GitHub shorthand), any git URL,
-// or a local path. The client clones/reads the source and copies the selected
-// skill folders into the workspace's skills/ — the daemon never fetches git.
-const resolveSkillSource = async (source: string): Promise<{ dir: string; cleanup: () => Promise<void> }> => {
-    if (/^[\w.-]+\/[\w.-]+$/.test(source)) {
-        const dir = await mkdtemp(join(tmpdir(), "plurnk-skill-"));
-        await execFileP("git", ["clone", "--depth", "1", `https://github.com/${source}.git`, dir]);
-        return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
-    }
-    if (/^(https?:\/\/|git@|ssh:\/\/)/.test(source) || source.endsWith(".git")) {
-        const dir = await mkdtemp(join(tmpdir(), "plurnk-skill-"));
-        await execFileP("git", ["clone", "--depth", "1", source, dir]);
-        return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
-    }
-    return { dir: resolve(source), cleanup: async () => undefined };
-};
+const includesAny = (args: readonly string[], choices: readonly string[]): boolean =>
+    args.some((arg) => choices.includes(arg));
 
-const skillFoldersOf = async (dir: string): Promise<string[]> => {
-    const candidate = await readdir(join(dir, "skills"), { withFileTypes: true }).then(
-        (entries) => entries.filter((entry) => entry.isDirectory()).map((entry) => join(dir, "skills", entry.name)),
-    ).catch(() => []);
-    const entries = candidate.length > 0
-        ? candidate
-        : await readdir(dir, { withFileTypes: true }).then(
-            (found) => found.filter((entry) => entry.isDirectory()).map((entry) => join(dir, entry.name)),
-        ).catch(() => []);
-    const folders: string[] = [];
-    for (const folder of entries) {
-        const hasDoc = await readdir(folder).then((names) => names.includes("SKILL.md")).catch(() => false);
-        if (hasDoc) folders.push(folder);
+const commandArguments = (input: readonly string[]): string[] | null => {
+    if (input.length === 0) return ["list", "--agent", "universal"];
+    if (input.some((arg) => arg === "--agent" || arg === "-a" || arg.startsWith("--agent="))) return null;
+
+    const [command, ...rest] = input;
+    switch (command) {
+        case "list":
+        case "ls":
+            return ["list", ...rest, "--agent", "universal"];
+        case "add":
+        case "install":
+            return rest.length === 0 || includesAny(rest, ["--all"])
+                ? null
+                : ["add", ...rest, "--agent", "universal", "--yes"];
+        case "remove":
+        case "rm":
+            return rest.length === 0
+                ? null
+                : ["remove", ...rest, "--agent", "universal", "--yes"];
+        case "find":
+        case "search":
+            return rest.length === 0 ? null : ["find", ...rest];
+        case "update":
+        case "upgrade":
+            return [
+                "update",
+                ...rest,
+                ...(includesAny(rest, ["--global", "-g", "--project", "-p"])
+                    ? []
+                    : ["--project"]),
+                "--yes",
+            ];
+        default:
+            return null;
     }
-    return folders;
 };
 
 export const handleSkills = async (
     input: string | readonly string[],
     write: (text: string) => void,
     projectRoot: string | null | undefined,
+    runner: SkillsRunner = runSkills,
 ): Promise<void> => {
-    if (input.length === 0) {
-        const dir = skillsDir(projectRoot);
-        const folders = (await readdir(dir, { withFileTypes: true }).catch(() => []))
-            .filter((entry) => entry.isDirectory())
-            .toSorted((left, right) => left.name.localeCompare(right.name));
-        if (folders.length === 0) {
-            write("  skills: none\n");
-            return;
-        }
-        for (const folder of folders) {
-            const raw = await readFile(join(dir, folder.name, "SKILL.md"), "utf8").catch(() => null);
-            const { name, description } = raw === null
-                ? { name: null, description: null }
-                : frontmatter(raw);
-            const label = name ?? folder.name;
-            write(description === null
-                ? `  ${label}\n`
-                : `  ${label} — ${description}\n`);
-        }
-        return;
+    if (projectRoot === null || projectRoot === undefined || projectRoot.length === 0) {
+        throw new Error("skills require a workspace project root");
     }
-
-    const args = typeof input === "string" ? argumentsOf(input) : [...input];
-    if (args === null || args.length === 0) {
+    const parsed = typeof input === "string" ? argumentsOf(input) : [...input];
+    const args = parsed === null ? null : commandArguments(parsed);
+    if (args === null) {
         usage(write);
         return;
     }
-    const [command, name] = args;
-    const dir = skillsDir(projectRoot);
 
-    if (command === "add") {
-        if (args.length !== 3 || name.length === 0 || args[2].length === 0) {
-            write("  usage: /skills add <name> <path-to-SKILL.md>\n");
-            return;
+    try {
+        const { stdout, stderr } = await runner(args, resolve(projectRoot));
+        if (stdout.length > 0) write(stripVTControlCharacters(stdout));
+        if (stderr.length > 0) write(stripVTControlCharacters(stderr));
+    } catch (cause) {
+        const output = cause as { stdout?: unknown; stderr?: unknown };
+        if (typeof output.stdout === "string" && output.stdout.length > 0) {
+            write(stripVTControlCharacters(output.stdout));
         }
-        const folder = requireName(name);
-        let raw: string;
-        try {
-            raw = await readFile(resolve(args[2]), "utf8");
-        } catch (cause) {
-            throw new Error(`skills file not readable: ${args[2]}`, { cause });
+        if (typeof output.stderr === "string" && output.stderr.length > 0) {
+            write(stripVTControlCharacters(output.stderr));
         }
-        await mkdir(join(dir, folder), { recursive: true });
-        await writeFile(join(dir, folder, "SKILL.md"), raw);
-        write(`  added: ${folder}\n`);
-        return;
+        throw new Error("Agent Skills command failed", { cause });
     }
-
-    if (command === "install") {
-        if (args.length < 2 || args[1].length === 0) {
-            write("  usage: /skills install <owner/repo|git-url|local-path> [--skill <name>]\n");
-            return;
-        }
-        const skillFlag = args.indexOf("--skill");
-        const requested = skillFlag >= 0 ? (args[skillFlag + 1] ?? "") : null;
-        if (requested === "") {
-            write("  usage: /skills install <source> --skill <name>\n");
-            return;
-        }
-        const source = await resolveSkillSource(args[1]);
-        try {
-            const folders = (await skillFoldersOf(source.dir))
-                .filter((folder) => requested === null
-                    || folder.split(/[\/\\]/u).at(-1) === requested);
-            if (folders.length === 0) {
-                write(`  skills: no skill${requested === null ? "s" : ` named ${requested}`} in ${args[1]}\n`);
-                return;
-            }
-            const wanted: string | null = requested;
-            const installed: string[] = [];
-            for (const folder of folders) {
-                const name = requireName(folder.split(/[\/\\]/u).at(-1) ?? "");
-                await cp(folder, join(dir, name), { recursive: true });
-                installed.push(name);
-            }
-            write(`  installed: ${installed.join(", ")}\n`);
-        } finally {
-            await source.cleanup();
-        }
-        return;
-    }
-
-    if (command === "remove") {
-        if (args.length !== 2 || name.length === 0) {
-            write("  usage: /skills remove <name>\n");
-            return;
-        }
-        const folder = requireName(name);
-        const exists = await readdir(join(dir, folder)).then(() => true).catch(() => false);
-        if (!exists) {
-            write(`  skills: no skill named ${folder}\n`);
-            return;
-        }
-        await rm(join(dir, folder), { recursive: true, force: true });
-        write(`  removed: ${folder}\n`);
-        return;
-    }
-
-    usage(write);
 };

@@ -43,7 +43,7 @@ plurnk --help                                  # full flag list
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp` and `/mcp add|enable|disable|remove|oauth` |
+| `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp`, and universal Agent Skills `/skills` |
 | `# PLAN0` / `## OP0` | raw PLURNK (`op.parse`) |
 | `! cmd` | exec via the daemon |
 | `... text` | inject into the running loop (or just type — a mid-loop prompt steers) |
@@ -52,7 +52,9 @@ Tab completes verbs, model aliases, file paths (`/pick`, `@file`), and PLURNK he
 
 **Key flags:** `--model <alias>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
 
-**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` / `PLURNK_MODEL_CHILD` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`. Shared **`~/.plurnk`** cascade with the daemon: `~/.plurnk/.env.defaults` < `~/.plurnk/.env` < `./.env` < `--env-file`/`--env-file-if-exists` < shell. Project-local `PLURNK_MCP_*` declarations accompany `/mcp` and `plurnk mcp enable`; the daemon remains their sole parser and activation owner.
+**Env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` / `PLURNK_MODEL_CHILD` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`. Cascade: the packaged `.env.defaults` floor < `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` < project `./.env` < repeated `--env-file` flags (last wins) < shell. `plurnk-service config defaults` prints the complete owner-labelled catalog on demand. Project-local `PLURNK_MCP_*` declarations accompany `/mcp` and `plurnk mcp enable`; the daemon remains their sole parser and activation owner.
+
+`/skills` lists project skills; `/skills add|remove|find|update` delegates to the standard `npx skills` CLI with its `universal` target. Project skills live in `.agents/skills`; global skills live in `~/.agents/skills`. Plurnk contributes a bundled `find-skills` reference without installing it into either location.
 
 ## what plurnk is
 

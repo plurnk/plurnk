@@ -6,7 +6,47 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+
+test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "plurnk-env-cascade-"));
+    const first = join(root, "first.env");
+    const last = join(root, "last.env");
+    const user = join(root, "user.env");
+    const key = "PLURNK_TEST_CLIENT_CASCADE_298";
+    const original = process.env[key];
+    t.after(async () => {
+        if (original === undefined) delete process.env[key];
+        else process.env[key] = original;
+        await rm(root, { recursive: true, force: true });
+    });
+    await writeFile(first, `${key}=first\n`);
+    await writeFile(last, `${key}=last\n`);
+    await writeFile(user, `${key}=user\n`);
+
+    delete process.env[key];
+    const selected = orderedEnvFiles([
+        "--env-file", first,
+        `--env-file-if-exists=${last}`,
+    ]);
+    assert.deepEqual(selected, [
+        { path: first, required: true },
+        { path: last, required: false },
+    ]);
+    loadEnvCascade(selected, user);
+    assert.equal(process.env[key], "last");
+
+    delete process.env[key];
+    loadEnvCascade([], user);
+    assert.equal(process.env[key], "user");
+
+    process.env[key] = "shell";
+    loadEnvCascade([
+        { path: first, required: true },
+        { path: last, required: true },
+    ], user);
+    assert.equal(process.env[key], "shell");
+});
 
 // ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
 

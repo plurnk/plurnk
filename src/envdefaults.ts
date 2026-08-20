@@ -1,9 +1,7 @@
-// The client's self-serve env floor (plurnk#141, ecosystem standard
-// §operator-config-env-defaults): the packaged .env.defaults is the documentation
-// AND the defaults for the PLURNK_CLIENT_* prefix — one owner per key. The daemon
-// assembles its members' files into its own floor; the client is a separate process
-// the daemon cannot assemble, so it loads its own file SET-IF-UNSET beneath the
-// operator's env (shell > env-files > this floor). A commented knob is docs only.
+// The client's self-serve env floor ({§cli-env-defaults}): the packaged
+// .env.defaults is both the documentation and the defaults for PLURNK_CLIENT_*.
+// The client loads its own file SET-IF-UNSET beneath operator configuration
+// (shell > env-files > this floor). A commented knob is documentation only.
 
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";

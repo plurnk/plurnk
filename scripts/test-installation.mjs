@@ -1,6 +1,6 @@
 // Off-hot-path e2e: install the built CLIENT into a clean sandbox as a consumer
-// would (--omit=optional → just `ws`), then prove OUR side of the boundary — the
-// bin runs, the client package is lean, and the no-daemon onboarding + --json
+// would (--omit=optional → no daemon), then prove OUR side of the boundary —
+// the bin runs, the AG-UI client composition is present, and the no-daemon + --json
 // structured-error paths fire. Self-contained: no daemon, no model, no sibling
 // repo. The bundled-daemon install is the service's test:installation; the
 // connect-to-a-live-daemon path is the tui harness / live checklist.
@@ -22,7 +22,7 @@ const runBin = (args, env = {}) => {
     try {
         const stdout = execFileSync(bin, args, {
             cwd: sandbox, encoding: "utf8", input: "",
-            env: { ...process.env, PLURNK_WS: "ws://127.0.0.1:59999", ...env },
+            env: { ...process.env, PLURNK_AGUI_URL: "http://127.0.0.1:59999", ...env },
         });
         return { code: 0, stdout, stderr: "" };
     } catch (e) {
@@ -35,8 +35,13 @@ process.stdout.write("-- local sandbox install (--omit=optional, client alone) -
 installSandbox();
 
 ok(existsSync(bin), "plurnk bin linked in the sandbox");
-// Our boundary: the CLIENT's own footprint is just ws.
-ok(existsSync(resolve(mods, "ws")), "ws installed (the client's one runtime dep)");
+// Our boundary: the client carries the standard AG-UI transport, not the retired
+// direct WebSocket dependency or the optional daemon composition.
+ok(
+    existsSync(resolve(mods, "@ag-ui", "client")) && existsSync(resolve(mods, "@ag-ui", "core")),
+    "standard AG-UI client dependencies are installed",
+);
+ok(!existsSync(resolve(mods, "ws")), "retired direct WebSocket dependency is absent");
 ok(!existsSync(resolve(mods, "@plurnk", "plurnk-service")), "optional daemon NOT pulled (--omit=optional; the service's install is its own)");
 ok(!existsSync(resolve(mods, "onnxruntime-node")) && !existsSync(resolve(mods, "sharp")), "no native onnxruntime/sharp in the client tree");
 
@@ -56,7 +61,11 @@ const refusedJson = runBin(["--json", "hello"]);
 ok(refusedJson.code === 1, "--json no-daemon exits 1");
 let parsed = null;
 try { parsed = JSON.parse(refusedJson.stdout.trim()); } catch { /* invalid JSON → fails below */ }
-ok(parsed?.error?.kind === "connection_refused", "--json emits {error:{kind:'connection_refused'}} on stdout");
+ok(
+    parsed?.schemaVersion === 6
+        && parsed?.problem?.type === "https://problems.plurnk.dev/client/connection/refused",
+    "--json emits the current schemaVersion + exact RFC 9457 Problem on stdout",
+);
 ok(refusedJson.stderr.trim() === "", "--json keeps stderr silent even on failure");
 
 uninstallSandbox();

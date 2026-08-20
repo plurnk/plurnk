@@ -68,9 +68,9 @@ Env:
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
 | `PLURNK_EXECS_ONLY` / `PLURNK_EXECS_<tag>` | _unset_ | Create-time workspace executor policy. The client forwards only the closed allowlist/runtime-tag grammar; plugin configuration sharing the broad prefix is not workspace policy and never crosses the wire. |
 
-**Cascading env (shared `~/.plurnk` home with plurnk-service).** Highest precedence first: shell exports → `--env-file` / `--env-file-if-exists` (node-native; `--env-file` requires the file, the other skips a missing one) → project `./.env` → `~/.plurnk/.env` → `~/.plurnk/.env.defaults` (the daemon family's rendered catalog) → the client's own packaged floor (below). All layers optional; the client works with no config at all. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared home; everything else there is the daemon family's.
+**Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → project `./.env` → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
-**The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring ONLY the `PLURNK_CLIENT_*` prefix, and loads it itself SET-IF-UNSET beneath everything above — the one family member the daemon cannot assemble. A knob the operator set is never overridden; a commented knob is documentation, not a value.
+**The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring only the `PLURNK_CLIENT_*` prefix and loads it SET-IF-UNSET beneath every operator layer. A knob the operator set is never overridden; a commented knob is documentation, not a value.
 
 ### §1.1 Workspaces and workers {§cli-workspaces-and-workers}
 
@@ -254,6 +254,28 @@ authorization URL and exact `/mcp oauth …` completion command. Invalid or
 unreadable local JSON fails before dispatch; daemon Problems—including an
 unsupported MCP protocol revision—cross the existing diagnostic path without
 rewriting or retry.
+
+### §3.5 Universal Agent Skills {§cli-universal-agent-skills}
+
+Agent Skills management is a thin projection of the standard `skills` CLI,
+executed by `npx` in the workspace project root. The client fixes installation
+and removal to the `universal` agent target, whose standard roots are
+`.agents/skills` for a project and
+`~/.agents/skills` globally. It does not implement a
+registry, clone sources, parse frontmatter, copy skill files, or maintain
+parallel package metadata.
+
+| TUI input | Standard CLI invocation |
+|---|---|
+| `/skills` or `/skills list [--global]` | `skills list … --agent universal` |
+| `/skills add <source> …` | `skills add <source> … --agent universal --yes` |
+| `/skills remove <name> …` | `skills remove <name> … --agent universal --yes` |
+| `/skills find <query>` | `skills find <query>` |
+| `/skills update [name …] [--global]` | `skills update … --project\|--global --yes` |
+
+The service's bundled `find-skills` document is a read-only discovery
+affordance in model context. Neither service nor client installs it into a
+universal root or forces it into any other agent's environment.
 
 ---
 

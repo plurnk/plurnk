@@ -1,7 +1,7 @@
 // Model-GATED pty tests. Boots a daemon; the loop-running test is currently
 // BLOCKED on svc#265 (see below). When #265 lands, restore the loop PROBE here
 // (loop.run → await loop/terminated, finalStatus===200, bounded) to gate the
-// test on a reachable provider key (FIREWORKS_API_KEY in ~/.plurnk/.env) vs CI.
+// test on a reachable provider key (for example, in ~/.config/plurnk/.env) vs CI.
 
 import { test, before, after, describe } from "node:test";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";

@@ -1,88 +1,108 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { handleSkills } from "./skills.ts";
+import { handleSkills, type SkillsRunner } from "./skills.ts";
 
 const harness = () => {
     const out: string[] = [];
-    return { write: (text: string) => out.push(text), out };
+    const calls: Array<{ args: readonly string[]; cwd: string }> = [];
+    const runner: SkillsRunner = async (args, cwd) => {
+        calls.push({ args, cwd });
+        return { stdout: "\u001b[32mdone\u001b[0m\n", stderr: "" };
+    };
+    return { write: (text: string) => out.push(text), out, calls, runner };
 };
 
-test("skills list reads the workspace skills directory", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "plurnk-skills-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
-    await (await import("node:fs/promises")).mkdir(join(root, "skills", "grep"), { recursive: true });
-    await writeFile(join(root, "skills", "grep", "SKILL.md"), "---\nname: grep\ndescription: Find text\n---\nbody");
-
+test("skills lists only the universal project target by default", async () => {
     const h = harness();
-    await handleSkills([], h.write, root);
-    assert.match(h.out.join(""), /grep — Find text/);
-
-    const empty = harness();
-    await handleSkills([], empty.write, join(root, "absent"));
-    assert.match(empty.out.join(""), /skills: none/);
+    await handleSkills([], h.write, "/work/project", h.runner);
+    assert.deepEqual(h.calls, [{
+        args: ["list", "--agent", "universal"],
+        cwd: "/work/project",
+    }]);
+    assert.equal(h.out.join(""), "done\n");
 });
 
-test("skills add writes a complete SKILL.md folder and validates names", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "plurnk-skills-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
-    const file = join(root, "skill.md");
-    await writeFile(file, "---\nname: review\ndescription: Check diffs\n---\nReview diffs before committing.");
-
-    const h = harness();
-    await handleSkills(["add", "review", file], h.write, root);
-    assert.match(h.out.join(""), /added: review/);
-    assert.equal(await readFile(join(root, "skills", "review", "SKILL.md"), "utf8"), "---\nname: review\ndescription: Check diffs\n---\nReview diffs before committing.");
-
-    const invalid = harness();
-    await assert.rejects(
-        () => handleSkills(["add", "../escape", file], invalid.write, root),
-        /must match/,
+test("skills delegates add and remove to the universal Agent Skills CLI", async () => {
+    const add = harness();
+    await handleSkills(
+        "add 'owner/skill repo' --skill review",
+        add.write,
+        "/work/project",
+        add.runner,
     );
+    assert.deepEqual(add.calls[0]?.args, [
+        "add",
+        "owner/skill repo",
+        "--skill",
+        "review",
+        "--agent",
+        "universal",
+        "--yes",
+    ]);
+
+    const remove = harness();
+    await handleSkills(["remove", "review"], remove.write, "/work/project", remove.runner);
+    assert.deepEqual(remove.calls[0]?.args, [
+        "remove",
+        "review",
+        "--agent",
+        "universal",
+        "--yes",
+    ]);
 });
 
-test("skills remove deletes one folder and reports missing skills", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "plurnk-skills-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
-    await (await import("node:fs/promises")).mkdir(join(root, "skills", "gone"), { recursive: true });
-    await writeFile(join(root, "skills", "gone", "SKILL.md"), "---\nname: gone\n---\nbody");
-
+test("skills exposes registry discovery without inventing a Plurnk registry", async () => {
     const h = harness();
-    await handleSkills(["remove", "gone"], h.write, root);
-    assert.match(h.out.join(""), /removed: gone/);
-    await assert.rejects(() => readFile(join(root, "skills", "gone", "SKILL.md")), /ENOENT/);
-
-    const missing = harness();
-    await handleSkills(["remove", "absent"], missing.write, root);
-    assert.match(missing.out.join(""), /no skill named absent/);
+    await handleSkills(["find", "sqlite", "review"], h.write, "/work/project", h.runner);
+    assert.deepEqual(h.calls[0]?.args, ["find", "sqlite", "review"]);
 });
 
-test("skills requires a project root", async () => {
-    const h = harness();
-    await assert.rejects(() => handleSkills([], h.write, null), /project root/);
+test("skills updates project or global universal skills explicitly", async () => {
+    const project = harness();
+    await handleSkills(["update", "review"], project.write, "/work/project", project.runner);
+    assert.deepEqual(project.calls[0]?.args, ["update", "review", "--project", "--yes"]);
+
+    const global = harness();
+    await handleSkills(["update", "review", "--global"], global.write, "/work/project", global.runner);
+    assert.deepEqual(global.calls[0]?.args, ["update", "review", "--global", "--yes"]);
 });
 
-test("skills install copies local skill folders, optionally one named skill", async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "plurnk-skills-"));
-    const source = await mkdtemp(join(tmpdir(), "plurnk-skill-source-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
-    t.after(() => rm(source, { recursive: true, force: true }));
-    await (await import("node:fs/promises")).mkdir(join(source, "skills", "grep"), { recursive: true });
-    await writeFile(join(source, "skills", "grep", "SKILL.md"), "---\nname: grep\ndescription: Find text\n---\nbody");
-    await (await import("node:fs/promises")).mkdir(join(source, "skills", "review"), { recursive: true });
-    await writeFile(join(source, "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Check diffs\n---\nbody");
+test("skills rejects alternate agent targets and malformed invocations", async () => {
+    const agent = harness();
+    await handleSkills(["add", "owner/repo", "--agent", "codex"], agent.write, "/work/project", agent.runner);
+    assert.equal(agent.calls.length, 0);
+    assert.match(agent.out.join(""), /usage:/);
 
+    const allAgents = harness();
+    await handleSkills(["add", "owner/repo", "--all"], allAgents.write, "/work/project", allAgents.runner);
+    assert.equal(allAgents.calls.length, 0);
+    assert.match(allAgents.out.join(""), /usage:/);
+
+    const assignedAgent = harness();
+    await handleSkills(["add", "owner/repo", "--agent=codex"], assignedAgent.write, "/work/project", assignedAgent.runner);
+    assert.equal(assignedAgent.calls.length, 0);
+    assert.match(assignedAgent.out.join(""), /usage:/);
+
+    const quoted = harness();
+    await handleSkills("add 'unterminated", quoted.write, "/work/project", quoted.runner);
+    assert.equal(quoted.calls.length, 0);
+    assert.match(quoted.out.join(""), /usage:/);
+});
+
+test("skills requires a project root and preserves command failure context", async () => {
     const h = harness();
-    await handleSkills(["install", source], h.write, root);
-    assert.match(h.out.join(""), /installed: (grep|review), (grep|review)/);
+    await assert.rejects(
+        () => handleSkills([], h.write, null, h.runner),
+        /project root/,
+    );
 
-    const one = harness();
-    await handleSkills(["install", source, "--skill", "review"], one.write, root);
-    assert.match(one.out.join(""), /installed: review/);
-
-    const missing = harness();
-    await handleSkills(["install", source, "--skill", "absent"], missing.write, root);
-    assert.match(missing.out.join(""), /no skill named absent/);
+    const cause = Object.assign(new Error("exit 1"), { stderr: "registry unavailable\n" });
+    const failed = harness();
+    await assert.rejects(
+        () => handleSkills([], failed.write, "/work/project", async () => Promise.reject(cause)),
+        (error: unknown) => error instanceof Error
+            && error.message === "Agent Skills command failed"
+            && error.cause === cause,
+    );
+    assert.equal(failed.out.join(""), "registry unavailable\n");
 });

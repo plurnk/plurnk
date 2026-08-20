@@ -81,8 +81,8 @@ export const TUI_HELP = [
     "  /mcp                              list available workspace MCP servers",
     "       add <alias> <target> [options.json] · enable/disable/remove <alias>",
     "       oauth <alias> <callback-url>",
-    "  /skills                           list workspace Agent Skills",
-    "       add <name> <path-to-SKILL.md> · remove <name>",
+    "  /skills                           list universal Agent Skills",
+    "       add/remove/find/update       manage .agents/skills via npx skills",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -202,7 +202,7 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
         const skillsFrag = line.match(/^\/skills\s+(\S*)$/);
         if (skillsFrag) {
             const fragment = skillsFrag[1];
-            const commands = ["add", "remove"]
+            const commands = ["add", "remove", "find", "list", "update"]
                 .filter((command) => command.startsWith(fragment));
             callback(null, [commands, fragment]);
             return;

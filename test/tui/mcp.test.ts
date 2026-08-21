@@ -1,6 +1,6 @@
-// Built-client dogfood for workspace MCP management. A current SDK server is
-// the positive peer; the pre-server/discover peer is expected to fail with the
-// daemon's exact non-retryable protocol-revision diagnosis.
+// Built-client dogfood for workspace MCP management. A current SDK server and
+// a pre-server/discover standard peer prove the host's negotiate-and-degrade
+// admission contract through the public client.
 
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -23,12 +23,11 @@ before(async () => {
     const serviceRoot = resolve(process.cwd(), "../plurnk-service");
     const currentFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/echo-server.mjs");
     const legacyFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/legacy-server.mjs");
-    const deprecatedCommand = process.env.PLURNK_TEST_DEPRECATED_MCP_BIN;
-    legacyTarget = deprecatedCommand ?? process.execPath;
+    legacyTarget = process.execPath;
     try {
         await Promise.all([
             access(currentFixture),
-            access(deprecatedCommand ?? legacyFixture),
+            access(legacyFixture),
         ]);
     } catch {
         return;
@@ -44,7 +43,7 @@ before(async () => {
             read: ["echo"],
         })),
         writeFile(legacyDefinition, JSON.stringify({
-            args: deprecatedCommand === undefined ? [legacyFixture] : [],
+            args: [legacyFixture],
         })),
         writeFile(currentCall, [
             "# PLAN0",
@@ -64,7 +63,7 @@ after(async () => {
 });
 
 describe("TUI workspace MCP dogfood", () => {
-    test("[§cli-workspace-mcp-controls] current lifecycle succeeds; deprecated endpoint is attributed exactly", { timeout: 60_000 }, async (t) => {
+    test("[§cli-workspace-mcp-controls] current and negotiated standard peers share the client lifecycle", { timeout: 60_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with MCP fixtures is not reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
@@ -87,11 +86,14 @@ describe("TUI workspace MCP dogfood", () => {
             await tui.waitFor(/enabled: current \(connected\)/, 20_000);
 
             tui.write(`/mcp add legacy ${legacyTarget} "${legacyDefinition}"\r`);
-            const rejected = await tui.waitFor(/Protocol revision unsupported[\s\S]*upgrade or replace the legacy endpoint/i, 20_000);
-            assert.match(rejected, /required revision 2026-07-28 through server\/discover/);
+            await tui.waitFor(/added: legacy \(connected\)/, 20_000);
+            tui.write("/mcp\r");
+            await tui.waitFor(/legacy\s+connected\s+stdio[\s\S]*1 tools/, 20_000);
 
             tui.write("/mcp remove current\r");
             await tui.waitFor(/removed: current/, 20_000);
+            tui.write("/mcp remove legacy\r");
+            await tui.waitFor(/removed: legacy/, 20_000);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {

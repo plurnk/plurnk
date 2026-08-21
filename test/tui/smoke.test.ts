@@ -45,7 +45,7 @@ describe("TUI pty harness", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("\x1bm");                 // ESC m = Alt-m → /models
-            await tui.waitFor(/alias|model|\(no models/i, 8_000);
+            await tui.waitFor(/alias\s+provider\s+model\s+active/, 8_000);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {

@@ -41,7 +41,7 @@ Options:
 | `--json` | flag | CLI mode only (or `PLURNK_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
 | `--worker <name>` | string | Resume (or create) the named run within the workspace. Requires `--workspace`. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
-| `--model <alias>` | string | Model alias passed on every `loop.run`. See §1.2. Overrides `PLURNK_MODEL` for this invocation. |
+| `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
 | `--auto` | flag | Keep proposal authority inside the loop (`flags.auto=true`); no client review/resume round-trip. |
@@ -61,8 +61,6 @@ Env:
 | `PLURNK_HOST` / `PLURNK_PORT` | `127.0.0.1` / `3044` | The daemon's in-process AG-UI+ module — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. `PLURNK_AGUI_URL` overrides the assembled URL; `PLURNK_AGUI_TOKEN` rides as the bearer when set. |
 | `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
 | `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE`. |
-| `PLURNK_MODEL` | _unset_ | Model alias. Shared with the daemon (both processes read it for the same intent — see §1.2). Equivalent to `--model`. |
-| `PLURNK_MODEL_CHILD` | _unset_ | Default WORK/FORK/BARE provider alias; unset means inherit the spawning loop's provider. See §1.2. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
@@ -87,25 +85,28 @@ CLI flag takes precedence over env when both are set.
 
 ### §1.2 Model selection {§cli-model-selection}
 
-The daemon registers model aliases via `PLURNK_MODEL_<alias>=<provider>/<model>` env entries at boot, and resolves an active alias for its own provider via `PLURNK_MODEL=<alias>` (also at boot). The worker owns the model ({§worker-model-selection}); the client persists selections server-side and never reasserts a model on every loop.
+The worker owns its model route ({§worker-model-selection}); the client persists deliberate selections server-side and never reasserts model policy on an individual loop. One selector accepts either a daemon-declared alias or an exact `provider/model` route. Alias selection preserves its alias-scoped configuration and provenance; exact selection uses provider-wide configuration without inventing an alias.
 
 Resolution at the client:
 
-- `--model <alias>` set → one `worker.model.set` before the first loop of this invocation, then no per-loop selector.
-- `--model` unset, `PLURNK_MODEL` set → send nothing; the value is the daemon's own seed/default.
-- Neither set → send nothing; the worker's durable model (or the daemon default) runs.
+- `--model <selector>` set → one `worker.model.set` before the first loop of this invocation, then no per-loop selector.
+- `--model` unset → send nothing; the worker's durable route (or the daemon's `PLURNK_MODEL` default when the worker is first created) runs.
 
-`PLURNK_MODEL` is shared with the daemon process; env vars represent user-level preferences, not per-process namespaces. Both processes reading the same name for the same intent is the point.
+An explicit model or reasoning selection is invocation admission: rejection fails
+before the CLI sends a prompt or the TUI accepts input. The client never continues
+under the worker's previous policy.
 
-The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the worker's durable model. Unknown aliases return a clear error from the daemon (the `PLURNK_MODEL_<alias>=...` entry is missing on the daemon side). Discoverability is via the `providers.list` action.
+The daemon alone owns provider configuration, credentials, alias declarations, and its `PLURNK_MODEL` seed. A client connected to a local or remote daemon has the same contract.
+
+The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the resolved durable route. `providers.list` remains the small declared-alias directory used for completion. `/models [search]` and `plurnk models` lazily query `models.list`; no model catalog is fetched at startup or injected into a model packet.
 
 ### §1.2.1 Child provider selection {§cli-child-provider-selection}
 
 Child selection is the same durable posture for WORK, FORK, and BARE calls.
 `PLURNK_MODEL_CHILD` seeds the worker's spawn override (the daemon reads its own
 env); otherwise the policy is inherit. Bare `/child` reports the worker's
-persisted override, `/child <alias>` persists it via `worker.child.set`, and
-`/child inherit` sends `alias: null` (clearing the override). The client sends
+persisted override, `/child <selector>` persists it via `worker.child.set`, and
+`/child inherit` sends `selector: null` (clearing the override). The client sends
 no child selector on loops.
 
 ### §1.2.2 Reasoning policy {§cli-reasoning-policy}
@@ -208,7 +209,7 @@ Triggered when `argv` has no positional prompt.
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND carrying signal 202) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is an input-affordance constant, not the service's durable prompt-row operation or status. Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /child <alias|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs, provider aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -471,9 +472,9 @@ When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatc
 
 ### §7.1 `plurnk models` {§cli-plurnk-models}
 
-Lists registered provider/model aliases via the daemon's `providers.list` action. No workspace is attached.
+Queries one bounded page from the daemon's release-pinned catalog through `models.list`. No workspace is attached and no provider request is made. Positional words form a case-insensitive search; `--provider <name>` narrows the provider, `--all` includes models missing local configuration, and `--offset`/`--limit` page without loading the full catalog.
 
-Default output: a column-aligned table of `alias / provider / model / active`. The `active` column carries a `*` for the alias the daemon resolved as its boot-time `PLURNK_MODEL`. With `--json`: emits `aliases` array verbatim as compact JSON.
+Default output is a column-aligned table of `selector / name / context / reasoning / readiness` plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
 
 ### §7.2 `plurnk workspace list` {§cli-plurnk-workspace-list}
 

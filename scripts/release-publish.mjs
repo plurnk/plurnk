@@ -80,16 +80,7 @@ const assertCanonicalSource = async ({ allowPrepared = false } = {}) => {
     await output("git", ["verify-commit", "HEAD"]);
 };
 
-const supportsPlatform = (range, version) => {
-    const match = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range ?? "");
-    const exact = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-    if (match === null || exact === null) return false;
-    const minimum = match.slice(1).map(Number);
-    const candidate = exact.slice(1).map(Number);
-    if (minimum[0] !== candidate[0]) return false;
-    return candidate[1] > minimum[1]
-        || (candidate[1] === minimum[1] && candidate[2] >= minimum[2]);
-};
+const platformContractsRange = (version) => `^${version}`;
 
 const readProjection = async () => ({
     manifest: JSON.parse(await readFile(PACKAGE_FILE, "utf8")),
@@ -101,8 +92,8 @@ const assertProjection = ({ manifest, lock }) => {
     if (manifest.plurnk?.builtAgainst !== platformVersion) {
         throw new Error(`client builtAgainst is ${manifest.plurnk?.builtAgainst}, expected ${platformVersion}`);
     }
-    if (!supportsPlatform(manifest.dependencies?.[CONTRACTS_PACKAGE], platformVersion)) {
-        throw new Error(`client contracts range ${manifest.dependencies?.[CONTRACTS_PACKAGE]} excludes ${platformVersion}`);
+    if (manifest.dependencies?.[CONTRACTS_PACKAGE] !== platformContractsRange(platformVersion)) {
+        throw new Error(`client contracts range ${manifest.dependencies?.[CONTRACTS_PACKAGE]} is not ${platformContractsRange(platformVersion)}`);
     }
     if (lock.version !== clientVersion || lock.packages?.[""]?.version !== clientVersion) {
         throw new Error(`client lock is not stamped at ${clientVersion}`);
@@ -148,6 +139,7 @@ if (!targetServed) {
     const manifest = JSON.parse(await readFile(PACKAGE_FILE, "utf8"));
     manifest.plurnk ??= {};
     manifest.plurnk.builtAgainst = platformVersion;
+    manifest.dependencies[CONTRACTS_PACKAGE] = platformContractsRange(platformVersion);
     await writeFile(PACKAGE_FILE, `${JSON.stringify(manifest, null, 4)}\n`);
 
     await run("npm", [

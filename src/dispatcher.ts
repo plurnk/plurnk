@@ -6,7 +6,6 @@ import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { createRequire } from "node:module";
-import { parseAliasesFromEnv } from "@plurnk/plurnk-aliases";
 import { buildJsonError } from "./cli.ts";
 import { loadFloor } from "./envdefaults.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
@@ -64,19 +63,6 @@ export const resolveLoopFlags = (rawJson: string | undefined, auto = false): Rec
     return { ...(parsed as Record<string, unknown>), ...(auto ? { auto: true } : {}) };
 };
 
-// #90 — resolve a model alias to a concrete "<provider>/<model>" from the CLIENT's
-// (always-fresh) env, so a long-lived daemon launched before the user set
-// PLURNK_MODEL_<alias> doesn't reject loop.run with "unknown alias" (the daemon's
-// launch env is frozen; ours isn't). First-slash split is lossless — provider is
-// before the first "/", the model id is the rest (may itself contain "/"). baseUrl
-// stays daemon-side. null → send bare {alias} and let the daemon resolve or fail.
-// parseAliasesFromEnv is fail-hard on a duplicate/dangling env config — let it throw.
-export const resolveModelSpec = (alias: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined => {
-    if (alias === undefined) return undefined;
-    const match = parseAliasesFromEnv(env).find((a) => a.alias === alias.toLowerCase());
-    return match !== undefined ? `${match.provider}/${match.model}` : undefined;
-};
-
 // #132 — the client's per-workspace exec-policy layer: forward the closed
 // enable/disable grammar (PLURNK_EXECS_ONLY, PLURNK_EXECS_<TAG>=0|false) so the
 // daemon intersects it with its own ceiling (service ∧ client — subtractive,
@@ -126,9 +112,9 @@ export const resolveProjectRoot = (raw: string | undefined): string | null => {
     return raw;
 };
 
-const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <alias>] [--reasoning <policy>] [prompt...]
+const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--reasoning <policy>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
-       plurnk models [--json]
+       plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
        plurnk workspace workers <name> [--json]
        plurnk workspace rename <name> <newname> [--json]
@@ -151,12 +137,6 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
   PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
                         mints a fresh, uniquely-named workspace per invocation.
   PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace
-  PLURNK_MODEL          model alias seeded onto the conversation worker at startup
-                        when --model is unset. Shared with the daemon (user-level
-                        preference); --model persists the worker's selection.
-  PLURNK_MODEL_CHILD    optional WORK/FORK/BARE spawn override (the daemon reads
-                        its own env and seeds the worker). Unset = inherit the
-                        spawning loop's provider; interactive /child overrides.
   PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
@@ -196,11 +176,11 @@ options:
                           auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
                           Requires --workspace. Overrides PLURNK_CLIENT_WORKER.
-      --model <alias>     persistently select the conversation worker's model
-                          before the first loop (worker.model.set). Resolved
-                          server-side against PLURNK_MODEL_<alias>. Without
-                          this (and PLURNK_MODEL unset), the worker's durable
-                          model or the daemon's boot-time default runs.
+      --model <selector>  persistently select the conversation worker's model
+                          before the first loop (worker.model.set). A selector is
+                          a declared alias or exact provider/model route. Without
+                          this, the worker's durable model or the daemon's
+                          boot-time default runs.
       --reasoning <policy> persistently select the conversation worker's reasoning
                           policy before the first loop. The daemon validates the
                           policy against the selected parent and child models.
@@ -242,9 +222,12 @@ options:
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
       --limit <n>         (log read) max entries to return (default 100)
+      --provider <name>   (models) restrict the catalog to one provider
+      --all               (models) include unconfigured models with readiness causes
+      --offset <n>        (models) catalog page offset (default 0)
 
 subcommands:
-  models                  list configured model aliases (providers.list)
+  models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
   workspace workers <name>  list workers in the named workspace (workspace.workers)
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
@@ -449,10 +432,22 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
     const sub = positionals[1];
 
     if (verb === "models") {
-        if (positionals.length > 1) {
-            throw new ProblemError(clientSubcommandUnknownVerb(`models ${positionals.slice(1).join(" ")}`));
+        const offset = parseIntFlag(opts.values.offset as string | undefined, "--offset");
+        const limit = parseIntFlag(opts.values.limit as string | undefined, "--limit");
+        if (limit !== undefined && (limit < 1 || limit > 100)) {
+            throw new ProblemError(clientFlagInvalid("--limit", String(limit), "must be between 1 and 100 for models"));
         }
-        return await runModels(rpc, { json: opts.json });
+        const search = positionals.slice(1).join(" ").trim();
+        return await runModels(rpc, {
+            json: opts.json,
+            query: {
+                ...(typeof opts.values.provider === "string" ? { provider: opts.values.provider } : {}),
+                ...(search.length > 0 ? { search } : {}),
+                ...(opts.values.all === true ? { availability: "all" as const } : {}),
+                ...(offset !== undefined ? { offset } : {}),
+                ...(limit !== undefined ? { limit } : {}),
+            },
+        });
     }
 
     if (verb === "workspace") {
@@ -600,6 +595,9 @@ export const main = async (argv: string[]): Promise<void> => {
             turn: { type: "string" },
             since: { type: "string" },
             limit: { type: "string" },
+            provider: { type: "string" },
+            all: { type: "boolean" },
+            offset: { type: "string" },
         },
     });
 
@@ -641,10 +639,10 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     }
 
-    // CLI flag overrides env; env overrides nothing.
+    // Client flags select client behavior. Provider defaults remain daemon-owned.
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
-    const modelAlias = values.model ?? process.env.PLURNK_MODEL;
+    const modelSelector = values.model;
     const reasoningPolicy = values.reasoning;
     // {§worker-settings} — the worker's request-user-input rule: TUI/nvim default on,
     // the one-shot CLI defaults off; the explicit flag always wins, then the env.
@@ -730,10 +728,9 @@ export const main = async (argv: string[]): Promise<void> => {
             const { constraints, settings } = await workspaceOptions();
             // {§worker-model-selection} — an explicit --model is a durable selection:
             // persist it onto the conversation worker before the run, then run WITHOUT
-            // a per-loop model selector (the worker owns the model). An inherited
-            // PLURNK_MODEL value is the daemon's own default and is never reasserted.
-            if (values.model !== undefined && modelAlias !== undefined) {
-                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.model.set", params: { alias: modelAlias } });
+            // a per-loop model selector (the worker owns the model).
+            if (values.model !== undefined && modelSelector !== undefined) {
+                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.model.set", params: { selector: modelSelector } });
             }
             if (reasoningPolicy !== undefined) {
                 await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.reasoning.set", params: { policy: reasoningPolicy } });
@@ -785,22 +782,29 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints,
             settings,
         });
-        await runTui(transport, { id: 0, name: w }, {
-            modelAlias,
-            modelExplicit: values.model !== undefined,
-            reasoningPolicy,
-            reasoningExplicit: reasoningPolicy !== undefined,
-            requestUserInput: requestUserInputTui,
-            yolo,
-            loopFlags,
-            maxTurns,
-            projectRoot,
-            workerName,
-            client: CLIENT_ID_TUI,
-            mcpConfiguration,
-        });
-        process.exitCode = 0;
-        return;
+        try {
+            await runTui(transport, { id: 0, name: w }, {
+                modelSelector,
+                modelExplicit: values.model !== undefined,
+                reasoningPolicy,
+                reasoningExplicit: reasoningPolicy !== undefined,
+                requestUserInput: requestUserInputTui,
+                yolo,
+                loopFlags,
+                maxTurns,
+                projectRoot,
+                workerName,
+                client: CLIENT_ID_TUI,
+                mcpConfiguration,
+            });
+            process.exitCode = 0;
+            return;
+        } catch (cause) {
+            transport.shutdown();
+            if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
+            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
+            dieWith(1, clientRuntimeError(cause));
+        }
     }
 
     // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script

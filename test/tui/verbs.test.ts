@@ -18,7 +18,15 @@ before(async () => {
     const bin = await locateDaemon();
     if (bin !== null) {
         daemon = await bootDaemon(bin, {
-            extraEnv: { PLURNK_MODEL_clienttest: "openai/turboderp" },
+            extraEnv: {
+                PLURNK_MODEL_clientfirst: "openai/client-first",
+                PLURNK_MODEL_clienttest: "openai/client-test",
+                PLURNK_PROVIDERS_CONTEXT_WINDOW_clientfirst: "32768",
+                PLURNK_PROVIDERS_CONTEXT_WINDOW_clienttest: "32768",
+                PLURNK_PROVIDERS_REASONING_clientfirst: "adaptive",
+                PLURNK_PROVIDERS_REASONING_clienttest: "adaptive",
+                OPENAI_API_KEY: "client-control-plane-test",
+            },
         });
     }
 });
@@ -40,7 +48,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("/model turboderp\r"); await tui.waitFor(/model: turboderp/);
+            tui.write("/model clientfirst\r"); await tui.waitFor(/model: clientfirst/);
             tui.write("/model clienttest\r"); await tui.waitFor(/model: clienttest/);
             tui.write("/model\r");            await tui.waitFor(/model: clienttest/); // sticky — the switch persisted
             tui.write("/reasoning adaptive\r");

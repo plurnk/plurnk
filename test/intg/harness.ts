@@ -8,7 +8,7 @@
 // whole suite cleanly. This keeps `npm test` from hard-failing downstream.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm, access, writeFile, constants as fsConstants } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, access, writeFile, constants as fsConstants } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
@@ -56,6 +56,7 @@ export interface Daemon {
 
 interface BootOptions {
     extraEnv?: Record<string, string>;  // additional env vars (override file-loaded ones)
+    inheritOperatorConfig?: boolean;    // only real-model tiers may read the operator's config
     readyTimeoutMs?: number;             // default 10s
 }
 
@@ -63,9 +64,12 @@ interface BootOptions {
 // the resolved URL plus a cleanup function that MUST be awaited (otherwise
 // orphan subprocess — see memory:feedback-background-task-cleanup).
 export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promise<Daemon> => {
-    const dbPath = (await mkdtemp(join(tmpdir(), "plurnk-intg-db-"))) + "/plurnk.db";
+    const runtime = await mkdtemp(join(tmpdir(), "plurnk-intg-"));
+    const dbPath = join(runtime, "plurnk.db");
+    const home = join(runtime, "home");
+    await mkdir(home, { recursive: true });
     const workspace = await mkdtemp(join(tmpdir(), "plurnk-intg-ws-"));
-    const daemonEnv = await locateDaemonEnv(binPath);
+    const daemonEnv = opts.inheritOperatorConfig === true ? await locateDaemonEnv(binPath) : null;
     // The service loads env IN-SCRIPT (process.loadEnvFile OVERRIDES spawn env), so
     // spawn-env pins don't survive; its own --env-file flags, loaded LAST, are the
     // sanctioned override. Also: PLURNK_PORT=0 makes the banner lie (prints the
@@ -74,15 +78,17 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         const srv = createServer();
         srv.listen(0, "127.0.0.1", () => { const p = (srv.address() as { port: number }).port; srv.close(() => r(p)); });
     });
-    const overrides = [
-        `PLURNK_SERVICE_DB_PATH=${dbPath}`,
-        `PLURNK_PORT=${port}`,
-        "PLURNK_WS_PORT=0",
-        `OPENAI_BASE_URL=${process.env.OPENAI_BASE_URL ?? "http://127.0.0.1:11435"}`,
-        "PLURNK_SERVICE_EMBED_DISABLE=1",
-        `PLURNK_EMBED_WORKERS=${process.env.PLURNK_EMBED_WORKERS ?? "2"}`,
-        ...Object.entries(opts.extraEnv ?? {}).map(([k, v]) => `${k}=${v}`),
-    ].join("\n");
+    const overrides = Object.entries({
+        PLURNK_SERVICE_DB_PATH: dbPath,
+        PLURNK_PORT: String(port),
+        PLURNK_WS_PORT: "0",
+        PLURNK_MODEL: "",
+        PLURNK_MCP_ENABLED: "[]",
+        OPENAI_BASE_URL: "http://127.0.0.1:11435",
+        PLURNK_SERVICE_EMBED_DISABLE: "1",
+        PLURNK_EMBED_WORKERS: "2",
+        ...opts.extraEnv,
+    }).map(([key, value]) => `${key}=${value}`).join("\n");
     const overridesPath = join(dirname(dbPath), "test.env");
     await writeFile(overridesPath, `${overrides}\n`);
     const args = [
@@ -91,7 +97,16 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         ...(daemonEnv !== null ? [`--env-file=${daemonEnv}`] : []),
         `--env-file=${overridesPath}`,
     ];
-    const env = process.env as Record<string, string>;
+    const env = opts.inheritOperatorConfig === true
+        ? process.env as Record<string, string>
+        : {
+            ...process.env as Record<string, string>,
+            HOME: home,
+            XDG_CONFIG_HOME: join(home, ".config"),
+            XDG_DATA_HOME: join(home, ".local", "share"),
+            XDG_STATE_HOME: join(home, ".local", "state"),
+            XDG_CACHE_HOME: join(home, ".cache"),
+        };
 
     const child: ChildProcess = spawn("node", args, {
         env,
@@ -141,7 +156,7 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
                 setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* already dead */ } done(); }, 2000);
             });
         }
-        await rm(dirname(dbPath), { recursive: true, force: true });
+        await rm(runtime, { recursive: true, force: true });
         await rm(workspace, { recursive: true, force: true });
     };
 

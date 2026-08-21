@@ -7,8 +7,9 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, resolvedModelLabel, runTui, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
+import type { Transport } from "./transport.ts";
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {
     const problem = {
@@ -19,6 +20,53 @@ test("renderTuiFailure preserves exact Problem fields and recovery", () => {
     assert.match(out, /client:runtime:error/);
     assert.match(out, /The action failed\./);
     assert.match(out, /Correct the action and retry\./);
+});
+
+test("{§worker-model-selection}: TUI admission fails when durable model truth cannot be read", async () => {
+    const calls: string[] = [];
+    const transport: Transport = {
+        rpc: async <T>(method: string): Promise<T> => {
+            calls.push(method);
+            if (method === "providers.list") return { aliases: [] } as T;
+            if (method === "worker.model.get") throw new Error("model control plane unavailable");
+            throw new Error(`unexpected RPC ${method}`);
+        },
+        subscribe: () => { throw new Error("the TUI subscribed after failed admission"); },
+        run: () => { throw new Error("the TUI ran a model after failed admission"); },
+        inject: async () => { throw new Error("the TUI injected after failed admission"); },
+        resolve: async () => { throw new Error("the TUI resolved after failed admission"); },
+        resolveInteraction: async () => { throw new Error("the TUI resolved an interaction after failed admission"); },
+        onClose: () => {},
+        shutdown: () => {},
+        useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
+    };
+
+    await assert.rejects(
+        runTui(transport, { id: 1, name: "world" }, { yolo: false }),
+        /model control plane unavailable/,
+    );
+    assert.deepEqual(calls, ["providers.list", "worker.model.get"]);
+});
+
+test("{§worker-model-selection}: TUI admission rejects a malformed durable model projection", async () => {
+    const transport: Transport = {
+        rpc: async <T>(method: string): Promise<T> => (method === "providers.list"
+            ? { aliases: [] }
+            : { model: { provider: "openai" }, spawnModel: null }) as T,
+        subscribe: () => { throw new Error("the TUI subscribed after failed admission"); },
+        run: () => { throw new Error("the TUI ran a model after failed admission"); },
+        inject: async () => { throw new Error("the TUI injected after failed admission"); },
+        resolve: async () => { throw new Error("the TUI resolved after failed admission"); },
+        resolveInteraction: async () => { throw new Error("the TUI resolved an interaction after failed admission"); },
+        onClose: () => {},
+        shutdown: () => {},
+        useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
+    };
+
+    await assert.rejects(
+        runTui(transport, { id: 1, name: "world" }, { yolo: false }),
+        /invalid ModelRoute/,
+    );
 });
 
 // ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
@@ -150,9 +198,9 @@ test("isNewlineKey: ordinary input and bare ESC are not newline keys", () => {
 
 // ─── buildHeader (startup banner: version · workspace · model · help) ──────
 
-test("buildHeader: shows the client's explicit --model/PLURNK_MODEL alias", () => {
-    const h = buildHeader({ versionNotice: "plurnk client v1", workspaceName: "sess", modelAlias: "opus", activeAlias: "haiku" });
-    assert.equal(h, "plurnk client v1 · workspace: sess · model: opus · /help");
+test("buildHeader: shows the client's explicit --model selector", () => {
+    const h = buildHeader({ versionNotice: "plurnk client v1", workspaceName: "sess", modelSelector: "openrouter/anthropic/claude-opus", activeAlias: "haiku" });
+    assert.equal(h, "plurnk client v1 · workspace: sess · model: openrouter/anthropic/claude-opus · /help");
 });
 
 test("buildHeader: with no client model, names the daemon's active default", () => {
@@ -201,11 +249,15 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         spawnModel: null as ResolvedModelSpec | null,
         reasoning: { policy: null, supportedPolicies: [] } as VerbContext["reasoning"],
     };
+    const defaults: Record<string, unknown> = {
+        "worker.model.get": { model: null, spawnModel: null },
+        "worker.reasoning.get": { policy: null, supportedPolicies: [] },
+    };
     return {
         rpc: {
             call: async (method: string, params?: unknown) => {
                 calls.push({ method, params });
-                const r = results[method];
+                const r = Object.hasOwn(results, method) ? results[method] : defaults[method];
                 return typeof r === "function" ? (r as (p: unknown) => unknown)(params) : (r ?? {});
             },
         } as unknown as VerbContext["rpc"],
@@ -363,12 +415,29 @@ test("{§worker-model-selection}: handleVerb /model sets server-side and mirrors
         "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
     });
     await handleVerb("/model gpt", ctx);
-    assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { alias: "gpt" } });
+    assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { selector: "gpt" } });
     assert.deepEqual(ctx.calls[1], { method: "worker.reasoning.get", params: undefined });
     assert.deepEqual(ctx.model, { alias: "gpt", provider: "openai", model: "gpt-4" }, "the server-resolved spec is the display truth");
     assert.deepEqual(ctx.reasoning.supportedPolicies, ["off", "adaptive", "high"], "model changes refresh daemon-supported reasoning completion");
     await handleVerb("/model", ctx);
     assert.match(ctx.out.join(""), /model: gpt/);
+});
+
+test("{§worker-model-selection}: an exact route remains alias-free in control and display", async () => {
+    const route = { provider: "google", model: "gemini-3-flash" };
+    const ctx = makeCtx({
+        "worker.model.set": route,
+        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+    });
+    await handleVerb("/model google/gemini-3-flash", ctx);
+    assert.deepEqual(ctx.calls[0], {
+        method: "worker.model.set",
+        params: { selector: "google/gemini-3-flash" },
+    });
+    assert.deepEqual(ctx.model, route);
+    assert.equal(resolvedModelLabel(ctx.model as ResolvedModelSpec), "google/gemini-3-flash");
+    await handleVerb("/model", ctx);
+    assert.match(ctx.out.join(""), /model: google\/gemini-3-flash/);
 });
 
 test("handleVerb /reasoning inspects and sets durable daemon policy", async () => {
@@ -397,19 +466,19 @@ test("handleVerb /reasoning preserves a daemon rejection", async () => {
     assert.match(ctx.out.join(""), /Reasoning policy 'medium' is not supported/);
 });
 
-test("{§worker-model-selection}: handleVerb /child persists the override and inherit clears it", async () => {
+test("[§cli-child-provider-selection]{§worker-model-selection}: handleVerb /child persists the override and inherit clears it", async () => {
     const ctx = makeCtx({
-        "worker.child.set": (p: unknown) => (p as { alias: string | null }).alias === null
+        "worker.child.set": (p: unknown) => (p as { selector: string | null }).selector === null
             ? null
             : { alias: "fireslow", provider: "fireworks", model: "deepseek" },
     });
     await handleVerb("/child fireslow", ctx);
-    assert.deepEqual(ctx.calls[0], { method: "worker.child.set", params: { alias: "fireslow" } });
+    assert.deepEqual(ctx.calls[0], { method: "worker.child.set", params: { selector: "fireslow" } });
     assert.equal(ctx.spawnModel?.alias, "fireslow");
     await handleVerb("/child", ctx);
     assert.match(ctx.out.join(""), /child: fireslow/);
     await handleVerb("/child inherit", ctx);
-    assert.deepEqual(ctx.calls[1], { method: "worker.child.set", params: { alias: null } });
+    assert.deepEqual(ctx.calls[1], { method: "worker.child.set", params: { selector: null } });
     assert.equal(ctx.spawnModel, null);
     assert.match(ctx.out.join(""), /child: inherit/);
 });
@@ -419,6 +488,13 @@ test("{§worker-model-selection}: a failed /model surfaces the server's rejectio
     await handleVerb("/model mystery", ctx);
     assert.equal(ctx.model, null, "the failed set changes nothing client-side");
     assert.match(ctx.out.join(""), /model set failed: No provider is configured/);
+});
+
+test("{§worker-model-selection}: /model rejects a malformed route projection", async () => {
+    const ctx = makeCtx({ "worker.model.set": { provider: "openai" } });
+    await handleVerb("/model broken", ctx);
+    assert.equal(ctx.model, null);
+    assert.match(ctx.out.join(""), /model set failed: invalid ModelRoute/);
 });
 
 test("handleVerb /workspace → workspace.create (new) + setWorkspace", async () => {

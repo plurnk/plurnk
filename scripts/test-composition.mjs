@@ -1,7 +1,7 @@
 // Packed client/service composition gate (#630). The client candidate and an
 // explicit service artifact are installed into an empty consumer directory,
 // then exercised through the public CLI and AG-UI listener. A deterministic
-// local OpenAI-compatible endpoint supplies one grammar-valid model turn.
+// local OpenAI-compatible endpoint supplies grammar-valid model turns.
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
@@ -53,6 +53,7 @@ const runClient = (file, args, options) => new Promise((accept, reject) => {
 let daemon;
 let model;
 const modelRequests = [];
+const selectedModels = [];
 try {
     await run("npm", ["init", "-y"], { cwd: temp });
     await mkdir(install, { recursive: true });
@@ -73,12 +74,18 @@ try {
         maxBuffer: 64 * 1024 * 1024,
     });
 
-    const response = "# PLAN0\nVerify the packed client and service compose.\n\n## SEND0 [200]\ncomposition ok";
     model = createServer((req, res) => {
         modelRequests.push(`${req.method} ${req.url}`);
         if (req.method === "GET" && req.url === "/v1/models") {
             res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify({ object: "list", data: [{ id: "composition", object: "model", owned_by: "plurnk-test" }] }));
+            res.end(JSON.stringify({
+                object: "list",
+                data: ["composition", "composition-family/selected"].map((id) => ({
+                    id,
+                    object: "model",
+                    owned_by: "plurnk-test",
+                })),
+            }));
             return;
         }
         if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
@@ -86,8 +93,13 @@ try {
             res.end();
             return;
         }
-        req.resume();
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk) => { body += chunk; });
         req.once("end", () => {
+            const request = JSON.parse(body);
+            selectedModels.push(request.model);
+            const response = `# PLAN0\nVerify the packed client and service compose.\n## SEND0 [200]\ncomposition ok: ${request.model}`;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -95,11 +107,11 @@ try {
             });
             const frame = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
             frame({
-                id: "composition", object: "chat.completion.chunk", created: 1, model: "composition",
+                id: "composition", object: "chat.completion.chunk", created: 1, model: request.model,
                 choices: [{ index: 0, delta: { role: "assistant", content: response }, finish_reason: null }],
             });
             frame({
-                id: "composition", object: "chat.completion.chunk", created: 1, model: "composition",
+                id: "composition", object: "chat.completion.chunk", created: 1, model: request.model,
                 choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
                 usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
             });
@@ -124,6 +136,7 @@ try {
             PLURNK_MODEL: "composition",
             PLURNK_MODEL_composition: "openai/composition",
             PLURNK_BASEURL_composition: `http://127.0.0.1:${modelPort}/v1`,
+            OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}/v1`,
             OPENAI_API_KEY: "composition",
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
             PLURNK_PROVIDERS_REASONING: "off",
@@ -158,20 +171,56 @@ try {
         PLURNK_HOST: address.host,
         PLURNK_PORT: address.port,
     };
-    let completed;
-    try {
-        completed = await runClient(clientBin, [
-            "--json", "--workspace", "packed-composition", "--project-root", "",
-            "--max-turns", "2", "--timeout", "20", "Reply after verifying package composition.",
-        ], { cwd: install, env, timeout: 30_000 });
-    } catch (cause) {
-        throw new Error(
-            `packed client run failed\nmodel requests: ${modelRequests.join(", ") || "(none)"}\nservice stdout:\n${stdout}\nservice stderr:\n${stderr}`,
-            { cause },
-        );
+    const runPrompt = async (prompt, selector) => {
+        let completed;
+        try {
+            completed = await runClient(clientBin, [
+                "--json", "--workspace", "packed-composition", "--worker", "durable-worker",
+                "--project-root", "", "--max-turns", "2", "--timeout", "20",
+                ...(selector === undefined ? [] : ["--model", selector]),
+                prompt,
+            ], { cwd: install, env, timeout: 30_000 });
+        } catch (cause) {
+            throw new Error(
+                `packed client run failed\nmodel requests: ${modelRequests.join(", ") || "(none)"}\nservice stdout:\n${stdout}\nservice stderr:\n${stderr}`,
+                { cause },
+            );
+        }
+        return JSON.parse(completed.stdout);
+    };
+
+    const seeded = await runPrompt("Seed the existing worker on the daemon default.");
+    if (seeded.response !== "composition ok: composition") {
+        throw new Error(`default packed run returned ${JSON.stringify(seeded.response)}`);
     }
-    const result = JSON.parse(completed.stdout);
-    if (result.response !== "composition ok") throw new Error(`packed run returned ${JSON.stringify(result.response)}`);
+
+    const exactSelector = "openai/composition-family/selected";
+    const selected = await runPrompt("Select an exact model route for this worker.", exactSelector);
+    if (selected.response !== "composition ok: composition-family/selected") {
+        throw new Error(`selected packed run returned ${JSON.stringify(selected.response)}`);
+    }
+
+    const requestsBeforeRefusal = selectedModels.length;
+    await runClient(clientBin, [
+        "--json", "--workspace", "packed-composition", "--worker", "durable-worker",
+        "--project-root", "", "--model", "missing-provider/missing-model",
+        "This prompt must never reach a model.",
+    ], { cwd: install, env, timeout: 30_000 }).then(
+        () => { throw new Error("an unavailable explicit model selector was accepted"); },
+        () => undefined,
+    );
+    if (selectedModels.length !== requestsBeforeRefusal) {
+        throw new Error("a rejected explicit model selector still generated a model request");
+    }
+
+    const reconnected = await runPrompt("Reconnect without selecting a model.");
+    if (reconnected.response !== "composition ok: composition-family/selected") {
+        throw new Error(`reconnected packed run returned ${JSON.stringify(reconnected.response)}`);
+    }
+    const expectedModels = ["composition", "composition-family/selected", "composition-family/selected"];
+    if (JSON.stringify(selectedModels) !== JSON.stringify(expectedModels)) {
+        throw new Error(`worker model lifecycle selected ${JSON.stringify(selectedModels)}, expected ${JSON.stringify(expectedModels)}`);
+    }
 
     const log = await runClient(clientBin, [
         "log", "read", "--json", "--workspace", "packed-composition", "--limit", "100",

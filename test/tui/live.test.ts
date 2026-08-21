@@ -1,18 +1,26 @@
-// Model-GATED pty tests. Boots a daemon; the loop-running test is currently
-// BLOCKED on svc#265 (see below). When #265 lands, restore the loop PROBE here
-// (loop.run → await loop/terminated, finalStatus===200, bounded) to gate the
-// test on a reachable provider key (for example, in ~/.config/plurnk/.env) vs CI.
+// Explicit real-model pty tier. The deterministic TUI gate loads no operator
+// configuration and never performs inference; `npm run test:tui:live` opts into
+// the operator config and requires an explicitly selected PLURNK_MODEL.
 
 import { test, before, after, describe } from "node:test";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
+const liveEnabled = process.env.PLURNK_CLIENT_LIVE === "1";
+const liveModel = process.env.PLURNK_MODEL;
 
 before(async () => {
+    if (!liveEnabled) return;
+    if (liveModel === undefined || liveModel.length === 0) {
+        throw new Error("test:tui:live requires an explicit PLURNK_MODEL selector");
+    }
     const bin = await locateDaemon();
     if (bin === null) return;
-    daemon = await bootDaemon(bin);
+    daemon = await bootDaemon(bin, {
+        inheritOperatorConfig: true,
+        extraEnv: { PLURNK_MODEL: liveModel },
+    });
 });
 after(async () => { await daemon?.cleanup(); });
 
@@ -26,6 +34,7 @@ describe("TUI live (model-gated)", () => {
     // failure is unambiguously a real hang (svc#265 is fixed — errored loops now
     // broadcast loop/terminated), never "the model was slow." Only daemon-gated.
     test("[§cli-tui-flow] mid-loop inject — a line typed during a loop is folded in (loop.inject)", { timeout: 600_000 }, async (t) => {
+        if (!liveEnabled) { t.skip("real-model tier requires npm run test:tui:live"); return; }
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {

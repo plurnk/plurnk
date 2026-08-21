@@ -7,6 +7,7 @@ test("release publication preserves canonical source, dependency order, and exac
     const canonical = release.indexOf("await assertCanonicalSource({ allowPrepared: !targetServed })");
     const checkBoundary = release.indexOf("if (checkOnly)");
     const platformGate = release.indexOf("for (const name of [SERVICE_PACKAGE, CONTRACTS_PACKAGE])");
+    const contractMinimum = release.indexOf("manifest.dependencies[CONTRACTS_PACKAGE] = platformContractsRange(platformVersion)");
     const lock = release.indexOf('"update", "--package-lock-only"');
     const cleanInstall = release.indexOf('["ci", "--prefer-online"');
     const freshness = release.indexOf('["run", "deps:fresh"]');
@@ -16,11 +17,12 @@ test("release publication preserves canonical source, dependency order, and exac
     const publish = release.indexOf('["publish", "--access", "public"]');
 
     assert.ok(canonical >= 0 && canonical < checkBoundary && checkBoundary < platformGate);
-    assert.ok(platformGate < lock && lock < cleanInstall && cleanInstall < freshness && freshness < commit);
+    assert.ok(platformGate < contractMinimum && contractMinimum < lock && lock < cleanInstall && cleanInstall < freshness && freshness < commit);
     assert.ok(porcelain < commit);
     assert.ok(commit < push && push < publish);
     assert.match(release, /assertCanonicalSource\(\{ allowPrepared: !targetServed \}\)/);
     assert.match(release, /if \(dirty\.length > 0\)/);
+    assert.match(release, /manifest\.dependencies\[CONTRACTS_PACKAGE\] = platformContractsRange\(platformVersion\)/);
     assert.doesNotMatch(release, /status", "--porcelain"\]\)\)\.stdout\.trim/);
     assert.match(release, /PLURNK_COMPOSITION_SERVICE: `\$\{SERVICE_PACKAGE\}@\$\{platformVersion\}`/);
     assert.doesNotMatch(release, /@latest/);

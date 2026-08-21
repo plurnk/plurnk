@@ -51,7 +51,7 @@ durable public work inventory.
 | `/verb` | `/models /workspaces /workers /log /model /child /reasoning /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp`, and universal Agent Skills `/skills` |
 | `! cmd` | exec via the daemon |
 
-**Key flags:** `--model <alias>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
+**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
 
 ## what plurnk is
 
@@ -87,9 +87,9 @@ What the daemon brings to those turns:
 
 **Env cascade** (the client's side): packaged `.env.defaults` floor < `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` < project `./.env` < repeated `--env-file` flags (last wins) < shell. `plurnk-service config defaults` prints the complete owner-labelled catalog on demand.
 
-**Client env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_MODEL` / `PLURNK_MODEL_CHILD` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`.
+**Client env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:3044`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`.
 
-**Models** are daemon-side: declare aliases in the daemon's env (e.g. `PLURNK_MODEL_turbo=openai/gpt-4o`) and select with `--model turbo` or `PLURNK_MODEL`. Provider credentials live in the daemon's environment, referenced by name — the client never holds a key.
+**Models** are daemon-side. A worker durably owns its selected route; `--model` and `/model` accept either a declared alias or an exact `provider/model` selector and persist it without adding model policy to subsequent loops. `plurnk models [search]` and `/models [search]` query the daemon's bounded catalog only when requested. Provider credentials and the `PLURNK_MODEL` default live in the daemon's environment — the client never holds a key or guesses readiness.
 
 **Skills:** `/skills` lists project skills; `/skills add|remove|find|update` delegates to the standard `npx skills` CLI with its `universal` target. Project skills live in `.agents/skills`; global skills live in `~/.agents/skills`.
 

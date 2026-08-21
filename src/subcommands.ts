@@ -3,9 +3,12 @@
 // goes to stdout (the product), trace/errors to stderr — same posture as CLI
 // mode per SPEC.md §2.1.
 
-// The minimal wire surface: any transport's verb caller satisfies it (AG-UI+
-// actions or — until deletion day — the legacy WS Rpc).
-export interface Caller { call(method: string, params?: object): Promise<unknown> }
+import {
+    Validator,
+    type ModelCatalogEntry,
+    type ModelCatalogQuery,
+} from "@plurnk/plurnk-contracts";
+export type { ModelCatalogPage, ModelCatalogQuery } from "@plurnk/plurnk-contracts";
 import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
 import type { LogEntryWire } from "./render.ts";
 import {
@@ -15,6 +18,10 @@ import {
     clientSubcommandWorkspaceAmbiguous,
     clientSubcommandWorkspaceNotFound,
 } from "./diagnostics.ts";
+
+// The minimal wire surface: any transport's verb caller satisfies it (AG-UI+
+// actions or — until deletion day — the legacy WS Rpc).
+export interface Caller { call(method: string, params?: object): Promise<unknown> }
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
@@ -33,30 +40,43 @@ const renderTable = (headers: string[], rows: string[][]): string => {
 
 // ─── plurnk models ────────────────────────────────────────────────────
 
-interface ProviderAlias {
-    alias: string;
-    provider: string;
-    model: string;
-    active: boolean;
-}
+const contextLabel = (tokens: number): string => tokens >= 1_000_000 && tokens % 1_000_000 === 0
+    ? `${tokens / 1_000_000}m`
+    : tokens >= 1_000 && tokens % 1_000 === 0
+        ? `${tokens / 1_000}k`
+        : String(tokens);
 
-export const runModels = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
-    const { aliases } = await rpc.call("providers.list") as { aliases: ProviderAlias[] };
+const readinessLabel = (entry: ModelCatalogEntry): string => {
+    if (entry.readiness.ready) return "ready";
+    return entry.readiness.causes
+        .map(({ alternatives }) => alternatives.map((names) => names.join("+")).join("|"))
+        .join("; ");
+};
+
+export const runModels = async (
+    rpc: Caller,
+    opts: { json: boolean; query?: ModelCatalogQuery },
+): Promise<number> => {
+    const page = Validator.assertModelCatalogPage(await rpc.call("models.list", opts.query ?? {}));
     if (opts.json) {
-        process.stdout.write(`${JSON.stringify(aliases)}\n`);
+        process.stdout.write(`${JSON.stringify(page)}\n`);
         return 0;
     }
-    if (aliases.length === 0) {
-        process.stdout.write("(no model aliases configured; set PLURNK_MODEL_<alias>=<provider>/<model> on the daemon)\n");
+    if (page.items.length === 0) {
+        process.stdout.write("(no models match; use --all to include models missing local configuration)\n");
         return 0;
     }
-    const rows = aliases.map((a) => [
-        a.alias,
-        a.provider,
-        a.model,
-        a.active ? "*" : "",
+    const rows = page.items.map((model) => [
+        model.selector,
+        model.modelName,
+        contextLabel(model.limits.contextTokens),
+        model.capabilities.reasoning ? "yes" : "no",
+        readinessLabel(model),
     ]);
-    process.stdout.write(`${renderTable(["alias", "provider", "model", "active"], rows)}\n`);
+    process.stdout.write(`${renderTable(["selector", "name", "context", "reasoning", "readiness"], rows)}\n`);
+    if (page.nextOffset !== undefined) {
+        process.stdout.write(`(showing ${page.offset + 1}-${page.offset + page.items.length} of ${page.total}; next --offset ${page.nextOffset})\n`);
+    }
     return 0;
 };
 

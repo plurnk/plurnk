@@ -45,9 +45,21 @@ describe("TUI pty harness", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("\x1bm");                 // ESC m = Alt-m → /models
-            await tui.waitFor(/alias\s+provider\s+model\s+active/, 8_000);
+            await tui.waitFor(/selector\s+name\s+context|no models match/, 8_000);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
+        } finally {
+            tui.kill();
+        }
+    });
+
+    test("an invalid explicit --model fails before the TUI accepts input", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--model", "missing-provider/missing-model"]);
+        try {
+            const output = await tui.waitFor(/unknown provider|not configured|cannot construct|unavailable/i, 8_000);
+            assert.doesNotMatch(output, /resume this workspace:/, "selection failure is not an ordinary interactive exit");
+            assert.notEqual(await tui.exited, 0, "the rejected selection fails the invocation");
         } finally {
             tui.kill();
         }

@@ -65,14 +65,14 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const t = await bt.run("largest planet?", { alias: "opus" }).done;
+        const t = await bt.run("largest planet?", {}).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
         assert.deepEqual(seen.reasoning, [{ messageId: "1/1/2/SEND/reasoning", content: "checked the evidence" }]);
         assert.equal((seen.notices[0] as { source: string }).source, "grammar");
         assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true }, alias: "opus" } }, "the workspace (world) + options + per-run knobs ride the first run's forwardedProps");
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } } }, "the workspace (world) + options ride the first run's forwardedProps");
     } finally { await mock.close(); }
 });
 
@@ -411,12 +411,9 @@ test("[§cli-workspaces-and-workers] EVERY request carries the workspace options
     } finally { await mock.close(); }
 });
 
-test("[§cli-model-selection] THE MODEL RIDES EVERY LOOP — not just the first (svc#414 guard: /model must not go cosmetic on run 2+)", async () => {
-    // Two sequential runs on one transport. Workspace options are first-touch only, but
-    // the model (alias + client-resolved spec) is a PER-LOOP knob and MUST ride every run
-    // — the daemon keeps no sticky workspace-model, so a missing alias on run 2 = the loop
-    // silently reverting to the daemon default. This is the "all loops send their model
-    // alias" contract, verified deterministically at the choke point.
+test("[§cli-model-selection] model policy never rides an individual loop", async () => {
+    // Model and child-model policy are changed once through worker actions. Keeping
+    // them structurally absent from RunOpts prevents a second per-loop authority.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
@@ -426,36 +423,15 @@ test("[§cli-model-selection] THE MODEL RIDES EVERY LOOP — not just the first 
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
-        await bt.run("first", { alias: "fireslow", model: "fireworks/deepseek" }).done;
-        await bt.run("second", { alias: "fireslow", model: "fireworks/deepseek" }).done;
+        await bt.run("first", { flags: { auto: true } }).done;
+        await bt.run("second", {}).done;
         const runs = mock.captured.filter((c) => (c.body as { messages?: unknown[] }).messages !== undefined && ((c.body as { messages: unknown[] }).messages.length > 0 || (c.body as { forwardedProps?: { plurnk?: { action?: unknown } } }).forwardedProps?.plurnk?.action === undefined));
         assert.equal(runs.length, 2, "two loops drove");
-        for (const [i, c] of runs.entries()) {
+        for (const c of runs) {
             const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
-            assert.equal(fp.alias, "fireslow", `loop ${i + 1} carries the alias`);
-            assert.equal(fp.model, "fireworks/deepseek", `loop ${i + 1} carries the resolved model — never dropped on a later loop`);
+            for (const retired of ["alias", "model", "selector", "childAlias", "childModel", "childSelector"]) {
+                assert.equal(Object.hasOwn(fp, retired), false, `${retired} is worker policy, not a loop knob`);
+            }
         }
     } finally { await mock.close(); }
-});
-
-test("[§cli-child-provider-selection] child selection preserves explicit alias and inherit on the run wire", async () => {
-    const mock = await bootMock((_req, res) => {
-        res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
-        res.end();
-    });
-    try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
-        bt.subscribe(collectingHandlers().h);
-        await bt.run("delegated", { childAlias: "firefast", childModel: "fireworks/qwen" }).done;
-        await bt.run("inherited", { childAlias: null }).done;
-        const runs = mock.captured.map((capture) => (capture.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk);
-        assert.equal(runs[0].childAlias, "firefast");
-        assert.equal(runs[0].childModel, "fireworks/qwen");
-        assert.equal(runs[1].childAlias, null, "explicit inherit is not collapsed into omission");
-        assert.equal(Object.hasOwn(runs[1], "childModel"), false);
-    } finally {
-        await mock.close();
-    }
 });

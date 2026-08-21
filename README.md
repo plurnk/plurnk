@@ -39,6 +39,10 @@ plurnk --help                                # full flag list
 
 **Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `notices` + the daemon's exact `usage.accounting` envelope), stderr silent, failures as RFC 9457 Problems under `{"problem":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
 
+Readable provider reasoning appears as a distinct `💭` trace before the paired
+SEND. It comes from AG-UI's standard reasoning events; PLAN remains the model's
+durable public work inventory.
+
 **Line language** (converged across the TUI, the CLI prefixes, and plurnk.nvim's `:AI`):
 
 | | |

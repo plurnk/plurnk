@@ -1,8 +1,6 @@
 // The TUI's transport seam. The AG-UI bridge un-projects `plurnk.*` custom
-// events back to
-// the daemon-notification shapes the TUI already renders (plurnk.row IS the wire
-// entry, plurnk.proposal IS the proposal, …), so the render + verb code is
-// untouched; only the source of the bytes changes.
+// events into the daemon-notification shapes the TUI already renders and folds
+// the standard reasoning lifecycle into one completed display value.
 //
 // Handlers are PERSISTENT (subscribe once): the WS TUI renders a shared workspace's
 // activity — a worker's rows, a second client's loop — even while this REPL is
@@ -25,6 +23,7 @@ import {
 } from "./diagnostics.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { runViaBridge, actionViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import ReasoningEvents, { type ReasoningMessage } from "./reasoning-events.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
 // plurnk.terminated + workspaceId).
@@ -52,6 +51,7 @@ export interface BranchBatchEvent {
 // existing handlers consume, so they work unchanged under either transport.
 export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
+    onReasoning: (reasoning: ReasoningMessage) => void;
     onProposal: (p: ProposalParams) => void;
     onInteraction?: (i: { interactionId: number; message: string; responseSchema: Record<string, unknown> }) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
@@ -99,6 +99,7 @@ export class BridgeTransport implements Transport {
     #h: RunHandlers | null = null;
     #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
     #pendingInteractionResolve: ((r: Record<string, unknown> | "cancel") => void) | null = null;
+    #reasoning = new ReasoningEvents();
 
     constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
         this.#target = target;
@@ -166,7 +167,7 @@ export class BridgeTransport implements Transport {
                         && e.outcome.interrupts.some((interrupt) => interrupt.id === toolId || interrupt.toolCallId === toolId);
                     continue;
                 }
-                if (e.type === "CUSTOM") this.#dispatch(e);
+                this.#dispatch(e);
             }
             if (problem !== undefined) throw new ProblemError(problem);
             if (sawResult) return result as T;
@@ -278,7 +279,7 @@ export class BridgeTransport implements Transport {
                             }
                             proposalResolution = new Promise((resolve) => { this.#pendingResolve = resolve; });
                             this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs, staleClobberRisk: a.staleClobberRisk } as unknown as ProposalParams);
-                        } else if (e.type === "CUSTOM") {
+                        } else {
                             const t = this.#dispatch(e);
                             if (t !== null) terminated = t;
                             if ((e as { name?: unknown }).name === "plurnk.problem") {
@@ -380,9 +381,15 @@ export class BridgeTransport implements Transport {
         return { id: 0, name: threadId };
     }
 
-    // Un-project one CUSTOM plurnk.* → the handlers; returns TerminatedInfo when it
-    // was the terminal event, else null. Core AG-UI events are for generic frontends.
+    // Project one standard reasoning event or un-project one CUSTOM plurnk.*
+    // event into the family handlers; returns terminal truth when present.
     #dispatch(e: AguiEvent): TerminatedInfo | null {
+        const reasoning = this.#reasoning.consume(e);
+        if (reasoning.handled) {
+            if (reasoning.message !== undefined) this.#h?.onReasoning(reasoning.message);
+            return null;
+        }
+        if (e.type !== "CUSTOM") return null;
         const name = (e as { name?: string }).name;
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.row") this.#h?.onEntry(value as LogEntryWire);

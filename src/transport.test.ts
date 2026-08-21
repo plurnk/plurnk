@@ -9,9 +9,10 @@ import { BridgeTransport, type RunHandlers } from "./transport.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], proposals: [], streams: [], notices: [], problems: [], branches: [], terminated: [] };
+    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], reasoning: [], proposals: [], streams: [], notices: [], problems: [], branches: [], terminated: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
+        onReasoning: (reasoning) => seen.reasoning.push(reasoning),
         onProposal: (p) => seen.proposals.push(p),
         onStream: (s) => seen.streams.push(s),
         onNotice: (notice) => seen.notices.push(notice),
@@ -46,6 +47,12 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TEXT_MESSAGE_CONTENT", messageId: "generic", delta: "generic-ignored" }));
+        res.write(frame({ type: "REASONING_START", messageId: "1/1/2/SEND/reasoning" }));
+        res.write(frame({ type: "REASONING_MESSAGE_START", messageId: "1/1/2/SEND/reasoning", role: "reasoning" }));
+        res.write(frame({ type: "REASONING_MESSAGE_CONTENT", messageId: "1/1/2/SEND/reasoning", delta: "checked " }));
+        res.write(frame({ type: "REASONING_MESSAGE_CONTENT", messageId: "1/1/2/SEND/reasoning", delta: "the evidence" }));
+        res.write(frame({ type: "REASONING_MESSAGE_END", messageId: "1/1/2/SEND/reasoning" }));
+        res.write(frame({ type: "REASONING_END", messageId: "1/1/2/SEND/reasoning" }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "PLAN" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
@@ -60,6 +67,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         bt.subscribe(h);
         const t = await bt.run("largest planet?", { alias: "opus" }).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
+        assert.deepEqual(seen.reasoning, [{ messageId: "1/1/2/SEND/reasoning", content: "checked the evidence" }]);
         assert.equal((seen.notices[0] as { source: string }).source, "grammar");
         assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");

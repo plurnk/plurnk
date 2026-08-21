@@ -13,6 +13,7 @@ const {
     sendSubGlyph,
     extractSendBody,
     renderLogEntry,
+    renderReasoning,
     renderSummary,
     curationGauge,
     contextGauge,
@@ -102,6 +103,10 @@ test("extractSendBody prettify=true: markdown body → ANSI transform applied", 
 test("extractSendBody prettify=true: plain text → raw verbatim", () => {
     const tx = { body: { raw: "Hello, world.", json: null } };
     assert.equal(extractSendBody(tx, true), "Hello, world.");
+});
+
+test("renderReasoning: distinct, compact block with no coordinate or status code", () => {
+    assert.equal(renderReasoning("first line\nsecond line"), "  💭 first line\n     second line");
 });
 
 // ─── renderLogEntry: target rendering ────────────────────────────────

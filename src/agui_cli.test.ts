@@ -82,6 +82,25 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
     assert.ok(err.length >= 2, "every row traced to stderr");
 });
 
+test("[§cli-provider-reasoning] consumeCliRun: standard readable reasoning renders once before its paired SEND trace", async () => {
+    const { io, out, err } = sink();
+    await consumeCliRun(stream([
+        { type: EventType.REASONING_START, messageId: "1/1/2/SEND/reasoning" },
+        { type: EventType.REASONING_MESSAGE_START, messageId: "1/1/2/SEND/reasoning", role: "reasoning" },
+        { type: EventType.REASONING_MESSAGE_CONTENT, messageId: "1/1/2/SEND/reasoning", delta: "compare " },
+        { type: EventType.REASONING_MESSAGE_CONTENT, messageId: "1/1/2/SEND/reasoning", delta: "the evidence" },
+        { type: EventType.REASONING_MESSAGE_END, messageId: "1/1/2/SEND/reasoning" },
+        { type: EventType.REASONING_END, messageId: "1/1/2/SEND/reasoning" },
+        terminalSend("Jupiter."),
+        terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io);
+    assert.equal(out.join(""), "Jupiter.\n");
+    const trace = err.join("");
+    assert.match(trace, /💭 compare the evidence/);
+    assert.ok(trace.indexOf("💭") < trace.indexOf("SEND"), "reasoning precedes the SEND row");
+});
+
 test("consumeCliRun: RUN_ERROR without the exact Problem is a transport contract failure", async () => {
     const { io, err } = sink();
     const result = await consumeCliRun(stream([

@@ -22,7 +22,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, renderQuestionMenu, questionChoices, answerForQuestion } from "./proposal.ts";
@@ -874,6 +874,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
 
     transport.subscribe({
+        onReasoning: ({ content }) => printAbove(renderReasoning(content)),
         onEntry: (entry) => {
             if (entry.loop_seq > lastLoopSeq) lastLoopSeq = entry.loop_seq;
             // The typed line at the prompt is the user's record — rendering the

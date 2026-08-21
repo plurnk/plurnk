@@ -14,6 +14,11 @@ import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
 import { runTui } from "./tui.ts";
 import { handleMcp } from "./mcp.ts";
+import {
+    formatWorkerReasoning,
+    readWorkerReasoning,
+    setWorkerReasoning,
+} from "./reasoning.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters, Caller } from "./subcommands.ts";
 import {
@@ -121,7 +126,7 @@ export const resolveProjectRoot = (raw: string | undefined): string | null => {
     return raw;
 };
 
-const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <alias>] [prompt...]
+const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <alias>] [--reasoning <policy>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [--json]
        plurnk workspace list [--json]
@@ -130,6 +135,7 @@ const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--
        plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
+       plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
 
@@ -195,6 +201,9 @@ options:
                           server-side against PLURNK_MODEL_<alias>. Without
                           this (and PLURNK_MODEL unset), the worker's durable
                           model or the daemon's boot-time default runs.
+      --reasoning <policy> persistently select the conversation worker's reasoning
+                          policy before the first loop. The daemon validates the
+                          policy against the selected parent and child models.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
@@ -241,6 +250,7 @@ subcommands:
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
+  reasoning [policy]      inspect or set a worker's durable reasoning policy
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
@@ -494,6 +504,25 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         return 0;
     }
 
+    if (verb === "reasoning") {
+        if (opts.workspaceName === undefined) {
+            throw new ProblemError(clientFlagMissingDependency(
+                "plurnk reasoning",
+                "--workspace (or PLURNK_CLIENT_WORKSPACE)",
+            ));
+        }
+        if (positionals.length > 2) {
+            throw new ProblemError(clientSubcommandUnknownVerb(`reasoning ${positionals.slice(1).join(" ")}`));
+        }
+        const reasoning = sub === undefined
+            ? await readWorkerReasoning(rpc)
+            : await setWorkerReasoning(rpc, sub);
+        process.stdout.write(opts.json
+            ? `${JSON.stringify(reasoning)}\n`
+            : formatWorkerReasoning(reasoning));
+        return 0;
+    }
+
     if (verb === "log") {
         if (sub !== "read") {
             throw new ProblemError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
@@ -549,6 +578,7 @@ export const main = async (argv: string[]): Promise<void> => {
             workspace: { type: "string" },
             worker: { type: "string" },
             model: { type: "string" },
+            reasoning: { type: "string" },
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
@@ -589,10 +619,9 @@ export const main = async (argv: string[]): Promise<void> => {
     const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_JSON ?? "").toLowerCase());
     if (!json) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
 
-    // Subcommand routing happens BEFORE prompt assembly: if positionals[0] is
-    // a known read-only subcommand (models / workspace / log), we skip stdin
-    // reading and prompt construction entirely.
-    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp"] as const;
+    // State-command routing happens BEFORE prompt assembly, so inspection and
+    // deliberate configuration never consume stdin or become model prompts.
+    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "reasoning"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -616,6 +645,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelAlias = values.model ?? process.env.PLURNK_MODEL;
+    const reasoningPolicy = values.reasoning;
     // {§worker-settings} — the worker's request-user-input rule: TUI/nvim default on,
     // the one-shot CLI defaults off; the explicit flag always wins, then the env.
     const requestUserInputEnv = ["1", "true", "yes", "on"].includes((process.env.PLURNK_REQUEST_USER_INPUT ?? "").toLowerCase());
@@ -703,7 +733,10 @@ export const main = async (argv: string[]): Promise<void> => {
             // a per-loop model selector (the worker owns the model). An inherited
             // PLURNK_MODEL value is the daemon's own default and is never reasserted.
             if (values.model !== undefined && modelAlias !== undefined) {
-                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, kind: "worker.model.set", params: { alias: modelAlias } });
+                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.model.set", params: { alias: modelAlias } });
+            }
+            if (reasoningPolicy !== undefined) {
+                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.reasoning.set", params: { policy: reasoningPolicy } });
             }
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, requestUserInput: requestUserInputCli, ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
             // Let Node drain stdout before termination. A forced exit truncated large
@@ -752,7 +785,20 @@ export const main = async (argv: string[]): Promise<void> => {
             constraints,
             settings,
         });
-        await runTui(transport, { id: 0, name: w }, { modelAlias, modelExplicit: values.model !== undefined, requestUserInput: requestUserInputTui, yolo, loopFlags, maxTurns, projectRoot, workerName, client: CLIENT_ID_TUI, mcpConfiguration });
+        await runTui(transport, { id: 0, name: w }, {
+            modelAlias,
+            modelExplicit: values.model !== undefined,
+            reasoningPolicy,
+            reasoningExplicit: reasoningPolicy !== undefined,
+            requestUserInput: requestUserInputTui,
+            yolo,
+            loopFlags,
+            maxTurns,
+            projectRoot,
+            workerName,
+            client: CLIENT_ID_TUI,
+            mcpConfiguration,
+        });
         process.exitCode = 0;
         return;
     }
@@ -760,8 +806,15 @@ export const main = async (argv: string[]): Promise<void> => {
     // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
     // speak the action surface through a structural Caller.
     const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
-    const callerThread = workspaceName ?? "cli";
-    const caller = { call: (method: string, params?: object) => actionViaBridge<unknown>(target, { threadId: callerThread, kind: method, params }) };
+    const callerThread = workerName ?? workspaceName ?? "cli";
+    const caller = {
+        call: (method: string, params?: object) => actionViaBridge<unknown>(target, {
+            threadId: callerThread,
+            ...(workspaceName !== undefined ? { workspace: workspaceName } : {}),
+            kind: method,
+            params,
+        }),
+    };
 
     try {
         // `plurnk script foo.plk` — feed a .plk file to op.parse over the action

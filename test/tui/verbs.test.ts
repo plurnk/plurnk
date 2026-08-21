@@ -16,7 +16,11 @@ let daemon: Daemon | null = null;
 
 before(async () => {
     const bin = await locateDaemon();
-    if (bin !== null) daemon = await bootDaemon(bin);
+    if (bin !== null) {
+        daemon = await bootDaemon(bin, {
+            extraEnv: { PLURNK_MODEL_clienttest: "openai/turboderp" },
+        });
+    }
 });
 after(async () => { await daemon?.cleanup(); });
 
@@ -31,14 +35,18 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("[§cli-model-selection] /model <alias> switches the model through the live TUI", async (t) => {
+    test("[§cli-model-selection][§cli-reasoning-policy] generation policy persists through the live TUI", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("/model turboderp\r"); await tui.waitFor(/model: turboderp/);
-            tui.write("/model fireslow\r");  await tui.waitFor(/model: fireslow/);
-            tui.write("/model\r");            await tui.waitFor(/model: fireslow/);   // sticky — the switch persisted
+            tui.write("/model clienttest\r"); await tui.waitFor(/model: clienttest/);
+            tui.write("/model\r");            await tui.waitFor(/model: clienttest/); // sticky — the switch persisted
+            tui.write("/reasoning adaptive\r");
+            await tui.waitFor(/reasoning: adaptive[\s\S]*supported:/);
+            tui.write("/reasoning\r");
+            await tui.waitFor(/supported:[\s\S]*supported:/);
         } finally { tui.kill(); }
     });
 

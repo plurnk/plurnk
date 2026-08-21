@@ -364,6 +364,16 @@ test("completer: /model completes aliases", async () => {
     assert.equal(frag, "g");
 });
 
+test("completer: /reasoning derives choices from the daemon response", async () => {
+    const result = await new Promise<[string[], string]>((resolve) =>
+        makeCompleter(
+            () => [],
+            process.cwd(),
+            () => ["off", "adaptive", "high"],
+        )("/reasoning a", (_error, completed) => resolve(completed)));
+    assert.deepEqual(result, [["adaptive"], "a"]);
+});
+
 test("completer: /child completes inherit and aliases", async () => {
     const [hits, frag] = await complete(() => ["gemma", "gpt-mini"], "/child i");
     assert.deepEqual(hits, ["inherit"]);

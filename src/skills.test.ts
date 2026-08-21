@@ -12,7 +12,7 @@ const harness = () => {
     return { write: (text: string) => out.push(text), out, calls, runner };
 };
 
-test("skills lists only the universal project target by default", async () => {
+test("[§cli-universal-agent-skills] skills lists only the universal project target by default", async () => {
     const h = harness();
     await handleSkills([], h.write, "/work/project", h.runner);
     assert.deepEqual(h.calls, [{

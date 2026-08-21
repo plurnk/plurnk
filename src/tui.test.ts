@@ -180,6 +180,14 @@ test("buildHeader: workerName present → shown between workspace and model; abs
     assert.doesNotMatch(buildHeader({ workspaceName: "plurnk" }), /worker/);
 });
 
+test("buildHeader: reasoning is a distinct durable policy label", () => {
+    assert.match(
+        buildHeader({ workspaceName: "plurnk", activeAlias: "grok", reasoningPolicy: "adaptive" }),
+        /· model: grok · reasoning: adaptive ·/,
+    );
+    assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /reasoning:/);
+});
+
 interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
@@ -188,7 +196,11 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const imports: string[] = [];
     const resolved: string[] = [];
     let workspace = { id: 1, name: "sess" };
-    const modelState = { model: null as ResolvedModelSpec | null, spawnModel: null as ResolvedModelSpec | null };
+    const modelState = {
+        model: null as ResolvedModelSpec | null,
+        spawnModel: null as ResolvedModelSpec | null,
+        reasoning: { policy: null, supportedPolicies: [] } as VerbContext["reasoning"],
+    };
     return {
         rpc: {
             call: async (method: string, params?: unknown) => {
@@ -200,8 +212,10 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         opts: { yolo: false, ...opts },
         get model() { return modelState.model; },
         get spawnModel() { return modelState.spawnModel; },
+        get reasoning() { return modelState.reasoning; },
         setModel: (spec) => { modelState.model = spec; },
         setSpawnModel: (spec) => { modelState.spawnModel = spec; },
+        setReasoning: (reasoning) => { modelState.reasoning = reasoning; },
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
         switchWorkspace: async (name) => {
@@ -344,12 +358,43 @@ test("handleVerb /yolo → toggles opts.yolo and reports", async () => {
 });
 
 test("{§worker-model-selection}: handleVerb /model sets server-side and mirrors the resolved spec; bare /model shows it", async () => {
-    const ctx = makeCtx({ "worker.model.set": { alias: "gpt", provider: "openai", model: "gpt-4" } });
+    const ctx = makeCtx({
+        "worker.model.set": { alias: "gpt", provider: "openai", model: "gpt-4" },
+        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+    });
     await handleVerb("/model gpt", ctx);
     assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { alias: "gpt" } });
+    assert.deepEqual(ctx.calls[1], { method: "worker.reasoning.get", params: undefined });
     assert.deepEqual(ctx.model, { alias: "gpt", provider: "openai", model: "gpt-4" }, "the server-resolved spec is the display truth");
+    assert.deepEqual(ctx.reasoning.supportedPolicies, ["off", "adaptive", "high"], "model changes refresh daemon-supported reasoning completion");
     await handleVerb("/model", ctx);
     assert.match(ctx.out.join(""), /model: gpt/);
+});
+
+test("handleVerb /reasoning inspects and sets durable daemon policy", async () => {
+    const ctx = makeCtx({
+        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+        "worker.reasoning.set": { policy: "high", supportedPolicies: ["off", "adaptive", "high"] },
+    });
+    await handleVerb("/reasoning", ctx);
+    await handleVerb("/reasoning high", ctx);
+    assert.deepEqual(ctx.calls, [
+        { method: "worker.reasoning.get", params: undefined },
+        { method: "worker.reasoning.set", params: { policy: "high" } },
+    ]);
+    assert.equal(ctx.reasoning.policy, "high");
+    assert.match(ctx.out.join(""), /reasoning: adaptive/);
+    assert.match(ctx.out.join(""), /reasoning: high/);
+    assert.match(ctx.out.join(""), /supported: off, adaptive, high/);
+});
+
+test("handleVerb /reasoning preserves a daemon rejection", async () => {
+    const ctx = makeCtx({
+        "worker.reasoning.set": () => { throw new Error("Reasoning policy 'medium' is not supported by xai/grok-4.6."); },
+    });
+    await handleVerb("/reasoning medium", ctx);
+    assert.equal(ctx.reasoning.policy, null);
+    assert.match(ctx.out.join(""), /Reasoning policy 'medium' is not supported/);
 });
 
 test("{§worker-model-selection}: handleVerb /child persists the override and inherit clears it", async () => {
@@ -377,10 +422,16 @@ test("{§worker-model-selection}: a failed /model surfaces the server's rejectio
 });
 
 test("handleVerb /workspace → workspace.create (new) + setWorkspace", async () => {
-    const ctx = makeCtx({ "workspace.create": { id: 9, name: "fresh" } });
+    const ctx = makeCtx({
+        "workspace.create": { id: 9, name: "fresh" },
+        "worker.model.get": { model: { alias: "new-model", provider: "openai", model: "new" }, spawnModel: null },
+        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+    });
     await handleVerb("/workspace fresh", ctx);
     assert.deepEqual(ctx.calls[0], { method: "workspace.create", params: { name: "fresh" } });
     assert.equal(ctx.getWorkspace().name, "fresh");
+    assert.equal(ctx.model?.alias, "new-model");
+    assert.equal(ctx.reasoning.policy, "adaptive");
     assert.match(ctx.out.join(""), /workspace: fresh \(new\)/);
 });
 
@@ -508,4 +559,3 @@ test("lineMode: bare text carries the base flags untouched; prefix mode OVERRIDE
 test("lineMode: '...' injection prefix strips without minting mode flags", () => {
     assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
 });
-

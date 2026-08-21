@@ -64,9 +64,10 @@ export interface RunHandlers {
 
 export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
 
-// loop.run knobs. The bridge run endpoint reads alias/model/flags/maxTurns from
-// forwardedProps.plurnk (agui 0.2.4); WS passes them straight to loop.run.
-export interface RunOpts { alias?: string; model?: string; childAlias?: string | null; childModel?: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[]; requestUserInput?: boolean }
+// loop.run knobs. Model and child-model selection are durable worker policy,
+// changed through worker.model.set / worker.child.set rather than reasserted on
+// individual runs.
+export interface RunOpts { flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[]; requestUserInput?: boolean }
 
 export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
@@ -202,10 +203,6 @@ export class BridgeTransport implements Transport {
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
             ...this.#workspaceOpts(),
-            ...(opts.alias !== undefined ? { alias: opts.alias } : {}),
-            ...(opts.model !== undefined ? { model: opts.model } : {}),
-            ...(opts.childAlias !== undefined ? { childAlias: opts.childAlias } : {}),
-            ...(opts.childModel !== undefined ? { childModel: opts.childModel } : {}),
             ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
             ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
             ...(opts.requestUserInput !== undefined ? { requestUserInput: opts.requestUserInput } : {}),

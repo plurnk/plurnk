@@ -303,8 +303,10 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
         assert.deepEqual(fp.settings, { filesItems: 0 }, "workspace settings reach the wire");
         assert.equal(fp.alias, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
         assert.equal(fp.model, undefined);
+        assert.equal(fp.selector, undefined);
         assert.equal(fp.childAlias, undefined);
         assert.equal(fp.childModel, undefined);
+        assert.equal(fp.childSelector, undefined);
         assert.deepEqual(fp.flags, { auto: true }, "loop flags reach the wire");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
     } finally { await mock.close(); }

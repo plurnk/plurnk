@@ -33,7 +33,11 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
-import type { OperationResult } from "@plurnk/plurnk-contracts";
+import {
+    Validator,
+    type ModelRoute,
+    type OperationResult,
+} from "@plurnk/plurnk-contracts";
 import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
 import {
@@ -71,8 +75,8 @@ export const VERBS = [
 ] as const;
 
 export const TUI_HELP = [
-    "  /models /workspaces /workers /log [n]   inspect",
-    "  /model <alias> · /child <alias|inherit>   parent and child models",
+    "  /models [search] /workspaces /workers /log [n]   inspect",
+    "  /model <selector> · /child <selector|inherit>   parent and child models",
     "  /reasoning [off|adaptive|effort]       inspect or set reasoning",
     "  /yolo                              toggle local auto-accept",
     "  /workspace [name]                    new workspace",
@@ -253,16 +257,16 @@ export const seedPromptHistory = async (rpc: VerbCaller, workspaceId: number, rl
 };
 
 // The one-line startup banner: version · workspace [· worker] · model · help. Pure so the
-// model-label resolution is unit-testable. modelLabel = the client's
-// --model/PLURNK_MODEL when set, else the daemon's active default
+// model-label resolution is unit-testable. modelLabel = the client's explicit
+// --model selector when set, else the daemon's active default
 // (providers.list `active`), else an honest fallback.
 export const buildHeader = (opts: {
-    versionNotice?: string; workspaceName: string; workerName?: string; modelAlias?: string;
+    versionNotice?: string; workspaceName: string; workerName?: string; modelSelector?: string;
     activeAlias?: string; reasoningPolicy?: string | null; yolo?: boolean;
 }): string => {
     const head = opts.versionNotice ?? "plurnk";
     const worker = opts.workerName !== undefined ? ` · worker: ${opts.workerName}` : "";
-    const modelLabel = opts.modelAlias ?? opts.activeAlias ?? "(daemon default)";
+    const modelLabel = opts.modelSelector ?? opts.activeAlias ?? "(daemon default)";
     const reasoning = opts.reasoningPolicy === undefined || opts.reasoningPolicy === null
         ? ""
         : ` · reasoning: ${opts.reasoningPolicy}`;
@@ -275,7 +279,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
-    opts: { modelAlias?: string; yolo: boolean; projectRoot?: string | null; client?: string; mcpConfiguration?: Readonly<Record<string, string>> };
+    opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null; client?: string; mcpConfiguration?: Readonly<Record<string, string>> };
     // The worker's durable model truth ({§worker-model-selection}): the server's
     // resolved specs, updated by the set verbs. The display label AND the routing
     // both come from the server; the client never reasserts a model per loop.
@@ -297,18 +301,35 @@ export interface VerbContext {
     resolveProposal: (action: "accept" | "reject" | "cancel" | "edit") => Promise<void>;
 }
 
-export interface ResolvedModelSpec { alias: string; provider: string; model: string }
+export type ResolvedModelSpec = ModelRoute;
+
+const modelRouteOrNull = (value: unknown): ResolvedModelSpec | null =>
+    value === null ? null : Validator.assertModelRoute(value);
+
+const workerModelProjection = (value: unknown): {
+    model: ResolvedModelSpec | null;
+    spawnModel: ResolvedModelSpec | null;
+} => {
+    if (value === null || typeof value !== "object") {
+        throw new TypeError("worker.model.get returned no model projection");
+    }
+    const projection = value as { model?: unknown; spawnModel?: unknown };
+    return {
+        model: modelRouteOrNull(projection.model),
+        spawnModel: modelRouteOrNull(projection.spawnModel),
+    };
+};
+
+export const resolvedModelLabel = (spec: ResolvedModelSpec): string =>
+    spec.alias ?? `${spec.provider}/${spec.model}`;
 
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
     const { verb, rest } = parseSlash(line);
     const { rpc, opts, write } = ctx;
     const refreshWorkerPolicy = async (): Promise<void> => {
-        const model = await rpc.call("worker.model.get") as {
-            model: ResolvedModelSpec | null;
-            spawnModel: ResolvedModelSpec | null;
-        };
-        ctx.setModel(model.model ?? null);
-        ctx.setSpawnModel(model.spawnModel ?? null);
+        const model = workerModelProjection(await rpc.call("worker.model.get"));
+        ctx.setModel(model.model);
+        ctx.setSpawnModel(model.spawnModel);
         ctx.setReasoning(await readWorkerReasoning(rpc));
     };
     switch (verb) {
@@ -316,7 +337,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "help":
             write(TUI_HELP);
             return;
-        case "models": await runModels(rpc, { json: false }); return;
+        case "models": await runModels(rpc, {
+            json: false,
+            query: rest.length === 0 ? {} : { search: rest },
+        }); return;
         case "workspaces": await runWorkspaceList(rpc, { json: false }); return;
         case "workers": await runWorkspaceWorkers(rpc, ctx.getWorkspace().name, { json: false }); return;
         case "log": {
@@ -326,12 +350,12 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "model":
-            if (rest.length === 0) { write(`  model: ${ctx.model?.alias ?? "(daemon default)"}\n`); return; }
+            if (rest.length === 0) { write(`  model: ${ctx.model === null ? "(daemon default)" : resolvedModelLabel(ctx.model)}\n`); return; }
             // {§worker-model-selection} — /model is a server-backed durable selection:
             // the daemon resolves and persists onto the conversation worker; nothing
             // client-local rides the next loop.
             try {
-                ctx.setModel(await rpc.call("worker.model.set", { alias: rest }) as ResolvedModelSpec);
+                ctx.setModel(Validator.assertModelRoute(await rpc.call("worker.model.set", { selector: rest })));
                 write(`  model: ${rest}\n`);
             } catch (cause) {
                 write(`  model set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
@@ -355,13 +379,14 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             }
             return;
         case "child":
-            if (rest.length === 0) { write(`  child: ${ctx.spawnModel?.alias ?? "inherit"}\n`); return; }
+            if (rest.length === 0) { write(`  child: ${ctx.spawnModel === null ? "inherit" : resolvedModelLabel(ctx.spawnModel)}\n`); return; }
             try {
-                // {§worker-model-selection} — inherit IS the server action (alias null
+                // {§worker-model-selection} — inherit IS the server action (selector null
                 // clears the override); the daemon returns null for it.
-                ctx.setSpawnModel(rest === "inherit"
-                    ? await rpc.call("worker.child.set", { alias: null }) as ResolvedModelSpec | null
-                    : await rpc.call("worker.child.set", { alias: rest }) as ResolvedModelSpec);
+                ctx.setSpawnModel(modelRouteOrNull(await rpc.call(
+                    "worker.child.set",
+                    { selector: rest === "inherit" ? null : rest },
+                )));
                 write(`  child: ${rest}\n`);
             } catch (cause) {
                 write(`  child set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
@@ -493,10 +518,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 };
 
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
-    // The explicit --model alias for this invocation ({§worker-model-selection}):
-    // an explicit flag persistently selects the worker at startup; an inherited
-    // PLURNK_MODEL value is the daemon's own default and is never reasserted.
-    modelAlias?: string; modelExplicit?: boolean; reasoningPolicy?: string; reasoningExplicit?: boolean;
+    // The explicit --model selector for this invocation ({§worker-model-selection}):
+    // an explicit flag persistently selects the worker at startup.
+    modelSelector?: string; modelExplicit?: boolean; reasoningPolicy?: string; reasoningExplicit?: boolean;
     requestUserInput?: boolean; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
@@ -548,7 +572,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Alias cache for /model completion + the active alias for the header —
     // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
     // Awaited before the banner so the header can name the model the daemon
-    // will actually use when --model/PLURNK_MODEL is unset (providers.list
+    // will actually use when --model is unset (providers.list
     // marks the boot-time default `active`).
     let aliasCache: string[] = [];
     let activeAlias: string | undefined;
@@ -566,31 +590,43 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {§worker-model-selection} — the worker owns the model. Read the server truth
     // for the header and the /model /child display; an EXPLICIT --model persists
     // onto the worker at startup (a one-time durable selection, not a per-loop
-    // reassertion). An inherited PLURNK_MODEL env value is the daemon's own seed.
+    // reassertion).
     let workerModel: ResolvedModelSpec | null = null;
     let workerSpawnModel: ResolvedModelSpec | null = null;
     let workerReasoning: WorkerReasoning = { policy: null, supportedPolicies: [] };
     let reasoningFailure: unknown;
-    try {
-        const m = await transport.rpc("worker.model.get") as { model: ResolvedModelSpec | null; spawnModel: ResolvedModelSpec | null };
-        workerModel = m.model ?? null;
-        workerSpawnModel = m.spawnModel ?? null;
-    } catch { /* model header falls back to the daemon default label */ }
-    if (opts.modelExplicit === true && opts.modelAlias !== undefined) {
-        try {
-            workerModel = await transport.rpc("worker.model.set", { alias: opts.modelAlias }) as ResolvedModelSpec;
-        } catch { /* the first loop fails loudly if the alias is unresolvable */ }
+    // Model identity is control-plane truth, not decorative header data. A
+    // transport failure or malformed projection leaves this client unable to
+    // know which durable worker policy it is presenting, so admission fails
+    // instead of silently relabeling the worker as the daemon default.
+    const initialModel = workerModelProjection(await transport.rpc("worker.model.get"));
+    workerModel = initialModel.model;
+    workerSpawnModel = initialModel.spawnModel;
+    if (opts.modelExplicit === true && opts.modelSelector !== undefined) {
+        // A deliberate selection is part of invocation admission, not display
+        // hydration. Refuse the TUI before it accepts input if the daemon cannot
+        // persist it; continuing would silently run the worker's previous model.
+        workerModel = Validator.assertModelRoute(
+            await transport.rpc("worker.model.set", { selector: opts.modelSelector }),
+        );
     }
-    try {
-        workerReasoning = opts.reasoningExplicit === true && opts.reasoningPolicy !== undefined
-            ? await setWorkerReasoning({ call: (method, params) => transport.rpc(method, params) }, opts.reasoningPolicy)
-            : await readWorkerReasoning({ call: (method, params) => transport.rpc(method, params) });
-    } catch (cause) { reasoningFailure = cause; }
+    if (opts.reasoningExplicit === true && opts.reasoningPolicy !== undefined) {
+        // Same admission rule as --model: an explicit policy must take effect or
+        // the invocation fails before any model work can run under stale policy.
+        workerReasoning = await setWorkerReasoning(
+            { call: (method, params) => transport.rpc(method, params) },
+            opts.reasoningPolicy,
+        );
+    } else {
+        try {
+            workerReasoning = await readWorkerReasoning({ call: (method, params) => transport.rpc(method, params) });
+        } catch (cause) { reasoningFailure = cause; }
+    }
 
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
         versionNotice: opts.versionNotice, workspaceName: current.name, workerName: opts.workerName,
-        modelAlias: workerModel?.alias ?? opts.modelAlias, activeAlias,
+        modelSelector: workerModel === null ? opts.modelSelector : resolvedModelLabel(workerModel), activeAlias,
         reasoningPolicy: workerReasoning.policy,
         yolo: opts.yolo,
     });

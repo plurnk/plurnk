@@ -71,49 +71,96 @@ test("runWorkspaceRename: unknown workspace throws the exact public Problem", as
 
 // ─── runModels ────────────────────────────────────────────────────────
 
-test("[§cli-plurnk-models] runModels: table format with aliases", async () => {
-    const { rpc, calls } = fakeRpc({
-        "providers.list": {
-            aliases: [
-                { alias: "gemma", provider: "openai", model: "macher.gguf", active: true },
-                { alias: "opus", provider: "openrouter", model: "claude-opus", active: false },
-            ],
+const modelPage = {
+    items: [
+        {
+            selector: "google/gemini-3-flash",
+            provider: "google",
+            providerName: "Google",
+            model: "gemini-3-flash",
+            modelName: "Gemini 3 Flash",
+            limits: { contextTokens: 1_000_000, outputTokens: 65_536 },
+            capabilities: {
+                attachment: true,
+                reasoning: true,
+                toolCall: true,
+                inputModalities: ["text", "image"],
+                outputModalities: ["text"],
+            },
+            readiness: { ready: true, causes: [] },
         },
+        {
+            selector: "google/gemini-3-pro",
+            provider: "google",
+            providerName: "Google",
+            model: "gemini-3-pro",
+            modelName: "Gemini 3 Pro",
+            limits: { contextTokens: 1_000_000 },
+            capabilities: {
+                attachment: true,
+                reasoning: true,
+                toolCall: true,
+                inputModalities: ["text"],
+                outputModalities: ["text"],
+            },
+            readiness: {
+                ready: false,
+                causes: [{ kind: "credential" as const, alternatives: [["GOOGLE_GENERATIVE_AI_API_KEY"]] }],
+            },
+        },
+    ],
+    offset: 0,
+    total: 3,
+    nextOffset: 2,
+};
+
+test("[§cli-plurnk-models] runModels: bounded catalog table and continuation hint", async () => {
+    const { rpc, calls } = fakeRpc({
+        "models.list": modelPage,
     });
-    const out = await captureStdout(() => runModels(rpc, { json: false }));
+    const query = { provider: "google", search: "gemini", availability: "all" as const, limit: 2 };
+    const out = await captureStdout(() => runModels(rpc, { json: false, query }));
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].method, "providers.list");
-    assert.match(out, /alias/);
-    assert.match(out, /provider/);
-    assert.match(out, /gemma/);
-    assert.match(out, /opus/);
-    assert.match(out, /macher\.gguf/);
-    // Active marker '*' on gemma
-    assert.match(out, /gemma.*\*/);
+    assert.deepEqual(calls[0], { method: "models.list", params: query });
+    assert.match(out, /selector/);
+    assert.match(out, /google\/gemini-3-flash/);
+    assert.match(out, /Gemini 3 Pro/);
+    assert.match(out, /GOOGLE_GENERATIVE_AI_API_KEY/);
+    assert.match(out, /next --offset 2/);
 });
 
-test("runModels: --json emits compact JSON array", async () => {
+test("runModels: --json emits the complete page without client projection", async () => {
     const { rpc } = fakeRpc({
-        "providers.list": { aliases: [{ alias: "g", provider: "p", model: "m", active: true }] },
+        "models.list": modelPage,
     });
     const out = await captureStdout(() => runModels(rpc, { json: true }));
-    const parsed = JSON.parse(out.trim()) as unknown[];
-    assert.deepEqual(parsed, [{ alias: "g", provider: "p", model: "m", active: true }]);
+    assert.deepEqual(JSON.parse(out.trim()), modelPage);
 });
 
 test("runModels: empty list → friendly message in table mode", async () => {
-    const { rpc } = fakeRpc({ "providers.list": { aliases: [] } });
+    const { rpc } = fakeRpc({ "models.list": { items: [], offset: 0, total: 0 } });
     const out = await captureStdout(() => runModels(rpc, { json: false }));
-    assert.match(out, /no model aliases configured/);
+    assert.match(out, /use --all/);
 });
 
-test("runModels: empty list → '[]' in json mode", async () => {
-    const { rpc } = fakeRpc({ "providers.list": { aliases: [] } });
+test("runModels: empty page remains a page in json mode", async () => {
+    const page = { items: [], offset: 0, total: 0 };
+    const { rpc } = fakeRpc({ "models.list": page });
     const out = await captureStdout(() => runModels(rpc, { json: true }));
-    assert.equal(out.trim(), "[]");
+    assert.deepEqual(JSON.parse(out.trim()), page);
 });
 
 // ─── runWorkspaceList ───────────────────────────────────────────────────
+
+test("runModels: rejects a malformed daemon catalog page at the shared contract boundary", async () => {
+    const { rpc } = fakeRpc({
+        "models.list": { items: [{ selector: "google/broken" }], offset: 0, total: 1 },
+    });
+    await assert.rejects(
+        runModels(rpc, { json: false }),
+        /invalid ModelCatalogPage/,
+    );
+});
 
 test("[§cli-plurnk-workspace-list] runWorkspaceList: table format with workspaces", async () => {
     const { rpc, calls } = fakeRpc({

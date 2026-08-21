@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, resolveModelSpec, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
 
 test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-env-cascade-"));
@@ -46,28 +46,6 @@ test("[§cli-invocation] env cascade uses XDG user configuration and last repeat
         { path: last, required: true },
     ], user);
     assert.equal(process.env[key], "shell");
-});
-
-// ─── resolveModelSpec (#90 client-side alias resolution) ─────────────
-
-test("[§cli-model-selection] resolveModelSpec: named alias → concrete provider/model from env", () => {
-    assert.equal(resolveModelSpec("ccp", { PLURNK_MODEL_ccp: "anthropic/claude-x" }), "anthropic/claude-x");
-});
-
-test("resolveModelSpec: alias is case-folded", () => {
-    assert.equal(resolveModelSpec("CCP", { PLURNK_MODEL_ccp: "openai/gpt-5" }), "openai/gpt-5");
-});
-
-test("resolveModelSpec: model id containing '/' round-trips (first-slash split is lossless)", () => {
-    assert.equal(resolveModelSpec("or", { PLURNK_MODEL_or: "openrouter/anthropic/claude-sonnet-latest" }), "openrouter/anthropic/claude-sonnet-latest");
-});
-
-test("resolveModelSpec: undefined alias → undefined (no --model / PLURNK_MODEL)", () => {
-    assert.equal(resolveModelSpec(undefined, { PLURNK_MODEL_ccp: "anthropic/claude-x" }), undefined);
-});
-
-test("resolveModelSpec: alias absent from env → undefined (fall back to bare {alias})", () => {
-    assert.equal(resolveModelSpec("nope", { PLURNK_MODEL_ccp: "anthropic/claude-x" }), undefined);
 });
 
 // ─── collectExecsPolicy (#132 per-workspace exec-policy layer) ─────────

@@ -1,6 +1,6 @@
 # plurnk
 
-A terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service). Type a prompt, drive a real model loop through the plurnk DSL — a compact grammar where the model emits operations, the daemon executes them against real workspaces, and the client renders the trace. CLI one-shot, interactive TUI, and read-only subcommands over ONE wire: AG-UI+ (the daemon's sole client surface).
+A terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service). Type a prompt, drive a real model loop through the plurnk DSL — a compact grammar where the model emits operations, the daemon executes them against real workspaces, and the client renders the trace. CLI one-shot, interactive TUI, and state commands share ONE wire: AG-UI+ (the daemon's sole client surface).
 
 Plurnk gets its power from structure, not raw model capability: the grammar forces disciplined multi-turn loops, real receipts for every operation, and a budget the model can actually see and manage. Fancy agent behavior on weak models.
 
@@ -32,7 +32,8 @@ plurnk "what is the capital of France?"      # one-shot — bare answer on stdou
 plurnk --json "…" | jq -r .response          # json mode: ONE complete record document
 plurnk --workspace project mcp enable gitea  # activate project-specialized config
 cat notes.md | plurnk "summarize this"       # piped stdin (appended)
-plurnk models | session list | log read …    # read-only subcommands
+plurnk models | workspace list | log read …  # inspect daemon state
+plurnk reasoning high --workspace my-work   # persist worker reasoning policy
 plurnk --help                                # full flag list
 ```
 
@@ -43,10 +44,10 @@ plurnk --help                                # full flag list
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/models /workspaces /workers /log /model /child /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp`, and universal Agent Skills `/skills` |
+| `/verb` | `/models /workspaces /workers /log /model /child /reasoning /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp`, and universal Agent Skills `/skills` |
 | `! cmd` | exec via the daemon |
 
-**Key flags:** `--model <alias>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
+**Key flags:** `--model <alias>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
 
 ## what plurnk is
 

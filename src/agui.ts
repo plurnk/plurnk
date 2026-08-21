@@ -170,9 +170,14 @@ export const resolveWorld = async (
 // Replaces the retired /plurnk/rpc side-channel; the run envelope is the interface.
 export const actionViaBridge = async <T = unknown>(
     target: BridgeTarget,
-    req: { threadId: string; kind: string; params?: object },
+    req: { threadId: string; workspace?: string; kind: string; params?: object },
 ): Promise<T> => {
-    for await (const e of runViaBridge(target, { threadId: req.threadId, messages: [], forwardedProps: { action: { kind: req.kind, ...(req.params ?? {}) } } })) {
+    for await (const e of runViaBridge(target, {
+        threadId: req.threadId,
+        ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
+        messages: [],
+        forwardedProps: { action: { kind: req.kind, ...(req.params ?? {}) } },
+    })) {
         if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
             const v = actionOutcome<T>((e as { value?: unknown }).value);
             if (!v.ok) throw new ProblemError(v.problem);

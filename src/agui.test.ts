@@ -169,9 +169,11 @@ test("actionViaBridge: a verb rides its own run and returns its result verbatim"
         res.end();
     });
     try {
-        const out = await actionViaBridge<{ workspaces: Array<{ id: number }> }>({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" });
+        const out = await actionViaBridge<{ workspaces: Array<{ id: number }> }>({ bridgeUrl: mock.url }, { threadId: "t", workspace: "world", kind: "workspace.list" });
         assert.equal(out.workspaces[0].id, 1);
-        const sent = mock.captured[0].body as { forwardedProps: { plurnk: { action: { kind: string } } } };
+        const sent = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string; action: { kind: string } } } };
+        assert.equal(sent.threadId, "t", "the thread continues to name the worker conversation");
+        assert.equal(sent.forwardedProps.plurnk.workspace, "world", "a split worker action retains its workspace world");
         assert.equal(sent.forwardedProps.plurnk.action.kind, "workspace.list", "the action rides forwardedProps.plurnk.action");
     } finally { await mock.close(); }
 });

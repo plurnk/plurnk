@@ -108,6 +108,17 @@ persisted override, `/child <alias>` persists it via `worker.child.set`, and
 `/child inherit` sends `alias: null` (clearing the override). The client sends
 no child selector on loops.
 
+### §1.2.2 Reasoning policy {§cli-reasoning-policy}
+
+Reasoning is a separate durable worker policy owned and validated by the daemon.
+`/reasoning` and `plurnk reasoning --workspace <name>` inspect the effective
+policy and daemon-supported choices; supplying a policy to either form persists
+it. `--reasoning <policy>` performs that same action after an explicit model
+selection and before the invocation's first loop. The client forwards the value
+without maintaining a provider capability catalog, uses `supportedPolicies` for
+completion, and never encodes policy in an alias or loop request. Reattachment
+reads the durable value; descendants follow the daemon's snapshot inheritance.
+
 ### §1.3 Project root {§cli-project-root}
 
 **Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. Stored on `workspaces.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "workspace has no project_root").
@@ -197,7 +208,7 @@ Triggered when `argv` has no positional prompt.
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print banner; enter readline loop with the `  <coord>🐹 <status> 201 : ` prompt — the user's waterfall row, coordinate-prefixed (the coordinate the typed line will get; §5.1), pre-rendered, restricted to WIDTH-STABLE glyphs, carrying exactly TWO glyph lanes like every waterfall row (identity · status). The identity lane is 🐹 (🧮 while embeddings warm); the status lane shows ⏳ while busy (💤 when the loop is parked on a SEND carrying signal 202) and holds a RESERVED BLANK when idle; a 🔥 gutter precedes the coordinate when YOLO is armed. The `201` is an input-affordance constant, not the service's durable prompt-row operation or status. Settled empirically: `✉️` (U+2709+VS16) drifted the cursor one column on terminals that cell-count VS16 sequences as 1 (readline repositions at its own computed width on every refresh) and is banned. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines render anything — no cursor positioning happens on output.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /child <alias|inherit> /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs and provider aliases, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models /workspaces /workers /log [n] /model <alias> /child <alias|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`worker.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs, provider aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -439,7 +450,12 @@ Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripte
 
 ## §7 Subcommands {§cli-subcommands}
 
-Read-only subcommands inspect daemon state without running a loop. They share the same connection and workspace-resolution machinery as the prompt-driven flow, but skip `loop.run` entirely. All support `--json` for machine-readable output (stdout product per §2.1; trace and errors stay on stderr).
+Subcommands inspect or deliberately configure daemon state without running a
+loop. They share the same connection and workspace-resolution machinery as the
+prompt-driven flow, but skip `loop.run` entirely. All support `--json` for
+machine-readable output (stdout product per §2.1; trace and errors stay on
+stderr). `reasoning [policy]` is the sole worker-policy mutation in this surface
+and follows {§cli-reasoning-policy}.
 
 When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
 
@@ -480,11 +496,21 @@ Filter flags (all numeric, all optional):
 
 Default output: one trace line per entry, same format as CLI-mode trace (`[<status>] <origin> <op>[<sub>] <path> <scope>`). The scope is omitted when the operation has no line marker. With `--json`: emits `entries` array verbatim.
 
-### §7.5 What subcommands do NOT do
+### §7.5 `plurnk reasoning [policy]` {§cli-plurnk-reasoning}
+
+Requires `--workspace`; `--worker` selects a named conversation. With no
+policy, calls `worker.reasoning.get`. With one policy, calls
+`worker.reasoning.set`. Text mode prints the effective policy and supported
+choices; JSON mode emits the daemon result unchanged.
+
+### §7.6 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
-- Send prompts or drive loops — the only mutation in the family is `plurnk workspace rename` (§7.4); everything else is read-only.
-- Honor flags that only matter to loop workers (`--model`, `--yolo`, `--auto`) — those parse without error but have no effect in subcommand mode.
+- Hide state changes: workspace rename and an explicit reasoning policy are the
+  only mutations; every other subcommand is read-only.
+- Honor flags that only matter to loop workers (`--model`, `--reasoning`,
+  `--yolo`, `--auto`) — those parse without error but have no effect in
+  subcommand mode. Reasoning mutation uses the positional policy above.
 
 ---
 

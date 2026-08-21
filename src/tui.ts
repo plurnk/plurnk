@@ -36,6 +36,12 @@ import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
+import {
+    formatWorkerReasoning,
+    readWorkerReasoning,
+    setWorkerReasoning,
+    type WorkerReasoning,
+} from "./reasoning.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -58,7 +64,7 @@ interface WorkspaceResult { id: number; name: string }
 // ambiguous (workspace or worker?) and is gone. /rename retargets the current
 // workspace's mutable handle (a worker's name is immutable — no /rename for workers).
 export const VERBS = [
-    "help", "models", "workspaces", "workers", "log", "model", "child",
+    "help", "models", "workspaces", "workers", "log", "model", "child", "reasoning",
     "yolo", "workspace", "rename", "worker", "stop", "quit",
     "pick", "hide", "view", "drop", "members", "import", "script", "mcp",
     "accept", "reject", "cancel", "edit",
@@ -67,6 +73,7 @@ export const VERBS = [
 export const TUI_HELP = [
     "  /models /workspaces /workers /log [n]   inspect",
     "  /model <alias> · /child <alias|inherit>   parent and child models",
+    "  /reasoning [off|adaptive|effort]       inspect or set reasoning",
     "  /yolo                              toggle local auto-accept",
     "  /workspace [name]                    new workspace",
     "  /rename <name>                     rename this workspace (a mutable handle)",
@@ -176,7 +183,11 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
 // readline's async completer form (arity 2 → async). Verb/alias completion
 // answers synchronously; path positions read the local fs (co-location law)
 // and answer once readdir resolves.
-export const makeCompleter = (getAliases: () => string[], cwd: string) =>
+export const makeCompleter = (
+    getAliases: () => string[],
+    cwd: string,
+    getReasoningPolicies: () => string[] = () => [],
+) =>
     (line: string, callback: (err: null, result: [string[], string]) => void): void => {
         const verbFrag = line.match(/^\/(\w*)$/);
         if (verbFrag) {
@@ -189,6 +200,14 @@ export const makeCompleter = (getAliases: () => string[], cwd: string) =>
                 ? ["inherit", ...getAliases().filter((alias) => alias !== "inherit")]
                 : getAliases();
             callback(null, [candidates.filter((a) => a.startsWith(aliasFrag[2])), aliasFrag[2]]);
+            return;
+        }
+        const reasoningFrag = line.match(/^\/reasoning\s+(\S*)$/);
+        if (reasoningFrag) {
+            callback(null, [
+                getReasoningPolicies().filter((policy) => policy.startsWith(reasoningFrag[1])),
+                reasoningFrag[1],
+            ]);
             return;
         }
         const mcpFrag = line.match(/^\/mcp\s+(\S*)$/);
@@ -238,13 +257,17 @@ export const seedPromptHistory = async (rpc: VerbCaller, workspaceId: number, rl
 // --model/PLURNK_MODEL when set, else the daemon's active default
 // (providers.list `active`), else an honest fallback.
 export const buildHeader = (opts: {
-    versionNotice?: string; workspaceName: string; workerName?: string; modelAlias?: string; activeAlias?: string; yolo?: boolean;
+    versionNotice?: string; workspaceName: string; workerName?: string; modelAlias?: string;
+    activeAlias?: string; reasoningPolicy?: string | null; yolo?: boolean;
 }): string => {
     const head = opts.versionNotice ?? "plurnk";
     const worker = opts.workerName !== undefined ? ` · worker: ${opts.workerName}` : "";
     const modelLabel = opts.modelAlias ?? opts.activeAlias ?? "(daemon default)";
+    const reasoning = opts.reasoningPolicy === undefined || opts.reasoningPolicy === null
+        ? ""
+        : ` · reasoning: ${opts.reasoningPolicy}`;
     const yolo = opts.yolo ? " · yolo: on" : "";
-    return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${yolo} · /help`;
+    return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${reasoning}${yolo} · /help`;
 };
 
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
@@ -258,8 +281,10 @@ export interface VerbContext {
     // both come from the server; the client never reasserts a model per loop.
     model: ResolvedModelSpec | null;
     spawnModel: ResolvedModelSpec | null;
+    reasoning: WorkerReasoning;
     setModel: (spec: ResolvedModelSpec | null) => void;
     setSpawnModel: (spec: ResolvedModelSpec | null) => void;
+    setReasoning: (reasoning: WorkerReasoning) => void;
     getWorkspace: () => WorkspaceResult;
     setWorkspace: (s: WorkspaceResult) => void;
     // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
@@ -277,6 +302,15 @@ export interface ResolvedModelSpec { alias: string; provider: string; model: str
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
     const { verb, rest } = parseSlash(line);
     const { rpc, opts, write } = ctx;
+    const refreshWorkerPolicy = async (): Promise<void> => {
+        const model = await rpc.call("worker.model.get") as {
+            model: ResolvedModelSpec | null;
+            spawnModel: ResolvedModelSpec | null;
+        };
+        ctx.setModel(model.model ?? null);
+        ctx.setSpawnModel(model.spawnModel ?? null);
+        ctx.setReasoning(await readWorkerReasoning(rpc));
+    };
     switch (verb) {
         case "":
         case "help":
@@ -301,6 +335,23 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
                 write(`  model: ${rest}\n`);
             } catch (cause) {
                 write(`  model set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+                return;
+            }
+            try {
+                ctx.setReasoning(await readWorkerReasoning(rpc));
+            } catch (cause) {
+                write(`  reasoning refresh failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+            }
+            return;
+        case "reasoning":
+            try {
+                const reasoning = rest.length === 0
+                    ? await readWorkerReasoning(rpc)
+                    : await setWorkerReasoning(rpc, rest);
+                ctx.setReasoning(reasoning);
+                write(`${formatWorkerReasoning(reasoning).trimEnd().replace(/^/gm, "  ")}\n`);
+            } catch (cause) {
+                write(`${renderTuiFailure(cause)}\n`);
             }
             return;
         case "child":
@@ -327,6 +378,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // handle (/rename retargets it). client id (#249) + AGENTS override
             // (#268) ride the switch.
             ctx.setWorkspace(await ctx.switchWorkspace(rest.length > 0 ? rest : undefined));
+            await refreshWorkerPolicy();
             write(`  workspace: ${ctx.getWorkspace().name} (new)\n`);
             return;
         }
@@ -345,6 +397,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // next prompt speaks there. The workspace (the world) is unchanged.
             const forked = await rpc.call("worker.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
             await rpc.call("workspace.attach", { id: ctx.getWorkspace().id, workerId: forked.workerId });
+            await refreshWorkerPolicy();
             write(`  worker: ${forked.workerName} (new)\n`);
             return;
         }
@@ -443,7 +496,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // The explicit --model alias for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup; an inherited
     // PLURNK_MODEL value is the daemon's own default and is never reasserted.
-    modelAlias?: string; modelExplicit?: boolean; requestUserInput?: boolean; yolo: boolean;
+    modelAlias?: string; modelExplicit?: boolean; reasoningPolicy?: string; reasoningExplicit?: boolean;
+    requestUserInput?: boolean; yolo: boolean;
     loopFlags?: Record<string, unknown>; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
@@ -515,6 +569,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // reassertion). An inherited PLURNK_MODEL env value is the daemon's own seed.
     let workerModel: ResolvedModelSpec | null = null;
     let workerSpawnModel: ResolvedModelSpec | null = null;
+    let workerReasoning: WorkerReasoning = { policy: null, supportedPolicies: [] };
+    let reasoningFailure: unknown;
     try {
         const m = await transport.rpc("worker.model.get") as { model: ResolvedModelSpec | null; spawnModel: ResolvedModelSpec | null };
         workerModel = m.model ?? null;
@@ -525,13 +581,21 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             workerModel = await transport.rpc("worker.model.set", { alias: opts.modelAlias }) as ResolvedModelSpec;
         } catch { /* the first loop fails loudly if the alias is unresolvable */ }
     }
+    try {
+        workerReasoning = opts.reasoningExplicit === true && opts.reasoningPolicy !== undefined
+            ? await setWorkerReasoning({ call: (method, params) => transport.rpc(method, params) }, opts.reasoningPolicy)
+            : await readWorkerReasoning({ call: (method, params) => transport.rpc(method, params) });
+    } catch (cause) { reasoningFailure = cause; }
 
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
         versionNotice: opts.versionNotice, workspaceName: current.name, workerName: opts.workerName,
-        modelAlias: workerModel?.alias ?? opts.modelAlias, activeAlias, yolo: opts.yolo,
+        modelAlias: workerModel?.alias ?? opts.modelAlias, activeAlias,
+        reasoningPolicy: workerReasoning.policy,
+        yolo: opts.yolo,
     });
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
+    if (reasoningFailure !== undefined) process.stdout.write(`${renderTuiFailure(reasoningFailure)}\n`);
 
     // The prompt is the user's row, restricted to WIDTH-STABLE glyphs —
     // settled empirically in two rounds. Round 1 (`  👤 ✉️  ✅ 201 : `)
@@ -604,7 +668,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         output: process.stdout,
         terminal: true,
         prompt: buildPrompt(),
-        completer: makeCompleter(() => aliasCache, process.cwd()),
+        completer: makeCompleter(
+            () => aliasCache,
+            process.cwd(),
+            () => workerReasoning.supportedPolicies,
+        ),
     });
     const reprompt = (): void => {
         readline.cursorTo(process.stdout, 0);
@@ -904,8 +972,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         rpc: verbRpc, opts,
         get model(): ResolvedModelSpec | null { return workerModel; },
         get spawnModel(): ResolvedModelSpec | null { return workerSpawnModel; },
+        get reasoning(): WorkerReasoning { return workerReasoning; },
         setModel: (spec) => { workerModel = spec; },
         setSpawnModel: (spec) => { workerSpawnModel = spec; },
+        setReasoning: (reasoning) => { workerReasoning = reasoning; },
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client }),

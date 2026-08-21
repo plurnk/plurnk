@@ -297,9 +297,9 @@ test("[§cli-plurnk-log-read] runLogRead: forwards filter flags as RPC params", 
     const { rpc, calls } = fakeRpc({ "log.read": { status: 200, entries: [] } });
     await captureStdout(() => runLogRead(rpc, {
         json: false,
-        filters: { loopId: 5, turnId: 2, sinceId: 100, limit: 50 },
+        filters: { workerId: 7, loopId: 5, turnId: 2, sinceId: 100, limit: 50 },
     }));
-    assert.deepEqual(calls[0].params, { loopId: 5, turnId: 2, sinceId: 100, limit: 50 });
+    assert.deepEqual(calls[0].params, { workerId: 7, loopId: 5, turnId: 2, sinceId: 100, limit: 50 });
 });
 
 test("runLogRead: --json emits raw entries array", async () => {

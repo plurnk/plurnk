@@ -52,6 +52,7 @@ const runClient = (file, args, options) => new Promise((accept, reject) => {
 
 let daemon;
 let model;
+let passed = false;
 const modelRequests = [];
 const selectedModels = [];
 try {
@@ -223,20 +224,22 @@ try {
     }
 
     const log = await runClient(clientBin, [
-        "log", "read", "--json", "--workspace", "packed-composition", "--limit", "100",
+        "log", "read", "--json", "--workspace", "packed-composition", "--worker", "durable-worker", "--limit", "100",
     ], { cwd: install, env, timeout: 30_000 });
     const rows = JSON.parse(log.stdout);
     const entries = Array.isArray(rows) ? rows : rows.entries;
     if (!Array.isArray(entries) || !entries.some((entry) =>
         Number.isInteger(entry.worker_id) && Number.isInteger(entry.loop_id) && Number.isInteger(entry.turn_id))) {
-        throw new Error("packed run created no durable worker/loop/turn log entry");
+        throw new Error(`packed run created no durable worker/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
     }
 
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));
     console.log(`packed composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${servicePackage.name}@${servicePackage.version}`);
+    passed = true;
 } finally {
     await stop(daemon);
     if (model !== undefined) await new Promise((accept) => model.close(accept));
-    await rm(temp, { recursive: true, force: true });
+    if (passed) await rm(temp, { recursive: true, force: true });
+    else process.stderr.write(`packed composition evidence preserved at ${temp}\n`);
 }

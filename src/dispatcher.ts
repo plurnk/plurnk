@@ -527,7 +527,8 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         }
         // The caller's threadId (--workspace) scopes the action to that workspace; the
         // module defaults reads to the conversation (model worker); --worker pins by name.
-        const filters: LogReadFilters = { ...(await resolveWorkerId(rpc, opts.workerName) !== undefined ? { workerId: await resolveWorkerId(rpc, opts.workerName) } : {}) };
+        const workerId = await resolveWorkerId(rpc, opts.workerName);
+        const filters: LogReadFilters = { ...(workerId === undefined ? {} : { workerId }) };
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
         const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
         const sinceId = parseIntFlag(opts.values.since as string | undefined, "--since");

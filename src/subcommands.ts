@@ -197,6 +197,7 @@ export const runLogRead = async (
     opts: { json: boolean; filters: LogReadFilters },
 ): Promise<number> => {
     const params: LogReadFilters = {};
+    if (opts.filters.workerId !== undefined) params.workerId = opts.filters.workerId;
     if (opts.filters.loopId !== undefined) params.loopId = opts.filters.loopId;
     if (opts.filters.turnId !== undefined) params.turnId = opts.filters.turnId;
     if (opts.filters.sinceId !== undefined) params.sinceId = opts.filters.sinceId;

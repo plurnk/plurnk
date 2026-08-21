@@ -253,6 +253,13 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     return prose;
 };
 
+// Provider reasoning is neither PLAN nor speech. Give it one quiet visual lane
+// without inventing a log coordinate or status it does not own.
+export const renderReasoning = (content: string): string => content
+    .split("\n")
+    .map((line, index) => `${index === 0 ? "  💭 " : "     "}${DIM}${line}${RESET}`)
+    .join("\n");
+
 // Bold the model's ANSWER. The model's terminal SEND (200 done / 499 cancelled
 // — a signal, not a directed target) is its reply to the user; its body renders
 // BOLD so it stands out against the operation-record grid. Intermediate 102

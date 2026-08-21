@@ -325,6 +325,16 @@ A present durable operation annotation is appended as sanitized, literal plain t
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
+#### §5.1.1 Provider reasoning {§cli-provider-reasoning}
+
+Readable provider reasoning is neither PLAN nor assistant speech. The client
+consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle,
+concatenates its ordered deltas once, and renders the completed value as a dim
+`💭` block immediately before the paired SEND row. It never infers reasoning
+from PLAN, renders encrypted reasoning as text, or invents an empty transcript.
+The one-shot client writes this human trace to stderr; stdout remains the bare
+answer and JSON mode remains silent.
+
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
 ```

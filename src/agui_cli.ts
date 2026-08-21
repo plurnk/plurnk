@@ -1,15 +1,16 @@
 // CLI one-shot through the plurnk-agui bridge:
 // text mode. The bridge owns the WS + workspace; we POST the run and render the
-// AG-UI SSE projection. A FAMILY client renders from CUSTOM plurnk.row (the full
-// wire row) for full fidelity — the generic AG-UI events (TEXT_MESSAGE/…) are for
-// third-party frontends — so this reuses runCli's exact text-mode rendering:
+// AG-UI SSE projection. A FAMILY client renders operations from CUSTOM
+// plurnk.row for full fidelity and provider reasoning from AG-UI's standard
+// reasoning lifecycle. Generic TEXT_MESSAGE events remain third-party speech.
+// This reuses runCli's exact text-mode rendering:
 // stdout = the terminal broadcast body (the answer), stderr = the per-row trace.
 //
 // JSON mode uses the terminal projection's complete loop identity and usage.
 
 import process from "node:process";
 import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
-import { extractSendBody } from "./render.ts";
+import { extractSendBody, renderReasoning } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import {
@@ -27,6 +28,7 @@ import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } fro
 import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
+import ReasoningEvents from "./reasoning-events.ts";
 
 type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
 
@@ -100,6 +102,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     const entries: LogEntryWire[] = [];
     const notices: Notice[] = [];
     const streams = new StreamTrace();
+    const reasoning = new ReasoningEvents();
     for await (const e of events) {
         if (e.type === "RUN_ERROR") {
             sawRunError = true;
@@ -125,6 +128,13 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                 continue;
             }
             pendingResume = await decideProposal({ logEntryId, ...a } as unknown as BridgeProposal, io);
+            continue;
+        }
+        const reasoningEvent = reasoning.consume(e);
+        if (reasoningEvent.handled) {
+            if (!io.json && reasoningEvent.message !== undefined) {
+                io.err(`${renderReasoning(reasoningEvent.message.content)}\n`);
+            }
             continue;
         }
         if (e.type !== "CUSTOM") continue;   // generic vocab is for third-party frontends

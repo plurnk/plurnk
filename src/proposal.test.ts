@@ -72,7 +72,7 @@ test("keyToResolution: case-insensitive (A == a)", async () => {
     assert.deepEqual(await keyToResolution("A", proposal({})), { decision: "accept" });
 });
 
-test("renderProposalMenu: shows the op, target, and the key menu", () => {
+test("[§cli-notification-shape] renderProposalMenu: shows the op, target, and the key menu", () => {
     const menu = renderProposalMenu({ ...proposal({}), op: "EDIT", target: { scheme: "file", pathname: "/tmp/x" } });
     assert.match(menu, /proposal EDIT/);
     assert.match(menu, /\[a\]ccept/);

@@ -323,7 +323,7 @@ A present durable operation annotation is appended as sanitized, literal plain t
 
 **Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's actionless `prompt` row at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 
-**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 (Plan) · ⏳ 💤 🤔 💥 ✋ ❌ (status). Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
+**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (Plan) · ⏳ 💤 🤔 💥 ✋ ❌ (status). Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
@@ -338,19 +338,21 @@ from PLAN, renders encrypted reasoning as text, or invents an empty transcript.
 The one-shot client streams this human trace to stderr; stdout remains the bare
 answer and JSON mode remains silent.
 
-#### §5.1.2 ACP Plan {§cli-plan-rendering}
+#### §5.1.2 Plan {§cli-plan-rendering}
 
-PLAN renders its complete ACP entries in source order, one human line each:
+PLAN renders its complete entries in source order, one human line each:
 
 | Status | Glyph |
 |---|---|
 | `completed` | ✅ |
 | `in_progress` | 🚧 |
+| `memory` or ACP-projected `completed` content beginning `Memory: ` | 💾 |
 | `pending` | ⬜ |
 
 The first line carries the PLAN row's coordinate and dispatch status; subsequent
-entries align beneath it as the same durable row. Entry whitespace collapses to
-one line. Neutral `medium` priority is implicit; `high` and `low` render as
+entries align beneath it as the same durable row. Projected memory omits the
+transport-only `Memory: ` prefix. Entry whitespace collapses to one line.
+Neutral `medium` priority is implicit; `high` and `low` render as
 `[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
 trace retains its PLAN header and applies the same entry projection below it.
 

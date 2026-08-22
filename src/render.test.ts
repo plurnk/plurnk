@@ -237,7 +237,7 @@ test("renderLogEntry: intermediate 102 broadcast → single plain line, no blank
     assert.ok(!out.includes("\n"), `102 ping is one line, got: ${JSON.stringify(out)}`);
 });
 
-test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per ACP entry", () => {
+test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entry", () => {
     const out = renderLogEntry(entry({
         op: "PLAN",
         origin: "model",
@@ -249,6 +249,7 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per ACP 
             body: {
                 entries: [
                     { content: "Contract settled.", priority: "medium", status: "completed" },
+                    { content: "One baseline owns the schema.", priority: "medium", status: "memory" },
                     { content: "Update\nclients.", priority: "high", status: "in_progress" },
                     { content: "Run drills.", priority: "low", status: "pending" },
                 ],
@@ -257,6 +258,7 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per ACP 
     }));
     assert.deepEqual(out.split("\n"), [
         "  01/01/01 ✅    200 Contract settled.",
+        "           💾        One baseline owns the schema.",
         "           🚧        [high] Update clients.",
         "           ⬜        [low] Run drills.",
     ]);

@@ -7,14 +7,12 @@ test("presentPlan: preserves Plan order and projects statuses as width-stable gl
         body: {
             entries: [
                 { content: "Settled contract", priority: "medium", status: "completed" },
-                { content: "One baseline owns the schema", priority: "medium", status: "memory" },
                 { content: "Update clients", priority: "high", status: "in_progress" },
                 { content: "Run local drills", priority: "low", status: "pending" },
             ],
         },
     }), [
         { glyph: "✅", text: "Settled contract" },
-        { glyph: "💾", text: "One baseline owns the schema" },
         { glyph: "🚧", text: "[high] Update clients" },
         { glyph: "⬜", text: "[low] Run local drills" },
     ]);
@@ -46,4 +44,7 @@ test("presentPlan: collapses each entry to one human line", () => {
 
 test("presentPlan: rejects a PLAN row without the canonical body", () => {
     assert.throws(() => presentPlan(null), /canonical Plan body/);
+    assert.throws(() => presentPlan({
+        body: [{ content: "internal memory", priority: "medium", status: "memory" }],
+    }), /canonical Plan body/, "the client consumes ACP, never the daemon's model-native array");
 });

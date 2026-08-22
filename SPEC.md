@@ -346,12 +346,13 @@ PLAN renders its complete entries in source order, one human line each:
 |---|---|
 | `completed` | ✅ |
 | `in_progress` | 🚧 |
-| `memory` or ACP-projected `completed` content beginning `Memory: ` | 💾 |
+| `completed` content beginning `Memory: ` | 💾 |
 | `pending` | ⬜ |
 
 The first line carries the PLAN row's coordinate and dispatch status; subsequent
-entries align beneath it as the same durable row. Projected memory omits the
-transport-only `Memory: ` prefix. Entry whitespace collapses to one line.
+entries align beneath it as the same durable row. The client consumes the ACP
+Plan projection; projected memory omits its `Memory: ` prefix. Entry whitespace
+collapses to one line.
 Neutral `medium` priority is implicit; `high` and `low` render as
 `[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
 trace retains its PLAN header and applies the same entry projection below it.

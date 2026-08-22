@@ -50,11 +50,41 @@ export const operationResult = (value: unknown): OperationResult => {
 
 const problemFetch = async (url: string, requestInit: RequestInit): Promise<Response> => {
     const response = await fetch(url, requestInit);
-    if (response.ok || response.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/problem+json") {
-        return response;
+    const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+    if (!response.ok && mediaType === "application/problem+json") {
+        const problem = problemDetails(await response.clone().json());
+        throw new ProblemError(problem);
     }
-    const problem = problemDetails(await response.clone().json());
-    throw new ProblemError(problem);
+    if (mediaType !== "text/event-stream" || response.body === null) return response;
+
+    // The SSE line grammar admits CRLF, LF, and CR. @ag-ui/client currently
+    // accepts the first two but silently drops CR-only frames, so normalize only
+    // line-ending bytes before its otherwise-authoritative event parser. Track a
+    // trailing CR across chunks to avoid turning a split CRLF into two newlines.
+    let pendingCr = false;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+            const normalized: number[] = [];
+            for (const byte of chunk) {
+                if (pendingCr) {
+                    normalized.push(0x0a);
+                    pendingCr = false;
+                    if (byte === 0x0a) continue;
+                }
+                if (byte === 0x0d) pendingCr = true;
+                else normalized.push(byte);
+            }
+            if (normalized.length > 0) controller.enqueue(Uint8Array.from(normalized));
+        },
+        flush(controller) {
+            if (pendingCr) controller.enqueue(Uint8Array.of(0x0a));
+        },
+    }));
+    return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+    });
 };
 
 export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {

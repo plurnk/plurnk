@@ -16,6 +16,7 @@
     "files": [
         "bin/plurnk.js",
         "dist/**/*",
+        "conformance/agui-client.json",
         ".env.defaults",
         "README.md"
     ],

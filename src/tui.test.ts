@@ -369,24 +369,24 @@ test("handleVerb /rename with no name → usage, no rpc", async () => {
     assert.match(ctx.out.join(""), /usage: \/rename/);
 });
 
-test("handleVerb /worker [name] → worker.fork (new worker) then binds to it", async () => {
+test("handleVerb /worker [name] → run.fork (new worker) then binds to it", async () => {
     const ctx = makeCtx({
-        "worker.fork": { workerId: 42, workerName: "main-fork" },
+        "run.fork": { workerId: 42, workerName: "main-fork" },
         "workspace.attach": { id: 1, name: "sess", workerId: 42, workerName: "main-fork" },
     });
     await handleVerb("/worker branch-a", ctx);
-    assert.deepEqual(ctx.calls[0], { method: "worker.fork", params: { name: "branch-a" } });
+    assert.deepEqual(ctx.calls[0], { method: "run.fork", params: { name: "branch-a" } });
     assert.deepEqual(ctx.calls[1], { method: "workspace.attach", params: { id: 1, workerId: 42 } });
     assert.match(ctx.out.join(""), /worker: main-fork \(new\)/);
 });
 
-test("handleVerb /worker with no name → worker.fork with no name (auto <parent>-fork)", async () => {
+test("handleVerb /worker with no name → run.fork with no name (auto <parent>-fork)", async () => {
     const ctx = makeCtx({
-        "worker.fork": { workerId: 42, workerName: "main-fork" },
+        "run.fork": { workerId: 42, workerName: "main-fork" },
         "workspace.attach": { id: 1, name: "sess", workerId: 42, workerName: "main-fork" },
     });
     await handleVerb("/worker", ctx);
-    assert.deepEqual(ctx.calls[0], { method: "worker.fork", params: {} });
+    assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
 });
 
 test("[§cli-proposal-review][§cli-review-menu-interactive] handleVerb /accept /reject /cancel /edit → resolveProposal(action) — typed no-modifier fallback", async () => {

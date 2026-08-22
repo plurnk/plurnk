@@ -260,6 +260,18 @@ export const renderReasoning = (content: string): string => content
     .map((line, index) => `${index === 0 ? "  💭 " : "     "}${DIM}${line}${RESET}`)
     .join("\n");
 
+// One physical terminal row for an in-flight reasoning preview. The completed
+// message replaces it with renderReasoning(), so live deltas never accumulate a
+// scrollback line per token.
+export const renderReasoningPreview = (content: string, columns: number = 80): string => {
+    const normalized = content.replace(/\s+/g, " ").trim();
+    const capacity = Math.max(8, columns - 7);
+    const excerpt = normalized.length > capacity
+        ? `…${normalized.slice(-(capacity - 1))}`
+        : normalized;
+    return `  💭 ${DIM}${excerpt}${RESET}`;
+};
+
 // Bold the model's ANSWER. The model's terminal SEND (200 done / 499 cancelled
 // — a signal, not a directed target) is its reply to the user; its body renders
 // BOLD so it stands out against the operation-record grid. Intermediate 102

@@ -22,7 +22,8 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderReasoningPreview, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
+import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, isServerResolved, renderQuestionMenu, questionChoices, answerForQuestion } from "./proposal.ts";
@@ -550,6 +551,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
     const priorTargets: string[] = [];
     let lookCursor: number | null = null;
+    let liveReasoning: { messageId: string; content: string; shown: boolean } | null = null;
 
     // Print a line ABOVE the live readline prompt without eating the user's
     // in-progress input. The canonical "log while prompting" idiom: wipe the
@@ -725,11 +727,49 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         rl.setPrompt(buildPrompt());
         rl.prompt(true);
     };
-    // Now that rl exists, printAbove can re-render the prompt after each line.
-    printAbove = (text: string): void => {
+    const clearPromptAndLiveReasoning = (): void => {
         readline.cursorTo(process.stdout, 0);
         readline.clearLine(process.stdout, 0);
+        if (liveReasoning?.shown === true) {
+            readline.moveCursor(process.stdout, 0, -1);
+            readline.cursorTo(process.stdout, 0);
+            readline.clearLine(process.stdout, 0);
+        }
+    };
+    const redrawLiveReasoning = (): void => {
+        if (liveReasoning?.shown === true) {
+            process.stdout.write(`${renderReasoningPreview(liveReasoning.content, process.stdout.columns ?? 80)}\n`);
+        }
+        rl.prompt(true);
+    };
+    // Now that rl exists, printAbove can re-render the prompt after each line.
+    // A live reasoning preview remains the final row above it, so concurrent
+    // stream or worker activity cannot corrupt the preview's cursor ownership.
+    printAbove = (text: string): void => {
+        clearPromptAndLiveReasoning();
         process.stdout.write(`${text}\n`);
+        redrawLiveReasoning();
+    };
+
+    const presentReasoning = (update: ReasoningUpdate): void => {
+        if (update.phase === "start") {
+            if (liveReasoning !== null) throw new TypeError("A second reasoning message started before the first ended.");
+            liveReasoning = { messageId: update.messageId, content: "", shown: false };
+            return;
+        }
+        if (liveReasoning === null || liveReasoning.messageId !== update.messageId) {
+            throw new TypeError(`Reasoning ${update.phase} did not match the active message.`);
+        }
+        clearPromptAndLiveReasoning();
+        if (update.phase === "content") {
+            liveReasoning.content = update.content;
+            liveReasoning.shown = update.content.length > 0;
+            redrawLiveReasoning();
+            return;
+        }
+        const content = update.content;
+        liveReasoning = null;
+        if (content.length > 0) process.stdout.write(`${renderReasoning(content)}\n`);
         rl.prompt(true);
     };
 
@@ -910,7 +950,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
 
     transport.subscribe({
-        onReasoning: ({ content }) => printAbove(renderReasoning(content)),
+        onReasoning: presentReasoning,
         onEntry: (entry) => {
             if (entry.loop_seq > lastLoopSeq) lastLoopSeq = entry.loop_seq;
             // The typed line at the prompt is the user's record — rendering the

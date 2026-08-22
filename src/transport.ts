@@ -23,7 +23,7 @@ import {
 } from "./diagnostics.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { runViaBridge, actionViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
-import ReasoningEvents, { type ReasoningMessage } from "./reasoning-events.ts";
+import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
 // plurnk.terminated + workspaceId).
@@ -51,7 +51,7 @@ export interface BranchBatchEvent {
 // existing handlers consume, so they work unchanged under either transport.
 export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
-    onReasoning: (reasoning: ReasoningMessage) => void;
+    onReasoning: (reasoning: ReasoningUpdate) => void;
     onProposal: (p: ProposalParams) => void;
     onInteraction?: (i: {
         interactionId: number;
@@ -399,7 +399,7 @@ export class BridgeTransport implements Transport {
     #dispatch(e: AguiEvent): TerminatedInfo | null {
         const reasoning = this.#reasoning.consume(e);
         if (reasoning.handled) {
-            if (reasoning.message !== undefined) this.#h?.onReasoning(reasoning.message);
+            if (reasoning.update !== undefined) this.#h?.onReasoning(reasoning.update);
             return null;
         }
         if (e.type !== "CUSTOM") return null;

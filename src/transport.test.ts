@@ -172,6 +172,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                 if (seen.entries.length > 0) families.add("log/entry");
                 if (seen.proposals.length > 0) families.add("loop/proposal");
                 if (seen.interactions.length > 0) families.add("loop/interaction");
+                if (seen.reasoning.length > 0) families.add("reasoning/event");
                 if (seen.notices.length > 0) families.add("notice/event");
                 if (seen.problems.length > 0) families.add("problem/event");
                 if (seen.branches.length > 0) families.add("workspace/branch-batch");
@@ -213,7 +214,12 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         bt.subscribe(h);
         const t = await bt.run("largest planet?", {}).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
-        assert.deepEqual(seen.reasoning, [{ messageId: "1/1/2/SEND/reasoning", content: "checked the evidence" }]);
+        assert.deepEqual(seen.reasoning, [
+            { phase: "start", messageId: "1/1/2/SEND/reasoning" },
+            { phase: "content", messageId: "1/1/2/SEND/reasoning", delta: "checked ", content: "checked " },
+            { phase: "content", messageId: "1/1/2/SEND/reasoning", delta: "the evidence", content: "checked the evidence" },
+            { phase: "end", messageId: "1/1/2/SEND/reasoning", content: "checked the evidence" },
+        ]);
         assert.equal((seen.notices[0] as { source: string }).source, "grammar");
         assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");

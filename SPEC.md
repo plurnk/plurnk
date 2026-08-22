@@ -330,10 +330,11 @@ A present durable operation annotation is appended as sanitized, literal plain t
 
 Readable provider reasoning is neither PLAN nor assistant speech. The client
 consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle,
-concatenates its ordered deltas once, and renders the completed value as a dim
-`💭` block immediately before the paired SEND row. It never infers reasoning
+shows its growing tail in one replaceable `💭` row, then replaces that preview
+with the complete dim block before the paired SEND row. No delta creates a
+scrollback row. It never infers reasoning
 from PLAN, renders encrypted reasoning as text, or invents an empty transcript.
-The one-shot client writes this human trace to stderr; stdout remains the bare
+The one-shot client streams this human trace to stderr; stdout remains the bare
 answer and JSON mode remains silent.
 
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}

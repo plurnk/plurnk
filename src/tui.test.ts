@@ -301,7 +301,7 @@ for (const verb of ["pick", "hide", "view"] as const) {
 }
 
 test("handleVerb /drop → lists then unconstrains the matching glob (any effect)", async () => {
-    const ctx = makeCtx({ "workspace.constraints": { constraints: [{ effect: "hide", glob: "*.lock" }, { effect: "pick", glob: "docs/**" }] } });
+    const ctx = makeCtx({ "workspace.constraints": { constraints: [{ effect: "hide", glob: "*.lock", source: "explicit" }, { effect: "pick", glob: "docs/**", source: "create" }] } });
     await handleVerb("/drop *.lock", ctx);
     assert.equal(ctx.calls[0].method, "workspace.constraints");
     const un = ctx.calls.find((c) => c.method === "workspace.unconstrain");

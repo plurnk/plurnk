@@ -439,10 +439,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "drop": {
             if (rest.length === 0) { write("  usage: /drop <glob>\n"); return; }
-            const { constraints } = await rpc.call("workspace.constraints") as { constraints: Array<{ effect: string; glob: string }> };
+            const { constraints } = await rpc.call("workspace.constraints") as { constraints: Array<{ effect: string; glob: string; source: "explicit" | "create" }> };
             const matches = constraints.filter((c) => c.glob === rest);
             if (matches.length === 0) { write(`  no constraint matching ${JSON.stringify(rest)}\n`); return; }
-            for (const c of matches) await rpc.call("workspace.unconstrain", c);
+            for (const { effect, glob } of matches) await rpc.call("workspace.unconstrain", { effect, glob });
             write(`  dropped ${matches.length} constraint${matches.length === 1 ? "" : "s"} (${rest})\n`);
             return;
         }

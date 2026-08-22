@@ -3,6 +3,7 @@
 
 import { stripVTControlCharacters } from "node:util";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
+import { presentPlan } from "./plan.ts";
 
 // Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
 // (width 2 in node and every major terminal); VS16 variation-selector
@@ -22,7 +23,6 @@ export const OP_GLYPHS: Record<string, string> = {
     SEND: "💬",
     EXEC: "🔧",
     BARE: "🔮",
-    PLAN: "🧠",   // the model's per-turn reasoning (grammar 0.70 leads every turn with PLAN)
 };
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
@@ -204,6 +204,11 @@ export const progressLabel = (percent: number): string =>
     `${DIM}${`${Math.max(0, Math.min(100, Math.trunc(percent)))}%`.padStart(8, " ")}${RESET} `;
 const coordPrefix = (entry: LogEntryWire): string =>
     coordLabel(entry.loop_seq, entry.turn_seq, entry.sequence);
+const coordBlank = (entry: LogEntryWire): string => " ".repeat(
+    [entry.loop_seq, entry.turn_seq, entry.sequence]
+        .map((value) => String(value).padStart(2, "0"))
+        .join("/").length + 1,
+);
 
 const BOLD = code("1");
 const ITALIC = code("3");
@@ -320,6 +325,25 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     return emphasizeLines(lines, isAnswer);
 };
 
+const renderPlan = (entry: LogEntryWire): string => {
+    const status = String(entry.status_rx);
+    const statusText = `${colorForStatus(entry.status_rx)}${status}${RESET}`;
+    const subGlyph = sendSubGlyph(entry.status_rx);
+    const note = entryAnnotation(entry);
+    const presented = presentPlan(entry.tx);
+    const rows = presented.length === 0
+        ? [{ glyph: "📭", text: "no entries" }]
+        : presented;
+
+    return rows.map(({ glyph, text }, index) => {
+        const prefix = index === 0
+            ? `  ${coordPrefix(entry)}${glyph} ${subGlyph} ${statusText} `
+            : `  ${coordBlank(entry)}${glyph}${" ".repeat(5 + status.length)}`;
+        const annotation = index === 0 && note !== null ? ` ${DIM}— ${note}${RESET}` : "";
+        return `${prefix}${DIM}${text}${RESET}${annotation}`;
+    }).join("\n");
+};
+
 // The TUI skips actionless prompt rows in the live waterfall: the line the
 // user typed at the readline prompt is already their record, and rendering
 // the broadcast too would duplicate every prompt.
@@ -352,6 +376,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     // A SEND directed at file:// would have scheme=null but pathname set —
     // not a broadcast.
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry);
+    if (entry.op === "PLAN") return renderPlan(entry);
 
     // ONE identity/action glyph, not origin+op (they were redundant on SEND and
     // cluttered elsewhere). A SEND shows its ACTOR (🐹 you / 🤖 model — the "who's
@@ -388,16 +413,6 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
     if (extra.length > 0) parts.push(extra);
     const annotation = entryAnnotation(entry);
     if (annotation !== null) parts.push(`${DIM}— ${annotation}${RESET}`);
-
-    // PLAN carries the model's reasoning as a plain string in tx.body (NOT the
-    // SEND {raw,json} shape) — surface it dimmed, newlines collapsed, so the
-    // waterfall shows what the model planned instead of a bare glyph.
-    if (entry.op === "PLAN") {
-        const planBody = (entry.tx as { body?: unknown } | null)?.body;
-        if (typeof planBody === "string" && planBody.trim().length > 0) {
-            parts.push(`${DIM}${planBody.replace(/\s*\n\s*/g, " ").trim()}${RESET}`);
-        }
-    }
 
     return `  ${coordPrefix(entry)}${parts.join(" ")}`;
 };

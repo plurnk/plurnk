@@ -249,7 +249,7 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entr
             body: {
                 entries: [
                     { content: "Contract settled.", priority: "medium", status: "completed" },
-                    { content: "One baseline owns the schema.", priority: "medium", status: "memory" },
+                    { content: "Memory: One baseline owns the schema.", priority: "medium", status: "completed" },
                     { content: "Update\nclients.", priority: "high", status: "in_progress" },
                     { content: "Run drills.", priority: "low", status: "pending" },
                 ],

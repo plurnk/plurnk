@@ -12,6 +12,7 @@ import type { Notice, ProblemDetails } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
+import { presentPlan } from "./plan.ts";
 
 interface WorkspaceResult { id: number; name: string }
 
@@ -111,13 +112,12 @@ export const formatPlain = (entry: LogEntryWire): string => {
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op}${sub} ${address}`.trim();
     const annotation = entryAnnotation(entry);
     if (annotation !== null) line += ` — ${annotation}`;
-    // PLAN's reasoning rides tx.body (a plain string) — surface it like the TUI/nvim
-    // do, so a one-shot run shows what the model planned, not a bare op name.
     if (entry.op === "PLAN") {
-        const planBody = (entry.tx as { body?: unknown } | null)?.body;
-        if (typeof planBody === "string" && planBody.trim().length > 0) {
-            line += `  ${planBody.replace(/\s*\n\s*/g, " ").trim()}`;
-        }
+        const presented = presentPlan(entry.tx);
+        const rows = presented.length === 0
+            ? ["📭 no entries"]
+            : presented.map(({ glyph, text }) => `${glyph} ${text}`);
+        line += `\n${rows.map((row) => `  ${row}`).join("\n")}`;
     }
     return line;
 };

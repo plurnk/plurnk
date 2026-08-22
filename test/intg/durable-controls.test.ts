@@ -46,7 +46,7 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     await from("a", "workspace.constrain", { effect: "pick", glob: "src/**" });
     assert.deepEqual(
         await from("b", "workspace.constraints"),
-        { constraints: [{ effect: "pick", glob: "src/**" }] },
+        { constraints: [{ effect: "pick", glob: "src/**", source: "explicit" }] },
     );
     await from("a", "workspace.unconstrain", { effect: "pick", glob: "src/**" });
     assert.deepEqual(await from("b", "workspace.constraints"), { constraints: [] });

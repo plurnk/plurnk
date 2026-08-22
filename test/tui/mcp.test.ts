@@ -47,8 +47,7 @@ before(async () => {
         })),
         writeFile(currentCall, [
             "# PLAN0",
-            "Call the attached current MCP tool through the installed daemon.",
-            "",
+            '{"entries":[{"content":"Call the attached current MCP tool through the installed daemon.","status":"in_progress"}]}',
             "## EXEC0 [current] (echo)",
             '{"message":"installed daemon current peer"}',
             "",

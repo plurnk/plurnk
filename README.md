@@ -61,7 +61,7 @@ The model emits operations in a compact grammar; the daemon executes them, persi
 
 ```
 # PLAN0
-Update the capital, then answer.
+{"entries":[{"content":"Update the capital, then answer.","status":"in_progress"}]}
 
 ## EDIT0 [+france,+europe] (worker:///countries/france/capital)
 Paris

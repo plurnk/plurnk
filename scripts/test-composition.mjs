@@ -116,7 +116,7 @@ try {
         req.once("end", () => {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
-            const response = `# PLAN0\nVerify the packed client and service compose.\n## SEND0 [200]\ncomposition ok: ${request.model}`;
+            const response = `# PLAN0\n{"entries":[{"content":"Verify the packed client and service compose.","status":"in_progress"}]}\n## SEND0 [200]\ncomposition ok: ${request.model}`;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",

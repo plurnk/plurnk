@@ -82,6 +82,26 @@ test("formatPlain: preserves numeric and hash scopes after the target", () => {
     );
 });
 
+test("formatPlain: PLAN preserves the trace header and renders one line per entry", () => {
+    assert.equal(formatPlain(entry({
+        op: "PLAN",
+        tx: {
+            body: {
+                entries: [
+                    { content: "Inspect the parser.", priority: "medium", status: "completed" },
+                    { content: "Memory: One baseline owns the schema.", priority: "medium", status: "completed" },
+                    { content: "Run the tests.", priority: "high", status: "in_progress" },
+                ],
+            },
+        },
+    })), [
+        "[200] model PLAN",
+        "  ✅ Inspect the parser.",
+        "  💾 One baseline owns the schema.",
+        "  🚧 [high] Run the tests.",
+    ].join("\n"));
+});
+
 // ─── isTerminalBroadcast ──────────────────────────────────────────────
 
 test("isTerminalBroadcast: SEND, no path, signal 200 → true", () => {

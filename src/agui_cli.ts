@@ -10,7 +10,7 @@
 
 import process from "node:process";
 import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
-import { extractSendBody, renderReasoning } from "./render.ts";
+import { extractSendBody } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import {
@@ -103,6 +103,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     const notices: Notice[] = [];
     const streams = new StreamTrace();
     const reasoning = new ReasoningEvents();
+    const visibleReasoning = new Map<string, { atLineStart: boolean }>();
     for await (const e of events) {
         if (e.type === "RUN_ERROR") {
             sawRunError = true;
@@ -132,8 +133,17 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         }
         const reasoningEvent = reasoning.consume(e);
         if (reasoningEvent.handled) {
-            if (!io.json && reasoningEvent.message !== undefined) {
-                io.err(`${renderReasoning(reasoningEvent.message.content)}\n`);
+            const update = reasoningEvent.update;
+            if (!io.json && update?.phase === "content" && update.delta.length > 0) {
+                const prior = visibleReasoning.get(update.messageId);
+                const prefix = prior === undefined ? "  💭 " : prior.atLineStart ? "     " : "";
+                const body = update.delta.replace(/\n(?=.)/g, "\n     ");
+                visibleReasoning.set(update.messageId, { atLineStart: update.delta.endsWith("\n") });
+                io.err(`${prefix}${body}`);
+            } else if (!io.json && update?.phase === "end") {
+                const prior = visibleReasoning.get(update.messageId);
+                visibleReasoning.delete(update.messageId);
+                if (prior !== undefined && !prior.atLineStart) io.err("\n");
             }
             continue;
         }

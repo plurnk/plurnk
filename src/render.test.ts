@@ -14,6 +14,7 @@ const {
     extractSendBody,
     renderLogEntry,
     renderReasoning,
+    renderReasoningPreview,
     renderSummary,
     curationGauge,
     contextGauge,
@@ -107,6 +108,11 @@ test("extractSendBody prettify=true: plain text → raw verbatim", () => {
 
 test("renderReasoning: distinct, compact block with no coordinate or status code", () => {
     assert.equal(renderReasoning("first line\nsecond line"), "  💭 first line\n     second line");
+});
+
+test("renderReasoningPreview: one bounded row follows the live tail", () => {
+    assert.equal(renderReasoningPreview("first\nsecond", 80), "  💭 first second");
+    assert.equal(renderReasoningPreview("abcdefghijklmnopqrstuvwxyz", 20), "  💭 …opqrstuvwxyz");
 });
 
 // ─── renderLogEntry: target rendering ────────────────────────────────

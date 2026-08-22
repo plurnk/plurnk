@@ -1,18 +1,18 @@
 import type { AguiEvent } from "./agui.ts";
 
-export interface ReasoningMessage {
-    messageId: string;
-    content: string;
-}
+export type ReasoningUpdate =
+    | { phase: "start"; messageId: string }
+    | { phase: "content"; messageId: string; delta: string; content: string }
+    | { phase: "end"; messageId: string; content: string };
 
 export interface ReasoningEventResult {
     handled: boolean;
-    message?: ReasoningMessage;
+    update?: ReasoningUpdate;
 }
 
-// Fold AG-UI's delta lifecycle into the one completed value a text client can
-// render. Shape validation belongs to HttpAgent; lifecycle integrity belongs
-// here, at the client projection boundary.
+// Preserve AG-UI's live delta lifecycle while maintaining the accumulated value
+// needed by terminal and editor presentation. Shape validation belongs to
+// HttpAgent; lifecycle integrity belongs here, at the client projection boundary.
 export default class ReasoningEvents {
     #messages = new Map<string, string>();
 
@@ -25,15 +25,19 @@ export default class ReasoningEvents {
                 throw new TypeError(`Reasoning message '${event.messageId}' started twice.`);
             }
             this.#messages.set(event.messageId, "");
-            return { handled: true };
+            return { handled: true, update: { phase: "start", messageId: event.messageId } };
         }
         if (event.type === "REASONING_MESSAGE_CONTENT") {
             const prior = this.#messages.get(event.messageId);
             if (prior === undefined) {
                 throw new TypeError(`Reasoning content for '${event.messageId}' arrived before its start.`);
             }
-            this.#messages.set(event.messageId, prior + event.delta);
-            return { handled: true };
+            const content = prior + event.delta;
+            this.#messages.set(event.messageId, content);
+            return {
+                handled: true,
+                update: { phase: "content", messageId: event.messageId, delta: event.delta, content },
+            };
         }
         if (event.type === "REASONING_MESSAGE_END") {
             const content = this.#messages.get(event.messageId);
@@ -41,9 +45,7 @@ export default class ReasoningEvents {
                 throw new TypeError(`Reasoning message '${event.messageId}' ended before its start.`);
             }
             this.#messages.delete(event.messageId);
-            return content.length === 0
-                ? { handled: true }
-                : { handled: true, message: { messageId: event.messageId, content } };
+            return { handled: true, update: { phase: "end", messageId: event.messageId, content } };
         }
         return { handled: false };
     }

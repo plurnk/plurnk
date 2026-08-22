@@ -599,6 +599,21 @@
         "presentation"
       ]
     },
+    "reasoning/event": {
+      "posture": "native",
+      "evidence": [
+        "src/reasoning-events.test.ts — ordered live lifecycle",
+        "src/agui_cli.test.ts — streaming stderr presentation",
+        "src/transport.test.ts — shared lifecycle corpus"
+      ],
+      "dimensions": [
+        "admission",
+        "framing",
+        "projection",
+        "lifecycle",
+        "presentation"
+      ]
+    },
     "stream/event": {
       "posture": "native",
       "evidence": [

@@ -53,7 +53,13 @@ export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
     onReasoning: (reasoning: ReasoningMessage) => void;
     onProposal: (p: ProposalParams) => void;
-    onInteraction?: (i: { interactionId: number; message: string; responseSchema: Record<string, unknown> }) => void;
+    onInteraction?: (i: {
+        interactionId: number;
+        toolName: string;
+        arguments: Record<string, unknown>;
+        message: string;
+        responseSchema: Record<string, unknown>;
+    }) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
@@ -226,25 +232,41 @@ export class BridgeTransport implements Transport {
                 let interactionResolution: Promise<Record<string, unknown> | "cancel"> | null = null;
                 let interrupted = false;
                 let toolId = "";
+                let toolName = "";
                 let toolArgs = "";
+                let interactionArguments: Record<string, unknown> | null = null;
                 try {
                     for await (const e of runViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), ...next, forwardedProps: fp }, ac.signal)) {
                         if (e.type === "RUN_ERROR") {
                             sawRunError = true;
                         } else if (e.type === "RUN_FINISHED") {
                             const outcome = e.outcome;
-                            interrupted = outcome?.type === "interrupt"
-                                && outcome.interrupts.some((interrupt) => interrupt.id === toolId || interrupt.toolCallId === toolId);
+                            const interrupt = outcome?.type === "interrupt"
+                                ? outcome.interrupts.find((candidate) => candidate.id === toolId || candidate.toolCallId === toolId)
+                                : undefined;
+                            interrupted = interrupt !== undefined;
+                            if (pausedInteraction !== null && interrupt !== undefined && interactionArguments !== null) {
+                                interactionResolution = new Promise((resolve) => { this.#pendingInteractionResolve = resolve; });
+                                this.#h?.onInteraction?.({
+                                    interactionId: pausedInteraction,
+                                    toolName,
+                                    arguments: interactionArguments,
+                                    message: typeof interrupt.message === "string"
+                                        ? interrupt.message
+                                        : "Provide the requested input.",
+                                    responseSchema: interrupt.responseSchema ?? {},
+                                });
+                            }
                         } else if (e.type === "TOOL_CALL_START") {
                             toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
+                            toolName = String((e as { toolCallName?: unknown }).toolCallName ?? "");
                             toolArgs = "";
                         } else if (e.type === "TOOL_CALL_ARGS" && (toolId.startsWith("prop:") || toolId.startsWith("int:"))) {
                             toolArgs += String((e as { delta?: unknown }).delta ?? "");
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("int:")) {
                             pausedInteraction = Number(toolId.slice(4));
-                            let a: Record<string, unknown>;
                             try {
-                                a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                                interactionArguments = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
                             } catch (cause) {
                                 const problem = clientTransportProposalInvalid(pausedInteraction, cause);
                                 this.#h?.onProblem?.(problem);
@@ -254,12 +276,6 @@ export class BridgeTransport implements Transport {
                                     result: operationResult({ status: problem.status, problem }),
                                 };
                             }
-                            interactionResolution = new Promise((resolve) => { this.#pendingInteractionResolve = resolve; });
-                            this.#h?.onInteraction?.({
-                                interactionId: pausedInteraction,
-                                message: typeof a.message === "string" ? a.message : "Provide the requested input.",
-                                responseSchema: (a.requestedSchema ?? {}) as Record<string, unknown>,
-                            });
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
                             pausedProp = Number(toolId.slice(5));
                             let a: Record<string, unknown>;
@@ -316,7 +332,7 @@ export class BridgeTransport implements Transport {
                         result: operationResult({ status: problem.status, problem }),
                     };
                 }
-                if (pausedProp === null) {
+                if (pausedProp === null && pausedInteraction === null) {
                     // NO fabricated success (fabrication audit, 2026-07-11): a stream that
                     // ends without terminal truth is a broken wire — 502, never 200.
                     const problem = runProblem

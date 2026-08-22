@@ -15,6 +15,7 @@ const temp = await mkdtemp(join(tmpdir(), "plurnk-composition-"));
 const install = join(temp, "consumer");
 const home = join(temp, "home");
 const serviceSpec = process.env.PLURNK_COMPOSITION_SERVICE ?? "@plurnk/plurnk-service@latest";
+const serviceRoot = process.env.PLURNK_COMPOSITION_SERVICE_ROOT;
 const clientSpec = process.env.PLURNK_COMPOSITION_CLIENT;
 
 const listen = (server) => new Promise((accept, reject) => {
@@ -70,7 +71,22 @@ try {
         if (!Array.isArray(packed) || typeof packed[0]?.filename !== "string") throw new Error("npm pack returned no client artifact");
         installedClient = join(temp, packed[0].filename);
     }
-    await run("npm", ["install", "--ignore-scripts", installedClient, serviceSpec], {
+    let serviceSpecs = [serviceSpec];
+    if (serviceRoot !== undefined && serviceRoot.length > 0) {
+        const absoluteServiceRoot = resolve(serviceRoot);
+        await run("npm", ["run", "build"], {
+            cwd: absoluteServiceRoot,
+            maxBuffer: 128 * 1024 * 1024,
+        });
+        const packed = JSON.parse((await run("npm", [
+            "pack", "--workspaces", "--ignore-scripts", "--json", "--pack-destination", temp,
+        ], { cwd: absoluteServiceRoot, maxBuffer: 128 * 1024 * 1024 })).stdout);
+        if (!Array.isArray(packed) || packed.some((item) => typeof item?.filename !== "string")) {
+            throw new Error("npm pack returned an invalid service workspace artifact set");
+        }
+        serviceSpecs = packed.map(({ filename }) => join(temp, filename));
+    }
+    await run("npm", ["install", "--ignore-scripts", installedClient, ...serviceSpecs], {
         cwd: install,
         maxBuffer: 64 * 1024 * 1024,
     });
@@ -235,6 +251,15 @@ try {
 
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));
+    JSON.parse(await readFile(join(
+        install,
+        "node_modules",
+        "@plurnk",
+        "plurnk-contracts",
+        "dist",
+        "conformance",
+        "agui-v1.json",
+    ), "utf8"));
     console.log(`packed composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${servicePackage.name}@${servicePackage.version}`);
     passed = true;
 } finally {

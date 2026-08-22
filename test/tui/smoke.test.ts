@@ -27,7 +27,8 @@ describe("TUI pty harness", () => {
             await tui.waitFor(/plurnk.*\/help/);
             // 2. A verb keystroke round-trips: /help prints the verb table.
             tui.write("/help\r");
-            const afterHelp = await tui.waitFor(/\/models .*\/workspaces/);
+            const afterHelp = await tui.waitFor(/\/yolo/);
+            assert.match(afterHelp, /\/models .*\/workspaces/, "help lists inspection verbs");
             assert.match(afterHelp, /\/yolo/, "help lists the verb surface");
             // 3. /quit closes the REPL with a clean exit code + the resume hint.
             tui.write("/quit\r");

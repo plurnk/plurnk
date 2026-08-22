@@ -417,10 +417,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "worker": {
-            // New worker — worker.fork (svc#248) branches this conversation, optionally
+            // New worker — run.fork branches this conversation, optionally
             // named at instantiation (immutable after). Bind to the fork so the
             // next prompt speaks there. The workspace (the world) is unchanged.
-            const forked = await rpc.call("worker.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
+            const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
             await rpc.call("workspace.attach", { id: ctx.getWorkspace().id, workerId: forked.workerId });
             await refreshWorkerPolicy();
             write(`  worker: ${forked.workerName} (new)\n`);

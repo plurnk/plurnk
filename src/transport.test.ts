@@ -5,15 +5,51 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { BridgeTransport, type RunHandlers } from "./transport.ts";
 import { ProblemError } from "./diagnostics.ts";
+import { runViaBridge } from "./agui.ts";
+
+interface ConformanceKit {
+    schemaVersion: number;
+    transport: Array<{
+        name: string;
+        chunks: string[];
+        eof: boolean;
+        expect: { events: Array<Record<string, unknown>> } | { error: "invalid-json" };
+    }>;
+    lifecycles: Array<{
+        name: string;
+        events: Array<Record<string, unknown>>;
+        expect: {
+            completion: "success" | "interrupt" | "error" | "dead-stream";
+            families: string[];
+            status?: number;
+            interrupt?: "proposal" | "interaction";
+            action?: { kind: string; ok: boolean; status?: number };
+        };
+    }>;
+}
+
+const loadConformanceKit = async (): Promise<ConformanceKit> => {
+    let path: string;
+    try {
+        path = fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/conformance/agui-v1.json"));
+    } catch {
+        path = resolve(import.meta.dirname, "../../plurnk-service/plurnk-contracts/conformance/agui-v1.json");
+    }
+    return JSON.parse(await readFile(path, "utf8")) as ConformanceKit;
+};
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], reasoning: [], proposals: [], streams: [], notices: [], problems: [], branches: [], terminated: [] };
+    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], branches: [], terminated: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
         onReasoning: (reasoning) => seen.reasoning.push(reasoning),
         onProposal: (p) => seen.proposals.push(p),
+        onInteraction: (interaction) => seen.interactions.push(interaction),
         onStream: (s) => seen.streams.push(s),
         onNotice: (notice) => seen.notices.push(notice),
         onProblem: (problem) => seen.problems.push(problem),
@@ -42,6 +78,116 @@ const frame = (event: Record<string, unknown>): string => {
         : event;
     return `data: ${JSON.stringify(lifecycle)}\n\n`;
 };
+
+test("{§cli-agui-conformance}: the official AG-UI transport consumes every shared SSE specimen", async (t) => {
+    const kit = await loadConformanceKit();
+    assert.equal(kit.schemaVersion, 1);
+    for (const specimen of kit.transport) {
+        await t.test(specimen.name, async () => {
+            const mock = await bootMock((_req, res) => {
+                res.writeHead(200, { "content-type": "text/event-stream" });
+                const chunks = [...specimen.chunks];
+                const write = (): void => {
+                    const chunk = chunks.shift();
+                    if (chunk === undefined) { res.end(); return; }
+                    res.write(chunk);
+                    setImmediate(write);
+                };
+                write();
+            });
+            try {
+                const events: unknown[] = [];
+                const consume = async (): Promise<void> => {
+                    for await (const event of runViaBridge(
+                        { bridgeUrl: mock.url },
+                        { threadId: "fixture", messages: [] },
+                    )) events.push(event);
+                };
+                if ("error" in specimen.expect) {
+                    await assert.rejects(consume, /JSON|parse|event/i);
+                } else {
+                    await consume();
+                    assert.deepEqual(events, specimen.expect.events);
+                }
+            } finally {
+                await mock.close();
+            }
+        });
+    }
+});
+
+test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle specimen", async (t) => {
+    const kit = await loadConformanceKit();
+    const terminalContinuation = kit.lifecycles
+        .find(({ name }) => name === "ordinary-run")!
+        .events.filter(({ type }, index) => type === "RUN_FINISHED" || index === 2);
+
+    for (const specimen of kit.lifecycles) {
+        await t.test(specimen.name, async () => {
+            let request = 0;
+            const mock = await bootMock((_req, res) => {
+                request += 1;
+                res.writeHead(200, { "content-type": "text/event-stream" });
+                const events = request === 1 ? specimen.events : terminalContinuation;
+                for (const event of events) res.write(frame(event));
+                res.end();
+            });
+            try {
+                const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
+                const { h, seen } = collectingHandlers();
+                transport.subscribe({
+                    ...h,
+                    onProposal: (proposal) => {
+                        seen.proposals.push(proposal);
+                        void transport.resolve({ logEntryId: proposal.logEntryId, decision: "accept" });
+                    },
+                    onInteraction: (interaction) => {
+                        seen.interactions.push(interaction);
+                        void transport.resolveInteraction(interaction.interactionId, { answer: "yes" });
+                    },
+                });
+
+                if (specimen.expect.action !== undefined) {
+                    if (specimen.expect.action.ok) {
+                        const result = await transport.rpc<Record<string, unknown>>(specimen.expect.action.kind);
+                        if (specimen.expect.action.status !== undefined) {
+                            assert.equal(result.status, specimen.expect.action.status);
+                        }
+                    } else {
+                        await assert.rejects(
+                            () => transport.rpc(specimen.expect.action!.kind),
+                            (error: unknown) => error instanceof ProblemError
+                                && error.problem.status === specimen.expect.action!.status,
+                        );
+                    }
+                } else {
+                    const result = await transport.run("fixture", {}).done;
+                    assert.equal(
+                        result.finalStatus,
+                        specimen.expect.completion === "interrupt" ? 200 : specimen.expect.status,
+                    );
+                }
+
+                const families = new Set<string>();
+                if (seen.entries.length > 0) families.add("log/entry");
+                if (seen.proposals.length > 0) families.add("loop/proposal");
+                if (seen.interactions.length > 0) families.add("loop/interaction");
+                if (seen.notices.length > 0) families.add("notice/event");
+                if (seen.problems.length > 0) families.add("problem/event");
+                if (seen.branches.length > 0) families.add("workspace/branch-batch");
+                if (seen.streams.some((value) => "result" in (value as object))) families.add("stream/concluded");
+                if (seen.streams.some((value) => !("result" in (value as object)))) families.add("stream/event");
+                if (seen.terminated.length > 0) families.add("loop/terminated");
+                for (const family of specimen.expect.families) {
+                    assert.ok(families.has(family), `${specimen.name} projects ${family}`);
+                }
+                if (specimen.expect.interrupt !== undefined) assert.equal(request, 2, "the interrupt resumed once");
+            } finally {
+                await mock.close();
+            }
+        });
+    }
+});
 
 test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
     const mock = await bootMock((_req, res) => {
@@ -300,6 +446,63 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
         assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", body: "edited" } }], "the standard resume carries the decision + edited body");
+    } finally { await mock.close(); }
+});
+
+test("BridgeTransport: a client interaction uses interrupt guidance and resumes with the answer", async () => {
+    let call = 0;
+    const responseSchema = {
+        type: "object",
+        required: ["repository"],
+        properties: { repository: { enum: ["plurnk-service", "plurnk"] } },
+    };
+    const mock = await bootMock((_req, res) => {
+        call += 1;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        if (call === 1) {
+            res.write(frame({ type: "TOOL_CALL_START", toolCallId: "int:8", toolCallName: "select_repository" }));
+            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "int:8", delta: JSON.stringify({ owner: "plurnk" }) }));
+            res.write(frame({ type: "TOOL_CALL_END", toolCallId: "int:8" }));
+            res.write(frame({
+                type: "RUN_FINISHED",
+                outcome: {
+                    type: "interrupt",
+                    interrupts: [{
+                        id: "int:8",
+                        reason: "tool_call",
+                        toolCallId: "int:8",
+                        message: "Choose one repository.",
+                        responseSchema,
+                    }],
+                },
+            }));
+        } else {
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } }));
+            res.write(frame({ type: "RUN_FINISHED" }));
+        }
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const { h, seen } = collectingHandlers();
+        bt.subscribe(h);
+        const handle = bt.run("choose", {});
+        while (seen.interactions.length === 0) await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.deepEqual(seen.interactions, [{
+            interactionId: 8,
+            toolName: "select_repository",
+            arguments: { owner: "plurnk" },
+            message: "Choose one repository.",
+            responseSchema,
+        }]);
+        await bt.resolveInteraction(8, { repository: "plurnk-service" });
+        assert.equal((await handle.done).finalStatus, 200);
+        const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
+        assert.deepEqual(resume.resume, [{
+            interruptId: "int:8",
+            status: "resolved",
+            payload: { repository: "plurnk-service" },
+        }]);
     } finally { await mock.close(); }
 });
 

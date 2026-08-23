@@ -31,6 +31,13 @@ before(async () => {
     scratch = await mkdtemp(join(tmpdir(), "plurnk-functionality-tui-"));
     source = join(scratch, "source");
     await mkdir(join(source, "extra"), { recursive: true });
+    await writeFile(join(scratch, "delegate.plk"), [
+        "# PLAN0",
+        '{"entries":[{"content":"Delegate one comparison to the configured remote agent.","status":"in_progress"}]}',
+        "## SEND0 [200] (a2a://researcher)",
+        "Compare mangoes and pineapples in one concise sentence.",
+        "",
+    ].join("\n"));
     await writeFile(join(source, "extra", "SKILL.md"), "---\nname: extra\ndescription: Extra dogfood skill\n---\nUse extra.\n");
     daemon = await bootDaemon(bin, {
         readyTimeoutMs: 30_000,
@@ -77,6 +84,11 @@ describe("TUI Functionality dogfood", () => {
             await tui.waitFor(/researcher\s+active\s+http:\/\/127\.0\.0\.1:\d+\s+Plurnk A2A protocol witness v1\.0\.0\s+1 skills\s+\(service\)/, 20_000);
             tui.write(`/agents discover ${agent!.baseUrl}\r`);
             await tui.waitFor(/plurnk-a2a-protocol-witness\s+candidate/, 20_000);
+            // Remote-agent delegation through the ordinary client surface: the
+            // scripted SEND routes to the enabled alias and answers its Task
+            // receipt (a 4xx/5xx would print a worst-status diagnosis instead).
+            tui.write(`/script ${join(scratch, "delegate.plk")}\r`);
+            await tui.waitFor(/script: 2 ops ok/, 20_000);
             tui.write(`/agents add peer ${agent!.baseUrl}\r`);
             await tui.waitFor(/added: peer \(active\)/, 20_000);
             tui.write("/agents disable researcher\r");

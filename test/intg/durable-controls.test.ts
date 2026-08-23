@@ -77,19 +77,19 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.deepEqual(await from("b", "worker.settings.get"), { requestUserInput: true });
 
     const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
-    await from("a", "workspace.mcp.add", {
+    await from("a", "worker.mcp.add", {
         alias: "durable",
         target: process.execPath,
         options: { args: [fixture], tools: ["echo"], read: ["echo"] },
     });
     const servers = async (): Promise<Array<{ alias: string; state: string }>> =>
-        (await from<{ servers: Array<{ alias: string; state: string }> }>("b", "workspace.mcp.list")).servers;
+        (await from<{ servers: Array<{ alias: string; state: string }> }>("b", "worker.mcp.list")).servers;
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "connected");
-    await from("a", "workspace.mcp.disable", { alias: "durable" });
+    await from("a", "worker.mcp.disable", { alias: "durable" });
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "disabled");
-    await from("a", "workspace.mcp.enable", { alias: "durable" });
+    await from("a", "worker.mcp.enable", { alias: "durable" });
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "connected");
-    await from("a", "workspace.mcp.remove", { alias: "durable" });
+    await from("a", "worker.mcp.remove", { alias: "durable" });
     assert.equal((await servers()).some(({ alias }) => alias === "durable"), false);
 
     const renamed = `${original}-renamed`;

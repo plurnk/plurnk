@@ -97,10 +97,15 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         ...(daemonEnv !== null ? [`--env-file=${daemonEnv}`] : []),
         `--env-file=${overridesPath}`,
     ];
+    // The service's env cascade is set-if-unset with the shell highest, so an
+    // operator shell that exports provider or PLURNK variables would silently
+    // override the test's overrides. Isolated boots therefore inherit neither.
+    const isolatedProcessEnv = Object.fromEntries(Object.entries(process.env as Record<string, string>)
+        .filter(([key]) => !/^PLURNK_/.test(key) && !/_(API_KEY|BASE_URL)$/.test(key)));
     const env = opts.inheritOperatorConfig === true
         ? process.env as Record<string, string>
         : {
-            ...process.env as Record<string, string>,
+            ...isolatedProcessEnv,
             HOME: home,
             XDG_CONFIG_HOME: join(home, ".config"),
             XDG_DATA_HOME: join(home, ".local", "share"),

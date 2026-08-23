@@ -585,7 +585,7 @@ test("handleVerb /script on a missing file → throws (fail-hard, surfaced by th
 
 test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", async () => {
     const ctx = makeCtx({
-        "workspace.mcp.list": {
+        "worker.mcp.list": {
             servers: [
                 { alias: "gitea", state: "connected", transport: "http", enabledTools: ["issue_read"], tools: ["issue_read", "issue_search"] },
                 { alias: "local", state: "disabled", transport: "stdio", tools: [] },
@@ -593,7 +593,7 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
         },
     });
     await handleVerb("/mcp", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: { overlay: {} } }]);
+    assert.deepEqual(ctx.calls, [{ method: "worker.mcp.list", params: { overlay: {} } }]);
     assert.match(ctx.out.join(""), /gitea\s+connected\s+http\s+1\/2 tools/);
     assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+0 tools/);
 });

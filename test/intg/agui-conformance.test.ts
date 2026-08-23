@@ -73,7 +73,7 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
     assert.deepEqual(sortedKeys(manifest.notifications), sortedKeys(discovery.notifications));
 
     for (const [name, contract] of Object.entries(discovery.actions)) {
-        assert.ok(contract.scope === "worldless" || contract.scope === "workspace", `${name} declares scope`);
+        assert.ok(typeof contract.scope === "string" && ["worldless", "workspace", "worker"].includes(contract.scope), `${name} declares scope`);
         assert.ok(object(contract.inputSchema), `${name} declares an input schema`);
         assert.ok(object(contract.outputSchema), `${name} declares an output schema`);
         assertDisposition(`action ${name}`, manifest.actions[name]!);

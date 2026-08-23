@@ -130,8 +130,8 @@ export const handleMcp = async (
 ): Promise<unknown | null> => {
     const overlay = { ...configuration.overlay };
     if (input.length === 0) {
-        const result = await rpc.call("workspace.mcp.list", { overlay }) as { servers?: unknown };
-        if (!Array.isArray(result.servers)) throw new Error("workspace.mcp.list returned an invalid result.");
+        const result = await rpc.call("worker.mcp.list", { overlay }) as { servers?: unknown };
+        if (!Array.isArray(result.servers)) throw new Error("worker.mcp.list returned an invalid result.");
         if (result.servers.length === 0) write("  MCP servers: none\n");
         else for (const server of result.servers) write(renderServer(server as McpServerSummary));
         return result;
@@ -148,7 +148,7 @@ export const handleMcp = async (
         }
         const [, , target, path] = args;
         const options = path === undefined ? undefined : await readOptions(path);
-        const result = await rpc.call("workspace.mcp.add", {
+        const result = await rpc.call("worker.mcp.add", {
             alias,
             target,
             ...(options === undefined ? {} : { options }),
@@ -163,7 +163,7 @@ export const handleMcp = async (
             return null;
         }
         const options = args[2] === undefined ? undefined : await readOptions(args[2]);
-        const result = await rpc.call("workspace.mcp.enable", {
+        const result = await rpc.call("worker.mcp.enable", {
             alias,
             overlay,
             ...(options === undefined ? {} : { options }),
@@ -177,7 +177,7 @@ export const handleMcp = async (
             write("  usage: /mcp disable <alias>\n");
             return null;
         }
-        const result = await rpc.call("workspace.mcp.disable", { alias }) as McpMutationResult;
+        const result = await rpc.call("worker.mcp.disable", { alias }) as McpMutationResult;
         renderMutation(result, "disabled", alias, write);
         return result;
     }
@@ -187,7 +187,7 @@ export const handleMcp = async (
             write("  usage: /mcp remove <alias>\n");
             return null;
         }
-        const result = await rpc.call("workspace.mcp.remove", { alias });
+        const result = await rpc.call("worker.mcp.remove", { alias });
         write(`  removed: ${alias}\n`);
         return result;
     }
@@ -197,7 +197,7 @@ export const handleMcp = async (
             write("  usage: /mcp oauth <alias> <callback-url>\n");
             return null;
         }
-        const result = await rpc.call("workspace.mcp.oauth.complete", {
+        const result = await rpc.call("worker.mcp.oauth.complete", {
             alias,
             callbackUrl: args[2],
         }) as McpMutationResult;

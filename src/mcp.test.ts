@@ -24,7 +24,7 @@ test("[§cli-workspace-mcp-controls] add forwards alias, exact target, and optio
     const options = { args: ["--stdio"], tools: ["issue_read"], read: ["issue_read"] };
     await writeFile(file, JSON.stringify(options));
     const h = harness({
-        "workspace.mcp.add": {
+        "worker.mcp.add": {
             status: 201,
             server: { alias: "echo", state: "connected", transport: "stdio" },
         },
@@ -33,7 +33,7 @@ test("[§cli-workspace-mcp-controls] add forwards alias, exact target, and optio
     await handleMcp(["add", "echo", "/opt/MCP Servers/echo", file], h.rpc, h.write);
 
     assert.deepEqual(h.calls, [{
-        method: "workspace.mcp.add",
+        method: "worker.mcp.add",
         params: { alias: "echo", target: "/opt/MCP Servers/echo", options },
     }]);
     assert.match(h.out.join(""), /added: echo \(connected\)/);
@@ -47,21 +47,21 @@ test("[§cli-workspace-mcp-controls] enable, disable, remove, and oauth map exac
     await writeFile(file, JSON.stringify(options));
     const overlay = { PLURNK_MCP_ECHO_ARGS: '["project-default"]' };
     const h = harness({
-        "workspace.mcp.enable": { status: 200, server: { alias: "echo", state: "connected" } },
-        "workspace.mcp.disable": { status: 200, server: { alias: "echo", state: "disabled" } },
-        "workspace.mcp.remove": { status: 200, alias: "echo", removed: true },
-        "workspace.mcp.oauth.complete": { status: 200, server: { alias: "gitea", state: "connected" } },
+        "worker.mcp.enable": { status: 200, server: { alias: "echo", state: "connected" } },
+        "worker.mcp.disable": { status: 200, server: { alias: "echo", state: "disabled" } },
+        "worker.mcp.remove": { status: 200, alias: "echo", removed: true },
+        "worker.mcp.oauth.complete": { status: 200, server: { alias: "gitea", state: "connected" } },
     });
     await handleMcp(`enable echo "${file}"`, h.rpc, h.write, { overlay });
     await handleMcp("disable echo", h.rpc, h.write, { overlay });
     await handleMcp("remove echo", h.rpc, h.write, { overlay });
     await handleMcp("oauth gitea https://client.example/callback?code=x&state=y", h.rpc, h.write, { overlay });
     assert.deepEqual(h.calls, [
-        { method: "workspace.mcp.enable", params: { alias: "echo", overlay, options } },
-        { method: "workspace.mcp.disable", params: { alias: "echo" } },
-        { method: "workspace.mcp.remove", params: { alias: "echo" } },
+        { method: "worker.mcp.enable", params: { alias: "echo", overlay, options } },
+        { method: "worker.mcp.disable", params: { alias: "echo" } },
+        { method: "worker.mcp.remove", params: { alias: "echo" } },
         {
-            method: "workspace.mcp.oauth.complete",
+            method: "worker.mcp.oauth.complete",
             params: { alias: "gitea", callbackUrl: "https://client.example/callback?code=x&state=y" },
         },
     ]);
@@ -72,7 +72,7 @@ test("[§cli-workspace-mcp-controls] enable, disable, remove, and oauth map exac
 
 test("[§cli-workspace-mcp-controls] authorization-required result prints the URL and exact completion command", async () => {
     const h = harness({
-        "workspace.mcp.add": {
+        "worker.mcp.add": {
             status: 202,
             authorization: { url: "https://gitea.example/authorize?state=abc" },
         },
@@ -88,7 +88,7 @@ test("[§cli-workspace-mcp-controls] list exposes cold-disabled and connected se
         PLURNK_MCP_LOCAL: "local-mcp",
     };
     const h = harness({
-        "workspace.mcp.list": {
+        "worker.mcp.list": {
             servers: [
                 { alias: "brave", state: "disabled", transport: "http", target: "https://example.test/mcp" },
                 {
@@ -103,7 +103,7 @@ test("[§cli-workspace-mcp-controls] list exposes cold-disabled and connected se
         },
     });
     await handleMcp("", h.rpc, h.write, { overlay });
-    assert.deepEqual(h.calls, [{ method: "workspace.mcp.list", params: { overlay } }]);
+    assert.deepEqual(h.calls, [{ method: "worker.mcp.list", params: { overlay } }]);
     assert.match(h.out.join(""), /brave\s+disabled\s+http\s+https:\/\/example\.test\/mcp/);
     assert.match(h.out.join(""), /gitea\s+connected\s+stdio\s+gitea-mcp\s+1\/2 tools/);
 });
@@ -145,7 +145,7 @@ test("[§cli-workspace-mcp-controls] only tokenization and local JSON syntax are
     const semantic = harness();
     await handleMcp(`add echo echo-mcp "${structurallyInvalid}"`, semantic.rpc, semantic.write);
     assert.deepEqual(semantic.calls, [{
-        method: "workspace.mcp.add",
+        method: "worker.mcp.add",
         params: { alias: "echo", target: "echo-mcp", options: {} },
     }]);
 });

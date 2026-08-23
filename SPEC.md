@@ -252,12 +252,12 @@ result.
 
 | TUI / CLI input | AG-UI+ action |
 |---|---|
-| `/mcp` / `plurnk mcp` | `workspace.mcp.list {overlay}` |
-| `/mcp add <alias> <target> [options.json]` | `workspace.mcp.add {alias, target, options?}` |
-| `/mcp enable <alias> [options.json]` | `workspace.mcp.enable {alias, overlay, options?}` |
-| `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
-| `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
-| `/mcp oauth <alias> <callback-url>` | `workspace.mcp.oauth.complete {alias, callbackUrl}` |
+| `/mcp` / `plurnk mcp` | `worker.mcp.list {overlay}` |
+| `/mcp add <alias> <target> [options.json]` | `worker.mcp.add {alias, target, options?}` |
+| `/mcp enable <alias> [options.json]` | `worker.mcp.enable {alias, overlay, options?}` |
+| `/mcp disable <alias>` | `worker.mcp.disable {alias}` |
+| `/mcp remove <alias>` | `worker.mcp.remove {alias}` |
+| `/mcp oauth <alias> <callback-url>` | `worker.mcp.oauth.complete {alias, callbackUrl}` |
 
 Every slash-command row also admits the same arguments after `plurnk mcp`.
 

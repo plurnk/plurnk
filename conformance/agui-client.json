@@ -422,7 +422,7 @@
         "composition"
       ]
     },
-    "workspace.mcp.list": {
+    "worker.mcp.list": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -437,7 +437,7 @@
         "composition"
       ]
     },
-    "workspace.mcp.add": {
+    "worker.mcp.add": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -452,7 +452,7 @@
         "durability"
       ]
     },
-    "workspace.mcp.enable": {
+    "worker.mcp.enable": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -467,7 +467,7 @@
         "durability"
       ]
     },
-    "workspace.mcp.disable": {
+    "worker.mcp.disable": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -482,7 +482,7 @@
         "durability"
       ]
     },
-    "workspace.mcp.remove": {
+    "worker.mcp.remove": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -497,7 +497,7 @@
         "durability"
       ]
     },
-    "workspace.mcp.oauth.complete": {
+    "worker.mcp.oauth.complete": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP authorization",
@@ -512,7 +512,7 @@
         "durability"
       ]
     },
-    "workspace.mcp.complete": {
+    "worker.mcp.complete": {
       "posture": "generic",
       "evidence": [
         "src/agui.test.ts — arbitrary action round-trip"

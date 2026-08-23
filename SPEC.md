@@ -271,25 +271,28 @@ rewriting or retry.
 
 ### §3.5 Universal Agent Skills {§cli-universal-agent-skills}
 
-Agent Skills management is a thin projection of the standard `skills` CLI,
-executed by `npx` in the workspace project root. The client fixes installation
-and removal to the `universal` agent target, whose standard roots are
-`.agents/skills` for a project and
-`~/.agents/skills` globally. It does not implement a
-registry, clone sources, parse frontmatter, copy skill files, or maintain
-parallel package metadata.
+Agent Skills management is a thin projection of the daemon's `skills`
+Functionality family — the same common lifecycle as `/mcp`. The client
+composes one exact `SkillDefinition` and renders the daemon's states; it
+runs no package manager, reads no registry, parses no frontmatter, and keeps
+no parallel package metadata. The standard universal roots
+(`.agents/skills` in the project, `~/.agents/skills` globally) stay
+interoperable with every other agent; a skill installed there by any other
+tool is admitted by the daemon at the next turn.
 
-| TUI input | Standard CLI invocation |
+| TUI input | AG-UI+ action |
 |---|---|
-| `/skills` or `/skills list [--global]` | `skills list … --agent universal` |
-| `/skills add <source> …` | `skills add <source> … --agent universal --yes` |
-| `/skills remove <name> …` | `skills remove <name> … --agent universal --yes` |
-| `/skills find <query>` | `skills find <query>` |
-| `/skills update [name …] [--global]` | `skills update … --project\|--global --yes` |
+| `/skills` | `worker.skills.list {}` |
+| `/skills discover <query>` | `worker.skills.discover {query}` — registry search |
+| `/skills discover <source>` | `worker.skills.discover {source}` — a single term holding `/`, `:`, or `\\`, or starting with `.` or `~`, is a package reference |
+| `/skills add <name> <source> [--global]` | `worker.skills.add {alias, definition: {name, scope, source}}` with `scope` `project` unless `--global` |
+| `/skills enable <name>` | `worker.skills.enable {alias}` |
+| `/skills disable <name>` | `worker.skills.disable {alias}` |
+| `/skills remove <name>` | `worker.skills.remove {alias}` |
 
-The service's bundled `find-skills` document is a read-only discovery
-affordance in model context. Neither service nor client installs it into a
-universal root or forces it into any other agent's environment.
+Daemon Problems — an uninstallable source, a missing project root, a
+service-owned skill that cannot be removed — cross the existing diagnostic
+path without rewriting or retry.
 
 ---
 

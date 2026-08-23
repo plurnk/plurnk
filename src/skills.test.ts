@@ -1,108 +1,100 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleSkills, type SkillsRunner } from "./skills.ts";
+import { handleSkills, isSource } from "./skills.ts";
 
-const harness = () => {
+const harness = (results: Record<string, unknown> = {}) => {
+    const calls: Array<{ method: string; params?: object }> = [];
     const out: string[] = [];
-    const calls: Array<{ args: readonly string[]; cwd: string }> = [];
-    const runner: SkillsRunner = async (args, cwd) => {
-        calls.push({ args, cwd });
-        return { stdout: "\u001b[32mdone\u001b[0m\n", stderr: "" };
+    const rpc = {
+        call: async (method: string, params?: object) => {
+            calls.push({ method, params });
+            return results[method] ?? {};
+        },
     };
-    return { write: (text: string) => out.push(text), out, calls, runner };
+    return { rpc, write: (text: string) => out.push(text), calls, out };
 };
 
-test("[§cli-universal-agent-skills] skills lists only the universal project target by default", async () => {
-    const h = harness();
-    await handleSkills([], h.write, "/work/project", h.runner);
-    assert.deepEqual(h.calls, [{
-        args: ["list", "--agent", "universal"],
-        cwd: "/work/project",
-    }]);
-    assert.equal(h.out.join(""), "done\n");
+test("[§cli-universal-agent-skills] list renders every definition state from the Worker's skills family", async () => {
+    const h = harness({
+        "worker.skills.list": {
+            definitions: [
+                { alias: "grep", origin: "service", state: "active", definition: { name: "grep", scope: "project" }, detail: { scope: "project", description: "Find text" } },
+                { alias: "review", origin: "worker", state: "disabled", definition: { name: "review", scope: "global", source: "acme/kit" } },
+                { alias: "bad", origin: "service", state: "unavailable", definition: { name: "bad", scope: "global" }, problem: { detail: "requires YAML frontmatter" } },
+            ],
+        },
+    });
+    await handleSkills([], h.rpc, h.write);
+    assert.deepEqual(h.calls, [{ method: "worker.skills.list", params: {} }]);
+    const text = h.out.join("");
+    assert.match(text, /grep\s+active\s+project\s+Find text/);
+    assert.match(text, /review\s+disabled\s+global\s+acme\/kit\s+\(worker\)/);
+    assert.match(text, /bad\s+unavailable\s+global\s+— requires YAML frontmatter/);
+    const empty = harness({ "worker.skills.list": { definitions: [] } });
+    await handleSkills("", empty.rpc, empty.write);
+    assert.match(empty.out.join(""), /Agent Skills: none/);
 });
 
-test("skills delegates add and remove to the universal Agent Skills CLI", async () => {
-    const add = harness();
-    await handleSkills(
-        "add 'owner/skill repo' --skill review",
-        add.write,
-        "/work/project",
-        add.runner,
-    );
-    assert.deepEqual(add.calls[0]?.args, [
-        "add",
-        "owner/skill repo",
-        "--skill",
-        "review",
-        "--agent",
-        "universal",
-        "--yes",
+test("[§cli-universal-agent-skills] discover sends a registry query or an explicit source and renders inert candidates", async () => {
+    const h = harness({
+        "worker.skills.discover": {
+            candidates: [{ alias: "changelog", summary: "1200 installs", definition: { name: "changelog", scope: "project", source: "acme/kit" }, provenance: { kind: "registry", source: "acme/kit", reference: "https://skills.sh/acme/kit/changelog" } }],
+        },
+    });
+    await handleSkills("discover react changelog", h.rpc, h.write);
+    await handleSkills("discover acme/kit", h.rpc, h.write);
+    await handleSkills("find ./vendor/skills", h.rpc, h.write);
+    await handleSkills("discover https://github.com/acme/kit", h.rpc, h.write);
+    assert.deepEqual(h.calls, [
+        { method: "worker.skills.discover", params: { query: "react changelog" } },
+        { method: "worker.skills.discover", params: { source: "acme/kit" } },
+        { method: "worker.skills.discover", params: { source: "./vendor/skills" } },
+        { method: "worker.skills.discover", params: { source: "https://github.com/acme/kit" } },
     ]);
+    assert.match(h.out.join(""), /changelog\s+candidate\s+acme\/kit\s+1200 installs\s+https:\/\/skills\.sh\/acme\/kit\/changelog/);
+    assert.equal(isSource("react"), false);
+    assert.equal(isSource("~/skills"), true);
+});
 
-    const remove = harness();
-    await handleSkills(["remove", "review"], remove.write, "/work/project", remove.runner);
-    assert.deepEqual(remove.calls[0]?.args, [
-        "remove",
-        "review",
-        "--agent",
-        "universal",
-        "--yes",
+test("[§cli-universal-agent-skills] add composes one exact SkillDefinition; enable, disable, and remove map to Worker actions", async () => {
+    const h = harness({
+        "worker.skills.add": { status: 201, alias: "changelog", definition: { alias: "changelog", state: "active" } },
+        "worker.skills.enable": { status: 200, alias: "changelog", definition: { alias: "changelog", state: "active" } },
+        "worker.skills.disable": { status: 200, alias: "changelog", definition: { alias: "changelog", state: "disabled" } },
+        "worker.skills.remove": { status: 200, alias: "changelog", removed: true },
+    });
+    await handleSkills("add changelog acme/kit", h.rpc, h.write);
+    await handleSkills("add changelog acme/kit --global", h.rpc, h.write);
+    await handleSkills("enable changelog", h.rpc, h.write);
+    await handleSkills("disable changelog", h.rpc, h.write);
+    await handleSkills("remove changelog", h.rpc, h.write);
+    assert.deepEqual(h.calls, [
+        { method: "worker.skills.add", params: { alias: "changelog", definition: { name: "changelog", scope: "project", source: "acme/kit" } } },
+        { method: "worker.skills.add", params: { alias: "changelog", definition: { name: "changelog", scope: "global", source: "acme/kit" } } },
+        { method: "worker.skills.enable", params: { alias: "changelog" } },
+        { method: "worker.skills.disable", params: { alias: "changelog" } },
+        { method: "worker.skills.remove", params: { alias: "changelog" } },
     ]);
+    const text = h.out.join("");
+    assert.match(text, /added: changelog \(active\)/);
+    assert.match(text, /enabled: changelog \(active\)/);
+    assert.match(text, /disabled: changelog \(disabled\)/);
+    assert.match(text, /removed: changelog/);
 });
 
-test("skills exposes registry discovery without inventing a Plurnk registry", async () => {
-    const h = harness();
-    await handleSkills(["find", "sqlite", "review"], h.write, "/work/project", h.runner);
-    assert.deepEqual(h.calls[0]?.args, ["find", "sqlite", "review"]);
+test("[§cli-universal-agent-skills] an unavailable outcome renders the daemon's Problem beside the state", async () => {
+    const h = harness({
+        "worker.skills.add": { status: 201, alias: "ghost", definition: { alias: "ghost", state: "unavailable", problem: { detail: "could not be installed" } } },
+    });
+    await handleSkills("add ghost acme/kit", h.rpc, h.write);
+    assert.match(h.out.join(""), /added: ghost \(unavailable\)\s+— could not be installed/);
 });
 
-test("skills updates project or global universal skills explicitly", async () => {
-    const project = harness();
-    await handleSkills(["update", "review"], project.write, "/work/project", project.runner);
-    assert.deepEqual(project.calls[0]?.args, ["update", "review", "--project", "--yes"]);
-
-    const global = harness();
-    await handleSkills(["update", "review", "--global"], global.write, "/work/project", global.runner);
-    assert.deepEqual(global.calls[0]?.args, ["update", "review", "--global", "--yes"]);
-});
-
-test("skills rejects alternate agent targets and malformed invocations", async () => {
-    const agent = harness();
-    await handleSkills(["add", "owner/repo", "--agent", "codex"], agent.write, "/work/project", agent.runner);
-    assert.equal(agent.calls.length, 0);
-    assert.match(agent.out.join(""), /usage:/);
-
-    const allAgents = harness();
-    await handleSkills(["add", "owner/repo", "--all"], allAgents.write, "/work/project", allAgents.runner);
-    assert.equal(allAgents.calls.length, 0);
-    assert.match(allAgents.out.join(""), /usage:/);
-
-    const assignedAgent = harness();
-    await handleSkills(["add", "owner/repo", "--agent=codex"], assignedAgent.write, "/work/project", assignedAgent.runner);
-    assert.equal(assignedAgent.calls.length, 0);
-    assert.match(assignedAgent.out.join(""), /usage:/);
-
-    const quoted = harness();
-    await handleSkills("add 'unterminated", quoted.write, "/work/project", quoted.runner);
-    assert.equal(quoted.calls.length, 0);
-    assert.match(quoted.out.join(""), /usage:/);
-});
-
-test("skills requires a project root and preserves command failure context", async () => {
-    const h = harness();
-    await assert.rejects(
-        () => handleSkills([], h.write, null, h.runner),
-        /project root/,
-    );
-
-    const cause = Object.assign(new Error("exit 1"), { stderr: "registry unavailable\n" });
-    const failed = harness();
-    await assert.rejects(
-        () => handleSkills([], failed.write, "/work/project", async () => Promise.reject(cause)),
-        (error: unknown) => error instanceof Error
-            && error.message === "Agent Skills command failed"
-            && error.cause === cause,
-    );
-    assert.equal(failed.out.join(""), "registry unavailable\n");
+test("[§cli-universal-agent-skills] malformed client command shapes never dispatch", async () => {
+    for (const command of ["add", "add one", "add one two three", "discover", "enable", "disable a b", "remove", "add echo 'unterminated", "update", "list --global"]) {
+        const h = harness();
+        await handleSkills(command, h.rpc, h.write);
+        assert.equal(h.calls.length, 0, command);
+        assert.match(h.out.join(""), /usage:/, command);
+    }
 });

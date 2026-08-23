@@ -93,8 +93,8 @@ export const TUI_HELP = [
     "  /mcp                              list available workspace MCP servers",
     "       add <alias> <target> [options.json] · enable/disable/remove <alias>",
     "       oauth <alias> <callback-url>",
-    "  /skills                           list universal Agent Skills",
-    "       add/remove/find/update       manage .agents/skills via npx skills",
+    "  /skills                           list this Worker's Agent Skills",
+    "       discover <query|source> · add <name> <source> [--global] · enable/disable/remove <name>",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
     "  /stop                              cancel the running loop",
     "  /quit                              exit",
@@ -226,7 +226,7 @@ export const makeCompleter = (
         const skillsFrag = line.match(/^\/skills\s+(\S*)$/);
         if (skillsFrag) {
             const fragment = skillsFrag[1];
-            const commands = ["add", "remove", "find", "list", "update"]
+            const commands = ["add", "discover", "enable", "disable", "remove"]
                 .filter((command) => command.startsWith(fragment));
             callback(null, [commands, fragment]);
             return;
@@ -497,7 +497,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "skills": {
-            await handleSkills(rest, write, opts.projectRoot);
+            await handleSkills(rest, rpc, write);
             return;
         }
         case "accept":

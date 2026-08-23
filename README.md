@@ -91,7 +91,7 @@ What the daemon brings to those turns:
 
 **Models** are daemon-side. A worker durably owns its selected route; `--model` and `/model` accept either a declared alias or an exact `provider/model` selector and persist it without adding model policy to subsequent loops. `plurnk models [search]` and `/models [search]` query the daemon's bounded catalog only when requested. Provider credentials and the `PLURNK_MODEL` default live in the daemon's environment — the client never holds a key or guesses readiness.
 
-**Skills:** `/skills` lists project skills; `/skills add|remove|find|update` delegates to the standard `npx skills` CLI with its `universal` target. Project skills live in `.agents/skills`; global skills live in `~/.agents/skills`.
+**Skills:** `/skills` lists this Worker's Agent Skills; `/skills discover|add <name> <source> [--global]|enable|disable|remove` are the daemon's common Functionality actions — the client runs no package manager. Project skills live in `.agents/skills`; global skills live in `~/.agents/skills`.
 
 **MCP:** project-local `PLURNK_MCP_*` declarations accompany `/mcp` and `plurnk mcp enable`; the daemon remains their sole parser and activation owner. See the plurnk-mcp docs in plurnk-service for the declaration shapes (npx servers, remote endpoints, `_TOOLS`/`_READ` policies).
 

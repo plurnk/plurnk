@@ -422,6 +422,94 @@
         "composition"
       ]
     },
+    "worker.skills.list": {
+      "posture": "native",
+      "evidence": [
+        "src/skills.test.ts — Agent Skills management"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
+    "worker.skills.discover": {
+      "posture": "native",
+      "evidence": [
+        "src/skills.test.ts — Agent Skills management"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
+    "worker.skills.add": {
+      "posture": "native",
+      "evidence": [
+        "src/skills.test.ts — Agent Skills management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.skills.enable": {
+      "posture": "native",
+      "evidence": [
+        "src/skills.test.ts — Agent Skills management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.skills.disable": {
+      "posture": "native",
+      "evidence": [
+        "src/skills.test.ts — Agent Skills management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.skills.remove": {
+      "posture": "native",
+      "evidence": [
+        "src/skills.test.ts — Agent Skills management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
     "worker.mcp.list": {
       "posture": "native",
       "evidence": [

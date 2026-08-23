@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { actionViaBridge } from "../../src/agui.ts";
 import { BridgeTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
@@ -18,6 +19,9 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
         },
     });
     t.after(daemon.cleanup);
+    // A standard global Agent Skill present before the Worker's first Functionality demand.
+    await mkdir(join(daemon.home, ".agents", "skills", "durable-skill"), { recursive: true });
+    await writeFile(join(daemon.home, ".agents", "skills", "durable-skill", "SKILL.md"), "---\nname: durable-skill\ndescription: Durable skill\n---\nUse it.\n");
 
     const original = `terminal-durable-${crypto.randomUUID()}`;
     const created = await actionViaBridge<{ id: number; name: string; workerId: number }>(
@@ -90,6 +94,14 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "active");
     await from("a", "worker.mcp.remove", { alias: "durable" });
     assert.equal((await servers()).some(({ alias }) => alias === "durable"), false);
+
+    const skills = async (): Promise<Array<{ alias: string; state: string }>> =>
+        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "worker.skills.list")).definitions;
+    assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "active");
+    await from("a", "worker.skills.disable", { alias: "durable-skill" });
+    assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "disabled");
+    await from("a", "worker.skills.enable", { alias: "durable-skill" });
+    assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "active");
 
     const renamed = `${original}-renamed`;
     await from("a", "workspace.rename", { name: renamed });

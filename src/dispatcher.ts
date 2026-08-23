@@ -323,7 +323,7 @@ export const buildConstraints = (values: {
 // Workspace-open settings. Open-context: filesItems REPLACES PLURNK_FILES_ITEMS
 // (it only ever capped the tracked-file list; memory always foists full).
 // The mdDocs channel is retired — operator reference material is skills under
-// the workspace .agents/skills tree ({§skills-materialization} in the service SPEC).
+// the workspace .agents/skills tree ({§skills-functionality} in the service SPEC).
 // Ceilings (svc#232, most-restrictive-wins): maxCommands min()s
 // PLURNK_MAX_COMMANDS; git:false ANDs PLURNK_GIT_ALLOWED (deny-only).
 export interface Settings {

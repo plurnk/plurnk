@@ -1,36 +1,27 @@
-// Project-facing projection of the universal Agent Skills package manager.
-// Plurnk owns neither its registry nor its installation format: this wrapper
-// fixes the target to the shared `.agents/skills` convention and leaves source
-// resolution, lock metadata, updates, and removal to the standard CLI.
+// Thin TUI projection of the daemon-owned Agent Skills Functionality family:
+// the common lifecycle (list | discover | add | enable | disable | remove)
+// over the Worker's `skills` actions. The client composes exact definitions
+// and renders the daemon's states; installation, discovery, and enablement
+// policy live in the service.
 
-import { execFile } from "node:child_process";
-import { resolve } from "node:path";
-import { promisify, stripVTControlCharacters } from "node:util";
-
-const execFileP = promisify(execFile);
-
-export interface SkillsCommandResult {
-    stdout: string;
-    stderr: string;
+interface ActionCaller {
+    call(method: string, params?: object): Promise<unknown>;
 }
 
-export type SkillsRunner = (
-    args: readonly string[],
-    cwd: string,
-) => Promise<SkillsCommandResult>;
+type SkillDefinition = { name: string; scope: "project" | "global"; source?: string };
 
-const runSkills: SkillsRunner = async (args, cwd) => {
-    const { stdout, stderr } = await execFileP(
-        "npx",
-        ["--yes", "skills", ...args],
-        {
-            cwd,
-            env: { ...process.env, NO_COLOR: "1" },
-            maxBuffer: 4 * 1024 * 1024,
-        },
-    );
-    return { stdout, stderr };
+type DefinitionState = {
+    alias?: unknown;
+    origin?: unknown;
+    state?: unknown;
+    definition?: Partial<SkillDefinition>;
+    detail?: { scope?: unknown; description?: unknown };
+    problem?: { detail?: unknown };
 };
+
+type Candidate = { alias?: unknown; summary?: unknown; definition?: Partial<SkillDefinition>; provenance?: { kind?: unknown; source?: unknown; reference?: unknown } };
+
+type MutationResult = { status?: unknown; alias?: unknown; removed?: unknown; definition?: DefinitionState };
 
 const argumentsOf = (source: string): string[] | null => {
     const values: string[] = [];
@@ -77,82 +68,105 @@ const argumentsOf = (source: string): string[] | null => {
     return values;
 };
 
-const usage = (write: (text: string) => void): void => {
-    write("  usage: /skills [list [--global]]\n");
-    write("         /skills add <source> [--skill <name> ...] [--global]\n");
-    write("         /skills remove <name> ... [--global]\n");
-    write("         /skills find <query>\n");
-    write("         /skills update [name ...] [--global]\n");
+// A package reference (owner/repo, URL, or path) is a source; anything else
+// is a registry query.
+export const isSource = (term: string): boolean => /[\/\\:]/u.test(term) || term.startsWith(".") || term.startsWith("~");
+
+const renderDefinition = (entry: DefinitionState): string => {
+    const alias = typeof entry.alias === "string" ? entry.alias : "(unnamed)";
+    const state = typeof entry.state === "string" ? entry.state : "unknown";
+    const scope = typeof entry.definition?.scope === "string" ? entry.definition.scope : "unknown";
+    const source = typeof entry.definition?.source === "string" ? `  ${entry.definition.source}` : "";
+    const description = typeof entry.detail?.description === "string" ? `  ${entry.detail.description}` : "";
+    const origin = entry.origin === "worker" ? "  (worker)" : "";
+    const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
+    return `  ${alias}  ${state}  ${scope}${source}${description}${origin}${problem}\n`;
 };
 
-const includesAny = (args: readonly string[], choices: readonly string[]): boolean =>
-    args.some((arg) => choices.includes(arg));
+const renderCandidate = (candidate: Candidate): string => {
+    const alias = typeof candidate.alias === "string" ? candidate.alias : "(unnamed)";
+    const source = typeof candidate.definition?.source === "string" ? `  ${candidate.definition.source}` : "";
+    const summary = typeof candidate.summary === "string" ? `  ${candidate.summary}` : "";
+    const reference = typeof candidate.provenance?.reference === "string" ? `  ${candidate.provenance.reference}` : "";
+    return `  ${alias}  candidate${source}${summary}${reference}\n`;
+};
 
-const commandArguments = (input: readonly string[]): string[] | null => {
-    if (input.length === 0) return ["list", "--agent", "universal"];
-    if (input.some((arg) => arg === "--agent" || arg === "-a" || arg.startsWith("--agent="))) return null;
+const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
+    const alias = typeof result.alias === "string" ? result.alias : aliasHint;
+    const state = typeof result.definition?.state === "string" ? ` (${result.definition.state})` : "";
+    const problem = typeof result.definition?.problem?.detail === "string" ? `  — ${result.definition.problem.detail}` : "";
+    write(`  ${verb}: ${alias}${state}${problem}\n`);
+};
 
-    const [command, ...rest] = input;
-    switch (command) {
-        case "list":
-        case "ls":
-            return ["list", ...rest, "--agent", "universal"];
-        case "add":
-        case "install":
-            return rest.length === 0 || includesAny(rest, ["--all"])
-                ? null
-                : ["add", ...rest, "--agent", "universal", "--yes"];
-        case "remove":
-        case "rm":
-            return rest.length === 0
-                ? null
-                : ["remove", ...rest, "--agent", "universal", "--yes"];
-        case "find":
-        case "search":
-            return rest.length === 0 ? null : ["find", ...rest];
-        case "update":
-        case "upgrade":
-            return [
-                "update",
-                ...rest,
-                ...(includesAny(rest, ["--global", "-g", "--project", "-p"])
-                    ? []
-                    : ["--project"]),
-                "--yes",
-            ];
-        default:
-            return null;
-    }
+const usage = (write: (text: string) => void): void => {
+    write("  usage: /skills [discover <query|source> | add <name> <source> [--global] | enable|disable|remove <name>]\n");
 };
 
 export const handleSkills = async (
     input: string | readonly string[],
+    rpc: ActionCaller,
     write: (text: string) => void,
-    projectRoot: string | null | undefined,
-    runner: SkillsRunner = runSkills,
-): Promise<void> => {
-    if (projectRoot === null || projectRoot === undefined || projectRoot.length === 0) {
-        throw new Error("skills require a workspace project root");
-    }
-    const parsed = typeof input === "string" ? argumentsOf(input) : [...input];
-    const args = parsed === null ? null : commandArguments(parsed);
-    if (args === null) {
-        usage(write);
-        return;
+): Promise<unknown | null> => {
+    if (input.length === 0) {
+        const result = await rpc.call("worker.skills.list", {}) as { definitions?: unknown };
+        if (!Array.isArray(result.definitions)) throw new Error("worker.skills.list returned an invalid result.");
+        if (result.definitions.length === 0) write("  Agent Skills: none\n");
+        else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
+        return result;
     }
 
-    try {
-        const { stdout, stderr } = await runner(args, resolve(projectRoot));
-        if (stdout.length > 0) write(stripVTControlCharacters(stdout));
-        if (stderr.length > 0) write(stripVTControlCharacters(stderr));
-    } catch (cause) {
-        const output = cause as { stdout?: unknown; stderr?: unknown };
-        if (typeof output.stdout === "string" && output.stdout.length > 0) {
-            write(stripVTControlCharacters(output.stdout));
+    const args = typeof input === "string" ? argumentsOf(input) : [...input];
+    if (args === null || args.length === 0) { usage(write); return null; }
+    const [command, name] = args;
+
+    if (command === "discover" || command === "find") {
+        const term = args.slice(1).join(" ").trim();
+        if (term.length === 0) {
+            write("  usage: /skills discover <query|source>\n");
+            return null;
         }
-        if (typeof output.stderr === "string" && output.stderr.length > 0) {
-            write(stripVTControlCharacters(output.stderr));
-        }
-        throw new Error("Agent Skills command failed", { cause });
+        const query = args.length === 2 && isSource(term) ? { source: term } : { query: term };
+        const result = await rpc.call("worker.skills.discover", query) as { candidates?: unknown };
+        if (!Array.isArray(result.candidates)) throw new Error("worker.skills.discover returned an invalid result.");
+        if (result.candidates.length === 0) write("  candidates: none\n");
+        else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
+        return result;
     }
+
+    if (command === "add") {
+        const positional = args.slice(1).filter((arg) => arg !== "--global");
+        const global = args.includes("--global");
+        if (positional.length !== 2 || positional[0].length === 0 || positional[1].length === 0) {
+            write("  usage: /skills add <name> <source> [--global]\n");
+            return null;
+        }
+        const [alias, source] = positional;
+        const definition: SkillDefinition = { name: alias, scope: global ? "global" : "project", source };
+        const result = await rpc.call("worker.skills.add", { alias, definition }) as MutationResult;
+        renderMutation(result, "added", alias, write);
+        return result;
+    }
+
+    if (command === "enable" || command === "disable") {
+        if (args.length !== 2 || name.length === 0) {
+            write(`  usage: /skills ${command} <name>\n`);
+            return null;
+        }
+        const result = await rpc.call(`worker.skills.${command}`, { alias: name }) as MutationResult;
+        renderMutation(result, command === "enable" ? "enabled" : "disabled", name, write);
+        return result;
+    }
+
+    if (command === "remove") {
+        if (args.length !== 2 || name.length === 0) {
+            write("  usage: /skills remove <name>\n");
+            return null;
+        }
+        const result = await rpc.call("worker.skills.remove", { alias: name });
+        write(`  removed: ${name}\n`);
+        return result;
+    }
+
+    usage(write);
+    return null;
 };

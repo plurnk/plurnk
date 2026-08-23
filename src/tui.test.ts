@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, resolvedModelLabel, runTui, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, resolvedModelLabel, runTui, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
@@ -634,4 +634,28 @@ test("lineMode: bare text carries the base flags untouched; prefix mode OVERRIDE
 
 test("lineMode: '...' injection prefix strips without minting mode flags", () => {
     assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
+});
+
+// ─── makeCompleter (/model provider-scoped catalog completion, plurnk#22) ───
+
+test("[§cli-plurnk-models] /model completion: aliases synchronously, provider prefixes lazily from one bounded catalog page", async () => {
+    const fetched: string[] = [];
+    const complete = (line: string): Promise<[string[], string]> => new Promise((accept, reject) => {
+        makeCompleter(
+            () => ["fast", "smart"],
+            process.cwd(),
+            () => [],
+            async (provider) => {
+                fetched.push(provider);
+                if (provider === "down") throw new Error("catalog unavailable");
+                return [`${provider}/gpt-5`, `${provider}/gpt-5-mini`, `${provider}/o4`];
+            },
+        )(line, (err, result) => err === null ? accept(result) : reject(err));
+    });
+    assert.deepEqual(await complete("/model fa"), [["fast"], "fa"], "a bare fragment completes declared aliases only");
+    assert.deepEqual(fetched, [], "alias completion never touches the catalog");
+    assert.deepEqual(await complete("/model openai/gpt"), [["openai/gpt-5", "openai/gpt-5-mini"], "openai/gpt"], "a provider prefix completes provider-scoped selectors");
+    assert.deepEqual(fetched, ["openai"], "the catalog is consulted lazily, per provider");
+    assert.deepEqual(await complete("/model down/x"), [[], "down/x"], "a failed catalog fetch completes nothing rather than erroring the prompt");
+    assert.deepEqual(await complete("/child inh"), [["inherit"], "inh"], "child completion keeps its inherit sentinel");
 });

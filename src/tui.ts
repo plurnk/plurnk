@@ -190,11 +190,15 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
 // Plain readline machinery only; no screen takeover, no terminal hell.
 // readline's async completer form (arity 2 → async). Verb/alias completion
 // answers synchronously; path positions read the local fs (co-location law)
-// and answer once readdir resolves.
+// and answer once readdir resolves. A fragment holding a provider prefix
+// (`/model openai/…`) completes lazily from one bounded, provider-scoped
+// daemon catalog page ([§cli-plurnk-models]); the client never preloads or
+// owns the Models.dev snapshot.
 export const makeCompleter = (
     getAliases: () => string[],
     cwd: string,
     getReasoningPolicies: () => string[] = () => [],
+    getProviderModels: (provider: string) => Promise<string[]> = async () => [],
 ) =>
     (line: string, callback: (err: null, result: [string[], string]) => void): void => {
         const verbFrag = line.match(/^\/(\w*)$/);
@@ -204,10 +208,19 @@ export const makeCompleter = (
         }
         const aliasFrag = line.match(/^\/(model|child)\s+(\S*)$/);
         if (aliasFrag) {
+            const fragment = aliasFrag[2];
+            const provider = /^([A-Za-z0-9_-]+)\//.exec(fragment)?.[1];
+            if (provider !== undefined) {
+                getProviderModels(provider).then(
+                    (selectors) => callback(null, [selectors.filter((selector) => selector.startsWith(fragment)), fragment]),
+                    () => callback(null, [[], fragment]),
+                );
+                return;
+            }
             const candidates = aliasFrag[1] === "child"
                 ? ["inherit", ...getAliases().filter((alias) => alias !== "inherit")]
                 : getAliases();
-            callback(null, [candidates.filter((a) => a.startsWith(aliasFrag[2])), aliasFrag[2]]);
+            callback(null, [candidates.filter((a) => a.startsWith(fragment)), fragment]);
             return;
         }
         const reasoningFrag = line.match(/^\/reasoning\s+(\S*)$/);
@@ -592,6 +605,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // will actually use when --model is unset (providers.list
     // marks the boot-time default `active`).
     let aliasCache: string[] = [];
+    const providerModelCache = new Map<string, string[]>();
     let activeAlias: string | undefined;
     // Alias list for completion + the header's active default. Both terminal gauges
     // ride the loop usage envelope; this client never reconstructs curation policy or
@@ -725,6 +739,18 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             () => aliasCache,
             process.cwd(),
             () => workerReasoning.supportedPolicies,
+            async (provider) => {
+                // One bounded page per provider, cached for the session: lazy,
+                // provider-scoped, never the whole catalog.
+                const cached = providerModelCache.get(provider);
+                if (cached !== undefined) return cached;
+                const page = await transport.rpc("models.list", { provider, limit: 100 }) as { items?: Array<{ selector?: unknown }> };
+                const selectors = (page.items ?? [])
+                    .map(({ selector }) => selector)
+                    .filter((selector): selector is string => typeof selector === "string");
+                providerModelCache.set(provider, selectors);
+                return selectors;
+            },
         ),
     });
     const reprompt = (): void => {

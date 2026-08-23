@@ -294,6 +294,27 @@ Daemon Problems — an uninstallable source, a missing project root, a
 service-owned skill that cannot be removed — cross the existing diagnostic
 path without rewriting or retry.
 
+### §3.6 Outbound A2A agents {§cli-outbound-agents}
+
+Outbound A2A agents are a thin projection of the daemon's `agents`
+Functionality family — the same common lifecycle as `/mcp` and `/skills`. The
+client composes one exact `A2aAgentDefinition` and renders the daemon's
+states; the remote Agent Card, connection, and enablement policy live in the
+service, and the model addresses an enabled agent as `a2a://<alias>`.
+
+| TUI input | AG-UI+ action |
+|---|---|
+| `/agents` | `worker.agents.list {}` |
+| `/agents discover <url>` | `worker.agents.discover {source}` — one inert card-derived candidate |
+| `/agents add <alias> <url> [options.json]` | `worker.agents.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
+| `/agents enable <alias>` | `worker.agents.enable {alias}` |
+| `/agents disable <alias>` | `worker.agents.disable {alias}` |
+| `/agents remove <alias>` | `worker.agents.remove {alias}` |
+
+Invalid or unreadable local JSON fails before dispatch; daemon Problems — an
+unreachable card, an unsupported interface, an unresolved symbolic credential —
+cross the existing diagnostic path without rewriting or retry.
+
 ---
 
 ## §4 Exit codes {§cli-exit-codes}

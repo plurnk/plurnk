@@ -5,13 +5,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { actionViaBridge } from "../../src/agui.ts";
 import { BridgeTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
+import { startDemoAgent } from "../../../plurnk-service/plurnk-a2a/test/fixtures/DemoAgent.ts";
 
 test("{§cli-agui-conformance}: separate client connections observe every exposed durable control", { timeout: 120_000 }, async (t) => {
     const service = await locateDaemon();
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
+    const agent = await startDemoAgent();
+    t.after(() => agent.close());
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,
         extraEnv: {
+            PLURNK_A2A_DURABLE: agent.baseUrl,
+            PLURNK_A2A_ENABLED: '["durable"]',
             PLURNK_MODEL_nvimtest: "lmstudio/nvim-family/selected",
             PLURNK_PROVIDERS_CONTEXT_WINDOW_nvimtest: "32768",
             PLURNK_PROVIDERS_REASONING_nvimtest: "off",
@@ -98,6 +103,14 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     const skills = async (): Promise<Array<{ alias: string; state: string }>> =>
         (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "worker.skills.list")).definitions;
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "active");
+
+    const agents = async (): Promise<Array<{ alias: string; state: string }>> =>
+        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "worker.agents.list")).definitions;
+    assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "active");
+    await from("a", "worker.agents.disable", { alias: "durable" });
+    assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "disabled");
+    await from("a", "worker.agents.enable", { alias: "durable" });
+    assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "active");
     await from("a", "worker.skills.disable", { alias: "durable-skill" });
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "disabled");
     await from("a", "worker.skills.enable", { alias: "durable-skill" });

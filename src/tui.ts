@@ -41,6 +41,7 @@ import {
 } from "@plurnk/plurnk-contracts";
 import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
+import { handleAgents } from "./agents.ts";
 import {
     formatWorkerReasoning,
     readWorkerReasoning,
@@ -93,6 +94,8 @@ export const TUI_HELP = [
     "  /mcp                              list available workspace MCP servers",
     "       add <alias> <target> [options.json] · enable/disable/remove <alias>",
     "       oauth <alias> <callback-url>",
+    "  /agents                           list this Worker's outbound A2A agents",
+    "       discover <url> · add <alias> <url> [options.json] · enable/disable/remove <alias>",
     "  /skills                           list this Worker's Agent Skills",
     "       discover <query|source> · add <name> <source> [--global] · enable/disable/remove <name>",
     "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
@@ -219,6 +222,14 @@ export const makeCompleter = (
         if (mcpFrag) {
             const fragment = mcpFrag[1];
             const commands = ["add", "enable", "disable", "remove", "oauth"]
+                .filter((command) => command.startsWith(fragment));
+            callback(null, [commands, fragment]);
+            return;
+        }
+        const agentsFrag = line.match(/^\/agents\s+(\S*)$/);
+        if (agentsFrag) {
+            const fragment = agentsFrag[1];
+            const commands = ["add", "discover", "enable", "disable", "remove"]
                 .filter((command) => command.startsWith(fragment));
             callback(null, [commands, fragment]);
             return;
@@ -498,6 +509,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "skills": {
             await handleSkills(rest, rpc, write);
+            return;
+        }
+        case "agents": {
+            await handleAgents(rest, rpc, write);
             return;
         }
         case "accept":

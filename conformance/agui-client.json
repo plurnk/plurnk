@@ -510,6 +510,94 @@
         "durability"
       ]
     },
+    "worker.agents.list": {
+      "posture": "native",
+      "evidence": [
+        "src/agents.test.ts — outbound agents management"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
+    "worker.agents.discover": {
+      "posture": "native",
+      "evidence": [
+        "src/agents.test.ts — outbound agents management"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
+    "worker.agents.add": {
+      "posture": "native",
+      "evidence": [
+        "src/agents.test.ts — outbound agents management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.agents.enable": {
+      "posture": "native",
+      "evidence": [
+        "src/agents.test.ts — outbound agents management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.agents.disable": {
+      "posture": "native",
+      "evidence": [
+        "src/agents.test.ts — outbound agents management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.agents.remove": {
+      "posture": "native",
+      "evidence": [
+        "src/agents.test.ts — outbound agents management",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
     "worker.mcp.list": {
       "posture": "native",
       "evidence": [

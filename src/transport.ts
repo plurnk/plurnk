@@ -166,7 +166,7 @@ export class BridgeTransport implements Transport {
                         throw new ProblemError(invalid);
                     }
                     proposalResolution = new Promise((resolve) => { this.#pendingResolve = resolve; });
-                    this.#h?.onProposal({ logEntryId: pausedProp, op: args.op, target: args.target, body: args.body, attrs: args.attrs, staleClobberRisk: args.staleClobberRisk } as unknown as ProposalParams);
+                    this.#h?.onProposal({ logEntryId: pausedProp, op: args.op, target: args.target, body: args.body, attrs: args.attrs } as unknown as ProposalParams);
                     continue;
                 }
                 if (e.type === "RUN_FINISHED") {
@@ -291,7 +291,7 @@ export class BridgeTransport implements Transport {
                                 };
                             }
                             proposalResolution = new Promise((resolve) => { this.#pendingResolve = resolve; });
-                            this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs, staleClobberRisk: a.staleClobberRisk } as unknown as ProposalParams);
+                            this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs } as unknown as ProposalParams);
                         } else {
                             const t = this.#dispatch(e);
                             if (t !== null) terminated = t;

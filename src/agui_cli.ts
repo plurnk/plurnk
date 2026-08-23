@@ -30,8 +30,6 @@ import { actionOutcome, operationResult, problemDetails, type ActionOutcome } fr
 import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 
-type BridgeProposal = ProposalParams & { staleClobberRisk?: boolean };
-
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
 // WS-run schema exactly.
@@ -72,7 +70,7 @@ export interface CliRunSinks {
 // Decide a stopped-world proposal: the AG-UI run ended
 // on the tool-call; the decision returns as the next run's resume payload. A
 // tool-call strictly means client-owned (the module filters server-yolo/noProposals).
-const decideProposal = async (p: BridgeProposal, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }> => {
+const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }> => {
     if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept" };
     if (io.noReviewChannel) return { logEntryId: p.logEntryId, decision: "reject" };
     const resolution = await io.review(p);
@@ -128,7 +126,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                 finalStatus = problem.status;
                 continue;
             }
-            pendingResume = await decideProposal({ logEntryId, ...a } as unknown as BridgeProposal, io);
+            pendingResume = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
             continue;
         }
         const reasoningEvent = reasoning.consume(e);

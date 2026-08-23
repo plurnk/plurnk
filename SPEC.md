@@ -357,6 +357,20 @@ A present durable operation annotation is appended as sanitized, literal plain t
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
+#### §5.1.0 Markdown projection {§cli-markdown-projection}
+
+A prettified SEND body (TUI only; the one-shot CLI keeps raw verbatim for
+pipes) projects Markdown for the terminal through one client rendering model
+(plurnk#15): headings/bold/italic/inline-code as ANSI emphasis; GFM pipe
+tables as aligned box-drawn columns shrunk to the 80-column ergonomic target
+with visible per-cell truncation; fenced blocks as a labeled `◇ lang` gutter
+with verbatim bodies (no inline styling inside a fence); and ```mermaid
+fences as a deterministic projection — a simple flowchart chain becomes
+vertical boxes joined by labeled arrows, a branching graph becomes a labeled
+edge list, and any other Mermaid type falls back to its verbatim source under
+a `◇ mermaid` gutter, never a half-drawn diagram. The wire always carries the
+semantic/raw source; no pre-rendered channel exists at the protocol boundary.
+
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
 Readable provider reasoning is neither PLAN nor assistant speech. The client

@@ -2,6 +2,7 @@
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
 import { stripVTControlCharacters } from "node:util";
+import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { presentPlan } from "./plan.ts";
 
@@ -209,31 +210,11 @@ export const statusCodeVisible = (entry: Pick<LogEntryWire, "op" | "status_rx">)
 
 const BOLD = code("1");
 const ITALIC = code("3");
+void ITALIC;
 
 // A common model-authored inline-math spelling with an exact terminal glyph.
 // This is typographic normalization, not a claim of general LaTeX support.
 const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "→");
-
-// Heuristic: body looks like markdown if it carries any of the structural markers.
-// False positives on plain text containing isolated `*` or `_` are avoided by requiring
-// paired markers or line-anchored constructs.
-const looksLikeMarkdown = (s: string): boolean =>
-    /(^|\n)#{1,6}\s/.test(s) ||
-    /\*\*[^*\n]+\*\*/.test(s) ||
-    /(^|\n)[-*+]\s/.test(s) ||
-    /```/.test(s) ||
-    /\[[^\]]+\]\([^)]+\)/.test(s);
-
-// Minimal vanilla-ANSI markdown: enough to make a reply readable, not a full parser.
-const renderMarkdown = (s: string): string => {
-    let out = s;
-    out = out.replace(/^(#{1,6})\s+(.*)$/gm, (_m, _h, text) => `${BOLD}${text}${RESET}`);
-    out = out.replace(/\*\*([^*\n]+)\*\*/g, (_m, t) => `${BOLD}${t}${RESET}`);
-    out = out.replace(/(^|[^*_])[*_]([^*_\n]+)[*_](?!\*)/g, (_m, pre, t) => `${pre}${ITALIC}${t}${RESET}`);
-    out = out.replace(/`([^`\n]+)`/g, (_m, t) => `${DIM}${t}${RESET}`);
-    out = out.replace(/^[-*+]\s/gm, "• ");
-    return out;
-};
 
 // Read a SEND body off a log_entry.tx, dispatching by content type.
 // Per plurnk-grammar/schema/SendBody.json: tx.body is { raw, json } | null.
@@ -251,7 +232,9 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
     if (typeof raw !== "string") return "";
     const prose = normalizeProse(raw);
-    if (looksLikeMarkdown(prose)) return renderMarkdown(prose);
+    // Tables, fences, and Mermaid project through the one client rendering
+    // model (plurnk#15), width-capped at the 80-column ergonomic target.
+    if (looksLikeMarkdown(prose)) return renderMarkdownDocument(prose);
     return prose;
 };
 

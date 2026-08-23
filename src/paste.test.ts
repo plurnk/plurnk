@@ -95,3 +95,16 @@ test("PasteFilter: stash single-line content → verbatim (no marker)", () => {
     const f = new PasteFilter();
     assert.equal(f.stash("one line"), "one line");
 });
+
+test("PasteFilter: idle() is false while pasting or holding a partial marker (the lone-Esc gate)", () => {
+    const f = new PasteFilter();
+    assert.equal(f.idle(), true);
+    f.feed(`${START}line one`);
+    assert.equal(f.idle(), false, "an open paste is not idle");
+    f.feed(`line two${END}`);
+    assert.equal(f.idle(), true);
+    f.feed("\x1b[200");
+    assert.equal(f.idle(), false, "a held partial START marker is not idle");
+    f.feed("~x\n" + END);
+    assert.equal(f.idle(), true);
+});

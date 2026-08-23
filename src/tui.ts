@@ -105,6 +105,7 @@ export const TUI_HELP = [
     "  ## LOOK0 (uri)                    off-run READ — inspect a uri for you, not the model",
     "  Alt-p / Alt-n                     cycle ## LOOK0 through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
+    "  Esc                               cancel the running loop; idle: clear the line",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
     "                                     log yolo workspace members stop · Alt-h help",
 ].join("\n") + "\n";
@@ -562,6 +563,18 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // runs and the line handler / SIGINT can share it.
     let inFlight = false;
     let cancelRequested = false;
+    // One cancel path for every interrupt gesture (Ctrl-C, Esc, /stop): the
+    // run's active drain cancels via loop.cancel; the pending loop resolves
+    // 499 and the REPL continues. A failed cancel SURFACES — a stop button
+    // that silently does nothing is the worst kind of broken.
+    const requestCancel = (reason: string): void => {
+        if (cancelRequested) return;
+        cancelRequested = true;
+        process.stdout.write("\r\x1b[2K  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m\n");
+        void transport.rpc("loop.cancel", { reason }).catch((err: unknown) => {
+            process.stdout.write(`\r\x1b[2K  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m\n`);
+        });
+    };
     // Prompt status gutter (#114, refined): two reserved slots — 🧮 while
     // embeddings warm, and a busy glyph (⏳ working / 💤 hibernating) whenever a
     // loop OR embedding is active. Glyphs when active, blanks when not, so the
@@ -858,7 +871,22 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let pendingQuestion: { interactionId: number; schema: Record<string, unknown> } | null = null;
     let dispatchShortcut: (verb: string) => void = () => {};
     const onStdin = (chunk: Buffer): void => {
-        const forward = paste.feed(chunk.toString("utf8"));
+        const text = chunk.toString("utf8");
+        // Esc interrupts (plurnk#25) — the agent-CLI convention: bare Esc with
+        // a loop in flight cancels it (same path as the first Ctrl-C); idle it
+        // clears the composed line. Read BEFORE the paste filter, which would
+        // otherwise hold a lone ESC as a possible split \x1b[200~ prefix. An
+        // exact lone-ESC chunk while no paste is open is the KEY — the same
+        // whole-chunk rule the Alt-shortcuts rely on.
+        if (text === "\x1b" && paste.idle()) {
+            if (inFlight) { requestCancel("user_escape"); return; }
+            if (rl.line.length > 0) {
+                rl.write(null as unknown as string, { ctrl: true, name: "e" });
+                rl.write(null as unknown as string, { ctrl: true, name: "u" });
+            }
+            return;
+        }
+        const forward = paste.feed(text);
         if (forward.length === 0) return;
         // A pending proposal + an EMPTY prompt line: a single review key
         // (a/e/r/c) resolves it. Anything else — including typing `/accept` —
@@ -1267,11 +1295,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // unblock (op.parse). A failed cancel SURFACES — a stop button that
             // silently does nothing is the worst kind of broken.
             if (inFlight && !cancelRequested) {
-                cancelRequested = true;
-                process.stdout.write("\r\x1b[2K  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m\n");
-                void transport.rpc("loop.cancel", { reason: "user_sigint" }).catch((err: unknown) => {
-                    process.stdout.write(`\r\x1b[2K  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m\n`);
-                });
+                requestCancel("user_sigint");
                 return;
             }
             rl.close();

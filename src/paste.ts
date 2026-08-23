@@ -32,6 +32,12 @@ export default class PasteFilter {
     #store = new Map<number, string>();
     #nextId = 1;
 
+    // True when no paste is open and no partial marker is held back — the
+    // precondition for reading an exact lone-ESC chunk as the Esc KEY.
+    idle(): boolean {
+        return this.#state === "normal" && this.#carry === "";
+    }
+
     // Process a stdin chunk; return the bytes readline should see (multi-line
     // pastes collapsed to markers). Completed pastes are stored for expand().
     feed(chunk: string): string {

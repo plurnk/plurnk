@@ -5,6 +5,7 @@
 
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
+import { setTimeout } from "node:timers/promises";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -47,6 +48,31 @@ describe("TUI pty harness", () => {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("\x1bm");                 // ESC m = Alt-m → /models
             await tui.waitFor(/selector\s+name\s+context|no models match/, 8_000);
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+        } finally {
+            tui.kill();
+        }
+    });
+
+    test("bare Esc clears the composed line while idle (plurnk#25)", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            // Real keypresses arrive as separate chunks; over a pipe the
+            // writes would coalesce and hide the lone-ESC chunk. Space them.
+            const key = async (bytes: string): Promise<void> => {
+                tui.write(bytes);
+                await setTimeout(80);
+            };
+            await key("/helx");                 // a mistyped verb on the line
+            await key("\x1b");                  // bare Esc — clears it, no submit
+            await key("/help\r");
+            // The mistyped line echoes while composed but never executes: the
+            // submit after Esc runs /help, and no unknown-verb Problem fires.
+            const out = await tui.waitFor(/\/quit\s+exit/, 8_000);
+            assert.doesNotMatch(out, /unknown subcommand/, "the escaped line never executed");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {

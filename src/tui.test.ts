@@ -236,13 +236,14 @@ test("buildHeader: reasoning is a distinct durable policy label", () => {
     assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /reasoning:/);
 });
 
-interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[] }
+interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
     const calls: Array<{ method: string; params?: unknown }> = [];
     const out: string[] = [];
     const imports: string[] = [];
     const resolved: string[] = [];
+    const composed: boolean[] = [];
     let workspace = { id: 1, name: "sess" };
     const modelState = {
         model: null as ResolvedModelSpec | null,
@@ -279,7 +280,8 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         write: (s) => { out.push(s); },
         importFile: async (p) => { imports.push(p); },
         resolveProposal: async (action) => { resolved.push(action); },
-        calls, out, imports, resolved,
+        composeInEditor: async () => { composed.push(true); },
+        calls, out, imports, resolved, composed,
     };
 };
 
@@ -509,6 +511,13 @@ test("handleVerb /workspace → workspace.create (new) + setWorkspace", async ()
     assert.equal(ctx.model?.alias, "new-model");
     assert.equal(ctx.reasoning.policy, "adaptive");
     assert.match(ctx.out.join(""), /workspace: fresh \(new\)/);
+});
+
+test("handleVerb /editor → composeInEditor; Alt-e maps to it (plurnk#26)", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/editor", ctx as unknown as VerbContext);
+    assert.deepEqual(ctx.composed, [true], "/editor invokes the $EDITOR composition hook");
+    assert.equal(altShortcut("\x1be"), "/editor");
 });
 
 test("handleVerb /stop → loop.cancel", async () => {

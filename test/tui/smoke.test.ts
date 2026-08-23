@@ -6,6 +6,9 @@
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -77,6 +80,32 @@ describe("TUI pty harness", () => {
             assert.equal(await tui.exited, 0);
         } finally {
             tui.kill();
+        }
+    });
+
+    test("/editor (Alt-e) composes the line in $VISUAL and places it back (plurnk#26)", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        // A deterministic "editor": overwrite the buffer with /help.
+        const dir = await mkdtemp(join(tmpdir(), "plurnk-editor-e2e-"));
+        const editor = join(dir, "editor.sh");
+        await writeFile(editor, "#!/bin/sh\nprintf '/help\\n' > \"$1\"\n", { mode: 0o755 });
+        const tui = spawnTui(daemon.url, [], { VISUAL: editor });
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            const key = async (bytes: string): Promise<void> => {
+                tui.write(bytes);
+                await setTimeout(80);
+            };
+            await key("/helx");                 // a seed the editor replaces
+            await key("\x1be");                 // Alt-e → $VISUAL
+            await key("\r");                    // Enter submits the edited line
+            const out = await tui.waitFor(/\/quit\s+exit/, 8_000);
+            assert.doesNotMatch(out, /unknown subcommand/, "the edited line ran, not the seed");
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+        } finally {
+            tui.kill();
+            await rm(dir, { recursive: true, force: true });
         }
     });
 

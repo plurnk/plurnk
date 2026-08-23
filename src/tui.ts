@@ -26,7 +26,7 @@ import { renderLogEntry, renderReasoning, renderReasoningPreview, renderSummary,
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, isServerResolved, renderQuestionMenu, questionChoices, answerForQuestion } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, isServerResolved, renderQuestionMenu, questionChoices, answerForQuestion, editInEditor } from "./proposal.ts";
 import { BridgeTransport, type BranchBatchEvent, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -72,7 +72,7 @@ interface WorkspaceResult { id: number; name: string }
 export const VERBS = [
     "help", "models", "workspaces", "workers", "log", "model", "child", "reasoning",
     "yolo", "workspace", "rename", "worker", "stop", "quit",
-    "pick", "hide", "view", "drop", "members", "import", "script", "mcp",
+    "pick", "hide", "view", "drop", "members", "import", "script", "mcp", "editor",
     "accept", "reject", "cancel", "edit",
 ] as const;
 
@@ -106,6 +106,7 @@ export const TUI_HELP = [
     "  Alt-p / Alt-n                     cycle ## LOOK0 through prior operations' targets",
     "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
     "  Esc                               cancel the running loop; idle: clear the line",
+    "  /editor · Alt-e                    compose the prompt line in $EDITOR",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
     "                                     log yolo workspace members stop · Alt-h help",
 ].join("\n") + "\n";
@@ -136,7 +137,7 @@ export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK,
 // owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped (readline word-ops).
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     m: "/models", s: "/workspaces", R: "/workers", L: "/log",
-    Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", h: "/help",
+    Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", h: "/help", e: "/editor",
 });
 
 // An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
@@ -325,6 +326,9 @@ export interface VerbContext {
     // Resolve the pending proposal (no-op if none) — the typed no-modifier
     // fallback for the a/e/r/c review keys. `edit` opens $EDITOR.
     resolveProposal: (action: "accept" | "reject" | "cancel" | "edit") => Promise<void>;
+    // Compose the prompt line in $EDITOR (plurnk#26) — places the result back
+    // on the line (zsh edit-command-line convention); Enter submits.
+    composeInEditor: () => Promise<void>;
 }
 
 export type ResolvedModelSpec = ModelRoute;
@@ -538,6 +542,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         case "stop":
             await rpc.call("loop.cancel", { reason: "user_stop" });
+            return;
+        case "editor":
+            await ctx.composeInEditor();
             return;
         case "quit":
             return "quit";
@@ -1130,6 +1137,29 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (pendingProposal === null) { process.stdout.write("  (no pending proposal)\n"); return; }
             if (action === "edit") { await editAndResolve(); return; }
             await resolvePending({ decision: action });
+        },
+        // /editor · Alt-e (plurnk#26): seed $EDITOR with the composed line
+        // (markers expanded), place the result BACK on the line — never
+        // auto-submit (bash Ctrl-X Ctrl-E executes on exit; a prompt line
+        // spends model tokens, so Enter stays the only submit). Same bounded
+        // terminal handoff as proposal edit. Empty buffer ⇒ line unchanged.
+        composeInEditor: async () => {
+            process.stdin.off("data", onStdin);
+            process.stdin.setRawMode?.(false);
+            let edited: string | null = null;
+            try {
+                edited = await editInEditor(paste.expand(expandNewlines(rl.line)), ".md");
+            } catch (cause) {
+                process.stdout.write(`${renderTuiFailure(cause)}\n`);
+            } finally {
+                process.stdin.setRawMode?.(true);
+                process.stdin.resume();
+                process.stdin.on("data", onStdin);
+            }
+            if (edited === null) return;
+            rl.write(null as unknown as string, { ctrl: true, name: "e" });
+            rl.write(null as unknown as string, { ctrl: true, name: "u" });
+            rl.write(paste.stash(edited.replace(/\n$/, "")));
         },
     };
 

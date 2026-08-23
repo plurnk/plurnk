@@ -90,14 +90,13 @@ const readSingleKey = (): Promise<string> => new Promise((resolve) => {
     stdin.on("data", onData);
 });
 
-// Drop the proposal body into a tmpfile, spawn $EDITOR (or VISUAL, or vi) on
-// it, wait for the editor to exit, read the result back. Empty file ⇒ cancel
-// (git-commit convention). Non-empty ⇒ the new body to accept with.
-const editInEditor = async (body: string, op: string): Promise<string | null> => {
+// Drop a body into a tmpfile, spawn $EDITOR (or VISUAL, or vi) on it, wait
+// for the editor to exit, read the result back. Empty file ⇒ null (git-commit
+// convention). Shared by proposal review and prompt composition (plurnk#26).
+export const editInEditor = async (body: string, suffix: string): Promise<string | null> => {
     const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
-    const dir = await mkdtemp(join(tmpdir(), "plurnk-proposal-"));
-    const suffix = op === "EDIT" ? ".diff" : op === "EXEC" ? ".sh" : ".txt";
-    const path = join(dir, `proposal${suffix}`);
+    const dir = await mkdtemp(join(tmpdir(), "plurnk-edit-"));
+    const path = join(dir, `buffer${suffix}`);
     try {
         await writeFile(path, body, "utf8");
         await new Promise<void>((resolve, reject) => {
@@ -187,7 +186,7 @@ export const keyToResolution = async (key: string, params: ProposalParams): Prom
         case "a":
             return { decision: "accept" };
         case "e": {
-            const edited = await editInEditor(params.body, params.op);
+            const edited = await editInEditor(params.body, params.op === "EDIT" ? ".diff" : params.op === "EXEC" ? ".sh" : ".txt");
             if (edited === null) return { decision: "cancel", outcome: "empty_editor_buffer" };
             return { decision: "accept", body: edited };
         }

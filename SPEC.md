@@ -221,6 +221,8 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.2 Cancellation {§cli-cancellation}
 
+`/editor` (Alt-e) composes the prompt line in `$VISUAL`/`$EDITOR` (fallback `vi`): the composed line — markers expanded — seeds a tmpfile buffer, and the editor's result is placed BACK on the line (multi-line results collapse to a paste marker), never auto-submitted — a prompt line spends model tokens, so Enter stays the only submit (zsh `edit-command-line`, not bash `C-x C-e` execute-on-exit). An empty buffer leaves the line unchanged. The spawn is the proposal-edit terminal handoff, bounded to the editor's lifetime.
+
 `Esc` is the same interrupt in its modern agent-CLI spelling: a bare Esc keypress while a dispatch is in flight fires `loop.cancel` (reason `user_escape`) through the identical cancel path, and while idle clears the composed line; Esc never exits. A lone-ESC stdin chunk means the Esc KEY — the same whole-chunk rule the Alt-shortcuts rely on — and is read before the bracketed-paste filter, which would otherwise hold it as a possible split paste-marker prefix.
 
 `Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the REPL continues. A failed cancel SURFACES on the terminal — a stop control that silently does nothing is the worst kind of broken. A second `Ctrl-C` (or `Ctrl-C` while idle) closes the readline interface — the escape hatch for dispatches a drain-cancel can't unblock (`op.parse`). (Dropping a conversation run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)

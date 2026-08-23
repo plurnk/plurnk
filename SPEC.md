@@ -252,9 +252,11 @@ result.
 
 | TUI / CLI input | AG-UI+ action |
 |---|---|
-| `/mcp` / `plurnk mcp` | `worker.mcp.list {overlay}` |
-| `/mcp add <alias> <target> [options.json]` | `worker.mcp.add {alias, target, options?}` |
-| `/mcp enable <alias> [options.json]` | `worker.mcp.enable {alias, overlay, options?}` |
+| `/mcp` / `plurnk mcp` | `worker.mcp.list {}`, then `worker.mcp.discover {configuration}` when the client holds `PLURNK_MCP_*` declarations |
+| `/mcp discover <url\|command>` | `worker.mcp.discover {source}` |
+| `/mcp add <alias> <target> [options.json]` | `worker.mcp.add {alias, definition}` — the client composes the exact `McpServerDefinition`: `name = alias`; an absolute `http(s)://` target is `{transport: "http", url}`, anything else `{transport: "stdio", command, args: []}`; `options.json` supplies the remaining definition members |
+| `/mcp enable <alias>` | `worker.mcp.enable {alias}` for an available definition; `worker.mcp.add {alias, definition}` when `alias` is a candidate of the client's own configuration |
+| `/mcp enable <alias> options.json` | `worker.mcp.add {alias, definition}` with the alias's current (listed or discovered) definition specialized by `options.json` |
 | `/mcp disable <alias>` | `worker.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `worker.mcp.remove {alias}` |
 | `/mcp oauth <alias> <callback-url>` | `worker.mcp.oauth.complete {alias, callbackUrl}` |

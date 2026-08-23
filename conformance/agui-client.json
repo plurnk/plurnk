@@ -437,6 +437,21 @@
         "composition"
       ]
     },
+    "worker.mcp.discover": {
+      "posture": "native",
+      "evidence": [
+        "src/mcp.test.ts — MCP management",
+        "../plurnk-service/scripts/test-client-conformance.mjs — client-local MCP isolation"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
     "worker.mcp.add": {
       "posture": "native",
       "evidence": [

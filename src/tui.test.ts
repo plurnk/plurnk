@@ -586,16 +586,16 @@ test("handleVerb /script on a missing file → throws (fail-hard, surfaced by th
 test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", async () => {
     const ctx = makeCtx({
         "worker.mcp.list": {
-            servers: [
-                { alias: "gitea", state: "connected", transport: "http", enabledTools: ["issue_read"], tools: ["issue_read", "issue_search"] },
-                { alias: "local", state: "disabled", transport: "stdio", tools: [] },
+            definitions: [
+                { alias: "gitea", origin: "worker", state: "active", definition: { name: "gitea", transport: "http", url: "https://gitea.test/mcp", tools: ["issue_read"] }, detail: { tools: ["issue_read", "issue_search"] } },
+                { alias: "local", origin: "service", state: "disabled", definition: { name: "local", transport: "stdio", command: "local-mcp", args: [] }, detail: { tools: [] } },
             ],
         },
     });
     await handleVerb("/mcp", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "worker.mcp.list", params: { overlay: {} } }]);
-    assert.match(ctx.out.join(""), /gitea\s+connected\s+http\s+1\/2 tools/);
-    assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+0 tools/);
+    assert.deepEqual(ctx.calls, [{ method: "worker.mcp.list", params: {} }]);
+    assert.match(ctx.out.join(""), /gitea\s+active\s+http\s+https:\/\/gitea\.test\/mcp\s+1\/2 tools/);
+    assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+local-mcp\s+0 tools\s+\(service\)/);
 });
 
 // ─── seedPromptHistory (svc#238) ─────────────────────────────────────

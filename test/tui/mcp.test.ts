@@ -69,25 +69,25 @@ describe("TUI workspace MCP dogfood", () => {
             await tui.waitFor(/plurnk.*\/help/);
 
             tui.write(`/mcp add current ${process.execPath} "${currentDefinition}"\r`);
-            await tui.waitFor(/added: current \(connected\)/, 20_000);
+            await tui.waitFor(/added: current \(active\)/, 20_000);
 
             tui.write(`/script ${currentCall}\r`);
             const used = await tui.waitFor(/script: 2 ops ok/, 20_000);
             assert.match(used, /200 echo/);
 
             tui.write("/mcp\r");
-            await tui.waitFor(/current\s+connected\s+stdio[\s\S]*1\/2 tools/, 20_000);
+            await tui.waitFor(/current\s+active\s+stdio[\s\S]*1\/2 tools/, 20_000);
 
             tui.write("/mcp disable current\r");
             await tui.waitFor(/disabled: current \(disabled\)/, 20_000);
 
             tui.write("/mcp enable current\r");
-            await tui.waitFor(/enabled: current \(connected\)/, 20_000);
+            await tui.waitFor(/enabled: current \(active\)/, 20_000);
 
             tui.write(`/mcp add legacy ${legacyTarget} "${legacyDefinition}"\r`);
-            await tui.waitFor(/added: legacy \(connected\)/, 20_000);
+            await tui.waitFor(/added: legacy \(active\)/, 20_000);
             tui.write("/mcp\r");
-            await tui.waitFor(/legacy\s+connected\s+stdio[\s\S]*1 tools/, 20_000);
+            await tui.waitFor(/legacy\s+active\s+stdio[\s\S]*1 tools/, 20_000);
 
             tui.write("/mcp remove current\r");
             await tui.waitFor(/removed: current/, 20_000);

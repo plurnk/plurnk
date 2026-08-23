@@ -19,6 +19,7 @@ const {
     curationGauge,
     contextGauge,
     progressLabel,
+    coordLabel,
     isEntryMaterialization,
     isPromptEntry,
     entryTarget,
@@ -257,11 +258,11 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entr
         } as unknown as { body: { raw: string; json: null } },
     }));
     assert.deepEqual(out.split("\n"), [
-        "  01/01/01 ✅    200 Contract settled.",
-        "           💾        One baseline owns the schema.",
-        "           🚧        [high] Update clients.",
-        "           ⬜        [low] Run drills.",
-    ]);
+        "  ✅ Contract settled.",
+        "  💾 One baseline owns the schema.",
+        "  🚧 [high] Update clients.",
+        "  ⬜ [low] Run drills.",
+    ], "a routine PLAN carries neither coordinates nor a status code (plurnk#21)");
     assert.doesNotMatch(out, /🧠/);
 });
 
@@ -270,7 +271,7 @@ test("renderLogEntry: an empty PLAN remains a visible durable row", () => {
         op: "PLAN",
         tx: { body: { entries: [] } } as unknown as { body: { raw: string; json: null } },
     }));
-    assert.equal(out, "  01/01/01 📭    200 no entries");
+    assert.equal(out, "  📭 no entries", "an empty PLAN stays visible, without coordinate or routine code");
 });
 
 test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line", () => {
@@ -634,27 +635,25 @@ test("status glyph: routine 2xx badges NOTHING (no ✅); only notable statuses g
     assert.match(renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /❌/);
 });
 
-// ─── Coordinate prefix (plurnk-service#208) ───────────────────────────
+// ─── Coordinate-free human waterfall (plurnk#21) ──────────────────────
 
-test("[§cli-log-entry-line-format] coordinate: zero-padded L/T/S prefix when the wire carries seqs", () => {
+test("[§cli-log-entry-line-format] the human waterfall carries no log coordinates", () => {
     const out = renderLogEntry(entry({
         op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
     }));
-    assert.match(out, /01\/02\/03 /);
+    assert.doesNotMatch(out, /01\/02\/03/, "the 01/02/03 gutter is gone from human rows");
+    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/, "a routine non-SEND success shows no status code");
+    assert.match(out, /worker:\/\/\/x/);
 });
 
-test("coordinate: grows past two digits without truncation", () => {
-    const out = renderLogEntry(entry({
-        op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
-        loop_seq: 7, turn_seq: 104, sequence: 12, rx: {}, tx: {},
-    }));
-    assert.match(out, /07\/104\/12 /);
+test("coordLabel survives for machine-adjacent surfaces and grows past two digits", () => {
+    assert.match(coordLabel(7, 104, 12), /07\/104\/12 /);
 });
 
-test("active-prompt progress occupies the coordinate's eight visible cells", () => {
-    assert.equal(progressLabel(42), "     42% ");
-    assert.equal(progressLabel(100), "    100% ");
+test("active-prompt progress gauge is four visible cells and appears only while active", () => {
+    assert.equal(progressLabel(42), " 42% ");
+    assert.equal(progressLabel(100), "100% ");
 });
 
 test("entry materialization narration is recognized from hydrated or JSON attrs", () => {
@@ -665,25 +664,24 @@ test("entry materialization narration is recognized from hydrated or JSON attrs"
     assert.equal(isEntryMaterialization(entry({ ...base, origin: "model", attrs: { kind: "entry_materialized" } })), false);
 });
 
-test("coordinate: rendered from the wire ordinals, never DB ids", () => {
-    // loop_id/turn_id are the DB keys; the prefix uses ONLY loop_seq/turn_seq.
+test("coordinates never leak into rows, from ordinals or DB ids", () => {
     const out = renderLogEntry(entry({
         op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
-        // @ts-expect-error — DB ids are not part of LogEntryWire; ensure
-        // they can't leak into the coordinate even if present on the row.
+        // @ts-expect-error — DB ids are not part of LogEntryWire.
         loop_id: 38, turn_id: 412,
     }));
-    assert.match(out, /01\/02\/03 /);
+    assert.doesNotMatch(out, /01\/02\/03/);
     assert.doesNotMatch(out, /38\/412/);
 });
 
-test("coordinate: broadcasts carry it on the header line", () => {
+test("broadcasts carry no coordinate but keep their SEND code", () => {
     const out = renderLogEntry(entry({
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         loop_seq: 1, turn_seq: 4, sequence: 1, tx: { body: { raw: "Paris", json: null } },
     }));
-    assert.match(out, /01\/04\/01 /);
+    assert.doesNotMatch(out, /01\/04\/01/);
+    assert.match(out, /200/, "SEND codes stay — the conversation's protocol truth");
 });
 
 // ─── buildExtra: per-op branch coverage ──────────────────────────────
@@ -730,10 +728,14 @@ test("renderLogEntry: EXEC shows the command body", () => {
 
 // ─── colorForStatus: each status class is exercised ──────────────────
 
-test("renderLogEntry: status classes render without throwing (color branches)", () => {
-    for (const status of [102, 202, 301, 404, 500]) {
+test("renderLogEntry: only errors carry a code on non-SEND rows (color branches render without throwing)", () => {
+    for (const status of [404, 500]) {
         const out = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x", status_rx: status, rx: {} }));
-        assert.match(out, new RegExp(String(status)), `status ${status} appears`);
+        assert.match(out, new RegExp(String(status)), `error ${status} keeps its code`);
+    }
+    for (const status of [102, 202, 301]) {
+        const out = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x", status_rx: status, rx: {} }));
+        assert.doesNotMatch(out, new RegExp(`(?:^|\\s)${status}(?:\\s|$)`), `routine ${status} shows no code`);
     }
 });
 

@@ -22,7 +22,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderReasoningPreview, renderSummary, isPromptEntry, coordLabel, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderReasoningPreview, renderSummary, isPromptEntry, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -558,8 +558,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     mcpConfiguration?: Readonly<Record<string, string>>;
 }): Promise<void> => {
     let current = workspace;
-    // Highest loop_seq the waterfall has shown — the next prompt is one beyond.
-    let lastLoopSeq = 0;
     // Loop state, hoisted so buildPrompt can show a steer prompt while a loop
     // runs and the line handler / SIGINT can share it.
     let inFlight = false;
@@ -678,10 +676,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // 💬 (U+1F4AC, stable-wide) fills the op slot the toxic ✉️ vacated.
     // Policy: VS16/ambiguous glyphs are banned from the ENTIRE palette
     // (render.ts) — stable widths are also what make columns align.
-    // The prompt is the user's row, coordinate-prefixed like every other
-    // waterfall line (§5.1). The coordinate is the next actionless prompt row.
-    // lastLoopSeq tracks the highest loop the waterfall has shown; the next
-    // prompt is one beyond it. Plain-ASCII coordinate — width-safe.
     // The prompt is the SAME whether or not a loop is running — kept alive above
     // the streaming traces by printAbove. The user just types; a line submitted
     // while a loop is in flight is folded into it (loop.inject), else it starts
@@ -716,10 +710,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const activePercent = embedding ? embeddingPercent
             : searchFetching ? searchPercent
             : branchPercent;
-        const position = activePercent !== null
-            ? progressLabel(activePercent)
-            : coordLabel(lastLoopSeq + 1, 1, 1);
-        return `${yolo}${position}${origin} ${status} \x1b[32m201\x1b[0m \x1b[1m: \x1b[0m`;
+        // No coordinate, no decorative code (plurnk#21): the prompt is
+        // `[gauge] 🐹 <status> : ` — the busy gauge appears only while active.
+        const position = activePercent !== null ? progressLabel(activePercent) : "";
+        return `${yolo}${position}${origin} ${status} \x1b[1m: \x1b[0m`;
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -993,7 +987,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     transport.subscribe({
         onReasoning: presentReasoning,
         onEntry: (entry) => {
-            if (entry.loop_seq > lastLoopSeq) lastLoopSeq = entry.loop_seq;
             // The typed line at the prompt is the user's record — rendering the
             // prompt broadcast too would duplicate it (see isPromptEntry).
             if (isPromptEntry(entry)) return;

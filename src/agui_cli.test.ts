@@ -292,7 +292,8 @@ test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) 
     ]), io);
     const trace = err.join("");
     assert.match(trace, /python:\/\/\/1\/1\/1/, "stream lines traced to stderr");
-    assert.match(trace, /200/, "the conclusion carries the close status");
+    assert.doesNotMatch(trace, /(?:^|\s)200(?:\s|$)/, "a routine conclusion carries no code (plurnk#21)");
+    assert.match(trace, /📡/, "the conclusion still traces");
 });
 
 test("runScript segments: a run with NO parse result must not report success", async () => {

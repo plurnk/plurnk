@@ -1,8 +1,9 @@
-// The waterfall alignment GAUGE (operator, 2026-07-10): every rendered line species
-// carries exactly TWO emoji lanes (identity · status — blanks reserved, never
-// omitted), and the status-code column sits at ONE display column across all of
-// them. Measured, not eyeballed: strip ANSI, count display cells (the repo's glyph
-// convention is plane-1/EAW width-2, VS16-free), find the code token, compare.
+// The waterfall alignment GAUGE (operator, 2026-07-10; simplified plurnk#21):
+// every rendered line species carries exactly TWO emoji lanes (identity ·
+// status — blanks reserved, never omitted). Status CODES render only where
+// they mean something — SENDs and errors — and every code-bearing species
+// puts its code at ONE display column. Measured, not eyeballed: strip ANSI,
+// count display cells (plane-1/EAW width-2, VS16-free), find the code token.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -43,20 +44,25 @@ const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     ...over,
 });
 
-test("[§cli-rendering] every line species puts the status code in ONE display column (two glyph lanes, blanks reserved)", () => {
+test("[§cli-rendering] code-bearing species share ONE code column; routine non-SEND lines carry no code (plurnk#21)", () => {
     const streams = new StreamTrace();
-    const lines: Array<[string, string]> = [
-        ["op 200 (blank status lane)", renderLogEntry(entry({}))],
-        ["BARE 200 (isolated inference)", renderLogEntry(entry({ op: "BARE" }))],
-        ["op 404 (glyph status lane)", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
-        ["exec 202 (parked)", renderLogEntry(entry({ op: "EXEC", status_rx: 202, signal: 202 }))],
+    const codeless: Array<[string, string]> = [
+        ["op 200", renderLogEntry(entry({}))],
+        ["BARE 200", renderLogEntry(entry({ op: "BARE" }))],
+        ["exec 202 (proposed)", renderLogEntry(entry({ op: "EXEC", status_rx: 202, signal: 202 }))],
+        ["stream concluded 200", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1/1/8", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-loop", loop_seq: 1, turn_seq: 1, sequence: 8 })],
+    ];
+    for (const [label, line] of codeless) {
+        assert.doesNotMatch(stripAnsi(line).split("\n")[0], /(?:^|\s)\d{3}(?:\s|$)/, `routine line carries no code: ${label}: ${JSON.stringify(stripAnsi(line))}`);
+    }
+    const coded: Array<[string, string]> = [
+        ["op 404", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
         ["model SEND 102", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 102, status_rx: 102, tx: { body: { raw: "thinking on" } } }))],
         ["model SEND 200 (answer)", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: "pong" } } }))],
         ["user SEND 201 (prompt row)", renderLogEntry(entry({ op: "SEND", origin: "client", signal: 201, status_rx: 201, tx: { body: { raw: "hi" } } }))],
-        ["stream concluded 200", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
-        ["stream concluded 499", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 499, problem: { type: "https://problems.plurnk.dev/client/stream/cancelled", title: "Cancelled", status: 499, detail: "The stream was cancelled." } }, summary: "cancelled", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
+        ["stream concluded 499", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 499, problem: { type: "https://problems.plurnk.dev/x/cancelled", title: "Cancelled", status: 499, detail: "cancelled" } }, summary: "cancelled", wakeAction: "no-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
     ];
-    const cols = lines.map(([label, line]) => {
+    const cols = coded.map(([label, line]) => {
         const first = stripAnsi(line).split("\n")[0];
         return [label, codeColumn(first)] as const;
     });

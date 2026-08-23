@@ -188,27 +188,24 @@ export const isEntryMaterialization = (entry: LogEntryWire): boolean => {
         && (attrs as { kind?: unknown } | null)?.kind === "entry_materialized";
 };
 
-// `01/02/03 ` coordinate label — zero-padded to two digits minimum for
-// alignment zen, growing naturally past 99. Every waterfall line carries
-// one (log entries from the wire, the prompt and stream lines from their
-// own coordinates — §5.1). DB ids are NOT the user's loop/turn numbers.
+// The default human waterfall carries NO log coordinates (plurnk#21: the
+// 01/02/03 gutter was clutter for end users). Coordinates remain forensic
+// truth on the wire and in --json; this label survives for machine-adjacent
+// surfaces that still want one.
 export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): string => {
     const p = (n: number): string => String(n).padStart(2, "0");
     return `${DIM}${p(loopSeq)}/${p(turnSeq)}/${p(sequence)}${RESET} `;
 };
 
-// The active prompt temporarily uses its fixed-width coordinate slot as an
-// indexing gauge. Eight visible cells exactly match `01/01/01`; the trailing
-// separator remains identical, so readline's cursor math never shifts.
+// The active prompt shows a busy gauge in its own slot; idle shows nothing.
 export const progressLabel = (percent: number): string =>
-    `${DIM}${`${Math.max(0, Math.min(100, Math.trunc(percent)))}%`.padStart(8, " ")}${RESET} `;
-const coordPrefix = (entry: LogEntryWire): string =>
-    coordLabel(entry.loop_seq, entry.turn_seq, entry.sequence);
-const coordBlank = (entry: LogEntryWire): string => " ".repeat(
-    [entry.loop_seq, entry.turn_seq, entry.sequence]
-        .map((value) => String(value).padStart(2, "0"))
-        .join("/").length + 1,
-);
+    `${DIM}${`${Math.max(0, Math.min(100, Math.trunc(percent)))}%`.padStart(4, " ")}${RESET} `;
+
+// Status codes render only where they carry meaning (plurnk#21): every SEND
+// keeps its code (the conversation's protocol truth), every error keeps its
+// code, and routine non-SEND successes show none.
+export const statusCodeVisible = (entry: Pick<LogEntryWire, "op" | "status_rx">): boolean =>
+    entry.op === "SEND" || entry.status_rx >= 400;
 
 const BOLD = code("1");
 const ITALIC = code("3");
@@ -305,7 +302,7 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const statusText = `${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}`;
 
     const annotation = entryAnnotation(entry);
-    const header = `  ${coordPrefix(entry)}${[idGlyph, subGlyph, statusText].join(" ")}`
+    const header = `  ${[idGlyph, subGlyph, statusText].join(" ")}`
         + (annotation === null ? "" : ` ${DIM}— ${annotation}${RESET}`);
 
     const body = extractSendBody(entry.tx, /* prettify */ true);
@@ -326,9 +323,12 @@ const renderBroadcast = (entry: LogEntryWire): string => {
 };
 
 const renderPlan = (entry: LogEntryWire): string => {
+    // A routine PLAN carries no status code (plurnk#21); a failed one keeps
+    // its error code and glyph on the first row.
     const status = String(entry.status_rx);
-    const statusText = `${colorForStatus(entry.status_rx)}${status}${RESET}`;
-    const subGlyph = sendSubGlyph(entry.status_rx);
+    const failed = entry.status_rx >= 400;
+    const firstSlot = failed ? `${sendSubGlyph(entry.status_rx)} ${colorForStatus(entry.status_rx)}${status}${RESET} ` : "";
+    const laterSlot = failed ? `${" ".repeat(3 + status.length + 1)}` : "";
     const note = entryAnnotation(entry);
     const presented = presentPlan(entry.tx);
     const rows = presented.length === 0
@@ -337,8 +337,8 @@ const renderPlan = (entry: LogEntryWire): string => {
 
     return rows.map(({ glyph, text }, index) => {
         const prefix = index === 0
-            ? `  ${coordPrefix(entry)}${glyph} ${subGlyph} ${statusText} `
-            : `  ${coordBlank(entry)}${glyph}${" ".repeat(5 + status.length)}`;
+            ? `  ${glyph} ${firstSlot}`
+            : `  ${glyph} ${laterSlot}`;
         const annotation = index === 0 && note !== null ? ` ${DIM}— ${note}${RESET}` : "";
         return `${prefix}${DIM}${text}${RESET}${annotation}`;
     }).join("\n");
@@ -393,7 +393,7 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
         : sendSubGlyph(entry.status_rx);
 
     const statusColor = colorForStatus(entry.status_rx);
-    const statusText = `${statusColor}${entry.status_rx}${RESET}`;
+    const statusText = statusCodeVisible(entry) ? `${statusColor}${entry.status_rx}${RESET}` : "";
 
     // Render whatever target the daemon supplied — no synthesis. If scheme
     // is null but pathname is set, that's the daemon's choice (e.g. file://
@@ -405,16 +405,17 @@ export const renderLogEntry = (entry: LogEntryWire): string => {
 
     const extra = buildExtra(entry);
 
-    // Fixed columns: idGlyph · status (always present — glyph or reserved blank) ·
-    // code · target · extra. subGlyph is ALWAYS pushed so the code column is stable.
-    const parts = [idGlyph, subGlyph, statusText];
+    // Columns: idGlyph · status glyph (always present — glyph or reserved blank)
+    // · code (SEND and errors only, plurnk#21) · target · extra.
+    const parts = [idGlyph, subGlyph];
+    if (statusText.length > 0) parts.push(statusText);
     if (pathText.length > 0) parts.push(pathText);
     if (scopeText.length > 0) parts.push(scopeText);
     if (extra.length > 0) parts.push(extra);
     const annotation = entryAnnotation(entry);
     if (annotation !== null) parts.push(`${DIM}— ${annotation}${RESET}`);
 
-    return `  ${coordPrefix(entry)}${parts.join(" ")}`;
+    return `  ${parts.join(" ")}`;
 };
 
 export interface LoopUsage {

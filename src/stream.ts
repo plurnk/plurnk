@@ -12,7 +12,6 @@
 
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { coordLabel } from "./render.ts";
 
 const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
@@ -53,12 +52,9 @@ export interface StreamConcludedPayload extends StreamCoord {
     wakeLoopId?: number;
 }
 
-// The coordinate label from a stream payload, or "" when the stream
-// carries none (non-coordinate-bearing scheme).
-const streamCoord = (ev: StreamCoord): string =>
-    typeof ev.loop_seq === "number" && typeof ev.turn_seq === "number" && typeof ev.sequence === "number"
-        ? coordLabel(ev.loop_seq, ev.turn_seq, ev.sequence)
-        : "";
+// The human waterfall carries no coordinates (plurnk#21); stream lines
+// align with the coordinate-free rows.
+const streamCoord = (_ev: StreamCoord): string => "";
 
 const statusGlyph = (status: number): string => {
     if (status === 200) return "  ";   // routine success — empty slot, not a check on every conclusion
@@ -83,9 +79,9 @@ export default class StreamTrace {
     event(ev: StreamEventPayload): string | null {
         if (this.#started.has(ev.entryId)) return null;
         this.#started.add(ev.entryId);
-        // TWO lanes (identity · status) like every waterfall row; the in-flight line
-        // has no status CODE yet, so the code column holds a reserved 3-blank.
-        return `  ${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${DIM}...${RESET} ${ev.target}`;
+        // TWO lanes (identity · status) like every waterfall row; no code —
+        // routine codes left the human waterfall (plurnk#21).
+        return `  ${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${ev.target}`;
     }
 
     // One conclusion line in the waterfall grammar. The daemon's summary
@@ -97,10 +93,12 @@ export default class StreamTrace {
         let summary = ev.summary ?? "";
         if (summary.startsWith(ev.target)) summary = summary.slice(ev.target.length).replace(/^\s+/, "");
         const wake = ev.wakeAction === "resumed-loop" ? " → resumed loop" : "";
+        // The code renders only when it means something: cancellation or error
+        // (plurnk#21). A routine 200 conclusion is the quiet default.
         const parts = [
             STREAM_GLYPH,   // lane 1: identity (the stream)
             statusGlyph(status),   // lane 2: status (reserved blank on 2xx)
-            `${statusColor(status)}${status}${RESET}`,
+            ...(status === 200 ? [] : [`${statusColor(status)}${status}${RESET}`]),
             ev.target,
         ];
         let line = `  ${streamCoord(ev)}${parts.join(" ")}`;

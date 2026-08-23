@@ -73,7 +73,7 @@ describe("TUI workspace MCP dogfood", () => {
 
             tui.write(`/script ${currentCall}\r`);
             const used = await tui.waitFor(/script: 2 ops ok/, 20_000);
-            assert.match(used, /200 echo/);
+            assert.match(used, /echo/);  // the EXEC row keeps its target; routine codes left the waterfall (plurnk#21)
 
             tui.write("/mcp\r");
             await tui.waitFor(/current\s+active\s+stdio[\s\S]*1\/2 tools/, 20_000);

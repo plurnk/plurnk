@@ -25,11 +25,10 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     const t = new StreamTrace();
     const first = t.event(event(1));
     assert.ok(first !== null);
-    // Blank op slot (2sp) + blank code slot (3sp) hold the waterfall columns:
-    // Two lanes (identity · status): `📡 ⏳ ... target` — the in-flight line holds a
-    // dim 3-dot reserve in the code column.
-    assert.match(first, /📡 ⏳ \.{3} python:\/\/\/1\/2\/1/);
-    assert.match(first, /^  01\/02\/01 /, "start line carries the wire coordinate");
+    // Two lanes (identity · status): `📡 ⏳ target` — no coordinate, no code
+    // reserve; the human waterfall is coordinate- and code-free here (plurnk#21).
+    assert.match(first, /📡 ⏳ python:\/\/\/1\/2\/1/);
+    assert.doesNotMatch(first, /01\/02\/01/, "no coordinate gutter on stream lines");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
 });
@@ -44,12 +43,12 @@ test("StreamTrace: distinct entries each announce once", () => {
 test("[§cli-stream-event-and-stream-concluded] StreamTrace: conclusion speaks the waterfall grammar and strips the target echo", () => {
     const t = new StreamTrace();
     const line = t.concluded(concluded());
-    // Blank op slot between origin and status keeps the code/target columns
-    // aligned with op rows (📡 has no op glyph).
-    // Routine 200 conclusion badges no ✅ now (blank status slot); code + target stay aligned.
+    // Routine 200 conclusion badges no ✅ and carries no code (plurnk#21);
+    // only the target and summary remain.
     assert.doesNotMatch(line, /✅/);
-    assert.match(line, /📡.*200 python:\/\/\/1\/2\/1/);
-    assert.match(line, /^  01\/02\/01 /, "conclusion line carries the wire coordinate");
+    assert.doesNotMatch(line, /200/, "a routine conclusion shows no code");
+    assert.match(line, /📡.*python:\/\/\/1\/2\/1/);
+    assert.doesNotMatch(line, /01\/02\/01/, "no coordinate gutter on conclusions");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
     assert.doesNotMatch(line, /python:\/\/\/1\/2\/1 completed/);
     assert.doesNotMatch(line, /no-op-active-loop/);
@@ -92,5 +91,5 @@ test("StreamTrace: a stream without a coordinate renders without one", () => {
     const line = t.event({ entryId: 9, workerId: 7, target: "sse://feed", channel: "data", state: "active", contentLength: 5 });
     assert.ok(line !== null);
     assert.doesNotMatch(line, /\d\d\/\d\d\/\d\d/);
-    assert.match(line, /📡 ⏳ \.{3} sse:\/\/feed/);
+    assert.match(line, /📡 ⏳ sse:\/\/feed/);
 });

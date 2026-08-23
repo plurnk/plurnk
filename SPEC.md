@@ -340,14 +340,18 @@ One line per dispatched op, except the structured PLAN block below. Format
 (vanilla ANSI, no framework):
 
 ```
-  <origin> <op-glyph> <status-glyph> <status> <target> <scope>  <body-preview> [— <annotation>]
+  <identity-glyph> <status-glyph> [<status>] <target> <scope>  <body-preview> [— <annotation>]
 ```
 
-Width-tolerant; no fixed column widths. The status code drives color; EVERY line carries a status glyph (✅/⏳/❌ from the outcome; SENDs glyph their signal — ✋/💥/⏳ carry meaning; 4xx and 5xx share ❌, nvim-converged: one failure signal in the alignment column, the colored status carries the class). A glyph that exists only sometimes is dissonant (rummy f20c4a0 precedent).
+Width-tolerant; no fixed column widths. EVERY line carries exactly two glyph
+lanes (identity · status, blanks reserved), and the human waterfall is
+deliberately quiet (plurnk#21): **no log coordinates** and **no status codes
+except where they mean something** — every SEND keeps its code (the
+conversation's protocol truth) and every error (≥400) keeps its colored code;
+routine non-SEND successes show none. Coordinates and every status remain
+exact on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
-
-**Coordinate prefix.** Each line opens with the `LL/TT/SS` logical coordinate (loop/turn/sequence, zero-padded min-2), so it's its own `log://` address. AG-UI+ row events carry `loop_seq`/`turn_seq`/`sequence`; the readline prompt shows the coordinate the typed line will get — the next loop's actionless `prompt` row at `<next>/01/01`, advancing as loops complete. Stream lines (`📡`) carry it too — `stream/event`/`stream/concluded` mirror the entry's coordinate, read straight from the payload (never reconstructed from the URI). A stream without a coordinate renders without one.
 
 **Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (Plan) · ⏳ 💤 🤔 💥 ✋ ❌ (status). Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
 

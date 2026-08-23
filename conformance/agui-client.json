@@ -425,7 +425,8 @@
     "worker.skills.list": {
       "posture": "native",
       "evidence": [
-        "src/skills.test.ts — Agent Skills management"
+        "src/skills.test.ts — Agent Skills management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
       ],
       "dimensions": [
         "admission",
@@ -439,7 +440,8 @@
     "worker.skills.discover": {
       "posture": "native",
       "evidence": [
-        "src/skills.test.ts — Agent Skills management"
+        "src/skills.test.ts — Agent Skills management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
       ],
       "dimensions": [
         "admission",
@@ -454,6 +456,7 @@
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -469,6 +472,7 @@
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -484,6 +488,7 @@
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -499,6 +504,7 @@
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -513,7 +519,8 @@
     "worker.agents.list": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management"
+        "src/agents.test.ts — outbound agents management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
       ],
       "dimensions": [
         "admission",
@@ -527,7 +534,8 @@
     "worker.agents.discover": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management"
+        "src/agents.test.ts — outbound agents management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
       ],
       "dimensions": [
         "admission",
@@ -542,6 +550,7 @@
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -557,6 +566,7 @@
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -572,6 +582,7 @@
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [
@@ -587,6 +598,7 @@
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
+        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [

@@ -5,6 +5,7 @@
 //
 // They share a renderer, not a semantic envelope. Per SPEC.md §8.
 
+import { colorEnabled } from "./color.ts";
 import process from "node:process";
 import {
     Problems,
@@ -54,7 +55,7 @@ export class ProblemError extends Error {
     }
 }
 
-const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
+const useColor = colorEnabled();
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
 const DIM = code("2");

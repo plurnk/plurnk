@@ -367,7 +367,7 @@ const freshRender = async (tag: string): Promise<typeof import("./render.ts")> =
 const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
 test("bold: the model's terminal SEND (200) renders bold, with NO background band", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=1");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry(sendEntry));
@@ -377,7 +377,7 @@ test("bold: the model's terminal SEND (200) renders bold, with NO background ban
 });
 
 test("bold: a cancelled terminal SEND (499) is also bold (it's a terminal answer)", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=499");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 499, status_rx: 499 }));
@@ -385,7 +385,7 @@ test("bold: a cancelled terminal SEND (499) is also bold (it's a terminal answer
 });
 
 test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=102");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 102, status_rx: 102, tx: { body: { raw: "working…", json: null } } }));
@@ -393,7 +393,7 @@ test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)
 });
 
 test("bold: inner RESET re-arms bold so a markdown span can't cut it mid-line", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=rearm");
     process.env.NO_COLOR = "1";
     // The markdown **bold** span emits its own RESET; the line-bold must resume
@@ -403,7 +403,7 @@ test("bold: inner RESET re-arms bold so a markdown span can't cut it mid-line", 
 });
 
 test("bold: a client-origin broadcast is NOT bold (only the MODEL's answer)", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=client");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({

@@ -4,7 +4,9 @@
 // ergonomic target. Vanilla ANSI, no framework, no wire channel. The one-shot
 // CLI never uses this — raw stays raw for pipes.
 
-const supportsColor = process.env.NO_COLOR === undefined && process.stdout.isTTY === true;
+import { colorEnabled } from "./color.ts";
+
+const supportsColor = colorEnabled() && process.stdout.isTTY === true;
 const code = (n: string): string => supportsColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
 const DIM = code("2");

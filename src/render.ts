@@ -1,6 +1,7 @@
 // Glyph palette + line formatting for the TUI log waterfall.
 // Glyphs per TUI.md §4 (canonical for the constellation).
 
+import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
@@ -66,7 +67,7 @@ export const sendSubGlyph = (status: number): string => {
 };
 
 // ANSI escape codes. NO_COLOR support per Unix convention.
-const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
+const useColor = colorEnabled();
 
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");

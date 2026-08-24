@@ -18,7 +18,9 @@
         "dist/**/*",
         "conformance/agui-client.json",
         ".env.defaults",
-        "README.md"
+        "README.md",
+        "man/",
+        "completions/"
     ],
     "scripts": {
         "test:lint": "tsc --noEmit",
@@ -42,7 +44,8 @@
         "build:local:uninstall": "node scripts/install-sandbox.mjs uninstall",
         "test:installation": "node scripts/test-installation.mjs",
         "test:composition": "node scripts/test-composition.mjs",
-        "release:publish": "node scripts/release-publish.mjs"
+        "release:publish": "node scripts/release-publish.mjs",
+        "build:posix": "node --conditions=plurnk-dev scripts/generate-posix.mjs"
     },
     "devDependencies": {
         "@types/node": "^26.1.1",
@@ -57,5 +60,6 @@
     },
     "plurnk": {
         "builtAgainst": "1.8.0"
-    }
+    },
+    "man": "./man/plurnk.1"
 }

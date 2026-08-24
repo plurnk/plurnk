@@ -10,10 +10,11 @@
 // TUI doesn't fetch content" (SPEC §5.3), because the content IS the
 // optics when it's two lines long.
 
+import { colorEnabled } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 
-const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
+const useColor = colorEnabled();
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
 const DIM = code("2");

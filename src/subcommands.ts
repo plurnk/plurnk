@@ -3,6 +3,7 @@
 // goes to stdout (the product), trace/errors to stderr — same posture as CLI
 // mode per SPEC.md §2.1.
 
+import { colorEnabled } from "./color.ts";
 import {
     Validator,
     type ModelCatalogEntry,
@@ -25,7 +26,7 @@ export interface Caller { call(method: string, params?: object): Promise<unknown
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
-const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
+const useColor = colorEnabled();
 const BOLD = useColor ? "\x1b[1m" : "";
 const RESET = useColor ? "\x1b[0m" : "";
 

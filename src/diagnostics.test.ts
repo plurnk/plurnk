@@ -81,7 +81,7 @@ const freshDiagnostics = async (tag: string): Promise<typeof import("./diagnosti
     await import(`./diagnostics.ts?${tag}`) as typeof import("./diagnostics.ts");
 
 test("renderDiagnostic colors Problems red", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const module = await freshDiagnostics("problem-color");
     process.env.NO_COLOR = "1";
     const out = module.renderDiagnostic(clientRuntimeError("failed"));
@@ -99,7 +99,7 @@ test("renderDiagnostic renders a Problem's producer-owned recovery once", () => 
 });
 
 test("renderDiagnostic uses producer-owned Notice severity", async () => {
-    process.env.NO_COLOR = "0";
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const module = await freshDiagnostics("notice-colors");
     process.env.NO_COLOR = "1";
     const warn = module.renderDiagnostic({

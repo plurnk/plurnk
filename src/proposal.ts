@@ -8,6 +8,7 @@
 // for EXEC), and an opaque attrs object. loop.resolve takes {logEntryId,
 // decision, body?, outcome?}.
 
+import { colorEnabled } from "./color.ts";
 import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -45,7 +46,7 @@ export interface Resolution {
     outcome?: string;
 }
 
-const useColor = process.env.NO_COLOR !== "1" && process.env.NO_COLOR !== "true";
+const useColor = colorEnabled();
 const ansi = (code: string): string => useColor ? `\x1b[${code}m` : "";
 const RESET = ansi("0");
 const BOLD = ansi("1");

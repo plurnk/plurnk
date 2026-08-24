@@ -112,7 +112,7 @@ export const resolveProjectRoot = (raw: string | undefined): string | null => {
     return raw;
 };
 
-const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--reasoning <policy>] [prompt...]
+export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--reasoning <policy>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]

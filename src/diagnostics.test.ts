@@ -157,7 +157,7 @@ test("[§cli-connection-onboarding] isUnreachable only classifies connection-lev
 
 test("[§cli-problems-and-notices] clientConnectionRefused is an RFC 9457 Problem", () => {
     const problem = clientConnectionRefused("http://127.0.0.1:3044", new Error("ECONNREFUSED"));
-    assert.equal(problem.type, "https://problems.plurnk.dev/client/connection/refused");
+    assert.equal(problem.type, "https://problems.plurnk.xyz/client/connection/refused");
     assert.equal(problem.title, "Refused");
     assert.equal(problem.status, 503);
     assert.equal(problem.detail, "ECONNREFUSED");

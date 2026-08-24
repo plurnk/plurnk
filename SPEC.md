@@ -631,7 +631,7 @@ interface ProblemDetails {
 ```
 
 Client problem types live under
-`https://problems.plurnk.dev/client/<owner>/<kind>`. Helpers in
+`https://problems.plurnk.xyz/client/<owner>/<kind>`. Helpers in
 `src/diagnostics.ts` own the stable type, status, detail, and recovery fields;
 callers do not hand-shape failure JSON. `ProblemError` carries an exact Problem
 through async control flow together with its process exit code. Unstructured

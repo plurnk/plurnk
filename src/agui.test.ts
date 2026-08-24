@@ -39,12 +39,12 @@ test("AG-UI validators map invalid Problems and results to exact client Problems
     assert.throws(
         () => problemDetails({ status: 500 }),
         (error: unknown) => error instanceof ProblemError
-            && error.problem.type === "https://problems.plurnk.dev/client/transport/problem-invalid",
+            && error.problem.type === "https://problems.plurnk.xyz/client/transport/problem-invalid",
     );
     assert.throws(
         () => operationResult({ status: 500 }),
         (error: unknown) => error instanceof ProblemError
-            && error.problem.type === "https://problems.plurnk.dev/client/transport/result-invalid",
+            && error.problem.type === "https://problems.plurnk.xyz/client/transport/result-invalid",
     );
 });
 
@@ -103,7 +103,7 @@ test("runViaBridge: even with NO options, the workspace (world) still rides — 
 
 test("runViaBridge: a PLURNK HTTP failure preserves exact Problem Details", async () => {
     const problem = {
-        type: "https://problems.plurnk.dev/agui/http/bearer-token-required",
+        type: "https://problems.plurnk.xyz/agui/http/bearer-token-required",
         title: "Bearer token required",
         status: 401,
         detail: "A bearer token is required.",
@@ -180,7 +180,7 @@ test("actionViaBridge: a verb rides its own run and returns its result verbatim"
 
 test("actionViaBridge: an action failure throws the exact validated Problem", async () => {
     const problem = {
-        type: "https://problems.plurnk.dev/agui/action/unknown-action",
+        type: "https://problems.plurnk.xyz/agui/action/unknown-action",
         title: "Unknown action",
         status: 404,
         detail: "Unknown action 'missing'.",
@@ -207,7 +207,7 @@ test("actionViaBridge: a missing action result throws an exact client Problem", 
         await assert.rejects(
             () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
             (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.dev/client/action/result-missing"
+                && error.problem.type === "https://problems.plurnk.xyz/client/action/result-missing"
                 && error.problem.action === "workspace.list",
         );
     } finally { await mock.close(); }
@@ -222,7 +222,7 @@ test("actionViaBridge: a malformed action result throws an exact client Problem"
         await assert.rejects(
             () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
             (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.dev/client/action/result-invalid",
+                && error.problem.type === "https://problems.plurnk.xyz/client/action/result-invalid",
         );
     } finally { await mock.close(); }
 });
@@ -272,7 +272,7 @@ test("resolveWorld: a missing minted name throws an exact client Problem", async
         await assert.rejects(
             () => resolveWorld({ bridgeUrl: mock.url }, undefined, { projectRoot: "/repo" }),
             (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.dev/client/workspace/name-missing",
+                && error.problem.type === "https://problems.plurnk.xyz/client/workspace/name-missing",
         );
     } finally { await mock.close(); }
 });
@@ -332,7 +332,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "PLAN" } }));
         holdOpen = () => {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.dev/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } }));
+            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
             res.end();
         };

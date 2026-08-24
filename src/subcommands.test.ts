@@ -61,7 +61,7 @@ test("runWorkspaceRename: unknown workspace throws the exact public Problem", as
         (error: unknown) => {
             assert.ok(error instanceof ProblemError);
             assert.equal(error.exitCode, 1);
-            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/workspace-not-found");
+            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/workspace-not-found");
             assert.equal(error.problem.name, "ghost");
             return true;
         },
@@ -237,7 +237,7 @@ test("runWorkspaceWorkers: unknown workspace name throws the exact public Proble
         (error: unknown) => {
             assert.ok(error instanceof ProblemError);
             assert.equal(error.exitCode, 1);
-            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/workspace-not-found");
+            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/workspace-not-found");
             assert.equal(error.problem.name, "nonexistent");
             return true;
         },
@@ -258,7 +258,7 @@ test("runWorkspaceWorkers: ambiguous name throws the exact public Problem", asyn
         (error: unknown) => {
             assert.ok(error instanceof ProblemError);
             assert.equal(error.exitCode, 1);
-            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/workspace-ambiguous");
+            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/workspace-ambiguous");
             assert.equal(error.problem.count, 2);
             return true;
         },
@@ -362,7 +362,7 @@ test("runRead: no entry at the coordinate throws an exact 404 Problem", async ()
         (error: unknown) => {
             assert.ok(error instanceof ProblemError);
             assert.equal(error.exitCode, 4);
-            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/entry-not-found");
+            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/entry-not-found");
             assert.equal(error.problem.coordinate, "3/1/2");
             return true;
         },
@@ -376,7 +376,7 @@ test("runRead: malformed coordinate throws an exact 400 Problem and never hits t
         (error: unknown) => {
             assert.ok(error instanceof ProblemError);
             assert.equal(error.exitCode, 64);
-            assert.equal(error.problem.type, "https://problems.plurnk.dev/client/subcommand/coordinate-invalid");
+            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/coordinate-invalid");
             assert.equal(error.problem.coordinate, "nope");
             return true;
         },

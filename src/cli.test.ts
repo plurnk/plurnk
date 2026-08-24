@@ -318,7 +318,7 @@ test("buildScriptJsonRecord: round-trips through JSON.stringify", () => {
 
 test("buildJsonError embeds the exact RFC 9457 Problem", () => {
     const problem = {
-        type: "https://problems.plurnk.dev/client/rpc/error",
+        type: "https://problems.plurnk.xyz/client/rpc/error",
         title: "Error",
         status: 502,
         detail: "loop.run rejected",

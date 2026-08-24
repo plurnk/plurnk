@@ -230,7 +230,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
 
 test("BridgeTransport: plurnk.problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
     const problem = {
-        type: "https://problems.plurnk.dev/engine/rails/max-turns",
+        type: "https://problems.plurnk.xyz/engine/rails/max-turns",
         title: "Max turns",
         status: 429,
         detail: "The configured turn ceiling is exhausted.",
@@ -265,13 +265,13 @@ test("BridgeTransport: RUN_ERROR without the exact Problem returns a client cont
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
         assert.equal(result.finalStatus, 502);
-        assert.equal(result.result.problem?.type, "https://problems.plurnk.dev/client/transport/problem-missing");
+        assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/problem-missing");
     } finally { await mock.close(); }
 });
 
 test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth", async () => {
     const problem = {
-        type: "https://problems.plurnk.dev/lifecycle/cancel/loop-cancelled",
+        type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled",
         title: "Loop cancelled",
         status: 499,
         detail: "The loop was cancelled.",
@@ -306,7 +306,7 @@ test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth",
 
 test("BridgeTransport.rpc: an action failure throws its exact Problem", async () => {
     const problem = {
-        type: "https://problems.plurnk.dev/agui/action/unknown-action",
+        type: "https://problems.plurnk.xyz/agui/action/unknown-action",
         title: "Unknown action",
         status: 404,
         detail: "Unknown action 'missing'.",
@@ -372,7 +372,7 @@ test("BridgeTransport.rpc: an action stream without a result or interrupt fails 
         await assert.rejects(
             () => bt.rpc("op.exec", { command: "printf done" }),
             (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.dev/client/action/result-missing",
+                && error.problem.type === "https://problems.plurnk.xyz/client/action/result-missing",
         );
     } finally { await mock.close(); }
 });
@@ -526,7 +526,7 @@ test("BridgeTransport: a proposal without the matching interrupt outcome returns
         bt.subscribe(h);
         const result = await bt.run("edit it", {}).done;
         assert.equal(result.finalStatus, 502);
-        assert.equal(result.result.problem?.type, "https://problems.plurnk.dev/client/transport/interrupt-mismatch");
+        assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/interrupt-mismatch");
         assert.deepEqual(seen.problems, [result.result.problem]);
     } finally { await mock.close(); }
 });
@@ -544,7 +544,7 @@ test("BridgeTransport: malformed proposal arguments return an exact Problem", as
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("edit it", {}).done;
-        assert.equal(result.result.problem?.type, "https://problems.plurnk.dev/client/transport/proposal-invalid");
+        assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/proposal-invalid");
         assert.deepEqual(seen.problems, [result.result.problem]);
     } finally { await mock.close(); }
 });

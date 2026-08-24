@@ -90,7 +90,7 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
                 },
             ),
             (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.dev/agui/action/invalid-action-parameters"
+                && error.problem.type === "https://problems.plurnk.xyz/agui/action/invalid-action-parameters"
                 && error.problem.status === 400,
             `${name} preserves the exact admission Problem`,
         );

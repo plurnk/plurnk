@@ -250,6 +250,6 @@ test("[§cli-workspaces-and-workers] resolveWorkerId: an unknown run name THROWS
         () => resolveWorkerId(rpc, "ghost"),
         (error: unknown) => error instanceof Error
             && "problem" in error
-            && (error as { problem: { type?: unknown } }).problem.type === "https://problems.plurnk.dev/client/worker/not-found",
+            && (error as { problem: { type?: unknown } }).problem.type === "https://problems.plurnk.xyz/client/worker/not-found",
     );
 });

@@ -444,8 +444,8 @@ export const contextGauge = (tokens?: number | null, capacity?: number | null): 
 // usage is absent for non-model ops (op.exec / op.parse have no provider
 // call) — those render no token part. It is NOT a fallback for missing
 // data: a model loop always carries real usage (plurnk-service #197).
-const STRIKE_THRESHOLD = "https://problems.plurnk.dev/engine/rails/strike-threshold";
-const INVALID_EMISSION_EXHAUSTED = "https://problems.plurnk.dev/engine/generation/invalid-emission-exhausted";
+const STRIKE_THRESHOLD = "https://problems.plurnk.xyz/engine/rails/strike-threshold";
+const INVALID_EMISSION_EXHAUSTED = "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted";
 
 // The status class is not the verdict. Preserve the exact terminal Problem so
 // unrelated engine failures do not masquerade as rail strike-outs.

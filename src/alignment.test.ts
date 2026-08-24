@@ -60,7 +60,7 @@ test("[§cli-rendering] code-bearing species share ONE code column; routine non-
         ["model SEND 102", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 102, status_rx: 102, tx: { body: { raw: "thinking on" } } }))],
         ["model SEND 200 (answer)", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: "pong" } } }))],
         ["user SEND 201 (prompt row)", renderLogEntry(entry({ op: "SEND", origin: "client", signal: 201, status_rx: 201, tx: { body: { raw: "hi" } } }))],
-        ["stream concluded 499", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 499, problem: { type: "https://problems.plurnk.dev/x/cancelled", title: "Cancelled", status: 499, detail: "cancelled" } }, summary: "cancelled", wakeAction: "no-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
+        ["stream concluded 499", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 499, problem: { type: "https://problems.plurnk.xyz/x/cancelled", title: "Cancelled", status: 499, detail: "cancelled" } }, summary: "cancelled", wakeAction: "no-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
     ];
     const cols = coded.map(([label, line]) => {
         const first = stripAnsi(line).split("\n")[0];

@@ -63,7 +63,7 @@ let parsed = null;
 try { parsed = JSON.parse(refusedJson.stdout.trim()); } catch { /* invalid JSON → fails below */ }
 ok(
     parsed?.schemaVersion === 6
-        && parsed?.problem?.type === "https://problems.plurnk.dev/client/connection/refused",
+        && parsed?.problem?.type === "https://problems.plurnk.xyz/client/connection/refused",
     "--json emits the current schemaVersion + exact RFC 9457 Problem on stdout",
 );
 ok(refusedJson.stderr.trim() === "", "--json keeps stderr silent even on failure");

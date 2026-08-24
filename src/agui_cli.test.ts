@@ -121,14 +121,14 @@ test("consumeCliRun: RUN_ERROR without the exact Problem is a transport contract
         { type: EventType.RUN_ERROR, message: "loop terminated 429 (maxTurns)", code: "429" },
     ]), io);
     assert.equal(result.exitCode, 4);
-    assert.equal(result.problem?.type, "https://problems.plurnk.dev/client/transport/problem-missing");
+    assert.equal(result.problem?.type, "https://problems.plurnk.xyz/client/transport/problem-missing");
     assert.match(err.join(""), /required Problem Details/);
     assert.doesNotMatch(err.join(""), /maxTurns/, "the client does not reconstruct failure truth from lossy RUN_ERROR fields");
 });
 
 test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERROR cannot encode", async () => {
     const problem = {
-        type: "https://problems.plurnk.dev/engine/generation/invalid-emission-exhausted",
+        type: "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted",
         title: "Invalid emission exhausted",
         status: 500,
         detail: "The model did not emit a valid turn in three attempts.",
@@ -156,7 +156,7 @@ test("consumeCliRun: a proposal without the matching interrupt outcome returns a
     const events = proposalCall(9).slice(0, -1);
     const result = await consumeCliRun(stream(events), io);
     assert.equal(result.pendingResume, null);
-    assert.equal(result.problem?.type, "https://problems.plurnk.dev/client/transport/interrupt-mismatch");
+    assert.equal(result.problem?.type, "https://problems.plurnk.xyz/client/transport/interrupt-mismatch");
     assert.equal(result.problem?.logEntryId, 9);
 });
 
@@ -167,7 +167,7 @@ test("consumeCliRun: malformed proposal arguments return an exact Problem", asyn
         { type: EventType.TOOL_CALL_ARGS, toolCallId: "prop:12", delta: "{" },
         { type: EventType.TOOL_CALL_END, toolCallId: "prop:12" },
     ]), io);
-    assert.equal(result.problem?.type, "https://problems.plurnk.dev/client/transport/proposal-invalid");
+    assert.equal(result.problem?.type, "https://problems.plurnk.xyz/client/transport/proposal-invalid");
     assert.equal(result.problem?.logEntryId, 12);
 });
 
@@ -261,7 +261,7 @@ test("consumeCliRun: plurnk.terminated is authoritative for the exit code", asyn
             result: {
                 status: 499,
                 problem: {
-                    type: "https://problems.plurnk.dev/lifecycle/cancel/loop-cancelled",
+                    type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled",
                     title: "Loop cancelled",
                     status: 499,
                     detail: "The loop was cancelled.",

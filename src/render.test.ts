@@ -475,7 +475,7 @@ const usage = (inputTokens: number, outputTokens: number, costUsd = "0") => ({
 const terminalResult = (status: number, type?: string) => status >= 400 ? {
     status,
     problem: {
-        type: type ?? `https://problems.plurnk.dev/test/status-${status}`,
+        type: type ?? `https://problems.plurnk.xyz/test/status-${status}`,
         title: `Status ${status}`,
         status,
         detail: `Terminal status ${status}`,
@@ -498,7 +498,7 @@ test("renderSummary: differentiated terminal codes get distinct labels (#70)", (
     assert.match(renderSummary(3, 1000, terminalResult(499), false, usage(10, 5)), /cancelled/);
     assert.match(renderSummary(3, 1000, terminalResult(413), false, usage(10, 5)), /budget overflow/);
     assert.match(renderSummary(3, 1000, terminalResult(429), false, usage(10, 5)), /turn ceiling/);
-    assert.match(renderSummary(3, 1000, terminalResult(500, "https://problems.plurnk.dev/engine/rails/strike-threshold"), false, usage(10, 5)), /strike-out/);
+    assert.match(renderSummary(3, 1000, terminalResult(500, "https://problems.plurnk.xyz/engine/rails/strike-threshold"), false, usage(10, 5)), /strike-out/);
     assert.match(renderSummary(3, 1000, terminalResult(508), false, usage(10, 5)), /loop detected/);
 });
 
@@ -506,7 +506,7 @@ test("renderSummary: status 500 is a strike-out only for the rail Problem (#7)",
     const invalidEmission = {
         status: 500,
         problem: {
-            type: "https://problems.plurnk.dev/engine/generation/invalid-emission-exhausted",
+            type: "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted",
             title: "Invalid emission exhausted",
             status: 500,
             detail: "No valid PLAN...SEND turn was received after 3 emission attempts.",

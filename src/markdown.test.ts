@@ -90,6 +90,19 @@ test("[§cli-markdown-projection] list prose wraps within the supplied screen wi
         "Every word in this deliberately long list item remains visible within the terminal viewport.");
 });
 
+test("[§cli-markdown-projection] GFM task lists project each checkbox exactly once", () => {
+    const out = renderMarkdownDocument([
+        "- [x] Boot the terminal",
+        "- [x] Render headings",
+        "- [ ] Convince yourself it's real",
+    ].join("\n"), 80);
+    assert.equal(out, [
+        "* [x] Boot the terminal",
+        "* [x] Render headings",
+        "* [ ] Convince yourself it's real",
+    ].join("\n"));
+});
+
 test("[§cli-markdown-projection] a simple Mermaid chain projects as a bounded diagram", () => {
     const out = renderMermaid([
         "graph TD",

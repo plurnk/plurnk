@@ -379,9 +379,10 @@ semantic/raw source; no pre-rendered channel exists at the protocol boundary.
 
 Readable provider reasoning is neither PLAN nor assistant speech. The client
 consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle,
-shows its growing tail in one replaceable `💭` row, then replaces that preview
-with the complete dim block before the paired SEND row. No delta creates a
-scrollback row. It never infers reasoning
+commits complete terminal-width rows to one growing dim `💭` block and keeps
+only its incomplete tail in a replaceable row above the live prompt. Each row
+enters scrollback once, and the completed block precedes the paired SEND without
+being replayed. It never infers reasoning
 from PLAN, renders encrypted reasoning as text, or invents an empty transcript.
 The one-shot client streams this human trace to stderr; stdout remains the bare
 answer and JSON mode remains silent.

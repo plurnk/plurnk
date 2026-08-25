@@ -22,7 +22,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderReasoningPreview, renderSummary, isPromptEntry, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
+import { renderLogEntry, renderReasoningFrame, renderSummary, isPromptEntry, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -597,7 +597,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
     const priorTargets: string[] = [];
     let lookCursor: number | null = null;
-    let liveReasoning: { messageId: string; content: string; shown: boolean } | null = null;
+    let liveReasoning: {
+        messageId: string;
+        columns: number;
+        committed: number;
+        tail: string | null;
+        tailShown: boolean;
+    } | null = null;
 
     // Print a line ABOVE the live readline prompt without eating the user's
     // in-progress input. The canonical "log while prompting" idiom: wipe the
@@ -785,15 +791,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const clearPromptAndLiveReasoning = (): void => {
         readline.cursorTo(process.stdout, 0);
         readline.clearLine(process.stdout, 0);
-        if (liveReasoning?.shown === true) {
+        if (liveReasoning?.tailShown === true) {
             readline.moveCursor(process.stdout, 0, -1);
             readline.cursorTo(process.stdout, 0);
             readline.clearLine(process.stdout, 0);
+            liveReasoning.tailShown = false;
         }
     };
     const redrawLiveReasoning = (): void => {
-        if (liveReasoning?.shown === true) {
-            process.stdout.write(`${renderReasoningPreview(liveReasoning.content, process.stdout.columns ?? 80)}\n`);
+        if (liveReasoning !== null && liveReasoning.tail !== null) {
+            process.stdout.write(`${liveReasoning.tail}\n`);
+            liveReasoning.tailShown = true;
         }
         rl.prompt(true);
     };
@@ -809,7 +817,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const presentReasoning = (update: ReasoningUpdate): void => {
         if (update.phase === "start") {
             if (liveReasoning !== null) throw new TypeError("A second reasoning message started before the first ended.");
-            liveReasoning = { messageId: update.messageId, content: "", shown: false };
+            liveReasoning = {
+                messageId: update.messageId,
+                columns: process.stdout.columns ?? 80,
+                committed: 0,
+                tail: null,
+                tailShown: false,
+            };
             return;
         }
         if (liveReasoning === null || liveReasoning.messageId !== update.messageId) {
@@ -817,14 +831,22 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
         clearPromptAndLiveReasoning();
         if (update.phase === "content") {
-            liveReasoning.content = update.content;
-            liveReasoning.shown = update.content.length > 0;
+            const frame = renderReasoningFrame(update.content, liveReasoning.columns);
+            if (frame.committed.length < liveReasoning.committed) {
+                throw new TypeError("Growing reasoning replaced an already committed terminal row.");
+            }
+            const rows = frame.committed.slice(liveReasoning.committed);
+            if (rows.length > 0) process.stdout.write(`${rows.join("\n")}\n`);
+            liveReasoning.committed = frame.committed.length;
+            liveReasoning.tail = frame.tail;
             redrawLiveReasoning();
             return;
         }
-        const content = update.content;
+        const frame = renderReasoningFrame(update.content, liveReasoning.columns);
+        const rows = frame.committed.slice(liveReasoning.committed);
+        if (rows.length > 0) process.stdout.write(`${rows.join("\n")}\n`);
+        if (frame.tail !== null) process.stdout.write(`${frame.tail}\n`);
         liveReasoning = null;
-        if (content.length > 0) process.stdout.write(`${renderReasoning(content)}\n`);
         rl.prompt(true);
     };
 

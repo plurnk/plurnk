@@ -3,7 +3,7 @@
 
 import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
-import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
+import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { presentPlan } from "./plan.ts";
 
@@ -246,16 +246,46 @@ export const renderReasoning = (content: string): string => content
     .map((line, index) => `${index === 0 ? "  💭 " : "     "}${DIM}${line}${RESET}`)
     .join("\n");
 
-// One physical terminal row for an in-flight reasoning preview. The completed
-// message replaces it with renderReasoning(), so live deltas never accumulate a
-// scrollback line per token.
-export const renderReasoningPreview = (content: string, columns: number = 80): string => {
-    const normalized = content.replace(/\s+/g, " ").trim();
+export interface ReasoningFrame {
+    committed: string[];
+    tail: string | null;
+}
+
+// A growing reasoning transcript without multiline cursor ownership. Explicit
+// newlines and terminal-width rows become immutable scrollback; only the final
+// incomplete row remains replaceable above readline's prompt. Keep two spare
+// terminal cells so a tail never triggers an implicit wrap that readline cannot
+// account for.
+export const renderReasoningFrame = (content: string, columns: number = 80): ReasoningFrame => {
+    if (content.length === 0) return { committed: [], tail: null };
     const capacity = Math.max(8, columns - 7);
-    const excerpt = normalized.length > capacity
-        ? `…${normalized.slice(-(capacity - 1))}`
-        : normalized;
-    return `  💭 ${DIM}${excerpt}${RESET}`;
+    const rows: string[] = [];
+    let row = "";
+    let width = 0;
+    for (const ch of content) {
+        if (ch === "\n") {
+            rows.push(row);
+            row = "";
+            width = 0;
+            continue;
+        }
+        const nextWidth = displayWidth(ch);
+        if (row.length > 0 && width + nextWidth > capacity) {
+            rows.push(row);
+            row = "";
+            width = 0;
+        }
+        row += ch;
+        width += nextWidth;
+    }
+    const hasTail = !content.endsWith("\n");
+    const format = (value: string, index: number): string =>
+        `${index === 0 ? "  💭 " : "     "}${DIM}${value}${RESET}`;
+    const committed = rows.map(format);
+    return {
+        committed,
+        tail: hasTail ? format(row, rows.length) : null,
+    };
 };
 
 // Bold the model's ANSWER. The model's terminal SEND (200 done / 499 cancelled

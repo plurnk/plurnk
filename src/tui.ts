@@ -10,7 +10,7 @@
 //   ? text         ask — loop.run with flags.mode="ask"
 //   : text         act (the default)
 //   text           prompt
-// The readline prompt is `[🔥][ progress%]: `: mode, active work, input.
+// The readline prompt is `[🔥|progress%]: `: one fixed slot, then input.
 
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
@@ -57,9 +57,10 @@ export const renderTuiFailure = (cause: unknown): string => {
 };
 
 export const renderInputPrompt = (yolo: boolean, activePercent: number | null): string => {
-    const mode = yolo ? "🔥" : "  ";
-    const progress = activePercent === null ? "" : ` ${progressLabel(activePercent)}`;
-    return `${mode}${progress}\x1b[1m: \x1b[0m`;
+    const slot = activePercent !== null
+        ? progressLabel(activePercent)
+        : yolo ? " 🔥 " : "    ";
+    return `${slot}\x1b[1m: \x1b[0m`;
 };
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
@@ -688,10 +689,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
     if (reasoningFailure !== undefined) process.stdout.write(`${renderTuiFailure(reasoningFailure)}\n`);
 
-    // The prompt carries only the stable-wide YOLO badge, an optional ASCII
-    // progress value, and the input affordance. Identity and lifecycle status
-    // belong to durable waterfall rows and diagnostics. A blank two-cell mode
-    // gutter when YOLO is off keeps input aligned with the waterfall.
+    // The prompt has one four-cell slot followed by the input affordance. Active
+    // progress replaces the centered YOLO badge, so every repaint leaves the
+    // colon fixed. Identity and lifecycle status belong to durable rows and
+    // diagnostics.
     const buildPrompt = (): string => {
         const branchCompleted = Number(branchBatch?.completed);
         const branchTotal = Number(branchBatch?.total);

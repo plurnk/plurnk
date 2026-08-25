@@ -62,7 +62,7 @@ export const renderInputPrompt = (yolo: boolean, activePercent: number | null): 
         && activePercent < 100;
     const slot = progressActive
         ? progressLabel(activePercent)
-        : yolo ? " 🔥" : "   ";
+        : yolo ? "🔥 " : "   ";
     return `${slot}\x1b[1m: \x1b[0m`;
 };
 

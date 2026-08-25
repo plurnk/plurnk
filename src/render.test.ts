@@ -14,7 +14,7 @@ const {
     extractSendBody,
     renderLogEntry,
     renderReasoning,
-    renderReasoningPreview,
+    renderReasoningFrame,
     renderSummary,
     curationGauge,
     contextGauge,
@@ -111,9 +111,23 @@ test("renderReasoning: distinct, compact block with no coordinate or status code
     assert.equal(renderReasoning("first line\nsecond line"), "  💭 first line\n     second line");
 });
 
-test("renderReasoningPreview: one bounded row follows the live tail", () => {
-    assert.equal(renderReasoningPreview("first\nsecond", 80), "  💭 first second");
-    assert.equal(renderReasoningPreview("abcdefghijklmnopqrstuvwxyz", 20), "  💭 …opqrstuvwxyz");
+test("[§cli-provider-reasoning] renderReasoningFrame commits complete rows and retains only the live tail", () => {
+    assert.deepEqual(renderReasoningFrame("first\nsecond", 80), {
+        committed: ["  💭 first"],
+        tail: "     second",
+    });
+    assert.deepEqual(renderReasoningFrame("abcdefghijklmnop", 20), {
+        committed: ["  💭 abcdefghijklm"],
+        tail: "     nop",
+    });
+});
+
+test("renderReasoningFrame preserves explicit blank lines without inventing an empty tail", () => {
+    assert.deepEqual(renderReasoningFrame("first\n\n", 80), {
+        committed: ["  💭 first", "     "],
+        tail: null,
+    });
+    assert.deepEqual(renderReasoningFrame("", 80), { committed: [], tail: null });
 });
 
 // ─── renderLogEntry: target rendering ────────────────────────────────

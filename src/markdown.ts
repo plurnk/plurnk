@@ -16,7 +16,7 @@ const CYAN = code("36");
 
 export const WIDTH_TARGET = 80;
 
-const displayWidth = (s: string): number => {
+export const displayWidth = (s: string): number => {
     let w = 0;
     for (const ch of s) {
         const cp = ch.codePointAt(0) ?? 0;

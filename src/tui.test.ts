@@ -16,8 +16,8 @@ const plainPrompt = (value: string): string => value.replaceAll(/\x1b\[[0-9;]*m/
 test("input prompt replaces its YOLO badge with fixed-width pre-completion progress", () => {
     assert.equal(plainPrompt(renderInputPrompt(true, 8)), " 8%: ");
     assert.equal(plainPrompt(renderInputPrompt(true, 88)), "88%: ");
-    assert.equal(plainPrompt(renderInputPrompt(true, 100)), " 🔥: ");
-    assert.equal(plainPrompt(renderInputPrompt(true, null)), " 🔥: ");
+    assert.equal(plainPrompt(renderInputPrompt(true, 100)), "🔥 : ");
+    assert.equal(plainPrompt(renderInputPrompt(true, null)), "🔥 : ");
     assert.equal(plainPrompt(renderInputPrompt(false, 42)), "42%: ");
     assert.equal(plainPrompt(renderInputPrompt(false, null)), "   : ");
 });

@@ -28,7 +28,7 @@ describe("TUI pty harness", () => {
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
             const output = await tui.waitFor(/🔥/);
-            assert.match(output, /🔥(?:\x1b\[[0-9;]*m)*: /, "idle YOLO prompt is 🔥:");
+            assert.match(output, / 🔥 (?:\x1b\[[0-9;]*m)*: /, "idle YOLO badge is centered in the prompt slot");
             assert.doesNotMatch(output, /🐹|🧮/, "the prompt has no identity or embedder glyph");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);

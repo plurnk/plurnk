@@ -13,11 +13,13 @@ import type { Transport } from "./transport.ts";
 
 const plainPrompt = (value: string): string => value.replaceAll(/\x1b\[[0-9;]*m/g, "");
 
-test("input prompt carries only YOLO mode and active progress", () => {
-    assert.equal(plainPrompt(renderInputPrompt(true, 42)), "🔥 42%: ");
-    assert.equal(plainPrompt(renderInputPrompt(true, null)), "🔥: ");
-    assert.equal(plainPrompt(renderInputPrompt(false, 42)), "   42%: ");
-    assert.equal(plainPrompt(renderInputPrompt(false, null)), "  : ");
+test("input prompt replaces its centered YOLO badge with fixed-width progress", () => {
+    assert.equal(plainPrompt(renderInputPrompt(true, 8)), "  8%: ");
+    assert.equal(plainPrompt(renderInputPrompt(true, 88)), " 88%: ");
+    assert.equal(plainPrompt(renderInputPrompt(true, 100)), "100%: ");
+    assert.equal(plainPrompt(renderInputPrompt(true, null)), " 🔥 : ");
+    assert.equal(plainPrompt(renderInputPrompt(false, 42)), " 42%: ");
+    assert.equal(plainPrompt(renderInputPrompt(false, null)), "    : ");
 });
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {

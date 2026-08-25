@@ -690,8 +690,9 @@ test("coordLabel survives for machine-adjacent surfaces and grows past two digit
     assert.match(coordLabel(7, 104, 12), /07\/104\/12 /);
 });
 
-test("active-prompt progress is a bounded integer percentage", () => {
-    assert.equal(progressLabel(42), "42%");
+test("active-prompt progress is a bounded four-cell integer percentage", () => {
+    assert.equal(progressLabel(7), "  7%");
+    assert.equal(progressLabel(42), " 42%");
     assert.equal(progressLabel(100), "100%");
     assert.equal(progressLabel(107.9), "100%");
 });

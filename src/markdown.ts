@@ -4,6 +4,9 @@
 // ergonomic target. Vanilla ANSI, no framework, no wire channel. The one-shot
 // CLI never uses this — raw stays raw for pipes.
 
+import { stripVTControlCharacters } from "node:util";
+import { renderMermaidASCII, type AsciiRenderOptions } from "beautiful-mermaid";
+
 import { colorEnabled } from "./color.ts";
 
 const supportsColor = colorEnabled() && process.stdout.isTTY === true;
@@ -12,13 +15,12 @@ const RESET = code("0");
 const DIM = code("2");
 const BOLD = code("1");
 const ITALIC = code("3");
-const CYAN = code("36");
 
 export const WIDTH_TARGET = 80;
 
 export const displayWidth = (s: string): number => {
     let w = 0;
-    for (const ch of s) {
+    for (const ch of stripVTControlCharacters(s)) {
         const cp = ch.codePointAt(0) ?? 0;
         w += (cp >= 0x1100 && (
             cp <= 0x115f || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3)
@@ -66,7 +68,7 @@ export const renderTable = (lines: string[], width: number = WIDTH_TARGET): stri
     const rows = lines.filter((line) => !isTableRule(line)).map(splitRow);
     const columns = Math.max(...rows.map((row) => row.length));
     const widths = Array.from({ length: columns }, (_v, index) =>
-        Math.max(1, ...rows.map((row) => displayWidth(row[index] ?? ""))));
+        Math.max(1, ...rows.map((row) => displayWidth(renderInline(row[index] ?? "")))));
     // Overhead: "│ " + " │ ".repeat + " │" → 3 per column + 1.
     const budget = () => widths.reduce((sum, w) => sum + w + 3, 1);
     while (budget() > width && Math.max(...widths) > 4) {
@@ -76,8 +78,12 @@ export const renderTable = (lines: string[], width: number = WIDTH_TARGET): stri
         `${DIM}${left}${widths.map((w) => "─".repeat(w + 2)).join(mid)}${right}${RESET}`;
     const cells = (row: string[], emphasize: boolean): string =>
         `${DIM}│${RESET} ${row.length === 0 ? "" : widths.map((w, index) => {
-            const cell = pad(truncate(row[index] ?? "", w), w);
-            return emphasize ? `${BOLD}${cell}${RESET}` : renderInline(cell);
+            const projected = renderInline(row[index] ?? "");
+            const cell = displayWidth(projected) > w
+                ? truncate(stripVTControlCharacters(projected), w)
+                : projected;
+            const aligned = pad(cell, w);
+            return emphasize ? `${BOLD}${aligned}${RESET}` : aligned;
         }).join(` ${DIM}│${RESET} `)} ${DIM}│${RESET}`;
     const out = [line("┌", "┬", "┐"), cells(rows[0] ?? [], true)];
     if (rows.length > 1) out.push(line("├", "┼", "┤"));
@@ -86,116 +92,49 @@ export const renderTable = (lines: string[], width: number = WIDTH_TARGET): stri
     return out;
 };
 
-// ─── Mermaid (flowchart subset) ──────────────────────────────────────
+// ─── Mermaid ─────────────────────────────────────────────────────────
 
-interface MermaidGraph {
-    labels: Map<string, string>;
-    edges: Array<{ from: string; to: string; label: string | null }>;
-    order: string[];
-}
+const MERMAID_OPTIONS = {
+    useAscii: false,
+    paddingX: 1,
+    paddingY: 1,
+    boxBorderPadding: 0,
+    colorMode: "none",
+} satisfies AsciiRenderOptions;
 
-const NODE = /([A-Za-z0-9_.-]+)(?:\[([^\]]*)\]|\(\(([^)]*)\)\)|\(([^)]*)\)|\{([^}]*)\})?/y;
-
-// Parse the common flowchart subset: `graph TD` / `flowchart LR`, node
-// definitions with [..] (..) {{..}} labels, and `A --> B`, `A -->|label| B`,
-// including chains. Anything unrecognized returns null and the source shows.
-export const parseMermaidFlowchart = (source: string): MermaidGraph | null => {
-    const lines = source.split("\n").map((line) => line.trim()).filter((line) => line.length > 0 && !line.startsWith("%%"));
-    if (lines.length === 0) return null;
-    if (!/^(graph|flowchart)\s+(TD|TB|LR|RL|BT)$/.test(lines[0])) return null;
-    const labels = new Map<string, string>();
-    const order: string[] = [];
-    const edges: MermaidGraph["edges"] = [];
-    const see = (id: string, label: string | undefined): string => {
-        if (!labels.has(id)) {
-            labels.set(id, label ?? id);
-            order.push(id);
-        } else if (label !== undefined) {
-            labels.set(id, label);
-        }
-        return id;
-    };
-    for (const line of lines.slice(1)) {
-        let cursor = 0;
-        let previous: string | null = null;
-        for (;;) {
-            NODE.lastIndex = cursor;
-            const node = NODE.exec(line);
-            if (node === null || node[0].length === 0) return null;
-            const id = see(node[1], node[2] ?? node[3] ?? node[4] ?? node[5]);
-            cursor = NODE.lastIndex;
-            // The edge that led here was pushed with a placeholder target.
-            if (previous !== null) edges[edges.length - 1] = { ...edges[edges.length - 1]!, to: id };
-            const rest = line.slice(cursor);
-            const edge = /^\s*(?:-{2,3}>|={2,3}>)(?:\|([^|]*)\|)?\s*/.exec(rest);
-            if (edge === null) {
-                if (rest.trim().length !== 0) return null;
-                break; // this line is done; the next statement line continues the graph
-            }
-            edges.push({ from: id, to: id, label: edge[1]?.trim() ?? null });
-            cursor += edge[0].length;
-            previous = id;
-        }
+const renderMermaidLines = (source: string): string[] | null => {
+    try {
+        const lines = renderMermaidASCII(source, MERMAID_OPTIONS)
+            .replaceAll("\r\n", "\n")
+            .split("\n")
+            .map((line) => line.trimEnd());
+        while (lines[0]?.length === 0) lines.shift();
+        while (lines.at(-1)?.length === 0) lines.pop();
+        return lines.length === 0 ? null : lines;
+    } catch {
+        return null;
     }
-    return { labels, edges, order };
 };
 
-const box = (label: string, width: number): string[] => {
-    const text = truncate(label, width - 4);
-    const inner = displayWidth(text) + 2;
-    return [
-        `┌${"─".repeat(inner)}┐`,
-        `│ ${text} │`,
-        `└${"─".repeat(inner)}┘`,
-    ];
-};
+const verticalizeWideFlowchart = (source: string): string =>
+    source.replace(/^(\s*(?:graph|flowchart)\s+)(?:LR|RL)(?=\s*(?:;|$))/im, "$1TD");
 
-// Project the parsed flowchart: a simple chain becomes vertical boxes joined
-// by labeled arrows; anything with branching or joining becomes a legible
-// labeled edge list under the node inventory. Deterministic, width-bounded,
-// honest — never a half-drawn diagram.
+// Preserve the author's layout when it fits. Wide horizontal flowcharts are
+// projected vertically for the terminal; unsupported or still-overwide input
+// remains visible as its honest Mermaid source.
 export const renderMermaid = (source: string, width: number = WIDTH_TARGET): string[] => {
-    const graph = parseMermaidFlowchart(source);
     const fallback = (): string[] => [
         `${DIM}◇ mermaid${RESET}`,
         ...source.split("\n").map((line) => `${DIM}│ ${line}${RESET}`),
     ];
-    if (graph === null) return fallback();
-    const { labels, edges, order } = graph;
-    const out = new Map<string, number>();
-    const into = new Map<string, number>();
-    for (const { from, to } of edges) {
-        out.set(from, (out.get(from) ?? 0) + 1);
-        into.set(to, (into.get(to) ?? 0) + 1);
+    const authored = renderMermaidLines(source);
+    if (authored?.every((line) => displayWidth(line) <= width)) return authored;
+    const vertical = verticalizeWideFlowchart(source);
+    if (vertical !== source) {
+        const projected = renderMermaidLines(vertical);
+        if (projected?.every((line) => displayWidth(line) <= width)) return projected;
     }
-    const isChain = order.length > 0
-        && edges.length === order.length - 1
-        && order.every((id) => (out.get(id) ?? 0) <= 1 && (into.get(id) ?? 0) <= 1);
-    if (isChain && edges.length > 0) {
-        const lines: string[] = [];
-        let id: string | undefined = order.find((candidate) => (into.get(candidate) ?? 0) === 0);
-        while (id !== undefined) {
-            const b = box(labels.get(id) ?? id, width);
-            const boxWidth = displayWidth(b[0]!);
-            lines.push(...b);
-            const edge = edges.find((candidate) => candidate.from === id);
-            if (edge === undefined) break;
-            const stem = " ".repeat(Math.max(0, Math.floor(boxWidth / 2)));
-            lines.push(`${stem}│${edge.label === null ? "" : ` ${DIM}${truncate(edge.label, width - stem.length - 2)}${RESET}`}`);
-            lines.push(`${stem}▼`);
-            id = edge.to;
-        }
-        return lines;
-    }
-    const lines = [`${DIM}◇ mermaid graph${RESET}`];
-    for (const { from, to, label } of edges) {
-        const arrow = `  ${truncate(labels.get(from) ?? from, 30)} ${CYAN}─▶${RESET} ${truncate(labels.get(to) ?? to, 30)}`;
-        lines.push(label === null ? arrow : `${arrow} ${DIM}(${truncate(label, 20)})${RESET}`);
-    }
-    for (const id of order) {
-        if ((out.get(id) ?? 0) === 0 && (into.get(id) ?? 0) === 0) lines.push(`  ${truncate(labels.get(id) ?? id, 60)}`);
-    }
-    return lines;
+    return fallback();
 };
 
 // ─── Fenced blocks ───────────────────────────────────────────────────

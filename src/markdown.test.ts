@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.NO_COLOR = "1";
-const { renderMarkdownDocument, renderTable, renderMermaid, parseMermaidFlowchart, looksLikeMarkdown, WIDTH_TARGET } = await import("./markdown.ts");
+const { displayWidth, renderMarkdownDocument, renderTable, renderMermaid, looksLikeMarkdown, WIDTH_TARGET } = await import("./markdown.ts");
 
 test("[§cli-markdown-projection] a pipe table projects as aligned box-drawn columns", () => {
     const out = renderTable([
@@ -37,6 +37,18 @@ test("[§cli-markdown-projection] a wide table shrinks its widest columns to the
     assert.match(out[3]!, /…/, "over-budget cells truncate visibly");
 });
 
+test("[§cli-markdown-projection] table alignment measures projected inline content", () => {
+    const out = renderTable([
+        "| Surface | Use |",
+        "| --- | --- |",
+        "| CLI one-shot | `npx @plurnk/plurnk \"what is 2+2?\"` |",
+        "| Interactive TUI | ongoing prompt sessions |",
+        "| State commands | inspect and manage session state |",
+    ]);
+    const widths = out.map(displayWidth);
+    assert.equal(new Set(widths).size, 1, `every border must align after inline Markdown projects: ${widths.join(", ")}`);
+});
+
 test("[§cli-markdown-projection] a fenced block renders as a labeled gutter without inline styling", () => {
     const out = renderMarkdownDocument("before\n```json\n{\"a\": **1**}\n```\nafter");
     assert.deepEqual(out.split("\n"), [
@@ -47,49 +59,62 @@ test("[§cli-markdown-projection] a fenced block renders as a labeled gutter wit
     ], "fence bodies stay verbatim — no markdown applied inside");
 });
 
-test("[§cli-markdown-projection] a simple Mermaid chain projects as vertical boxes with labeled arrows", () => {
+test("[§cli-markdown-projection] a simple Mermaid chain projects as a bounded diagram", () => {
     const out = renderMermaid([
         "graph TD",
         "  start[Start] -->|yes| work[Do the work]",
         "  work --> done[Done]",
     ].join("\n"));
-    assert.deepEqual(out, [
-        "┌───────┐",
-        "│ Start │",
-        "└───────┘",
-        "    │ yes",
-        "    ▼",
-        "┌─────────────┐",
-        "│ Do the work │",
-        "└─────────────┘",
-        "       │",
-        "       ▼",
-        "┌──────┐",
-        "│ Done │",
-        "└──────┘",
-    ]);
+    assert.doesNotMatch(out.join("\n"), /◇ mermaid/);
+    assert.match(out.join("\n"), /Start/);
+    assert.match(out.join("\n"), /yes/);
+    assert.match(out.join("\n"), /Do the work/);
+    assert.match(out.join("\n"), /Done/);
+    assert.ok(out.every((line) => displayWidth(line) <= WIDTH_TARGET));
 });
 
-test("[§cli-markdown-projection] a branching Mermaid graph projects as a labeled edge list, never a half-drawn diagram", () => {
+test("[§cli-markdown-projection] a branching Mermaid graph retains its topology and labels", () => {
     const out = renderMermaid([
         "flowchart LR",
         "  a[Gate] -->|pass| b[Ship]",
         "  a -->|fail| c[Fix]",
         "  c --> a",
     ].join("\n"));
-    assert.equal(out[0], "◇ mermaid graph");
-    assert.deepEqual(out.slice(1), [
-        "  Gate ─▶ Ship (pass)",
-        "  Gate ─▶ Fix (fail)",
-        "  Fix ─▶ Gate",
-    ]);
+    assert.doesNotMatch(out.join("\n"), /◇ mermaid/);
+    assert.match(out.join("\n"), /Gate/);
+    assert.match(out.join("\n"), /pass/);
+    assert.match(out.join("\n"), /Ship/);
+    assert.match(out.join("\n"), /fail/);
+    assert.match(out.join("\n"), /Fix/);
+    assert.ok(out.every((line) => displayWidth(line) <= WIDTH_TARGET));
 });
 
-test("[§cli-markdown-projection] non-flowchart Mermaid falls back to its verbatim source under a mermaid gutter", () => {
+test("[§cli-markdown-projection] standard Mermaid edge labels render within the terminal width", () => {
+    const out = renderMermaid([
+        "flowchart LR",
+        "    U[You at the terminal] --> C[plurnk client<br/>CLI · TUI · state commands]",
+        "    C -- \"AG-UI+ (sole client surface)\" --> D[plurnk-service daemon]",
+        "    D --> W[(real workspaces)]",
+        "    D --> M[model loop]",
+    ].join("\n"));
+    assert.doesNotMatch(out.join("\n"), /◇ mermaid/, "valid standard Mermaid must not fall back to source");
+    assert.match(out.join("\n"), /You at the terminal/);
+    assert.match(out.join("\n"), /AG-UI\+/);
+    assert.ok(out.every((line) => displayWidth(line) <= WIDTH_TARGET), "the projected diagram fits the terminal target");
+});
+
+test("[§cli-markdown-projection] standard sequence diagrams also project for the terminal", () => {
     const source = "sequenceDiagram\n  A->>B: hi";
     const out = renderMermaid(source);
-    assert.deepEqual(out, ["◇ mermaid", "│ sequenceDiagram", "│   A->>B: hi"]);
-    assert.equal(parseMermaidFlowchart(source), null);
+    assert.doesNotMatch(out.join("\n"), /◇ mermaid/);
+    assert.match(out.join("\n"), /A/);
+    assert.match(out.join("\n"), /B/);
+    assert.match(out.join("\n"), /hi/);
+});
+
+test("[§cli-markdown-projection] invalid Mermaid falls back to its verbatim source under a mermaid gutter", () => {
+    const source = "notMermaid\n  A->>B: hi";
+    assert.deepEqual(renderMermaid(source), ["◇ mermaid", "│ notMermaid", "│   A->>B: hi"]);
 });
 
 test("[§cli-markdown-projection] the document projector composes prose, tables, and mermaid fences", () => {
@@ -109,7 +134,7 @@ test("[§cli-markdown-projection] the document projector composes prose, tables,
     const lines = out.split("\n");
     assert.equal(lines[0], "Result", "heading renders without the #");
     assert.match(out, /│ a │ b │/);
-    assert.match(out, /│ One │/);
+    assert.match(out, /│\s*One\s*│/);
     assert.match(out, /▼/);
     assert.equal(looksLikeMarkdown("| a | b |\n| - | - |"), true, "a bare table is markdown enough");
 });

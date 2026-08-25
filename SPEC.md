@@ -369,11 +369,12 @@ pipes) projects Markdown for the terminal through one client rendering model
 tables as aligned box-drawn columns shrunk to the 80-column ergonomic target
 with visible per-cell truncation; fenced blocks as a labeled `◇ lang` gutter
 with verbatim bodies (no inline styling inside a fence); and ```mermaid
-fences as a deterministic projection — a simple flowchart chain becomes
-vertical boxes joined by labeled arrows, a branching graph becomes a labeled
-edge list, and any other Mermaid type falls back to its verbatim source under
-a `◇ mermaid` gutter, never a half-drawn diagram. The wire always carries the
-semantic/raw source; no pre-rendered channel exists at the protocol boundary.
+fences as topology- and label-preserving Unicode diagrams. Authored direction
+is preserved when the result fits; an overwide horizontal flowchart is
+reprojected vertically. Invalid, unsupported, or still-overwide diagrams fall
+back to their verbatim source under a `◇ mermaid` gutter, never a half-drawn
+diagram. The wire always carries the semantic/raw source; no pre-rendered
+channel exists at the protocol boundary.
 
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 

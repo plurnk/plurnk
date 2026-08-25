@@ -39,11 +39,11 @@ describe("TUI live (model-gated)", () => {
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            // Anything multi-step keeps the loop alive a beat. Inject as soon as
-            // the TUI displays its deterministic in-flight status; durable prompt
-            // rows are deliberately suppressed because readline already shows them.
+            // Anything multi-step keeps the loop alive beyond its first model row.
+            // Durable prompt rows are suppressed because readline already shows them;
+            // the lean input prompt deliberately carries no lifecycle ornamentation.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
-            await tui.waitFor(/⏳/, 540_000);
+            await tui.waitFor(/🚧|📋|🔧/, 540_000);
             tui.write("btw keep the summary short\r");
             await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop.run)
         } finally { tui.kill(); }

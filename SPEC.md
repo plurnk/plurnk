@@ -364,17 +364,17 @@ A present durable operation annotation is appended as sanitized, literal plain t
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
 A prettified SEND body (TUI only; the one-shot CLI keeps raw verbatim for
-pipes) projects Markdown for the terminal through one client rendering model
-(plurnk#15): headings/bold/italic/inline-code as ANSI emphasis; GFM pipe
-tables as aligned box-drawn columns shrunk to the 80-column ergonomic target
-with visible per-cell truncation; fenced blocks as a labeled `◇ lang` gutter
-with verbatim bodies (no inline styling inside a fence); and ```mermaid
-fences as topology- and label-preserving Unicode diagrams. Authored direction
-is preserved when the result fits; an overwide horizontal flowchart is
-reprojected vertically. Invalid, unsupported, or still-overwide diagrams fall
-back to their verbatim source under a `◇ mermaid` gutter, never a half-drawn
-diagram. The wire always carries the semantic/raw source; no pre-rendered
-channel exists at the protocol boundary.
+pipes) delegates GFM parsing and terminal layout to maintained renderers at
+the current terminal width, less the SEND-body indent (plurnk#15). Tables use
+aligned box-drawn columns, wrap complete cell content, and separate every
+logical row; headings, inline markup, lists, links, and fenced code retain the
+renderer's conventional terminal presentation. A ```mermaid fence projects as
+a topology- and label-preserving Unicode diagram when it fits the same live
+viewport. Authored direction is preserved when possible; horizontal flowchart
+and subgraph directions may be reprojected vertically. Invalid, unsupported,
+or still-overwide diagrams fall back to labeled verbatim source with the
+reason, never a half-drawn diagram. The wire always carries semantic source;
+no pre-rendered channel exists at the protocol boundary.
 
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 

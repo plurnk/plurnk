@@ -223,7 +223,11 @@ const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "�
 // prettify=true (TUI): json → pretty-print, markdown → ANSI, else raw.
 // prettify=false (CLI): always raw verbatim — pretty-printing is a TUI convenience,
 // not something a downstream pipe consumer should have to undo.
-export const extractSendBody = (txUnknown: unknown, prettify: boolean): string => {
+export const extractSendBody = (
+    txUnknown: unknown,
+    prettify: boolean,
+    viewport: number = process.stdout.columns ?? 80,
+): string => {
     const tx = txUnknown as { body?: { raw?: unknown; json?: unknown } | null } | null;
     if (tx === null || tx === undefined) return "";
     const sendBody = tx.body;
@@ -233,9 +237,9 @@ export const extractSendBody = (txUnknown: unknown, prettify: boolean): string =
     if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
     if (typeof raw !== "string") return "";
     const prose = normalizeProse(raw);
-    // Tables, fences, and Mermaid project through the one client rendering
-    // model (plurnk#15), width-capped at the 80-column ergonomic target.
-    if (looksLikeMarkdown(prose)) return renderMarkdownDocument(prose);
+    // GFM and Mermaid project through the terminal renderer at the caller's
+    // current available width (plurnk#15).
+    if (looksLikeMarkdown(prose)) return renderMarkdownDocument(prose, viewport);
     return prose;
 };
 
@@ -306,7 +310,7 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // Broadcast SEND (model → user) — multi-line block, content rather than a Notice.
 // Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
 // body indents further (5 spaces) so it visually nests under the speaker.
-const renderBroadcast = (entry: LogEntryWire): string => {
+const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
     // TWO lanes. The user speaking keeps the 🐹 identity + a status lane; the MODEL
     // speaking carries its state as lane 1: 💭 102 / 💡 200 / 💤 202 / 🤔 300,
     // with lane 2 held as a reserved blank.
@@ -319,15 +323,16 @@ const renderBroadcast = (entry: LogEntryWire): string => {
     const header = `  ${[idGlyph, subGlyph, statusText].join(" ")}`
         + (annotation === null ? "" : ` ${DIM}— ${annotation}${RESET}`);
 
-    const body = extractSendBody(entry.tx, /* prettify */ true);
+    const body = extractSendBody(entry.tx, /* prettify */ true, Math.max(1, columns - 5));
     const multiLine = body.includes("\n");
     // Short single-line replies inline after the header (nvim's
     // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
     // start on the next line, indented under the speaker.
     // Single space before the body — the same separator op rows use before their
     // target, so inline SEND bodies sit in the target column, not one right of it.
+    const inlineCapacity = Math.max(0, columns - displayWidth(header) - 1);
     const lines = body.length === 0 ? [header]
-        : !multiLine && body.length <= 80 ? [`${header} ${body}`]
+        : !multiLine && displayWidth(body) <= inlineCapacity ? [`${header} ${body}`]
         : [header, ...body.split("\n").map((l) => `     ${l}`)];
 
     // The model's answer (terminal SEND) is bold; everything else plain. No
@@ -385,11 +390,14 @@ export const entryTarget = (entry: LogEntryWire): string | null => {
 export const entryScope = (entry: LogEntryWire): string | null =>
     entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;
 
-export const renderLogEntry = (entry: LogEntryWire): string => {
+export const renderLogEntry = (
+    entry: LogEntryWire,
+    columns: number = process.stdout.columns ?? 80,
+): string => {
     // Broadcast SEND has no path at all (both scheme AND pathname null).
     // A SEND directed at file:// would have scheme=null but pathname set —
     // not a broadcast.
-    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry);
+    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
     if (entry.op === "PLAN") return renderPlan(entry);
 
     // ONE identity/action glyph, not origin+op (they were redundant on SEND and

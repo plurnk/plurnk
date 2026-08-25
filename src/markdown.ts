@@ -1,11 +1,14 @@
-// Client-side Markdown projection for the TUI (plurnk#15, under the #21
-// contract): the wire carries semantic/raw Markdown and Mermaid source; this
-// module projects it for the current terminal, capped at the 80-column
-// ergonomic target. Vanilla ANSI, no framework, no wire channel. The one-shot
-// CLI never uses this — raw stays raw for pipes.
+// Client-side GFM projection for the TUI (plurnk#15, under the #21
+// contract). The wire carries semantic Markdown and Mermaid source. Maintained
+// parser and layout packages own GFM, wrapping, width, and table mechanics;
+// this module composes them with the live viewport and Mermaid projection.
+// One-shot output stays raw.
 
-import { stripVTControlCharacters } from "node:util";
 import { renderMermaidASCII, type AsciiRenderOptions } from "beautiful-mermaid";
+import Table from "cli-table3";
+import { Marked, type RendererObject, type Tokens } from "marked";
+import stringWidth from "string-width";
+import wrapAnsi from "wrap-ansi";
 
 import { colorEnabled } from "./color.ts";
 
@@ -15,84 +18,31 @@ const RESET = code("0");
 const DIM = code("2");
 const BOLD = code("1");
 const ITALIC = code("3");
+const STRIKE = code("9");
+const CYAN = code("36");
 
-export const WIDTH_TARGET = 80;
+export const displayWidth = (text: string): number => stringWidth(text);
 
-export const displayWidth = (s: string): number => {
-    let w = 0;
-    for (const ch of stripVTControlCharacters(s)) {
-        const cp = ch.codePointAt(0) ?? 0;
-        w += (cp >= 0x1100 && (
-            cp <= 0x115f || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3)
-            || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0x1f000 && cp <= 0x1ffff)
-        )) ? 2 : 1;
-    }
-    return w;
-};
-
-const truncate = (s: string, max: number): string => {
-    if (displayWidth(s) <= max) return s;
-    let out = "";
-    for (const ch of s) {
-        if (displayWidth(out + ch) > max - 1) break;
-        out += ch;
-    }
-    return `${out}…`;
-};
-
-const pad = (s: string, width: number): string => s + " ".repeat(Math.max(0, width - displayWidth(s)));
-
-// A common model-authored inline-math spelling with an exact terminal glyph.
-const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "→");
-
-const renderInline = (s: string): string => {
-    let out = s;
-    out = out.replace(/\*\*([^*\n]+)\*\*/g, (_m, t) => `${BOLD}${t}${RESET}`);
-    out = out.replace(/(^|[^*_])[*_]([^*_\n]+)[*_](?!\*)/g, (_m, pre, t) => `${pre}${ITALIC}${t}${RESET}`);
-    out = out.replace(/`([^`\n]+)`/g, (_m, t) => `${DIM}${t}${RESET}`);
-    return out;
-};
-
-// ─── GFM pipe tables ─────────────────────────────────────────────────
-
-const isTableRow = (line: string): boolean => /^\s*\|.*\|\s*$/.test(line);
-const isTableRule = (line: string): boolean => /^\s*\|(\s*:?-+:?\s*\|)+\s*$/.test(line);
-
-const splitRow = (line: string): string[] =>
-    line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-
-// Project a pipe table as aligned columns within the width budget: compute
-// natural widths, then shrink the widest columns until the row fits, with a
-// per-cell … truncation. 80 columns is the ergonomic target, not a wire fact.
-export const renderTable = (lines: string[], width: number = WIDTH_TARGET): string[] => {
-    const rows = lines.filter((line) => !isTableRule(line)).map(splitRow);
+const styled = (style: string) => (text: string): string =>
+    style.length === 0 ? text : `${style}${text}${RESET}`;
+const fitTableWidths = (
+    rows: string[][],
+    viewport: number,
+): number[] => {
     const columns = Math.max(...rows.map((row) => row.length));
-    const widths = Array.from({ length: columns }, (_v, index) =>
-        Math.max(1, ...rows.map((row) => displayWidth(renderInline(row[index] ?? "")))));
-    // Overhead: "│ " + " │ ".repeat + " │" → 3 per column + 1.
-    const budget = () => widths.reduce((sum, w) => sum + w + 3, 1);
-    while (budget() > width && Math.max(...widths) > 4) {
-        widths[widths.indexOf(Math.max(...widths))] -= 1;
+    const widths = Array.from({ length: columns }, (_value, index) =>
+        Math.max(3, ...rows.map((row) => displayWidth(row[index] ?? "") + 2)));
+    const contentBudget = Math.max(columns * 3, viewport - columns - 1);
+    while (widths.reduce((sum, width) => sum + width, 0) > contentBudget) {
+        const reducible = widths
+            .map((width, index) => ({ width, index }))
+            .filter(({ width }) => width > 3)
+            .sort((left, right) => right.width - left.width)[0];
+        if (reducible === undefined) break;
+        widths[reducible.index] -= 1;
     }
-    const line = (left: string, mid: string, right: string): string =>
-        `${DIM}${left}${widths.map((w) => "─".repeat(w + 2)).join(mid)}${right}${RESET}`;
-    const cells = (row: string[], emphasize: boolean): string =>
-        `${DIM}│${RESET} ${row.length === 0 ? "" : widths.map((w, index) => {
-            const projected = renderInline(row[index] ?? "");
-            const cell = displayWidth(projected) > w
-                ? truncate(stripVTControlCharacters(projected), w)
-                : projected;
-            const aligned = pad(cell, w);
-            return emphasize ? `${BOLD}${aligned}${RESET}` : aligned;
-        }).join(` ${DIM}│${RESET} `)} ${DIM}│${RESET}`;
-    const out = [line("┌", "┬", "┐"), cells(rows[0] ?? [], true)];
-    if (rows.length > 1) out.push(line("├", "┼", "┤"));
-    for (const row of rows.slice(1)) out.push(cells(row, false));
-    out.push(line("└", "┴", "┘"));
-    return out;
+    return widths;
 };
-
-// ─── Mermaid ─────────────────────────────────────────────────────────
 
 const MERMAID_OPTIONS = {
     useAscii: false,
@@ -116,79 +66,191 @@ const renderMermaidLines = (source: string): string[] | null => {
     }
 };
 
-const verticalizeWideFlowchart = (source: string): string =>
-    source.replace(/^(\s*(?:graph|flowchart)\s+)(?:LR|RL)(?=\s*(?:;|$))/im, "$1TD");
+const verticalizeFlowchart = (source: string): string => source
+    .replace(/^(\s*(?:graph|flowchart)\s+)(?:LR|RL)(?=\s*(?:;|$))/im, "$1TD")
+    .replace(/^(\s*direction\s+)(?:LR|RL)(\s*)$/gim, "$1TB$2");
 
-// Preserve the author's layout when it fits. Wide horizontal flowcharts are
-// projected vertically for the terminal; unsupported or still-overwide input
-// remains visible as its honest Mermaid source.
-export const renderMermaid = (source: string, width: number = WIDTH_TARGET): string[] => {
-    const fallback = (): string[] => [
-        `${DIM}◇ mermaid${RESET}`,
+const widestLine = (lines: string[]): number =>
+    Math.max(0, ...lines.map(displayWidth));
+
+// Preserve the authored layout whenever it fits the current viewport. A
+// vertical projection is the one bounded alternative; invalid, unsupported,
+// or still-overwide diagrams remain inspectable as labeled source.
+export const renderMermaid = (
+    source: string,
+    viewport: number = process.stdout.columns ?? 80,
+): string[] => {
+    const width = Math.max(1, Math.trunc(viewport));
+    const authored = renderMermaidLines(source);
+    if (authored !== null && widestLine(authored) <= width) return authored;
+
+    const verticalSource = verticalizeFlowchart(source);
+    const vertical = verticalSource === source ? null : renderMermaidLines(verticalSource);
+    if (vertical !== null && widestLine(vertical) <= width) return vertical;
+
+    const attemptedWidths = [authored, vertical]
+        .filter((lines): lines is string[] => lines !== null)
+        .map(widestLine);
+    const reason = attemptedWidths.length === 0
+        ? "unsupported or invalid"
+        : `rendered width ${Math.min(...attemptedWidths)} exceeds ${width}`;
+    return [
+        `${DIM}◇ mermaid source — ${reason}${RESET}`,
         ...source.split("\n").map((line) => `${DIM}│ ${line}${RESET}`),
     ];
-    const authored = renderMermaidLines(source);
-    if (authored?.every((line) => displayWidth(line) <= width)) return authored;
-    const vertical = verticalizeWideFlowchart(source);
-    if (vertical !== source) {
-        const projected = renderMermaidLines(vertical);
-        if (projected?.every((line) => displayWidth(line) <= width)) return projected;
-    }
-    return fallback();
 };
 
-// ─── Fenced blocks ───────────────────────────────────────────────────
-
-const renderFence = (language: string, body: string[], width: number): string[] => {
-    if (language === "mermaid") return renderMermaid(body.join("\n"), width);
-    const header = language.length === 0 ? `${DIM}◇${RESET}` : `${DIM}◇ ${language}${RESET}`;
-    return [header, ...body.map((line) => `${DIM}│${RESET} ${line}`)];
-};
-
-// ─── The document projector ──────────────────────────────────────────
-
-// Heuristic: body looks like markdown if it carries structural markers.
-export const looksLikeMarkdown = (s: string): boolean =>
-    /(^|\n)#{1,6}\s/.test(s) ||
-    /\*\*[^*\n]+\*\*/.test(s) ||
-    /(^|\n)[-*+]\s/.test(s) ||
-    /```/.test(s) ||
-    /(^|\n)\s*\|.*\|/.test(s) ||
-    /\[[^\]]+\]\([^)]+\)/.test(s);
-
-export const renderMarkdownDocument = (raw: string, width: number = WIDTH_TARGET): string => {
-    const source = normalizeProse(raw);
-    const lines = source.split("\n");
-    const out: string[] = [];
-    let index = 0;
-    while (index < lines.length) {
-        const line = lines[index]!;
-        const fence = /^\s*```(\S*)\s*$/.exec(line);
-        if (fence !== null) {
-            const body: string[] = [];
-            index += 1;
-            while (index < lines.length && !/^\s*```\s*$/.test(lines[index]!)) {
-                body.push(lines[index]!);
-                index += 1;
-            }
-            index += 1; // closing fence (or end)
-            out.push(...renderFence(fence[1] ?? "", body, width));
-            continue;
+const terminalRenderer = (viewport: number): Marked => {
+    let blockIndent = 0;
+    const availableWidth = (): number => Math.max(1, viewport - blockIndent);
+    const withBlockIndent = <T>(columns: number, project: () => T): T => {
+        blockIndent += columns;
+        try {
+            return project();
+        } finally {
+            blockIndent -= columns;
         }
-        if (isTableRow(line) && index + 1 < lines.length && isTableRule(lines[index + 1]!)) {
-            const table: string[] = [];
-            while (index < lines.length && (isTableRow(lines[index]!) || isTableRule(lines[index]!))) {
-                table.push(lines[index]!);
-                index += 1;
+    };
+    const wrap = (text: string): string => wrapAnsi(text, availableWidth(), {
+        hard: true,
+        trim: true,
+        wordWrap: true,
+    });
+    const renderer: RendererObject = {
+        space() {
+            return "";
+        },
+        code(token: Tokens.Code) {
+            if (token.lang?.trim().toLowerCase() === "mermaid") {
+                return `${renderMermaid(token.text, viewport).join("\n")}\n\n`;
             }
-            out.push(...renderTable(table, width));
-            continue;
-        }
-        let prose = line;
-        prose = prose.replace(/^(#{1,6})\s+(.*)$/, (_m, _h, text: string) => `${BOLD}${text}${RESET}`);
-        prose = prose.replace(/^[-*+]\s/, "• ");
-        out.push(renderInline(prose));
-        index += 1;
-    }
-    return out.join("\n");
+            const language = token.lang?.trim() ?? "";
+            const header = language.length === 0 ? "◇" : `◇ ${language}`;
+            return [
+                styled(DIM)(header),
+                ...token.text.split("\n").map((line) => `${styled(DIM)("│")} ${line}`),
+                "",
+                "",
+            ].join("\n");
+        },
+        blockquote(token: Tokens.Blockquote) {
+            const body = withBlockIndent(2, () => this.parser.parse(token.tokens).trimEnd());
+            return `${body.split("\n").map((line) => `${styled(DIM)("│")} ${line}`).join("\n")}\n\n`;
+        },
+        html(token: Tokens.HTML | Tokens.Tag) {
+            return styled(DIM)(token.text);
+        },
+        def() {
+            return "";
+        },
+        heading(token: Tokens.Heading) {
+            return `${wrap(styled(BOLD)(this.parser.parseInline(token.tokens)))}\n\n`;
+        },
+        hr() {
+            return `${styled(DIM)("─".repeat(viewport))}\n\n`;
+        },
+        list(token: Tokens.List) {
+            const start = typeof token.start === "number" ? token.start : 1;
+            const rows = token.items.map((item, index) => {
+                const marker = token.ordered ? `${start + index}. ` : "* ";
+                const task = item.task ? `[${item.checked === true ? "x" : " "}] ` : "";
+                const prefix = `${marker}${task}`;
+                const body = withBlockIndent(displayWidth(prefix), () => item.tokens.map((itemToken) => {
+                    const rendered = this.parser.parse([itemToken]);
+                    return itemToken.type === "text" ? wrap(rendered) : rendered;
+                }).join("").trim());
+                const lines = body.split("\n");
+                return [
+                    `${prefix}${lines[0] ?? ""}`,
+                    ...lines.slice(1).map((line) => `${" ".repeat(displayWidth(prefix))}${line}`),
+                ].join("\n");
+            });
+            return `${rows.join("\n")}\n\n`;
+        },
+        checkbox(token: Tokens.Checkbox) {
+            return `[${token.checked ? "x" : " "}] `;
+        },
+        paragraph(token: Tokens.Paragraph) {
+            return `${wrap(this.parser.parseInline(token.tokens))}\n\n`;
+        },
+        table(token: Tokens.Table) {
+            const header = token.header.map((cell) => this.parser.parseInline(cell.tokens));
+            const rows = token.rows.map((row) => row.map((cell) => this.parser.parseInline(cell.tokens)));
+            const colWidths = fitTableWidths([header, ...rows], viewport);
+            const wrapCell = (cell: string, index: number): string => wrapAnsi(
+                cell,
+                Math.max(1, (colWidths[index] ?? 3) - 2),
+                { hard: true, trim: true, wordWrap: true },
+            );
+            const table = new Table({
+                colAligns: token.align.map((align) => align ?? "left"),
+                colWidths,
+                head: header.map((cell, index) => wrapCell(styled(BOLD)(cell), index)),
+                wordWrap: true,
+                wrapOnWordBoundary: true,
+                style: {
+                    border: [],
+                    compact: false,
+                    head: [],
+                    "padding-left": 1,
+                    "padding-right": 1,
+                },
+            });
+            table.push(...rows.map((row) => row.map(wrapCell)));
+            return `${table.toString()}\n\n`;
+        },
+        strong(token: Tokens.Strong) {
+            return styled(BOLD)(this.parser.parseInline(token.tokens));
+        },
+        em(token: Tokens.Em) {
+            return styled(ITALIC)(this.parser.parseInline(token.tokens));
+        },
+        codespan(token: Tokens.Codespan) {
+            return styled(DIM)(token.text);
+        },
+        br() {
+            return "\n";
+        },
+        del(token: Tokens.Del) {
+            return styled(STRIKE)(this.parser.parseInline(token.tokens));
+        },
+        link(token: Tokens.Link) {
+            const label = this.parser.parseInline(token.tokens);
+            return token.href === token.text
+                ? styled(CYAN)(label)
+                : `${styled(CYAN)(label)} ${styled(DIM)(`(${token.href})`)}`;
+        },
+        image(token: Tokens.Image) {
+            return `${token.text} ${styled(DIM)(`(${token.href})`)}`;
+        },
+        text(token: Tokens.Text | Tokens.Escape) {
+            return "tokens" in token && token.tokens !== undefined
+                ? this.parser.parseInline(token.tokens)
+                : token.text;
+        },
+    };
+    return new Marked({ breaks: false, gfm: true, renderer });
 };
+
+// A common model-authored inline-math spelling with an exact terminal glyph.
+const normalizeProse = (text: string): string => text.replaceAll("$\\rightarrow$", "→");
+
+export const renderMarkdownDocument = (
+    raw: string,
+    viewport: number = process.stdout.columns ?? 80,
+): string => {
+    const width = Math.max(1, Math.trunc(viewport));
+    const rendered = terminalRenderer(width).parse(normalizeProse(raw));
+    if (typeof rendered !== "string") throw new TypeError("Terminal Markdown rendering became asynchronous.");
+    return rendered.trimEnd();
+};
+
+// Heuristic: ordinary speech remains ordinary speech; structurally marked GFM
+// enters the terminal renderer.
+export const looksLikeMarkdown = (text: string): boolean =>
+    /(^|\n)#{1,6}\s/.test(text)
+    || /\*\*[^*\n]+\*\*/.test(text)
+    || /(^|\n)[-*+]\s/.test(text)
+    || /```/.test(text)
+    || /(^|\n)\s*\|.*\|/.test(text)
+    || /\[[^\]]+\]\([^)]+\)/.test(text);

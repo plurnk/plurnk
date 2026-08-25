@@ -1053,7 +1053,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (target !== null) priorTargets.push(target);
             // A model SEND carrying signal 202 parks the loop → 💤; anything else → ⏳.
             hibernating = entry.op === "SEND" && entry.signal === 202;
-            printAbove(renderLogEntry(entry));
+            printAbove(renderLogEntry(entry, process.stdout.columns ?? 80));
         },
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),

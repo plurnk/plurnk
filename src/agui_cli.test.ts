@@ -96,7 +96,7 @@ test("[§cli-provider-reasoning] consumeCliRun: standard readable reasoning rend
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "Jupiter.\n");
-    assert.deepEqual(err.slice(0, 3), ["  💭 compare ", "the evidence", "\n"], "reasoning deltas reach stderr before completion");
+    assert.deepEqual(err.slice(0, 3), ["💭 compare ", "the evidence", "\n"], "reasoning deltas reach stderr before completion");
     const trace = err.join("");
     assert.match(trace, /💭 compare the evidence/);
     assert.ok(trace.indexOf("💭") < trace.indexOf("SEND"), "reasoning precedes the SEND row");
@@ -112,7 +112,7 @@ test("[§cli-provider-reasoning] multiline reasoning preserves indentation acros
         terminated(),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
-    assert.equal(err.slice(0, 2).join(""), "  💭 first\n     second\n     third\n");
+    assert.equal(err.slice(0, 2).join(""), "💭 first\n   second\n   third\n");
 });
 
 test("consumeCliRun: RUN_ERROR without the exact Problem is a transport contract failure", async () => {

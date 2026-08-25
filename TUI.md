@@ -20,17 +20,19 @@ client.
 
 ## Rendering
 
-The waterfall is intentionally compact: a logical coordinate, actor, operation,
-status, and target identify each row. Model broadcasts render as full response
-blocks rather than diagnostic rows. Indexing and search progress update the
-active prompt instead of appending an event for every milestone. Serialized
-branch batches use the same compact treatment: 🌿 plus aggregate progress while
-active, followed by one completion, failure, or recovery line.
+The waterfall is intentionally compact: every row's primary glyph shares the
+prompt's left edge, with only the fields that identify its operation or state.
+Model broadcasts render as full response blocks rather than diagnostic rows.
+An active loop replaces the prompt's 🔥 with `⌛︎`; indexing and search progress
+temporarily replace that badge instead of appending an event for every
+milestone. Serialized branch batches use the same compact treatment: 🌿 plus
+aggregate progress while active, followed by one completion, failure, or
+recovery line.
 
-The renderer uses width-stable glyphs and respects `NO_COLOR`. Avoid glyphs
-whose variation selectors produce inconsistent terminal widths. Rendering
-details and exit behavior are specified and tested in `SPEC.md`; design history
-belongs in Git.
+The renderer respects `NO_COLOR`. Readline's fixed prompt slot permits only its
+two measured badges; append-only SEND output may use standard emoji sequences.
+Rendering details and exit behavior are specified and tested in `SPEC.md`;
+design history belongs in Git.
 
 ## Interaction
 

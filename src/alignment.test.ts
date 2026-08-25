@@ -1,41 +1,14 @@
-// The waterfall alignment GAUGE (operator, 2026-07-10; simplified plurnk#21):
-// every rendered line species carries exactly TWO emoji lanes (identity ·
-// status — blanks reserved, never omitted). Status CODES render only where
-// they mean something — SENDs and errors — and every code-bearing species
-// puts its code at ONE display column. Measured, not eyeballed: strip ANSI,
-// count display cells (plane-1/EAW width-2, VS16-free), find the code token.
+// The waterfall's stable alignment contract is its left edge. Glyph-bearing
+// rows begin at column zero; SEND lifecycle glyphs replace redundant human
+// protocol codes, while non-SEND failures retain useful diagnostic codes.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderLogEntry } from "./render.ts";
+import { renderLogEntry, renderReasoning } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import StreamTrace from "./stream.ts";
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
-
-// Display width under the repo convention: wide (EAW W/F — emoji, CJK) = 2 cells.
-const cells = (s: string): number => {
-    let w = 0;
-    for (const ch of s) {
-        const cp = ch.codePointAt(0) ?? 0;
-        w += (cp >= 0x1100 && (
-            cp <= 0x115f || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3)
-            || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xfe30 && cp <= 0xfe4f)
-            || (cp >= 0xff00 && cp <= 0xff60) || (cp >= 0xffe0 && cp <= 0xffe6)
-            || (cp >= 0x1f000 && cp <= 0x1ffff) || (cp >= 0x20000 && cp <= 0x3fffd)
-            || cp === 0x2705 || cp === 0x274c || cp === 0x2753 || cp === 0x270b || (cp >= 0x231a && cp <= 0x23ff)
-        )) ? 2 : 1;
-    }
-    return w;
-};
-
-// The display column where the 3-digit status code begins.
-const codeColumn = (line: string): number => {
-    const plain = stripAnsi(line);
-    const m = /(?:^|\s)(\d{3})(?:\s|$)/.exec(plain);
-    assert.ok(m !== null, `no status code in: ${JSON.stringify(plain)}`);
-    return cells(plain.slice(0, m.index + (m[0].startsWith(" ") ? 1 : 0)));
-};
 
 const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     id: 1, loop_seq: 1, turn_seq: 1, sequence: 5, op: "READ", suffix: "", origin: "model",
@@ -44,30 +17,32 @@ const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     ...over,
 });
 
-test("[§cli-rendering] code-bearing species share ONE code column; routine non-SEND lines carry no code (plurnk#21)", () => {
+test("[§cli-rendering] glyph-bearing waterfall rows share the left edge and SENDs are codeless", () => {
     const streams = new StreamTrace();
-    const codeless: Array<[string, string]> = [
-        ["op 200", renderLogEntry(entry({}))],
-        ["BARE 200", renderLogEntry(entry({ op: "BARE" }))],
-        ["exec 202 (proposed)", renderLogEntry(entry({ op: "EXEC", status_rx: 202, signal: 202 }))],
-        ["stream concluded 200", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1/1/8", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-loop", loop_seq: 1, turn_seq: 1, sequence: 8 })],
+    const rows: Array<[string, string]> = [
+        ["operation", renderLogEntry(entry({}))],
+        ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
+        ["PLAN", renderLogEntry(entry({ op: "PLAN", tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
+        ["reasoning", renderReasoning("Inspect the contract.")],
+        ["model SEND 102", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { raw: "continuing" } } }))],
+        ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
+        ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
+        ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410 }))],
+        ["stream event", streams.event({ entryId: 8, workerId: 7, target: "sh:///1/1/8", channel: "stdout", state: "active", contentLength: 0 }) ?? ""],
+        ["stream conclusion", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1/1/8", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-loop" })],
     ];
-    for (const [label, line] of codeless) {
-        assert.doesNotMatch(stripAnsi(line).split("\n")[0], /(?:^|\s)\d{3}(?:\s|$)/, `routine line carries no code: ${label}: ${JSON.stringify(stripAnsi(line))}`);
+
+    for (const [label, value] of rows) {
+        const first = stripAnsi(value).split("\n")[0];
+        assert.doesNotMatch(first, /^\s/, `${label} did not begin at column zero: ${JSON.stringify(first)}`);
     }
-    const coded: Array<[string, string]> = [
-        ["op 404", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
-        ["model SEND 102", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 102, status_rx: 102, tx: { body: { raw: "thinking on" } } }))],
-        ["model SEND 200 (answer)", renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: "pong" } } }))],
-        ["user SEND 201 (prompt row)", renderLogEntry(entry({ op: "SEND", origin: "client", signal: 201, status_rx: 201, tx: { body: { raw: "hi" } } }))],
-        ["stream concluded 499", streams.concluded({ entryId: 9, workerId: 7, target: "sh:///1/1/9", subscriptionId: 1, scheme: "sh", result: { status: 499, problem: { type: "https://problems.plurnk.xyz/x/cancelled", title: "Cancelled", status: 499, detail: "cancelled" } }, summary: "cancelled", wakeAction: "no-loop", loop_seq: 1, turn_seq: 1, sequence: 9 })],
-    ];
-    const cols = coded.map(([label, line]) => {
-        const first = stripAnsi(line).split("\n")[0];
-        return [label, codeColumn(first)] as const;
-    });
-    const want = cols[0][1];
-    for (const [label, col] of cols) {
-        assert.equal(col, want, `status column drift: "${label}" at cell ${col}, expected ${want}\n${cols.map(([l, c]) => `  ${c}  ${l}`).join("\n")}`);
-    }
+
+    const continuing = stripAnsi(rows[4][1]);
+    const complete = stripAnsi(rows[5][1]);
+    assert.match(continuing, /^▶️/);
+    assert.doesNotMatch(continuing, /(?:^|\s)102(?:\s|$)/);
+    assert.match(complete, /^⏹️/);
+    assert.doesNotMatch(complete, /(?:^|\s)200(?:\s|$)/);
+    assert.match(stripAnsi(rows[1][1]), /❌ 404/, "non-SEND failures retain their exact diagnostic code");
+    assert.match(stripAnsi(rows[7][1]), /❌ 410/, "a directed SEND failure remains diagnosable");
 });

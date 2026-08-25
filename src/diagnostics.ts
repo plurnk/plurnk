@@ -113,29 +113,29 @@ const renderHeadline = (diagnostic: Diagnostic): string => {
     const color = colorOf(diagnostic);
     if (color.length > 0) {
         if (message.length > 0) parts.push(`"${message}"`);
-        return `  ${color}${parts.join(" ")}${RESET}`;
+        return `${color}${parts.join(" ")}${RESET}`;
     }
     if (message.length > 0) parts.push(`${DIM}"${message}"${RESET}`);
-    return `  ${parts.join(" ")}`;
+    return parts.join(" ");
 };
 
 const renderSnippet = (diagnostic: Diagnostic): string => {
     const snippet = typeof diagnostic.snippet === "string" ? diagnostic.snippet : "";
     if (snippet.length === 0) return "";
-    return snippet.split("\n").map((line) => `     ${line}`).join("\n");
+    return snippet.split("\n").map((line) => `   ${line}`).join("\n");
 };
 
 const renderHints = (diagnostic: Diagnostic): string => {
     if (!Array.isArray(diagnostic.hints) || diagnostic.hints.length === 0) return "";
     return diagnostic.hints
         .filter((hint): hint is string => typeof hint === "string")
-        .map((hint) => `     ${DIM}${hint}${RESET}`)
+        .map((hint) => `   ${DIM}${hint}${RESET}`)
         .join("\n");
 };
 
 const renderRecovery = (diagnostic: Diagnostic): string => {
     if (!isProblem(diagnostic) || typeof diagnostic.recovery !== "string") return "";
-    return `     ${DIM}${diagnostic.recovery}${RESET}`;
+    return `   ${DIM}${diagnostic.recovery}${RESET}`;
 };
 
 export const renderDiagnostic = (diagnostic: Diagnostic): string => {

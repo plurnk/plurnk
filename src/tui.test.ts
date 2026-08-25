@@ -20,6 +20,9 @@ test("input prompt replaces its YOLO badge with fixed-width pre-completion progr
     assert.equal(plainPrompt(renderInputPrompt(true, null)), "🔥 : ");
     assert.equal(plainPrompt(renderInputPrompt(false, 42)), "42%: ");
     assert.equal(plainPrompt(renderInputPrompt(false, null)), "   : ");
+    assert.equal(plainPrompt(renderInputPrompt(true, null, true)), "⌛︎ : ");
+    assert.equal(plainPrompt(renderInputPrompt(false, null, true)), "⌛︎ : ");
+    assert.equal(plainPrompt(renderInputPrompt(true, 42, true)), "42%: ", "specific progress supersedes the active-loop hourglass");
 });
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {

@@ -25,9 +25,9 @@ test("StreamTrace: first event announces the stream, every later tick is silent"
     const t = new StreamTrace();
     const first = t.event(event(1));
     assert.ok(first !== null);
-    // Two lanes (identity · status): `📡 ⏳ target` — no coordinate, no code
-    // reserve; the human waterfall is coordinate- and code-free here (plurnk#21).
+    // Identity plus active state: `📡 ⏳ target`, left-anchored and codeless.
     assert.match(first, /📡 ⏳ python:\/\/\/1\/2\/1/);
+    assert.match(first, /^📡/, "the stream glyph shares the waterfall's left edge");
     assert.doesNotMatch(first, /01\/02\/01/, "no coordinate gutter on stream lines");
     assert.equal(t.event(event(1, { contentLength: 24 })), null);
     assert.equal(t.event(event(1, { channel: "stderr", state: "closed", contentLength: 0 })), null);
@@ -48,6 +48,7 @@ test("[§cli-stream-event-and-stream-concluded] StreamTrace: conclusion speaks t
     assert.doesNotMatch(line, /✅/);
     assert.doesNotMatch(line, /200/, "a routine conclusion shows no code");
     assert.match(line, /📡.*python:\/\/\/1\/2\/1/);
+    assert.match(line, /^📡/);
     assert.doesNotMatch(line, /01\/02\/01/, "no coordinate gutter on conclusions");
     assert.match(line, /"completed \(exit 0\); stdout=12 bytes, stderr=0 bytes"/);
     assert.doesNotMatch(line, /python:\/\/\/1\/2\/1 completed/);
@@ -82,8 +83,8 @@ test("inlineable: short one-or-two-line content only", () => {
 });
 
 test("renderInline: indents under the conclusion; stderr is marked", () => {
-    assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "     Ulaanbaatar");
-    assert.match(renderInline("stderr", "oh no\n"), /^     ! oh no$/);
+    assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "   Ulaanbaatar");
+    assert.match(renderInline("stderr", "oh no\n"), /^   ! oh no$/);
 });
 
 test("StreamTrace: a stream without a coordinate renders without one", () => {

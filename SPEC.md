@@ -207,7 +207,7 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow {§cli-tui-flow}
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
-2. Print the banner; enter the readline loop with one fixed three-cell slot followed by the `: ` input affordance. The slot holds a stable-wide 🔥 with one trailing cell while YOLO is armed (blank otherwise); while embedding, search, or branch work reports progress below completion, its right-aligned ASCII percentage replaces the badge. Completion restores the badge instead of rendering `100%`, so the colon never moves. Identity and lifecycle state belong to waterfall rows and diagnostics, not the prompt. **Prompt glyph policy: no VS16/width-ambiguous sequences, ever**; output lines may render them because output requires no cursor positioning.
+2. Print the banner; enter the readline loop with one fixed three-cell slot followed by the `: ` input affordance. The slot holds 🔥 plus one trailing cell while YOLO is armed (blank otherwise), and exact text-presentation `⌛︎` while a loop is active. While embedding, search, or branch work reports progress below completion, its right-aligned ASCII percentage supersedes either badge. Completion restores the applicable badge instead of rendering `100%`, so the colon never moves. `🔥` and `⌛︎` each occupy two measured display cells; no other variation-selector or width-ambiguous prompt glyphs are permitted. Output lines may render standard emoji sequences because output requires no readline cursor positioning.
 3. Each line entered is dispatched:
     - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
@@ -344,20 +344,21 @@ One line per dispatched op, except the structured PLAN block below. Format
 (vanilla ANSI, no framework):
 
 ```
-  <identity-glyph> <status-glyph> [<status>] <target> <scope>  <body-preview> [— <annotation>]
+<primary-glyph> [<status-glyph>] [<error-status>] <target> <scope> <body-preview> [— <annotation>]
 ```
 
-Width-tolerant; no fixed column widths. EVERY line carries exactly two glyph
-lanes (identity · status, blanks reserved), and the human waterfall is
-deliberately quiet (plurnk#21): **no log coordinates** and **no status codes
-except where they mean something** — every SEND keeps its code (the
-conversation's protocol truth) and every error (≥400) keeps its colored code;
-routine non-SEND successes show none. Coordinates and every status remain
-exact on the wire and in `--json`.
+Width-tolerant; no fixed column widths. Every glyph-bearing waterfall row
+begins at column zero. A non-SEND operation carries its operation glyph plus a
+status-glyph slot and retains a colored numeric status only for failures
+(≥400). A broadcast SEND carries one actor or lifecycle glyph and no numeric
+status: the glyph is the human state, so repeating its protocol code is noise.
+A failed directed SEND retains its code like any other failed operation. The
+human waterfall carries no log coordinates (plurnk#21); coordinates and every
+exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Width-stable glyph palette (both clients).** Every palette glyph is plain East-Asian-Wide — width 2 in node and every major terminal. VS16 variation-selector sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely: they cell-count differently across terminals, which corrupted readline cursor math in the prompt and produced ragged column gaps in output. Stable widths need no pad-space hacks, so columns align truly. Palette: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (Plan) · ⏳ 💤 🤔 💥 ✋ ❌ (status). Prefer plane-1 emoji (U+1F300+) for any new glyph: BMP "ornament" dingbats with default emoji presentation (e.g. ❓ U+2753) are width-2 in spec but a font may still render them as a width-1 text glyph — `300` was ❓ until a terminal showed it un-emojified, now 🤔.
+**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). Model SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled). The exact standard variation sequences are safe here because each SEND is append-only output anchored at column zero; neither a shared following column nor readline cursor math depends on their display width.
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
@@ -400,10 +401,10 @@ PLAN renders its complete entries in source order, one human line each:
 | `completed` content beginning `Memory: ` | 💾 |
 | `pending` | ⬜ |
 
-The first line carries the PLAN row's coordinate and dispatch status; subsequent
-entries align beneath it as the same durable row. The client consumes the ACP
-Plan projection; projected memory omits its `Memory: ` prefix. Entry whitespace
-collapses to one line.
+Every entry glyph begins at column zero. A failed PLAN may append its failure
+glyph and numeric status to the first entry; routine PLANs show neither. The
+client consumes the ACP Plan projection; projected memory omits its `Memory: `
+prefix. Entry whitespace collapses to one line.
 Neutral `medium` priority is implicit; `high` and `low` render as
 `[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
 trace retains its PLAN header and applies the same entry projection below it.
@@ -422,7 +423,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
 - Raw bodies for non-broadcast ops. Broadcast SEND body IS rendered (§5.4); other op bodies surface only via `entry.read` / `## READ0 (log://...)`.
 - Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
-- Content fetching from streaming channels — with ONE bounded exception. Streams render coalesced: a single start line on the first `stream/event` (`📡 ⏳ <target>`; growth ticks and per-channel closes are silent) and a single conclusion line in the waterfall grammar (`📡 ✅ 200 <target> "<summary>"`, target echo stripped from the summary, `→ resumed loop` only when the wake resumed one). On conclusion the client makes one `entry.read` and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`) — at that size the content IS the better optics (a 12-byte exec answer should be visible, not described). Larger outputs remain summary-only; fetching them is the consumer's job. See §8.7.
+- Content fetching from streaming channels — with ONE bounded exception. Streams render coalesced: a single start line on the first `stream/event` (`📡 ⏳ <target>`; growth ticks and per-channel closes are silent) and a single conclusion line (`📡 <target> "<summary>"` for routine success; failures add their glyph and code), with target echo stripped from the summary and `→ resumed loop` only when the wake resumed one. On conclusion the client makes one `entry.read` and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`) — at that size the content IS the better optics (a 12-byte exec answer should be visible, not described). Larger outputs remain summary-only; fetching them is the consumer's job. See §8.7.
 
 ### §5.4 Broadcast SEND rendering {§cli-broadcast-send-rendering}
 
@@ -430,17 +431,15 @@ A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's repl
 
 TUI mode contract:
 
-- Header line: two glyph lanes — identity (🐹 client / status-flavored model-send glyph: 💭 102, 💡 200, 💤 202, 🤔 300) then the status code in ONE display column across every line species (blanks reserved, never omitted). 2-space INDENT matching the trace lines, no PATH.
-- Body: a short single-line body (≤80 chars) inlines on the header line after two spaces (nvim convergence); otherwise the body starts on the next line, each line prefixed with five spaces (3 more than the header), no ellipsis, no dim.
-- Surrounded by one blank line above and one blank line below.
+- Header line: one actor or lifecycle glyph at column zero, no numeric SEND code and no path. Model lifecycle glyphs are `▶️` (102), `⏹️` (200), 💤 (202), 🤔 (300), and ✋ (499); a non-model SEND uses its origin glyph.
+- Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
+- No synthetic surrounding blank rows.
 - Empty body is legal and renders as just the header.
 
-**Conversation stripe.** Model speech stands out against operation records as a full-width background band (every block line painted to the terminal's right edge via `\x1b[K`, with an explicit near-white foreground so the band reads on any theme). It is the ONLY thing that gets a background:
-
-- **Model speech** — any broadcast SEND from `origin === "model"` (102 intermediate, 200/499 terminal alike): the project green `#148800`, emitted as truecolor (`48;2;20;136;0`) when `COLORTERM` advertises it, else the nearest 256-color cube entry (`48;5;28` = `#008700`). A 2xx on the band drops its green foreground (band-white) so it doesn't vanish green-on-green; non-2xx keep their signal color.
-- **Nothing else is banded.** The user's prompt entry is skipped per §5.1 (the typed line is their record); client-origin and other broadcasts render plain. One band, one signal.
-
-Inner ANSI resets (status colors, markdown styling) re-arm the band so a styled span can't cut it mid-line. `NO_COLOR` drops the bands; the block layout (header + indented body) remains. CLI mode is unaffected — stdout/stderr stay plain per §2.
+The model's terminal 200/499 response is bold so the answer stands out from
+operation records; intermediate and non-model SENDs remain plain. Inner ANSI
+resets re-arm bold across Markdown spans. `NO_COLOR` removes the emphasis while
+preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode contract: trace line emits as usual per §5.1, immediately followed by the body content as plain unprefixed lines. This makes the assistant's reply present in stdout for the standard Unix-tool posture (§2).
 
@@ -686,9 +685,9 @@ they advise without terminating an operation. Client failures are Problems.
 into the other:
 
 ```
-  📡 <source>:<kind> [<position>] ["<detail-or-message>"]
-       <snippet lines, if any>
-       <hint lines, if any>
+📡 <source>:<kind> [<position>] ["<detail-or-message>"]
+   <snippet lines, if any>
+   <hint lines, if any>
 ```
 
 Problems render red. Notices use their required producer-owned `level`; the
@@ -711,9 +710,9 @@ stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, su
 `workerId` is the entry-read perspective and `target` is the entry's URI (`scheme://pathname`). Rendering is coalesced per §5.3:
 
 ```
-  📡 ⏳ exec://python/1/2/1
-  📡    200 exec://python/1/2/1 "completed (exit 0); stdout=12 bytes, stderr=0 bytes"
-     Ulaanbaatar
+📡 ⏳ exec://python/1/2/1
+📡    exec://python/1/2/1 "completed (exit 0); stdout=12 bytes, stderr=0 bytes"
+   Ulaanbaatar
 ```
 
 CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt-wipe prefix. **The client does not fetch the actual streamed content** — that's not the CLI's job. Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.

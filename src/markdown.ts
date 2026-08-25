@@ -153,8 +153,7 @@ const terminalRenderer = (viewport: number): Marked => {
             const start = typeof token.start === "number" ? token.start : 1;
             const rows = token.items.map((item, index) => {
                 const marker = token.ordered ? `${start + index}. ` : "* ";
-                const task = item.task ? `[${item.checked === true ? "x" : " "}] ` : "";
-                const prefix = `${marker}${task}`;
+                const prefix = marker;
                 const body = withBlockIndent(displayWidth(prefix), () => item.tokens.map((itemToken) => {
                     const rendered = this.parser.parse([itemToken]);
                     return itemToken.type === "text" ? wrap(rendered) : rendered;

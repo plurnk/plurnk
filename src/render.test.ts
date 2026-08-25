@@ -95,11 +95,11 @@ test("extractSendBody prettify=true: json wins, pretty-printed", () => {
 });
 
 test("extractSendBody prettify=true: markdown body → ANSI transform applied", () => {
-    // With NO_COLOR=1, ANSI codes collapse to empty. Just confirm the bullet
-    // substitution fires (a non-color transform).
+    // With NO_COLOR=1, ANSI codes collapse to empty. The mature renderer owns
+    // the terminal list marker and indentation.
     const tx = { body: { raw: "- item one\n- item two", json: null } };
     const out = extractSendBody(tx, true);
-    assert.match(out, /• item one/);
+    assert.match(out, /\* item one/);
 });
 
 test("extractSendBody prettify=true: plain text → raw verbatim", () => {
@@ -236,6 +236,31 @@ test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, s
     assert.doesNotMatch(out, /\n$/);
     assert.match(out, /line one/);
     assert.match(out, /line two/);
+});
+
+test("[§cli-markdown-projection] broadcast GFM uses the current screen width after its body indent", () => {
+    const body = [
+        "| Layer | Role |",
+        "| --- | --- |",
+        "| Entry | A complete description that must wrap without losing any words. |",
+        "| Wire | short |",
+    ].join("\n");
+    const value = entry({
+        op: "SEND",
+        scheme: null,
+        pathname: null,
+        signal: 200,
+        status_rx: 200,
+        tx: { body: { raw: body, json: null } },
+    });
+    const narrow = renderLogEntry(value, 48);
+    const wide = renderLogEntry(value, 96);
+    assert.ok(narrow.split("\n").every((line) => line.length <= 48));
+    assert.ok(wide.split("\n").every((line) => line.length <= 96));
+    assert.ok(narrow.split("\n").length > wide.split("\n").length, "a narrower live viewport produces more wrapped rows");
+    assert.doesNotMatch(narrow, /…/);
+    assert.match(narrow, /losing any/);
+    assert.match(narrow, /words\./);
 });
 
 test("renderLogEntry: intermediate 102 broadcast → single plain line, no blanks (the per-turn ping)", () => {
@@ -764,7 +789,7 @@ test("extractSendBody prettify: markdown header → bold, no leading #", () => {
 test("extractSendBody prettify: bold, inline code, and bullets transform", () => {
     assert.match(extractSendBody({ body: { raw: "**strong**", json: null } }, true), /strong/);
     assert.match(extractSendBody({ body: { raw: "`code`", json: null } }, true), /code/);
-    assert.match(extractSendBody({ body: { raw: "- one\n- two", json: null } }, true), /• one/);
+    assert.match(extractSendBody({ body: { raw: "- one\n- two", json: null } }, true), /\* one/);
 });
 
 test("extractSendBody prettify: plain text (no markdown markers) passes through", () => {

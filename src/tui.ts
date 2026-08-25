@@ -10,7 +10,7 @@
 //   ? text         ask — loop.run with flags.mode="ask"
 //   : text         act (the default)
 //   text           prompt
-// The readline prompt is `[🔥|progress%]: `: one fixed slot, then input.
+// The readline prompt is `[🔥|progress%]: `: one three-cell slot, then input.
 
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
@@ -57,9 +57,12 @@ export const renderTuiFailure = (cause: unknown): string => {
 };
 
 export const renderInputPrompt = (yolo: boolean, activePercent: number | null): string => {
-    const slot = activePercent !== null
+    const progressActive = activePercent !== null
+        && Number.isFinite(activePercent)
+        && activePercent < 100;
+    const slot = progressActive
         ? progressLabel(activePercent)
-        : yolo ? " 🔥 " : "    ";
+        : yolo ? " 🔥" : "   ";
     return `${slot}\x1b[1m: \x1b[0m`;
 };
 
@@ -689,8 +692,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
     if (reasoningFailure !== undefined) process.stdout.write(`${renderTuiFailure(reasoningFailure)}\n`);
 
-    // The prompt has one four-cell slot followed by the input affordance. Active
-    // progress replaces the centered YOLO badge, so every repaint leaves the
+    // The prompt has one three-cell slot followed by the input affordance. Active
+    // progress replaces the YOLO badge, so every repaint leaves the
     // colon fixed. Identity and lifecycle status belong to durable rows and
     // diagnostics.
     const buildPrompt = (): string => {

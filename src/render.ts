@@ -199,9 +199,9 @@ export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): 
     return `${DIM}${p(loopSeq)}/${p(turnSeq)}/${p(sequence)}${RESET} `;
 };
 
-// The active prompt's four-cell slot admits every integer percentage.
+// The active prompt only represents progress below completion in three cells.
 export const progressLabel = (percent: number): string =>
-    `${DIM}${`${Math.max(0, Math.min(100, Math.trunc(percent)))}%`.padStart(4, " ")}${RESET}`;
+    `${DIM}${`${Math.max(0, Math.min(99, Math.trunc(percent)))}%`.padStart(3, " ")}${RESET}`;
 
 // Status codes render only where they carry meaning (plurnk#21): every SEND
 // keeps its code (the conversation's protocol truth), every error keeps its

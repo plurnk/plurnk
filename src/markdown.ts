@@ -125,7 +125,7 @@ const terminalRenderer = (viewport: number): Marked => {
                 return `${renderMermaid(token.text, viewport).join("\n")}\n\n`;
             }
             const language = token.lang?.trim() ?? "";
-            const header = language.length === 0 ? "◇" : `◇ ${language}`;
+            const header = language.length === 0 ? "💻" : `💻 ${language}`;
             return [
                 styled(DIM)(header),
                 ...token.text.split("\n").map((line) => `${styled(DIM)("│")} ${line}`),

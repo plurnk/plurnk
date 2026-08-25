@@ -367,8 +367,9 @@ A prettified SEND body (TUI only; the one-shot CLI keeps raw verbatim for
 pipes) delegates GFM parsing and terminal layout to maintained renderers at
 the current terminal width, less the SEND-body indent (plurnk#15). Tables use
 aligned box-drawn columns, wrap complete cell content, and separate every
-logical row; headings, inline markup, lists, links, and fenced code retain the
-renderer's conventional terminal presentation. A ```mermaid fence projects as
+logical row; headings, inline markup, lists, and links retain conventional
+terminal presentation, while ordinary fenced code begins with a `💻 language`
+header. A ```mermaid fence projects as
 a topology- and label-preserving Unicode diagram when it fits the same live
 viewport. Authored direction is preserved when possible; horizontal flowchart
 and subgraph directions may be reprojected vertically. Invalid, unsupported,

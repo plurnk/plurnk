@@ -134,8 +134,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const update = reasoningEvent.update;
             if (!io.json && update?.phase === "content" && update.delta.length > 0) {
                 const prior = visibleReasoning.get(update.messageId);
-                const prefix = prior === undefined ? "  💭 " : prior.atLineStart ? "     " : "";
-                const body = update.delta.replace(/\n(?=.)/g, "\n     ");
+                const prefix = prior === undefined ? "💭 " : prior.atLineStart ? "   " : "";
+                const body = update.delta.replace(/\n(?=.)/g, "\n   ");
                 visibleReasoning.set(update.messageId, { atLineStart: update.delta.endsWith("\n") });
                 io.err(`${prefix}${body}`);
             } else if (!io.json && update?.phase === "end") {

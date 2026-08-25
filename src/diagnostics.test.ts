@@ -28,7 +28,7 @@ const {
 test("[§cli-notice-rendering] renderDiagnostic renders a minimal Notice discriminator", () => {
     const out = renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" });
     assert.match(out, /📡 engine:rail:strike/);
-    assert.match(out, /^  /);
+    assert.match(out, /^📡/);
 });
 
 test("renderDiagnostic renders a Notice message in quotes", () => {
@@ -72,9 +72,9 @@ test("renderDiagnostic renders producer snippets and hints below the headline", 
     });
     const lines = out.split("\n");
     assert.equal(lines.length, 4);
-    assert.match(lines[1], /^     2:/);
-    assert.match(lines[2], /^     3:/);
-    assert.match(lines[3], /^     close the EDIT target/);
+    assert.match(lines[1], /^   2:/);
+    assert.match(lines[2], /^   3:/);
+    assert.match(lines[3], /^   close the EDIT target/);
 });
 
 const freshDiagnostics = async (tag: string): Promise<typeof import("./diagnostics.ts")> =>
@@ -95,7 +95,7 @@ test("renderDiagnostic renders a Problem's producer-owned recovery once", () => 
         recovery: "Retry after restoring the connection.",
     });
     assert.match(out, /"The request failed\."/);
-    assert.match(out, /^     Retry after restoring the connection\.$/m);
+    assert.match(out, /^   Retry after restoring the connection\.$/m);
 });
 
 test("renderDiagnostic uses producer-owned Notice severity", async () => {

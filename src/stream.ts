@@ -73,16 +73,13 @@ export default class StreamTrace {
     // First event for an entry announces the stream; every later tick
     // (growth, per-channel close) is silent — a line-oriented view has
     // nothing actionable to say about len changing.
-    // Column discipline: the waterfall grammar is `origin op status code target`.
-    // A stream has no op and (while open) no code — those slots render as
-    // width-matched blanks ("  " for the op glyph, "   " for the code) so the
-    // status/code/target columns line up with the op rows instead of drifting left.
+    // The stream glyph begins at the waterfall's common left edge; its lifecycle
+    // glyph follows because both fields remain useful for a non-SEND resource.
     event(ev: StreamEventPayload): string | null {
         if (this.#started.has(ev.entryId)) return null;
         this.#started.add(ev.entryId);
-        // TWO lanes (identity · status) like every waterfall row; no code —
-        // routine codes left the human waterfall (plurnk#21).
-        return `  ${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${ev.target}`;
+        // Identity and active-state both matter here; routine numeric codes do not.
+        return `${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${ev.target}`;
     }
 
     // One conclusion line in the waterfall grammar. The daemon's summary
@@ -102,7 +99,7 @@ export default class StreamTrace {
             ...(status === 200 ? [] : [`${statusColor(status)}${status}${RESET}`]),
             ev.target,
         ];
-        let line = `  ${streamCoord(ev)}${parts.join(" ")}`;
+        let line = `${streamCoord(ev)}${parts.join(" ")}`;
         if (summary.length > 0) line += ` ${DIM}"${summary}"${RESET}`;
         return line + wake;
     }
@@ -119,7 +116,7 @@ export const inlineable = (content: string): boolean => {
 // conclusion; stderr is marked and tinted.
 export const renderInline = (channel: string, content: string): string =>
     content.trimEnd().split("\n")
-        .map((l) => channel === "stderr" ? `     ${RED}!${RESET} ${l}` : `     ${l}`)
+        .map((l) => channel === "stderr" ? `   ${RED}!${RESET} ${l}` : `   ${l}`)
         .join("\n");
 
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in

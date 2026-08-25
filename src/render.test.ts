@@ -11,6 +11,7 @@ process.env.NO_COLOR = "1";
 
 const {
     sendSubGlyph,
+    modelSendGlyph,
     extractSendBody,
     renderLogEntry,
     renderReasoning,
@@ -67,6 +68,10 @@ test("sendSubGlyph: 410 → 💥 (directed SEND, gone)", () => assert.equal(send
 test("sendSubGlyph: 404 → ❌ (single failure glyph, nvim-converged)", () => assert.equal(sendSubGlyph(404), "❌"));
 test("sendSubGlyph: 500 → ❌ (single failure glyph)", () => assert.equal(sendSubGlyph(500), "❌"));
 test("sendSubGlyph: unknown range → reserved blank slot (width-2, keeps alignment)", () => assert.equal(sendSubGlyph(100), "  "));
+test("model SEND lifecycle glyphs replace human protocol codes", () => {
+    assert.equal(modelSendGlyph(102), "▶️");
+    assert.equal(modelSendGlyph(200), "⏹️");
+});
 
 // ─── extractSendBody ──────────────────────────────────────────────────
 
@@ -108,23 +113,23 @@ test("extractSendBody prettify=true: plain text → raw verbatim", () => {
 });
 
 test("renderReasoning: distinct, compact block with no coordinate or status code", () => {
-    assert.equal(renderReasoning("first line\nsecond line"), "  💭 first line\n     second line");
+    assert.equal(renderReasoning("first line\nsecond line"), "💭 first line\n   second line");
 });
 
 test("[§cli-provider-reasoning] renderReasoningFrame commits complete rows and retains only the live tail", () => {
     assert.deepEqual(renderReasoningFrame("first\nsecond", 80), {
-        committed: ["  💭 first"],
-        tail: "     second",
+        committed: ["💭 first"],
+        tail: "   second",
     });
     assert.deepEqual(renderReasoningFrame("abcdefghijklmnop", 20), {
-        committed: ["  💭 abcdefghijklm"],
-        tail: "     nop",
+        committed: ["💭 abcdefghijklmno"],
+        tail: "   p",
     });
 });
 
 test("renderReasoningFrame preserves explicit blank lines without inventing an empty tail", () => {
     assert.deepEqual(renderReasoningFrame("first\n\n", 80), {
-        committed: ["  💭 first", "     "],
+        committed: ["💭 first", "   "],
         tail: null,
     });
     assert.deepEqual(renderReasoningFrame("", 80), { committed: [], tail: null });
@@ -201,7 +206,8 @@ test("renderLogEntry: a broadcast SEND retains its annotation on the header", ()
         signal: 200,
         tx: { annotation: "Answer ready", body: { raw: "Paris", json: null } },
     }));
-    assert.match(out, /200 — Answer ready Paris/);
+    assert.match(out, /^⏹️ — Answer ready Paris$/);
+    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/);
 });
 
 // ─── renderLogEntry: broadcast SEND ──────────────────────────────────
@@ -220,7 +226,8 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bo
     assert.doesNotMatch(out, /\n$/);
     assert.ok(!out.includes("\n"), `short broadcast inlines to one line, got: ${JSON.stringify(out)}`);
     assert.match(out, /Hello\./);
-    assert.match(out, /💡/);  // the answer state is the identity
+    assert.match(out, /^⏹️/);  // the answer state is the identity
+    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/);
 });
 
 test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, still no surrounding blanks", () => {
@@ -275,6 +282,8 @@ test("renderLogEntry: intermediate 102 broadcast → single plain line, no blank
     assert.doesNotMatch(out, /^\n/);
     assert.doesNotMatch(out, /\n$/);
     assert.ok(!out.includes("\n"), `102 ping is one line, got: ${JSON.stringify(out)}`);
+    assert.match(out, /^▶️/);
+    assert.doesNotMatch(out, /(?:^|\s)102(?:\s|$)/);
 });
 
 test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entry", () => {
@@ -297,10 +306,10 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entr
         } as unknown as { body: { raw: string; json: null } },
     }));
     assert.deepEqual(out.split("\n"), [
-        "  ✅ Contract settled.",
-        "  💾 One baseline owns the schema.",
-        "  🚧 [high] Update clients.",
-        "  ⬜ [low] Run drills.",
+        "✅ Contract settled.",
+        "💾 One baseline owns the schema.",
+        "🚧 [high] Update clients.",
+        "⬜ [low] Run drills.",
     ], "a routine PLAN carries neither coordinates nor a status code (plurnk#21)");
     assert.doesNotMatch(out, /🧠/);
 });
@@ -310,7 +319,7 @@ test("renderLogEntry: an empty PLAN remains a visible durable row", () => {
         op: "PLAN",
         tx: { body: { entries: [] } } as unknown as { body: { raw: string; json: null } },
     }));
-    assert.equal(out, "  📭 no entries", "an empty PLAN stays visible, without coordinate or routine code");
+    assert.equal(out, "📭 no entries", "an empty PLAN stays visible, without coordinate or routine code");
 });
 
 test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line", () => {
@@ -322,8 +331,9 @@ test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line",
         status_rx: 200,
         tx: { body: { raw: "Hello", json: null } },
     }));
-    // Trace line: starts with 2-space indent, single line, no leading \n
+    // Directed SENDs share the left edge with every other waterfall glyph.
     assert.doesNotMatch(out, /^\n/);
+    assert.doesNotMatch(out, /^\s/);
     assert.match(out, /\/tmp\/somewhere\.txt/);
 });
 
@@ -431,13 +441,13 @@ test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)
     assert.doesNotMatch(out, /\x1b\[1m/);   // plain
 });
 
-test("bold: inner RESET re-arms bold so a markdown span can't cut it mid-line", async () => {
+test("bold: inner RESET re-arms bold so header styling cannot cut the answer", async () => {
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=rearm");
     process.env.NO_COLOR = "1";
-    // The markdown **bold** span emits its own RESET; the line-bold must resume
-    // immediately after, not die at the first reset.
-    const out = colored.renderLogEntry(entry({ ...sendEntry, tx: { body: { raw: "**strong** then more", json: null } } }));
+    // The annotation's dim span emits its own RESET; answer bold must resume
+    // immediately afterward instead of dying before the body.
+    const out = colored.renderLogEntry(entry({ ...sendEntry, tx: { annotation: "ready", body: { raw: "strong then more", json: null } } }));
     assert.match(out, /\x1b\[0m\x1b\[1m/);
 });
 
@@ -464,9 +474,9 @@ test("bold: NO_COLOR build emits no bold (or background) codes", () => {
 
 // ─── renderLogEntry: trace line shape ─────────────────────────────────
 
-test("renderLogEntry: trace line starts with 2-space indent", () => {
+test("renderLogEntry: trace glyph starts at column zero", () => {
     const line = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x" }));
-    assert.match(line, /^  /);
+    assert.match(line, /^📖/);
 });
 
 test("renderLogEntry: a SEND shows the ACTOR glyph (who's speaking), not the op 💬", () => {
@@ -656,7 +666,7 @@ test("broadcast: multi-line body starts on the second line", () => {
     const lines = out.replace(/^\n|\n$/g, "").split("\n");
     assert.equal(lines.length, 3);
     assert.doesNotMatch(lines[0], /line one/);
-    assert.match(lines[1], /^     line one/);
+    assert.match(lines[1], /^   line one/);
 });
 
 test("broadcast: long single-line body breaks to the second line", () => {
@@ -716,13 +726,14 @@ test("coordinates never leak into rows, from ordinals or DB ids", () => {
     assert.doesNotMatch(out, /38\/412/);
 });
 
-test("broadcasts carry no coordinate but keep their SEND code", () => {
+test("broadcasts replace human SEND codes with lifecycle glyphs", () => {
     const out = renderLogEntry(entry({
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         loop_seq: 1, turn_seq: 4, sequence: 1, tx: { body: { raw: "Paris", json: null } },
     }));
     assert.doesNotMatch(out, /01\/04\/01/);
-    assert.match(out, /200/, "SEND codes stay — the conversation's protocol truth");
+    assert.match(out, /^⏹️/);
+    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/, "wire status is not repeated in the human waterfall");
 });
 
 // ─── buildExtra: per-op branch coverage ──────────────────────────────

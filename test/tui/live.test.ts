@@ -27,9 +27,9 @@ after(async () => { await daemon?.cleanup(); });
 describe("TUI live (model-gated)", () => {
     // The readline referendum — the CLIENT contract: a line typed while a loop is
     // in flight is folded in via loop.inject (NOT a new loop.run) and acknowledged,
-    // with the prompt surviving the trace burst. The prompt is identical to idle —
-    // injection is seamless, the user never sees it. (Whether the MODEL honors the
-    // injected content is the model's behavior, not the client's.)
+    // with the prompt surviving the trace burst. Its ⌛︎ badge makes the active
+    // lifecycle visible without disturbing injection. (Whether the MODEL honors
+    // the injected content is the model's behavior, not the client's.)
     // 10-minute test budget + 9-minute waits below: dramatically generous so a
     // failure is unambiguously a real hang (svc#265 is fixed — errored loops now
     // broadcast loop/terminated), never "the model was slow." Only daemon-gated.
@@ -41,8 +41,9 @@ describe("TUI live (model-gated)", () => {
             await tui.waitFor(/plurnk.*\/help/);
             // Anything multi-step keeps the loop alive beyond its first model row.
             // Durable prompt rows are suppressed because readline already shows them;
-            // the lean input prompt deliberately carries no lifecycle ornamentation.
+            // the fixed prompt slot carries the active-loop hourglass.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
+            await tui.waitFor(/⌛︎/);
             await tui.waitFor(/🚧|📋|🔧/, 540_000);
             tui.write("btw keep the summary short\r");
             await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop.run)

@@ -7,11 +7,9 @@ import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markd
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { presentPlan } from "./plan.ts";
 
-// Width-stable glyph palette — EVERY glyph is plain East-Asian-Wide
-// (width 2 in node and every major terminal); VS16 variation-selector
-// sequences (✉️ ✏️ ⚙️ ⚠️ 🗑) are banned from the palette entirely after
-// two rounds of cursor-drift and column-gap forensics. No pad-space
-// hacks needed: stable widths give true column alignment.
+// Operation glyphs are plain East-Asian-Wide so their secondary fields align.
+// SEND lifecycle glyphs are left-anchored append-only output and may use a
+// standard variation sequence: no cursor or shared-column arithmetic follows.
 export const OP_GLYPHS: Record<string, string> = {
     FIND: "🔍",
     READ: "📖",
@@ -39,17 +37,16 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
 // and error families. Specific codes before ranges. Every glyph is EAW width-2,
 // VS16-free (column-stable). The COLOR (colorForStatus) carries the class; the
 // glyph carries the state. Converged with plurnk.nvim's STATUS_GLYPHS.
-// Model-SEND lane 1: the state is the identity, so the
-// constant 🤖 retired. 102 thinking-on, 200 the answer, 202 parked, 300 a question;
-// failures keep the shared error glyphs. All plane-1/EAW-wide, VS16-free.
+// A model SEND's lifecycle is its one human-facing identity. Numeric SEND codes
+// remain wire truth but do not repeat beside these glyphs in the waterfall.
 export const modelSendGlyph = (status: number): string => {
-    if (status === 102) return "💭";
+    if (status === 102) return "▶️";
     if (status === 202) return "💤";
     if (status === 300) return "🤔";
     if (status === 499) return "✋";
-    if (status >= 200 && status < 300) return "💡";
+    if (status >= 200 && status < 300) return "⏹️";
     if (status >= 400 && status < 600) return "❌";
-    return "💡";
+    return "⏹️";
 };
 
 export const sendSubGlyph = (status: number): string => {
@@ -203,11 +200,12 @@ export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): 
 export const progressLabel = (percent: number): string =>
     `${DIM}${`${Math.max(0, Math.min(99, Math.trunc(percent)))}%`.padStart(3, " ")}${RESET}`;
 
-// Status codes render only where they carry meaning (plurnk#21): every SEND
-// keeps its code (the conversation's protocol truth), every error keeps its
-// code, and routine non-SEND successes show none.
-export const statusCodeVisible = (entry: Pick<LogEntryWire, "op" | "status_rx">): boolean =>
-    entry.op === "SEND" || entry.status_rx >= 400;
+// SEND lifecycle glyphs carry the human state without repeating protocol codes.
+// Non-SEND failures retain their exact code because it remains useful diagnosis.
+// Every status remains exact on the wire and in JSON.
+export const statusCodeVisible = (entry: Pick<LogEntryWire, "op" | "status_rx" | "scheme" | "pathname">): boolean =>
+    entry.status_rx >= 400
+    && (entry.op !== "SEND" || entry.scheme !== null || entry.pathname !== null);
 
 const BOLD = code("1");
 const ITALIC = code("3");
@@ -247,7 +245,7 @@ export const extractSendBody = (
 // without inventing a log coordinate or status it does not own.
 export const renderReasoning = (content: string): string => content
     .split("\n")
-    .map((line, index) => `${index === 0 ? "  💭 " : "     "}${DIM}${line}${RESET}`)
+    .map((line, index) => `${index === 0 ? "💭 " : "   "}${DIM}${line}${RESET}`)
     .join("\n");
 
 export interface ReasoningFrame {
@@ -262,7 +260,7 @@ export interface ReasoningFrame {
 // account for.
 export const renderReasoningFrame = (content: string, columns: number = 80): ReasoningFrame => {
     if (content.length === 0) return { committed: [], tail: null };
-    const capacity = Math.max(8, columns - 7);
+    const capacity = Math.max(8, columns - 5);
     const rows: string[] = [];
     let row = "";
     let width = 0;
@@ -284,7 +282,7 @@ export const renderReasoningFrame = (content: string, columns: number = 80): Rea
     }
     const hasTail = !content.endsWith("\n");
     const format = (value: string, index: number): string =>
-        `${index === 0 ? "  💭 " : "     "}${DIM}${value}${RESET}`;
+        `${index === 0 ? "💭 " : "   "}${DIM}${value}${RESET}`;
     const committed = rows.map(format);
     return {
         committed,
@@ -308,22 +306,17 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 };
 
 // Broadcast SEND (model → user) — multi-line block, content rather than a Notice.
-// Per TUI.md §3.4.1 / SPEC.md §5.4. Header column-aligns with trace lines (2-space indent);
-// body indents further (5 spaces) so it visually nests under the speaker.
+// Per TUI.md §3.4.1 / SPEC.md §5.4. The lifecycle glyph begins at column zero;
+// continuation body lines nest under its following separator.
 const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
-    // TWO lanes. The user speaking keeps the 🐹 identity + a status lane; the MODEL
-    // speaking carries its state as lane 1: 💭 102 / 💡 200 / 💤 202 / 🤔 300,
-    // with lane 2 held as a reserved blank.
     const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
     const idGlyph = entry.origin === "model" ? modelSendGlyph(signal) : (ORIGIN_GLYPHS[entry.origin] ?? "?");
-    const subGlyph = entry.origin === "model" ? "  " : sendSubGlyph(signal);
-    const statusText = `${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}`;
 
     const annotation = entryAnnotation(entry);
-    const header = `  ${[idGlyph, subGlyph, statusText].join(" ")}`
+    const header = idGlyph
         + (annotation === null ? "" : ` ${DIM}— ${annotation}${RESET}`);
 
-    const body = extractSendBody(entry.tx, /* prettify */ true, Math.max(1, columns - 5));
+    const body = extractSendBody(entry.tx, /* prettify */ true, Math.max(1, columns - 3));
     const multiLine = body.includes("\n");
     // Short single-line replies inline after the header (nvim's
     // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
@@ -333,7 +326,7 @@ const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
     const inlineCapacity = Math.max(0, columns - displayWidth(header) - 1);
     const lines = body.length === 0 ? [header]
         : !multiLine && displayWidth(body) <= inlineCapacity ? [`${header} ${body}`]
-        : [header, ...body.split("\n").map((l) => `     ${l}`)];
+        : [header, ...body.split("\n").map((l) => `   ${l}`)];
 
     // The model's answer (terminal SEND) is bold; everything else plain. No
     // surrounding blank lines — the bold body is the standout on its own.
@@ -356,8 +349,8 @@ const renderPlan = (entry: LogEntryWire): string => {
 
     return rows.map(({ glyph, text }, index) => {
         const prefix = index === 0
-            ? `  ${glyph} ${firstSlot}`
-            : `  ${glyph} ${laterSlot}`;
+            ? `${glyph} ${firstSlot}`
+            : `${glyph} ${laterSlot}`;
         const annotation = index === 0 && note !== null ? ` ${DIM}— ${note}${RESET}` : "";
         return `${prefix}${DIM}${text}${RESET}${annotation}`;
     }).join("\n");
@@ -407,12 +400,9 @@ export const renderLogEntry = (
     const idGlyph = entry.op === "SEND"
         ? (entry.origin === "model" ? modelSendGlyph(typeof entry.signal === "number" ? entry.signal : entry.status_rx) : (ORIGIN_GLYPHS[entry.origin] ?? "?"))
         : (OP_GLYPHS[entry.op] ?? "?");
-    // Status glyph: SENDs glyph their signal, others the outcome. Routine 2xx →
-    // "  " (a width-2 blank exactly matching a glyph) so the code column NEVER
-    // shifts — the status slot is always present, glyph or reserved blank.
-    const subGlyph = entry.op === "SEND" && typeof entry.signal === "number"
-        ? sendSubGlyph(entry.signal)
-        : sendSubGlyph(entry.status_rx);
+    // Operation rows retain an outcome slot. SEND rows use only their actor or
+    // lifecycle glyph: adding a second state and numeric code repeats one fact.
+    const subGlyph = sendSubGlyph(entry.status_rx);
 
     const statusColor = colorForStatus(entry.status_rx);
     const statusText = statusCodeVisible(entry) ? `${statusColor}${entry.status_rx}${RESET}` : "";
@@ -427,9 +417,7 @@ export const renderLogEntry = (
 
     const extra = buildExtra(entry);
 
-    // Columns: idGlyph · status glyph (always present — glyph or reserved blank)
-    // · code (SEND and errors only, plurnk#21) · target · extra.
-    const parts = [idGlyph, subGlyph];
+    const parts = entry.op === "SEND" ? [idGlyph] : [idGlyph, subGlyph];
     if (statusText.length > 0) parts.push(statusText);
     if (pathText.length > 0) parts.push(pathText);
     if (scopeText.length > 0) parts.push(scopeText);
@@ -437,7 +425,7 @@ export const renderLogEntry = (
     const annotation = entryAnnotation(entry);
     if (annotation !== null) parts.push(`${DIM}— ${annotation}${RESET}`);
 
-    return `  ${parts.join(" ")}`;
+    return parts.join(" ");
 };
 
 export interface LoopUsage {

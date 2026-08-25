@@ -10,7 +10,7 @@
 //   ? text         ask — loop.run with flags.mode="ask"
 //   : text         act (the default)
 //   text           prompt
-// The readline prompt is `[🔥|progress%]: `: one three-cell slot, then input.
+// The readline prompt is `[🔥|⌛︎|progress%]: `: one three-cell slot, then input.
 
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
@@ -56,12 +56,13 @@ export const renderTuiFailure = (cause: unknown): string => {
     return `  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`;
 };
 
-export const renderInputPrompt = (yolo: boolean, activePercent: number | null): string => {
+export const renderInputPrompt = (yolo: boolean, activePercent: number | null, loopActive: boolean = false): string => {
     const progressActive = activePercent !== null
         && Number.isFinite(activePercent)
         && activePercent < 100;
     const slot = progressActive
         ? progressLabel(activePercent)
+        : loopActive ? "⌛︎ "
         : yolo ? "🔥 " : "   ";
     return `${slot}\x1b[1m: \x1b[0m`;
 };
@@ -708,7 +709,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const activePercent = embedding ? embeddingPercent
             : searchFetching ? searchPercent
             : branchPercent;
-        return renderInputPrompt(opts.yolo, activePercent);
+        return renderInputPrompt(opts.yolo, activePercent, inFlight);
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -993,16 +994,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         let rendered = false;
         if (event.state === "completed") {
             branchBatch = null;
-            printAbove(`  🌿 branch batch ${event.batchId} complete (${event.completed ?? event.total ?? 0}/${event.total ?? event.completed ?? 0})`);
+            printAbove(`🌿 branch batch ${event.batchId} complete (${event.completed ?? event.total ?? 0}/${event.total ?? event.completed ?? 0})`);
             rendered = true;
         } else if (event.state === "failed") {
             branchBatch = null;
-            printAbove(`  \x1b[31m❌ branch batch ${event.batchId} failed: ${event.problem?.detail ?? "branch preflight failed"}\x1b[0m`);
+            printAbove(`\x1b[31m❌ branch batch ${event.batchId} failed: ${event.problem?.detail ?? "branch preflight failed"}\x1b[0m`);
             rendered = true;
         } else {
             branchBatch = event;
             if (event.state === "recovery_required") {
-                printAbove(`  \x1b[31m❌ branch batch ${event.batchId} requires recovery: ${event.problem?.detail ?? "inspect the workspace Git state"}\x1b[0m`);
+                printAbove(`\x1b[31m❌ branch batch ${event.batchId} requires recovery: ${event.problem?.detail ?? "inspect the workspace Git state"}\x1b[0m`);
                 rendered = true;
             }
         }

@@ -7,9 +7,18 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderTuiFailure, resolvedModelLabel, runTui, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderInputPrompt, renderTuiFailure, resolvedModelLabel, runTui, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
+
+const plainPrompt = (value: string): string => value.replaceAll(/\x1b\[[0-9;]*m/g, "");
+
+test("input prompt carries only YOLO mode and active progress", () => {
+    assert.equal(plainPrompt(renderInputPrompt(true, 42)), "🔥 42%: ");
+    assert.equal(plainPrompt(renderInputPrompt(true, null)), "🔥: ");
+    assert.equal(plainPrompt(renderInputPrompt(false, 42)), "   42%: ");
+    assert.equal(plainPrompt(renderInputPrompt(false, null)), "  : ");
+});
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {
     const problem = {

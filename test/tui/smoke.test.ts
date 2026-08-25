@@ -23,6 +23,20 @@ before(async () => {
 after(async () => { await daemon?.cleanup(); });
 
 describe("TUI pty harness", () => {
+    test("[§cli-tui-flow] input prompt is the lean YOLO/progress surface", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--yolo"]);
+        try {
+            const output = await tui.waitFor(/🔥/);
+            assert.match(output, /🔥(?:\x1b\[[0-9;]*m)*: /, "idle YOLO prompt is 🔥:");
+            assert.doesNotMatch(output, /🐹|🧮/, "the prompt has no identity or embedder glyph");
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+        } finally {
+            tui.kill();
+        }
+    });
+
     test("[§cli-tui-mode] banner renders, a verb dispatches, /quit exits clean", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);

@@ -10,8 +10,7 @@
 //   ? text         ask — loop.run with flags.mode="ask"
 //   : text         act (the default)
 //   text           prompt
-// The readline prompt is `: ` — it rhymes with nvim's cmdline; when an
-// ask-default toggle exists (nvim first), the prompt char flips to `? `.
+// The readline prompt is `[🔥][ progress%]: `: mode, active work, input.
 
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
@@ -55,6 +54,12 @@ export const renderTuiFailure = (cause: unknown): string => {
             + (cause.problem.status === 501 ? NO_MODEL_HINT : "");
     }
     return `  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`;
+};
+
+export const renderInputPrompt = (yolo: boolean, activePercent: number | null): string => {
+    const mode = yolo ? "🔥" : "  ";
+    const progress = activePercent === null ? "" : ` ${progressLabel(activePercent)}`;
+    return `${mode}${progress}\x1b[1m: \x1b[0m`;
 };
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
@@ -566,8 +571,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     mcpConfiguration?: Readonly<Record<string, string>>;
 }): Promise<void> => {
     let current = workspace;
-    // Loop state, hoisted so buildPrompt can show a steer prompt while a loop
-    // runs and the line handler / SIGINT can share it.
+    // Loop state, hoisted so the line handler and SIGINT can share it.
     let inFlight = false;
     let cancelRequested = false;
     // One cancel path for every interrupt gesture (Ctrl-C, Esc, /stop): the
@@ -582,16 +586,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             process.stdout.write(`\r\x1b[2K  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m\n`);
         });
     };
-    // Prompt status gutter (#114, refined): two reserved slots — 🧮 while
-    // embeddings warm, and a busy glyph (⏳ working / 💤 hibernating) whenever a
-    // loop OR embedding is active. Glyphs when active, blanks when not, so the
-    // prompt never shifts. Pure state, no timer — repainted on state change.
+    // Ephemeral progress projected into the prompt while background work is active.
     let embedding = false;
     let embeddingPercent: number | null = null;
     let searchFetching = false;
     let searchPercent: number | null = null;
     let branchBatch: BranchBatchEvent | null = null;
-    let hibernating = false;   // the loop parked on SEND signal 202 (awaiting streams/workers)
     // LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -688,43 +688,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
     if (reasoningFailure !== undefined) process.stdout.write(`${renderTuiFailure(reasoningFailure)}\n`);
 
-    // The prompt is the user's row, restricted to WIDTH-STABLE glyphs —
-    // settled empirically in two rounds. Round 1 (`  👤 ✉️  ✅ 201 : `)
-    // drifted by exactly one column: ✉️ is U+2709+VS16, the variation-
-    // selector class terminals genuinely cell-count differently; readline
-    // repositions the cursor at its own computed width on every
-    // history-nav/backspace/completion refresh, so the disagreement shows
-    // as text shift. Round 2 (bare `  : `) fixed the drift but destroyed
-    // the row identity. 🐹 (U+1F439, the brand head — was the generic 👤
-    // U+1F464) and ✅ (U+2705) are plain East-Asian-Wide single code points —
-    // width 2 in node AND every major terminal, no VS16 — so they stay; the
-    // 201 is the input-affordance constant;
-    // 💬 (U+1F4AC, stable-wide) fills the op slot the toxic ✉️ vacated.
-    // Policy: VS16/ambiguous glyphs are banned from the ENTIRE palette
-    // (render.ts) — stable widths are also what make columns align.
-    // The prompt is the SAME whether or not a loop is running — kept alive above
-    // the streaming traces by printAbove. The user just types; a line submitted
-    // while a loop is in flight is folded into it (loop.inject), else it starts
-    // the next loop. The user never has to know which — both continue the same
-    // conversation. The yolo badge FILLS the prompt's 2-col indent — 🔥 (U+1F525) is width-2,
-    // exactly the indent — so toggling yolo never shifts the prompt and the
-    // coordinate stays column-aligned with the waterfall. 🔥 is plane-1 (width-
-    // stable), NOT the BMP ⚡ (U+26A1) which a font may render width-1 and drift
-    // the readline cursor (the ❓ U+2753 lesson).
+    // The prompt carries only the stable-wide YOLO badge, an optional ASCII
+    // progress value, and the input affordance. Identity and lifecycle status
+    // belong to durable waterfall rows and diagnostics. A blank two-cell mode
+    // gutter when YOLO is off keeps input aligned with the waterfall.
     const buildPrompt = (): string => {
-        // Status rides the prompt's OWN glyphs — no prepended gutter, so the row
-        // never shifts and stays column-aligned with the waterfall. The origin
-        // 🐹→🧮 while embeddings warm; the status lane shows ⏳ (💤 if the loop is
-        // parked on SEND signal 202) while busy, and holds a RESERVED BLANK when idle —
-        // TWO lanes exactly, same as every waterfall row (identity · status), so the
-        // prompt sits flush in the ladder. All glyphs are same-width palette members;
-        // swapping in place keeps the columns and the readline cursor stable.
-        const busy = inFlight || embedding || searchFetching || branchBatch !== null;
-        const origin = embedding ? "🧮" : searchFetching ? "🔎" : branchBatch !== null ? "🌿" : "🐹";
-        const status = branchBatch?.state === "recovery_required"
-            ? "❌"
-            : busy ? (inFlight && hibernating && branchBatch === null ? "💤" : "⏳") : "  ";
-        const yolo = opts.yolo ? "🔥" : "  ";
         const branchCompleted = Number(branchBatch?.completed);
         const branchTotal = Number(branchBatch?.total);
         const branchPercent = branchBatch !== null
@@ -736,10 +704,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const activePercent = embedding ? embeddingPercent
             : searchFetching ? searchPercent
             : branchPercent;
-        // No coordinate, no decorative code (plurnk#21): the prompt is
-        // `[gauge] 🐹 <status> : ` — the busy gauge appears only while active.
-        const position = activePercent !== null ? progressLabel(activePercent) : "";
-        return `${yolo}${position}${origin} ${status} \x1b[1m: \x1b[0m`;
+        return renderInputPrompt(opts.yolo, activePercent);
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -780,7 +745,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         rl.prompt();
     };
     // Repaint the prompt preserving a typed-in inject (rl.prompt(true)) — used
-    // when the status gutter changes (embedding starts/stops) mid-typing. The
+    // when active progress changes mid-typing. The
     // printAbove idiom; readline owns the redraw, no cursor/width math.
     const repromptPreserving = (): void => {
         readline.cursorTo(process.stdout, 0);
@@ -993,11 +958,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // they render the shared workspace's activity whether this REPL started the loop
     // or a worker/second client did (multi-client observability).
     const handleNotice = (notice: Notice): void => {
-        // engine:turn liveness is the ⏳ gutter (inFlight), not a waterfall line.
+        // engine:turn liveness is owned by the run state, not a waterfall line.
         if (notice.source === "engine:turn") return;
         // Indexing progress is ephemeral prompt state, not an append-only waterfall
-        // record. The coordinate slot becomes a fixed-width percentage while warm,
-        // then returns to the next real L/T/S coordinate on completion.
+        // record. Its percentage disappears when warming completes.
         if (notice.source === "engine:derivation" && notice.kind === "embed_progress") {
             const phase = typeof notice.phase === "string" ? notice.phase : null;
             embedding = phase === "preparing"
@@ -1011,7 +975,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             return;
         }
         // Search acquisition is the same compact lifecycle shape: update the
-        // fixed-width prompt gauge, never append one notice line per tick.
+        // prompt percentage, never append one notice line per tick.
         if (notice.kind === "search_progress" && notice.source.startsWith("exec:")) {
             searchFetching = notice.phase !== "complete" && notice.phase !== "failed";
             const percent = Number(notice.percent);
@@ -1051,8 +1015,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);
-            // A model SEND carrying signal 202 parks the loop → 💤; anything else → ⏳.
-            hibernating = entry.op === "SEND" && entry.signal === 202;
             printAbove(renderLogEntry(entry, process.stdout.columns ?? 80));
         },
         onNotice: handleNotice,
@@ -1094,9 +1056,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             printAbove(renderQuestionMenu(i.message, questionChoices(i.responseSchema)));
             reprompt();
         },
-        // A loop terminating just clears the parked glyph; the summary is rendered
-        // from the run's own done (below).
-        onTerminated: () => { hibernating = false; },
+        // The summary is rendered from the run's own done below.
+        onTerminated: () => {},
     });
 
     // Startup warming begins while AG-UI is still establishing the workspace, before a
@@ -1268,10 +1229,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
 
             inFlight = true;
-            hibernating = false;   // fresh loop — the ⏳ busy glyph lights the whole run
-            // Keep a live steer prompt for the duration of the loop — a stable row
-            // to type an inject into (traces print above it); the gutter's ⏳ shows
-            // the loop is active (#114). Still editable.
+            // Keep a live steer prompt for the duration of the loop so traces can
+            // print above an editable injection row.
             reprompt();
             const start = Date.now();
             let turnCount = 0;
@@ -1322,7 +1281,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 inFlight = false;
                 cancelRequested = false;
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
-                reprompt();   // loop over → the busy glyph clears from the gutter
+                reprompt();
             }
         });
 

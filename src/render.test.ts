@@ -690,11 +690,11 @@ test("coordLabel survives for machine-adjacent surfaces and grows past two digit
     assert.match(coordLabel(7, 104, 12), /07\/104\/12 /);
 });
 
-test("active-prompt progress is a bounded four-cell integer percentage", () => {
-    assert.equal(progressLabel(7), "  7%");
-    assert.equal(progressLabel(42), " 42%");
-    assert.equal(progressLabel(100), "100%");
-    assert.equal(progressLabel(107.9), "100%");
+test("active-prompt progress is a bounded three-cell pre-completion percentage", () => {
+    assert.equal(progressLabel(7), " 7%");
+    assert.equal(progressLabel(42), "42%");
+    assert.equal(progressLabel(99), "99%");
+    assert.equal(progressLabel(107.9), "99%");
 });
 
 test("entry materialization narration is recognized from hydrated or JSON attrs", () => {

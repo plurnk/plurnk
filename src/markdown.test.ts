@@ -76,6 +76,7 @@ test("[§cli-markdown-projection] an unbroken table value hard-wraps without tru
 
 test("[§cli-markdown-projection] a fenced block uses the terminal renderer without styling its body as Markdown", () => {
     const out = renderMarkdownDocument("before\n```json\n{\"a\": **1**}\n```\nafter");
+    assert.match(out, /^💻 json$/m, "the code glyph and language are separated by one space");
     assert.match(out, /\{\"a\": \*\*1\*\*\}/, "fence bodies stay verbatim — no Markdown applies inside");
     assert.doesNotMatch(out, /<pre>|<code>/, "the terminal renderer never leaks HTML projection");
 });

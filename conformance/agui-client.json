@@ -858,6 +858,19 @@
         "lifecycle",
         "presentation"
       ]
+    },
+    "loop/packet": {
+      "posture": "native",
+      "evidence": [
+        "src/transport.test.ts — shared lifecycle corpus (status rendering: plurnk#30)"
+      ],
+      "dimensions": [
+        "admission",
+        "framing",
+        "projection",
+        "lifecycle",
+        "presentation"
+      ]
     }
   }
 }

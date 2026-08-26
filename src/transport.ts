@@ -17,6 +17,7 @@ import {
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
     clientTransportProposalInvalid,
+    clientTransportStateInvalid,
     clientTransportTerminalMissing,
     clientActionResultMissing,
     type ProblemDetails,
@@ -47,6 +48,13 @@ export interface BranchBatchEvent {
     problem?: { detail?: string };
 }
 
+// The run's status gauge — the AG-UI state the bridge snapshots on RUN_STARTED and
+// patches per packet, termination, and derivation (plurnk-agui SPEC, `loop/packet`).
+export interface StatusGauge {
+    plurnk: { status: { lifecycle: string; model: string | null; loopId: number | null; packetCount: number; activity: unknown } };
+    budget: Record<string, unknown>;
+}
+
 // Run-plane events in daemon-notification shapes — the SAME shapes the TUI's
 // existing handlers consume, so they work unchanged under either transport.
 export interface RunHandlers {
@@ -65,6 +73,7 @@ export interface RunHandlers {
     onProblem?: (problem: ProblemDetails) => void;
     onBranchBatch: (event: BranchBatchEvent) => void;
     onQuiesced?: (payload: unknown) => void;
+    onStatus?: (gauge: StatusGauge) => void;
     onTerminated: (t: TerminatedInfo) => void;
 }
 
@@ -104,6 +113,7 @@ export class BridgeTransport implements Transport {
     #world: string | undefined;   // the workspace name when it differs from the thread (--worker)
     #workspace: BridgeSessionOpts;
     #h: RunHandlers | null = null;
+    #gauge: StatusGauge | null = null;
     #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
     #pendingInteractionResolve: ((r: Record<string, unknown> | "cancel") => void) | null = null;
     #reasoning = new ReasoningEvents();
@@ -394,12 +404,39 @@ export class BridgeTransport implements Transport {
         return { id: 0, name: threadId };
     }
 
+    // Apply one STATE_DELTA to the gauge: JSON Patch `replace` on a pointer under
+    // /plurnk/status or /budget (plurnk-agui SPEC). Anything else is a broken wire.
+    static #applyDelta(gauge: StatusGauge | null, delta: unknown): StatusGauge {
+        if (gauge === null) throw new ProblemError(clientTransportStateInvalid("STATE_DELTA before any STATE_SNAPSHOT"));
+        if (!Array.isArray(delta)) throw new ProblemError(clientTransportStateInvalid("STATE_DELTA delta is not an array"));
+        const next = structuredClone(gauge);
+        for (const op of delta as Array<{ op?: unknown; path?: unknown; value?: unknown }>) {
+            if (op.op !== "replace" || typeof op.path !== "string") throw new ProblemError(clientTransportStateInvalid(`unsupported patch op ${JSON.stringify(op.op)} at ${JSON.stringify(op.path)}`));
+            const segments = op.path.split("/").slice(1).map((seg) => seg.replaceAll("~1", "/").replaceAll("~0", "~"));
+            const leaf = segments.pop();
+            const parent = segments.reduce<unknown>((node, seg) => (node !== null && typeof node === "object" ? (node as Record<string, unknown>)[seg] : undefined), next);
+            if (leaf === undefined || parent === null || typeof parent !== "object") throw new ProblemError(clientTransportStateInvalid(`no parent for ${op.path}`));
+            (parent as Record<string, unknown>)[leaf] = op.value;
+        }
+        return next;
+    }
+
     // Project one standard reasoning event or un-project one CUSTOM plurnk.*
     // event into the family handlers; returns terminal truth when present.
     #dispatch(e: AguiEvent): TerminatedInfo | null {
         const reasoning = this.#reasoning.consume(e);
         if (reasoning.handled) {
             if (reasoning.update !== undefined) this.#h?.onReasoning(reasoning.update);
+            return null;
+        }
+        if (e.type === "STATE_SNAPSHOT") {
+            this.#gauge = structuredClone((e as { snapshot?: unknown }).snapshot as StatusGauge);
+            this.#h?.onStatus?.(structuredClone(this.#gauge));
+            return null;
+        }
+        if (e.type === "STATE_DELTA") {
+            this.#gauge = BridgeTransport.#applyDelta(this.#gauge, (e as { delta?: unknown }).delta);
+            this.#h?.onStatus?.(structuredClone(this.#gauge));
             return null;
         }
         if (e.type !== "CUSTOM") return null;

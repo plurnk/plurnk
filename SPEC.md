@@ -781,6 +781,7 @@ A conforming `plurnk` client:
 6. Consumes `CUSTOM plurnk.notice` and renders each Notice per §8.
 7. Maps `loop.run` results to exit codes per §4.
 8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.
+9. Projects `STATE_SNAPSHOT` and each `STATE_DELTA` into the run's status gauge (`loop/packet`, plurnk-agui SPEC); a delta before a snapshot or a patch op other than `replace` is a 502 `state-invalid` Problem.
 
 ---
 

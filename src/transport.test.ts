@@ -44,7 +44,7 @@ const loadConformanceKit = async (): Promise<ConformanceKit> => {
 };
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], branches: [], terminated: [] };
+    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[]; status: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], branches: [], terminated: [], status: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
         onReasoning: (reasoning) => seen.reasoning.push(reasoning),
@@ -55,6 +55,7 @@ const collectingHandlers = () => {
         onProblem: (problem) => seen.problems.push(problem),
         onBranchBatch: (event) => seen.branches.push(event),
         onTerminated: (t) => seen.terminated.push(t),
+        onStatus: (gauge) => seen.status.push(gauge),
     };
     return { h, seen };
 };
@@ -120,7 +121,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
     const kit = await loadConformanceKit();
     const terminalContinuation = kit.lifecycles
         .find(({ name }) => name === "ordinary-run")!
-        .events.filter(({ type }, index) => type === "RUN_FINISHED" || index === 2);
+        .events.filter((event) => event.type === "RUN_FINISHED" || (event.type === "CUSTOM" && (event as { name?: string }).name === "plurnk.terminated"));
 
     for (const specimen of kit.lifecycles) {
         await t.test(specimen.name, async () => {
@@ -170,6 +171,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
 
                 const families = new Set<string>();
                 if (seen.entries.length > 0) families.add("log/entry");
+                if (seen.status.length > 0) families.add("loop/packet");
                 if (seen.proposals.length > 0) families.add("loop/proposal");
                 if (seen.interactions.length > 0) families.add("loop/interaction");
                 if (seen.reasoning.length > 0) families.add("reasoning/event");
@@ -187,6 +189,49 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                 await mock.close();
             }
         });
+    }
+});
+
+test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each STATE_DELTA", async () => {
+    const kit = await loadConformanceKit();
+    const ordinary = kit.lifecycles.find(({ name }) => name === "ordinary-run")!;
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        for (const event of ordinary.events) res.write(frame(event));
+        res.end();
+    });
+    try {
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        const result = await transport.run("fixture", {}).done;
+        assert.equal(result.finalStatus, 200);
+        const gauges = seen.status as Array<{ plurnk: { status: { lifecycle: string; loopId: number | null; packetCount: number } } }>;
+        assert.equal(gauges.length, 3, "one gauge per STATE_SNAPSHOT and STATE_DELTA");
+        assert.deepEqual(gauges.map((g) => g.plurnk.status.lifecycle), ["idle", "running", "completed"]);
+        assert.deepEqual(gauges.map((g) => g.plurnk.status.packetCount), [0, 1, 1]);
+        assert.equal(gauges[2]!.plurnk.status.loopId, 1);
+    } finally {
+        await mock.close();
+    }
+});
+
+test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state-invalid Problem", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "RUN_STARTED", threadId: "fixture", runId: "r1" }));
+        res.write(frame({ type: "STATE_DELTA", delta: [{ op: "replace", path: "/plurnk/status/packetCount", value: 1 }] }));
+        res.end();
+    });
+    try {
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
+        transport.subscribe(collectingHandlers().h);
+        await assert.rejects(
+            () => transport.run("fixture", {}).done,
+            (error: unknown) => error instanceof ProblemError && error.problem.status === 502 && error.problem.kind === "state-invalid",
+        );
+    } finally {
+        await mock.close();
     }
 });
 

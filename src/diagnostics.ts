@@ -243,6 +243,13 @@ export const clientTransportResultInvalid = (cause: unknown): ProblemDetails =>
         retryable: false,
     });
 
+export const clientTransportStateInvalid = (reason: string): ProblemDetails =>
+    clientProblem("transport", "state-invalid", 502, "The AG-UI stream contained an invalid state delta.", {
+        stage: "transport",
+        reason,
+        retryable: false,
+    });
+
 export const clientTransportInterruptMismatch = (logEntryId: number): ProblemDetails =>
     clientProblem("transport", "interrupt-mismatch", 502, `Proposal ${logEntryId} ended without its matching AG-UI interrupt outcome.`, {
         stage: "proposal-resolution",

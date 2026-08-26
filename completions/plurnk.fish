@@ -3,6 +3,7 @@ complete -c plurnk -n __fish_use_subcommand -a models
 complete -c plurnk -n __fish_use_subcommand -a workspace
 complete -c plurnk -n __fish_use_subcommand -a log
 complete -c plurnk -n __fish_use_subcommand -a reasoning
+complete -c plurnk -n __fish_use_subcommand -a render
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a script
 complete -c plurnk -l help
@@ -35,3 +36,4 @@ complete -c plurnk -l limit
 complete -c plurnk -l provider
 complete -c plurnk -l all
 complete -c plurnk -l offset
+complete -c plurnk -l width

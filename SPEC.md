@@ -48,10 +48,10 @@ Options:
 | `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"auto":true}'` for automation workers). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
-| `--pick <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (the sole source when headless). Maps to a `pick` constraint. Create-time / workspace-level. See §1.4. |
-| `--hide <glob>` | string, repeatable | Membership overlay: block file(s) from manifest. Maps to a `hide` constraint. See §1.4. |
-| `--view <glob>` | string, repeatable | Membership overlay: track file(s) in manifest (read-only). Maps to a `view` constraint. See §1.4. |
-| `--manifest-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N items of `plurnk://manifest.json` at turn 0. Create-time only. See §1.4. |
+| `--pick <glob>` | string, repeatable | Track file(s); the sole source when headless. Maps to a `pick` constraint. Create-time / workspace-level. See §1.4. |
+| `--hide <glob>` | string, repeatable | Hide file(s). Maps to a `hide` constraint. See §1.4. |
+| `--view <glob>` | string, repeatable | Track file(s) read-only. Maps to a `view` constraint. See §1.4. |
+| `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. |
 | `--md <name=path>` | string, repeatable | Pin a markdown doc into the workspace (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
 
 Env:
@@ -78,7 +78,7 @@ Workspaces and workers are daemon-owned. The client only knows their **names** �
 
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/constraints/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
-- **`--worker <name>` names the CONVERSATION** (thread-per-run, svc#366): with a prompt, the worker name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--worker`, thread == world and conversations bind the workspace's model run (the default conversation). For read subcommands, `--worker` resolves via `workspace.workers` and an unknown name fails hard — no silent fallback to the model run.
+- **`--worker <name>` names the CONVERSATION**: with a prompt, the worker name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--worker`, thread == world and conversations bind the workspace's model run (the default conversation). For read subcommands, `--worker` resolves via `workspace.workers` and an unknown name fails hard — no silent fallback to the model run.
 - **`--worker` set without `--workspace`** → usage error (exit 64). Run names are scoped to a workspace; there's no workspace to scope into.
 
 CLI flag takes precedence over env when both are set.
@@ -122,7 +122,7 @@ reads the durable value; descendants follow the daemon's snapshot inheritance.
 
 ### §1.3 Project root {§cli-project-root}
 
-**Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. Stored on `workspaces.project_root` (per plurnk-service migration 015); NULL = headless (file ops 400 with "workspace has no project_root").
+**Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. NULL = headless (file ops 400 with "workspace has no project_root").
 
 Client behavior:
 
@@ -135,23 +135,23 @@ The "inject standing context into every loop" role formerly served by persona is
 
 ### §1.4 Membership overlay and workspace-open settings {§cli-membership-overlay-and-workspace-open-settings}
 
-These flags shape what the workspace sees. The membership overlay flags map to **constraints** (service vocabulary, svc#200); the settings flags map to **workspace-open settings** (svc#231). All are creation-time / workspace-level.
+These flags shape what the workspace sees. Membership flags map to daemon-owned constraints; settings flags map to workspace-open settings. All are creation-time / workspace-level.
 
 **Membership overlay** — repeatable glob flags, sent as `constraints` on `workspace.create`:
 
-- `--pick <glob>` → `{effect: "pick", glob}` — track file(s) in manifest (the sole source when headless).
-- `--hide <glob>` → `{effect: "hide", glob}` — block file(s) from manifest.
-- `--view <glob>` → `{effect: "view", glob}` — track file(s) in manifest (read-only).
+- `--pick <glob>` → `{effect: "pick", glob}` — track file(s), and the sole source when headless.
+- `--hide <glob>` → `{effect: "hide", glob}` — hide file(s).
+- `--view <glob>` → `{effect: "view", glob}` — track file(s) read-only.
 
 Seeded atomically at `workspace.create` so turn-1's manifest is right with no follow-up RPC. On `--workspace` attach, each constraint is applied **live** via `workspace.constrain` (workspace-scoped, re-resolved immediately).
 
 **Workspace-open settings** — sent as `settings` on `workspace.create`:
 
-- `--manifest-items <n>` → `manifestItems`. Controls the `plurnk://manifest.json` preview at turn 0: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_MANIFEST_ITEMS` for the workspace.
+- `--files-items <n>` → `filesItems`. Controls the turn-0 tracked-file preview: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_FILES_ITEMS` for the workspace.
 - `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the workspace, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
 - Executor policy → `execs` (`Record<string, string>`). Only `PLURNK_EXECS_ONLY` and `PLURNK_EXECS_<canonical-runtime-tag>` are admitted, case-insensitively. Values remain verbatim for daemon-owned interpretation; unrelated executor/plugin configuration is excluded.
 
-Settings are **workspace-create-only** (no live setter). On `--workspace` attach, `--manifest-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
+Settings are **workspace-create-only** (no live setter). On `--workspace` attach, `--files-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
 
 ---
 
@@ -350,15 +350,15 @@ One line per dispatched op, except the structured PLAN block below. Format
 Width-tolerant; no fixed column widths. Every glyph-bearing waterfall row
 begins at column zero. A non-SEND operation carries its operation glyph plus a
 status-glyph slot and retains a colored numeric status only for failures
-(≥400). A broadcast SEND carries one actor or lifecycle glyph and no numeric
+(≥400). A SEND carries one lifecycle glyph regardless of its producer and no numeric
 status: the glyph is the human state, so repeating its protocol code is noise.
 A failed directed SEND retains its code like any other failed operation. The
-human waterfall carries no log coordinates (plurnk#21); coordinates and every
+human waterfall carries no log coordinates; coordinates and every
 exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🤖 🐹 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). Model SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled). The exact standard variation sequences are safe here because each SEND is append-only output anchored at column zero; neither a shared following column nor readline cursor math depends on their display width.
+**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🤖 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled). The exact standard variation sequences are safe here because each SEND is append-only output anchored at column zero; neither a shared following column nor readline cursor math depends on their display width.
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
 
@@ -366,7 +366,7 @@ A present durable operation annotation is appended as sanitized, literal plain t
 
 A prettified SEND body (TUI only; the one-shot CLI keeps raw verbatim for
 pipes) delegates GFM parsing and terminal layout to maintained renderers at
-the current terminal width, less the SEND-body indent (plurnk#15). Tables use
+the current terminal width, less the SEND-body indent. Tables use
 aligned box-drawn columns, wrap complete cell content, and separate every
 logical row; headings, inline markup, lists, and links retain conventional
 terminal presentation, while ordinary fenced code begins with a `💻 language`
@@ -377,6 +377,17 @@ and subgraph directions may be reprojected vertically. Invalid, unsupported,
 or still-overwide diagrams fall back to labeled verbatim source with the
 reason, never a half-drawn diagram. The wire always carries semantic source;
 no pre-rendered channel exists at the protocol boundary.
+
+#### §5.1.0a Local rendering filter {§cli-render-filter}
+
+`plurnk render --width <columns>` is the renderer's daemon-free Unix filter:
+it reads semantic Markdown from stdin and writes one width-bounded plain-Unicode
+projection to stdout. It performs no configuration loading, model work, network
+activity, startup narration, or ANSI styling. Other clients may discover this
+optional executable for presentation while retaining their protocol-native
+transport and a faithful source fallback. `plurnk render --help` begins with
+the exact filter synopsis and is the side-effect-free capability probe; clients
+must not send semantic content to an unproven executable.
 
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
@@ -431,7 +442,7 @@ A broadcast SEND (`op === "SEND" && target_scheme === null`) is the model's repl
 
 TUI mode contract:
 
-- Header line: one actor or lifecycle glyph at column zero, no numeric SEND code and no path. Model lifecycle glyphs are `▶️` (102), `⏹️` (200), 💤 (202), 🤔 (300), and ✋ (499); a non-model SEND uses its origin glyph.
+- Header line: one lifecycle glyph at column zero, no numeric SEND code and no path. Lifecycle glyphs are `▶️` (102), `⏹️` (200), 💤 (202), 🤔 (300), and ✋ (499), regardless of producer.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
 - Empty body is legal and renders as just the header.
@@ -516,7 +527,7 @@ This is distinct from **loop auto** (`--auto`, `loop.run({flags:{auto:true}})`),
 
 ### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals` {§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals}
 
-When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true` (plurnk-service #169 server half): the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
+When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true`: the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
 
 Because the server is silent by design, **the client owns the explanation** — it emits `client:proposal:edits_blocked` once at loop start: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)."
 

@@ -93,7 +93,7 @@ const readSingleKey = (): Promise<string> => new Promise((resolve) => {
 
 // Drop a body into a tmpfile, spawn $EDITOR (or VISUAL, or vi) on it, wait
 // for the editor to exit, read the result back. Empty file ⇒ null (git-commit
-// convention). Shared by proposal review and prompt composition (plurnk#26).
+// convention). Shared by proposal review and prompt composition.
 export const editInEditor = async (body: string, suffix: string): Promise<string | null> => {
     const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
     const dir = await mkdtemp(join(tmpdir(), "plurnk-edit-"));

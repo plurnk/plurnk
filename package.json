@@ -45,7 +45,7 @@
         "test:installation": "node scripts/test-installation.mjs",
         "test:composition": "node scripts/test-composition.mjs",
         "release:publish": "node scripts/release-publish.mjs",
-        "build:posix": "node --conditions=plurnk-dev scripts/generate-posix.mjs"
+        "build:posix": "node scripts/generate-posix.mjs"
     },
     "devDependencies": {
         "@types/node": "^26.1.1",

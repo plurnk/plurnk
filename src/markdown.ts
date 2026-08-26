@@ -250,6 +250,7 @@ export const looksLikeMarkdown = (text: string): boolean =>
     /(^|\n)#{1,6}\s/.test(text)
     || /\*\*[^*\n]+\*\*/.test(text)
     || /(^|\n)[-*+]\s/.test(text)
-    || /```/.test(text)
+    || /(^|\n)\s*\d+[.)]\s/.test(text)
+    || /```|~~~/.test(text)
     || /(^|\n)\s*\|.*\|/.test(text)
     || /\[[^\]]+\]\([^)]+\)/.test(text);

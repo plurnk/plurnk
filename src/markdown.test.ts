@@ -201,3 +201,9 @@ test("[§cli-markdown-projection] the document projector composes prose, tables,
     assert.match(out, /▼/);
     assert.equal(looksLikeMarkdown("| a | b |\n| - | - |"), true, "a bare table is markdown enough");
 });
+
+test("[§cli-markdown-projection] admission recognizes the same structural GFM in both clients", () => {
+    assert.equal(looksLikeMarkdown("1. first\n2. second"), true, "ordered lists are structural Markdown");
+    assert.equal(looksLikeMarkdown("~~~json\n{}\n~~~"), true, "tilde fences are structural Markdown");
+    assert.equal(looksLikeMarkdown("An ordinary sentence."), false, "ordinary prose stays ordinary prose");
+});

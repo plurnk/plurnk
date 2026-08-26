@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderInputPrompt, renderTuiFailure, resolvedModelLabel, runTui, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderInputPrompt, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
@@ -23,6 +23,14 @@ test("input prompt replaces its YOLO badge with fixed-width pre-completion progr
     assert.equal(plainPrompt(renderInputPrompt(true, null, true)), "⌛︎ : ");
     assert.equal(plainPrompt(renderInputPrompt(false, null, true)), "⌛︎ : ");
     assert.equal(plainPrompt(renderInputPrompt(true, 42, true)), "42%: ", "specific progress supersedes the active-loop hourglass");
+});
+
+test("help uses the settled worker and membership vocabulary", () => {
+    assert.match(TUI_HELP, /\/worker \[name\]\s+create a new worker/);
+    assert.doesNotMatch(TUI_HELP, /workspace>worker>loop>turn>op|manifest|remove a matching rule/);
+    assert.match(TUI_HELP, /\/pick <glob>\s+track file\(s\)/);
+    assert.match(TUI_HELP, /\/view <glob>\s+track file\(s\) \(read-only\)/);
+    assert.match(TUI_HELP, /\/drop <glob>\s+no longer pick file\(s\)/);
 });
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {

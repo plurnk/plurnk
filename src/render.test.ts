@@ -11,7 +11,7 @@ process.env.NO_COLOR = "1";
 
 const {
     sendSubGlyph,
-    modelSendGlyph,
+    sendLifecycleGlyph,
     extractSendBody,
     renderLogEntry,
     renderReasoning,
@@ -68,9 +68,9 @@ test("sendSubGlyph: 410 → 💥 (directed SEND, gone)", () => assert.equal(send
 test("sendSubGlyph: 404 → ❌ (single failure glyph, nvim-converged)", () => assert.equal(sendSubGlyph(404), "❌"));
 test("sendSubGlyph: 500 → ❌ (single failure glyph)", () => assert.equal(sendSubGlyph(500), "❌"));
 test("sendSubGlyph: unknown range → reserved blank slot (width-2, keeps alignment)", () => assert.equal(sendSubGlyph(100), "  "));
-test("model SEND lifecycle glyphs replace human protocol codes", () => {
-    assert.equal(modelSendGlyph(102), "▶️");
-    assert.equal(modelSendGlyph(200), "⏹️");
+test("SEND lifecycle glyphs replace human protocol codes regardless of producer", () => {
+    assert.equal(sendLifecycleGlyph(102), "▶️");
+    assert.equal(sendLifecycleGlyph(200), "⏹️");
 });
 
 // ─── extractSendBody ──────────────────────────────────────────────────
@@ -479,10 +479,11 @@ test("renderLogEntry: trace glyph starts at column zero", () => {
     assert.match(line, /^📖/);
 });
 
-test("renderLogEntry: a SEND shows the ACTOR glyph (who's speaking), not the op 💬", () => {
-    const client = renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hi" } } }));
-    assert.ok(client.includes(ORIGIN_GLYPHS.client), `expected 🐹 in ${client}`);
-    assert.ok(!client.includes(OP_GLYPHS.SEND), "the 💬 op glyph is dropped — the actor conveys speaking");
+test("renderLogEntry: every SEND shows its lifecycle rather than a producer mascot", () => {
+    const runtime = renderLogEntry(entry({ op: "SEND", origin: "_plurnk", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { raw: "Next: Address the prompt." } } }));
+    assert.equal(runtime, "▶️ Next: Address the prompt.");
+    assert.ok(!runtime.includes(OP_GLYPHS.SEND), "the 💬 op glyph is dropped — lifecycle conveys the SEND state");
+    assert.ok(!runtime.includes("?"), "the wire-standard _plurnk producer is never an unknown actor");
 });
 
 test("renderLogEntry: an operation shows its OP glyph, no origin column", () => {
@@ -708,7 +709,7 @@ test("active-prompt progress is a bounded three-cell pre-completion percentage",
 });
 
 test("entry materialization narration is recognized from hydrated or JSON attrs", () => {
-    const base = { origin: "plurnk", op: "EDIT" } as Partial<LogEntryWire>;
+    const base = { origin: "_plurnk", op: "EDIT" } as Partial<LogEntryWire>;
     assert.equal(isEntryMaterialization(entry({ ...base, attrs: { kind: "entry_materialized" } })), true);
     assert.equal(isEntryMaterialization(entry({ ...base, attrs: JSON.stringify({ kind: "entry_materialized" }) })), true);
     assert.equal(isEntryMaterialization(entry({ ...base, attrs: "{bad json" })), false);

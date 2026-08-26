@@ -38,6 +38,7 @@ import {
 import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { userConfigFile } from "./paths.ts";
+import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive workspace because we gate on isTTY upstream.
@@ -122,6 +123,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
+       <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
 
@@ -205,10 +207,9 @@ options:
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
       --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
                           seconds; exits 3 with "timedOut":true in the result.
-      --pick <glob>       membership: track file(s) in manifest (the sole
-                          source when headless). Repeatable.
-      --hide <glob>       membership: block file(s) from manifest. Repeatable.
-      --view <glob>       membership: track file(s) in manifest (read-only). Repeatable.
+      --pick <glob>       track file(s); the sole source when headless. Repeatable.
+      --hide <glob>       hide file(s). Repeatable.
+      --view <glob>       track file(s) (read-only). Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (## FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
@@ -225,6 +226,8 @@ options:
       --provider <name>   (models) restrict the catalog to one provider
       --all               (models) include unconfigured models with readiness causes
       --offset <n>        (models) catalog page offset (default 0)
+      --width <n>         (render) output width in terminal columns (default: stdout
+                          width when available, otherwise 80)
 
 subcommands:
   models [search...]      list the bounded daemon model catalog (models.list)
@@ -234,6 +237,8 @@ subcommands:
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   reasoning [policy]      inspect or set a worker's durable reasoning policy
+  render                  project Markdown stdin as width-bounded plain Unicode;
+                          local only: no daemon, config cascade, or startup output
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
@@ -306,7 +311,7 @@ interface WorkspaceResult { id: number; name: string }
 // Resolve the workspace by name (via workspace.list filter) or create a fresh one.
 // Names are the user-facing handle — ids are internals, not exposed via flags.
 // projectRoot is sent on creation only; attach inherits the daemon-stored value.
-// A membership-overlay constraint (svc#200), service vocabulary: `pick` admits
+// A membership-overlay constraint. Service vocabulary: `pick` admits
 // a file git misses (the sole source when headless), `hide` drops a tracked
 // match, `view` admits a member read-only.
 export interface Constraint { effect: "pick" | "hide" | "view"; glob: string }
@@ -599,10 +604,31 @@ export const main = async (argv: string[]): Promise<void> => {
             provider: { type: "string" },
             all: { type: "boolean" },
             offset: { type: "string" },
+            width: { type: "string" },
         },
     });
 
-    if (values.help) { process.stdout.write(USAGE); process.exit(0); }
+    if (values.help) {
+        process.stdout.write(positionals[0] === "render" ? RENDER_USAGE : USAGE);
+        process.exit(0);
+    }
+    if (positionals[0] === "render") {
+        try {
+            if (positionals.length > 1) {
+                throw new ProblemError(clientSubcommandUnknownVerb(`render ${positionals.slice(1).join(" ")}`));
+            }
+            const source = await readStdin();
+            const rendered = renderDocument(source, resolveRenderWidth(values.width));
+            if (rendered.length > 0) process.stdout.write(`${rendered}\n`);
+            process.exitCode = 0;
+            return;
+        } catch (cause) {
+            if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
+            process.stderr.write(`plurnk render: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+            process.exitCode = 64;
+            return;
+        }
+    }
     const buildInfo = await getBuildInfo();
     if (values.version) {
         process.stdout.write(`${formatBuildInfo(buildInfo)}\n`);

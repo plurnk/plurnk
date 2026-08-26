@@ -27,8 +27,8 @@ export const OP_GLYPHS: Record<string, string> = {
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🤖",
-    client: "🐹",   // the user/client — the brand head (was the generic 👤)
-    plurnk: "🧰",   // the runtime actor (§14.7)
+    client: "❯",
+    _plurnk: "🧰",
     plugin: "🔌",
 };
 
@@ -37,9 +37,9 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
 // and error families. Specific codes before ranges. Every glyph is EAW width-2,
 // VS16-free (column-stable). The COLOR (colorForStatus) carries the class; the
 // glyph carries the state. Converged with plurnk.nvim's STATUS_GLYPHS.
-// A model SEND's lifecycle is its one human-facing identity. Numeric SEND codes
+// A SEND's lifecycle is its one human-facing identity. Numeric SEND codes
 // remain wire truth but do not repeat beside these glyphs in the waterfall.
-export const modelSendGlyph = (status: number): string => {
+export const sendLifecycleGlyph = (status: number): string => {
     if (status === 102) return "▶️";
     if (status === 202) return "💤";
     if (status === 300) return "🤔";
@@ -182,13 +182,12 @@ export const isEntryMaterialization = (entry: LogEntryWire): boolean => {
     const attrs = typeof entry.attrs === "string"
         ? (() => { try { return JSON.parse(entry.attrs) as unknown; } catch { return null; } })()
         : entry.attrs;
-    return entry.origin === "plurnk"
+    return entry.origin === "_plurnk"
         && entry.op === "EDIT"
         && (attrs as { kind?: unknown } | null)?.kind === "entry_materialized";
 };
 
-// The default human waterfall carries NO log coordinates (plurnk#21: the
-// 01/02/03 gutter was clutter for end users). Coordinates remain forensic
+// Human output carries no coordinate gutter. Coordinates remain forensic
 // truth on the wire and in --json; this label survives for machine-adjacent
 // surfaces that still want one.
 export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): string => {
@@ -310,7 +309,7 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // continuation body lines nest under its following separator.
 const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
     const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
-    const idGlyph = entry.origin === "model" ? modelSendGlyph(signal) : (ORIGIN_GLYPHS[entry.origin] ?? "?");
+    const idGlyph = sendLifecycleGlyph(signal);
 
     const annotation = entryAnnotation(entry);
     const header = idGlyph
@@ -394,14 +393,14 @@ export const renderLogEntry = (
     if (entry.op === "PLAN") return renderPlan(entry);
 
     // ONE identity/action glyph, not origin+op (they were redundant on SEND and
-    // cluttered elsewhere). A SEND shows its ACTOR (🐹 you / 🤖 model — the "who's
-    // speaking"); any other op shows its OP glyph (🧠/🔍/📖/📝/🔧 — self-evidently
+    // cluttered elsewhere). A SEND shows its lifecycle; any other op shows its
+    // OP glyph (🧠/🔍/📖/📝/🔧 — self-evidently
     // the agent working). The 💬 and the origin column are both gone.
     const idGlyph = entry.op === "SEND"
-        ? (entry.origin === "model" ? modelSendGlyph(typeof entry.signal === "number" ? entry.signal : entry.status_rx) : (ORIGIN_GLYPHS[entry.origin] ?? "?"))
+        ? sendLifecycleGlyph(typeof entry.signal === "number" ? entry.signal : entry.status_rx)
         : (OP_GLYPHS[entry.op] ?? "?");
-    // Operation rows retain an outcome slot. SEND rows use only their actor or
-    // lifecycle glyph: adding a second state and numeric code repeats one fact.
+    // Operation rows retain an outcome slot. SEND rows use only their lifecycle
+    // glyph: adding a second state and numeric code repeats one fact.
     const subGlyph = sendSubGlyph(entry.status_rx);
 
     const statusColor = colorForStatus(entry.status_rx);

@@ -205,6 +205,36 @@ test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice 
     assert.equal(err.join(""), "", "no row → no trace");
 });
 
+test("consumeCliRun: derivation Notices drive ephemeral progress without duplicating durable trace", async () => {
+    const progress: unknown[] = [];
+    const notices: unknown[] = [];
+    const { io } = sink({
+        onProgress: (activity) => progress.push(activity),
+        notice: (notice) => notices.push(notice),
+    });
+    await consumeCliRun(stream([
+        { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine:derivation", kind: "embed_progress", level: "info", phase: "indexing", completed: 3, total: 10, percent: 30 } },
+        { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine:derivation", kind: "embed_progress", level: "info", phase: "complete", completed: 10, total: 10, percent: 100 } },
+        terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io);
+    assert.deepEqual(progress, [{ label: "indexing", percent: 30 }, null]);
+    assert.deepEqual(notices, [], "progress is not a second durable display channel");
+});
+
+test("consumeCliRun reports the latest model turn coordinate to the status surface", async () => {
+    const turns: number[] = [];
+    const { io } = sink({ onTurn: (turn) => turns.push(turn) });
+    await consumeCliRun(stream([
+        rowRun({ op: "READ", origin: "model", turn_seq: 2 }, 42),
+        rowRun({ op: "READ", origin: "model", turn_seq: 2 }, 42),
+        rowRun({ op: "READ", origin: "model", turn_seq: 3 }, 42),
+        terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io);
+    assert.deepEqual(turns, [2, 2, 3]);
+});
+
 test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {
     const { io, out, err } = sink({ json: true });
     const res = await consumeCliRun(stream([

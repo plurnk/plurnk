@@ -39,6 +39,7 @@ import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
+import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive workspace because we gate on isTTY upstream.
@@ -756,13 +757,36 @@ export const main = async (argv: string[]): Promise<void> => {
             // {§worker-model-selection} — an explicit --model is a durable selection:
             // persist it onto the conversation worker before the run, then run WITHOUT
             // a per-loop model selector (the worker owns the model).
+            let activeModel: ModelRoute | null;
             if (values.model !== undefined && modelSelector !== undefined) {
-                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.model.set", params: { selector: modelSelector } });
+                activeModel = Validator.assertModelRoute(await actionViaBridge(
+                    { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN },
+                    { threadId: workerName ?? w, workspace: w, kind: "worker.model.set", params: { selector: modelSelector } },
+                ));
+            } else {
+                const projection = await actionViaBridge<{ model: unknown }>(
+                    { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN },
+                    { threadId: workerName ?? w, workspace: w, kind: "worker.model.get" },
+                );
+                activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
             }
             if (reasoningPolicy !== undefined) {
                 await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.reasoning.set", params: { policy: reasoningPolicy } });
             }
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, { threadId: workerName ?? w, workspace: w, requestUserInput: requestUserInputCli, ...(loopFlags !== undefined ? { flags: loopFlags } : {}), ...(maxTurns !== undefined ? { maxTurns } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), yolo, json, projectRoot, constraints, settings });
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, {
+                threadId: workerName ?? w,
+                workspace: w,
+                ...(activeModel === null ? {} : { modelLabel: activeModel.alias ?? `${activeModel.provider}/${activeModel.model}` }),
+                requestUserInput: requestUserInputCli,
+                ...(loopFlags !== undefined ? { flags: loopFlags } : {}),
+                ...(maxTurns !== undefined ? { maxTurns } : {}),
+                ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+                yolo,
+                json,
+                projectRoot,
+                constraints,
+                settings,
+            });
             // Let Node drain stdout before termination. A forced exit truncated large
             // --json records mid-string when notices made the pipe exceed its buffer.
             process.exitCode = code;

@@ -47,6 +47,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
+import { derivationActivity, renderStatusLine, type ClientStatus, type StatusLifecycle } from "./status.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -56,14 +57,25 @@ export const renderTuiFailure = (cause: unknown): string => {
     return `  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`;
 };
 
-export const renderInputPrompt = (yolo: boolean, activePercent: number | null, loopActive: boolean = false): string => {
+export const renderInputPrompt = (
+    yolo: boolean,
+    activePercent: number | null,
+    loopActive: boolean = false,
+    status: ClientStatus | null = null,
+): string => {
     const progressActive = activePercent !== null
         && Number.isFinite(activePercent)
         && activePercent < 100;
-    const slot = progressActive
-        ? progressLabel(activePercent)
+    if (status !== null) {
+        return `${renderStatusLine({
+            ...status,
+            lifecycle: loopActive ? "running" : status.lifecycle,
+            activity: status.activity ?? (progressActive ? { label: "", percent: Math.floor(activePercent) } : null),
+        }, { idleGlyph: yolo ? "🔥" : "" })}\x1b[1m: \x1b[0m`;
+    }
+    const slot = progressActive ? progressLabel(activePercent)
         : loopActive ? "⌛︎ "
-        : yolo ? "🔥 " : "   ";
+            : yolo ? "🔥 " : "   ";
     return `${slot}\x1b[1m: \x1b[0m`;
 };
 
@@ -592,6 +604,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         });
     };
     // Ephemeral progress projected into the prompt while background work is active.
+    let lifecycle: StatusLifecycle = "idle";
+    let observedTurn: number | null = null;
     let embedding = false;
     let embeddingPercent: number | null = null;
     let searchFetching = false;
@@ -693,10 +707,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
     if (reasoningFailure !== undefined) process.stdout.write(`${renderTuiFailure(reasoningFailure)}\n`);
 
-    // The prompt has one three-cell slot followed by the input affordance. Active
-    // progress replaces the YOLO badge, so every repaint leaves the
-    // colon fixed. Identity and lifecycle status belong to durable rows and
-    // diagnostics.
+    // Client-owned lifecycle and model lead the input affordance; ephemeral
+    // derivation, search, and branch work share its final activity position.
     const buildPrompt = (): string => {
         const branchCompleted = Number(branchBatch?.completed);
         const branchTotal = Number(branchBatch?.total);
@@ -708,8 +720,20 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             : null;
         const activePercent = embedding ? embeddingPercent
             : searchFetching ? searchPercent
-            : branchPercent;
-        return renderInputPrompt(opts.yolo, activePercent, inFlight);
+                : branchPercent;
+        const activity = embedding ? { label: "indexing", percent: embeddingPercent }
+            : searchFetching ? { label: "search", percent: searchPercent }
+                : branchPercent !== null ? { label: "branches", percent: branchPercent }
+                    : null;
+        const model = workerModel === null
+            ? opts.modelSelector ?? activeAlias ?? null
+            : resolvedModelLabel(workerModel);
+        return renderInputPrompt(opts.yolo, activePercent, inFlight, {
+            lifecycle,
+            model,
+            turn: observedTurn,
+            activity,
+        });
     };
     // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
     // prompt, not one loop.run per line. readline reads a PassThrough we feed
@@ -965,18 +989,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const handleNotice = (notice: Notice): void => {
         // engine:turn liveness is owned by the run state, not a waterfall line.
         if (notice.source === "engine:turn") return;
-        // Indexing progress is ephemeral prompt state, not an append-only waterfall
-        // record. Its percentage disappears when warming completes.
-        if (notice.source === "engine:derivation" && notice.kind === "embed_progress") {
-            const phase = typeof notice.phase === "string" ? notice.phase : null;
-            embedding = phase === "preparing"
-                || (phase !== "complete" && phase !== "failed" && Number(notice.completed) < Number(notice.total));
-            const completed = Number(notice.completed);
-            const total = Number(notice.total);
-            embeddingPercent = embedding && Number.isFinite(completed) && Number.isFinite(total) && total > 0
-                ? Math.floor((completed / total) * 100)
-                : null;
-            repromptPreserving();
+        // Derivation progress is ephemeral status, never an append-only waterfall.
+        const derivation = derivationActivity(notice);
+        if (derivation !== undefined) {
+            embedding = derivation !== null && derivation.label !== "indexing failed";
+            embeddingPercent = embedding && derivation !== null ? derivation.percent : null;
+            if (derivation?.label === "indexing failed") printAbove(renderDiagnostic(notice));
+            else repromptPreserving();
             return;
         }
         // Search acquisition is the same compact lifecycle shape: update the
@@ -1020,6 +1039,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);
+            if (entry.origin === "model" && Number.isSafeInteger(entry.turn_seq)) observedTurn = entry.turn_seq;
             printAbove(renderLogEntry(entry, process.stdout.columns ?? 80));
         },
         onNotice: handleNotice,
@@ -1067,7 +1087,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Startup warming begins while AG-UI is still establishing the workspace, before a
     // request-scoped SSE exists. Poll the engine's latest structured state until terminal;
-    // Later membership actions stay on their own SSE while warming streams live events.
+    // later updates arrive as Notices on the run stream.
     let lastDerivationState = "";
     let derivationPoll: ReturnType<typeof setInterval> | null = null;
     const pollDerivation = async (): Promise<void> => {
@@ -1234,6 +1254,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
 
             inFlight = true;
+            lifecycle = "running";
+            observedTurn = null;
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.
             reprompt();
@@ -1278,9 +1300,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     turnCount = t.turnIds?.length ?? 0;
                     usage = t.usage;
                 }
+                lifecycle = terminalResult.status === 202 ? "parked"
+                    : terminalResult.status === 499 ? "cancelled"
+                        : terminalResult.status >= 400 ? "failed"
+                            : "completed";
                 const wallMs = Date.now() - start;
                 printAbove(renderSummary(turnCount, wallMs, terminalResult, hitMaxTurns, usage));
             } catch (cause) {
+                lifecycle = "failed";
                 printAbove(renderTuiFailure(cause));
             } finally {
                 inFlight = false;

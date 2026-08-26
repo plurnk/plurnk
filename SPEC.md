@@ -100,7 +100,16 @@ The daemon alone owns provider configuration, credentials, alias declarations, a
 
 The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the resolved durable route. `providers.list` remains the small declared-alias directory used for bare-fragment completion; a `/model` or `/child` fragment holding a provider prefix (`openai/…`) completes lazily from one bounded provider-scoped `models.list` page, cached per provider for the session — the client never preloads or owns the catalog. `/models [search]` and `plurnk models` lazily query `models.list`; no model catalog is fetched at startup or injected into a model packet.
 
-### §1.2.1 Child provider selection {§cli-child-provider-selection}
+### §1.2.1 Worker status {§cli-worker-status}
+
+Human status presents only facts already owned by the client: run lifecycle,
+the durable route returned by `worker.model.get`/`worker.model.set`, the latest
+model turn coordinate observed in `plurnk.row`, and ephemeral derivation
+activity from `engine:derivation/embed_progress`. It never labels row or turn
+counts as provider packets. Presentation order is lifecycle → model → turn →
+activity; exact terminal turn count and accounting remain in the loop summary.
+
+### §1.2.2 Child provider selection {§cli-child-provider-selection}
 
 Child selection is the same durable posture for WORK, FORK, and BARE calls.
 `PLURNK_MODEL_CHILD` seeds the worker's spawn override (the daemon reads its own
@@ -109,7 +118,7 @@ persisted override, `/child <selector>` persists it via `worker.child.set`, and
 `/child inherit` sends `selector: null` (clearing the override). The client sends
 no child selector on loops.
 
-### §1.2.2 Reasoning policy {§cli-reasoning-policy}
+### §1.2.3 Reasoning policy {§cli-reasoning-policy}
 
 Reasoning is a separate durable worker policy owned and validated by the daemon.
 `/reasoning` and `plurnk reasoning --workspace <name>` inspect the effective
@@ -169,7 +178,10 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 
 **text mode (default):**
 - **stdout** — the body of the *terminal* broadcast SEND (status 200 or 499), per §5.4. Exactly one value per invocation (none if the loop hit maxTurns and never terminated). Intermediate broadcasts (such as a SEND carrying signal 102) are protocol mechanics, not the answer, and do NOT appear on stdout.
-- **stderr** — workspace/prompt header, per-action trace lines (including intermediate broadcasts), summary line, error messages.
+- **stderr** — one mutable status row on a TTY, durable action trace lines
+  (including intermediate broadcasts), diagnostics, and the terminal summary.
+  Non-TTY stderr omits routine status/progress instead of accumulating heartbeat
+  history. It still receives durable trace, diagnostics, and the summary.
 
 **json mode (`--json` / `PLURNK_JSON`):**
 - **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
@@ -186,8 +198,12 @@ Consequence:
 
 ### §2.2 Flow {§cli-one-shot-flow}
 
-1. `POST /` (RunAgentInput) to the module — `threadId` = the workspace name, the prompt as the user message, workspace + per-run knobs on `forwardedProps.plurnk`.
-2. Consume the SSE: `CUSTOM plurnk.row` events render as per-action trace lines on stderr. The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4); intermediate broadcasts do not.
+1. Read the conversation worker's durable model, then `POST /` (RunAgentInput) to the module — `threadId` = the workspace name, the prompt as the user message, workspace + per-run knobs on `forwardedProps.plurnk`.
+2. Consume the SSE: `CUSTOM plurnk.row` events advance observed turn status and
+   render as durable action trace lines on stderr; derivation Notices update the
+   replaceable activity row without becoming trace history.
+   The terminal broadcast SEND body (status 200 or 499) goes to stdout (§5.4);
+   intermediate broadcasts do not.
 3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. `CUSTOM plurnk.terminated` is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
 5. Exit with the appropriate code (§4).
@@ -207,7 +223,13 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow {§cli-tui-flow}
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
-2. Print the banner; enter the readline loop with one fixed three-cell slot followed by the `: ` input affordance. The slot holds 🔥 plus one trailing cell while YOLO is armed (blank otherwise), and exact text-presentation `⌛︎` while a loop is active. While embedding, search, or branch work reports progress below completion, its right-aligned ASCII percentage supersedes either badge. Completion restores the applicable badge instead of rendering `100%`, so the colon never moves. `🔥` and `⌛︎` each occupy two measured display cells; no other variation-selector or width-ambiguous prompt glyphs are permitted. Output lines may render standard emoji sequences because output requires no readline cursor positioning.
+2. Print the banner; enter the readline loop with the shared worker status
+   followed by the `: ` input affordance. Its client-owned facts read lifecycle
+   → model → observed turn → activity. Derivation, search, and branch activity
+   share the activity position. The
+   lifecycle glyph is `⌛︎` while running, 💤 while parked, `⏹️` when complete,
+   and ❌ on failure; idle YOLO may use 🔥. Output lines may render standard
+   emoji sequences because output requires no readline cursor positioning.
 3. Each line entered is dispatched:
     - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
@@ -674,11 +696,11 @@ AG-UI projects daemon `notice/event {loopId, notice}` notifications as
 interleave with trace lines in text mode and accumulate under `notices` in the
 version-2 JSON record.
 
-Two progress Notices are interactive edge state rather than waterfall history:
-`engine:derivation/embed_progress` replaces the prompt coordinate with indexing
-percent, and `exec:*/search_progress` does the same with search-acquisition
-percent. Their terminal phase restores the real coordinate. The client does not
-append every tick, nor live-render durable `entry_materialized` narration.
+`engine:derivation/embed_progress` and `exec:*/search_progress` are interactive
+edge state: they replace the prompt's activity position and their terminal
+phase clears it. The one-shot TTY repaints routine derivation progress no more
+than once per 15 seconds; non-TTY stderr omits it. Neither client appends
+progress ticks or live-renders durable `entry_materialized` narration.
 
 Serialized Git branch batches arrive separately as `CUSTOM
 plurnk.branch_batch`, preserving the daemon's full lifecycle payload. Queued and

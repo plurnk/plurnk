@@ -13,7 +13,7 @@ import type { Transport } from "./transport.ts";
 
 const plainPrompt = (value: string): string => value.replaceAll(/\x1b\[[0-9;]*m/g, "");
 
-test("input prompt replaces its YOLO badge with fixed-width pre-completion progress", () => {
+test("input prompt retains local progress fallback and presents client-owned worker status", () => {
     assert.equal(plainPrompt(renderInputPrompt(true, 8)), " 8%: ");
     assert.equal(plainPrompt(renderInputPrompt(true, 88)), "88%: ");
     assert.equal(plainPrompt(renderInputPrompt(true, 100)), "🔥 : ");
@@ -23,6 +23,18 @@ test("input prompt replaces its YOLO badge with fixed-width pre-completion progr
     assert.equal(plainPrompt(renderInputPrompt(true, null, true)), "⌛︎ : ");
     assert.equal(plainPrompt(renderInputPrompt(false, null, true)), "⌛︎ : ");
     assert.equal(plainPrompt(renderInputPrompt(true, 42, true)), "42%: ", "specific progress supersedes the active-loop hourglass");
+    assert.equal(plainPrompt(renderInputPrompt(true, 42, true, {
+        lifecycle: "running",
+        model: "deepdumb",
+        turn: 3,
+        activity: null,
+    })), "⌛︎ · 🤖 deepdumb · T3 · 42%: ", "client-local progress follows durable model and observed turn state");
+    assert.equal(plainPrompt(renderInputPrompt(false, 42, false, {
+        lifecycle: "completed",
+        model: "deepdumb",
+        turn: 3,
+        activity: { label: "indexing", percent: 42 },
+    })), "⏹️ · 🤖 deepdumb · T3 · indexing 42%: ", "activity retains the shared lifecycle and label");
 });
 
 test("help uses the settled worker and membership vocabulary", () => {

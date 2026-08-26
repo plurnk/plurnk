@@ -29,6 +29,8 @@ import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
+import TerminalStatusLine, { derivationActivity, type StatusActivity } from "./status.ts";
+import { renderSummary } from "./render.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
@@ -65,6 +67,8 @@ export interface CliRunSinks {
     noReviewChannel: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
     onActionResult?: (v: ActionOutcome) => void;
+    onProgress?: (activity: StatusActivity | null) => void;
+    onTurn?: (turn: number) => void;
 }
 
 // Decide a stopped-world proposal: the AG-UI run ended
@@ -153,6 +157,9 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const workerId = (entry as { worker_id?: number }).worker_id;
             if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
             const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
+            if (belongsToRun && entry.origin === "model" && Number.isSafeInteger(entry.turn_seq)) {
+                io.onTurn?.(entry.turn_seq);
+            }
             if (belongsToRun && isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
             if (io.json) { entries.push(entry); continue; }
             io.err(`${formatPlain(entry)}\n`);
@@ -178,7 +185,13 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                 problemReported = true;
             }
         } else if (name === "plurnk.notice") {
-            if (io.json) notices.push(value as Notice); else io.notice(value as Notice);
+            const notice = value as Notice;
+            if (io.json) notices.push(notice);
+            else {
+                const progress = derivationActivity(notice);
+                if (progress !== undefined) io.onProgress?.(progress);
+                else io.notice(notice);
+            }
         } else if (name === "plurnk.stream") {
             // plurnk.stream carries the whole lifecycle: a concluded payload has
             // its exact result; a start/event payload has state. (json: streams aren't in
@@ -218,10 +231,9 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; requestUserInput?: boolean; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
+    opts: { threadId: string; workspace?: string; modelLabel?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; requestUserInput?: boolean; yolo: boolean; json: boolean; projectRoot?: string | null; constraints?: unknown[]; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
-    if (!opts.json) process.stderr.write(`bridge: ${target.bridgeUrl}\nprompt: ${prompt}\n\n`);
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
     // worker owns the model ({§worker-model-selection}), and an explicit --model
     // was already persisted by the dispatcher before this run.
@@ -235,10 +247,22 @@ export const runCliViaBridge = async (
     };
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
+    const statusLine = new TerminalStatusLine(
+        (value) => process.stderr.write(value),
+        !opts.json && process.stderr.isTTY === true,
+        { lifecycle: "running", model: opts.modelLabel ?? null, turn: null, activity: null },
+    );
+    statusLine.update({});
     const io = {
-        out: (s: string) => process.stdout.write(s),
-        err: (s: string) => process.stderr.write(s),
-        notice: (notice: Parameters<typeof report>[0]) => report(notice),
+        out: (s: string) => statusLine.product(
+            s,
+            (value) => process.stdout.write(value),
+            process.stdout.isTTY === true,
+        ),
+        err: (s: string) => statusLine.durable(s),
+        notice: (notice: Parameters<typeof report>[0]) => statusLine.durable(`${renderDiagnostic(notice)}\n`),
+        onProgress: (activity: StatusActivity | null) => statusLine.update({ activity }, { routine: true }),
+        onTurn: (turn: number) => statusLine.update({ turn }),
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,
@@ -322,6 +346,25 @@ export const runCliViaBridge = async (
         if (graceTimer !== undefined) clearTimeout(graceTimer);
     }
     emitRecord(result);
+    if (!opts.json) {
+        const finalStatus = result.terminated?.result.status ?? result.problem?.status ?? 502;
+        statusLine.update({
+            lifecycle: finalStatus === 202 ? "parked"
+                : finalStatus === 499 ? "cancelled"
+                : finalStatus >= 400 ? "failed"
+                    : "completed",
+            activity: null,
+        });
+        statusLine.settle();
+        const terminated = result.terminated;
+        process.stderr.write(`${renderSummary(
+            terminated?.turnIds.length ?? 0,
+            Date.now() - started,
+            terminated?.result ?? { status: result.problem?.status ?? 502, ...(result.problem === null ? {} : { problem: result.problem }) },
+            terminated?.hitMaxTurns ?? false,
+            terminated?.usage,
+        )}\n`);
+    }
     return timedOut ? 3 : result.exitCode;
 };
 

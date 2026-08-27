@@ -312,6 +312,44 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
     } finally { await mock.close(); }
 });
 
+test("[§cli-workspaces-and-workers] a split worker's JSON record retains the workspace world", async () => {
+    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const mock = await bootMock((_req, res) => sse(res, [
+        frame({
+            type: "CUSTOM",
+            name: "plurnk.terminated",
+            value: {
+                workspaceId: 7,
+                workerId: 11,
+                loopId: 3,
+                hitMaxTurns: false,
+                turnIds: [1],
+                result: { status: 200 },
+            },
+        }),
+        frame({ type: "RUN_FINISHED" }),
+    ]));
+    const outs: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
+    try {
+        await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
+            threadId: "conversation",
+            workspace: "world",
+            yolo: true,
+            json: true,
+            projectRoot: null,
+        });
+        const doc = JSON.parse(outs.map(String).find((value) => value.startsWith('{"schemaVersion"')) ?? "{}") as {
+            workspace?: { id?: number; name?: string };
+        };
+        assert.deepEqual(doc.workspace, { id: 7, name: "world" });
+    } finally {
+        (process.stdout as unknown as { write: typeof origWrite }).write = origWrite;
+        await mock.close();
+    }
+});
+
 test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loop, the record says timedOut, exit is 3 — the flag was parsed-and-dead since the agui migration", async () => {
     const { runCliViaBridge } = await import("./agui_cli.ts");
     let cancelSeen = false;

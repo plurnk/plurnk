@@ -298,7 +298,7 @@ export const runCliViaBridge = async (
         emitted = true;
         const t = r.terminated;
         const doc = buildJsonRecord({
-            workspace: { id: t?.workspaceId ?? 0, name: opts.threadId },
+            workspace: { id: t?.workspaceId ?? 0, name: opts.workspace ?? opts.threadId },
             prompt,
             response: r.response,
             entries: r.entries,

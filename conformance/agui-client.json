@@ -177,53 +177,6 @@
         "durability"
       ]
     },
-    "workspace.constrain": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — membership constraints",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls",
-        "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability",
-        "composition"
-      ]
-    },
-    "workspace.unconstrain": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — membership constraints",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
-    },
-    "workspace.constraints": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — membership constraints",
-        "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
-    },
     "workspace.derivation": {
       "posture": "native",
       "evidence": [
@@ -276,19 +229,6 @@
         "failure",
         "presentation",
         "lifecycle"
-      ]
-    },
-    "workspace.members": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — membership listing"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
       ]
     },
     "op.look": {
@@ -599,6 +539,100 @@
       "evidence": [
         "src/agents.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.members.list": {
+      "posture": "native",
+      "evidence": [
+        "src/members.test.ts — file members management",
+        "test/tui/verbs.test.ts — built-client members dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
+    "worker.members.discover": {
+      "posture": "native",
+      "evidence": [
+        "src/members.test.ts — file members management",
+        "test/tui/verbs.test.ts — built-client members dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
+    "worker.members.add": {
+      "posture": "native",
+      "evidence": [
+        "src/members.test.ts — file members management",
+        "test/tui/verbs.test.ts — built-client members dogfood",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.members.enable": {
+      "posture": "native",
+      "evidence": [
+        "src/members.test.ts — file members management",
+        "test/tui/verbs.test.ts — built-client members dogfood",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.members.disable": {
+      "posture": "native",
+      "evidence": [
+        "src/members.test.ts — file members management",
+        "test/tui/verbs.test.ts — built-client members dogfood",
+        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "durability"
+      ]
+    },
+    "worker.members.remove": {
+      "posture": "native",
+      "evidence": [
+        "src/members.test.ts — file members management",
+        "test/tui/verbs.test.ts — built-client members dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [

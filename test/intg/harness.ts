@@ -21,7 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const locateDaemon = async (): Promise<string | null> => {
     const envPath = process.env.PLURNK_SERVICE_BIN;
     if (envPath !== undefined && envPath.length > 0) {
-        try { await access(envPath, fsConstants.X_OK); return envPath; } catch { /* fall through */ }
+        try { await access(envPath, fsConstants.R_OK); return envPath; } catch { /* fall through */ }
     }
     // The service entrypoint has moved over time: bin/plurnk-service.js →
     // bin/plurnk-service.ts (#183) → src/service.ts (bin: dist/service.js,

@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
 import { clientFlagInvalid } from "./diagnostics.ts";
+import type { FunctionalityFamily } from "./commands.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -411,7 +412,7 @@ test("completer: Functionality aliases are fetched only at alias-taking position
     const options = {
         getAliases: () => [],
         cwd: process.cwd(),
-        getFunctionalityAliases: async (family: "mcp" | "skills" | "agents") => {
+        getFunctionalityAliases: async (family: FunctionalityFamily) => {
             fetched.push(family);
             return ["brave", "browser"];
         },

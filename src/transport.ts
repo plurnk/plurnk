@@ -102,7 +102,7 @@ export interface Transport {
 // the active loop); cancel aborts the SSE (the bridge cancels).
 // Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
 // (§agui-forwarded-props) — the bridge applies them at workspace.create.
-export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; constraints?: unknown[]; settings?: object }
+export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object }
 
 export class BridgeTransport implements Transport {
     #target: BridgeTarget;
@@ -205,7 +205,6 @@ export class BridgeTransport implements Transport {
     #workspaceOpts(): Record<string, unknown> {
         return {
             ...(this.#workspace.projectRoot !== undefined && this.#workspace.projectRoot !== null ? { projectRoot: this.#workspace.projectRoot } : {}),
-            ...(this.#workspace.constraints !== undefined && this.#workspace.constraints.length > 0 ? { constraints: this.#workspace.constraints } : {}),
             ...(this.#workspace.settings !== undefined && Object.keys(this.#workspace.settings).length > 0 ? { settings: this.#workspace.settings } : {}),
         };
     }

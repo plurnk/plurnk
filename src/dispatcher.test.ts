@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildConstraints, buildSettings, buildVersionNotice, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopFlags, buildSettings, buildVersionNotice, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
 
 test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-env-cascade-"));
@@ -157,25 +157,9 @@ test("resolveProjectRoot: bare name → throws", () => {
 });
 
 
-// ─── buildConstraints (membership overlay, svc#200) ──────────────────
-
-test("[§cli-membership-overlay-and-workspace-open-settings] buildConstraints: maps --pick/--hide/--view to service effects in order", () => {
-    const c = buildConstraints({ pick: ["docs/**"], hide: ["*.lock"], view: ["vendor/**", "gen/**"] });
-    assert.deepEqual(c, [
-        { effect: "pick", glob: "docs/**" },
-        { effect: "hide", glob: "*.lock" },
-        { effect: "view", glob: "vendor/**" },
-        { effect: "view", glob: "gen/**" },
-    ]);
-});
-
-test("buildConstraints: no flags → empty (no constraints param on workspace.create)", () => {
-    assert.deepEqual(buildConstraints({}), []);
-});
-
 // ─── buildSettings (workspace-open settings, svc#231) ──────────────────
 
-test("buildSettings: files-items -1/0/N parse", async () => {
+test("[§cli-workspace-open-settings] buildSettings: files-items -1/0/N parse", async () => {
     assert.deepEqual(await buildSettings({ "files-items": "-1" }, "/"), { filesItems: -1 });
     assert.deepEqual(await buildSettings({ "files-items": "0" }, "/"), { filesItems: 0 });
     assert.deepEqual(await buildSettings({ "files-items": "5" }, "/"), { filesItems: 5 });

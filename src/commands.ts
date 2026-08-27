@@ -9,7 +9,7 @@ export const COMMAND_GROUPS = [
 ] as const;
 
 export type CommandGroup = typeof COMMAND_GROUPS[number]["id"];
-export type FunctionalityFamily = "mcp" | "skills" | "agents";
+export type FunctionalityFamily = "mcp" | "skills" | "agents" | "members";
 
 export interface CommandSubcommand {
     name: string;
@@ -55,13 +55,18 @@ const AGENT_SUBCOMMANDS = lifecycle(
     { name: "add", usage: "add <alias> <url> [options.json]", summary: "Add and enable an outbound A2A agent.", alias: false },
 );
 
+const MEMBERS_SUBCOMMANDS = lifecycle(
+    "alias",
+    { name: "discover", usage: "discover <path|glob>", summary: "Explain a file's visibility, or preview what a glob would include or exclude.", alias: false },
+    { name: "add", usage: "add <alias> <glob>", summary: "Add and enable a members glob; a leading ! excludes.", alias: false },
+);
+
 export const COMMANDS = [
     { name: "help", usage: "/help [verb]", summary: "Show the command index or one command's usage.", group: "inspect" },
     { name: "models", usage: "/models [search]", summary: "Search the bounded model catalog.", group: "inspect" },
     { name: "workspaces", usage: "/workspaces", summary: "List daemon workspaces.", group: "inspect" },
     { name: "workers", usage: "/workers", summary: "List workers in this workspace.", group: "inspect" },
     { name: "log", usage: "/log [limit]", summary: "Read recent log entries.", group: "inspect" },
-    { name: "members", usage: "/members", summary: "Show the model's resolved file universe.", group: "inspect" },
 
     { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
@@ -71,14 +76,11 @@ export const COMMANDS = [
     { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace" },
     { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace" },
     { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace" },
-    { name: "pick", usage: "/pick <glob>", summary: "Track matching files.", group: "workspace" },
-    { name: "hide", usage: "/hide <glob>", summary: "Hide matching files.", group: "workspace" },
-    { name: "view", usage: "/view <glob>", summary: "Track matching files read-only.", group: "workspace" },
-    { name: "drop", usage: "/drop <glob>", summary: "Remove matching explicit constraints.", group: "workspace" },
 
     { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this worker's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },
     { name: "agents", usage: "/agents [subcommand]", summary: "List or manage this worker's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
+    { name: "members", usage: "/members [subcommand]", summary: "List or manage this worker's file members.", group: "functionality", subcommands: MEMBERS_SUBCOMMANDS },
 
     { name: "import", usage: "/import <path>", summary: "Insert a local file into the composer.", group: "compose" },
     { name: "script", usage: "/script <path>", summary: "Submit a local .plk program through op.parse.", group: "compose" },
@@ -130,7 +132,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
     const help = /^\/help\s+(\w*)$/u.exec(line);
     if (help !== null) return { kind: "syntax", prefix: help[1], suggestions: matchingCommands(help[1], false) };
 
-    const nested = /^\/(mcp|skills|agents)\s+(\w*)$/u.exec(line);
+    const nested = /^\/(mcp|skills|agents|members)\s+(\w*)$/u.exec(line);
     if (nested !== null) {
         const spec = commandSpec(nested[1]);
         const suggestions = (spec?.subcommands ?? [])
@@ -139,7 +141,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
         return { kind: "syntax", prefix: nested[2], suggestions };
     }
 
-    const alias = /^\/(mcp|skills|agents)\s+(\w+)\s+(\S*)$/u.exec(line);
+    const alias = /^\/(mcp|skills|agents|members)\s+(\w+)\s+(\S*)$/u.exec(line);
     if (alias !== null) {
         const subcommand = commandSpec(alias[1])?.subcommands?.find(({ name }) => name === alias[2]);
         if (subcommand?.alias === true) {

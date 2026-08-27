@@ -208,9 +208,6 @@ options:
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
       --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
                           seconds; exits 3 with "timedOut":true in the result.
-      --pick <glob>       track file(s); the sole source when headless. Repeatable.
-      --hide <glob>       hide file(s). Repeatable.
-      --view <glob>       track file(s) (read-only). Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (## FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
@@ -243,7 +240,7 @@ subcommands:
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
-                          /--project-root + membership flags. The daemon owns the
+                          /--project-root + workspace-open settings. The daemon owns the
                           grammar; the client just feeds the file.
 `;
 
@@ -312,20 +309,6 @@ interface WorkspaceResult { id: number; name: string }
 // Resolve the workspace by name (via workspace.list filter) or create a fresh one.
 // Names are the user-facing handle — ids are internals, not exposed via flags.
 // projectRoot is sent on creation only; attach inherits the daemon-stored value.
-// A membership-overlay constraint. Service vocabulary: `pick` admits
-// a file git misses (the sole source when headless), `hide` drops a tracked
-// match, `view` admits a member read-only.
-export interface Constraint { effect: "pick" | "hide" | "view"; glob: string }
-
-// Map repeatable membership flags to workspace constraints.
-export const buildConstraints = (values: {
-    pick?: string[]; hide?: string[]; view?: string[];
-}): Constraint[] => [
-    ...(values.pick ?? []).map((glob): Constraint => ({ effect: "pick", glob })),
-    ...(values.hide ?? []).map((glob): Constraint => ({ effect: "hide", glob })),
-    ...(values.view ?? []).map((glob): Constraint => ({ effect: "view", glob })),
-];
-
 // Workspace-open settings. Open-context: filesItems REPLACES PLURNK_FILES_ITEMS
 // (it only ever capped the tracked-file list; memory always foists full).
 // The mdDocs channel is retired — operator reference material is skills under
@@ -588,10 +571,6 @@ export const main = async (argv: string[]): Promise<void> => {
             "request-user-input": { type: "boolean" },   // --request_user_input: the worker may ask through the question tool
             "max-turns": { type: "string" },
             timeout: { type: "string" },
-            // membership overlay — repeatable globs; service vocabulary
-            pick: { type: "string", multiple: true },
-            hide: { type: "string", multiple: true },
-            view: { type: "string", multiple: true },
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
 
@@ -723,10 +702,9 @@ export const main = async (argv: string[]): Promise<void> => {
     // below is legacy awaiting deletion.
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
-    let workspaceOptionsPromise: Promise<{ constraints: Constraint[]; settings: Settings }> | undefined;
-    const workspaceOptions = (): Promise<{ constraints: Constraint[]; settings: Settings }> => {
+    let workspaceOptionsPromise: Promise<{ settings: Settings }> | undefined;
+    const workspaceOptions = (): Promise<{ settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
-            constraints: buildConstraints(values as { pick?: string[]; hide?: string[]; view?: string[] }),
             settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
         }))();
         return workspaceOptionsPromise;
@@ -739,10 +717,9 @@ export const main = async (argv: string[]): Promise<void> => {
     let resolvedWorld: string | undefined;
     const world = async (): Promise<string> => {
         if (resolvedWorld !== undefined) return resolvedWorld;
-        const { constraints, settings } = await workspaceOptions();
+        const { settings } = await workspaceOptions();
         resolvedWorld = await resolveWorld({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, workspaceName, {
             ...(projectRoot !== null ? { projectRoot } : {}),
-            ...(constraints.length > 0 ? { constraints } : {}),
             ...(Object.keys(settings).length > 0 ? { settings } : {}),
         });
         return resolvedWorld;
@@ -753,7 +730,7 @@ export const main = async (argv: string[]): Promise<void> => {
             // the world is --workspace, else a fresh daemon-minted workspace. Without --worker,
             // thread == world (the model worker).
             const w = await world();
-            const { constraints, settings } = await workspaceOptions();
+            const { settings } = await workspaceOptions();
             // {§worker-model-selection} — an explicit --model is a durable selection:
             // persist it onto the conversation worker before the run, then run WITHOUT
             // a per-loop model selector (the worker owns the model).
@@ -784,7 +761,6 @@ export const main = async (argv: string[]): Promise<void> => {
                 yolo,
                 json,
                 projectRoot,
-                constraints,
                 settings,
             });
             // Let Node drain stdout before termination. A forced exit truncated large
@@ -817,20 +793,19 @@ export const main = async (argv: string[]): Promise<void> => {
     // pure-bridge client has no direct daemon WS. The bridge owns the workspace; we
     // pass a threadId-named stub (the daemon workspace id is bridge-created). projectRoot
     // rides forwardedProps.
-    // (Per-workspace constraints/settings over the bridge are a follow-up.)
+    // (Per-workspace settings over the bridge are a follow-up.)
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         const w = await world();
         const threadId = workerName ?? w;
-        const { constraints, settings } = await workspaceOptions();
+        const { settings } = await workspaceOptions();
         // Workspace options ride the thread's first run (forwardedProps.plurnk): the
-        // Same constraints (--pick/hide/view) + settings every AG-UI+ run sends on
+        // same settings every AG-UI+ run sends on
         // workspace.create, so a bridge TUI is configured identically. (When the world
         // was daemon-minted above, it was created WITH these already; a re-send on the
         // first run is idempotent — the workspace exists, options apply at creation only.)
         const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
             workspace: w,
             projectRoot,
-            constraints,
             settings,
         });
         try {

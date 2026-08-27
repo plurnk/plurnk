@@ -254,7 +254,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } });
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/proj", settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", {}).done;
@@ -269,7 +269,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } } }, "the workspace (world) + options ride the first run's forwardedProps");
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", settings: { questions: true } } }, "the workspace (world) + options ride the first run's forwardedProps");
     } finally { await mock.close(); }
 });
 
@@ -653,13 +653,12 @@ test("[§cli-workspaces-and-workers] EVERY request carries the workspace options
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", constraints: [{ effect: "pick", glob: "src/**" }], settings: { questions: true } });
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", settings: { questions: true } });
         await bt.rpc("workspace.prompts", { limit: 50 });   // the TUI's real first touch (seedPromptHistory)
         await bt.rpc("workspace.prompts", { limit: 50 });   // and the SECOND — no consumed-once race
         for (const c of mock.captured) {
             const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
             assert.equal(fp.projectRoot, "/home/user/repo", "projectRoot rides EVERY request — whichever creates, creates rooted");
-            assert.deepEqual(fp.constraints, [{ effect: "pick", glob: "src/**" }]);
             assert.deepEqual(fp.settings, { questions: true });
         }
     } finally { await mock.close(); }

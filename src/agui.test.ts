@@ -294,12 +294,10 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
             yolo: true,
             json: true,
             projectRoot: "/repo",
-            constraints: [{ effect: "pick", glob: "docs/**" }],
             settings: { filesItems: 0 },
         });
         const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
         assert.equal(fp.projectRoot, "/repo", "the project root reaches the wire");
-        assert.deepEqual(fp.constraints, [{ effect: "pick", glob: "docs/**" }], "membership constraints reach the wire");
         assert.deepEqual(fp.settings, { filesItems: 0 }, "workspace settings reach the wire");
         assert.equal(fp.alias, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
         assert.equal(fp.model, undefined);

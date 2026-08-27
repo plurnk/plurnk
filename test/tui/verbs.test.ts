@@ -10,9 +10,11 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
+import { actionViaBridge } from "../../src/agui.ts";
 import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
+let members = false;   // the daemon serves the members Functionality family
 
 before(async () => {
     const bin = await locateDaemon();
@@ -28,6 +30,8 @@ before(async () => {
                 OPENAI_API_KEY: "client-control-plane-test",
             },
         });
+        const discovery = await actionViaBridge<{ actions: Record<string, unknown> }>({ bridgeUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
+        members = "worker.members.list" in discovery.actions;
     }
 });
 after(async () => { await daemon?.cleanup(); });
@@ -79,16 +83,30 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("/pick → /members reflects the rule; /drop removes it", async (t) => {
+    test("[§cli-file-members] /members shares the Functionality lifecycle grammar against the built daemon", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        if (!members) { t.skip("the daemon does not serve the members family"); return; }
+        const project = await mkdtemp(join(tmpdir(), "plurnk-members-"));
+        await writeFile(join(project, "note.md"), "# note\n");
+        await writeFile(join(project, "other.txt"), "x\n");
+        const tui = spawnTui(daemon.url, [], {}, project);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("/pick *.xyz\r"); await tui.waitFor(/pick: \*\.xyz/);
-            tui.write("/members\r");    await tui.waitFor(/rules:.*pick \*\.xyz/);
-            tui.write("/drop *.xyz\r");  await tui.waitFor(/dropped 1 constraint/);
-            tui.write("/members\r");    await tui.waitFor(/rules: none/);
-        } finally { tui.kill(); }
+            tui.write("/members add note note.md\r");
+            await tui.waitFor(/added: note \(active\)/, 20_000);
+            tui.write("/members\r");
+            await tui.waitFor(/note\s+worker\s+active\s+include note\.md → 1 file/, 20_000);
+            tui.write("/members discover note.md\r");
+            await tui.waitFor(/note-md\s+member\s+note\.md\s+member — /, 20_000);
+            tui.write("/members add no-txt !*.txt\r");
+            await tui.waitFor(/added: no-txt \(active\)/, 20_000);
+            tui.write("/members\r");
+            await tui.waitFor(/no-txt\s+worker\s+active\s+exclude \*\.txt → 0 members/, 20_000);
+            tui.write("/members disable note\r");
+            await tui.waitFor(/disabled: note \(disabled\)/, 20_000);
+            tui.write("/members remove note\r");
+            await tui.waitFor(/removed: note/, 20_000);
+        } finally { tui.kill(); await rm(project, { recursive: true, force: true }); }
     });
 
     test("Tab completes a verb prefix (/mo → /model)", async (t) => {

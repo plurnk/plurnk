@@ -8,12 +8,10 @@ import { join } from "node:path";
 
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 
-test("pathPartial: membership verbs expose their glob arg", () => {
-    assert.equal(pathPartial("/pick src/comp"), "src/comp");
-    assert.equal(pathPartial("/hide *.lock"), "*.lock");
-    assert.equal(pathPartial("/view vendor/"), "vendor/");
-    assert.equal(pathPartial("/pick packages/ap"), "packages/ap");
-    assert.equal(pathPartial("/drop docs"), "docs");
+test("pathPartial: members and compose verbs expose their path arg", () => {
+    assert.equal(pathPartial("/members discover src/comp"), "src/comp");
+    assert.equal(pathPartial("/members add docs docs/"), "docs/");
+    assert.equal(pathPartial("/members add vendor packages/ap"), "packages/ap");
     assert.equal(pathPartial("/import src/fo"), "src/fo");
     assert.equal(pathPartial("/script flows/build.pl"), "flows/build.pl");
     assert.equal(pathPartial("/mcp add gitea gitea-mcp config/git"), "config/git");
@@ -23,7 +21,8 @@ test("pathPartial: non-path contexts → null", () => {
     assert.equal(pathPartial("/mo"), null);          // verb completion, not a path
     assert.equal(pathPartial("/model gemma"), null); // alias, not a path
     assert.equal(pathPartial("explain this"), null); // a prompt
-    assert.equal(pathPartial("/pick"), null);        // no space yet → still verb completion
+    assert.equal(pathPartial("/members"), null);     // no space yet → still verb completion
+    assert.equal(pathPartial("/members enable docs"), null); // an alias, not a path
 });
 
 const withTree = async (build: (dir: string) => Promise<void>, run: (dir: string) => Promise<void>) => {

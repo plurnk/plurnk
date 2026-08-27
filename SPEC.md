@@ -48,9 +48,6 @@ Options:
 | `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"auto":true}'` for automation workers). Mode is not a flag — see the prompt prefixes (§2.0). |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
-| `--pick <glob>` | string, repeatable | Track file(s); the sole source when headless. Maps to a `pick` constraint. Create-time / workspace-level. See §1.4. |
-| `--hide <glob>` | string, repeatable | Hide file(s). Maps to a `hide` constraint. See §1.4. |
-| `--view <glob>` | string, repeatable | Track file(s) read-only. Maps to a `view` constraint. See §1.4. |
 | `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. |
 | `--md <name=path>` | string, repeatable | Pin a markdown doc into the workspace (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
 
@@ -76,7 +73,7 @@ Workspaces and workers are daemon-owned. The client only knows their **names** �
 
 **The name IS the identity.** With `--workspace`/`PLURNK_CLIENT_WORKSPACE`, the client sends that name VERBATIM as `forwardedProps.plurnk.workspace` on every run (also the AG-UI `threadId`); the module attaches it if it exists, creates it with exactly that name otherwise — no prefixes, no forging. **With NO workspace, the DAEMON mints a fresh, uniquely-named workspace** (a no-name `workspace.create`, created WITH the invocation's options so creation is atomic with the project root) and the client binds to the returned name. A literal client label (`tui`/`cli`) is NEVER a workspace name — that would collide every unnamed launch into one shared world. The workspace is required wire-side: a worker without one is rejected 500, and the client never relies on a module fallback.
 
-**Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/constraints/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
+**Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
 - **`--worker <name>` names the CONVERSATION**: with a prompt, the worker name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--worker`, thread == world and conversations bind the workspace's model run (the default conversation). For read subcommands, `--worker` resolves via `workspace.workers` and an unknown name fails hard — no silent fallback to the model run.
 - **`--worker` set without `--workspace`** → usage error (exit 64). Run names are scoped to a workspace; there's no workspace to scope into.
@@ -142,17 +139,9 @@ Client behavior:
 
 The "inject standing context into every loop" role formerly served by persona is now `--md`/`mdDocs` (§1.4): markdown docs pinned into the workspace and read at turn 0.
 
-### §1.4 Membership overlay and workspace-open settings {§cli-membership-overlay-and-workspace-open-settings}
+### §1.4 Workspace-open settings {§cli-workspace-open-settings}
 
-These flags shape what the workspace sees. Membership flags map to daemon-owned constraints; settings flags map to workspace-open settings. All are creation-time / workspace-level.
-
-**Membership overlay** — repeatable glob flags, sent as `constraints` on `workspace.create`:
-
-- `--pick <glob>` → `{effect: "pick", glob}` — track file(s), and the sole source when headless.
-- `--hide <glob>` → `{effect: "hide", glob}` — hide file(s).
-- `--view <glob>` → `{effect: "view", glob}` — track file(s) read-only.
-
-Seeded atomically at `workspace.create` so turn-1's manifest is right with no follow-up RPC. On `--workspace` attach, each constraint is applied **live** via `workspace.constrain` (workspace-scoped, re-resolved immediately).
+These flags shape what the workspace sees; they map to workspace-open settings and are creation-time / workspace-level. File membership is not a flag: it is the `members` Functionality family (§3.7).
 
 **Workspace-open settings** — sent as `settings` on `workspace.create`:
 
@@ -231,7 +220,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -251,10 +240,10 @@ the generated man page are checked against the same inventory.
 
 | Group | Verbs |
 |---|---|
-| Inspect | `/help /models /workspaces /workers /log /members` |
+| Inspect | `/help /models /workspaces /workers /log` |
 | Policy | `/model /child /reasoning /yolo` |
-| Workspace | `/workspace /rename /worker /pick /hide /view /drop` |
-| Functionality | `/mcp /skills /agents` |
+| Workspace | `/workspace /rename /worker` |
+| Functionality | `/mcp /skills /agents /members` |
 | Compose | `/import /script /editor` |
 | Review | `/accept /reject /cancel /edit` |
 | Session | `/stop /quit` |
@@ -373,6 +362,32 @@ service, and the model addresses an enabled agent as `a2a://<alias>`.
 Invalid or unreadable local JSON fails before dispatch; daemon Problems — an
 unreachable card, an unsupported interface, an unresolved symbolic credential —
 cross the existing diagnostic path without rewriting or retry.
+
+### §3.7 File members {§cli-file-members}
+
+File membership is a thin projection of the daemon's `members` Functionality
+family — the same common lifecycle as `/mcp`, `/skills`, and `/agents`. The
+client composes one exact definition, `{glob}`, and renders the daemon's
+states; resolution, the model's ceiling, and enablement policy live in the
+service. Git-tracked files are members on their own. A definition is one
+gitignore-style glob relative to the project root: it includes matching
+untracked files or, with a leading `!`, excludes matching members — an
+exclusion wins over every inclusion. The glob is one argument, tokenized
+exactly as the sibling families tokenize theirs (quote it to keep whitespace).
+
+| TUI input | AG-UI+ action |
+|---|---|
+| `/members` | `worker.members.list {}` — one line per definition with what its glob resolved to: `docs  service  active  include docs/** → 12 files (3 ignored)`, `no-tokenizer  worker  active  exclude **/tokenizer.json → 4 members` |
+| `/members discover <path>` | `worker.members.discover {query}` — one candidate explaining why the file is or is not a member |
+| `/members discover <glob>` | `worker.members.discover {query}` — one candidate previewing what `add` would include or exclude |
+| `/members add <alias> <glob>` | `worker.members.add {alias, definition: {glob}}` |
+| `/members enable <alias>` | `worker.members.enable {alias}` |
+| `/members disable <alias>` | `worker.members.disable {alias}` |
+| `/members remove <alias>` | `worker.members.remove {alias}` |
+
+Daemon Problems — a headless workspace, an invalid pattern, a service-owned
+definition that cannot be removed — cross the existing diagnostic path without
+rewriting or retry.
 
 ---
 

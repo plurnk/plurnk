@@ -66,9 +66,6 @@ log read / read <coord>) inspect daemon state without running a loop.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
       --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
                           seconds; exits 3 with "timedOut":true in the result.
-      --pick <glob>       track file(s); the sole source when headless. Repeatable.
-      --hide <glob>       hide file(s). Repeatable.
-      --view <glob>       track file(s) (read-only). Repeatable.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (## FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
@@ -102,7 +99,7 @@ log read / read <coord>) inspect daemon state without running a loop.
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
-                          /--project-root + membership flags. The daemon owns the
+                          /--project-root + workspace-open settings. The daemon owns the
                           grammar; the client just feeds the file.
 .fi
 .SH INTERACTIVE COMMANDS
@@ -113,7 +110,6 @@ The no-argument interactive terminal accepts these slash commands:
 /workspaces                    List daemon workspaces.
 /workers                       List workers in this workspace.
 /log [limit]                   Read recent log entries.
-/members                       Show the model's resolved file universe.
 /model [selector]              Inspect or select this worker's durable model.
 /child [selector|inherit]      Inspect or select the inherited child model.
 /reasoning [policy]            Inspect or select durable reasoning policy.
@@ -121,13 +117,10 @@ The no-argument interactive terminal accepts these slash commands:
 /workspace [name]              Create and enter a fresh workspace.
 /rename <name>                 Rename this workspace's mutable handle.
 /worker [name]                 Fork and enter a new worker.
-/pick <glob>                   Track matching files.
-/hide <glob>                   Hide matching files.
-/view <glob>                   Track matching files read-only.
-/drop <glob>                   Remove matching explicit constraints.
 /mcp [subcommand]              List or manage this worker's MCP servers.
 /skills [subcommand]           List or manage this worker's Agent Skills.
 /agents [subcommand]           List or manage this worker's outbound A2A agents.
+/members [subcommand]          List or manage this worker's file members.
 /import <path>                 Insert a local file into the composer.
 /script <path>                 Submit a local .plk program through op.parse.
 /editor                        Compose the current value in $EDITOR.

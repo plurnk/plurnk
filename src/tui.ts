@@ -40,6 +40,7 @@ import {
 import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
 import { handleAgents } from "./agents.ts";
+import { handleMembers } from "./members.ts";
 import {
     formatWorkerReasoning,
     readWorkerReasoning,
@@ -437,53 +438,6 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  worker: ${forked.workerName} (new)\n`);
             return;
         }
-        case "pick":
-        case "hide":
-        case "view": {
-            // Membership overlay — service vocabulary, live via
-            // workspace.constrain (workspace-scoped, re-resolved immediately).
-            if (rest.length === 0) { write(`  usage: /${verb} <glob>\n`); return; }
-            await rpc.call("workspace.constrain", { effect: verb, glob: rest });
-            write(`  ${verb}: ${rest}\n`);
-            return;
-        }
-        case "drop": {
-            if (rest.length === 0) { write("  usage: /drop <glob>\n"); return; }
-            const { constraints } = await rpc.call("workspace.constraints") as { constraints: Array<{ effect: string; glob: string; source: "explicit" | "create" }> };
-            const matches = constraints.filter((c) => c.glob === rest);
-            if (matches.length === 0) { write(`  no constraint matching ${JSON.stringify(rest)}\n`); return; }
-            for (const { effect, glob } of matches) await rpc.call("workspace.unconstrain", { effect, glob });
-            write(`  dropped ${matches.length} constraint${matches.length === 1 ? "" : "s"} (${rest})\n`);
-            return;
-        }
-        case "members": {
-            // The model's RESOLVED universe (svc#243) — daemon-resolved
-            // (ls-files ∪ pick) − hide, never the client's rule globs. Showing
-            // the rules here (the old behavior) misinforms: rules are deltas,
-            // not the universe. The constraint list rides along as a footer —
-            // it's what /drop targets, but it is NOT "what the model sees".
-            const { members, hidden } = await rpc.call("workspace.members") as {
-                members: Array<{ path: string; effect: string }>; hidden: string[];
-            };
-            const editable = members.filter((m) => m.effect === "member");
-            const view = members.filter((m) => m.effect === "view");
-            if (members.length === 0 && hidden.length === 0) {
-                write("  the model's universe is empty — no Git members or /pick rules\n");
-            } else {
-                write(`  the model's universe: ${members.length} file${members.length === 1 ? "" : "s"}`
-                    + ` — ${editable.length} editable, ${view.length} read-only`
-                    + `${hidden.length ? `, ${hidden.length} hidden` : ""}\n`);
-                for (const m of view) write(`  view    ${m.path}\n`);
-                for (const p of hidden) write(`  hidden  ${p}\n`);
-                if (editable.length <= 40) for (const m of editable) write(`  member  ${m.path}\n`);
-                else write(`  member  …${editable.length} editable files (git-tracked); listing suppressed\n`);
-            }
-            const { constraints } = await rpc.call("workspace.constraints") as { constraints: Array<{ effect: string; glob: string }> };
-            write(constraints.length === 0
-                ? "  rules: none (git-tracked files only)\n"
-                : `  rules: ${constraints.map((c) => `${c.effect} ${c.glob}`).join(", ")}\n`);
-            return;
-        }
         case "import":
             // Dump a LOCAL file's content into the multiline composer.
             if (rest.length === 0) { write("  usage: /import <path>\n"); return; }
@@ -511,6 +465,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "agents": {
             await handleAgents(rest, rpc, write);
+            return;
+        }
+        case "members": {
+            await handleMembers(rest, rpc, write);
             return;
         }
         case "accept":

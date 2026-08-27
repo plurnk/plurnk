@@ -11,8 +11,10 @@ import { isAbsolute, resolve } from "node:path";
 // cursor isn't in a path position. One case per call site: membership globs,
 // MCP option files, `@file`, and PLURNK targets all remain client-local paths.
 export const pathPartial = (line: string): string | null => {
-    const verb = line.match(/^\/(?:pick|hide|view|drop|import|script)\s+(\S*)$/);
+    const verb = line.match(/^\/(?:import|script)\s+(\S*)$/);
     if (verb) return verb[1];
+    const members = line.match(/^\/members\s+(?:discover|add\s+\S+)\s+(\S*)$/);
+    if (members) return members[1];
     const mcpOptions = line.match(/^\/mcp\s+add\s+\S+\s+\S+\s+(\S*)$/);
     if (mcpOptions) return mcpOptions[1];
     // @file: a path reference anywhere in a prompt (word-boundary @ to dodge

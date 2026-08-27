@@ -57,10 +57,10 @@ durable public work inventory.
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/help /models /workspaces /workers /log /members` · `/model /child /reasoning /yolo` · `/workspace /rename /worker /pick /hide /view /drop` · `/mcp /skills /agents` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
+| `/verb` | `/help /models /workspaces /workers /log` · `/model /child /reasoning /yolo` · `/workspace /rename /worker` · `/mcp /skills /agents /members` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
 | `! cmd` | exec via the daemon |
 
-**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
+**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · `--files-items <n>` · `--md NAME=path`.
 
 ## what plurnk is
 
@@ -101,6 +101,8 @@ What the daemon brings to those turns:
 **Agents:** `/agents` lists this Worker's outbound A2A agents; `/agents discover <url>|add <alias> <url> [options.json]|enable|disable|remove` are the daemon's common Functionality actions; an enabled agent is `a2a://<alias>` to the model.
 
 **Skills:** `/skills` lists this Worker's Agent Skills; `/skills discover|add <name> <source> [--global]|enable|disable|remove` are the daemon's common Functionality actions — the client runs no package manager. Project skills live in `.agents/skills`; global skills live in `~/.agents/skills`.
+
+**Members:** `/members` lists this Worker's file members — what the model may see; `/members discover <path|glob>|add <alias> <glob>|enable|disable|remove` are the daemon's common Functionality actions. Git-tracked files are members on their own; a gitignore-style glob adds untracked files, and a leading `!` excludes matching members.
 
 **MCP:** project-local `PLURNK_MCP_*` declarations accompany `/mcp` and `plurnk mcp enable`; the daemon remains their sole parser and activation owner. See the plurnk-mcp docs in plurnk-service for the declaration shapes (npx servers, remote endpoints, `_TOOLS`/`_READ` policies).
 

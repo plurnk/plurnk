@@ -13,7 +13,7 @@ import type { Transport } from "./transport.ts";
 
 test("help is a compact grouped index over commands and interaction grammar", () => {
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);
-    assert.match(TUI_HELP, /functionality\s+\/mcp \/skills \/agents/);
+    assert.match(TUI_HELP, /functionality\s+\/mcp \/skills \/agents \/members/);
     assert.match(TUI_HELP, /language\s+# PLAN0/);
     assert.match(TUI_HELP, /\/help <verb>/);
 });
@@ -263,75 +263,29 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     };
 };
 
-// ─── membership verbs (svc#200) ──────────────────────────────────────
+// ─── /members (file members Functionality family through AG-UI+) ─────
 
-for (const verb of ["pick", "hide", "view"] as const) {
-    test(`handleVerb /${verb} → workspace.constrain {effect:${verb}, glob}`, async () => {
-        const ctx = makeCtx();
-        await handleVerb(`/${verb} src/**`, ctx);
-        assert.deepEqual(ctx.calls, [{ method: "workspace.constrain", params: { effect: verb, glob: "src/**" } }]);
-        assert.match(ctx.out.join(""), new RegExp(`${verb}: src/\\*\\*`));
-    });
-    test(`handleVerb /${verb} with no glob → usage, no rpc`, async () => {
-        const ctx = makeCtx();
-        await handleVerb(`/${verb}`, ctx);
-        assert.equal(ctx.calls.length, 0);
-        assert.match(ctx.out.join(""), /usage:/);
-    });
-}
-
-test("handleVerb /drop → lists then unconstrains the matching glob (any effect)", async () => {
-    const ctx = makeCtx({ "workspace.constraints": { constraints: [{ effect: "hide", glob: "*.lock", source: "explicit" }, { effect: "pick", glob: "docs/**", source: "create" }] } });
-    await handleVerb("/drop *.lock", ctx);
-    assert.equal(ctx.calls[0].method, "workspace.constraints");
-    const un = ctx.calls.find((c) => c.method === "workspace.unconstrain");
-    assert.deepEqual(un?.params, { effect: "hide", glob: "*.lock" });
-});
-
-test("handleVerb /drop with no match → no unconstrain", async () => {
-    const ctx = makeCtx({ "workspace.constraints": { constraints: [{ effect: "hide", glob: "*.lock" }] } });
-    await handleVerb("/drop nope/**", ctx);
-    assert.equal(ctx.calls.filter((c) => c.method === "workspace.unconstrain").length, 0);
-    assert.match(ctx.out.join(""), /no constraint matching/);
-});
-
-test("handleVerb /members → reports the RESOLVED universe (workspace.members), not the rule globs", async () => {
+test("[§cli-file-members] handleVerb /members lists this worker's file members", async () => {
     const ctx = makeCtx({
-        "workspace.members": {
-            members: [{ path: "/src/a.ts", effect: "member" }, { path: "/vendor/x.js", effect: "view" }],
-            hidden: ["/secret.env"],
+        "worker.members.list": {
+            definitions: [
+                { alias: "docs", origin: "service", state: "active", definition: { glob: "docs/**" }, detail: { effect: "include", pattern: "docs/**", matched: 12, files: [], ignored: 3 } },
+                { alias: "no-tokenizer", origin: "worker", state: "disabled", definition: { glob: "!**/tokenizer.json" } },
+            ],
         },
-        "workspace.constraints": { constraints: [{ effect: "view", glob: "vendor/**" }] },
     });
     await handleVerb("/members", ctx);
-    // The universe comes from workspace.members — the daemon's resolution, not a client glob list.
-    assert.equal(ctx.calls[0].method, "workspace.members");
-    const o = ctx.out.join("");
-    assert.match(o, /the model's universe: 2 files — 1 editable, 1 read-only, 1 hidden/);
-    assert.match(o, /view\s+\/vendor\/x\.js/);   // read-only member, by resolved path
-    assert.match(o, /member\s+\/src\/a\.ts/);    // editable member, by resolved path
-    assert.match(o, /hidden\s+\/secret\.env/);   // excluded file surfaced honestly
-    assert.match(o, /rules: view vendor\/\*\*/); // the rule footer (what /drop targets), distinct from the universe
+    await handleVerb("/members", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "worker.members.list", params: {} }, { method: "worker.members.list", params: {} }]);
+    assert.match(ctx.out.join(""), /docs\s+service\s+active\s+include docs\/\*\* → 12 files \(3 ignored\)/);
+    assert.match(ctx.out.join(""), /no-tokenizer\s+worker\s+disabled\s+exclude \*\*\/tokenizer\.json/);
 });
 
-test("handleVerb /members empty universe → says so, doesn't imply the rules ARE the universe", async () => {
-    const ctx = makeCtx({
-        "workspace.members": { members: [], hidden: [] },
-        "workspace.constraints": { constraints: [] },
-    });
-    await handleVerb("/members", ctx);
-    const o = ctx.out.join("");
-    assert.match(o, /the model's universe is empty/);
-    assert.match(o, /rules: none/);
-});
-
-test("handleVerb /members → suppresses the editable list past 40 but still states the true count", async () => {
-    const members = Array.from({ length: 50 }, (_, i) => ({ path: `/f${i}.ts`, effect: "member" }));
-    const ctx = makeCtx({ "workspace.members": { members, hidden: [] }, "workspace.constraints": { constraints: [] } });
-    await handleVerb("/members", ctx);
-    const o = ctx.out.join("");
-    assert.match(o, /the model's universe: 50 files — 50 editable/);
-    assert.match(o, /…50 editable files \(git-tracked\); listing suppressed/);
+test("[§cli-file-members] handleVerb /members add posts one exact { glob } definition", async () => {
+    const ctx = makeCtx({ "worker.members.add": { status: 201, alias: "no-tokenizer", definition: { alias: "no-tokenizer", state: "active" } } });
+    await handleVerb("/members add no-tokenizer !**/tokenizer.json", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "worker.members.add", params: { alias: "no-tokenizer", definition: { glob: "!**/tokenizer.json" } } }]);
+    assert.match(ctx.out.join(""), /added: no-tokenizer \(active\)/);
 });
 
 test("handleVerb /rename → workspace.rename, adopts the returned name", async () => {

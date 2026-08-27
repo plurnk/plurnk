@@ -29,7 +29,7 @@ import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
-import TerminalStatusLine, { derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
+import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
@@ -254,6 +254,7 @@ export const runCliViaBridge = async (
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
         { lifecycle: "running", model: opts.modelLabel ?? null, packetCount: null, activity: null },
+        { workspace: opts.workspace ?? null, worker: null, tally: EMPTY_TALLY, runningSince: started },
     );
     statusLine.update({});
     const io = {

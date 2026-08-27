@@ -99,9 +99,19 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 
 ### §1.2.1 Worker status {§cli-worker-status}
 
-Human status projects the authoritative AG-UI `STATE_SNAPSHOT` and subsequent
-`STATE_DELTA` values: lifecycle → durable model → packet count → activity. The
-client does not infer provider packets from operation rows or turn coordinates.
+Human status is the summary line's shape aggregated over the session:
+
+```
+<glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> · <workspace> · worker://<name>/ [· 🧮 <percent>%]
+```
+
+Turns and wall time include the running loop — its packet count from the
+authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
+from the local clock, ticking once a second; token and cost totals are the exact
+sum of concluded loops' accounting. The turns/wall group appears once a loop has
+run, tokens once accounting exists, cost when nonzero, the worker once the
+conversation worker is known (the terminated outcome names it). The client does
+not infer provider packets from operation rows or turn coordinates.
 Before the first state snapshot, durable worker policy and local derivation
 activity provide an honest startup fallback. Exact accounting remains in the
 loop summary.
@@ -213,8 +223,8 @@ Triggered when `argv` has no positional prompt.
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
-   and a compact status row. Authoritative status reads lifecycle → model →
-   packet count → activity. Before AG-UI state arrives, derivation, search, and
+   and a compact status row rendering §1.2.1's aggregate line. Before AG-UI
+   state arrives, derivation, search, and
    branch activity share the fallback activity position. The
    lifecycle glyph is `⌛︎` while running, 💤 while parked, `⏹️` when complete,
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
@@ -428,7 +438,7 @@ exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🤖 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
+**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🎲 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's corresponding actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is therefore skipped to avoid duplication.
 
@@ -493,7 +503,7 @@ trace retains its PLAN header and applies the same entry projection below it.
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
 ```
-  <tag> · <N> turns · <wall>ms · ↑<input> ↓<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<exact-usd|unknown>]
+  <tag> · <N> turns · <wall>ms · ↓<input> ↑<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<exact-usd|unknown>]
 ```
 
 `tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; exhausted invalid emission is `invalid emission`, and another 500 is `failed`.

@@ -27,7 +27,7 @@ export const OP_GLYPHS: Record<string, string> = {
 };
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
-    model: "🤖",
+    model: "🎲",
     client: "❯",
     _plurnk: "🧰",
     plugin: "🔌",
@@ -454,7 +454,7 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
     let tokenPart = "";
     if (usage !== undefined) {
         const aggregate = usage.accounting.usage;
-        tokenPart = ` · ↑${aggregate?.inputTokens ?? "?"} ↓${aggregate?.outputTokens ?? "?"}`;
+        tokenPart = ` · ↓${aggregate?.inputTokens ?? "?"} ↑${aggregate?.outputTokens ?? "?"}`;
         tokenPart += curationGauge(usage.curationWeight, usage.curationBudget);
         tokenPart += contextGauge(usage.contextTokens, usage.contextCapacity);
         const costUsd = usage.accounting.costUsd;

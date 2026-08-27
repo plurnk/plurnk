@@ -565,7 +565,7 @@ test("renderSummary: an unmapped non-200 still falls back to 'final <N>'", () =>
 
 test("renderSummary: real usage renders conventional input/output + exact loop cost", () => {
     const s = renderSummary(2, 500, terminalResult(200), false, usage(1200, 345, "0.00042"));
-    assert.match(s, /↑1200 ↓345/);
+    assert.match(s, /↓1200 ↑345/);
     assert.match(s, /loop \$0\.00042/);
 });
 
@@ -612,13 +612,13 @@ test("renderSummary: no contextCapacity → no context gauge even with contextTo
 
 test("renderSummary: usage without cost omits the cost segment", () => {
     const s = renderSummary(1, 100, terminalResult(200), false, usage(10, 5));
-    assert.match(s, /↑10 ↓5/);
+    assert.match(s, /↓10 ↑5/);
     assert.doesNotMatch(s, /\$/);
 });
 
 test("renderSummary: no usage (non-model op) omits the token part", () => {
     const s = renderSummary(0, 50, terminalResult(201), false);
-    assert.doesNotMatch(s, /↑|tokens/);
+    assert.doesNotMatch(s, /↓|↑|tokens/);
 });
 
 test("renderSummary renders the loop's exact USD decimal without unit conversion", () => {
@@ -812,13 +812,13 @@ test("extractSendBody prettify: conventional inline right arrow renders as its t
 
 test("renderSummary: usage renders input/output and exact cost", () => {
     const out = renderSummary(3, 850, terminalResult(200), false, usage(100, 50, "0.5"));
-    assert.match(out, /↑100 ↓50/);
+    assert.match(out, /↓100 ↑50/);
     assert.match(out, /\$0\.5/);
 });
 
 test("renderSummary: zero cost omits the $ part", () => {
     const out = renderSummary(1, 100, terminalResult(200), false, usage(10, 5));
-    assert.match(out, /↑10 ↓5/);
+    assert.match(out, /↓10 ↑5/);
     assert.doesNotMatch(out, /\$/);
 });
 
@@ -835,7 +835,7 @@ test("renderSummary: unavailable money is omitted, never a gross $unknown", () =
         contextCapacity: null,
         meta: {},
     });
-    assert.match(out, /↑10 ↓5/, "physical evidence still renders");
+    assert.match(out, /↓10 ↑5/, "physical evidence still renders");
     assert.doesNotMatch(out, /\$/, "no cost segment at all when the price is not available");
 });
 

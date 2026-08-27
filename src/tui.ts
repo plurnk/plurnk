@@ -47,7 +47,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { derivationActivity, projectStatusGauge, renderStatusLine, type ClientStatus, type StatusLifecycle } from "./status.ts";
+import { EMPTY_TALLY, derivationActivity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
 import {
     COMMANDS,
     completeCommandSyntax,
@@ -521,6 +521,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Ephemeral progress projected into the prompt while background work is active.
     let lifecycle: StatusLifecycle = "idle";
     let authoritativeStatus: ClientStatus | null = null;
+    let tally: SessionTally = EMPTY_TALLY;
+    let runningSince: number | null = null;
+    let conversationWorkerId: number | null = null;
+    let conversationWorker: string | null = opts.workerName ?? null;
     let embedding = false;
     let embeddingPercent: number | null = null;
     let searchFetching = false;
@@ -615,9 +619,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Client-owned lifecycle and model lead the input affordance; ephemeral
     // derivation, search, and branch work share its final activity position.
+    const statusContext = () => ({ workspace: current.name, worker: conversationWorker, tally, runningSince, now: Date.now() });
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
-            return renderStatusLine(authoritativeStatus, { idleGlyph: opts.yolo ? "🔥" : "" });
+            return renderStatusLine(authoritativeStatus, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
         }
         const branchCompleted = Number(branchBatch?.completed);
         const branchTotal = Number(branchBatch?.total);
@@ -639,7 +644,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             model,
             packetCount: null,
             activity,
-        }, { idleGlyph: opts.yolo ? "🔥" : "" });
+        }, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
     const repromptPreserving = reprompt;
@@ -923,6 +928,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
     };
     derivationPoll = setInterval(() => { void pollDerivation(); }, 1_000);
+    // The running loop's elapsed time ticks in the status row.
+    const statusTick = setInterval(() => { if (inFlight) reprompt(); }, 1_000);
+    statusTick.unref();
     void pollDerivation();
 
     // Verbs + read-only subcommands call rpc.call(...) only; route that through the
@@ -1068,6 +1076,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // print above an editable injection row.
             reprompt();
             const start = Date.now();
+            runningSince = start;
             let turnCount = 0;
             let terminalResult: OperationResult = { status: 0 };
             let hitMaxTurns = false;
@@ -1107,6 +1116,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     hitMaxTurns = t.hitMaxTurns;
                     turnCount = t.turnIds?.length ?? 0;
                     usage = t.usage;
+                    if (t.workerId !== undefined && t.workerId !== conversationWorkerId) {
+                        conversationWorkerId = t.workerId;
+                        const { workers } = await transport.rpc("workspace.workers") as { workers: Array<{ id: number; name: string }> };
+                        const hit = workers.find((worker) => worker.id === conversationWorkerId);
+                        if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
+                        conversationWorker = hit.name;
+                    }
                 }
                 lifecycle = terminalResult.status === 202 ? "parked"
                     : terminalResult.status === 499 ? "cancelled"
@@ -1118,6 +1134,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 lifecycle = "failed";
                 printAbove(renderTuiFailure(cause));
             } finally {
+                tally = tallyOutcome(tally, { turns: turnCount, wallMs: Date.now() - start, usage });
+                runningSince = null;
                 inFlight = false;
                 cancelRequested = false;
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
@@ -1132,6 +1150,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         reprompt();
         surface.start();
     }).finally(() => {
+        clearInterval(statusTick);
         releaseGuards();
         surface.stop();
     });

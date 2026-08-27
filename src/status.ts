@@ -1,6 +1,53 @@
 import type { Notice } from "./diagnostics.ts";
 import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
 import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
+import type { LoopUsage } from "./render.ts";
+
+// The session's running total in the summary line's shape — every concluded
+// loop adds its turns, wall time, and exact accounting.
+export interface SessionTally {
+    turns: number;
+    wallMs: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    costUsd: string | null;
+}
+
+export const EMPTY_TALLY: SessionTally = Object.freeze({ turns: 0, wallMs: 0, inputTokens: null, outputTokens: null, costUsd: null });
+
+// Exact decimal addition on the daemon's decimal strings — never a float.
+const addDecimal = (a: string, b: string): string => {
+    const [ai, af = ""] = a.split(".");
+    const [bi, bf = ""] = b.split(".");
+    const scale = Math.max(af.length, bf.length);
+    const sum = BigInt(`${ai}${af.padEnd(scale, "0")}`) + BigInt(`${bi}${bf.padEnd(scale, "0")}`);
+    const digits = sum.toString().padStart(scale + 1, "0");
+    return scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+};
+
+const addNullable = (a: number | null, b: number | null | undefined): number | null =>
+    b === null || b === undefined ? a : (a ?? 0) + b;
+
+export const tallyOutcome = (tally: SessionTally, outcome: { turns: number; wallMs: number; usage?: LoopUsage }): SessionTally => {
+    const aggregate = outcome.usage?.accounting.usage;
+    const cost = outcome.usage?.accounting.costUsd ?? null;
+    return {
+        turns: tally.turns + outcome.turns,
+        wallMs: tally.wallMs + outcome.wallMs,
+        inputTokens: addNullable(tally.inputTokens, aggregate?.inputTokens),
+        outputTokens: addNullable(tally.outputTokens, aggregate?.outputTokens),
+        costUsd: cost === null ? tally.costUsd : tally.costUsd === null ? cost : addDecimal(tally.costUsd, cost),
+    };
+};
+
+// What the status line knows beyond the gauge: where it is, and the session so far.
+export interface StatusContext {
+    workspace: string | null;
+    worker: string | null;
+    tally: SessionTally;
+    runningSince: number | null;
+    now?: number;
+}
 
 export type StatusLifecycle = "idle" | "running" | "parked" | "completed" | "cancelled" | "failed";
 
@@ -134,19 +181,43 @@ const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => va
             : value === "failed" ? "❌"
                 : idleGlyph;
 
+export const formatDuration = (ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${(ms / 1000).toFixed(1)}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
+    return `${Math.floor(seconds / 3600)}h${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}m`;
+};
+
+const activityText = ({ label, percent }: StatusActivity): string => {
+    const indexing = label === "indexing" || label === "preparing" || label === "indexing failed";
+    if (!indexing) return percent === null ? label : `${label} ${percent}%`;
+    if (label === "indexing failed") return "🧮 failed";
+    if (percent !== null) return `🧮 ${percent}%`;
+    return `🧮 ${label}`;
+};
+
+// The summary line's shape, aggregated over the session: the running loop adds
+// its packets as turns and its elapsed time; tokens and cost are concluded totals.
 export const renderStatusLine = (
     value: ClientStatus,
+    context: StatusContext,
     options: { idleGlyph?: string } = {},
 ): string => {
-    const parts = [lifecycleGlyph(value.lifecycle, options.idleGlyph ?? "")];
-    if (value.model !== null) parts.push(`🤖 ${value.model}`);
-    if (value.packetCount !== null) parts.push(`P${value.packetCount}`);
-    if (value.activity !== null) {
-        parts.push(value.activity.percent === null
-            ? value.activity.label
-            : `${value.activity.label}${value.activity.label.length > 0 ? " " : ""}${value.activity.percent}%`);
-    }
-    return parts.filter((part) => part.length > 0).join(" · ");
+    const glyph = lifecycleGlyph(value.lifecycle, options.idleGlyph ?? "");
+    const parts = [glyph.length > 0 ? `${glyph} ${value.lifecycle}` : value.lifecycle];
+    const running = value.lifecycle === "running";
+    const turns = context.tally.turns + (running ? value.packetCount ?? 0 : 0);
+    const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
+    if (turns > 0 || running) parts.push(`${turns} turn${turns === 1 ? "" : "s"}`, formatDuration(context.tally.wallMs + elapsed));
+    const { inputTokens, outputTokens, costUsd } = context.tally;
+    if (inputTokens !== null || outputTokens !== null) parts.push(`↓${inputTokens ?? "?"} ↑${outputTokens ?? "?"}`);
+    if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${costUsd}`);
+    if (value.model !== null) parts.push(`🎲 ${value.model}`);
+    if (context.workspace !== null) parts.push(context.workspace);
+    if (context.worker !== null) parts.push(`worker://${context.worker}/`);
+    if (value.activity !== null) parts.push(activityText(value.activity));
+    return parts.join(" · ");
 };
 
 // One mutable human status row. Routine progress repaints at most once per
@@ -156,6 +227,7 @@ export default class TerminalStatusLine {
     #current: string | null = null;
     #lastRoutinePaint: number | null = null;
     #status: ClientStatus;
+    #context: StatusContext;
     #visible = false;
     readonly #enabled: boolean;
     readonly #intervalMs: number;
@@ -166,11 +238,13 @@ export default class TerminalStatusLine {
         write: (value: string) => void,
         enabled: boolean,
         initial: ClientStatus,
+        context: StatusContext,
         options: { intervalMs?: number; now?: () => number } = {},
     ) {
         this.#write = write;
         this.#enabled = enabled;
         this.#status = initial;
+        this.#context = context;
         this.#intervalMs = options.intervalMs ?? 15_000;
         this.#now = options.now ?? Date.now;
     }
@@ -178,7 +252,7 @@ export default class TerminalStatusLine {
     update(patch: Partial<ClientStatus>, options: { routine?: boolean } = {}): void {
         const priorActivity = this.#status.activity;
         this.#status = { ...this.#status, ...patch };
-        const rendered = renderStatusLine(this.#status);
+        const rendered = renderStatusLine(this.#status, this.#context);
         if (rendered === this.#current) return;
         this.#current = rendered;
         if (!this.#enabled) return;

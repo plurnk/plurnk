@@ -30,6 +30,7 @@ import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
 // plurnk.terminated + workspaceId).
 export interface TerminatedInfo {
     loopId?: number;
+    workerId?: number;
     finalStatus: number;
     hitMaxTurns: boolean;
     turnIds?: number[];

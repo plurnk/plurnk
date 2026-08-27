@@ -148,7 +148,7 @@ test("ProblemError rejects a typed but invalid Problem at the control-flow bound
 
 test("[§cli-connection-onboarding] isUnreachable only classifies connection-level failures", () => {
     const refused = new TypeError("fetch failed");
-    (refused as { cause?: unknown }).cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3044"), { code: "ECONNREFUSED" });
+    (refused as { cause?: unknown }).cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:1066"), { code: "ECONNREFUSED" });
     assert.equal(isUnreachable(refused), true);
     assert.equal(isUnreachable(new TypeError("fetch failed")), true);
     assert.equal(isUnreachable(new Error("bridge run failed: 500 — runLoop exploded")), false);
@@ -156,14 +156,14 @@ test("[§cli-connection-onboarding] isUnreachable only classifies connection-lev
 });
 
 test("[§cli-problems-and-notices] clientConnectionRefused is an RFC 9457 Problem", () => {
-    const problem = clientConnectionRefused("http://127.0.0.1:3044", new Error("ECONNREFUSED"));
+    const problem = clientConnectionRefused("http://127.0.0.1:1066", new Error("ECONNREFUSED"));
     assert.equal(problem.type, "https://problems.plurnk.xyz/client/connection/refused");
     assert.equal(problem.title, "Refused");
     assert.equal(problem.status, 503);
     assert.equal(problem.detail, "ECONNREFUSED");
     assert.equal(problem.source, "client:connection");
     assert.equal(problem.kind, "refused");
-    assert.equal(problem.url, "http://127.0.0.1:3044");
+    assert.equal(problem.url, "http://127.0.0.1:1066");
     assert.ok(Array.isArray(problem.hints) && problem.hints.length > 0);
 });
 

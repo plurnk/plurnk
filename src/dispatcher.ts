@@ -701,7 +701,7 @@ export const main = async (argv: string[]): Promise<void> => {
     // (a remote portal); otherwise the canonical legend is the default — ordinary AG-UI+
     // below is legacy awaiting deletion.
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
-    const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "3044"}`;
+    const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "1066"}`;
     let workspaceOptionsPromise: Promise<{ settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({

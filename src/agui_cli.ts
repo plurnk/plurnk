@@ -254,7 +254,7 @@ export const runCliViaBridge = async (
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
         { lifecycle: "running", model: opts.modelLabel ?? null, packetCount: null, activity: null },
-        { workspace: opts.workspace ?? null, worker: null, tally: EMPTY_TALLY, runningSince: started },
+        { workspace: opts.workspace ?? null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: started },
     );
     statusLine.update({});
     const io = {

@@ -102,15 +102,15 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 Human status is the summary line's shape aggregated over the session:
 
 ```
-<glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> · <workspace> · worker://<name>/ [· 🧮 <percent>%]
+<glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜 <child>] · <workspace> · worker://<name>/ [· 🧮 <percent>%]
 ```
 
 Turns and wall time include the running loop — its packet count from the
 authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
 from the local clock, ticking once a second; token and cost totals are the exact
 sum of concluded loops' accounting. The turns/wall group appears once a loop has
-run, tokens once accounting exists, cost when nonzero, the worker once the
-conversation worker is known (the terminated outcome names it). The client does
+run, tokens once accounting exists, cost when nonzero, the child model while a spawn override is set (§1.2.2), the
+worker once the conversation worker is known (the terminated outcome names it). The client does
 not infer provider packets from operation rows or turn coordinates.
 Before the first state snapshot, durable worker policy and local derivation
 activity provide an honest startup fallback. Exact accounting remains in the

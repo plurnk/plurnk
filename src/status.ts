@@ -44,6 +44,7 @@ export const tallyOutcome = (tally: SessionTally, outcome: { turns: number; wall
 export interface StatusContext {
     workspace: string | null;
     worker: string | null;
+    child: string | null;
     tally: SessionTally;
     runningSince: number | null;
     now?: number;
@@ -214,6 +215,7 @@ export const renderStatusLine = (
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${inputTokens ?? "?"} ↑${outputTokens ?? "?"}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${costUsd}`);
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
+    if (context.child !== null) parts.push(`🐜 ${context.child}`);
     if (context.workspace !== null) parts.push(context.workspace);
     if (context.worker !== null) parts.push(`worker://${context.worker}/`);
     if (value.activity !== null) parts.push(activityText(value.activity));

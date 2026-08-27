@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
-const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
+const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
 const running: ClientStatus = {
     lifecycle: "running",
@@ -13,6 +13,7 @@ const running: ClientStatus = {
 
 test("[§cli-worker-status] status presentation uses only client-owned facts", () => {
     assert.equal(renderStatusLine(running, CONTEXT), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · k3Zp9 · worker://model-1/");
+    assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · 🐜 rtx5070 · k3Zp9 · worker://model-1/", "a spawn override rides beside the model");
     const concluded = tallyOutcome(tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5_000 }), {
         turns: 2, wallMs: 60_000,
         usage: { accounting: { usage: { inputTokens: 1200, outputTokens: 345 }, costUsd: "0.024" } } as never,
@@ -23,7 +24,7 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
         renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }, { ...CONTEXT, tally: concluded, runningSince: null }),
         "⏹️ completed · 3 turns · 1m05s · ↓1200 ↑345 · $0.024 · 🎲 deepdumb · k3Zp9 · worker://model-1/ · 🧮 55%",
     );
-    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, packetCount: null, activity: null }, { workspace: null, worker: null, tally: EMPTY_TALLY, runningSince: null }, { idleGlyph: "🔥" }), "🔥 idle");
+    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, packetCount: null, activity: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { idleGlyph: "🔥" }), "🔥 idle");
 });
 
 test("derivationActivity recognizes progress, terminal clear, and failure", () => {

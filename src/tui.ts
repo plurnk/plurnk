@@ -619,7 +619,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Client-owned lifecycle and model lead the input affordance; ephemeral
     // derivation, search, and branch work share its final activity position.
-    const statusContext = () => ({ workspace: current.name, worker: conversationWorker, tally, runningSince, now: Date.now() });
+    const statusContext = () => ({
+        workspace: current.name,
+        worker: conversationWorker,
+        child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
+        tally,
+        runningSince,
+        now: Date.now(),
+    });
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
             return renderStatusLine(authoritativeStatus, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });

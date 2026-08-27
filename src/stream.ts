@@ -10,6 +10,7 @@
 // TUI doesn't fetch content" (SPEC §5.3), because the content IS the
 // optics when it's two lines long.
 
+import ModelText from "./model-text.ts";
 import { colorEnabled } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
@@ -115,7 +116,7 @@ export const inlineable = (content: string): boolean => {
 // Render a concluded channel's content as indented lines under the
 // conclusion; stderr is marked and tinted.
 export const renderInline = (channel: string, content: string): string =>
-    content.trimEnd().split("\n")
+    ModelText.plain(content).trimEnd().split("\n")
         .map((l) => channel === "stderr" ? `   ${RED}!${RESET} ${l}` : `   ${l}`)
         .join("\n");
 

@@ -8,6 +8,7 @@
 // for EXEC), and an opaque attrs object. loop.resolve takes {logEntryId,
 // decision, body?, outcome?}.
 
+import ModelText from "./model-text.ts";
 import { colorEnabled } from "./color.ts";
 import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
@@ -115,9 +116,10 @@ export const editInEditor = async (body: string, suffix: string): Promise<string
 // The rendered diff + key menu as a string. Shared by the CLI (writes it to
 // stderr) and the non-blocking TUI review (writes it to stdout). No I/O here.
 export const renderProposalMenu = (params: ProposalParams): string => {
-    const nl = params.body.endsWith("\n") ? "" : "\n";
-    return `\n${BOLD}── proposal ${params.op} ${formatTarget(params.target, params.op)} ──${RESET}\n`
-        + renderBody(params.op, params.body) + nl
+    const body = ModelText.plain(params.body);   // plurnk#35 — the body is the model's
+    const nl = body.endsWith("\n") ? "" : "\n";
+    return `\n${BOLD}── proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)} ──${RESET}\n`
+        + renderBody(params.op, body) + nl
         + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
 };
 
@@ -170,8 +172,8 @@ export const answerForQuestion = (line: string, schema: Record<string, unknown>)
 // The question menu: the question, numbered choices, and the always-present
 // free-response escape. An open question (no choices) is just "type your answer".
 export const renderQuestionMenu = (question: string, choices: string[]): string => {
-    const lines = [`\n${BOLD}── question ──${RESET}`, `  ${question}`];
-    choices.forEach((c, i) => lines.push(`  ${DIM}${i + 1}.${RESET} ${c}`));
+    const lines = [`\n${BOLD}── question ──${RESET}`, `  ${ModelText.plain(question)}`];
+    choices.forEach((c, i) => lines.push(`  ${DIM}${i + 1}.${RESET} ${ModelText.plain(c)}`));
     lines.push(choices.length > 0
         ? `${DIM}  type 1–${choices.length} to pick, or type your own answer (Free Response)${RESET} `
         : `${DIM}  type your answer${RESET} `);

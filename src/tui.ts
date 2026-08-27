@@ -14,6 +14,8 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { matchesKey, type AutocompleteItem, type AutocompleteProvider } from "@earendil-works/pi-tui";
 import TuiSurface from "./tui-surface.ts";
+import TerminalGuards from "./tui-guards.ts";
+import ModelText from "./model-text.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
@@ -56,11 +58,12 @@ import {
 } from "./commands.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
+    // A Problem may quote the model's own line; a thrown message may carry anything (plurnk#35).
     if (cause instanceof ProblemError) {
-        return renderDiagnostic(cause.problem)
+        return renderDiagnostic(ModelText.plainFields(cause.problem))
             + (cause.problem.status === 501 ? NO_MODEL_HINT : "");
     }
-    return `  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`;
+    return `  \x1b[31merror: ${ModelText.plain(cause instanceof Error ? cause.message : String(cause))}\x1b[0m`;
 };
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
@@ -646,6 +649,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         yolo: opts.yolo,
     });
     const surface = new TuiSurface();
+    const releaseGuards = TerminalGuards.install(surface);
     printAbove = (text) => surface.append(text);
     surface.append(`\x1b[2m${header}\x1b[0m`);
     surface.append("");
@@ -1169,5 +1173,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         };
         reprompt();
         surface.start();
+    }).finally(() => {
+        releaseGuards();
+        surface.stop();
     });
 };

@@ -111,6 +111,18 @@ test("extractSendBody prettify=true: plain text → raw verbatim", () => {
     assert.equal(extractSendBody(tx, true), "Hello, world.");
 });
 
+test("model-authored text never reaches the terminal with its own control sequences (plurnk#35)", () => {
+    const body = extractSendBody({ body: { raw: "safe \x1b]52;c;aGVsbG8=\x07 text", json: null } }, true);
+    assert.doesNotMatch(body, /\x1b\]52/, "an OSC 52 clipboard write inside a SEND body is stripped");
+    assert.match(body, /safe/); assert.match(body, /text/);
+    const send = renderLogEntry(entry({ op: "SEND", signal: 200, tx: { body: { raw: "done \x1b[31mRED\x1b[0m\rgone", json: null } } }));
+    assert.doesNotMatch(send, /\x1b\[31m/, "a model SGR sequence in a SEND body is stripped");
+    assert.doesNotMatch(send, /\r/, "a carriage-return overwrite is stripped");
+    const reasoning = renderReasoning("think \x1b]8;;https://evil.test\x07here\x1b]8;;\x07");
+    assert.doesNotMatch(reasoning, /\x1b\]8/, "an OSC 8 link in reasoning is stripped");
+    assert.match(reasoning, /think here/, "the words survive");
+});
+
 test("renderReasoning: distinct, compact block with no coordinate or status code", () => {
     assert.equal(renderReasoning("first line\nsecond line"), "💭 first line\n   second line");
 });

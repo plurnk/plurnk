@@ -4,6 +4,7 @@
 import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
+import ModelText from "./model-text.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { presentPlan } from "./plan.ts";
 
@@ -120,7 +121,7 @@ const buildExtra = (entry: LogEntryWire): string => {
             return `${DIM}→ ${count} result${count === 1 ? "" : "s"}${RESET}`;
         }
         case "READ": {
-            const content = rx !== null && typeof rx.content === "string" ? rx.content : "";
+            const content = rx !== null && typeof rx.content === "string" ? ModelText.plain(rx.content) : "";
             return content.length > 0 ? `${DIM}"${ellipsize(content.replace(/\n/g, " "), 40)}"${RESET}` : "";
         }
         case "SEND": {
@@ -233,7 +234,7 @@ export const extractSendBody = (
     if (!prettify) return typeof raw === "string" ? raw : "";
     if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
     if (typeof raw !== "string") return "";
-    const prose = normalizeProse(raw);
+    const prose = normalizeProse(ModelText.plain(raw));
     // GFM and Mermaid project through the terminal renderer at the caller's
     // current available width (plurnk#15).
     if (looksLikeMarkdown(prose)) return renderMarkdownDocument(prose, viewport);
@@ -242,7 +243,7 @@ export const extractSendBody = (
 
 // Provider reasoning is neither PLAN nor speech. Give it one quiet visual lane
 // without inventing a log coordinate or status it does not own.
-export const renderReasoning = (content: string): string => content
+export const renderReasoning = (content: string): string => ModelText.plain(content)
     .split("\n")
     .map((line, index) => `${index === 0 ? "💭 " : "   "}${DIM}${line}${RESET}`)
     .join("\n");
@@ -309,7 +310,7 @@ const renderPlan = (entry: LogEntryWire): string => {
             ? `${glyph} ${firstSlot}`
             : `${glyph} ${laterSlot}`;
         const annotation = index === 0 && note !== null ? ` ${DIM}— ${note}${RESET}` : "";
-        return `${prefix}${DIM}${text}${RESET}${annotation}`;
+        return `${prefix}${DIM}${ModelText.plain(text)}${RESET}${annotation}`;
     }).join("\n");
 };
 
@@ -364,7 +365,8 @@ export const renderLogEntry = (
     // Render whatever target the daemon supplied — no synthesis. If scheme
     // is null but pathname is set, that's the daemon's choice (e.g. file://
     // shortcut) and we render the bare path.
-    const target = entryTarget(entry);
+    const authoredTarget = entryTarget(entry);
+    const target = authoredTarget === null ? null : ModelText.plain(authoredTarget);
     const pathText = target !== null ? `${CYAN}${target}${RESET}` : "";
     const scope = entryScope(entry);
     const scopeText = scope !== null ? `${CYAN}${scope}${RESET}` : "";

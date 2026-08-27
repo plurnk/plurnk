@@ -34,7 +34,10 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<stri
         cwd,   // the client sends cwd as the workspace's project_root (membership + edits resolve here)
         // `url` is the daemon module's http address (bootDaemon returns it) — the
         // client reads PLURNK_HOST/PLURNK_PORT, AG-UI+ underneath.
-        env: { ...(process.env as Record<string, string>), PLURNK_HOST: new URL(url).hostname, PLURNK_PORT: new URL(url).port, PLURNK_AGUI_URL: "", NO_COLOR: "1", ...extraEnv },
+        // pi-tui stretches its lone-ESC window to 100 ms when it sees SSH_CONNECTION/SSH_TTY — a
+        // developer's own session, not the pty under test — which swallows an Esc typed 80 ms before
+        // the next key (plurnk#25). Pin the window so the harness is deterministic anywhere.
+        env: { ...(process.env as Record<string, string>), PI_TUI_ESC_TIMEOUT: "10", PLURNK_HOST: new URL(url).hostname, PLURNK_PORT: new URL(url).port, PLURNK_AGUI_URL: "", NO_COLOR: "1", ...extraEnv },
     });
 
     let buf = "";

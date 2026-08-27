@@ -4,6 +4,8 @@
 // and renders the daemon's states; installation, discovery, and enablement
 // policy live in the service.
 
+import { commandUsage } from "./commands.ts";
+
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
@@ -98,8 +100,8 @@ const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "dis
     write(`  ${verb}: ${alias}${state}${problem}\n`);
 };
 
-const usage = (write: (text: string) => void): void => {
-    write("  usage: /skills [discover <query|source> | add <name> <source> [--global] | enable|disable|remove <name>]\n");
+const usage = (write: (text: string) => void, subcommand?: string): void => {
+    write(`  usage: ${commandUsage("skills", subcommand)}\n`);
 };
 
 export const handleSkills = async (
@@ -119,10 +121,10 @@ export const handleSkills = async (
     if (args === null || args.length === 0) { usage(write); return null; }
     const [command, name] = args;
 
-    if (command === "discover" || command === "find") {
+    if (command === "discover") {
         const term = args.slice(1).join(" ").trim();
         if (term.length === 0) {
-            write("  usage: /skills discover <query|source>\n");
+            usage(write, "discover");
             return null;
         }
         const query = args.length === 2 && isSource(term) ? { source: term } : { query: term };
@@ -137,7 +139,7 @@ export const handleSkills = async (
         const positional = args.slice(1).filter((arg) => arg !== "--global");
         const global = args.includes("--global");
         if (positional.length !== 2 || positional[0].length === 0 || positional[1].length === 0) {
-            write("  usage: /skills add <name> <source> [--global]\n");
+            usage(write, "add");
             return null;
         }
         const [alias, source] = positional;
@@ -149,7 +151,7 @@ export const handleSkills = async (
 
     if (command === "enable" || command === "disable") {
         if (args.length !== 2 || name.length === 0) {
-            write(`  usage: /skills ${command} <name>\n`);
+            usage(write, command);
             return null;
         }
         const result = await rpc.call(`worker.skills.${command}`, { alias: name }) as MutationResult;
@@ -159,7 +161,7 @@ export const handleSkills = async (
 
     if (command === "remove") {
         if (args.length !== 2 || name.length === 0) {
-            write("  usage: /skills remove <name>\n");
+            usage(write, "remove");
             return null;
         }
         const result = await rpc.call("worker.skills.remove", { alias: name });

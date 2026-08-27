@@ -42,6 +42,7 @@ ok(
     "standard AG-UI client dependencies are installed",
 );
 ok(!existsSync(resolve(mods, "ws")), "retired direct WebSocket dependency is absent");
+ok(!existsSync(resolve(mods, "@plurnk", "plurnk", "dist", "paste.js")), "retired readline paste machinery is absent from the package projection");
 ok(!existsSync(resolve(mods, "@plurnk", "plurnk-service")), "optional daemon NOT pulled (--omit=optional; the service's install is its own)");
 ok(!existsSync(resolve(mods, "onnxruntime-node")) && !existsSync(resolve(mods, "sharp")), "no native onnxruntime/sharp in the client tree");
 

@@ -3,6 +3,7 @@
 // truth — the exported USAGE text. Deterministic; run via npm run build:posix.
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { USAGE } from "../src/dispatcher.ts";
+import { renderCommandReference } from "../src/commands.ts";
 
 const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
@@ -43,6 +44,9 @@ ${roffEscape(description)}
 ${nf(optionsBlock.replace(/^options:\n/, ""))}
 .SH SUBCOMMANDS
 ${nf(subcommandsBlock.replace(/^subcommands:\n/, ""))}
+.SH INTERACTIVE COMMANDS
+The no-argument interactive terminal accepts these slash commands:
+${nf(renderCommandReference())}
 .SH ENVIRONMENT
 ${nf(envBlock)}
 .SH EXIT STATUS

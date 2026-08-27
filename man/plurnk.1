@@ -1,4 +1,4 @@
-.TH PLURNK 1 "" "plurnk 0.76.2" "User Commands"
+.TH PLURNK 1 "" "plurnk 0.77.1" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -21,7 +21,7 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--r
 Connects to the plurnk-service daemon. Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
-enters the interactive REPL. Read-only subcommands (models / workspace list /
+enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list /
 log read / read <coord>) inspect daemon state without running a loop.
 .SH OPTIONS
 .nf
@@ -104,6 +104,39 @@ log read / read <coord>) inspect daemon state without running a loop.
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + membership flags. The daemon owns the
                           grammar; the client just feeds the file.
+.fi
+.SH INTERACTIVE COMMANDS
+The no-argument interactive terminal accepts these slash commands:
+.nf
+/help [verb]                   Show the command index or one command's usage.
+/models [search]               Search the bounded model catalog.
+/workspaces                    List daemon workspaces.
+/workers                       List workers in this workspace.
+/log [limit]                   Read recent log entries.
+/members                       Show the model's resolved file universe.
+/model [selector]              Inspect or select this worker's durable model.
+/child [selector|inherit]      Inspect or select the inherited child model.
+/reasoning [policy]            Inspect or select durable reasoning policy.
+/yolo                          Toggle local proposal auto-accept.
+/workspace [name]              Create and enter a fresh workspace.
+/rename <name>                 Rename this workspace's mutable handle.
+/worker [name]                 Fork and enter a new worker.
+/pick <glob>                   Track matching files.
+/hide <glob>                   Hide matching files.
+/view <glob>                   Track matching files read-only.
+/drop <glob>                   Remove matching explicit constraints.
+/mcp [subcommand]              List or manage this worker's MCP servers.
+/skills [subcommand]           List or manage this worker's Agent Skills.
+/agents [subcommand]           List or manage this worker's outbound A2A agents.
+/import <path>                 Insert a local file into the composer.
+/script <path>                 Submit a local .plk program through op.parse.
+/editor                        Compose the current value in $EDITOR.
+/accept                        Accept the pending proposal.
+/reject                        Reject the pending proposal.
+/cancel                        Cancel the pending proposal.
+/edit                          Edit and resolve the pending proposal.
+/stop                          Cancel the running loop.
+/quit                          Exit the interactive client.
 .fi
 .SH ENVIRONMENT
 .nf

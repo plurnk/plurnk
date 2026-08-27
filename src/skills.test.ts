@@ -43,7 +43,7 @@ test("[§cli-universal-agent-skills] discover sends a registry query or an expli
     });
     await handleSkills("discover react changelog", h.rpc, h.write);
     await handleSkills("discover acme/kit", h.rpc, h.write);
-    await handleSkills("find ./vendor/skills", h.rpc, h.write);
+    await handleSkills("discover ./vendor/skills", h.rpc, h.write);
     await handleSkills("discover https://github.com/acme/kit", h.rpc, h.write);
     assert.deepEqual(h.calls, [
         { method: "worker.skills.discover", params: { query: "react changelog" } },

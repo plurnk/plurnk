@@ -45,6 +45,15 @@ import {
     type WorkerReasoning,
 } from "./reasoning.ts";
 import { derivationActivity, projectStatusGauge, renderStatusLine, type ClientStatus, type StatusLifecycle } from "./status.ts";
+import {
+    COMMANDS,
+    completeCommandSyntax,
+    isCommandName,
+    renderCommandHelp,
+    type CommandName,
+    type CommandSuggestion,
+    type FunctionalityFamily,
+} from "./commands.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -66,47 +75,8 @@ interface WorkspaceResult { id: number; name: string }
 // lists them; /worker forks a new worker, /workers lists them. The old /new was
 // ambiguous (workspace or worker?) and is gone. /rename retargets the current
 // workspace's mutable handle (a worker's name is immutable — no /rename for workers).
-export const VERBS = [
-    "help", "models", "workspaces", "workers", "log", "model", "child", "reasoning",
-    "yolo", "workspace", "rename", "worker", "stop", "quit",
-    "pick", "hide", "view", "drop", "members", "import", "script", "mcp", "editor",
-    "accept", "reject", "cancel", "edit",
-] as const;
-
-export const TUI_HELP = [
-    "  /models [search] /workspaces /workers /log [n]   inspect",
-    "  /model <selector> · /child <selector|inherit>   parent and child models",
-    "  /reasoning [off|adaptive|effort]       inspect or set reasoning",
-    "  /yolo                              toggle local auto-accept",
-    "  /workspace [name]                    new workspace",
-    "  /rename <name>                     rename this workspace (a mutable handle)",
-    "  /worker [name]                     create a new worker",
-    "  /pick <glob>                       track file(s)",
-    "  /hide <glob>                       hide file(s)",
-    "  /view <glob>                       track file(s) (read-only)",
-    "  /drop <glob>                       no longer pick file(s)",
-    "  /members                           the model's resolved file universe (+ rules)",
-    "  /import <path>                     dump a local file's content into the prompt",
-    "  /script <path>                     run a .plk file (its DSL → op.parse)",
-    "  /mcp                              list available workspace MCP servers",
-    "       add <alias> <target> [options.json] · enable/disable/remove <alias>",
-    "       oauth <alias> <callback-url>",
-    "  /agents                           list this Worker's outbound A2A agents",
-    "       discover <url> · add <alias> <url> [options.json] · enable/disable/remove <alias>",
-    "  /skills                           list this Worker's Agent Skills",
-    "       discover <query|source> · add <name> <source> [--global] · enable/disable/remove <name>",
-    "  /accept /reject /cancel /edit      resolve a pending proposal (or keys a/e/r/c)",
-    "  /stop                              cancel the running loop",
-    "  /quit                              exit",
-    "  # PLAN0 / ## OP0                  raw PLURNK (op.parse)",
-    "  ## LOOK0 (uri)                    off-run READ — inspect a uri for you, not the model",
-    "  Alt-p / Alt-n                     cycle ## LOOK0 through prior operations' targets",
-    "  Shift-Enter / Ctrl-J               insert a newline; Enter submits",
-    "  Esc                               cancel the running loop; idle: clear the line",
-    "  /editor · Alt-e                    compose the prompt line in $EDITOR",
-    "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
-    "                                     log yolo workspace members stop · Alt-h help",
-].join("\n") + "\n";
+export const VERBS: readonly CommandName[] = COMMANDS.map(({ name }) => name);
+export const TUI_HELP = renderCommandHelp();
 
 // Muscle-memory quick-keys, converged with plurnk.nvim's `<leader>a<letter>`
 // mnemonics — SAME CASE as nvim (lowercase m/s/x, capital R/L/Y/N/M), which
@@ -165,98 +135,94 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
     return { verb: m?.[1] ?? "", rest: (m?.[2] ?? "").trim() };
 };
 
-// Completion contract — verbs after `/`, model aliases after `/model ` or `/child `.
-// Verb/alias completion answers synchronously; path positions read the local fs
-// and answer once readdir resolves. A fragment holding a provider prefix
+export interface CompletionOptions {
+    getAliases: () => string[];
+    cwd: string;
+    getReasoningPolicies?: () => string[];
+    getProviderModels?: (provider: string) => Promise<string[]>;
+    getFunctionalityAliases?: (family: FunctionalityFamily) => Promise<string[]>;
+}
+
+export interface InputCompletion {
+    suggestions: CommandSuggestion[];
+    prefix: string;
+}
+
+// Command syntax comes from the registry. Paths read the local filesystem;
+// model and Functionality aliases are fetched only when the cursor reaches a
+// position that consumes them. A fragment holding a provider prefix
 // (`/model openai/…`) completes lazily from one bounded, provider-scoped
 // daemon catalog page ([§cli-plurnk-models]); the client never preloads or
 // owns the Models.dev snapshot.
-export const makeCompleter = (
-    getAliases: () => string[],
-    cwd: string,
-    getReasoningPolicies: () => string[] = () => [],
-    getProviderModels: (provider: string) => Promise<string[]> = async () => [],
-) =>
-    (line: string, callback: (err: null, result: [string[], string]) => void): void => {
-        const verbFrag = line.match(/^\/(\w*)$/);
-        if (verbFrag) {
-            callback(null, [VERBS.map((v) => `/${v}`).filter((v) => v.startsWith(line)), line]);
-            return;
+export const completeInput = async (line: string, options: CompletionOptions): Promise<InputCompletion> => {
+        const command = completeCommandSyntax(line);
+        if (command?.kind === "syntax") return { suggestions: command.suggestions, prefix: command.prefix };
+        if (command?.kind === "aliases") {
+            let aliases: string[] = [];
+            try { aliases = await options.getFunctionalityAliases?.(command.family) ?? []; }
+            catch { /* completion failure is an empty result; the editor remains intact */ }
+            return {
+                suggestions: aliases
+                    .filter((alias) => alias.startsWith(command.prefix))
+                    .map((value) => ({ value, description: `${command.family} alias` })),
+                prefix: command.prefix,
+            };
         }
         const aliasFrag = line.match(/^\/(model|child)\s+(\S*)$/);
         if (aliasFrag) {
             const fragment = aliasFrag[2];
             const provider = /^([A-Za-z0-9_-]+)\//.exec(fragment)?.[1];
             if (provider !== undefined) {
-                getProviderModels(provider).then(
-                    (selectors) => callback(null, [selectors.filter((selector) => selector.startsWith(fragment)), fragment]),
-                    () => callback(null, [[], fragment]),
-                );
-                return;
+                let selectors: string[] = [];
+                try { selectors = await options.getProviderModels?.(provider) ?? []; }
+                catch { /* bounded remote completion is optional */ }
+                return {
+                    suggestions: selectors.filter((selector) => selector.startsWith(fragment))
+                        .map((value) => ({ value, description: "model route" })),
+                    prefix: fragment,
+                };
             }
             const candidates = aliasFrag[1] === "child"
-                ? ["inherit", ...getAliases().filter((alias) => alias !== "inherit")]
-                : getAliases();
-            callback(null, [candidates.filter((a) => a.startsWith(fragment)), fragment]);
-            return;
+                ? ["inherit", ...options.getAliases().filter((alias) => alias !== "inherit")]
+                : options.getAliases();
+            return {
+                suggestions: candidates.filter((alias) => alias.startsWith(fragment))
+                    .map((value) => ({ value, description: value === "inherit" ? "inherit parent route" : "model alias" })),
+                prefix: fragment,
+            };
         }
         const reasoningFrag = line.match(/^\/reasoning\s+(\S*)$/);
         if (reasoningFrag) {
-            callback(null, [
-                getReasoningPolicies().filter((policy) => policy.startsWith(reasoningFrag[1])),
-                reasoningFrag[1],
-            ]);
-            return;
-        }
-        const mcpFrag = line.match(/^\/mcp\s+(\S*)$/);
-        if (mcpFrag) {
-            const fragment = mcpFrag[1];
-            const commands = ["add", "enable", "disable", "remove", "oauth"]
-                .filter((command) => command.startsWith(fragment));
-            callback(null, [commands, fragment]);
-            return;
-        }
-        const agentsFrag = line.match(/^\/agents\s+(\S*)$/);
-        if (agentsFrag) {
-            const fragment = agentsFrag[1];
-            const commands = ["add", "discover", "enable", "disable", "remove"]
-                .filter((command) => command.startsWith(fragment));
-            callback(null, [commands, fragment]);
-            return;
-        }
-        const skillsFrag = line.match(/^\/skills\s+(\S*)$/);
-        if (skillsFrag) {
-            const fragment = skillsFrag[1];
-            const commands = ["add", "discover", "enable", "disable", "remove"]
-                .filter((command) => command.startsWith(fragment));
-            callback(null, [commands, fragment]);
-            return;
+            return {
+                suggestions: (options.getReasoningPolicies?.() ?? [])
+                    .filter((policy) => policy.startsWith(reasoningFrag[1]))
+                    .map((value) => ({ value, description: "reasoning policy" })),
+                prefix: reasoningFrag[1],
+            };
         }
         const op = dslOpPartial(line);
         if (op !== null) {
-            callback(null, completeOps(op));
-            return;
+            const [values, prefix] = completeOps(op);
+            return { suggestions: values.map((value) => ({ value, description: "Plurnk operation" })), prefix };
         }
         const partial = pathPartial(line);
         if (partial !== null) {
-            void completePath(partial, cwd).then((result) => callback(null, result));
-            return;
+            const [values, prefix] = await completePath(partial, options.cwd);
+            return { suggestions: values.map((value) => ({ value, description: "local path" })), prefix };
         }
-        callback(null, [[], line]);
+        return { suggestions: [], prefix: line };
     };
 
 export const makeAutocompleteProvider = (
-    completer: ReturnType<typeof makeCompleter>,
+    options: CompletionOptions,
 ): AutocompleteProvider => ({
     triggerCharacters: ["/", "#", "@"],
     getSuggestions: async (lines, cursorLine, cursorCol) => {
         const beforeCursor = lines.slice(0, cursorLine).concat(lines[cursorLine]?.slice(0, cursorCol) ?? "").join("\n");
-        const [hits, prefix] = await new Promise<[string[], string]>((accept, reject) => {
-            completer(beforeCursor, (error, result) => error === null ? accept(result) : reject(error));
-        });
-        if (hits.length === 0) return null;
+        const { suggestions, prefix } = await completeInput(beforeCursor, options);
+        if (suggestions.length === 0) return null;
         return {
-            items: hits.map((value): AutocompleteItem => ({ value, label: value })),
+            items: suggestions.map(({ value, description }): AutocompleteItem => ({ value, label: value, description })),
             prefix,
         };
     },
@@ -367,10 +333,17 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         ctx.setSpawnModel(model.spawnModel);
         ctx.setReasoning(await readWorkerReasoning(rpc));
     };
+    if (verb.length === 0) {
+        write(renderCommandHelp());
+        return;
+    }
+    if (!isCommandName(verb)) {
+        report(clientSubcommandUnknownVerb(`/${verb}`, [...VERBS]));
+        return;
+    }
     switch (verb) {
-        case "":
         case "help":
-            write(TUI_HELP);
+            write(renderCommandHelp(rest));
             return;
         case "models": await runModels(rpc, {
             json: false,
@@ -552,10 +525,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         case "quit":
             return "quit";
-        default:
-            report(clientSubcommandUnknownVerb(`/${verb}`, [...VERBS]));
-            return;
     }
+    verb satisfies never;
 };
 
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
@@ -710,11 +681,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
     const repromptPreserving = reprompt;
-    surface.setAutocompleteProvider(makeAutocompleteProvider(makeCompleter(
-            () => aliasCache,
-            process.cwd(),
-            () => workerReasoning.supportedPolicies,
-            async (provider) => {
+    surface.setAutocompleteProvider(makeAutocompleteProvider({
+            getAliases: () => aliasCache,
+            cwd: process.cwd(),
+            getReasoningPolicies: () => workerReasoning.supportedPolicies,
+            getProviderModels: async (provider) => {
                 // One bounded page per provider, cached for the session: lazy,
                 // provider-scoped, never the whole catalog.
                 const cached = providerModelCache.get(provider);
@@ -726,7 +697,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 providerModelCache.set(provider, selectors);
                 return selectors;
             },
-        )));
+            getFunctionalityAliases: async (family) => {
+                const result = await transport.rpc(`worker.${family}.list`, {}) as { definitions?: unknown };
+                if (!Array.isArray(result.definitions)) throw new TypeError(`worker.${family}.list returned an invalid result.`);
+                return result.definitions
+                    .map((definition) => definition !== null && typeof definition === "object"
+                        ? (definition as { alias?: unknown }).alias
+                        : undefined)
+                    .filter((alias): alias is string => typeof alias === "string");
+            },
+        }));
 
     const presentReasoning = (update: ReasoningUpdate): void => {
         if (update.phase === "start") {

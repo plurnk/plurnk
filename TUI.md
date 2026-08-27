@@ -13,8 +13,9 @@ client.
 
 - `plurnk "prompt"` is a Unix-style one-shot command. The final answer goes to
   stdout; narration and diagnostics go to stderr.
-- `plurnk` uses pi-tui's main-screen renderer and multiline editor. It preserves
-  normal terminal scrollback rather than taking over the alternate screen.
+- `plurnk` is a readline-style, main-buffer interaction built on pi-tui's
+  main-screen renderer and multiline editor. It preserves normal terminal
+  scrollback rather than taking over the alternate screen.
 - Prompts, command verbs, and raw DSL use the same AG-UI+ action/run transport.
   There is no client side channel or persistent socket.
 

@@ -356,7 +356,7 @@ test("exitCodeForLoop: 4xx/5xx → 4 (failure ≠ cancel)", () => {
 
 // ─── TUI verb helpers (converged language surface) ────────────────────
 
-const { parseSlash, makeCompleter, VERBS } = await import("./tui.ts");
+const { parseSlash, completeInput, VERBS } = await import("./tui.ts");
 
 test("parseSlash: verb + args", () => {
     assert.deepEqual(parseSlash("/model gemma"), { verb: "model", rest: "gemma" });
@@ -364,9 +364,10 @@ test("parseSlash: verb + args", () => {
     assert.deepEqual(parseSlash("/"), { verb: "", rest: "" });
 });
 
-// The callback adapter remains a convenient way to exercise completion results.
-const complete = (getAliases: () => string[], line: string): Promise<[string[], string]> =>
-    new Promise((res) => makeCompleter(getAliases, process.cwd())(line, (_e, r) => res(r)));
+const complete = async (getAliases: () => string[], line: string): Promise<[string[], string]> => {
+    const result = await completeInput(line, { getAliases, cwd: process.cwd() });
+    return [result.suggestions.map(({ value }) => value), result.prefix];
+};
 
 test("completer: verb fragments complete", async () => {
     const [hits] = await complete(() => [], "/mo");
@@ -385,13 +386,12 @@ test("completer: /model completes aliases", async () => {
 });
 
 test("completer: /reasoning derives choices from the daemon response", async () => {
-    const result = await new Promise<[string[], string]>((resolve) =>
-        makeCompleter(
-            () => [],
-            process.cwd(),
-            () => ["off", "adaptive", "high"],
-        )("/reasoning a", (_error, completed) => resolve(completed)));
-    assert.deepEqual(result, [["adaptive"], "a"]);
+    const result = await completeInput("/reasoning a", {
+        getAliases: () => [],
+        cwd: process.cwd(),
+        getReasoningPolicies: () => ["off", "adaptive", "high"],
+    });
+    assert.deepEqual([result.suggestions.map(({ value }) => value), result.prefix], [["adaptive"], "a"]);
 });
 
 test("completer: /child completes inherit and aliases", async () => {
@@ -404,6 +404,23 @@ test("completer: /mcp offers the alias lifecycle verbs", async () => {
     const [verbs, fragment] = await complete(() => [], "/mcp en");
     assert.deepEqual(verbs, ["enable"]);
     assert.equal(fragment, "en");
+});
+
+test("completer: Functionality aliases are fetched only at alias-taking positions", async () => {
+    const fetched: string[] = [];
+    const options = {
+        getAliases: () => [],
+        cwd: process.cwd(),
+        getFunctionalityAliases: async (family: "mcp" | "skills" | "agents") => {
+            fetched.push(family);
+            return ["brave", "browser"];
+        },
+    };
+    await completeInput("/mcp en", options);
+    assert.deepEqual(fetched, [], "subcommand discovery does not preload definitions");
+    const result = await completeInput("/mcp enable br", options);
+    assert.deepEqual(result.suggestions.map(({ value }) => value), ["brave", "browser"]);
+    assert.deepEqual(fetched, ["mcp"]);
 });
 
 test("completer: plain text completes nothing", async () => {

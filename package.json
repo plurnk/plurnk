@@ -1,7 +1,7 @@
 {
     "name": "@plurnk/plurnk",
     "version": "0.77.1",
-    "description": "Plurnk client app — CLI/TUI consuming plurnk-service. Type prompts at a terminal, drive real model loops through the protocol.",
+    "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive AG-UI client.",
     "type": "module",
     "license": "MIT",
     "publishConfig": {
@@ -30,9 +30,10 @@
         "test": "npm run test:lint && npm run test:unit && npm run test:intg && npm run test:tui",
         "test:all": "npm test",
         "deps:fresh": "npm outdated",
+        "build:clean": "node scripts/clean-dist.mjs",
         "build:dist": "tsc -p tsconfig.build.json",
         "build:info": "node scripts/write-build-info.mjs",
-        "build": "npm run build:dist && npm run build:info",
+        "build": "npm run build:clean && npm run build:dist && npm run build:info",
         "prepare": "git config core.hooksPath .githooks && npm run build",
         "prepublishOnly": "npm run test && npm audit --audit-level=high && npm run deps:fresh && npm run test:composition",
         "pretest:tui": "npm run build",

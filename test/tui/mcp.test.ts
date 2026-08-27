@@ -81,7 +81,9 @@ describe("TUI workspace MCP dogfood", () => {
             tui.write("/mcp disable current\r");
             await tui.waitFor(/disabled: current \(disabled\)/, 20_000);
 
-            tui.write("/mcp enable current\r");
+            tui.write("/mcp enable cur\t");
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            tui.write("\t\r");
             await tui.waitFor(/enabled: current \(active\)/, 20_000);
 
             tui.write(`/mcp add legacy ${legacyTarget} "${legacyDefinition}"\r`);

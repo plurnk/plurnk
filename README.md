@@ -1,6 +1,6 @@
 # plurnk
 
-A terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service). Type a prompt, drive a real model loop through the plurnk DSL — a compact grammar where the model emits operations, the daemon executes them against real workspaces, and the client renders the trace. CLI one-shot, interactive TUI, and state commands share ONE wire: AG-UI+ (the daemon's sole client surface).
+A terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service). Type a prompt, drive a real model loop through the plurnk DSL — a compact grammar where the model emits operations, the daemon executes them against real workspaces, and the client renders the trace. One-shot CLI, scrollback-native interactive terminal, and Neovim integration share ONE wire: AG-UI+ (the daemon's sole client surface).
 
 Plurnk gets its power from structure, not raw model capability: the grammar forces disciplined multi-turn loops, real receipts for every operation, and a budget the model can actually see and manage. Fancy agent behavior on weak models.
 
@@ -27,7 +27,7 @@ The client never starts a daemon. It POSTs runs/actions to the daemon's module a
 ## use
 
 ```
-plurnk                                       # interactive TUI (no args, a TTY)
+plurnk                                       # interactive terminal (no args, a TTY)
 plurnk "what is the capital of France?"      # one-shot — bare answer on stdout
 plurnk --json "…" | jq -r .response          # json mode: ONE complete record document
 plurnk --workspace project mcp enable gitea  # activate project-specialized config
@@ -39,9 +39,14 @@ plurnk --help                                # full flag list
 ```
 
 `plurnk render` is a daemon-free stdin/stdout filter for clients that want the
-TUI's width-aware GFM and Beautiful Mermaid projection as plain Unicode.
+terminal client's width-aware GFM and Beautiful Mermaid projection as plain Unicode.
 
-**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. On a terminal, one replaceable status row shows lifecycle, the worker's durable model, observed turn progress, and current indexing activity; indexing repaints at most every 15 seconds and redirected stderr omits routine progress history. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `notices` + the daemon's exact `usage.accounting` envelope), stderr silent, failures as RFC 9457 Problems under `{"problem":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
+**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. On a terminal, one replaceable status row shows authoritative lifecycle, durable model, packet count, and current activity; indexing repaints at most every 15 seconds and redirected stderr omits routine progress history. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `notices` + the daemon's exact `usage.accounting` envelope), stderr silent, failures as RFC 9457 Problems under `{"problem":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
+
+The one-shot CLI is the pipeline surface, the interactive terminal is a
+readline-style main-buffer conversation with real multiline editing, and
+plurnk.nvim is a native editor surface. None is a protocol intermediary for
+another; each speaks AG-UI+ directly.
 
 Readable provider reasoning appears as a distinct `💭` trace before the paired
 SEND. It comes from AG-UI's standard reasoning events; PLAN remains the model's
@@ -52,7 +57,7 @@ durable public work inventory.
 | | |
 |---|---|
 | `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/models /workspaces /workers /log /model /child /reasoning /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, membership `/pick /hide /view /drop /members`, `/import <path>`, workspace MCP `/mcp`, and universal Agent Skills `/skills` |
+| `/verb` | `/help /models /workspaces /workers /log /members` · `/model /child /reasoning /yolo` · `/workspace /rename /worker /pick /hide /view /drop` · `/mcp /skills /agents` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
 | `! cmd` | exec via the daemon |
 
 **Key flags:** `--model <selector>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · membership `--pick/--hide/--view <glob>` · `--files-items <n>` · `--md NAME=path`.
@@ -65,11 +70,9 @@ The model emits operations in a compact grammar; the daemon executes them, persi
 
 ```
 # PLAN0
-{"entries":[{"content":"Update the capital, then answer.","status":"in_progress"}]}
-
+[{"content":"Update the capital, then answer.","status":"in_progress"}]
 ## EDIT0 [+france,+europe] (worker:///countries/france/capital)
 Paris
-
 ## SEND0 [200]
 Paris
 ```

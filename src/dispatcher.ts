@@ -131,7 +131,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
 Connects to the plurnk-service daemon. Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
-enters the interactive REPL. Read-only subcommands (models / workspace list /
+enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list /
 log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env

@@ -241,6 +241,30 @@ Triggered when `argv` has no positional prompt.
 4. While a dispatch is in flight, additional input is rejected with a "busy" notice (except `/stop`, `/help`, and a bare `...`/`?`/`:` prompt, which injects).
 5. `Ctrl-C` or `EOF` exits cleanly.
 
+### §3.1.1 Interactive command discovery {§cli-interactive-command-discovery}
+
+One command registry owns the supported slash verbs, their groups, exact usage,
+summaries, nested Functionality verbs, root completion, and contextual help.
+Dispatch is exhaustive over that inventory. `/help` renders a compact grouped
+index; `/help <verb>` renders that verb's usage and nested forms. Public docs and
+the generated man page are checked against the same inventory.
+
+| Group | Verbs |
+|---|---|
+| Inspect | `/help /models /workspaces /workers /log /members` |
+| Policy | `/model /child /reasoning /yolo` |
+| Workspace | `/workspace /rename /worker /pick /hide /view /drop` |
+| Functionality | `/mcp /skills /agents` |
+| Compose | `/import /script /editor` |
+| Review | `/accept /reject /cancel /edit` |
+| Session | `/stop /quit` |
+
+Completion remains demand-driven. The client offers local syntax and known
+model aliases without I/O; provider-qualified models use one bounded provider
+page; MCP, Skill, and A2A aliases call only that Functionality family's list
+action after the cursor reaches an alias-taking position. A failed lazy lookup
+produces no completion and never changes the editor value.
+
 ### §3.2 Cancellation {§cli-cancellation}
 
 `/editor` (Alt-e) composes the current multiline value in `$VISUAL`/`$EDITOR`

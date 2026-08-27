@@ -5,6 +5,7 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { commandUsage } from "./commands.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -158,8 +159,8 @@ const renderMutation = (
     write(`  ${verb}: ${alias}${state}\n`);
 };
 
-const usage = (write: (text: string) => void): void => {
-    write("  usage: /mcp [discover <url|command> | add <alias> <target> [options.json] | enable <alias> [options.json] | disable|remove <alias> | oauth <alias> <callback-url>]\n");
+const usage = (write: (text: string) => void, subcommand?: string): void => {
+    write(`  usage: ${commandUsage("mcp", subcommand)}\n`);
 };
 
 const candidatesFrom = async (rpc: ActionCaller, overlay: Readonly<Record<string, string>>): Promise<Candidate[]> => {
@@ -195,7 +196,7 @@ export const handleMcp = async (
 
     if (command === "discover") {
         if (args.length !== 2 || alias.length === 0) {
-            write("  usage: /mcp discover <url|command>\n");
+            usage(write, "discover");
             return null;
         }
         const result = await rpc.call("worker.mcp.discover", { source: alias }) as { candidates?: unknown };
@@ -207,7 +208,7 @@ export const handleMcp = async (
 
     if (command === "add") {
         if (args.length < 3 || args.length > 4 || alias.length === 0 || args[2].length === 0) {
-            write("  usage: /mcp add <alias> <target> [options.json]\n");
+            usage(write, "add");
             return null;
         }
         const [, , target, path] = args;
@@ -219,7 +220,7 @@ export const handleMcp = async (
 
     if (command === "enable") {
         if (args.length < 2 || args.length > 3 || alias.length === 0) {
-            write("  usage: /mcp enable <alias> [options.json]\n");
+            usage(write, "enable");
             return null;
         }
         if (args[2] === undefined) {
@@ -245,7 +246,7 @@ export const handleMcp = async (
 
     if (command === "disable") {
         if (args.length !== 2 || alias.length === 0) {
-            write("  usage: /mcp disable <alias>\n");
+            usage(write, "disable");
             return null;
         }
         const result = await rpc.call("worker.mcp.disable", { alias }) as MutationResult;
@@ -255,7 +256,7 @@ export const handleMcp = async (
 
     if (command === "remove") {
         if (args.length !== 2 || alias.length === 0) {
-            write("  usage: /mcp remove <alias>\n");
+            usage(write, "remove");
             return null;
         }
         const result = await rpc.call("worker.mcp.remove", { alias });
@@ -265,7 +266,7 @@ export const handleMcp = async (
 
     if (command === "oauth") {
         if (args.length !== 3 || alias.length === 0 || args[2].length === 0) {
-            write("  usage: /mcp oauth <alias> <callback-url>\n");
+            usage(write, "oauth");
             return null;
         }
         const result = await rpc.call("worker.mcp.oauth.complete", {

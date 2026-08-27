@@ -88,7 +88,7 @@ describe("TUI pty harness", () => {
             await key("/help\r");
             // The mistyped line echoes while composed but never executes: the
             // submit after Esc runs /help, and no unknown-verb Problem fires.
-            const out = await tui.waitFor(/\/quit\s+exit/, 8_000);
+            const out = await tui.waitFor(/session\s+\/stop \/quit/, 8_000);
             assert.doesNotMatch(out, /unknown subcommand/, "the escaped line never executed");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
@@ -113,7 +113,7 @@ describe("TUI pty harness", () => {
             await key("/helx");                 // a seed the editor replaces
             await key("\x1be");                 // Alt-e → $VISUAL
             await key("\r");                    // Enter submits the edited line
-            const out = await tui.waitFor(/\/quit\s+exit/, 8_000);
+            const out = await tui.waitFor(/session\s+\/stop \/quit/, 8_000);
             assert.doesNotMatch(out, /unknown subcommand/, "the edited line ran, not the seed");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);

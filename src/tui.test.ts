@@ -7,16 +7,23 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
-test("help uses the settled worker and membership vocabulary", () => {
-    assert.match(TUI_HELP, /\/worker \[name\]\s+create a new worker/);
-    assert.doesNotMatch(TUI_HELP, /workspace>worker>loop>turn>op|manifest|remove a matching rule/);
-    assert.match(TUI_HELP, /\/pick <glob>\s+track file\(s\)/);
-    assert.match(TUI_HELP, /\/view <glob>\s+track file\(s\) \(read-only\)/);
-    assert.match(TUI_HELP, /\/drop <glob>\s+no longer pick file\(s\)/);
+test("help is a compact grouped index over commands and interaction grammar", () => {
+    assert.match(TUI_HELP, /inspect\s+\/help \/models/);
+    assert.match(TUI_HELP, /functionality\s+\/mcp \/skills \/agents/);
+    assert.match(TUI_HELP, /language\s+# PLAN0/);
+    assert.match(TUI_HELP, /\/help <verb>/);
+});
+
+test("handleVerb /help <verb> renders contextual registry usage without RPC", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/help mcp", ctx);
+    assert.deepEqual(ctx.calls, []);
+    assert.match(ctx.out.join(""), /\/mcp discover <url\|command>/);
+    assert.match(ctx.out.join(""), /\/mcp oauth <alias> <callback-url>/);
 });
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {
@@ -621,22 +628,23 @@ test("submitted multiline input becomes durable scrollback without the retired i
     assert.equal(renderSubmittedInput("first", false), "› first");
 });
 
-// ─── makeCompleter (/model provider-scoped catalog completion, plurnk#22) ───
+// ─── completion (/model provider-scoped catalog completion, plurnk#22) ───
 
 test("[§cli-plurnk-models] /model completion: aliases synchronously, provider prefixes lazily from one bounded catalog page", async () => {
     const fetched: string[] = [];
-    const complete = (line: string): Promise<[string[], string]> => new Promise((accept, reject) => {
-        makeCompleter(
-            () => ["fast", "smart"],
-            process.cwd(),
-            () => [],
-            async (provider) => {
+    const complete = async (line: string): Promise<[string[], string]> => {
+        const result = await completeInput(line, {
+            getAliases: () => ["fast", "smart"],
+            cwd: process.cwd(),
+            getReasoningPolicies: () => [],
+            getProviderModels: async (provider) => {
                 fetched.push(provider);
                 if (provider === "down") throw new Error("catalog unavailable");
                 return [`${provider}/gpt-5`, `${provider}/gpt-5-mini`, `${provider}/o4`];
             },
-        )(line, (err, result) => err === null ? accept(result) : reject(err));
-    });
+        });
+        return [result.suggestions.map(({ value }) => value), result.prefix];
+    };
     assert.deepEqual(await complete("/model fa"), [["fast"], "fa"], "a bare fragment completes declared aliases only");
     assert.deepEqual(fetched, [], "alias completion never touches the catalog");
     assert.deepEqual(await complete("/model openai/gpt"), [["openai/gpt-5", "openai/gpt-5-mini"], "openai/gpt"], "a provider prefix completes provider-scoped selectors");

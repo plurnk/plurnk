@@ -6,6 +6,7 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { commandUsage } from "./commands.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -120,8 +121,8 @@ const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "dis
     write(`  ${verb}: ${alias}${state}${problem}\n`);
 };
 
-const usage = (write: (text: string) => void): void => {
-    write("  usage: /agents [discover <url> | add <alias> <url> [options.json] | enable|disable|remove <alias>]\n");
+const usage = (write: (text: string) => void, subcommand?: string): void => {
+    write(`  usage: ${commandUsage("agents", subcommand)}\n`);
 };
 
 export const handleAgents = async (
@@ -143,7 +144,7 @@ export const handleAgents = async (
 
     if (command === "discover") {
         if (args.length !== 2 || alias.length === 0) {
-            write("  usage: /agents discover <url>\n");
+            usage(write, "discover");
             return null;
         }
         const result = await rpc.call("worker.agents.discover", { source: alias }) as { candidates?: unknown };
@@ -155,7 +156,7 @@ export const handleAgents = async (
 
     if (command === "add") {
         if (args.length < 3 || args.length > 4 || alias.length === 0 || args[2].length === 0) {
-            write("  usage: /agents add <alias> <url> [options.json]\n");
+            usage(write, "add");
             return null;
         }
         const [, , url, path] = args;
@@ -167,7 +168,7 @@ export const handleAgents = async (
 
     if (command === "enable" || command === "disable") {
         if (args.length !== 2 || alias.length === 0) {
-            write(`  usage: /agents ${command} <alias>\n`);
+            usage(write, command);
             return null;
         }
         const result = await rpc.call(`worker.agents.${command}`, { alias }) as MutationResult;
@@ -177,7 +178,7 @@ export const handleAgents = async (
 
     if (command === "remove") {
         if (args.length !== 2 || alias.length === 0) {
-            write("  usage: /agents remove <alias>\n");
+            usage(write, "remove");
             return null;
         }
         const result = await rpc.call("worker.agents.remove", { alias });

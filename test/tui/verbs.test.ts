@@ -68,13 +68,14 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("[§cli-import-and-bracketed-paste] bracketed paste folds to one [paste #N] marker (no per-line submit)", async (t) => {
+    test("[§cli-import-and-bracketed-paste] a small multiline paste remains one editable submission", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("\x1b[200~line one\nline two\nline three\x1b[201~");
-            await tui.waitFor(/\[paste #\d+ \+\d+ lines\]/);
+            tui.write("\x1b[200~## EDIT0 (worker:///pasted.md)\nline one\nline two\x1b[201~\r");
+            const output = await tui.waitFor(/final 2\d\d/, 15_000);
+            assert.equal(output.match(/worker:\/\/\/pasted\.md/g)?.length, 2, "one submitted prompt echo and one operation receipt");
         } finally { tui.kill(); }
     });
 
@@ -100,7 +101,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("/import <file> stashes the content behind a paste marker", async (t) => {
+    test("/import <file> inserts native multiline content into the composer", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const dir = await mkdtemp(join(tmpdir(), "plurnk-import-"));
         const file = join(dir, "note.md");
@@ -109,7 +110,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write(`/import ${file}\r`);
-            await tui.waitFor(/\[paste #\d+ \+\d+ lines\]/);
+            await tui.waitFor(/first line[\s\S]*second line[\s\S]*third line/);
         } finally { tui.kill(); await rm(dir, { recursive: true, force: true }); }
     });
 

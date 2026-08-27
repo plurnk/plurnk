@@ -13,8 +13,8 @@ client.
 
 - `plurnk "prompt"` is a Unix-style one-shot command. The final answer goes to
   stdout; narration and diagnostics go to stderr.
-- `plurnk` is a readline REPL. It streams output into normal terminal
-  scrollback rather than taking over the screen.
+- `plurnk` uses pi-tui's main-screen renderer and multiline editor. It preserves
+  normal terminal scrollback rather than taking over the alternate screen.
 - Prompts, command verbs, and raw DSL use the same AG-UI+ action/run transport.
   There is no client side channel or persistent socket.
 
@@ -23,23 +23,22 @@ client.
 The waterfall is intentionally compact: every row's primary glyph shares the
 prompt's left edge, with only the fields that identify its operation or state.
 Model broadcasts render as full response blocks rather than diagnostic rows.
-An active loop replaces the prompt's 🔥 with `⌛︎`; indexing and search progress
-temporarily replace that badge instead of appending an event for every
+The status row projects standard AG-UI state in lifecycle → model → packet →
+activity order. An active loop replaces idle 🔥 with `⌛︎`; indexing and search
+progress update the activity field instead of appending an event for every
 milestone. Serialized branch batches use the same compact treatment: 🌿 plus
 aggregate progress while active, followed by one completion, failure, or
 recovery line.
 
-The renderer respects `NO_COLOR`. Readline's fixed prompt slot permits only its
-two measured badges; append-only SEND output may use standard emoji sequences.
-Rendering details and exit behavior are specified and tested in `SPEC.md`;
-design history belongs in Git.
+The renderer respects `NO_COLOR`. Rendering details and exit behavior are
+specified and tested in `SPEC.md`; design history belongs in Git.
 
 ## Interaction
 
-Readline owns input editing, history, completion, and cancellation. The client
-does not maintain a virtual screen or duplicate terminal behavior. `Ctrl-C`
-cancels an active run and remains the escape hatch from the interactive client
-when idle.
+pi-tui owns multiline editing, history, completion presentation, paste framing,
+keyboard negotiation, cursor/IME behavior, resize, and scrollback rendering.
+Plurnk owns command and run semantics. `Ctrl-C` cancels an active run and
+remains the escape hatch from the interactive client when idle.
 
 Side-effect proposals are rendered for human review unless loop or client
 policy has already resolved them. A transport or resolution failure is shown

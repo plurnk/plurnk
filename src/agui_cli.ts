@@ -29,7 +29,7 @@ import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
-import TerminalStatusLine, { derivationActivity, type StatusActivity } from "./status.ts";
+import TerminalStatusLine, { derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
@@ -68,7 +68,7 @@ export interface CliRunSinks {
     review: (p: ProposalParams) => Promise<Resolution>;
     onActionResult?: (v: ActionOutcome) => void;
     onProgress?: (activity: StatusActivity | null) => void;
-    onTurn?: (turn: number) => void;
+    onStatus?: (status: ClientStatus) => void;
 }
 
 // Decide a stopped-world proposal: the AG-UI run ended
@@ -106,6 +106,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     const streams = new StreamTrace();
     const reasoning = new ReasoningEvents();
     const visibleReasoning = new Map<string, { atLineStart: boolean }>();
+    let statusGauge: StatusGaugeEnvelope | null = null;
     for await (const e of events) {
         if (e.type === "RUN_ERROR") {
             sawRunError = true;
@@ -133,6 +134,12 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             pendingResume = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
             continue;
         }
+        const state = reduceStatusGauge(statusGauge, e);
+        if (state.handled) {
+            statusGauge = state.gauge;
+            if (!io.json) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status));
+            continue;
+        }
         const reasoningEvent = reasoning.consume(e);
         if (reasoningEvent.handled) {
             const update = reasoningEvent.update;
@@ -157,9 +164,6 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const workerId = (entry as { worker_id?: number }).worker_id;
             if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
             const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
-            if (belongsToRun && entry.origin === "model" && Number.isSafeInteger(entry.turn_seq)) {
-                io.onTurn?.(entry.turn_seq);
-            }
             if (belongsToRun && isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
             if (io.json) { entries.push(entry); continue; }
             io.err(`${formatPlain(entry)}\n`);
@@ -250,7 +254,7 @@ export const runCliViaBridge = async (
     const statusLine = new TerminalStatusLine(
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
-        { lifecycle: "running", model: opts.modelLabel ?? null, turn: null, activity: null },
+        { lifecycle: "running", model: opts.modelLabel ?? null, packetCount: null, activity: null },
     );
     statusLine.update({});
     const io = {
@@ -262,7 +266,7 @@ export const runCliViaBridge = async (
         err: (s: string) => statusLine.durable(s),
         notice: (notice: Parameters<typeof report>[0]) => statusLine.durable(`${renderDiagnostic(notice)}\n`),
         onProgress: (activity: StatusActivity | null) => statusLine.update({ activity }, { routine: true }),
-        onTurn: (turn: number) => statusLine.update({ turn }),
+        onStatus: (status: ClientStatus) => statusLine.update(status),
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,

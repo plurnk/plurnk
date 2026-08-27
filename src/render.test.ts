@@ -15,7 +15,6 @@ const {
     extractSendBody,
     renderLogEntry,
     renderReasoning,
-    renderReasoningFrame,
     renderSummary,
     curationGauge,
     contextGauge,
@@ -114,25 +113,6 @@ test("extractSendBody prettify=true: plain text → raw verbatim", () => {
 
 test("renderReasoning: distinct, compact block with no coordinate or status code", () => {
     assert.equal(renderReasoning("first line\nsecond line"), "💭 first line\n   second line");
-});
-
-test("[§cli-provider-reasoning] renderReasoningFrame commits complete rows and retains only the live tail", () => {
-    assert.deepEqual(renderReasoningFrame("first\nsecond", 80), {
-        committed: ["💭 first"],
-        tail: "   second",
-    });
-    assert.deepEqual(renderReasoningFrame("abcdefghijklmnop", 20), {
-        committed: ["💭 abcdefghijklmno"],
-        tail: "   p",
-    });
-});
-
-test("renderReasoningFrame preserves explicit blank lines without inventing an empty tail", () => {
-    assert.deepEqual(renderReasoningFrame("first\n\n", 80), {
-        committed: ["💭 first", "   "],
-        tail: null,
-    });
-    assert.deepEqual(renderReasoningFrame("", 80), { committed: [], tail: null });
 });
 
 // ─── renderLogEntry: target rendering ────────────────────────────────

@@ -102,12 +102,12 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 
 ### §1.2.1 Worker status {§cli-worker-status}
 
-Human status presents only facts already owned by the client: run lifecycle,
-the durable route returned by `worker.model.get`/`worker.model.set`, the latest
-model turn coordinate observed in `plurnk.row`, and ephemeral derivation
-activity from `engine:derivation/embed_progress`. It never labels row or turn
-counts as provider packets. Presentation order is lifecycle → model → turn →
-activity; exact terminal turn count and accounting remain in the loop summary.
+Human status projects the authoritative AG-UI `STATE_SNAPSHOT` and subsequent
+`STATE_DELTA` values: lifecycle → durable model → packet count → activity. The
+client does not infer provider packets from operation rows or turn coordinates.
+Before the first state snapshot, durable worker policy and local derivation
+activity provide an honest startup fallback. Exact accounting remains in the
+loop summary.
 
 ### §1.2.2 Child provider selection {§cli-child-provider-selection}
 
@@ -223,15 +223,15 @@ Triggered when `argv` has no positional prompt.
 ### §3.1 Flow {§cli-tui-flow}
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
-2. Print the banner; enter the readline loop with the shared worker status
-   followed by the `: ` input affordance. Its client-owned facts read lifecycle
-   → model → observed turn → activity. Derivation, search, and branch activity
-   share the activity position. The
+2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
+   and a compact status row. Authoritative status reads lifecycle → model →
+   packet count → activity. Before AG-UI state arrives, derivation, search, and
+   branch activity share the fallback activity position. The
    lifecycle glyph is `⌛︎` while running, 💤 while parked, `⏹️` when complete,
-   and ❌ on failure; idle YOLO may use 🔥. Output lines may render standard
-   emoji sequences because output requires no readline cursor positioning.
+   and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
+   ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Tab completion (readline completer, no screen takeover) covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus membership verbs `/pick <glob> /hide <glob> /view <glob> /drop <glob> /members` (§1.4), `/import <path>` (§3.3), and workspace MCP controls (§3.4). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; membership verbs apply live via `workspace.constrain`/`workspace.unconstrain`; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/pick`/`/hide`/`/view`/`/import`, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
@@ -243,19 +243,28 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.2 Cancellation {§cli-cancellation}
 
-`/editor` (Alt-e) composes the prompt line in `$VISUAL`/`$EDITOR` (fallback `vi`): the composed line — markers expanded — seeds a tmpfile buffer, and the editor's result is placed BACK on the line (multi-line results collapse to a paste marker), never auto-submitted — a prompt line spends model tokens, so Enter stays the only submit (zsh `edit-command-line`, not bash `C-x C-e` execute-on-exit). An empty buffer leaves the line unchanged. The spawn is the proposal-edit terminal handoff, bounded to the editor's lifetime.
+`/editor` (Alt-e) composes the current multiline value in `$VISUAL`/`$EDITOR`
+(fallback `vi`): the value seeds a tmpfile buffer and the editor's result is
+placed back in the composer, never auto-submitted. Enter remains the only submit
+gesture. An empty buffer leaves the value unchanged. pi-tui relinquishes and
+reclaims terminal custody for the bounded editor process.
 
-`Esc` is the same interrupt in its modern agent-CLI spelling: a bare Esc keypress while a dispatch is in flight fires `loop.cancel` (reason `user_escape`) through the identical cancel path, and while idle clears the composed line; Esc never exits. A lone-ESC stdin chunk means the Esc KEY — the same whole-chunk rule the Alt-shortcuts rely on — and is read before the bracketed-paste filter, which would otherwise hold it as a possible split paste-marker prefix.
+`Esc` is the same interrupt in its modern agent-CLI spelling: while a dispatch
+is in flight it fires `loop.cancel` (reason `user_escape`) through the identical
+cancel path, and while idle it clears the composed value; Esc never exits.
+pi-tui owns escape-sequence reassembly and keyboard-protocol negotiation.
 
-`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the REPL continues. A failed cancel SURFACES on the terminal — a stop control that silently does nothing is the worst kind of broken. A second `Ctrl-C` (or `Ctrl-C` while idle) closes the readline interface — the escape hatch for dispatches a drain-cancel can't unblock (`op.parse`). (Dropping a conversation run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
+`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits — the escape hatch for dispatches a drain-cancel cannot unblock (`op.parse`). (Dropping a conversation run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 
 ### §3.3 `/import` and bracketed paste {§cli-import-and-bracketed-paste}
 
-`/import <path>` reads a **local** file (co-location law — the client reads its own fs, the daemon never sees the path) and stashes its content into the prompt buffer, reusing the paste machinery (§below): a short marker lands in the line and expands to the full content on submit, framed however you type. Relative paths resolve against cwd; an unreadable file prints an error and is a no-op.
+`/import <path>` reads a **local** file (co-location law — the client reads its own fs, the daemon never sees the path) and inserts its content at the editor cursor. Relative paths resolve against cwd; an unreadable file prints an error and is a no-op.
 
-**Bracketed paste.** A multi-line paste must become ONE prompt, not one `loop.run` per line. The client filters stdin through a paste filter and feeds readline a `PassThrough`, buffering the paste between the terminal's `?2004` markers so the whole block submits as a single prompt. Stream plumbing only — no cursor/width math.
+**Bracketed paste.** A multiline paste is one editable value and therefore one
+submission, never one `loop.run` per line. pi-tui owns bracketed-paste framing;
+small pastes remain native lines and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
@@ -380,9 +389,9 @@ exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🤖 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled). The exact standard variation sequences are safe here because each SEND is append-only output anchored at column zero; neither a shared following column nor readline cursor math depends on their display width.
+**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🤖 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
 
-**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The service's actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is **skipped entirely** in the TUI waterfall: the line the user typed at the readline prompt is already their record, and rendering the durable row too would duplicate every prompt. (Erasing the typed echo instead would require terminal-row math over emoji/nerdfont-width prompts — out of bounds by policy: the TUI stays brutally simple and works on every modern terminal.)
+**Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's corresponding actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is therefore skipped to avoid duplication.
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 

@@ -1,4 +1,4 @@
-// TUI mode — interactive REPL with glyph waterfall. Vanilla ANSI + readline.
+// TUI mode — interactive Plurnk client on pi-tui's main-screen renderer.
 // Per TUI.md §3.
 //
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
@@ -10,18 +10,15 @@
 //   ? text         ask — loop.run with flags.mode="ask"
 //   : text         act (the default)
 //   text           prompt
-// The readline prompt is `[🔥|⌛︎|progress%]: `: one three-cell slot, then input.
-
-import readline from "node:readline";
-import { PassThrough } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import PasteFilter from "./paste.ts";
+import { matchesKey, type AutocompleteItem, type AutocompleteProvider } from "@earendil-works/pi-tui";
+import TuiSurface from "./tui-surface.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoningFrame, renderSummary, isPromptEntry, progressLabel, entryTarget, isEntryMaterialization } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization } from "./render.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -47,7 +44,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { derivationActivity, renderStatusLine, type ClientStatus, type StatusLifecycle } from "./status.ts";
+import { derivationActivity, projectStatusGauge, renderStatusLine, type ClientStatus, type StatusLifecycle } from "./status.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     if (cause instanceof ProblemError) {
@@ -55,28 +52,6 @@ export const renderTuiFailure = (cause: unknown): string => {
             + (cause.problem.status === 501 ? NO_MODEL_HINT : "");
     }
     return `  \x1b[31merror: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`;
-};
-
-export const renderInputPrompt = (
-    yolo: boolean,
-    activePercent: number | null,
-    loopActive: boolean = false,
-    status: ClientStatus | null = null,
-): string => {
-    const progressActive = activePercent !== null
-        && Number.isFinite(activePercent)
-        && activePercent < 100;
-    if (status !== null) {
-        return `${renderStatusLine({
-            ...status,
-            lifecycle: loopActive ? "running" : status.lifecycle,
-            activity: status.activity ?? (progressActive ? { label: "", percent: Math.floor(activePercent) } : null),
-        }, { idleGlyph: yolo ? "🔥" : "" })}\x1b[1m: \x1b[0m`;
-    }
-    const slot = progressActive ? progressLabel(activePercent)
-        : loopActive ? "⌛︎ "
-            : yolo ? "🔥 " : "   ";
-    return `${slot}\x1b[1m: \x1b[0m`;
 };
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
@@ -126,37 +101,18 @@ export const TUI_HELP = [
     "  # PLAN0 / ## OP0                  raw PLURNK (op.parse)",
     "  ## LOOK0 (uri)                    off-run READ — inspect a uri for you, not the model",
     "  Alt-p / Alt-n                     cycle ## LOOK0 through prior operations' targets",
-    "  Ctrl-J / Alt-Enter                 insert a ↵ newline (editable); Enter submits",
+    "  Shift-Enter / Ctrl-J               insert a newline; Enter submits",
     "  Esc                               cancel the running loop; idle: clear the line",
     "  /editor · Alt-e                    compose the prompt line in $EDITOR",
     "  Alt-m/s · Alt-R/L/Y/N/M · Alt-x    quick verbs (nvim case): models workspaces runs",
     "                                     log yolo workspace members stop · Alt-h help",
 ].join("\n") + "\n";
 
-// The non-submitting newline keys, by their raw byte sequence (post paste
-// filter): Ctrl-J is LF (`\n`, a distinct byte from Enter's CR — works on every
-// terminal); Alt-Enter is Meta+Return (ESC then CR/LF). Enter itself is CR
-// (`\r`) and is NOT matched here, so it still submits. Shift-Enter is absent by
-// design (it can't be distinguished without the kitty/modifyOtherKeys protocol).
-export const isNewlineKey = (forward: string): boolean =>
-    forward === "\n" || forward === "\x1b\r" || forward === "\x1b\n";
-
-// A soft-enter inserts this single-width glyph into readline's ONE line, so the
-// whole multi-line buffer stays natively editable (backspace deletes the ↵ to
-// rejoin; arrows/history cross it; readline owns the wrapping). On submit it
-// expands back to a real newline. A pasted literal ↵ is preserved — expansion
-// runs on the typed line BEFORE paste markers expand, so paste content is
-// untouched.
-export const NL_MARK = "↵";
-export const expandNewlines = (line: string): string => line.replaceAll(NL_MARK, "\n");
-
 // Muscle-memory quick-keys, converged with plurnk.nvim's `<leader>a<letter>`
 // mnemonics — SAME CASE as nvim (lowercase m/s/x, capital R/L/Y/N/M), which
 // Alt-<letter> can carry (Alt-m = `ESC m`, Alt-M = `ESC M` — distinct bytes).
-// Delivered as Alt not Ctrl because Ctrl-<letter> collides with terminal/
-// readline control codes: Ctrl-m IS Enter, Ctrl-Shift-m is ALSO Enter (Shift
-// doesn't change a control code), Ctrl-s is XOFF, Ctrl-i is Tab, and readline
-// owns a/e/n/p/u/w/k/l. Alt-b/f/d are skipped (readline word-ops).
+// Delivered as Alt not Ctrl because Ctrl-<letter> collides with terminal and
+// editor control keys. Alt-b/f/d remain the editor's word operations.
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     m: "/models", s: "/workspaces", R: "/workers", L: "/log",
     Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", h: "/help", e: "/editor",
@@ -164,7 +120,7 @@ export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
 
 // An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
 // or function key) mapped to its verb, or null. Case-sensitive (mirrors nvim).
-// Reassembled by the paste filter whether it arrives in one chunk or split.
+// pi-tui's terminal buffer reassembles split escape sequences.
 export const altShortcut = (forward: string): string | null => {
     const m = forward.match(/^\x1b([a-zA-Z])$/);
     return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
@@ -186,12 +142,11 @@ export const lineMode = (trimmed: string, base?: Record<string, unknown>): { fla
     return { ...(flags !== undefined ? { flags } : {}), prompt: trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "") };
 };
 
+export const renderSubmittedInput = (text: string, yolo: boolean): string =>
+    text.split("\n").map((line, index) => `${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}`).join("\n");
+
 // Alt-p / Alt-n cycle the LOOK target through prior operations (prev/next op).
-// Alt-<letter> (`ESC<letter>`) survives the input pipeline intact — the paste
-// filter always holds a lone ESC and reassembles `ESC<letter>`, the same path the
-// Alt verb shortcuts use — whereas a Shift-Up CSI (`ESC[1;2A`) fragments at `ESC[1`
-// and leaks to readline as history-prev. Caught before altShortcut (which has no
-// lowercase p/n binding). null = not a cycle key.
+// null = not a cycle key.
 export const cycleKey = (forward: string): "up" | "down" | null =>
     forward === "\x1bp" ? "up" : forward === "\x1bn" ? "down" : null;
 
@@ -210,10 +165,8 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
     return { verb: m?.[1] ?? "", rest: (m?.[2] ?? "").trim() };
 };
 
-// readline completer — verbs after `/`, model aliases after `/model ` or `/child `.
-// Plain readline machinery only; no screen takeover, no terminal hell.
-// readline's async completer form (arity 2 → async). Verb/alias completion
-// answers synchronously; path positions read the local fs (co-location law)
+// Completion contract — verbs after `/`, model aliases after `/model ` or `/child `.
+// Verb/alias completion answers synchronously; path positions read the local fs
 // and answer once readdir resolves. A fragment holding a provider prefix
 // (`/model openai/…`) completes lazily from one bounded, provider-scoped
 // daemon catalog page ([§cli-plurnk-models]); the client never preloads or
@@ -292,16 +245,46 @@ export const makeCompleter = (
         callback(null, [[], line]);
     };
 
-// Seed readline history from the workspace's prior prompts (svc#238) so up/down
-// recalls them across restarts. One clean RPC — newest-first, exactly what
-// rl.history wants. Best-effort: a fresh workspace has none, failures are silent.
-export const seedPromptHistory = async (rpc: VerbCaller, workspaceId: number, rl: readline.Interface): Promise<void> => {
+export const makeAutocompleteProvider = (
+    completer: ReturnType<typeof makeCompleter>,
+): AutocompleteProvider => ({
+    triggerCharacters: ["/", "#", "@"],
+    getSuggestions: async (lines, cursorLine, cursorCol) => {
+        const beforeCursor = lines.slice(0, cursorLine).concat(lines[cursorLine]?.slice(0, cursorCol) ?? "").join("\n");
+        const [hits, prefix] = await new Promise<[string[], string]>((accept, reject) => {
+            completer(beforeCursor, (error, result) => error === null ? accept(result) : reject(error));
+        });
+        if (hits.length === 0) return null;
+        return {
+            items: hits.map((value): AutocompleteItem => ({ value, label: value })),
+            prefix,
+        };
+    },
+    applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+        const current = lines[cursorLine] ?? "";
+        const before = current.slice(0, cursorCol);
+        const after = current.slice(cursorCol);
+        const replaceFrom = Math.max(0, before.length - prefix.length);
+        const completed = `${before.slice(0, replaceFrom)}${item.value}`;
+        const next = [...lines];
+        next[cursorLine] = completed + after;
+        return { lines: next, cursorLine, cursorCol: completed.length };
+    },
+});
+
+// Seed editor history from prior workspace prompts. The server returns newest
+// first; the surface owns the insertion order required by its editor.
+export const seedPromptHistory = async (
+    rpc: VerbCaller,
+    workspaceId: number,
+    history: { addHistory(promptsNewestFirst: readonly string[]): void },
+): Promise<void> => {
     try {
         // Bridge mode has no client-known workspace id → omit it (the connection's
         // attached workspace answers); WS passes the real id.
         const params = workspaceId > 0 ? { id: workspaceId, limit: 100 } : { limit: 100 };
         const { prompts } = await rpc.call("workspace.prompts", params) as { prompts?: string[] };
-        if (Array.isArray(prompts) && prompts.length > 0) (rl as unknown as { history: string[] }).history = prompts;
+        if (Array.isArray(prompts) && prompts.length > 0) history.addHistory(prompts);
     } catch { /* history is a convenience; never block the REPL */ }
 };
 
@@ -526,8 +509,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "import":
-            // Dump a LOCAL file's content into the prompt (co-location law),
-            // via the paste machinery. The rl/paste glue lives in ctx.importFile.
+            // Dump a LOCAL file's content into the multiline composer.
             if (rest.length === 0) { write("  usage: /import <path>\n"); return; }
             await ctx.importFile(rest);
             return;
@@ -591,6 +573,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Loop state, hoisted so the line handler and SIGINT can share it.
     let inFlight = false;
     let cancelRequested = false;
+    let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
     // One cancel path for every interrupt gesture (Ctrl-C, Esc, /stop): the
     // run's active drain cancels via loop.cancel; the pending loop resolves
     // 499 and the REPL continues. A failed cancel SURFACES — a stop button
@@ -598,14 +581,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const requestCancel = (reason: string): void => {
         if (cancelRequested) return;
         cancelRequested = true;
-        process.stdout.write("\r\x1b[2K  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m\n");
+        printAbove("  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m");
         void transport.rpc("loop.cancel", { reason }).catch((err: unknown) => {
-            process.stdout.write(`\r\x1b[2K  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m\n`);
+            printAbove(`  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m`);
         });
     };
     // Ephemeral progress projected into the prompt while background work is active.
     let lifecycle: StatusLifecycle = "idle";
-    let observedTurn: number | null = null;
+    let authoritativeStatus: ClientStatus | null = null;
     let embedding = false;
     let embeddingPercent: number | null = null;
     let searchFetching = false;
@@ -616,22 +599,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
     const priorTargets: string[] = [];
     let lookCursor: number | null = null;
-    let liveReasoning: {
-        messageId: string;
-        columns: number;
-        committed: number;
-        tail: string | null;
-        tailShown: boolean;
-    } | null = null;
-
-    // Print a line ABOVE the live readline prompt without eating the user's
-    // in-progress input. The canonical "log while prompting" idiom: wipe the
-    // prompt row, write the line, then re-render the prompt + current buffer on
-    // the row below (rl.prompt(true) preserves what's typed). This is what lets a
-    // loop stream traces AND keep a steer prompt the user can inject into — no
-    // cursor/width math, readline owns the redraw. Reassigned to the real impl
-    // once rl exists; until then (no loop can be running yet) it just appends.
-    let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
+    let liveReasoning: { messageId: string; rendered: string } | null = null;
+    let pendingProposal: ProposalParams | null = null;
+    let pendingQuestion: { interactionId: number; schema: Record<string, unknown> } | null = null;
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
@@ -704,12 +674,18 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         reasoningPolicy: workerReasoning.policy,
         yolo: opts.yolo,
     });
-    process.stdout.write(`\x1b[2m${header}\x1b[0m\n\n`);
-    if (reasoningFailure !== undefined) process.stdout.write(`${renderTuiFailure(reasoningFailure)}\n`);
+    const surface = new TuiSurface();
+    printAbove = (text) => surface.append(text);
+    surface.append(`\x1b[2m${header}\x1b[0m`);
+    surface.append("");
+    if (reasoningFailure !== undefined) printAbove(renderTuiFailure(reasoningFailure));
 
     // Client-owned lifecycle and model lead the input affordance; ephemeral
     // derivation, search, and branch work share its final activity position.
-    const buildPrompt = (): string => {
+    const buildStatus = (): string => {
+        if (authoritativeStatus !== null) {
+            return renderStatusLine(authoritativeStatus, { idleGlyph: opts.yolo ? "🔥" : "" });
+        }
         const branchCompleted = Number(branchBatch?.completed);
         const branchTotal = Number(branchBatch?.total);
         const branchPercent = branchBatch !== null
@@ -718,9 +694,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             && branchTotal > 0
             ? Math.floor((branchCompleted / branchTotal) * 100)
             : null;
-        const activePercent = embedding ? embeddingPercent
-            : searchFetching ? searchPercent
-                : branchPercent;
         const activity = embedding ? { label: "indexing", percent: embeddingPercent }
             : searchFetching ? { label: "search", percent: searchPercent }
                 : branchPercent !== null ? { label: "branches", percent: branchPercent }
@@ -728,28 +701,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const model = workerModel === null
             ? opts.modelSelector ?? activeAlias ?? null
             : resolvedModelLabel(workerModel);
-        return renderInputPrompt(opts.yolo, activePercent, inFlight, {
-            lifecycle,
+        return renderStatusLine({
+            lifecycle: inFlight ? "running" : lifecycle,
             model,
-            turn: observedTurn,
+            packetCount: null,
             activity,
-        });
+        }, { idleGlyph: opts.yolo ? "🔥" : "" });
     };
-    // Bracketed-paste buffering (paste.ts): a multi-line paste must become ONE
-    // prompt, not one loop.run per line. readline reads a PassThrough we feed
-    // filtered stdin into; since the input is no longer the TTY directly, raw
-    // mode and ?2004 are ours to manage (terminal:true keeps readline's
-    // keypress decoding). Stream plumbing only — no cursor/width math.
-    const paste = new PasteFilter();
-    const input = new PassThrough();
-    process.stdin.setRawMode?.(true);
-    process.stdout.write("\x1b[?2004h");
-    const rl = readline.createInterface({
-        input,
-        output: process.stdout,
-        terminal: true,
-        prompt: buildPrompt(),
-        completer: makeCompleter(
+    const reprompt = (): void => surface.setStatus(buildStatus());
+    const repromptPreserving = reprompt;
+    surface.setAutocompleteProvider(makeAutocompleteProvider(makeCompleter(
             () => aliasCache,
             process.cwd(),
             () => workerReasoning.supportedPolicies,
@@ -765,93 +726,29 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 providerModelCache.set(provider, selectors);
                 return selectors;
             },
-        ),
-    });
-    const reprompt = (): void => {
-        readline.cursorTo(process.stdout, 0);
-        readline.clearLine(process.stdout, 0);
-        rl.setPrompt(buildPrompt());
-        rl.prompt();
-    };
-    // Repaint the prompt preserving a typed-in inject (rl.prompt(true)) — used
-    // when active progress changes mid-typing. The
-    // printAbove idiom; readline owns the redraw, no cursor/width math.
-    const repromptPreserving = (): void => {
-        readline.cursorTo(process.stdout, 0);
-        readline.clearLine(process.stdout, 0);
-        rl.setPrompt(buildPrompt());
-        rl.prompt(true);
-    };
-    const clearPromptAndLiveReasoning = (): void => {
-        readline.cursorTo(process.stdout, 0);
-        readline.clearLine(process.stdout, 0);
-        if (liveReasoning?.tailShown === true) {
-            readline.moveCursor(process.stdout, 0, -1);
-            readline.cursorTo(process.stdout, 0);
-            readline.clearLine(process.stdout, 0);
-            liveReasoning.tailShown = false;
-        }
-    };
-    const redrawLiveReasoning = (): void => {
-        if (liveReasoning !== null && liveReasoning.tail !== null) {
-            process.stdout.write(`${liveReasoning.tail}\n`);
-            liveReasoning.tailShown = true;
-        }
-        rl.prompt(true);
-    };
-    // Now that rl exists, printAbove can re-render the prompt after each line.
-    // A live reasoning preview remains the final row above it, so concurrent
-    // stream or worker activity cannot corrupt the preview's cursor ownership.
-    printAbove = (text: string): void => {
-        clearPromptAndLiveReasoning();
-        process.stdout.write(`${text}\n`);
-        redrawLiveReasoning();
-    };
+        )));
 
     const presentReasoning = (update: ReasoningUpdate): void => {
         if (update.phase === "start") {
             if (liveReasoning !== null) throw new TypeError("A second reasoning message started before the first ended.");
-            liveReasoning = {
-                messageId: update.messageId,
-                columns: process.stdout.columns ?? 80,
-                committed: 0,
-                tail: null,
-                tailShown: false,
-            };
+            liveReasoning = { messageId: update.messageId, rendered: "" };
             return;
         }
         if (liveReasoning === null || liveReasoning.messageId !== update.messageId) {
             throw new TypeError(`Reasoning ${update.phase} did not match the active message.`);
         }
-        clearPromptAndLiveReasoning();
+        const rendered = renderReasoning(update.content);
+        liveReasoning.rendered = rendered;
         if (update.phase === "content") {
-            const frame = renderReasoningFrame(update.content, liveReasoning.columns);
-            if (frame.committed.length < liveReasoning.committed) {
-                throw new TypeError("Growing reasoning replaced an already committed terminal row.");
-            }
-            const rows = frame.committed.slice(liveReasoning.committed);
-            if (rows.length > 0) process.stdout.write(`${rows.join("\n")}\n`);
-            liveReasoning.committed = frame.committed.length;
-            liveReasoning.tail = frame.tail;
-            redrawLiveReasoning();
+            surface.setLive(rendered);
             return;
         }
-        const frame = renderReasoningFrame(update.content, liveReasoning.columns);
-        const rows = frame.committed.slice(liveReasoning.committed);
-        if (rows.length > 0) process.stdout.write(`${rows.join("\n")}\n`);
-        if (frame.tail !== null) process.stdout.write(`${frame.tail}\n`);
+        surface.setLive(null);
+        if (rendered.length > 0) printAbove(rendered);
         liveReasoning = null;
-        rl.prompt(true);
     };
 
-    // Replace the whole readline buffer with `text`, public-API only: Ctrl-U kills
-    // to line start, Ctrl-K from there to the end (clearing whatever was typed),
-    // then type the new text. No private fields, no cursor/width math.
-    const setLine = (text: string): void => {
-        rl.write(null, { ctrl: true, name: "u" });
-        rl.write(null, { ctrl: true, name: "k" });
-        rl.write(text);
-    };
+    const setLine = (text: string): void => surface.setInput(text);
 
     // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
     // `## LOOK0 (<that uri>)` line into the buffer — an editable starting point
@@ -872,76 +769,53 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         return r;
     };
 
-    // Multi-line composition. The non-submitting newline keys insert a single ↵
-    // marker into readline's ONE line; Enter submits, expanding ↵→\n. Keeping it
-    // one readline line means backspace/arrows/history edit across newlines
-    // natively — no second buffer, no cursor/width math, the same idiom as
-    // paste. Two keys, one behavior (see isNewlineKey): Ctrl-J (LF) on every
-    // terminal, Alt-Enter (Meta+CR) on most; Shift-Enter is unhandled by design
-    // (needs the kitty/modifyOtherKeys protocols). Interposing on stdin
-    // (paste.ts feeds readline a PassThrough) is where we catch the keys, so the
-    // suppressed bytes never reach readline — which would otherwise submit on
-    // `\n`. Each interactive keypress is its own chunk, so an exact match holds.
-    // onStdin is the single keyboard dispatcher: pending-proposal key, paste,
-    // the newline keys, the Alt-shortcuts, else readline. The proposal/shortcut
-    // handlers are forward-declared (assigned once verbCtx exists).
-    let pendingProposal: ProposalParams | null = null;
+    // pi-tui owns multiline input, paste normalization, modern keyboard
+    // negotiation, history navigation, wrapping, cursor placement, and IME.
+    // Plurnk's listener consumes only product-level gestures before the editor.
     let onProposalKey: (key: string) => void = () => {};
-    // A pending request-user-input question ({§question-tool}): answered by TYPING
-    // (a number picks an enum choice; anything else is free response), NOT the
-    // a/e/r/c keypress path — free response needs text. The line handler
-    // intercepts while this is set.
-    let pendingQuestion: { interactionId: number; schema: Record<string, unknown> } | null = null;
     let dispatchShortcut: (verb: string) => void = () => {};
-    const onStdin = (chunk: Buffer): void => {
-        const text = chunk.toString("utf8");
-        // Esc interrupts (plurnk#25) — the agent-CLI convention: bare Esc with
-        // a loop in flight cancels it (same path as the first Ctrl-C); idle it
-        // clears the composed line. Read BEFORE the paste filter, which would
-        // otherwise hold a lone ESC as a possible split \x1b[200~ prefix. An
-        // exact lone-ESC chunk while no paste is open is the KEY — the same
-        // whole-chunk rule the Alt-shortcuts rely on.
-        if (text === "\x1b" && paste.idle()) {
-            if (inFlight) { requestCancel("user_escape"); return; }
-            if (rl.line.length > 0) {
-                rl.write(null as unknown as string, { ctrl: true, name: "e" });
-                rl.write(null as unknown as string, { ctrl: true, name: "u" });
+    let requestClose: () => void = () => {};
+    const removeInputListener = surface.addInputListener((text) => {
+        if (matchesKey(text, "escape")) {
+            if (inFlight) {
+                requestCancel("user_escape");
+                return { consume: true };
             }
-            return;
+            if (surface.editor.getText().length > 0) surface.setInput("");
+            return { consume: true };
         }
-        const forward = paste.feed(text);
-        if (forward.length === 0) return;
+        if (matchesKey(text, "ctrl+c")) {
+            if (inFlight && !cancelRequested) requestCancel("user_sigint");
+            else requestClose();
+            return { consume: true };
+        }
+        if (matchesKey(text, "ctrl+d") && surface.editor.getText().length === 0) {
+            requestClose();
+            return { consume: true };
+        }
         // A pending proposal + an EMPTY prompt line: a single review key
         // (a/e/r/c) resolves it. Anything else — including typing `/accept` —
-        // falls through to readline, so the no-modifier verb fallback works.
-        if (pendingProposal !== null && rl.line.length === 0 && /^[aerc]$/i.test(forward)) {
-            onProposalKey(forward);
-            return;
+        // falls through to the editor, so the typed verb fallback works.
+        if (pendingProposal !== null && surface.editor.getText().length === 0 && /^[aerc]$/i.test(text)) {
+            onProposalKey(text);
+            return { consume: true };
         }
-        if (isNewlineKey(forward)) { rl.write(NL_MARK); return; }
-        const dir = cycleKey(forward);
-        if (dir !== null) { cycleLook(dir); return; }
-        const verb = altShortcut(forward);
-        if (verb !== null) { dispatchShortcut(verb); return; }
-        input.write(forward);
-    };
-    process.stdin.on("data", onStdin);
-    // Cross-restart up/down history from the daemon (svc#238) — non-blocking.
-    void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, current.id, rl);
+        const dir = cycleKey(text);
+        if (dir !== null) { cycleLook(dir); return { consume: true }; }
+        const verb = altShortcut(text);
+        if (verb !== null) { dispatchShortcut(verb); return { consume: true }; }
+        return undefined;
+    });
+    void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, current.id, surface);
 
-    // Proposal lifecycle — NON-BLOCKING. Server-resolved (flags.auto/noProposals)
-    // settle in-process → skip. --yolo auto-accepts. A real
-    // proposal renders its menu and parks as `pendingProposal` (queue beyond),
-    // WITHOUT pausing readline or grabbing stdin: resolve via a single key
-    // (onStdin, above) OR the typed `/accept`/`/reject`/`/cancel`/`/edit` verbs.
-    // Only the `$EDITOR` path hands the terminal off — and only for its spawn.
+    // Proposal lifecycle stays non-blocking. The editor remains available for
+    // a/e/r/c or the equivalent typed verbs; only $EDITOR takes terminal custody.
     const proposalQueue: ProposalParams[] = [];
     const showNextProposal = (): void => {
         if (pendingProposal !== null || proposalQueue.length === 0) return;
         pendingProposal = proposalQueue.shift() as ProposalParams;
-        process.stdout.write(`\r\x1b[2K${renderProposalMenu(pendingProposal)}\n`
-            + `\x1b[2m  resolve: a/e/r/c  or  /accept /reject /cancel /edit\x1b[0m\n`);
-        reprompt();
+        printAbove(`${renderProposalMenu(pendingProposal)}\n`
+            + "\x1b[2m  resolve: a/e/r/c  or  /accept /reject /cancel /edit\x1b[0m");
     };
     const resolvePending = async (resolution: Resolution): Promise<void> => {
         const p = pendingProposal;
@@ -950,33 +824,25 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             await transport.resolve({ logEntryId: p.logEntryId, ...resolution });
         } catch (cause) {
-            process.stdout.write(`${renderTuiFailure(cause)}\n`);
+            printAbove(renderTuiFailure(cause));
         }
         showNextProposal();
-        reprompt();
     };
-    // `e`/`/edit` → $EDITOR. It needs the terminal: detach onStdin + raw-off for
-    // the spawn, restore after. The ONE place the non-blocking design still hands
-    // off — bounded to the editor's lifetime.
+    // `e`/`/edit` → $EDITOR through pi-tui's bounded terminal handoff.
     const editAndResolve = async (): Promise<void> => {
         const p = pendingProposal;
         if (p === null) return;
-        process.stdin.off("data", onStdin);
-        process.stdin.setRawMode?.(false);
         let resolution: Resolution;
         try {
-            resolution = (await keyToResolution("e", p)) ?? { decision: "cancel", outcome: "edit_failed" };
+            resolution = (await surface.handOff(() => keyToResolution("e", p)))
+                ?? { decision: "cancel", outcome: "edit_failed" };
         } catch (cause) {
-            process.stdout.write(`${renderTuiFailure(cause)}\n`);
+            printAbove(renderTuiFailure(cause));
             resolution = { decision: "cancel", outcome: "edit_error" };
-        } finally {
-            process.stdin.setRawMode?.(true);
-            process.stdin.resume();
-            process.stdin.on("data", onStdin);
         }
         await resolvePending(resolution);
     };
-    // Single review key (from onStdin): a/r/c resolve directly, e edits.
+    // Single review key: a/r/c resolve directly, e edits.
     onProposalKey = (key: string): void => {
         if (key.toLowerCase() === "e") { void editAndResolve(); return; }
         void keyToResolution(key, pendingProposal as ProposalParams)
@@ -1039,12 +905,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);
-            if (entry.origin === "model" && Number.isSafeInteger(entry.turn_seq)) observedTurn = entry.turn_seq;
-            printAbove(renderLogEntry(entry, process.stdout.columns ?? 80));
+            printAbove(renderLogEntry(entry, surface.columns || 80));
         },
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
         onBranchBatch: handleBranchBatch,
+        onStatus: (gauge) => {
+            authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
+            repromptPreserving();
+        },
         onStream: (payload) => {
             // One channel for the lifecycle: concluded carries its exact result, a start
             // event carries state. One start line, one conclusion line, tiny outputs inlined.
@@ -1133,63 +1002,62 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client }),
-        write: (text) => { process.stdout.write(text); },
+        write: (text) => { printAbove(text); },
         importFile: async (rest) => {
             const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);
             let content: string;
             try { content = await readFile(abs, "utf8"); }
-            catch (cause) { process.stdout.write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return; }
-            rl.write(paste.stash(content));
+            catch (cause) { printAbove(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}`); return; }
+            surface.insertInput(content);
         },
         resolveProposal: async (action) => {
-            if (pendingProposal === null) { process.stdout.write("  (no pending proposal)\n"); return; }
+            if (pendingProposal === null) { printAbove("  (no pending proposal)"); return; }
             if (action === "edit") { await editAndResolve(); return; }
             await resolvePending({ decision: action });
         },
-        // /editor · Alt-e (plurnk#26): seed $EDITOR with the composed line
-        // (markers expanded), place the result BACK on the line — never
-        // auto-submit (bash Ctrl-X Ctrl-E executes on exit; a prompt line
-        // spends model tokens, so Enter stays the only submit). Same bounded
-        // terminal handoff as proposal edit. Empty buffer ⇒ line unchanged.
+        // /editor · Alt-e: place the edited multiline value back in the composer;
+        // Enter remains the only submit gesture.
         composeInEditor: async () => {
-            process.stdin.off("data", onStdin);
-            process.stdin.setRawMode?.(false);
             let edited: string | null = null;
             try {
-                edited = await editInEditor(paste.expand(expandNewlines(rl.line)), ".md");
+                edited = await surface.handOff(() => editInEditor(surface.editor.getExpandedText(), ".md"));
             } catch (cause) {
-                process.stdout.write(`${renderTuiFailure(cause)}\n`);
-            } finally {
-                process.stdin.setRawMode?.(true);
-                process.stdin.resume();
-                process.stdin.on("data", onStdin);
+                printAbove(renderTuiFailure(cause));
             }
             if (edited === null) return;
-            rl.write(null as unknown as string, { ctrl: true, name: "e" });
-            rl.write(null as unknown as string, { ctrl: true, name: "u" });
-            rl.write(paste.stash(edited.replace(/\n$/, "")));
+            surface.setInput(edited.replace(/\n$/, ""));
         },
     };
 
-    // Alt-<letter> shortcut → run the verb. Wipe the prompt line, dispatch
-    // through the same handleVerb the typed `/verb` uses (the partial prompt in
-    // readline's buffer survives), then reprompt. Print-above pattern; no math.
+    // Alt-<letter> shortcut → the same verb contract as typed `/verb`.
     dispatchShortcut = (verb: string): void => {
-        process.stdout.write("\r\x1b[2K");
         void (async () => {
             try {
-                if (await handleVerb(verb, verbCtx) === "quit") { rl.close(); return; }
+                if (await handleVerb(verb, verbCtx) === "quit") { requestClose(); return; }
             } catch (cause) {
-                process.stdout.write(`${renderTuiFailure(cause)}\n`);
+                printAbove(renderTuiFailure(cause));
             }
             reprompt();
         })();
     };
 
-    reprompt();
-
     return new Promise<void>((resolve) => {
-        rl.on("line", async (line) => {
+        let closed = false;
+        const close = (): void => {
+            if (closed) return;
+            closed = true;
+            shuttingDown = true;
+            if (derivationPoll !== null) clearInterval(derivationPoll);
+            transport.shutdown();
+            removeInputListener();
+            surface.stop();
+            process.stdout.write(`  \x1b[2mresume this workspace:  plurnk --workspace ${current.name}\x1b[0m\n`);
+            resolve();
+        };
+        requestClose = close;
+
+        const submit = async (line: string): Promise<void> => {
+            if (line.trim().length > 0) printAbove(renderSubmittedInput(line, opts.yolo));
             // A pending request-user-input question consumes the typed line as its
             // answer, BEFORE any verb/prompt/inject handling: a number picks an
             // enum choice, anything else is free response (or raw JSON for a
@@ -1205,9 +1073,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reprompt();
                 return;
             }
-            // Expand typed ↵ markers (Ctrl-J / Alt-Enter newlines) FIRST, then
-            // paste markers — so a pasted literal ↵ stays literal.
-            const trimmed = paste.expand(expandNewlines(line)).trim();
+            const trimmed = line.trim();
             if (trimmed.length === 0) {
                 reprompt();
                 return;
@@ -1228,9 +1094,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     return;
                 }
                 try {
-                    if (await handleVerb(trimmed, verbCtx) === "quit") { rl.close(); return; }
+                    if (await handleVerb(trimmed, verbCtx) === "quit") { close(); return; }
                 } catch (cause) {
-                    process.stdout.write(`${renderTuiFailure(cause)}\n`);
+                    printAbove(renderTuiFailure(cause));
                 }
                 reprompt();
                 return;
@@ -1255,7 +1121,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
             inFlight = true;
             lifecycle = "running";
-            observedTurn = null;
+            authoritativeStatus = null;
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.
             reprompt();
@@ -1315,33 +1181,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
                 reprompt();
             }
-        });
+        };
 
-        rl.on("close", () => {
-            shuttingDown = true;   // intentional teardown — the rpc.close that follows isn't a "lost connection"
-            if (derivationPoll !== null) clearInterval(derivationPoll);
-            transport.shutdown();  // suppress the transport's connection-lost reject on an intentional quit
-            process.stdout.write("\x1b[?2004l");
-            process.stdin.off("data", onStdin);
-            process.stdin.setRawMode?.(false);
-            process.stdin.pause();
-            // Steal pi's nicety: hand back the one-liner to pick this workspace up.
-            process.stdout.write(`\n  \x1b[2mresume this workspace:  plurnk --workspace ${current.name}\x1b[0m\n`);
-            resolve();
-        });
-
-        rl.on("SIGINT", () => {
-            // First Ctrl-C with a dispatch in flight: cancel the run's active
-            // drain via the loop.cancel action; the pending loop resolves with
-            // finalStatus 499 and the REPL continues. Second Ctrl-C (or idle
-            // Ctrl-C) exits — escape hatch for dispatches a drain-cancel can't
-            // unblock (op.parse). A failed cancel SURFACES — a stop button that
-            // silently does nothing is the worst kind of broken.
-            if (inFlight && !cancelRequested) {
-                requestCancel("user_sigint");
-                return;
-            }
-            rl.close();
-        });
+        surface.editor.onSubmit = (line) => {
+            if (line.trim().length > 0) surface.editor.addToHistory(line);
+            void submit(line);
+        };
+        reprompt();
+        surface.start();
     });
 };

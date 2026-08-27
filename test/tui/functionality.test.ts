@@ -81,7 +81,7 @@ describe("TUI Functionality dogfood", () => {
 
             // Agents: the configured researcher is live; a dead peer is an exact Problem.
             tui.write("/agents\r");
-            await tui.waitFor(/researcher\s+active\s+http:\/\/127\.0\.0\.1:\d+\s+Plurnk A2A protocol witness v1\.0\.0\s+1 skills\s+\(service\)/, 20_000);
+            await tui.waitFor(/researcher[\s\S]*active[\s\S]*http:\/\/127\.0\.0\.1:\d+[\s\S]*Plurnk A2A protocol witness v1\.0\.0[\s\S]*1 skills[\s\S]*\(service\)/, 20_000);
             tui.write(`/agents discover ${agent!.baseUrl}\r`);
             await tui.waitFor(/plurnk-a2a-protocol-witness\s+candidate/, 20_000);
             // Remote-agent delegation through the ordinary client surface: the

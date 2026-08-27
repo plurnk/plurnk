@@ -5,14 +5,14 @@ import TerminalStatusLine, { derivationActivity, renderStatusLine, type ClientSt
 const running: ClientStatus = {
     lifecycle: "running",
     model: "deepdumb",
-    turn: 2,
+    packetCount: 2,
     activity: null,
 };
 
 test("[§cli-worker-status] status presentation uses only client-owned facts", () => {
-    assert.equal(renderStatusLine(running), "⌛︎ · 🤖 deepdumb · T2");
-    assert.equal(renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }), "⏹️ · 🤖 deepdumb · T2 · indexing 55%");
-    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, turn: null, activity: null }, { idleGlyph: "🔥" }), "🔥");
+    assert.equal(renderStatusLine(running), "⌛︎ · 🤖 deepdumb · P2");
+    assert.equal(renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }), "⏹️ · 🤖 deepdumb · P2 · indexing 55%");
+    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, packetCount: null, activity: null }, { idleGlyph: "🔥" }), "🔥");
 });
 
 test("derivationActivity recognizes progress, terminal clear, and failure", () => {

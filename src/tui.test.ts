@@ -7,35 +7,9 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, isNewlineKey, expandNewlines, NL_MARK, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderInputPrompt, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, makeCompleter, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
-
-const plainPrompt = (value: string): string => value.replaceAll(/\x1b\[[0-9;]*m/g, "");
-
-test("input prompt retains local progress fallback and presents client-owned worker status", () => {
-    assert.equal(plainPrompt(renderInputPrompt(true, 8)), " 8%: ");
-    assert.equal(plainPrompt(renderInputPrompt(true, 88)), "88%: ");
-    assert.equal(plainPrompt(renderInputPrompt(true, 100)), "🔥 : ");
-    assert.equal(plainPrompt(renderInputPrompt(true, null)), "🔥 : ");
-    assert.equal(plainPrompt(renderInputPrompt(false, 42)), "42%: ");
-    assert.equal(plainPrompt(renderInputPrompt(false, null)), "   : ");
-    assert.equal(plainPrompt(renderInputPrompt(true, null, true)), "⌛︎ : ");
-    assert.equal(plainPrompt(renderInputPrompt(false, null, true)), "⌛︎ : ");
-    assert.equal(plainPrompt(renderInputPrompt(true, 42, true)), "42%: ", "specific progress supersedes the active-loop hourglass");
-    assert.equal(plainPrompt(renderInputPrompt(true, 42, true, {
-        lifecycle: "running",
-        model: "deepdumb",
-        turn: 3,
-        activity: null,
-    })), "⌛︎ · 🤖 deepdumb · T3 · 42%: ", "client-local progress follows durable model and observed turn state");
-    assert.equal(plainPrompt(renderInputPrompt(false, 42, false, {
-        lifecycle: "completed",
-        model: "deepdumb",
-        turn: 3,
-        activity: { label: "indexing", percent: 42 },
-    })), "⏹️ · 🤖 deepdumb · T3 · indexing 42%: ", "activity retains the shared lifecycle and label");
-});
 
 test("help uses the settled worker and membership vocabulary", () => {
     assert.match(TUI_HELP, /\/worker \[name\]\s+create a new worker/);
@@ -119,7 +93,7 @@ test("altShortcut: CASE matches nvim — capitals are distinct (R/L/Y/N/M)", () 
     assert.equal(altShortcut("\x1br"), null);
 });
 
-test("altShortcut: an unmapped Alt-letter → null (falls through to readline)", () => {
+test("altShortcut: an unmapped Alt-letter → null (falls through to the editor)", () => {
     assert.equal(altShortcut("\x1bz"), null);
 });
 
@@ -154,8 +128,7 @@ test("lookStatement: rejects non-LOOK operations; trailing word characters are a
 });
 
 // ─── cycleKey (Alt-p/Alt-n → LOOK prior-op cycler) ───────────────────────
-// Alt-<letter> survives the paste-filter pipeline intact; a Shift-Up CSI
-// (ESC[1;2A) fragments and leaks to readline as history-prev (proven in pty).
+// pi-tui's terminal buffer delivers each normalized key sequence intact.
 
 test("cycleKey: Alt-p cycles prev/older (up), Alt-n next/newer (down)", () => {
     assert.equal(cycleKey("\x1bp"), "up");
@@ -163,8 +136,8 @@ test("cycleKey: Alt-p cycles prev/older (up), Alt-n next/newer (down)", () => {
 });
 
 test("cycleKey: a plain arrow or bare letter is NOT a cycle key", () => {
-    assert.equal(cycleKey("\x1b[A"), null);     // plain up → readline history
-    assert.equal(cycleKey("\x1b[1;2A"), null);  // Shift-Up CSI — deliberately not used (fragments)
+    assert.equal(cycleKey("\x1b[A"), null);     // plain up → editor navigation/history
+    assert.equal(cycleKey("\x1b[1;2A"), null);  // Shift-Up CSI belongs to the editor
     assert.equal(cycleKey("p"), null);          // plain typing
     assert.equal(cycleKey("\x1bm"), null);      // an Alt verb shortcut, not a cycle key
 });
@@ -192,42 +165,6 @@ test("cycleCoord: 'down' with no prior cycle is a no-op (null)", () => {
 
 test("cycleCoord: nothing seen yet → null (nothing to cycle)", () => {
     assert.equal(cycleCoord(0, null, "up"), null);
-});
-
-// ─── expandNewlines (↵ marker → real newline on submit) ──────────────────
-
-test("expandNewlines: each ↵ marker becomes a real newline", () => {
-    assert.equal(expandNewlines(`a${NL_MARK}b${NL_MARK}c`), "a\nb\nc");
-});
-
-test("expandNewlines: a line with no marker is untouched", () => {
-    assert.equal(expandNewlines("just one line"), "just one line");
-});
-
-test("expandNewlines: marker insertion is WYSIWYG — no spurious spaces around newlines", () => {
-    // "line one " (trailing space) + soft-enter + "line two"
-    assert.equal(expandNewlines(`line one ${NL_MARK}line two`), "line one \nline two");
-});
-
-// ─── isNewlineKey (non-submitting newline: Ctrl-J + Alt-Enter) ───────────
-
-test("isNewlineKey: Ctrl-J (LF) is a non-submitting newline", () => {
-    assert.equal(isNewlineKey("\n"), true);
-});
-
-test("isNewlineKey: Alt-Enter (Meta+CR / Meta+LF) is a non-submitting newline", () => {
-    assert.equal(isNewlineKey("\x1b\r"), true);
-    assert.equal(isNewlineKey("\x1b\n"), true);
-});
-
-test("isNewlineKey: plain Enter (CR) still submits — NOT a newline key", () => {
-    assert.equal(isNewlineKey("\r"), false);
-});
-
-test("isNewlineKey: ordinary input and bare ESC are not newline keys", () => {
-    for (const s of ["a", "hello", "\x1b", "\x1b[A", "\x1b[200~", " "]) {
-        assert.equal(isNewlineKey(s), false, `${JSON.stringify(s)} must not trigger a newline`);
-    }
 });
 
 // ─── buildHeader (startup banner: version · workspace · model · help) ──────
@@ -643,22 +580,22 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
 
 // ─── seedPromptHistory (svc#238) ─────────────────────────────────────
 
-test("seedPromptHistory: seeds rl.history from workspace.prompts (newest-first)", async () => {
+test("seedPromptHistory delegates newest-first workspace prompts to the editor surface", async () => {
     const calls: Array<{ m: string; p?: unknown }> = [];
     const rpc = { call: async (m: string, p?: unknown) => { calls.push({ m, p }); return { prompts: ["latest", "older"] }; } } as unknown as VerbContext["rpc"];
-    const rl = { history: [] as string[] };
-    await seedPromptHistory(rpc, 7, rl as unknown as Parameters<typeof seedPromptHistory>[2]);
+    const received: string[][] = [];
+    const history = { addHistory: (prompts: readonly string[]) => received.push([...prompts]) };
+    await seedPromptHistory(rpc, 7, history);
     assert.deepEqual(calls, [{ m: "workspace.prompts", p: { id: 7, limit: 100 } }]);
-    assert.deepEqual(rl.history, ["latest", "older"]);
+    assert.deepEqual(received, [["latest", "older"]]);
 });
 
 test("seedPromptHistory: empty / error → history untouched", async () => {
-    const rl1 = { history: ["x"] };
-    await seedPromptHistory({ call: async () => ({ prompts: [] }) } as unknown as VerbContext["rpc"], 1, rl1 as unknown as Parameters<typeof seedPromptHistory>[2]);
-    assert.deepEqual(rl1.history, ["x"]);
-    const rl2 = { history: ["x"] };
-    await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], 1, rl2 as unknown as Parameters<typeof seedPromptHistory>[2]);
-    assert.deepEqual(rl2.history, ["x"]);
+    let calls = 0;
+    const history = { addHistory: () => { calls += 1; } };
+    await seedPromptHistory({ call: async () => ({ prompts: [] }) } as unknown as VerbContext["rpc"], 1, history);
+    await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], 1, history);
+    assert.equal(calls, 0);
 });
 
 // §2.0 — mode is a per-line prefix habit (converged with nvim's :AI ? / :AI :),
@@ -677,6 +614,11 @@ test("lineMode: bare text carries the base flags untouched; prefix mode OVERRIDE
 
 test("lineMode: '...' injection prefix strips without minting mode flags", () => {
     assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
+});
+
+test("submitted multiline input becomes durable scrollback without the retired identity glyph", () => {
+    assert.equal(renderSubmittedInput("first\nsecond", true), "🔥 first\n  second");
+    assert.equal(renderSubmittedInput("first", false), "› first");
 });
 
 // ─── makeCompleter (/model provider-scoped catalog completion, plurnk#22) ───

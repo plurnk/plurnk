@@ -364,7 +364,7 @@ test("parseSlash: verb + args", () => {
     assert.deepEqual(parseSlash("/"), { verb: "", rest: "" });
 });
 
-// makeCompleter is readline's async form (line, callback); promisify for tests.
+// The callback adapter remains a convenient way to exercise completion results.
 const complete = (getAliases: () => string[], line: string): Promise<[string[], string]> =>
     new Promise((res) => makeCompleter(getAliases, process.cwd())(line, (_e, r) => res(r)));
 

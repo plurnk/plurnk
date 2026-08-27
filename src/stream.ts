@@ -120,7 +120,7 @@ export const renderInline = (channel: string, content: string): string =>
         .join("\n");
 
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in
-// the waterfall with the readline-prompt-wipe prefix.
+// the waterfall through the terminal surface.
 export const reportStream = (line: string): void => {
     process.stderr.write(`${line}\n`);
 };

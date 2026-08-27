@@ -1,8 +1,8 @@
-// Client-local file-path completion for the readline TUI.
+// Client-local file-path completion for the terminal editor.
 //
 // Co-location law: the client and daemon share one filesystem, so "what files
 // exist" is the CLIENT's question — completion reads the local fs directly, no
-// daemon round-trip. Feeds readline's native completer; no cursor math, no deps.
+// daemon round-trip. Feeds the editor completion provider.
 
 import { readdir } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
@@ -73,7 +73,7 @@ export const completeOps = ({ level, typed }: DslOpPartial): [string[], string] 
 };
 
 // Complete a filesystem path partial against the local fs. Returns
-// [completions, partial] for readline: full-path tokens (directories suffixed
+// [completions, partial] for the completion adapter: full-path tokens (directories suffixed
 // with `/`), and the partial they replace. Unreadable directory → no hits.
 // Dotfiles are hidden unless the prefix itself starts with `.` (shell habit).
 export const completePath = async (partial: string, cwd: string): Promise<[string[], string]> => {

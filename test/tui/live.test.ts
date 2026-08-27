@@ -25,7 +25,7 @@ before(async () => {
 after(async () => { await daemon?.cleanup(); });
 
 describe("TUI live (model-gated)", () => {
-    // The readline referendum — the CLIENT contract: a line typed while a loop is
+    // The CLIENT contract: a line typed while a loop is
     // in flight is folded in via loop.inject (NOT a new loop.run) and acknowledged,
     // with the prompt surviving the trace burst. Its ⌛︎ badge makes the active
     // lifecycle visible without disturbing injection. (Whether the MODEL honors
@@ -40,8 +40,8 @@ describe("TUI live (model-gated)", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             // Anything multi-step keeps the loop alive beyond its first model row.
-            // Durable prompt rows are suppressed because readline already shows them;
-            // the fixed prompt slot carries the active-loop hourglass.
+            // Durable prompt rows are suppressed because the submitted editor value
+            // is already in the transcript; the status row carries lifecycle.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
             await tui.waitFor(/⌛︎/);
             await tui.waitFor(/🚧|📋|🔧/, 540_000);

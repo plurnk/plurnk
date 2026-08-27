@@ -222,17 +222,25 @@ test("consumeCliRun: derivation Notices drive ephemeral progress without duplica
     assert.deepEqual(notices, [], "progress is not a second durable display channel");
 });
 
-test("consumeCliRun reports the latest model turn coordinate to the status surface", async () => {
-    const turns: number[] = [];
-    const { io } = sink({ onTurn: (turn) => turns.push(turn) });
+test("consumeCliRun projects the authoritative AG-UI status gauge", async () => {
+    const statuses: unknown[] = [];
+    const { io } = sink({ onStatus: (status) => statuses.push(status) });
     await consumeCliRun(stream([
-        rowRun({ op: "READ", origin: "model", turn_seq: 2 }, 42),
-        rowRun({ op: "READ", origin: "model", turn_seq: 2 }, 42),
-        rowRun({ op: "READ", origin: "model", turn_seq: 3 }, 42),
+        {
+            type: EventType.STATE_SNAPSHOT,
+            snapshot: {
+                plurnk: { status: { lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null } },
+                budget: {},
+            },
+        },
+        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/packetCount", value: 3 }] },
         terminated(),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
-    assert.deepEqual(turns, [2, 2, 3]);
+    assert.deepEqual(statuses, [
+        { lifecycle: "running", model: "deepdumb", packetCount: 0, activity: null },
+        { lifecycle: "running", model: "deepdumb", packetCount: 3, activity: null },
+    ]);
 });
 
 test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {

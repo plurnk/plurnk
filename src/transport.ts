@@ -17,7 +17,6 @@ import {
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
     clientTransportProposalInvalid,
-    clientTransportStateInvalid,
     clientTransportTerminalMissing,
     clientActionResultMissing,
     type ProblemDetails,
@@ -25,6 +24,7 @@ import {
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { runViaBridge, actionViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
+import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
 
 // The terminal outcome, unified across transports (WS loop/terminated ≈ bridge
 // plurnk.terminated + workspaceId).
@@ -50,10 +50,7 @@ export interface BranchBatchEvent {
 
 // The run's status gauge — the AG-UI state the bridge snapshots on RUN_STARTED and
 // patches per packet, termination, and derivation (plurnk-agui SPEC, `loop/packet`).
-export interface StatusGauge {
-    plurnk: { status: { lifecycle: string; model: string | null; loopId: number | null; packetCount: number; activity: unknown } };
-    budget: Record<string, unknown>;
-}
+export type StatusGauge = StatusGaugeEnvelope;
 
 // Run-plane events in daemon-notification shapes — the SAME shapes the TUI's
 // existing handlers consume, so they work unchanged under either transport.
@@ -404,23 +401,6 @@ export class BridgeTransport implements Transport {
         return { id: 0, name: threadId };
     }
 
-    // Apply one STATE_DELTA to the gauge: JSON Patch `replace` on a pointer under
-    // /plurnk/status or /budget (plurnk-agui SPEC). Anything else is a broken wire.
-    static #applyDelta(gauge: StatusGauge | null, delta: unknown): StatusGauge {
-        if (gauge === null) throw new ProblemError(clientTransportStateInvalid("STATE_DELTA before any STATE_SNAPSHOT"));
-        if (!Array.isArray(delta)) throw new ProblemError(clientTransportStateInvalid("STATE_DELTA delta is not an array"));
-        const next = structuredClone(gauge);
-        for (const op of delta as Array<{ op?: unknown; path?: unknown; value?: unknown }>) {
-            if (op.op !== "replace" || typeof op.path !== "string") throw new ProblemError(clientTransportStateInvalid(`unsupported patch op ${JSON.stringify(op.op)} at ${JSON.stringify(op.path)}`));
-            const segments = op.path.split("/").slice(1).map((seg) => seg.replaceAll("~1", "/").replaceAll("~0", "~"));
-            const leaf = segments.pop();
-            const parent = segments.reduce<unknown>((node, seg) => (node !== null && typeof node === "object" ? (node as Record<string, unknown>)[seg] : undefined), next);
-            if (leaf === undefined || parent === null || typeof parent !== "object") throw new ProblemError(clientTransportStateInvalid(`no parent for ${op.path}`));
-            (parent as Record<string, unknown>)[leaf] = op.value;
-        }
-        return next;
-    }
-
     // Project one standard reasoning event or un-project one CUSTOM plurnk.*
     // event into the family handlers; returns terminal truth when present.
     #dispatch(e: AguiEvent): TerminatedInfo | null {
@@ -429,13 +409,9 @@ export class BridgeTransport implements Transport {
             if (reasoning.update !== undefined) this.#h?.onReasoning(reasoning.update);
             return null;
         }
-        if (e.type === "STATE_SNAPSHOT") {
-            this.#gauge = structuredClone((e as { snapshot?: unknown }).snapshot as StatusGauge);
-            this.#h?.onStatus?.(structuredClone(this.#gauge));
-            return null;
-        }
-        if (e.type === "STATE_DELTA") {
-            this.#gauge = BridgeTransport.#applyDelta(this.#gauge, (e as { delta?: unknown }).delta);
+        const state = reduceStatusGauge(this.#gauge, e);
+        if (state.handled) {
+            this.#gauge = state.gauge;
             this.#h?.onStatus?.(structuredClone(this.#gauge));
             return null;
         }

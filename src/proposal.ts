@@ -1,7 +1,7 @@
 // Proposal review — receives loop/proposal notifications, presents the user
 // with an accept/edit/reject/cancel choice, and returns the resolution to send
 // back via loop.resolve. Shared between CLI (one-shot) and TUI modes; mode-
-// specific wiring (TTY check, readline pause) lives in the caller.
+// specific terminal handoff lives in the caller.
 //
 // Wire shape per plurnk-service Daemon.ts: loop/proposal carries an op kind,
 // a target {scheme, pathname}, a body string (udiff for EDIT, command summary
@@ -76,7 +76,7 @@ export const formatTarget = ({ scheme, pathname }: ProposalParams["target"], op?
 };
 
 // Read one raw byte from stdin and return its char form. Caller is responsible
-// for pausing any reader (readline) that competes for stdin first.
+// after the caller relinquishes terminal custody.
 const readSingleKey = (): Promise<string> => new Promise((resolve) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
@@ -180,7 +180,7 @@ export const renderQuestionMenu = (question: string, choices: string[]): string 
 
 // Map a single review key to a resolution. `e` runs $EDITOR (async — caller
 // must own the terminal during the spawn). Returns null for non-review keys, so
-// callers can pass them through (the TUI lets them reach readline) or default
+// callers can pass them through (the TUI lets them reach its editor) or default
 // (the CLI cancels for safety).
 export const keyToResolution = async (key: string, params: ProposalParams): Promise<Resolution | null> => {
     switch (key.toLowerCase()) {

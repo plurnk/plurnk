@@ -731,6 +731,10 @@ export const main = async (argv: string[]): Promise<void> => {
             // thread == world (the model worker).
             const w = await world();
             const { settings } = await workspaceOptions();
+            const controlWorkspaceOptions = {
+                ...(projectRoot !== null ? { projectRoot } : {}),
+                ...(Object.keys(settings).length > 0 ? { settings } : {}),
+            };
             // {§worker-model-selection} — an explicit --model is a durable selection:
             // persist it onto the conversation worker before the run, then run WITHOUT
             // a per-loop model selector (the worker owns the model).
@@ -738,17 +742,34 @@ export const main = async (argv: string[]): Promise<void> => {
             if (values.model !== undefined && modelSelector !== undefined) {
                 activeModel = Validator.assertModelRoute(await actionViaBridge(
                     { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN },
-                    { threadId: workerName ?? w, workspace: w, kind: "worker.model.set", params: { selector: modelSelector } },
+                    {
+                        threadId: workerName ?? w,
+                        workspace: w,
+                        workspaceOptions: controlWorkspaceOptions,
+                        kind: "worker.model.set",
+                        params: { selector: modelSelector },
+                    },
                 ));
             } else {
                 const projection = await actionViaBridge<{ model: unknown }>(
                     { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN },
-                    { threadId: workerName ?? w, workspace: w, kind: "worker.model.get" },
+                    {
+                        threadId: workerName ?? w,
+                        workspace: w,
+                        workspaceOptions: controlWorkspaceOptions,
+                        kind: "worker.model.get",
+                    },
                 );
                 activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
             }
             if (reasoningPolicy !== undefined) {
-                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, { threadId: workerName ?? w, workspace: w, kind: "worker.reasoning.set", params: { policy: reasoningPolicy } });
+                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
+                    threadId: workerName ?? w,
+                    workspace: w,
+                    workspaceOptions: controlWorkspaceOptions,
+                    kind: "worker.reasoning.set",
+                    params: { policy: reasoningPolicy },
+                });
             }
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, {
                 threadId: workerName ?? w,

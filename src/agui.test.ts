@@ -178,6 +178,29 @@ test("actionViaBridge: a verb rides its own run and returns its result verbatim"
     } finally { await mock.close(); }
 });
 
+test("[§cli-workspaces-and-workers] actionViaBridge carries workspace options beside the action", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.model.get", ok: true, result: { model: null } } }) + "\n\n");
+        res.write("data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n");
+        res.end();
+    });
+    try {
+        await actionViaBridge({ bridgeUrl: mock.url }, {
+            threadId: "worker",
+            workspace: "world",
+            workspaceOptions: { projectRoot: "/repo", settings: { filesItems: 16 } },
+            kind: "worker.model.get",
+        });
+        const sent = mock.captured[0].body as {
+            forwardedProps: { plurnk: Record<string, unknown> };
+        };
+        assert.equal(sent.forwardedProps.plurnk.projectRoot, "/repo");
+        assert.deepEqual(sent.forwardedProps.plurnk.settings, { filesItems: 16 });
+        assert.deepEqual(sent.forwardedProps.plurnk.action, { kind: "worker.model.get" });
+    } finally { await mock.close(); }
+});
+
 test("actionViaBridge: an action failure throws the exact validated Problem", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/agui/action/unknown-action",

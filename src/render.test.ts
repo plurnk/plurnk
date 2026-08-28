@@ -754,14 +754,20 @@ test("renderLogEntry: FIND with missing/empty rx → 0 results", () => {
 });
 
 test("renderLogEntry: COPY shows the destination", () => {
-    const out = renderLogEntry(entry({ op: "COPY", scheme: "worker", pathname: "/a", status_rx: 200, tx: { body: { raw: "worker://b" } } }));
+    const out = renderLogEntry(entry({
+        op: "COPY",
+        scheme: "worker",
+        pathname: "/a",
+        status_rx: 200,
+        tx: { destination: { target: { raw: "worker://b" } } },
+    }));
     assert.match(out, /→ worker:\/\/b/);
     assert.match(out, /📋/);
 });
 
-test("renderLogEntry: COPY/MOVE with null body reads (deleted)", () => {
-    const out = renderLogEntry(entry({ op: "MOVE", scheme: "worker", pathname: "/a", status_rx: 200, tx: { body: null } }));
-    assert.match(out, /\(deleted\)/);
+test("renderLogEntry: COPY/MOVE without a destination invents no obsolete body semantics", () => {
+    const out = renderLogEntry(entry({ op: "MOVE", scheme: "worker", pathname: "/a", status_rx: 200, tx: {} }));
+    assert.doesNotMatch(out, /→|deleted/);
     assert.match(out, /📦/);
 });
 

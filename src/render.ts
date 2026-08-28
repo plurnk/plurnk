@@ -93,7 +93,13 @@ const ellipsize = (s: string, max: number): string => {
 
 // Build the EXTRA segment based on the op + entry shape.
 const buildExtra = (entry: LogEntryWire): string => {
-    const tx = entry.tx as { op?: string; body?: unknown; signal?: unknown; path?: unknown } | null;
+    const tx = entry.tx as {
+        op?: string;
+        body?: unknown;
+        signal?: unknown;
+        path?: unknown;
+        destination?: { target?: { raw?: unknown } };
+    } | null;
     const rx = entry.rx as Record<string, unknown> | null;
     if (tx === null) return "";
 
@@ -104,9 +110,8 @@ const buildExtra = (entry: LogEntryWire): string => {
         }
         case "COPY":
         case "MOVE": {
-            const body = tx.body as { raw?: string } | null;
-            if (body === null) return `${DIM}(deleted)${RESET}`;
-            return `${DIM}→ ${body.raw ?? ""}${RESET}`;
+            const raw = tx.destination?.target?.raw;
+            return typeof raw === "string" ? `${DIM}→ ${raw}${RESET}` : "";
         }
         case "FIND": {
             // rx.results is an ARRAY of matches on the current wire (uniform

@@ -56,6 +56,7 @@ let model;
 let passed = false;
 const modelRequests = [];
 const selectedModels = [];
+const scriptedResponses = [];
 try {
     await run("npm", ["init", "-y"], { cwd: temp });
     await mkdir(install, { recursive: true });
@@ -116,7 +117,8 @@ try {
         req.once("end", () => {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
-            const response = `# PLAN0\n[{"content":"Verify the packed client and service compose.","status":"in_progress"}]\n## SEND0 [200]\ncomposition ok: ${request.model}`;
+            const response = scriptedResponses.shift()
+                ?? `# PLAN0\n[{"content":"Verify the packed client and service compose.","status":"in_progress"}]\n## SEND0 [200]\ncomposition ok: ${request.model}`;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -237,6 +239,39 @@ try {
     const expectedModels = ["composition", "composition-family/selected", "composition-family/selected"];
     if (JSON.stringify(selectedModels) !== JSON.stringify(expectedModels)) {
         throw new Error(`worker model lifecycle selected ${JSON.stringify(selectedModels)}, expected ${JSON.stringify(expectedModels)}`);
+    }
+
+    const delegatedRoot = join(temp, "delegated-root");
+    await mkdir(delegatedRoot, { recursive: true });
+    scriptedResponses.push(
+        "# PLAN0\n[{\"content\":\"Delegate the file creation and wait.\",\"status\":\"in_progress\"}]\n"
+            + "## WORK0 (worker://guesser1)\nCreate child.txt and conclude.\n\n"
+            + "## SEND0 [202] <-1>\nWaiting for guesser1.",
+        "# PLAN0\n[{\"content\":\"Create the delegated file.\",\"status\":\"in_progress\"}]\n"
+            + "## EDIT0 (child.txt)\ncreated by packed child\n\n"
+            + "## SEND0 [102]\nConfirming the write.",
+        "# PLAN0\n[{\"content\":\"The delegated file exists.\",\"status\":\"completed\"}]\n"
+            + "## SEND0 [200]\nChild work complete.",
+        "# PLAN0\n[{\"content\":\"The delegated child completed successfully.\",\"status\":\"completed\"}]\n"
+            + "## SEND0 [200]\npacked descendant proposal complete",
+    );
+    const requestsBeforeDelegation = selectedModels.length;
+    const delegated = await runClient(clientBin, [
+        "--json", "--yolo", "--workspace", "packed-delegation", "--worker", "delegation-parent",
+        "--project-root", delegatedRoot, "--max-turns", "8", "--timeout", "30",
+        "Exercise descendant proposal composition.",
+    ], { cwd: install, env, timeout: 45_000 });
+    const delegatedResult = JSON.parse(delegated.stdout);
+    if (delegatedResult.response !== "packed descendant proposal complete") {
+        throw new Error(`descendant proposal run returned ${JSON.stringify(delegatedResult.response)}`);
+    }
+    if (await readFile(join(delegatedRoot, "child.txt"), "utf8") !== "created by packed child") {
+        throw new Error("client yolo did not apply the descendant child's exact EDIT proposal");
+    }
+    if (scriptedResponses.length !== 0 || selectedModels.length - requestsBeforeDelegation !== 4) {
+        throw new Error(
+            `descendant proposal used ${selectedModels.length - requestsBeforeDelegation} provider requests with ${scriptedResponses.length} scripted responses left`,
+        );
     }
 
     const log = await runClient(clientBin, [

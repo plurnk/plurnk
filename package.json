@@ -55,8 +55,8 @@
         "typescript": "^7.0.2"
     },
     "dependencies": {
-        "@ag-ui/client": "^0.0.58",
-        "@ag-ui/core": "^0.0.58",
+        "@ag-ui/client": "^0.0.59",
+        "@ag-ui/core": "^0.0.59",
         "@earendil-works/pi-tui": "^0.84.3",
         "@plurnk/plurnk-contracts": "^1.10.1",
         "beautiful-mermaid": "^1.1.3",

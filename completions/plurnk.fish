@@ -3,6 +3,7 @@ complete -c plurnk -n __fish_use_subcommand -a models
 complete -c plurnk -n __fish_use_subcommand -a workspace
 complete -c plurnk -n __fish_use_subcommand -a log
 complete -c plurnk -n __fish_use_subcommand -a reasoning
+complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a script
@@ -16,8 +17,8 @@ complete -c plurnk -l reasoning
 complete -c plurnk -l project-root
 complete -c plurnk -l yolo
 complete -c plurnk -l auto
-complete -c plurnk -l flags
-complete -c plurnk -l request_user_input
+complete -c plurnk -l policy
+complete -c plurnk -l capabilities
 complete -c plurnk -l env-file
 complete -c plurnk -l env-file-if-exists
 complete -c plurnk -l max-turns

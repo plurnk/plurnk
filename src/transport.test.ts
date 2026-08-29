@@ -10,6 +10,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BridgeTransport, type RunHandlers } from "./transport.ts";
 import { ProblemError } from "./diagnostics.ts";
+
+const REVIEW_POLICY = { capabilities: {}, proposals: "review" as const };
 import { runViaBridge } from "./agui.ts";
 
 interface ConformanceKit {
@@ -162,7 +164,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                         );
                     }
                 } else {
-                    const result = await transport.run("fixture", {}).done;
+                    const result = await transport.run("fixture", { policy: REVIEW_POLICY }).done;
                     assert.equal(
                         result.finalStatus,
                         specimen.expect.completion === "interrupt" ? 200 : specimen.expect.status,
@@ -204,7 +206,7 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
         const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
-        const result = await transport.run("fixture", {}).done;
+        const result = await transport.run("fixture", { policy: REVIEW_POLICY }).done;
         assert.equal(result.finalStatus, 200);
         const gauges = seen.status as Array<{ plurnk: { status: { lifecycle: string; loopId: number | null; packetCount: number } } }>;
         assert.equal(gauges.length, 3, "one gauge per STATE_SNAPSHOT and STATE_DELTA");
@@ -227,7 +229,7 @@ test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state
         const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
         transport.subscribe(collectingHandlers().h);
         await assert.rejects(
-            () => transport.run("fixture", {}).done,
+            () => transport.run("fixture", { policy: REVIEW_POLICY }).done,
             (error: unknown) => error instanceof ProblemError && error.problem.status === 502 && error.problem.kind === "state-invalid",
         );
     } finally {
@@ -257,7 +259,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/proj", settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const t = await bt.run("largest planet?", {}).done;
+        const t = await bt.run("largest planet?", { policy: REVIEW_POLICY }).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
         assert.deepEqual(seen.reasoning, [
             { phase: "start", messageId: "1/1/2/SEND/reasoning" },
@@ -269,7 +271,14 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "th", projectRoot: "/proj", settings: { questions: true } } }, "the workspace (world) + options ride the first run's forwardedProps");
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, {
+            plurnk: {
+                workspace: "th",
+                projectRoot: "/proj",
+                settings: { questions: true },
+                policy: REVIEW_POLICY,
+            },
+        }, "the workspace (world) + options and loop policy ride the first run's forwardedProps");
     } finally { await mock.close(); }
 });
 
@@ -292,7 +301,7 @@ test("BridgeTransport: plurnk.problem supplies the exact terminal status instead
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const result = await bt.run("go", {}).done;
+        const result = await bt.run("go", { policy: REVIEW_POLICY }).done;
         assert.equal(result.finalStatus, 429);
         assert.deepEqual(seen.problems, [problem]);
     } finally { await mock.close(); }
@@ -308,7 +317,7 @@ test("BridgeTransport: RUN_ERROR without the exact Problem returns a client cont
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h } = collectingHandlers();
         bt.subscribe(h);
-        const result = await bt.run("go", {}).done;
+        const result = await bt.run("go", { policy: REVIEW_POLICY }).done;
         assert.equal(result.finalStatus, 502);
         assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/problem-missing");
     } finally { await mock.close(); }
@@ -342,7 +351,7 @@ test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth",
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const result = await bt.run("go", {}).done;
+        const result = await bt.run("go", { policy: REVIEW_POLICY }).done;
         assert.equal(result.finalStatus, 499);
         assert.deepEqual(result.result, { status: 499, problem });
         assert.deepEqual(seen.problems, [problem]);
@@ -448,7 +457,7 @@ test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done res
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
-        const handle = bt.run("go", {});
+        const handle = bt.run("go", { policy: REVIEW_POLICY });
         await new Promise((r) => setTimeout(r, 50));
         handle.cancel();
         assert.equal((await handle.done).finalStatus, 499, "cancel → clean 499 outcome");
@@ -462,7 +471,7 @@ test("BridgeTransport.useSession: re-maps the threadId — the next run addresse
         const s = await bt.useSession("new-thread", {});
         assert.equal(s.name, "new-thread");
         bt.subscribe(collectingHandlers().h);
-        await bt.run("go", {}).done;
+        await bt.run("go", { policy: REVIEW_POLICY }).done;
         assert.equal((mock.captured[0].body as { threadId: string }).threadId, "new-thread", "the run targets the re-mapped thread");
     } finally { await mock.close(); }
 });
@@ -487,7 +496,7 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const handle = bt.run("edit it", {});
+        const handle = bt.run("edit it", { policy: REVIEW_POLICY });
         // the proposal surfaces mid-run as an unprojected tool-call
         while (seen.proposals.length === 0) await new Promise((r) => setTimeout(r, 10));
         assert.equal((seen.proposals[0] as { logEntryId: number; op: string }).logEntryId, 42);
@@ -537,7 +546,7 @@ test("BridgeTransport: a client interaction uses interrupt guidance and resumes 
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const handle = bt.run("choose", {});
+        const handle = bt.run("choose", { policy: REVIEW_POLICY });
         while (seen.interactions.length === 0) await new Promise((resolve) => setTimeout(resolve, 10));
         assert.deepEqual(seen.interactions, [{
             interactionId: 8,
@@ -569,7 +578,7 @@ test("BridgeTransport: a proposal without the matching interrupt outcome returns
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const result = await bt.run("edit it", {}).done;
+        const result = await bt.run("edit it", { policy: REVIEW_POLICY }).done;
         assert.equal(result.finalStatus, 502);
         assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/interrupt-mismatch");
         assert.deepEqual(seen.problems, [result.result.problem]);
@@ -588,7 +597,7 @@ test("BridgeTransport: malformed proposal arguments return an exact Problem", as
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const result = await bt.run("edit it", {}).done;
+        const result = await bt.run("edit it", { policy: REVIEW_POLICY }).done;
         assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/proposal-invalid");
         assert.deepEqual(seen.problems, [result.result.problem]);
     } finally { await mock.close(); }
@@ -617,7 +626,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
             ...h,
             onProposal: (p) => { void bt.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" }); },
         });
-        const t = await bt.run("exec it", {}).done;
+        const t = await bt.run("exec it", { policy: REVIEW_POLICY }).done;
         assert.equal(t.finalStatus, 200, "immediate yolo resolution resumes and finishes the loop");
         assert.equal(call, 2, "the proposal segment is followed by one resume segment");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
@@ -640,7 +649,7 @@ test("BridgeTransport: a stream that dies without terminal truth is an ERROR, ne
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
-        const t = await bt.run("go", {}).done;
+        const t = await bt.run("go", { policy: REVIEW_POLICY }).done;
         assert.equal(t.finalStatus, 502, "silent stream death surfaces as 502, not success");
     } finally { await mock.close(); }
 });
@@ -653,13 +662,13 @@ test("[§cli-workspaces-and-workers] EVERY request carries the workspace options
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", settings: { questions: true } });
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", settings: { capabilities: { deny: [{ runtime: "sh" }] } } });
         await bt.rpc("workspace.prompts", { limit: 50 });   // the TUI's real first touch (seedPromptHistory)
         await bt.rpc("workspace.prompts", { limit: 50 });   // and the SECOND — no consumed-once race
         for (const c of mock.captured) {
             const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
             assert.equal(fp.projectRoot, "/home/user/repo", "projectRoot rides EVERY request — whichever creates, creates rooted");
-            assert.deepEqual(fp.settings, { questions: true });
+            assert.deepEqual(fp.settings, { capabilities: { deny: [{ runtime: "sh" }] } });
         }
     } finally { await mock.close(); }
 });
@@ -676,8 +685,8 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
-        await bt.run("first", { flags: { auto: true } }).done;
-        await bt.run("second", {}).done;
+        await bt.run("first", { policy: { capabilities: {}, proposals: "accept" } }).done;
+        await bt.run("second", { policy: { capabilities: {}, proposals: "review" } }).done;
         const runs = mock.captured.filter((c) => (c.body as { messages?: unknown[] }).messages !== undefined && ((c.body as { messages: unknown[] }).messages.length > 0 || (c.body as { forwardedProps?: { plurnk?: { action?: unknown } } }).forwardedProps?.plurnk?.action === undefined));
         assert.equal(runs.length, 2, "two loops drove");
         for (const c of runs) {
@@ -686,5 +695,12 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
                 assert.equal(Object.hasOwn(fp, retired), false, `${retired} is worker policy, not a loop knob`);
             }
         }
+        assert.deepEqual(
+            runs.map((c) => (c.body as { forwardedProps: { plurnk: { policy: unknown } } }).forwardedProps.plurnk.policy),
+            [
+                { capabilities: {}, proposals: "accept" },
+                { capabilities: {}, proposals: "review" },
+            ],
+        );
     } finally { await mock.close(); }
 });

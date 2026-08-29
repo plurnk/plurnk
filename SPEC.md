@@ -44,8 +44,9 @@ Options:
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
-| `--auto` | flag | Keep proposal authority inside the loop (`flags.auto=true`); no client review/resume round-trip. |
-| `--flags <json>` | string | Raw LoopFlags JSON passthrough on every `loop.run` (e.g. `'{"auto":true}'` for automation workers). Mode is not a flag — see the prompt prefixes (§2.0). |
+| `--auto` | flag | Set the loop proposal disposition to `accept`; no client review/resume round-trip. |
+| `--policy <json>` | string | Complete LoopPolicy applied to every loop: capability attenuation plus `review`, `accept`, or `reject` proposal disposition. |
+| `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
 | `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. |
@@ -59,9 +60,10 @@ Env:
 | `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
 | `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE`. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
-| `PLURNK_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every proposal locally. Client-only — see §6. Equivalent to `--yolo`. |
+| `PLURNK_CLIENT_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally. See §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
-| `PLURNK_EXECS_ONLY` / `PLURNK_EXECS_<tag>` | _unset_ | Create-time workspace executor policy. The client forwards only the closed allowlist/runtime-tag grammar; plugin configuration sharing the broad prefix is not workspace policy and never crosses the wire. |
+| `PLURNK_CLIENT_LOOP_POLICY` | _unset_ | Default LoopPolicy JSON. `--policy` overrides it. |
+| `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` | _unset_ | Create-time workspace CapabilityPolicy JSON. `--capabilities` overrides it. |
 
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → project `./.env` → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
@@ -157,7 +159,7 @@ These flags shape what the workspace sees; they map to workspace-open settings a
 
 - `--files-items <n>` → `filesItems`. Controls the turn-0 tracked-file preview: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_FILES_ITEMS` for the workspace.
 - `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the workspace, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
-- Executor policy → `execs` (`Record<string, string>`). Only `PLURNK_EXECS_ONLY` and `PLURNK_EXECS_<canonical-runtime-tag>` are admitted, case-insensitively. Values remain verbatim for daemon-owned interpretation; unrelated executor/plugin configuration is excluded.
+- `--capabilities <json>` / `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` → `capabilities`. The canonical CapabilityPolicy is a purely subtractive workspace ceiling. Executor plugin configuration remains service-owned and never becomes workspace settings.
 
 Settings are **workspace-create-only** (no live setter). On `--workspace` attach, `--files-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
 
@@ -169,7 +171,7 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI) {§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui}
 
-The prompt's first character carries the same habits as nvim's `:AI` and the TUI line: `plurnk "? question"` runs a read-only loop (`flags.mode="ask"`), `": text"` forces act, and `plurnk "! command"` execs via the daemon — op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). A prefix wins over a `--flags` mode.
+The prompt's first character carries the same habits as nvim's `:AI` and the TUI line. `plurnk "? question"` intersects the base loop policy with `{deny:[{operation:"EXEC"}]}` and selects proposal `review`; `": text"` uses the base policy unchanged. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
 
 ### §2.1 Output channels {§cli-output-channels}
 
@@ -230,10 +232,10 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `## READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`# PLAN…` or `## OP…`) → `op.parse`; `## LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
-    - Lines starting with `? ` → a conversation run with `flags.mode="ask"` (read-only loop); `: ` forces act (the daemon default). Mode is a per-line prefix habit, never a flag — there is no `--ask`; `--flags '{"mode":"ask"}'` is the generic passthrough for automation.
+    - Lines starting with `? ` → a conversation run whose loop policy denies EXEC and selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
     (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
@@ -571,15 +573,15 @@ loop/proposal {
     target: { scheme: string | null, pathname: string | null },
     body: string,                 // udiff for EDIT; command summary for EXEC
     attrs: object,                // scheme-specific payload (opaque to client)
-    flags: object,                // loop's persisted flags ({auto, noProposals, ...})
+    policy: LoopPolicy,           // loop's immutable capability/proposal policy
 }
 ```
 
-**Service-resolved proposals.** When `flags.auto` or `flags.noProposals` is set, the service settles the entry before any human can react—the notification is informational. The client skips review UI and sends no `loop.resolve`.
+AG-UI emits this client surface only for proposals whose durable disposition owner is the client. Loop-owned `accept` and `reject` dispositions settle in Core and never become client review work. The client does not infer ownership from policy fields.
 
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
-When the proposal is not server-resolved (§6.1), a TTY is present, and `--yolo` is not set, the client renders the proposal to stderr and prompts:
+When a proposal arrives, a TTY is present, and `--yolo` is not set, the client renders the proposal to stderr and prompts:
 
 ```
 ── proposal EDIT file:///path/to/file ──
@@ -603,17 +605,17 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 
 Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
 
-This is distinct from **loop auto** (`--auto`, `loop.run({flags:{auto:true}})`), where proposal authority never crosses into client review. A proposal carrying `flags.auto` gets no review UI and no `loop.resolve`.
+This is distinct from **loop auto** (`--auto`, or a policy with `proposals:"accept"`), where proposal authority never crosses into client review.
 
-### §6.4 Fail-closed (non-TTY, no yolo) — server-side via `noProposals` {§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals}
+### §6.4 Fail-closed (non-TTY, no yolo) {§cli-fail-closed-no-review-channel}
 
-When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. Rather than reject each proposal client-side, the client runs the loop with `flags.noProposals: true`: the server auto-rejects side-effecting ops in-process, the model sees a plain 400 (mode-blind, no per-proposal roundtrip, no 5-minute hang). The `loop/proposal` still broadcasts; the client suppresses its handler via the server-resolved check (§6.1).
+When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. If the selected policy requests `review`, the client projects `proposals:"reject"`; Core settles admitted side effects without a client round-trip. An explicitly selected `accept` or `reject` disposition remains authoritative.
 
-Because the server is silent by design, **the client owns the explanation** — it emits `client:proposal:edits_blocked` once at loop start: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)."
+The one-shot client also attenuates `{access:"interact"}` because it has no interactive question channel. This is a topology restriction through the same capability contract, not a question-specific boolean.
 
-Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`. A user who passes `--flags '{"noProposals":true}'` sets it explicitly; the no-review-channel detection merges with it.
+Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`.
 
-### §6.5 What proposal review does NOT do {§cli-what-proposal-review-does-not-do}
+### §6.5 Proposal-review boundaries {§cli-proposal-review-boundaries}
 
 - Concurrent proposals. The daemon pauses one dispatch per proposal; at most one proposal is pending per loop at any time. Client handles them sequentially as they arrive.
 - Patch validation. The client does not parse the udiff. `body` is treated as opaque text for display and (when edited) re-submission.
@@ -627,8 +629,10 @@ Subcommands inspect or deliberately configure daemon state without running a
 loop. They share the same connection and workspace-resolution machinery as the
 prompt-driven flow, but skip `loop.run` entirely. All support `--json` for
 machine-readable output (stdout product per §2.1; trace and errors stay on
-stderr). `reasoning [policy]` is the sole worker-policy mutation in this surface
-and follows {§cli-reasoning-policy}.
+stderr). `reasoning [policy]` reads or changes the durable reasoning policy.
+`capabilities [json]` projects every durable capability layer and its effective
+intersection, or replaces the mutable Worker layer. Prompt runs only carry loop
+policy.
 
 When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
 
@@ -835,7 +839,7 @@ A conforming `plurnk` client:
 2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT` (or `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
 3. Resolves the workspace per §1.1 (`workspace.create` by default, or `workspace.attach` when `--workspace`/`PLURNK_SESSION` is set); uses the returned workspace for all subsequent RPCs until disconnect.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
-5. Consumes `loop/proposal` interrupts and resolves each through standard AG-UI resume per §6, skipping service-resolved proposals (`flags.auto` / `flags.noProposals`) entirely.
+5. Consumes client-owned proposal interrupts and resolves each through standard AG-UI resume per §6; loop-owned dispositions are absent from that surface.
 6. Consumes `CUSTOM plurnk.notice` and renders each Notice per §8.
 7. Maps `loop.run` results to exit codes per §4.
 8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.

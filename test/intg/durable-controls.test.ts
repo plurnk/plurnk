@@ -75,8 +75,12 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
 
     await from("a", "worker.reasoning.set", { policy: "adaptive" });
     assert.equal((await from<{ policy: string }>("b", "worker.reasoning.get")).policy, "adaptive");
-    await from("a", "worker.settings.set", { settings: { requestUserInput: true } });
-    assert.deepEqual(await from("b", "worker.settings.get"), { requestUserInput: true });
+    await from("a", "worker.capabilities.set", {
+        policy: { deny: [{ runtime: "sh" }] },
+    });
+    const capabilities = await from<{ worker: object; effective: object }>("b", "worker.capabilities.get");
+    assert.deepEqual(capabilities.worker, { deny: [{ runtime: "sh" }] });
+    assert.deepEqual(capabilities.effective, { deny: [{ runtime: "sh" }] });
 
     const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
     await from("a", "worker.mcp.add", {

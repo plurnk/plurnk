@@ -39,7 +39,18 @@ import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
-import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
+import {
+    Validator,
+    type CapabilityPolicy,
+    type LoopPolicy,
+    type ModelRoute,
+} from "@plurnk/plurnk-contracts";
+import {
+    formatCapabilityProjection,
+    parseCapabilityPolicy,
+    promptPolicy,
+    resolveLoopPolicy as resolvePolicy,
+} from "./policy.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
 // blocks an interactive workspace because we gate on isTTY upstream.
@@ -49,41 +60,12 @@ const readStdin = async (): Promise<string> => {
     return buf;
 };
 
-// LoopFlags resolution: --flags takes raw JSON (the generic passthrough —
-// any flag the daemon wires lands without a client release). Mode is NOT a
-// flag here: ask/act ride the prompt-prefix habit (`? text` / `: text`),
-// converged across nvim, TUI, and the one-shot CLI.
-export const resolveLoopFlags = (rawJson: string | undefined, auto = false): Record<string, unknown> | undefined => {
-    if (rawJson === undefined) return auto ? { auto: true } : undefined;
-    let parsed: unknown;
-    try { parsed = JSON.parse(rawJson); } catch {
-        throw new ProblemError(clientFlagInvalid("--flags", rawJson, "must be valid JSON"));
+export const resolveLoopPolicy = (rawJson: string | undefined, auto = false): LoopPolicy => {
+    try {
+        return resolvePolicy(rawJson, auto);
+    } catch {
+        throw new ProblemError(clientFlagInvalid("--policy", rawJson ?? "", "must be a valid LoopPolicy JSON object"));
     }
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new ProblemError(clientFlagInvalid("--flags", rawJson, "must be a JSON object"));
-    }
-    return { ...(parsed as Record<string, unknown>), ...(auto ? { auto: true } : {}) };
-};
-
-// #132 — the client's per-workspace exec-policy layer: forward the closed
-// enable/disable grammar (PLURNK_EXECS_ONLY, PLURNK_EXECS_<TAG>=0|false) so the
-// daemon intersects it with its own ceiling (service ∧ client — subtractive,
-// can never re-enable a service-disabled tag). The key grammar is the executor
-// contract's canonical lowercase URI-scheme tag syntax, matched case-insensitively
-// for environment convention. Plugin configuration under the same broad prefix
-// is not policy and must never ride the wire. Values are forwarded verbatim; the
-// daemon's execs Policy remains the interpreter. Workspace-scoped: a per-workspace
-// .env carries its own.
-const EXECS_POLICY_KEY = /^PLURNK_EXECS_(?:ONLY|[A-Z][A-Z0-9+.-]*)$/i;
-
-export const collectExecsPolicy = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => {
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(env)) {
-        if (v === undefined) continue;
-        if (!EXECS_POLICY_KEY.test(k)) continue;
-        out[k] = v;
-    }
-    return out;
 };
 
 const MCP_CONFIGURATION_PREFIX = "PLURNK_MCP_";
@@ -124,6 +106,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
+       plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
@@ -146,22 +129,15 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
   PLURNK_AUTO                  when truthy, keep proposal authority inside the loop.
                         Client-side only — proposals still go through the wire.
+  PLURNK_CLIENT_LOOP_POLICY  default LoopPolicy JSON for each loop.
+  PLURNK_CLIENT_WORKSPACE_CAPABILITIES
+                        CapabilityPolicy JSON applied when creating a workspace.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
-  PLURNK_REQUEST_USER_INPUT  when truthy, the conversation worker may ask you
-                        through the question tool. TUI/nvim default on; the
-                        one-shot CLI defaults off. --request_user_input overrides.
   PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
                         set, a one-shot (text AND --json) runs THROUGH the bridge
                         instead of raw daemon WS (the exclusive-portal path).
                         PLURNK_AGUI_TOKEN is the bearer if the bridge requires one.
                         Scripts + subcommands stay on the daemon.
-  PLURNK_EXECS_ONLY /   per-workspace exec-runtime policy, sent to the daemon at
-  PLURNK_EXECS_<tag>    workspace.create (ONLY=a,b allowlist; <tag>=0 kills one).
-                        Plugin configuration with longer underscore suffixes is
-                        never forwarded. Subtractive only — the
-                        daemon intersects with its ceiling; the client can narrow,
-                        never re-enable. Shares the daemon's grammar; a workspace's
-                        .env carries its own.
   PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
                         Service controls do not. The daemon owns parsing,
                         activation, persistence, and credential expansion.
@@ -195,14 +171,11 @@ options:
                           Overrides PLURNK_CLIENT_YOLO.
       --auto              keep proposal authority inside the loop; proposals
                           resolve automatically without a client review round-trip.
-      --flags <json>      raw LoopFlags JSON passthrough on every loop.run
-                          (e.g. '{"auto":true}' for unattended
-                          benchmark/automation runs).
-      --request_user_input  let the model ask you through the question tool when it
-                          needs a decision (multiple choice with a free-response
-                          escape, or an open question). Off by default for the
-                          one-shot CLI; on by default for the TUI. Overrides
-                          PLURNK_REQUEST_USER_INPUT.
+      --policy <json>     LoopPolicy JSON applied to every loop. --auto selects
+                          proposal acceptance; '?' additionally denies EXEC and
+                          selects proposal review for that prompt.
+      --capabilities <json>
+                          CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
@@ -235,6 +208,7 @@ subcommands:
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   reasoning [policy]      inspect or set a worker's durable reasoning policy
+  capabilities [json]    inspect the capability cascade or set the Worker layer
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
   mcp ...                 list and manage MCP servers for --workspace
@@ -320,17 +294,27 @@ export interface Settings {
     maxCommands?: number;
     git?: boolean;
     client?: string;          // #249 — frontend id, set on every workspace.create
-    execs?: Record<string, string>; // #132 — per-workspace exec-policy layer (PLURNK_EXECS_* forwarded)
+    capabilities?: CapabilityPolicy;
 }
 
 export const buildSettings = async (
-    values: { "files-items"?: string; "max-commands"?: string; "no-git"?: boolean },
+    values: { "files-items"?: string; "max-commands"?: string; "no-git"?: boolean; capabilities?: string },
     cwd: string,
     env: NodeJS.ProcessEnv = process.env,
 ): Promise<Settings> => {
     const settings: Settings = {};
-    const execs = collectExecsPolicy(env);
-    if (Object.keys(execs).length > 0) settings.execs = execs;
+    const rawCapabilities = values.capabilities ?? env.PLURNK_CLIENT_WORKSPACE_CAPABILITIES;
+    if (rawCapabilities !== undefined) {
+        try {
+            settings.capabilities = parseCapabilityPolicy("--capabilities", rawCapabilities);
+        } catch {
+            throw new ProblemError(clientFlagInvalid(
+                "--capabilities",
+                rawCapabilities,
+                "must be a valid CapabilityPolicy JSON object",
+            ));
+        }
+    }
     const mc = values["max-commands"];
     if (mc !== undefined) {
         const n = Number(mc);
@@ -507,6 +491,27 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         return 0;
     }
 
+    if (verb === "capabilities") {
+        if (opts.workspaceName === undefined) {
+            throw new ProblemError(clientFlagMissingDependency(
+                "plurnk capabilities",
+                "--workspace (or PLURNK_CLIENT_WORKSPACE)",
+            ));
+        }
+        if (positionals.length > 2) {
+            throw new ProblemError(clientSubcommandUnknownVerb(`capabilities ${positionals.slice(1).join(" ")}`));
+        }
+        const projection = sub === undefined
+            ? await rpc.call("worker.capabilities.get") as Record<string, CapabilityPolicy>
+            : await rpc.call("worker.capabilities.set", {
+                policy: parseCapabilityPolicy("capabilities", sub),
+            }) as Record<string, CapabilityPolicy>;
+        process.stdout.write(opts.json
+            ? `${JSON.stringify(projection)}\n`
+            : formatCapabilityProjection(projection));
+        return 0;
+    }
+
     if (verb === "log") {
         if (sub !== "read") {
             throw new ProblemError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
@@ -567,8 +572,8 @@ export const main = async (argv: string[]): Promise<void> => {
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
-            flags: { type: "string" },
-            "request-user-input": { type: "boolean" },   // --request_user_input: the worker may ask through the question tool
+            policy: { type: "string" },
+            capabilities: { type: "string" },
             "max-turns": { type: "string" },
             timeout: { type: "string" },
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
@@ -626,7 +631,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // State-command routing happens BEFORE prompt assembly, so inspection and
     // deliberate configuration never consume stdin or become model prompts.
-    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "reasoning"] as const;
+    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "reasoning", "capabilities"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -651,35 +656,25 @@ export const main = async (argv: string[]): Promise<void> => {
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelSelector = values.model;
     const reasoningPolicy = values.reasoning;
-    // {§worker-settings} — the worker's request-user-input rule: TUI/nvim default on,
-    // the one-shot CLI defaults off; the explicit flag always wins, then the env.
-    const requestUserInputEnv = ["1", "true", "yes", "on"].includes((process.env.PLURNK_REQUEST_USER_INPUT ?? "").toLowerCase());
-    const requestUserInputCli = values["request-user-input"] === true || (values["request-user-input"] === undefined && requestUserInputEnv);
-    const requestUserInputTui = values["request-user-input"] ?? (requestUserInputEnv || true);
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
     if (workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
     }
 
-    // Loop knobs (benchmark surface): --flags JSON passthrough, --ask sugar,
-    // --max-turns, --timeout. All validated up front, usage errors exit 64.
-    let loopFlags: Record<string, unknown> | undefined;
+    // Loop policy is one contracts-owned surface. --auto is proposal-disposition
+    // sugar; prompt-prefix attenuation is composed immediately before each run.
+    let loopPolicy!: LoopPolicy;
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
         const auto = values.auto === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_AUTO ?? "").toLowerCase());
-        loopFlags = resolveLoopFlags(values.flags, auto);
+        loopPolicy = resolveLoopPolicy(values.policy ?? process.env.PLURNK_CLIENT_LOOP_POLICY, auto);
         maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
         timeoutSec = parseIntFlag(values.timeout, "--timeout");
     } catch (cause) {
         if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
         dieWith(64, clientRuntimeError(cause));
     }
-
-    // --request_user_input / PLURNK_REQUEST_USER_INPUT is the worker's own
-    // behavioral rule ({§worker-settings}): it rides the run's forwardedProps, the
-    // AG-UI thread binding persists it on the conversation worker, and it stays
-    // flippable between loops via worker.settings.set.
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
     const projectRoot: string | null = (() => {
@@ -705,7 +700,12 @@ export const main = async (argv: string[]): Promise<void> => {
     let workspaceOptionsPromise: Promise<{ settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
-            settings: await buildSettings(values as { "files-items"?: string; md?: string[]; "max-commands"?: string; "no-git"?: boolean }, process.cwd()),
+            settings: await buildSettings(values as {
+                "files-items"?: string;
+                "max-commands"?: string;
+                "no-git"?: boolean;
+                capabilities?: string;
+            }, process.cwd()),
         }))();
         return workspaceOptionsPromise;
     };
@@ -771,12 +771,12 @@ export const main = async (argv: string[]): Promise<void> => {
                     params: { policy: reasoningPolicy },
                 });
             }
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, prompt, {
+            const projected = promptPolicy(prompt, loopPolicy);
+            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, projected.prompt, {
                 threadId: workerName ?? w,
                 workspace: w,
                 ...(activeModel === null ? {} : { modelLabel: activeModel.alias ?? `${activeModel.provider}/${activeModel.model}` }),
-                requestUserInput: requestUserInputCli,
-                ...(loopFlags !== undefined ? { flags: loopFlags } : {}),
+                policy: projected.policy,
                 ...(maxTurns !== undefined ? { maxTurns } : {}),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
                 yolo,
@@ -835,9 +835,8 @@ export const main = async (argv: string[]): Promise<void> => {
                 modelExplicit: values.model !== undefined,
                 reasoningPolicy,
                 reasoningExplicit: reasoningPolicy !== undefined,
-                requestUserInput: requestUserInputTui,
                 yolo,
-                loopFlags,
+                loopPolicy,
                 maxTurns,
                 projectRoot,
                 workerName,

@@ -71,6 +71,7 @@ export const COMMANDS = [
     { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
     { name: "reasoning", usage: "/reasoning [policy]", summary: "Inspect or select durable reasoning policy.", group: "policy" },
+    { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect or restrict this worker's capabilities.", group: "policy" },
     { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept.", group: "policy" },
 
     { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace" },

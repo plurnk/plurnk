@@ -7,9 +7,11 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, lineMode, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
+
+const REVIEW_POLICY = { capabilities: {}, proposals: "review" as const };
 
 test("help is a compact grouped index over commands and interaction grammar", () => {
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);
@@ -57,7 +59,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
     };
 
     await assert.rejects(
-        runTui(transport, { id: 1, name: "world" }, { yolo: false }),
+        runTui(transport, { id: 1, name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
         /model control plane unavailable/,
     );
     assert.deepEqual(calls, ["providers.list", "worker.model.get"]);
@@ -79,7 +81,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
     };
 
     await assert.rejects(
-        runTui(transport, { id: 1, name: "world" }, { yolo: false }),
+        runTui(transport, { id: 1, name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
         /invalid ModelRoute/,
     );
 });
@@ -559,22 +561,34 @@ test("seedPromptHistory: empty / error → history untouched", async () => {
     assert.equal(calls, 0);
 });
 
-// §2.0 — mode is a per-line prefix habit (converged with nvim's :AI ? / :AI :),
-// never a --ask flag. THE ask chain the operator audited by hand (2026-07-11):
-// `? ` must put mode:"ask" on the wire flags; this pins the client's half.
-test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] lineMode: '? ' → flags.mode ask; ': ' → act; prefix stripped from the prompt", () => {
-    assert.deepEqual(lineMode("? what is truth"), { flags: { mode: "ask" }, prompt: "what is truth" });
-    assert.deepEqual(lineMode(": do the thing"), { flags: { mode: "act" }, prompt: "do the thing" });
+test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] linePolicy: '?' attenuates EXEC; ':' preserves ordinary policy", () => {
+    assert.deepEqual(linePolicy("? what is truth"), {
+        policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "review" },
+        prompt: "what is truth",
+    });
+    assert.deepEqual(linePolicy(": do the thing"), {
+        policy: { capabilities: {}, proposals: "review" },
+        prompt: "do the thing",
+    });
 });
 
-test("lineMode: bare text carries the base flags untouched; prefix mode OVERRIDES the base", () => {
-    assert.deepEqual(lineMode("hello", { auto: true }), { flags: { auto: true }, prompt: "hello" });
-    assert.deepEqual(lineMode("? hello", { mode: "act", yolo: true }), { flags: { mode: "ask", yolo: true }, prompt: "hello" });
-    assert.deepEqual(lineMode("plain"), { prompt: "plain" });
+test("linePolicy: '?' intersects the base policy and selects review", () => {
+    const base = { capabilities: { deny: [{ traits: ["web"] as [string] }] }, proposals: "accept" as const };
+    assert.deepEqual(linePolicy("hello", base), { policy: base, prompt: "hello" });
+    assert.deepEqual(linePolicy("? hello", base), {
+        policy: {
+            capabilities: { deny: [{ operation: "EXEC" }, { traits: ["web"] }] },
+            proposals: "review",
+        },
+        prompt: "hello",
+    });
 });
 
-test("lineMode: '...' injection prefix strips without minting mode flags", () => {
-    assert.deepEqual(lineMode("... btw also"), { prompt: "btw also" });
+test("linePolicy: '...' strips without altering the base policy", () => {
+    assert.deepEqual(linePolicy("... btw also"), {
+        policy: { capabilities: {}, proposals: "review" },
+        prompt: "btw also",
+    });
 });
 
 test("submitted multiline input becomes durable scrollback without the retired identity glyph", () => {

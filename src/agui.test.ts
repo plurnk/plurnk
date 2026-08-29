@@ -300,7 +300,7 @@ test("resolveWorld: a missing minted name throws an exact client Problem", async
     } finally { await mock.close(); }
 });
 
-test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and model selection ride forwardedProps.plurnk", async () => {
+test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBridge: one-shot workspace options, policy, and model selection ride forwardedProps.plurnk", async () => {
     const { runCliViaBridge } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -312,7 +312,7 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "w",
             workspace: "w",
-            flags: { auto: true },
+            policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "accept" },
             maxTurns: 7,
             yolo: true,
             json: true,
@@ -328,7 +328,15 @@ test("[§cli-model-selection] runCliViaBridge: one-shot workspace options and mo
         assert.equal(fp.childAlias, undefined);
         assert.equal(fp.childModel, undefined);
         assert.equal(fp.childSelector, undefined);
-        assert.deepEqual(fp.flags, { auto: true }, "loop flags reach the wire");
+        assert.deepEqual(fp.policy, {
+            capabilities: {
+                deny: [
+                    { access: "interact" },
+                    { operation: "EXEC" },
+                ],
+            },
+            proposals: "accept",
+        }, "loop policy reaches the wire with one-shot client attenuation");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
     } finally { await mock.close(); }
 });
@@ -357,6 +365,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "conversation",
             workspace: "world",
+            policy: { capabilities: {}, proposals: "review" },
             yolo: true,
             json: true,
             projectRoot: null,
@@ -400,7 +409,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { capabilities: {}, proposals: "review" }, timeoutSec: 1, yolo: true, json: true, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -424,7 +433,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { capabilities: {}, proposals: "review" }, yolo: true, json: true, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

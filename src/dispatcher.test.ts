@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopFlags, buildSettings, buildVersionNotice, collectExecsPolicy, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { resolveProjectRoot, resolveLoopPolicy, buildSettings, buildVersionNotice, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
 
 test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-env-cascade-"));
@@ -48,33 +48,6 @@ test("[§cli-invocation] env cascade uses XDG user configuration and last repeat
     assert.equal(process.env[key], "shell");
 });
 
-// ─── collectExecsPolicy (#132 per-workspace exec-policy layer) ─────────
-
-test("collectExecsPolicy: forwards the enable/disable grammar", () => {
-    assert.deepEqual(
-        collectExecsPolicy({ PLURNK_EXECS_ONLY: "search", PLURNK_EXECS_NODE: "0", PLURNK_EXECS_MCP: "0" }),
-        { PLURNK_EXECS_ONLY: "search", PLURNK_EXECS_NODE: "0", PLURNK_EXECS_MCP: "0" },
-    );
-});
-
-test("collectExecsPolicy: forwards only the runtime-policy key grammar", () => {
-    const out = collectExecsPolicy({
-        PLURNK_EXECS_ONLY: "search",
-        plurnk_execs_node: "0",
-        PLURNK_EXECS_SEARCH_ENGINES: "brave",
-        PLURNK_EXECS_ERROR_DETAIL_LIMIT: "1024",
-        PLURNK_EXECS_MCP_NOTION: "https://notion.example/mcp",
-        PLURNK_EXECS_MCP_NOTION_HEADERS: '{"Authorization":"Bearer sk-secret"}',
-        PLURNK_EXECS_MCP_INSTALL: "0",
-    });
-    assert.deepEqual(out, { PLURNK_EXECS_ONLY: "search", plurnk_execs_node: "0" });
-    assert.ok(!JSON.stringify(out).includes("secret"), "no bearer token leaks onto the wire");
-});
-
-test("collectExecsPolicy: ignores unrelated env; nothing set → empty map", () => {
-    assert.deepEqual(collectExecsPolicy({ PLURNK_WS: "ws://x", PATH: "/usr/bin" }), {});
-});
-
 test("collectMcpConfiguration carries raw declarations and excludes service controls", () => {
     assert.deepEqual(collectMcpConfiguration({
         PLURNK_MCP_GITEA: "gitea-mcp",
@@ -92,40 +65,41 @@ test("collectMcpConfiguration carries raw declarations and excludes service cont
     assert.deepEqual(collectMcpConfiguration({ PATH: "/usr/bin" }), {});
 });
 
-test("buildSettings carries the client executor policy into workspace creation", async () => {
+test("buildSettings carries the canonical workspace capability policy", async () => {
     assert.deepEqual(
         await buildSettings({}, "/", {
-            PLURNK_EXECS_ONLY: "atlas",
-            PLURNK_EXECS_SH: "0",
-            PLURNK_MCP_ATLAS: "node",
+            PLURNK_CLIENT_WORKSPACE_CAPABILITIES: '{"deny":[{"runtime":"sh"}]}',
         }),
-        { execs: { PLURNK_EXECS_ONLY: "atlas", PLURNK_EXECS_SH: "0" } },
+        { capabilities: { deny: [{ runtime: "sh" }] } },
     );
 });
 
-// ─── resolveLoopFlags ────────────────────────────────────────────────
-// Mode is NOT a flag: ask/act ride the prompt prefix (`? `/`: `), the
-// habit converged across nvim, TUI, and the one-shot CLI.
-
-test("resolveLoopFlags: undefined → undefined", () => {
-    assert.equal(resolveLoopFlags(undefined), undefined);
+test("buildSettings does not reinterpret service executor configuration as workspace policy", async () => {
+    assert.deepEqual(await buildSettings({}, "/", {
+        PLURNK_EXECS_ONLY: "atlas",
+        PLURNK_EXECS_SH: "0",
+    }), {});
 });
 
-test("[§cli-invocation] resolveLoopFlags: JSON passes through verbatim", () => {
-    assert.deepEqual(resolveLoopFlags('{"auto":true,"noWeb":true}'), { auto: true, noWeb: true });
+test("resolveLoopPolicy: undefined selects the canonical default", () => {
+    assert.deepEqual(resolveLoopPolicy(undefined), { capabilities: {}, proposals: "review" });
 });
 
-test("[§cli-invocation] resolveLoopFlags: --auto is canonical sugar and wins the raw bag", () => {
-    assert.deepEqual(resolveLoopFlags(undefined, true), { auto: true });
-    assert.deepEqual(resolveLoopFlags('{"auto":false,"noWeb":true}', true), { auto: true, noWeb: true });
+test("[§cli-invocation] resolveLoopPolicy validates canonical policy and --auto selects acceptance", () => {
+    const raw = '{"capabilities":{"deny":[{"traits":["web"]}]},"proposals":"reject"}';
+    assert.deepEqual(resolveLoopPolicy(raw), {
+        capabilities: { deny: [{ traits: ["web"] }] },
+        proposals: "reject",
+    });
+    assert.deepEqual(resolveLoopPolicy(raw, true), {
+        capabilities: { deny: [{ traits: ["web"] }] },
+        proposals: "accept",
+    });
 });
 
-test("resolveLoopFlags: malformed JSON throws", () => {
-    assert.throws(() => resolveLoopFlags("{nope"), /valid JSON/);
-});
-
-test("resolveLoopFlags: non-object JSON throws", () => {
-    assert.throws(() => resolveLoopFlags('["auto"]'), /JSON object/);
+test("resolveLoopPolicy: malformed or noncanonical JSON is a flag Problem", () => {
+    assert.throws(() => resolveLoopPolicy("{nope"));
+    assert.throws(() => resolveLoopPolicy('{"mode":"ask"}'));
 });
 
 // ─── resolveProjectRoot ──────────────────────────────────────────────

@@ -8,9 +8,9 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, isServerResolved, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, answerForQuestion } = await import("./proposal.ts");
+const { renderBody, formatTarget, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, answerForQuestion } = await import("./proposal.ts");
 
-const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
+const proposal = () => ({
     logEntryId: 1,
     loopId: 1,
     turnId: 1,
@@ -18,7 +18,7 @@ const proposal = (flags: object): Parameters<typeof isServerResolved>[0] => ({
     target: { scheme: "file", pathname: "/tmp/x" },
     body: "",
     attrs: {},
-    flags,
+    policy: { capabilities: {}, proposals: "review" as const },
 });
 
 // ─── request-user-input questions ({§question-tool}) ─────────────────
@@ -59,8 +59,8 @@ test("renderQuestionMenu: numbers the choices + free-response hint; open questio
 
 // ─── keyToResolution + renderProposalMenu (non-blocking review primitives) ──
 
-test("[§cli-review-menu-interactive] keyToResolution: a/r/c → accept/reject/cancel; unknown key → null (pass-through)", async () => {
-    const p = proposal({});
+test("[§cli-proposal-review-boundaries][§cli-review-menu-interactive] keyToResolution: a/r/c → accept/reject/cancel; unknown key → null (pass-through)", async () => {
+    const p = proposal();
     assert.deepEqual(await keyToResolution("a", p), { decision: "accept" });
     assert.deepEqual(await keyToResolution("r", p), { decision: "reject" });
     assert.deepEqual(await keyToResolution("c", p), { decision: "cancel" });
@@ -69,30 +69,14 @@ test("[§cli-review-menu-interactive] keyToResolution: a/r/c → accept/reject/c
 });
 
 test("keyToResolution: case-insensitive (A == a)", async () => {
-    assert.deepEqual(await keyToResolution("A", proposal({})), { decision: "accept" });
+    assert.deepEqual(await keyToResolution("A", proposal()), { decision: "accept" });
 });
 
 test("[§cli-notification-shape] renderProposalMenu: shows the op, target, and the key menu", () => {
-    const menu = renderProposalMenu({ ...proposal({}), op: "EDIT", target: { scheme: "file", pathname: "/tmp/x" } });
+    const menu = renderProposalMenu({ ...proposal(), op: "EDIT", target: { scheme: "file", pathname: "/tmp/x" } });
     assert.match(menu, /proposal EDIT/);
     assert.match(menu, /\[a\]ccept/);
     assert.match(menu, /\[r\]eject/);
-});
-
-// ─── isServerResolved ────────────────────────────────────────────────
-
-test("[§cli-what-proposal-review-does-not-do] isServerResolved: flags.auto → true (loop resolves in-process)", () => {
-    assert.equal(isServerResolved(proposal({ auto: true })), true);
-});
-
-test("[§cli-fail-closed-non-tty-no-yolo-server-side-via-noproposals] isServerResolved: flags.noProposals → true (server auto-rejects in-process)", () => {
-    assert.equal(isServerResolved(proposal({ noProposals: true })), true);
-});
-
-test("isServerResolved: plain flags → false (client review proceeds)", () => {
-    assert.equal(isServerResolved(proposal({})), false);
-    assert.equal(isServerResolved(proposal({ auto: false, noProposals: false })), false);
-    assert.equal(isServerResolved(proposal({ noWeb: true, noInteraction: true })), false);
 });
 
 // ─── renderBody ──────────────────────────────────────────────────────

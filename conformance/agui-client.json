@@ -334,7 +334,7 @@
         "durability"
       ]
     },
-    "worker.settings.get": {
+    "worker.capabilities.get": {
       "posture": "generic",
       "evidence": [
         "src/agui.test.ts — arbitrary action round-trip",
@@ -347,7 +347,7 @@
         "composition"
       ]
     },
-    "worker.settings.set": {
+    "worker.capabilities.set": {
       "posture": "generic",
       "evidence": [
         "src/agui.test.ts — arbitrary action round-trip",

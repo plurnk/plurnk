@@ -27,10 +27,11 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
-import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
+import type { LoopPolicy, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
+import { composeLoopPolicy, NONINTERACTIVE_CAPABILITIES } from "./policy.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
@@ -73,7 +74,8 @@ export interface CliRunSinks {
 
 // Decide a stopped-world proposal: the AG-UI run ended
 // on the tool-call; the decision returns as the next run's resume payload. A
-// tool-call strictly means client-owned (the module filters server-yolo/noProposals).
+// A projected proposal tool-call is client-owned; loop-owned dispositions settle
+// before the AG-UI boundary.
 const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }> => {
     if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept" };
     if (io.noReviewChannel) return { logEntryId: p.logEntryId, decision: "reject" };
@@ -235,18 +237,22 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; modelLabel?: string; flags?: Record<string, unknown>; maxTurns?: number; timeoutSec?: number; requestUserInput?: boolean; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
+    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicy; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
+    const policy = composeLoopPolicy(
+        opts.policy,
+        [NONINTERACTIVE_CAPABILITIES],
+        noReviewChannel && opts.policy.proposals === "review" ? "reject" : opts.policy.proposals,
+    );
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
     // worker owns the model ({§worker-model-selection}), and an explicit --model
     // was already persisted by the dispatcher before this run.
     const fp: Record<string, unknown> = {
         ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
-        ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
+        policy,
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
-        ...(opts.requestUserInput !== undefined ? { requestUserInput: opts.requestUserInput } : {}),
     };
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();

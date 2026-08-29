@@ -56,11 +56,11 @@ durable public work inventory.
 
 | | |
 |---|---|
-| `text` | a prompt (`?`=ask / `:`=act prefix) |
-| `/verb` | `/help /models /workspaces /workers /log` · `/model /child /reasoning /yolo` · `/workspace /rename /worker` · `/mcp /skills /agents /members` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
+| `text` | a prompt (`?` denies EXEC and keeps proposal review; `:` is ordinary) |
+| `/verb` | `/help /models /workspaces /workers /log` · `/model /child /reasoning /capabilities /yolo` · `/workspace /rename /worker` · `/mcp /skills /agents /members` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
 | `! cmd` | exec via the daemon |
 
-**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · `--files-items <n>` · `--md NAME=path`.
+**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--policy <json>` · `--capabilities <json>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · `--files-items <n>` · `--md NAME=path`.
 
 ## what plurnk is
 
@@ -94,7 +94,9 @@ What the daemon brings to those turns:
 
 **Env cascade** (the client's side): packaged `.env.defaults` floor < `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` < project `./.env` < repeated `--env-file` flags (last wins) < shell. `plurnk-service config defaults` prints the complete owner-labelled catalog on demand.
 
-**Client env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:1066`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT`.
+**Client env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:1066`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT` · `PLURNK_CLIENT_LOOP_POLICY` · `PLURNK_CLIENT_WORKSPACE_CAPABILITIES`.
+
+**Capabilities** use the daemon's one subtractive policy contract at every scope. `--capabilities` applies a workspace ceiling at creation; `plurnk capabilities [json]` and `/capabilities [json]` inspect the service/workspace/inherited/Worker cascade or replace its mutable Worker layer; `--policy` supplies the complete per-loop policy. Child Workers inherit the parent's effective ceiling and may only narrow it.
 
 **Models** are daemon-side. A worker durably owns its selected route; `--model` and `/model` accept either a declared alias or an exact `provider/model` selector and persist it without adding model policy to subsequent loops. `plurnk models [search]` and `/models [search]` query the daemon's bounded catalog only when requested. Provider credentials and the `PLURNK_MODEL` default live in the daemon's environment — the client never holds a key or guesses readiness.
 

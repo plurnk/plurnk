@@ -179,7 +179,7 @@ test("[§cli-yolo-plurnkyolo] consumeCliRun: yolo auto-accepts a proposal withou
     assert.deepEqual(r.pendingResume, { logEntryId: 3, decision: "accept" });
 });
 
-test("[§cli-what-one-shot-mode-does-not-do] consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
+test("[§cli-fail-closed-no-review-channel] consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
     const { io } = sink({ noReviewChannel: true });
     const r = await consumeCliRun(stream(proposalCall(4)), io);
     assert.deepEqual(r.pendingResume, { logEntryId: 4, decision: "reject" });

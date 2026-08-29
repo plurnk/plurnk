@@ -7,7 +7,7 @@
 //   ## LOOK0 (uri) off-run READ — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
-//   ? text         ask — loop.run with flags.mode="ask"
+//   ? text         deny EXEC for this loop and keep proposal review client-owned
 //   : text         act (the default)
 //   text           prompt
 import { readFile } from "node:fs/promises";
@@ -24,7 +24,7 @@ import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTar
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, isServerResolved, renderQuestionMenu, questionChoices, answerForQuestion, editInEditor } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, answerForQuestion, editInEditor } from "./proposal.ts";
 import { BridgeTransport, type BranchBatchEvent, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -34,9 +34,12 @@ import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
 import {
     Validator,
+    type CapabilityPolicy,
+    type LoopPolicy,
     type ModelRoute,
     type OperationResult,
 } from "@plurnk/plurnk-contracts";
+import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
 import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
 import { handleAgents } from "./agents.ts";
@@ -105,16 +108,7 @@ export const altShortcut = (forward: string): string | null => {
 export const lookStatement = (line: string): string | null =>
     line.startsWith("## LOOK") ? line : null;
 
-// §2.0 prompt prefixes (converged with nvim's :AI ? / :AI :): `? ` puts mode:"ask"
-// on the wire flags, `: ` forces act, both overriding a --flags base mode; `...`
-// (injection) strips without minting flags. Mode is a per-line habit, never --ask.
-export const lineMode = (trimmed: string, base?: Record<string, unknown>): { flags?: Record<string, unknown>; prompt: string } => {
-    const prefix = trimmed[0];
-    const flags = prefix === "?" || prefix === ":"
-        ? { ...(base ?? {}), mode: prefix === "?" ? "ask" : "act" }
-        : base;
-    return { ...(flags !== undefined ? { flags } : {}), prompt: trimmed.replace(/^(\.\.\.|[?:]+)\s*/, "") };
-};
+export const linePolicy = promptPolicy;
 
 export const renderSubmittedInput = (text: string, yolo: boolean): string =>
     text.split("\n").map((line, index) => `${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}`).join("\n");
@@ -390,6 +384,18 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
                 write(`${renderTuiFailure(cause)}\n`);
             }
             return;
+        case "capabilities":
+            try {
+                const projection = rest.length === 0
+                    ? await rpc.call("worker.capabilities.get") as Record<string, CapabilityPolicy>
+                    : await rpc.call("worker.capabilities.set", {
+                        policy: parseCapabilityPolicy("/capabilities", rest),
+                    }) as Record<string, CapabilityPolicy>;
+                write(`${formatCapabilityProjection(projection).trimEnd().replace(/^/gm, "  ")}\n`);
+            } catch (cause) {
+                write(`${renderTuiFailure(cause)}\n`);
+            }
+            return;
         case "child":
             if (rest.length === 0) { write(`  child: ${ctx.spawnModel === null ? "inherit" : resolvedModelLabel(ctx.spawnModel)}\n`); return; }
             try {
@@ -494,8 +500,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // The explicit --model selector for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup.
     modelSelector?: string; modelExplicit?: boolean; reasoningPolicy?: string; reasoningExplicit?: boolean;
-    requestUserInput?: boolean; yolo: boolean;
-    loopFlags?: Record<string, unknown>; maxTurns?: number;
+    yolo: boolean;
+    loopPolicy: LoopPolicy; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
@@ -887,7 +893,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         },
         onProposal: (p) => {
-            if (isServerResolved(p)) return;
             if (opts.yolo) {
                 void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
                     .catch((cause) => printAbove(`  \x1b[31mauto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
@@ -1105,13 +1110,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const command = trimmed.replace(/^!+\s*/, "");
                     terminalResult = await transport.rpc("op.exec", { command }) as OperationResult;
                 } else {
-                    // Prompt. `? ` = ask (read-only loop, flags.mode="ask");
-                    // `: ` = act. Per-line prefix overrides --flags mode.
-                    const { flags: lineFlags, prompt: promptText } = lineMode(trimmed, opts.loopFlags);
+                    // Prompt prefixes are client policy projections. `?` narrows
+                    // the ordinary loop by denying EXEC and retaining review;
+                    // `:` is the unmodified base policy.
+                    const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
                     // {§worker-model-selection} — no model selector rides the loop: the
                     // worker owns the model; /model and /child persisted it server-side.
-                    const loopParams: { prompt: string; flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[]; requestUserInput?: boolean } = { prompt: promptText, requestUserInput: opts.requestUserInput !== false };
-                    if (lineFlags !== undefined && Object.keys(lineFlags).length > 0) loopParams.flags = lineFlags;
+                    const loopParams: { policy: LoopPolicy; maxTurns?: number; openPaths?: string[] } = { policy };
                     if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                     const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
                     if (openPaths.length > 0) loopParams.openPaths = openPaths;

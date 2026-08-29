@@ -14,14 +14,7 @@ import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-export interface ProposalFlags {
-    auto?: boolean;
-    mode?: string;
-    noWeb?: boolean;
-    noInteraction?: boolean;
-    noProposals?: boolean;
-}
+import type { LoopPolicy } from "@plurnk/plurnk-contracts";
 
 export interface ProposalParams {
     logEntryId: number;
@@ -31,15 +24,8 @@ export interface ProposalParams {
     target: { scheme: string | null; pathname: string | null };
     body: string;
     attrs: unknown;
-    flags: ProposalFlags;
+    policy: LoopPolicy;
 }
-
-// Server-resolved proposals: flags.auto resolves inside the loop, while
-// flags.noProposals rejects inside the service. In both cases the
-// daemon resolves the entry in-process before any human can react. Review UI
-// and a client loop.resolve would race an already-settled proposal.
-export const isServerResolved = ({ flags }: ProposalParams): boolean =>
-    flags?.auto === true || flags?.noProposals === true;
 
 export interface Resolution {
     decision: "accept" | "reject" | "cancel";

@@ -21,7 +21,7 @@ import {
     clientActionResultMissing,
     type ProblemDetails,
 } from "./diagnostics.ts";
-import type { OperationResult } from "@plurnk/plurnk-contracts";
+import type { LoopPolicy, OperationResult } from "@plurnk/plurnk-contracts";
 import { runViaBridge, actionViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
@@ -80,7 +80,7 @@ export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
 // loop.run knobs. Model and child-model selection are durable worker policy,
 // changed through worker.model.set / worker.child.set rather than reasserted on
 // individual runs.
-export interface RunOpts { flags?: Record<string, unknown>; maxTurns?: number; openPaths?: string[]; requestUserInput?: boolean }
+export interface RunOpts { policy: LoopPolicy; maxTurns?: number; openPaths?: string[] }
 
 export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
@@ -216,9 +216,8 @@ export class BridgeTransport implements Transport {
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
             ...this.#workspaceOpts(),
-            ...(opts.flags !== undefined ? { flags: opts.flags } : {}),
+            policy: opts.policy,
             ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
-            ...(opts.requestUserInput !== undefined ? { requestUserInput: opts.requestUserInput } : {}),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
         // AG-UI interrupt/resume: a stopped-world ends the run as a

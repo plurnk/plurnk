@@ -46,6 +46,9 @@ export interface StatusContext {
     worker: string | null;
     child: string | null;
     tally: SessionTally;
+    // Running-loop accrual from turn_generated notices (#465); concluded totals
+    // stay in tally, so the two never double-count.
+    accrued?: TurnAccounting | null;
     runningSince: number | null;
     now?: number;
 }
@@ -56,6 +59,40 @@ export interface StatusActivity {
     label: string;
     percent: number | null;
 }
+
+// {§turn-accounting-notice} (#465) — the engine's turn_generated notice carries the
+// turn's exact settled wire accounting; the client accrues it into a running
+// loop figure so mid-run kill decisions never fly blind on price.
+export interface TurnAccounting {
+    costUsd: string | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
+}
+
+export const turnAccountingFromNotice = (notice: {
+    source?: unknown;
+    kind?: unknown;
+    accounting?: unknown;
+}): TurnAccounting | null => {
+    if (notice.source !== "engine:turn" || notice.kind !== "turn_generated") return null;
+    const accounting = notice.accounting;
+    if (typeof accounting !== "object" || accounting === null) return null;
+    const a = accounting as { costUsd?: unknown; inputTokens?: unknown; outputTokens?: unknown };
+    return {
+        costUsd: typeof a.costUsd === "string" ? a.costUsd : null,
+        inputTokens: typeof a.inputTokens === "number" ? a.inputTokens : null,
+        outputTokens: typeof a.outputTokens === "number" ? a.outputTokens : null,
+    };
+};
+
+export const accrueTurnAccounting = (
+    accrued: TurnAccounting | null,
+    turn: TurnAccounting,
+): TurnAccounting => accrued === null ? turn : {
+    costUsd: accrued.costUsd === null ? turn.costUsd : turn.costUsd === null ? accrued.costUsd : addDecimal(accrued.costUsd, turn.costUsd),
+    inputTokens: accrued.inputTokens === null ? turn.inputTokens : turn.inputTokens === null ? accrued.inputTokens : accrued.inputTokens + turn.inputTokens,
+    outputTokens: accrued.outputTokens === null ? turn.outputTokens : turn.outputTokens === null ? accrued.outputTokens : accrued.outputTokens + turn.outputTokens,
+};
 
 // {plurnk#41} — effort is identity-grade: contracts ≥1.14 routes carry the worker's
 // durable reasoning policy; when absent (older daemon, or a model with no reasoning
@@ -224,7 +261,13 @@ export const renderStatusLine = (
     const turns = context.tally.turns + (running ? value.packetCount ?? 0 : 0);
     const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
     if (turns > 0 || running) parts.push(`${turns} turn${turns === 1 ? "" : "s"}`, formatDuration(context.tally.wallMs + elapsed));
-    const { inputTokens, outputTokens, costUsd } = context.tally;
+    const accrued = running ? context.accrued ?? null : null;
+    const combined = accrued === null ? context.tally : accrueTurnAccounting({
+        costUsd: context.tally.costUsd,
+        inputTokens: context.tally.inputTokens,
+        outputTokens: context.tally.outputTokens,
+    }, accrued);
+    const { inputTokens, outputTokens, costUsd } = combined;
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${inputTokens ?? "?"} ↑${outputTokens ?? "?"}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${costUsd}`);
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
@@ -282,6 +325,12 @@ export default class TerminalStatusLine {
             this.#lastRoutinePaint = now;
         }
         this.#paint();
+    }
+
+    // (#465) Accrue one turn's settled wire accounting into the running figure.
+    accrue(turn: TurnAccounting): void {
+        this.#context = { ...this.#context, accrued: accrueTurnAccounting(this.#context.accrued ?? null, turn) };
+        this.update({});
     }
 
     durable(value: string): void {

@@ -29,7 +29,7 @@ import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { LoopPolicy, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
-import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
+import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 import { composeLoopPolicy, NONINTERACTIVE_CAPABILITIES } from "./policy.ts";
 
@@ -69,6 +69,7 @@ export interface CliRunSinks {
     review: (p: ProposalParams) => Promise<Resolution>;
     onActionResult?: (v: ActionOutcome) => void;
     onProgress?: (activity: StatusActivity | null) => void;
+    onTurnAccounting?: (turn: TurnAccounting) => void;
     onStatus?: (status: ClientStatus) => void;
 }
 
@@ -192,6 +193,11 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             }
         } else if (name === "plurnk.notice") {
             const notice = value as Notice;
+            // (#465) turn_generated carries the turn's settled wire accounting in
+            // every mode — the accrual hook runs before display routing so json
+            // (the benchlet surface) still streams running cost.
+            const turn = turnAccountingFromNotice(notice);
+            if (turn !== null) io.onTurnAccounting?.(turn);
             if (io.json) notices.push(notice);
             else {
                 const progress = derivationActivity(notice);
@@ -256,6 +262,7 @@ export const runCliViaBridge = async (
     };
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
+    let accruedStream: TurnAccounting | null = null;
     const statusLine = new TerminalStatusLine(
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
@@ -272,6 +279,15 @@ export const runCliViaBridge = async (
         err: (s: string) => statusLine.durable(s),
         notice: (notice: Parameters<typeof report>[0]) => statusLine.durable(`${renderDiagnostic(notice)}\n`),
         onProgress: (activity: StatusActivity | null) => statusLine.update({ activity }, { routine: true }),
+        // (#465) accrue running loop cost; PLURNK_STATUS_STREAM=1 also prints a
+        // greppable plain row per turn (stderr), the benchlet's live price feed.
+        onTurnAccounting: (turn: TurnAccounting) => {
+            statusLine.accrue(turn);
+            if (process.env.PLURNK_STATUS_STREAM === "1") {
+                accruedStream = accrueTurnAccounting(accruedStream, turn);
+                process.stderr.write(`status-stream: turn \u2193${turn.inputTokens ?? "?"} \u2191${turn.outputTokens ?? "?"} $${turn.costUsd ?? "?"} \u00b7 loop \u2193${accruedStream.inputTokens ?? "?"} \u2191${accruedStream.outputTokens ?? "?"} $${accruedStream.costUsd ?? "?"}\n`);
+            }
+        },
         onStatus: (status: ClientStatus) => statusLine.update(status),
         json: opts.json,
         yolo: opts.yolo,

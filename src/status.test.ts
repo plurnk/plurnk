@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, derivationActivity, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
@@ -84,4 +84,24 @@ test("formatRouteIdentity renders effort with the identity and stays bare withou
     assert.equal(formatRouteIdentity({ provider: "cloudflare", model: "@cf/zai-org/glm-5.3-flash", reasoningPolicy: "low" }), "cloudflare/@cf/zai-org/glm-5.3-flash[low]");
     assert.equal(formatRouteIdentity({ alias: "fireox", provider: "fireworks", model: "accounts/fireworks/models/glm-5p3-flash", reasoningPolicy: "off" }), "fireox[off]");
     assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m" }), "plain", "no reasoning dimension - no brackets");
+});
+
+test("#465: turn accounting parses, accrues decimal-exact, and rides the running status line", () => {
+    const turn = turnAccountingFromNotice({ source: "engine:turn", kind: "turn_generated", accounting: { costUsd: "0.01", inputTokens: 100, outputTokens: 20 } });
+    assert.deepEqual(turn, { costUsd: "0.01", inputTokens: 100, outputTokens: 20 });
+    assert.equal(turnAccountingFromNotice({ source: "engine:turn", kind: "turn_awaiting_model" }), null);
+    assert.equal(turnAccountingFromNotice({ source: "engine:provider", kind: "turn_generated", accounting: {} }), null);
+    const accrued = accrueTurnAccounting(turn!, { costUsd: "0.005", inputTokens: 50, outputTokens: 5 });
+    assert.deepEqual(accrued, { costUsd: "0.015", inputTokens: 150, outputTokens: 25 });
+    const line = renderStatusLine(
+        { lifecycle: "running", model: null, packetCount: 2, activity: null },
+        { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: 1000, now: 3000 },
+    );
+    assert.match(line, /↓150 ↑25/);
+    assert.match(line, /\$0\.015/);
+    const idle = renderStatusLine(
+        { lifecycle: "completed", model: null, packetCount: null, activity: null },
+        { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
+    );
+    assert.doesNotMatch(idle, /\$0\.015/, "a concluded line shows only the concluded tally");
 });

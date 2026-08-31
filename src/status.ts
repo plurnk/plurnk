@@ -57,6 +57,19 @@ export interface StatusActivity {
     percent: number | null;
 }
 
+// {plurnk#41} — effort is identity-grade: contracts ≥1.14 routes carry the worker's
+// durable reasoning policy; when absent (older daemon, or a model with no reasoning
+// dimension) the identity renders bare. Structural input so both contract eras format.
+export const formatRouteIdentity = (route: {
+    alias?: string;
+    provider: string;
+    model: string;
+    reasoningPolicy?: string;
+}): string => {
+    const name = route.alias ?? `${route.provider}/${route.model}`;
+    return route.reasoningPolicy === undefined ? name : `${name}[${route.reasoningPolicy}]`;
+};
+
 export interface ClientStatus {
     lifecycle: StatusLifecycle;
     model: string | null;
@@ -102,7 +115,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge): ClientStatus => {
     }
     return {
         lifecycle: value.lifecycle as StatusLifecycle,
-        model: model === null ? null : model.alias ?? `${model.provider}/${model.model}`,
+        model: model === null ? null : formatRouteIdentity(model),
         packetCount: value.packetCount,
         activity,
     };

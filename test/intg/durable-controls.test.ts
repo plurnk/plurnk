@@ -62,11 +62,13 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.ok(workers.workers.some(({ id, name }) => id === child.workerId && name === "durable-child"));
 
     await from("a", "worker.model.set", { selector: "nvimtest" });
-    const model = await from<{ model: { alias: string; provider: string; model: string } }>("b", "worker.model.get");
+    const model = await from<{ model: { alias: string; provider: string; model: string; reasoningPolicy?: string } }>("b", "worker.model.get");
+    // The route carries the worker's durable effort with the identity (plurnk#41).
     assert.deepEqual(model.model, {
         alias: "nvimtest",
         provider: "lmstudio",
         model: "nvim-family/selected",
+        reasoningPolicy: "off",
     });
 
     await from("a", "worker.child.set", { selector: "nvimtest" });

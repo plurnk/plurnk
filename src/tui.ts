@@ -50,7 +50,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { EMPTY_TALLY, derivationActivity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
+import { EMPTY_TALLY, derivationActivity, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
 import {
     COMMANDS,
     completeCommandSyntax,
@@ -319,8 +319,7 @@ const workerModelProjection = (value: unknown): {
     };
 };
 
-export const resolvedModelLabel = (spec: ResolvedModelSpec): string =>
-    spec.alias ?? `${spec.provider}/${spec.model}`;
+export const resolvedModelLabel = (spec: ResolvedModelSpec): string => formatRouteIdentity(spec);
 
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
     const { verb, rest } = parseSlash(line);

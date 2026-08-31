@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { EMPTY_TALLY, derivationActivity, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
@@ -77,4 +77,11 @@ test("TerminalStatusLine clears and restores its row around stdout on a shared t
     assert.deepEqual(stdout, ["answer\n"]);
     assert.equal(stderr[1], "\r\x1b[2K");
     assert.match(stderr[2] ?? "", /deepdumb/);
+});
+
+test("formatRouteIdentity renders effort with the identity and stays bare without it (plurnk#41)", () => {
+    assert.equal(formatRouteIdentity({ alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", reasoningPolicy: "low" }), "deepdumb[low]");
+    assert.equal(formatRouteIdentity({ provider: "cloudflare", model: "@cf/zai-org/glm-5.3-flash", reasoningPolicy: "low" }), "cloudflare/@cf/zai-org/glm-5.3-flash[low]");
+    assert.equal(formatRouteIdentity({ alias: "fireox", provider: "fireworks", model: "accounts/fireworks/models/glm-5p3-flash", reasoningPolicy: "off" }), "fireox[off]");
+    assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m" }), "plain", "no reasoning dimension - no brackets");
 });

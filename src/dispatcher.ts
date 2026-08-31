@@ -13,6 +13,7 @@ import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
 import { runTui } from "./tui.ts";
 import { handleMcp } from "./mcp.ts";
+import { formatRouteIdentity } from "./status.ts";
 import {
     formatWorkerReasoning,
     readWorkerReasoning,
@@ -775,7 +776,7 @@ export const main = async (argv: string[]): Promise<void> => {
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, projected.prompt, {
                 threadId: workerName ?? w,
                 workspace: w,
-                ...(activeModel === null ? {} : { modelLabel: activeModel.alias ?? `${activeModel.provider}/${activeModel.model}` }),
+                ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
                 policy: projected.policy,
                 ...(maxTurns !== undefined ? { maxTurns } : {}),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),

@@ -40,6 +40,7 @@ import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
+import { launchWeb } from "./web.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -108,6 +109,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
+       plurnk web [plurnk-web options...]
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
@@ -212,6 +214,8 @@ subcommands:
   capabilities [json]    inspect the capability cascade or set the Worker layer
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
+  web [options...]        foreground-launch the separately installed plurnk-web;
+                          inherits the env cascade and performs no package install
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
@@ -555,6 +559,22 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
 };
 
 export const main = async (argv: string[]): Promise<void> => {
+    if (argv[2] === "web") {
+        try {
+            const args = argv.slice(3);
+            loadEnvCascade(orderedEnvFiles(args));
+            process.exitCode = launchWeb(args);
+        } catch (cause) {
+            if (cause instanceof ProblemError) {
+                report(cause.problem);
+                process.exitCode = cause.exitCode;
+            } else {
+                report(clientRuntimeError(cause));
+                process.exitCode = 1;
+            }
+        }
+        return;
+    }
     const { positionals, values } = parseArgs({
         args: argv.slice(2),
         allowPositionals: true,

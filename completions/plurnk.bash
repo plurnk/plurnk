@@ -2,7 +2,7 @@
 _plurnk() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     local flags="--help --version --json --workspace --worker --model --reasoning --project-root --yolo --auto --policy --capabilities --env-file --env-file-if-exists --max-turns --timeout --files-items --md --max-commands --no-git --loop --turn --since --limit --provider --all --offset --width"
-    local subs="models workspace log reasoning capabilities render mcp script"
+    local subs="models workspace log reasoning capabilities render web mcp script"
     if [[ $cur == -* ]]; then
         COMPREPLY=($(compgen -W "$flags" -- "$cur"))
     elif [[ $COMP_CWORD -eq 1 ]]; then

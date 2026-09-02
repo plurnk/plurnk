@@ -625,14 +625,14 @@ Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripte
 
 ## §7 Subcommands {§cli-subcommands}
 
-Subcommands inspect or deliberately configure daemon state without running a
+Daemon subcommands inspect or deliberately configure state without running a
 loop. They share the same connection and workspace-resolution machinery as the
-prompt-driven flow, but skip `loop.run` entirely. All support `--json` for
+prompt-driven flow, but skip `loop.run` entirely. They support `--json` for
 machine-readable output (stdout product per §2.1; trace and errors stay on
 stderr). `reasoning [policy]` reads or changes the durable reasoning policy.
 `capabilities [json]` projects every durable capability layer and its effective
 intersection, or replaces the mutable Worker layer. Prompt runs only carry loop
-policy.
+policy. Local `render` and launcher `web` subcommands do not contact the daemon.
 
 When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
 
@@ -680,7 +680,16 @@ policy, calls `worker.reasoning.get`. With one policy, calls
 `worker.reasoning.set`. Text mode prints the effective policy and supported
 choices; JSON mode emits the daemon result unchanged.
 
-### §7.6 What subcommands do NOT do
+### §7.6 `plurnk web [options...]` {§cli-web-launcher}
+
+Foreground-launches the separately installed `plurnk-web` executable with
+inherited stdio and the resolved PLURNK environment. Every argument after
+`web` is forwarded unchanged. The launcher never downloads code, starts the
+daemon, or puts credentials in argv. If the executable is absent, it exits 127
+and names the exact opt-in installation command. Child exit status and
+termination signals retain their conventional shell status.
+
+### §7.7 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
 - Hide state changes: workspace rename and an explicit reasoning policy are the

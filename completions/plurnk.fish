@@ -5,6 +5,7 @@ complete -c plurnk -n __fish_use_subcommand -a log
 complete -c plurnk -n __fish_use_subcommand -a reasoning
 complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render
+complete -c plurnk -n __fish_use_subcommand -a web
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a script
 complete -c plurnk -l help

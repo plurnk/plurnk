@@ -8,15 +8,15 @@ process.env.NO_COLOR = "1";
 const { default: StreamTrace, inlineable, renderInline } = await import("./stream.ts");
 
 const event = (entryId: number, over: Partial<{ channel: string; state: string; contentLength: number }> = {}) => ({
-    entryId, workerId: 7, target: "python:///1/2/1", channel: "stdout", state: "active", contentLength: 12,
+    entryId, workerId: 7, target: "python:///1/2/1/EXEC", channel: "stdout", state: "active", contentLength: 12,
     loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 
 const concluded = (over: Partial<{ status: number; summary: string; wakeAction: string }> = {}) => {
     const { status = 200, ...rest } = over;
     return {
-        entryId: 1, workerId: 7, target: "python:///1/2/1", subscriptionId: 1, scheme: "python",
-        result: { status }, summary: "python:///1/2/1 completed (exit 0); stdout=12 bytes, stderr=0 bytes",
+        entryId: 1, workerId: 7, target: "python:///1/2/1/EXEC", subscriptionId: 1, scheme: "python",
+        result: { status }, summary: "python:///1/2/1/EXEC completed (exit 0); stdout=12 bytes, stderr=0 bytes",
         wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 2, sequence: 1, ...rest,
     };
 };

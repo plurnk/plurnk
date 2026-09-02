@@ -32,7 +32,7 @@ export const exitCodeForLoop = (finalStatus: number, hitMaxTurns: boolean): numb
 // CLIENT-OBSERVED record (every turn's ops with target/status, notices, the
 // answer, usage) — NOT op CONTENT: under co-location the consumer is on the
 // same filesystem and can `plurnk read L/T/S` any entry on demand, the same
-// OPEN/FOLD discipline the engine runs on. Bump on any breaking schema change.
+// KILL discipline the engine runs on. Bump on any breaking schema change.
 export const JSON_SCHEMA_VERSION = 6;
 
 // The logical L/T/S coordinate — the address `plurnk read` takes.

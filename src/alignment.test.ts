@@ -28,8 +28,8 @@ test("[§cli-rendering] glyph-bearing waterfall rows share the left edge and SEN
         ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
         ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410 }))],
-        ["stream event", streams.event({ entryId: 8, workerId: 7, target: "sh:///1/1/8", channel: "stdout", state: "active", contentLength: 0 }) ?? ""],
-        ["stream conclusion", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1/1/8", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-loop" })],
+        ["stream event", streams.event({ entryId: 8, workerId: 7, target: "sh:///1/1/8/EXEC", channel: "stdout", state: "active", contentLength: 0 }) ?? ""],
+        ["stream conclusion", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1/1/8/EXEC", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-loop" })],
     ];
 
     for (const [label, value] of rows) {

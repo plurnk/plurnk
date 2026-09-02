@@ -125,7 +125,8 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         Works with no config at all.
   PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
                         mints a fresh, uniquely-named workspace per invocation.
-  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace
+  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace;
+                        web mode resolves an unconstrained workspace first
   PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
@@ -157,7 +158,9 @@ options:
                           if none exists (attach-or-create). Without it, a fresh
                           auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Requires --workspace. Overrides PLURNK_CLIENT_WORKER.
+                          Requires --workspace except in web mode, which resolves
+                          the workspace before applying this constraint. Overrides
+                          PLURNK_CLIENT_WORKER.
       --model <selector>  persistently select the conversation worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -217,7 +220,8 @@ subcommands:
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
   web [options]           serve the optional browser client using this invocation's
-                          resolved workspace, Worker, model, reasoning, and policy;
+                          resolved configuration and optional workspace/Worker
+                          constraints; each tab is URL-addressed as /workspace/threadId;
                           performs no package install or daemon startup
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
@@ -676,7 +680,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const modelSelector = values.model;
     const reasoningPolicy = values.reasoning;
     const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
-    if (workerName !== undefined && workspaceName === undefined) {
+    if (!web && workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
     }
 
@@ -748,44 +752,59 @@ export const main = async (argv: string[]): Promise<void> => {
             if (positionals.length > 1) {
                 throw new ProblemError(clientSubcommandUnknownVerb(`web ${positionals.slice(1).join(" ")}`));
             }
-            const w = await world();
             const { settings } = await workspaceOptions();
-            const workspaceOptionsForAction = {
+            const workspaceProperties = {
                 ...(projectRoot !== null ? { projectRoot } : {}),
                 ...(Object.keys(settings).length > 0 ? { settings } : {}),
             };
-            const threadId = workerName ?? w;
             const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
-            if (modelSelector !== undefined) {
-                await actionViaBridge(target, {
-                    threadId,
-                    workspace: w,
-                    workspaceOptions: workspaceOptionsForAction,
-                    kind: "worker.model.set",
-                    params: { selector: modelSelector },
+            const prepared = new Map<string, Promise<void>>();
+            const prepareSession = (session: { workspace: string; threadId: string }): Promise<void> => {
+                const key = JSON.stringify([session.workspace, session.threadId]);
+                const existing = prepared.get(key);
+                if (existing !== undefined) return existing;
+                const pending = (async () => {
+                    if (modelSelector !== undefined) {
+                        await actionViaBridge(target, {
+                            threadId: session.threadId,
+                            workspace: session.workspace,
+                            workspaceOptions: workspaceProperties,
+                            kind: "worker.model.set",
+                            params: { selector: modelSelector },
+                        });
+                    }
+                    if (reasoningPolicy !== undefined) {
+                        await actionViaBridge(target, {
+                            threadId: session.threadId,
+                            workspace: session.workspace,
+                            workspaceOptions: workspaceProperties,
+                            kind: "worker.reasoning.set",
+                            params: { policy: reasoningPolicy },
+                        });
+                    }
+                })().catch((cause) => {
+                    prepared.delete(key);
+                    throw cause;
                 });
-            }
-            if (reasoningPolicy !== undefined) {
-                await actionViaBridge(target, {
-                    threadId,
-                    workspace: w,
-                    workspaceOptions: workspaceOptionsForAction,
-                    kind: "worker.reasoning.set",
-                    params: { policy: reasoningPolicy },
-                });
-            }
+                prepared.set(key, pending);
+                return pending;
+            };
             process.exitCode = await launchWeb({
                 ...(typeof values.host === "string" ? { host: values.host } : {}),
                 ...(typeof values.port === "string" ? { port: values.port } : {}),
                 upstream: new URL(bridgeUrl),
                 ...(process.env.PLURNK_AGUI_TOKEN === undefined ? {} : { token: process.env.PLURNK_AGUI_TOKEN }),
-                session: { workspace: w, threadId },
+                constraints: {
+                    ...(workspaceName === undefined ? {} : { workspace: workspaceName }),
+                    ...(workerName === undefined ? {} : { threadId: workerName }),
+                },
+                workspaceProperties,
                 runProperties: {
-                    ...(projectRoot !== null ? { projectRoot } : {}),
-                    ...(Object.keys(settings).length > 0 ? { settings } : {}),
+                    ...workspaceProperties,
                     policy: loopPolicy,
                     ...(maxTurns === undefined ? {} : { maxTurns }),
                 },
+                prepareSession,
                 autoAcceptProposals: yolo,
             }, {
                 announce: (origin) => process.stderr.write(`plurnk web: ${origin}\n`),

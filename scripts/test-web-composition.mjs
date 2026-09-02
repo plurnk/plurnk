@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -103,10 +103,17 @@ try {
             inputs.push(input);
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined) {
+                const result = action.kind === "workspace.create"
+                    ? { id: 1, name: action.name ?? "minted", workerId: 1 }
+                    : action.kind === "workspace.workers"
+                        ? { workers: [{ id: 1, name: input.threadId, created_at: "now", origin: "client", parentWorkerId: null }] }
+                        : action.kind === "workspace.list"
+                            ? { workspaces: [{ id: 1, name: "web-composition", project_root: projectRoot, created_at: "now" }] }
+                            : {};
                 sendEvents(response, input, [{
                     type: "CUSTOM",
                     name: "plurnk.action.result",
-                    value: { kind: action.kind, ok: true, result: {} },
+                    value: { kind: action.kind, ok: true, result },
                 }]);
                 return;
             }
@@ -126,14 +133,21 @@ try {
     const portalPort = await listen(reservation);
     await close(reservation);
 
+    await writeFile(join(consumer, ".env"), [
+        "PLURNK_CLIENT_WORKSPACE=web-composition",
+        "PLURNK_CLIENT_WORKER=browser",
+        "PLURNK_CLIENT_YOLO=1",
+        "PLURNK_WEB_HOST=127.0.0.1",
+        `PLURNK_WEB_PORT=${portalPort}`,
+        "",
+    ].join("\n"));
+
     const environment = Object.fromEntries(
         Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_")),
     );
     const bin = join(consumer, "node_modules", ".bin", "plurnk");
     client = spawn(bin, [
         "web",
-        "--workspace=web-composition",
-        "--worker=browser",
         "--model=fireox",
         "--reasoning=low",
         `--project-root=${projectRoot}`,
@@ -143,9 +157,6 @@ try {
         "--capabilities={\"deny\":[{\"operation\":\"EXEC\"}]}",
         "--policy={\"capabilities\":{},\"proposals\":\"review\"}",
         "--max-turns=7",
-        "--yolo",
-        "--host=127.0.0.1",
-        `--port=${portalPort}`,
     ], {
         cwd: consumer,
         env: {
@@ -179,18 +190,26 @@ try {
         });
     });
 
-    const bootstrap = await (await fetch(`${portalOrigin}/bootstrap.json`)).json();
+    const bootstrap = await (await fetch(
+        `${portalOrigin}/bootstrap.json?path=${encodeURIComponent("/web-composition/browser")}`,
+    )).json();
     assert.deepEqual(bootstrap, {
         runtimeUrl: "/api/copilotkit",
         agentId: "default",
         workspace: "web-composition",
         threadId: "browser",
+        runtimeThreadId: JSON.stringify(["web-composition", "browser"]),
+        canonicalPath: "/web-composition/browser",
+        workspaceLocked: true,
+        workerLocked: true,
+        workspaces: ["web-composition"],
+        workers: ["browser"],
         autoAcceptProposals: true,
     });
 
     const agent = new HttpAgent({ url: `${portalOrigin}/api/copilotkit/agent/default/run` });
     const runInput = {
-        threadId: "browser",
+        threadId: bootstrap.runtimeThreadId,
         runId: "web-composition-run",
         state: {},
         messages: [{ id: "prompt", role: "user", content: "exercise the browser path" }],
@@ -201,17 +220,19 @@ try {
     const events = await collect(agent, runInput);
     assert(events.some((event) => event.type === "TEXT_MESSAGE_CONTENT" && event.delta === "web composition ok"));
 
-    assert.equal(inputs.length, 3);
+    assert.equal(inputs.length, 6);
     assert.deepEqual(inputs[0].forwardedProps.plurnk, {
-        workspace: "web-composition",
-        projectRoot,
-        settings: {
-            capabilities: { deny: [{ operation: "EXEC" }] },
-            maxCommands: 12,
-            git: false,
-            filesItems: 3,
+        action: {
+            kind: "workspace.create",
+            name: "web-composition",
+            projectRoot,
+            settings: {
+                capabilities: { deny: [{ operation: "EXEC" }] },
+                maxCommands: 12,
+                git: false,
+                filesItems: 3,
+            },
         },
-        action: { kind: "worker.model.set", selector: "fireox" },
     });
     assert.deepEqual(inputs[1].forwardedProps.plurnk, {
         workspace: "web-composition",
@@ -222,9 +243,34 @@ try {
             git: false,
             filesItems: 3,
         },
-        action: { kind: "worker.reasoning.set", policy: "low" },
+        action: { kind: "workspace.workers" },
     });
     assert.deepEqual(inputs[2].forwardedProps.plurnk, {
+        workspace: "web-composition",
+        projectRoot,
+        settings: {
+            capabilities: { deny: [{ operation: "EXEC" }] },
+            maxCommands: 12,
+            git: false,
+            filesItems: 3,
+        },
+        action: { kind: "worker.model.set", selector: "fireox" },
+    });
+    assert.deepEqual(inputs[3].forwardedProps.plurnk, {
+        workspace: "web-composition",
+        projectRoot,
+        settings: {
+            capabilities: { deny: [{ operation: "EXEC" }] },
+            maxCommands: 12,
+            git: false,
+            filesItems: 3,
+        },
+        action: { kind: "worker.reasoning.set", policy: "low" },
+    });
+    assert.deepEqual(inputs[4].forwardedProps.plurnk, {
+        action: { kind: "workspace.list" },
+    });
+    assert.deepEqual(inputs[5].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
         settings: {

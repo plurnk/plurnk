@@ -10,7 +10,10 @@ export interface WebPortalLaunch {
     // Already-resolved AG-UI properties. The optional presentation module
     // forwards this opaque record; it does not own client configuration.
     runProperties: Readonly<Record<string, unknown>>;
-    prepareSession?(session: { workspace: string; threadId: string }): Promise<void>;
+    prepareSession?(session: { workspace: string; threadId: string }, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
+    projectPrompt?(prompt: string): { prompt: string; runProperties: Readonly<Record<string, unknown>> };
+    timeoutSec?: number;
+    mcpConfiguration: Readonly<Record<string, string>>;
     autoAcceptProposals: boolean;
 }
 

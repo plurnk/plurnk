@@ -109,6 +109,8 @@ try {
                         ? { workers: [{ id: 1, name: input.threadId, created_at: "now", origin: "client", parentWorkerId: null }] }
                         : action.kind === "workspace.list"
                             ? { workspaces: [{ id: 1, name: "web-composition", project_root: projectRoot, created_at: "now" }] }
+                            : action.kind === "worker.mcp.discover"
+                                ? { candidates: [{ alias: "gitea", definition: { name: "gitea", transport: "stdio", command: "gitea-mcp", args: [] }, provenance: { kind: "client-configuration", source: "PLURNK_MCP_GITEA" } }] }
                             : {};
                 sendEvents(response, input, [{
                     type: "CUSTOM",
@@ -139,6 +141,7 @@ try {
         "PLURNK_CLIENT_YOLO=1",
         "PLURNK_WEB_HOST=127.0.0.1",
         `PLURNK_WEB_PORT=${portalPort}`,
+        "PLURNK_MCP_GITEA=gitea-mcp",
         "",
     ].join("\n"));
 
@@ -155,7 +158,7 @@ try {
         "--max-commands=12",
         "--no-git",
         "--capabilities={\"deny\":[{\"operation\":\"EXEC\"}]}",
-        "--policy={\"capabilities\":{},\"proposals\":\"review\"}",
+        "--policy={\"capabilities\":{},\"proposals\":\"accept\"}",
         "--max-turns=7",
     ], {
         cwd: consumer,
@@ -212,7 +215,7 @@ try {
         threadId: bootstrap.runtimeThreadId,
         runId: "web-composition-run",
         state: {},
-        messages: [{ id: "prompt", role: "user", content: "exercise the browser path" }],
+        messages: [{ id: "prompt", role: "user", content: "? exercise the browser path @README.md" }],
         tools: [],
         context: [],
         forwardedProps: {},
@@ -220,51 +223,39 @@ try {
     const events = await collect(agent, runInput);
     assert(events.some((event) => event.type === "TEXT_MESSAGE_CONTENT" && event.delta === "web composition ok"));
 
+    const webPackage = JSON.parse(await readFile(join(consumer, "node_modules", "@plurnk", "plurnk-web", "package.json"), "utf8"));
+    const clientSettings = {
+        client: `@plurnk/plurnk-web/${webPackage.version}`,
+        capabilities: { deny: [{ operation: "EXEC" }] },
+        maxCommands: 12,
+        git: false,
+        filesItems: 3,
+    };
     assert.equal(inputs.length, 6);
     assert.deepEqual(inputs[0].forwardedProps.plurnk, {
         action: {
             kind: "workspace.create",
             name: "web-composition",
             projectRoot,
-            settings: {
-                capabilities: { deny: [{ operation: "EXEC" }] },
-                maxCommands: 12,
-                git: false,
-                filesItems: 3,
-            },
+            settings: clientSettings,
         },
     });
     assert.deepEqual(inputs[1].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
-        settings: {
-            capabilities: { deny: [{ operation: "EXEC" }] },
-            maxCommands: 12,
-            git: false,
-            filesItems: 3,
-        },
+        settings: clientSettings,
         action: { kind: "workspace.workers" },
     });
     assert.deepEqual(inputs[2].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
-        settings: {
-            capabilities: { deny: [{ operation: "EXEC" }] },
-            maxCommands: 12,
-            git: false,
-            filesItems: 3,
-        },
+        settings: clientSettings,
         action: { kind: "worker.model.set", selector: "fireox" },
     });
     assert.deepEqual(inputs[3].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
-        settings: {
-            capabilities: { deny: [{ operation: "EXEC" }] },
-            maxCommands: 12,
-            git: false,
-            filesItems: 3,
-        },
+        settings: clientSettings,
         action: { kind: "worker.reasoning.set", policy: "low" },
     });
     assert.deepEqual(inputs[4].forwardedProps.plurnk, {
@@ -273,18 +264,34 @@ try {
     assert.deepEqual(inputs[5].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
-        settings: {
-            capabilities: { deny: [{ operation: "EXEC" }] },
-            maxCommands: 12,
-            git: false,
-            filesItems: 3,
-        },
-        policy: { capabilities: {}, proposals: "review" },
+        settings: clientSettings,
+        policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "review" },
         maxTurns: 7,
+        openPaths: ["README.md"],
+    });
+    assert.equal(inputs[5].messages.at(-1)?.content, "exercise the browser path @README.md");
+
+    const mcpEvents = await collect(agent, {
+        ...runInput,
+        runId: "web-mcp-discovery",
+        messages: [],
+        forwardedProps: { plurnk: { action: { kind: "worker.mcp.discover" } } },
+    });
+    assert(mcpEvents.some((event) => event.type === "CUSTOM" && event.name === "plurnk.action.result"));
+    assert.equal(inputs.length, 7);
+    assert.deepEqual(inputs[6].forwardedProps.plurnk, {
+        workspace: "web-composition",
+        projectRoot,
+        settings: clientSettings,
+        policy: { capabilities: {}, proposals: "accept" },
+        maxTurns: 7,
+        action: {
+            kind: "worker.mcp.discover",
+            configuration: { PLURNK_MCP_GITEA: "gitea-mcp" },
+        },
     });
 
     const clientPackage = JSON.parse(await readFile(join(consumer, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
-    const webPackage = JSON.parse(await readFile(join(consumer, "node_modules", "@plurnk", "plurnk-web", "package.json"), "utf8"));
     process.stdout.write(`packed web composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${webPackage.name}@${webPackage.version}\n`);
     passed = true;
 } finally {

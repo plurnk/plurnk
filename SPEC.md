@@ -40,7 +40,7 @@ Options:
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
-| `--worker <name>` | string | Resume (or create) the named run within the workspace. Requires `--workspace`. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
+| `--worker <name>` | string | Resume (or create) the named run within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
@@ -60,7 +60,7 @@ Env:
 |---|---|---|
 | `PLURNK_HOST` / `PLURNK_PORT` | `127.0.0.1` / `1066` | The daemon's in-process AG-UI+ module — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. `PLURNK_AGUI_URL` overrides the assembled URL; `PLURNK_AGUI_TOKEN` rides as the bearer when set. |
 | `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
-| `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE`. |
+| `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE` outside web mode. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_CLIENT_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally. See §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
@@ -80,7 +80,7 @@ Workspaces and workers are daemon-owned. The client only knows their **names** �
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
 - **`--worker <name>` names the CONVERSATION**: with a prompt, the worker name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--worker`, thread == world and conversations bind the workspace's model run (the default conversation). For read subcommands, `--worker` resolves via `workspace.workers` and an unknown name fails hard — no silent fallback to the model run.
-- **`--worker` set without `--workspace`** → usage error (exit 64). Run names are scoped to a workspace; there's no workspace to scope into.
+- **`--worker` set without `--workspace`** → usage error (exit 64) for the one-shot, TUI, and state-command surfaces. Web mode may retain the Worker constraint while each browser route selects or creates its workspace first; the Worker never exists outside that resolved world.
 
 CLI flag takes precedence over env when both are set.
 
@@ -685,18 +685,24 @@ choices; JSON mode emits the daemon result unchanged.
 ### §7.6 `plurnk web [options...]` {§cli-web-launcher}
 
 Uses the canonical client invocation path to resolve the environment cascade,
-workspace creation options, workspace and Worker identity, durable model and
-reasoning selections, LoopPolicy, turn limit, and proposal behavior. It then
-loads the separately installed `@plurnk/plurnk-web` module in-process and gives
-it only the resolved AG-UI session, opaque per-Run properties, proposal
-behavior, daemon target, and its web-owned host/port. The web package does not
-parse, mirror, or reinterpret client or daemon configuration.
+workspace creation options, optional workspace and Worker constraints, durable
+model and reasoning selections, LoopPolicy, turn limit, and proposal behavior.
+It then loads the separately installed `@plurnk/plurnk-web` module in-process
+and supplies that safe resolved projection. The web package neither parses a
+second configuration cascade nor receives raw environment values.
 
-The client persists explicit model and reasoning selections before opening the
-portal. Create-time workspace options accompany both those management actions
-and every browser Run, preserving atomic named-workspace creation. `--yolo`
-remains client-side proposal behavior; the browser auto-resolves proposal
-interrupts while interaction requests still require user input.
+Every ready browser URL is `/<workspace>/<threadId>`. Without configured route
+constraints, browser tabs may create or select many workspaces and many Workers.
+A configured workspace fixes the first coordinate; a configured Worker fixes
+the second; missing unconstrained coordinates are generated before the page is
+served. Opening the same complete URL observes the same durable Worker.
+
+Create-time workspace options accompany every browser-selected world and every
+Run, preserving atomic creation. The client applies explicit model then
+reasoning selections once to each Worker first selected during this portal
+process; it does not turn them into per-loop policy. `--yolo` remains
+client-side proposal behavior: the browser auto-resolves proposal interrupts
+while interaction requests still require user input.
 
 The launcher never downloads code or starts the daemon. If the optional module
 is absent, it exits 127 and names the exact installation command. `SIGINT` and

@@ -8,17 +8,22 @@ const launch: WebPortalLaunch = {
     port: "10661",
     upstream: new URL("http://127.0.0.1:3044"),
     token: "private",
-    session: { workspace: "project", threadId: "conversation" },
+    constraints: { workspace: "project", threadId: "conversation" },
+    workspaceProperties: {
+        projectRoot: "/workspace",
+        settings: { filesItems: 16 },
+    },
     runProperties: {
         projectRoot: "/workspace",
         settings: { filesItems: 16 },
         policy: { capabilities: {}, proposals: "review" },
         maxTurns: 9,
     },
+    prepareSession: async () => undefined,
     autoAcceptProposals: true,
 };
 
-test("[§cli-web-launcher]: the optional module receives one resolved AG-UI session, not client configuration", async () => {
+test("[§cli-web-launcher]: the optional module receives the resolved navigation and Run projection", async () => {
     const calls: WebPortalLaunch[] = [];
     let closed = false;
     const load: WebModuleLoader = async () => ({

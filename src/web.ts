@@ -5,10 +5,12 @@ export interface WebPortalLaunch {
     port?: string;
     upstream: URL;
     token?: string;
-    session: { workspace: string; threadId: string };
+    constraints: { workspace?: string; threadId?: string };
+    workspaceProperties: Readonly<Record<string, unknown>>;
     // Already-resolved AG-UI properties. The optional presentation module
     // forwards this opaque record; it does not own client configuration.
     runProperties: Readonly<Record<string, unknown>>;
+    prepareSession?(session: { workspace: string; threadId: string }): Promise<void>;
     autoAcceptProposals: boolean;
 }
 

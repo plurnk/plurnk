@@ -30,7 +30,7 @@ export const pathPartial = (line: string): string | null => {
 };
 
 // The model-facing H2 operations. PLAN owns H1 and is deliberately separate.
-const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "OPEN", "FOLD", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND"] as const;
+const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND"] as const;
 
 // Client pseudo-op: `## LOOK0 (target)` rewrites to READ on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The
@@ -40,7 +40,7 @@ const H2_OPS = [...OPS, ...CLIENT_OPS] as const;
 const H2_OP_ALTERNATION = H2_OPS.join("|");
 const H2_DSL_PREFIX = new RegExp(`^## (?:${H2_OP_ALTERNATION})`);
 const DSL_TARGET_PARTIAL = new RegExp(
-    `^## (?:${H2_OP_ALTERNATION})[A-Za-z0-9_]*(?: \\[[^\\]\\n]*\\])? \\(([^)\\n]*)$`,
+    `^## (?:${H2_OP_ALTERNATION})[A-Za-z0-9_]* \\(([^)\\n]*)$`,
 );
 
 // Coarse dispatch classification only. The daemon remains the grammar owner

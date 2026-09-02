@@ -5,15 +5,17 @@ import { PlurnkParser } from "@plurnk/plurnk-contracts";
 import { COMMANDS } from "./commands.ts";
 import { USAGE } from "./dispatcher.ts";
 
-test("[§cli-tui-mode] the public README's complete-turn specimen parses under the installed contract", async () => {
+test("[§cli-tui-mode] the public README's model-turn specimens parse under the installed contract", async () => {
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-    const specimen = /```\n(# PLAN0[\s\S]*?)\n```/u.exec(readme)?.[1];
-    assert.ok(specimen, "README has no complete Plurnk turn specimen");
-    assert.doesNotMatch(specimen, /"entries"\s*:/u, "README teaches the retired PLAN wrapper");
-    const parsed = PlurnkParser.parse(specimen);
+    const specimens = [...readme.matchAll(/```\n(# PLAN0[\s\S]*?)\n```/gu)].map((match) => match[1]);
+    assert.equal(specimens.length, 2, "README must show the action and completion turns separately");
+    for (const specimen of specimens) {
+        assert.doesNotMatch(specimen, /"entries"\s*:/u, "README teaches the retired PLAN wrapper");
+    }
     assert.deepEqual(
-        parsed.items.map((item) => item.kind === "statement" ? item.statement.op : item.kind),
-        ["PLAN", "EDIT", "SEND"],
+        specimens.map((specimen) => PlurnkParser.parse(specimen).items
+            .map((item) => item.kind === "statement" ? item.statement.op : item.kind)),
+        [["PLAN", "EDIT", "SEND"], ["PLAN", "SEND"]],
     );
 });
 

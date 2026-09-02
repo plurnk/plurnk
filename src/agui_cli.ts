@@ -243,7 +243,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicy; maxTurns?: number; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
+    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicy; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     const policy = composeLoopPolicy(
@@ -259,6 +259,7 @@ export const runCliViaBridge = async (
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
         policy,
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
+        ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
     };
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();

@@ -86,7 +86,7 @@ durable public work inventory.
 | `/verb` | `/help /models /workspaces /workers /log` · `/model /child /reasoning /capabilities /yolo` · `/workspace /rename /worker` · `/mcp /skills /agents /members` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
 | `! cmd` | exec via the daemon |
 
-**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--policy <json>` · `--capabilities <json>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · `--files-items <n>` · `--md NAME=path`.
+**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--policy <json>` · `--capabilities <json>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · `--files-items <n>` · `--max-commands <n>` · `--no-git`.
 
 ## what plurnk is
 

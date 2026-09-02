@@ -314,6 +314,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
             workspace: "w",
             policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "accept" },
             maxTurns: 7,
+            openPaths: ["README.md", "src/index.ts"],
             yolo: true,
             json: true,
             projectRoot: "/repo",
@@ -338,6 +339,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
             proposals: "accept",
         }, "loop policy reaches the wire with one-shot client attenuation");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
+        assert.deepEqual(fp.openPaths, ["README.md", "src/index.ts"], "prompt file references reach the wire");
     } finally { await mock.close(); }
 });
 

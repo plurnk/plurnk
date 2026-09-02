@@ -41,6 +41,7 @@ import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
 import { launchWeb } from "./web.ts";
+import { extractOpenPaths } from "./openpaths.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -185,13 +186,11 @@ options:
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
-      --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
-                          seconds; exits 3 with "timedOut":true in the result.
+      --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
+                          CLI exits 3 with "timedOut":true. Web retains the Worker.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (## FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
-      --md <name=path>    pin a markdown doc into the workspace (read at turn 0);
-                          merges with operator PLURNK_MD_*. Repeatable. Create-time.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + working-tree status for the workspace (never
@@ -294,13 +293,12 @@ interface WorkspaceResult { id: number; name: string }
 
 // Resolve the workspace by name (via workspace.list filter) or create a fresh one.
 // Names are the user-facing handle — ids are internals, not exposed via flags.
-// projectRoot is sent on creation only; attach inherits the daemon-stored value.
-// Workspace-open settings. Open-context: filesItems REPLACES PLURNK_FILES_ITEMS
+// Workspace-open settings. Open-context: filesItems replaces PLURNK_SERVICE_FILES_ITEMS
 // (it only ever capped the tracked-file list; memory always foists full).
 // The mdDocs channel is retired — operator reference material is skills under
 // the workspace .agents/skills tree ({§skills-functionality} in the service SPEC).
 // Ceilings (svc#232, most-restrictive-wins): maxCommands min()s
-// PLURNK_MAX_COMMANDS; git:false ANDs PLURNK_GIT_ALLOWED (deny-only).
+// PLURNK_SERVICE_MAX_COMMANDS; git:false ANDs PLURNK_SERVICE_GIT_ALLOWED (deny-only).
 export interface Settings {
     filesItems?: number;
     maxCommands?: number;
@@ -311,10 +309,10 @@ export interface Settings {
 
 export const buildSettings = async (
     values: { "files-items"?: string; "max-commands"?: string; "no-git"?: boolean; capabilities?: string },
-    cwd: string,
     env: NodeJS.ProcessEnv = process.env,
+    client?: string,
 ): Promise<Settings> => {
-    const settings: Settings = {};
+    const settings: Settings = { ...(client === undefined ? {} : { client }) };
     const rawCapabilities = values.capabilities ?? env.PLURNK_CLIENT_WORKSPACE_CAPABILITIES;
     if (rawCapabilities !== undefined) {
         try {
@@ -728,7 +726,11 @@ export const main = async (argv: string[]): Promise<void> => {
                 "max-commands"?: string;
                 "no-git"?: boolean;
                 capabilities?: string;
-            }, process.cwd()),
+            }, process.env, web
+                ? undefined
+                : !isSubcommand && prompt.length === 0
+                    ? CLIENT_ID_TUI
+                    : CLIENT_ID_CLI),
         }))();
         return workspaceOptionsPromise;
     };
@@ -759,7 +761,10 @@ export const main = async (argv: string[]): Promise<void> => {
             };
             const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
             const prepared = new Map<string, Promise<void>>();
-            const prepareSession = (session: { workspace: string; threadId: string }): Promise<void> => {
+            const prepareSession = (
+                session: { workspace: string; threadId: string },
+                preparedWorkspaceProperties: Readonly<Record<string, unknown>>,
+            ): Promise<void> => {
                 const key = JSON.stringify([session.workspace, session.threadId]);
                 const existing = prepared.get(key);
                 if (existing !== undefined) return existing;
@@ -768,7 +773,7 @@ export const main = async (argv: string[]): Promise<void> => {
                         await actionViaBridge(target, {
                             threadId: session.threadId,
                             workspace: session.workspace,
-                            workspaceOptions: workspaceProperties,
+                            workspaceOptions: preparedWorkspaceProperties,
                             kind: "worker.model.set",
                             params: { selector: modelSelector },
                         });
@@ -777,7 +782,7 @@ export const main = async (argv: string[]): Promise<void> => {
                         await actionViaBridge(target, {
                             threadId: session.threadId,
                             workspace: session.workspace,
-                            workspaceOptions: workspaceProperties,
+                            workspaceOptions: preparedWorkspaceProperties,
                             kind: "worker.reasoning.set",
                             params: { policy: reasoningPolicy },
                         });
@@ -805,6 +810,18 @@ export const main = async (argv: string[]): Promise<void> => {
                     ...(maxTurns === undefined ? {} : { maxTurns }),
                 },
                 prepareSession,
+                projectPrompt: (value) => {
+                    const projected = promptPolicy(value, loopPolicy);
+                    return {
+                        prompt: projected.prompt,
+                        runProperties: {
+                            policy: projected.policy,
+                            openPaths: extractOpenPaths(projected.prompt),
+                        },
+                    };
+                },
+                ...(timeoutSec === undefined ? {} : { timeoutSec }),
+                mcpConfiguration,
                 autoAcceptProposals: yolo,
             }, {
                 announce: (origin) => process.stderr.write(`plurnk web: ${origin}\n`),
@@ -871,12 +888,14 @@ export const main = async (argv: string[]): Promise<void> => {
                 });
             }
             const projected = promptPolicy(prompt, loopPolicy);
+            const openPaths = extractOpenPaths(projected.prompt);
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, projected.prompt, {
                 threadId: workerName ?? w,
                 workspace: w,
                 ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
                 policy: projected.policy,
                 ...(maxTurns !== undefined ? { maxTurns } : {}),
+                ...(openPaths.length === 0 ? {} : { openPaths }),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
                 yolo,
                 json,

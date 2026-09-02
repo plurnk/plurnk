@@ -38,21 +38,23 @@ Options:
 | Flag | Type | Meaning |
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
-| `--json` | flag | CLI mode only (or `PLURNK_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
+| `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
 | `--worker <name>` | string | Resume (or create) the named run within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
+| `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
-| `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_YOLO`. |
+| `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_CLIENT_YOLO`. |
 | `--auto` | flag | Set the loop proposal disposition to `accept`; no client review/resume round-trip. |
 | `--policy <json>` | string | Complete LoopPolicy applied to every loop: capability attenuation plus `review`, `accept`, or `reject` proposal disposition. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
-| `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
+| `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. |
 | `--host <host>` | string | Web mode only: local browser portal host. Defaults to `PLURNK_WEB_HOST`, then `127.0.0.1`. |
 | `--port <n>` | string | Web mode only: local browser portal port. Defaults to `PLURNK_WEB_PORT`, then `10660`. |
 | `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. |
-| `--md <name=path>` | string, repeatable | Pin a markdown doc into the workspace (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
+| `--max-commands <n>` | string | Tighten the workspace operation ceiling. Create-time only. See §1.4. |
+| `--no-git` | flag | Deny git membership and working-tree status for the workspace. Create-time only. See §1.4. |
 
 Env:
 
@@ -147,11 +149,9 @@ reads the durable value; descendants follow the daemon's snapshot inheritance.
 Client behavior:
 
 - Default: `process.cwd()` — the user's current directory.
-- Override: `--project-root <abs-path>` or `PLURNK_PROJECT_ROOT`.
+- Override: `--project-root <abs-path>` or `PLURNK_CLIENT_PROJECT_ROOT`.
 - Explicit headless: set to empty string (`--project-root=`) → wire as `null`.
-- Sent on `workspace.create` only. On `--workspace` attach, the daemon preserves the stored value and the client's flag is silently ignored (no surprise overwrites of a workspace you're resuming). To change a live workspace's root, call `workspace.set_root` directly — not yet surfaced as a client command.
-
-The "inject standing context into every loop" role formerly served by persona is now `--md`/`mdDocs` (§1.4): markdown docs pinned into the workspace and read at turn 0.
+- Accompanies every attach-or-create request so whichever request wins can create the workspace atomically. An existing workspace preserves its stored root; the value never rewrites it.
 
 ### §1.4 Workspace-open settings {§cli-workspace-open-settings}
 
@@ -160,10 +160,11 @@ These flags shape what the workspace sees; they map to workspace-open settings a
 **Workspace-open settings** — sent as `settings` on `workspace.create`:
 
 - `--files-items <n>` → `filesItems`. Controls the turn-0 tracked-file preview: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_FILES_ITEMS` for the workspace.
-- `--md <name=path>` → `mdDocs` (`[{alias, content}]`). Pins a markdown doc into the workspace, read at turn 0. The client reads each file from its **own** local fs (co-location law — correct, not a workaround) and sends `content`, not a path. Relative paths resolve against cwd; an unreadable file is a usage error (exit 64). Unions with the operator's `PLURNK_MD_*` (client wins a collision). Repeatable.
 - `--capabilities <json>` / `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` → `capabilities`. The canonical CapabilityPolicy is a purely subtractive workspace ceiling. Executor plugin configuration remains service-owned and never becomes workspace settings.
+- `--max-commands <n>` → `maxCommands`. Tightens the daemon ceiling and must be a positive integer.
+- `--no-git` → `git: false`. It never re-enables git past a service-owned lockout.
 
-Settings are **workspace-create-only** (no live setter). On `--workspace` attach, `--files-items`/`--md` are flagged and skipped — the client prints a dim notice and ignores them.
+Settings have **workspace-create-only effect** (no live setter), but accompany every attach-or-create request so a concurrent first request cannot create an undressed workspace. Existing workspaces retain their durable settings.
 
 ---
 
@@ -177,7 +178,7 @@ The prompt's first character carries the same habits as nvim's `:AI` and the TUI
 
 ### §2.1 Output channels {§cli-output-channels}
 
-Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_JSON` — not a flag on one output, but two distinct contracts:
+Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_CLIENT_JSON` — not a flag on one output, but two distinct contracts:
 
 **text mode (default):**
 - **stdout** — the body of the *terminal* broadcast SEND (status 200 or 499), per §5.4. Exactly one value per invocation (none if the loop hit maxTurns and never terminated). Intermediate broadcasts (such as a SEND carrying signal 102) are protocol mechanics, not the answer, and do NOT appear on stdout.
@@ -186,7 +187,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
   Non-TTY stderr omits routine status/progress instead of accumulating heartbeat
   history. It still receives durable trace, diagnostics, and the summary.
 
-**json mode (`--json` / `PLURNK_JSON`):**
+**json mode (`--json` / `PLURNK_CLIENT_JSON`):**
 - **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
@@ -603,7 +604,7 @@ Single-keypress menu (raw stdin):
 
 Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. EXEC bodies render plain.
 
-### §6.3 `--yolo` / `PLURNK_YOLO` {§cli-yolo-plurnkyolo}
+### §6.3 `--yolo` / `PLURNK_CLIENT_YOLO` {§cli-yolo-plurnkyolo}
 
 Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
 
@@ -685,11 +686,27 @@ choices; JSON mode emits the daemon result unchanged.
 ### §7.6 `plurnk web [options...]` {§cli-web-launcher}
 
 Uses the canonical client invocation path to resolve the environment cascade,
-workspace creation options, optional workspace and Worker constraints, durable
-model and reasoning selections, LoopPolicy, turn limit, and proposal behavior.
-It then loads the separately installed `@plurnk/plurnk-web` module in-process
-and supplies that safe resolved projection. The web package neither parses a
-second configuration cascade nor receives raw environment values.
+then loads the separately installed `@plurnk/plurnk-web` module in-process.
+There is one configuration owner and one interpretation of every shared knob:
+
+| Resolved client surface | Browser projection |
+|---|---|
+| daemon address and bearer | Portal-only AG-UI target; neither value enters browser bootstrap |
+| `--host`, `--port` | Loopback portal listener |
+| workspace and Worker | Optional URL-coordinate constraints |
+| project root, files preview, command ceiling, git policy, workspace capabilities | Create-time properties accompanying every selected workspace |
+| explicit model and reasoning | Durable Worker actions before that session's first prompt |
+| LoopPolicy and `--auto` | Base policy on every prompt Run |
+| `?` prompt prefix | Per-prompt EXEC attenuation and proposal review, using the same projector as CLI/TUI |
+| prompt `@path` references | Per-prompt `openPaths` turn-0 projection |
+| `--max-turns` | Per-prompt daemon turn ceiling |
+| `--timeout` | Portal-owned deadline followed by `loop.cancel {reason:"client_timeout"}` for the exact workspace/Worker |
+| `--yolo` | Automatic acceptance of client-owned proposals; interactions remain user-owned |
+| client `PLURNK_MCP_*` declarations | Host-side discovery overlay for the browser's ordinary `worker.mcp.*` management actions; never bootstrap data |
+
+Terminal output controls (`--json`, `--width`) and state-subcommand filters do
+not project into browser behavior. The web package parses no second environment
+cascade and receives no provider credential or daemon environment.
 
 Every ready browser URL is `/<workspace>/<threadId>`. Without configured route
 constraints, browser tabs may create or select many workspaces and many Workers.
@@ -703,6 +720,13 @@ reasoning selections once to each Worker first selected during this portal
 process; it does not turn them into per-loop policy. `--yolo` remains
 client-side proposal behavior: the browser auto-resolves proposal interrupts
 while interaction requests still require user input.
+
+The MCP manager is lazy: opening it lists the Worker's durable MCP state and
+discovers client-configured candidates through AG-UI. Discovery remains inert;
+adding, enabling, disabling, and removing use the daemon-owned Functionality
+lifecycle. The portal inserts the client-held configuration only into an
+unscoped MCP discovery action, so raw declarations are neither serialized at
+startup nor made into a browser-side configuration authority.
 
 The launcher never downloads code or starts the daemon. If the optional module
 is absent, it exits 127 and names the exact installation command. `SIGINT` and

@@ -20,6 +20,9 @@ const launch: WebPortalLaunch = {
         maxTurns: 9,
     },
     prepareSession: async () => undefined,
+    projectPrompt: (prompt) => ({ prompt, runProperties: { openPaths: [] } }),
+    timeoutSec: 60,
+    mcpConfiguration: { PLURNK_MCP_GITEA: "gitea-mcp" },
     autoAcceptProposals: true,
 };
 

@@ -67,15 +67,22 @@ test("collectMcpConfiguration carries raw declarations and excludes service cont
 
 test("buildSettings carries the canonical workspace capability policy", async () => {
     assert.deepEqual(
-        await buildSettings({}, "/", {
+        await buildSettings({}, {
             PLURNK_CLIENT_WORKSPACE_CAPABILITIES: '{"deny":[{"runtime":"sh"}]}',
         }),
         { capabilities: { deny: [{ runtime: "sh" }] } },
     );
 });
 
+test("buildSettings carries the selected frontend identity into workspace creation", async () => {
+    assert.deepEqual(
+        await buildSettings({}, {}, "@plurnk/plurnk-tui/1.2.3"),
+        { client: "@plurnk/plurnk-tui/1.2.3" },
+    );
+});
+
 test("buildSettings does not reinterpret service executor configuration as workspace policy", async () => {
-    assert.deepEqual(await buildSettings({}, "/", {
+    assert.deepEqual(await buildSettings({}, {
         PLURNK_EXECS_ONLY: "atlas",
         PLURNK_EXECS_SH: "0",
     }), {});
@@ -134,32 +141,32 @@ test("resolveProjectRoot: bare name → throws", () => {
 // ─── buildSettings (workspace-open settings, svc#231) ──────────────────
 
 test("[§cli-workspace-open-settings] buildSettings: files-items -1/0/N parse", async () => {
-    assert.deepEqual(await buildSettings({ "files-items": "-1" }, "/"), { filesItems: -1 });
-    assert.deepEqual(await buildSettings({ "files-items": "0" }, "/"), { filesItems: 0 });
-    assert.deepEqual(await buildSettings({ "files-items": "5" }, "/"), { filesItems: 5 });
+    assert.deepEqual(await buildSettings({ "files-items": "-1" }), { filesItems: -1 });
+    assert.deepEqual(await buildSettings({ "files-items": "0" }), { filesItems: 0 });
+    assert.deepEqual(await buildSettings({ "files-items": "5" }), { filesItems: 5 });
 });
 
 test("buildSettings: files-items rejects < -1 and non-integer", async () => {
-    await assert.rejects(buildSettings({ "files-items": "-2" }, "/"), /-1 \(full\)/);
-    await assert.rejects(buildSettings({ "files-items": "x" }, "/"), /must be/);
+    await assert.rejects(buildSettings({ "files-items": "-2" }), /-1 \(full\)/);
+    await assert.rejects(buildSettings({ "files-items": "x" }), /must be/);
 });
 
 
 
 
 test("buildSettings: empty → {}", async () => {
-    assert.deepEqual(await buildSettings({}, "/"), {});
+    assert.deepEqual(await buildSettings({}), {});
 });
 
 // ─── buildSettings ceilings (svc#232) ────────────────────────────────
 
 test("buildSettings: --max-commands (positive int) + --no-git → ceilings", async () => {
-    assert.deepEqual(await buildSettings({ "max-commands": "10", "no-git": true }, "/"), { maxCommands: 10, git: false });
+    assert.deepEqual(await buildSettings({ "max-commands": "10", "no-git": true }), { maxCommands: 10, git: false });
 });
 
 test("buildSettings: --max-commands rejects non-positive / non-integer", async () => {
-    await assert.rejects(buildSettings({ "max-commands": "0" }, "/"), /positive integer/);
-    await assert.rejects(buildSettings({ "max-commands": "x" }, "/"), /positive integer/);
+    await assert.rejects(buildSettings({ "max-commands": "0" }), /positive integer/);
+    await assert.rejects(buildSettings({ "max-commands": "x" }), /positive integer/);
 });
 
 // ─── buildVersionNotice (svc#235) ────────────────────────────────────

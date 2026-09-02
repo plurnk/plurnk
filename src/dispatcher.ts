@@ -109,7 +109,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
-       plurnk web [plurnk-web options...]
+       plurnk web [options]
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
@@ -202,6 +202,8 @@ options:
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
+      --host <host>       (web) local browser portal host (default: 127.0.0.1)
+      --port <n>          (web) local browser portal port (default: 10660)
 
 subcommands:
   models [search...]      list the bounded daemon model catalog (models.list)
@@ -214,8 +216,9 @@ subcommands:
   capabilities [json]    inspect the capability cascade or set the Worker layer
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
-  web [options...]        foreground-launch the separately installed plurnk-web;
-                          inherits the env cascade and performs no package install
+  web [options]           serve the optional browser client using this invocation's
+                          resolved workspace, Worker, model, reasoning, and policy;
+                          performs no package install or daemon startup
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
@@ -559,22 +562,6 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
 };
 
 export const main = async (argv: string[]): Promise<void> => {
-    if (argv[2] === "web") {
-        try {
-            const args = argv.slice(3);
-            loadEnvCascade(orderedEnvFiles(args));
-            process.exitCode = launchWeb(args);
-        } catch (cause) {
-            if (cause instanceof ProblemError) {
-                report(cause.problem);
-                process.exitCode = cause.exitCode;
-            } else {
-                report(clientRuntimeError(cause));
-                process.exitCode = 1;
-            }
-        }
-        return;
-    }
     const { positionals, values } = parseArgs({
         args: argv.slice(2),
         allowPositionals: true,
@@ -611,9 +598,14 @@ export const main = async (argv: string[]): Promise<void> => {
             all: { type: "boolean" },
             offset: { type: "string" },
             width: { type: "string" },
+            // Browser-portal listener options. All session and loop options above
+            // retain this client's canonical interpretation in `plurnk web`.
+            host: { type: "string" },
+            port: { type: "string" },
         },
     });
 
+    const web = positionals[0] === "web";
     if (values.help) {
         process.stdout.write(positionals[0] === "render" ? RENDER_USAGE : USAGE);
         process.exit(0);
@@ -648,11 +640,17 @@ export const main = async (argv: string[]): Promise<void> => {
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
     const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_JSON ?? "").toLowerCase());
-    if (!json) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
+    if (!web && (values.host !== undefined || values.port !== undefined)) {
+        const flag = values.host !== undefined ? "--host" : "--port";
+        const problem = clientFlagMissingDependency(flag, "the web subcommand");
+        if (json) dieJson(64, problem);
+        dieWith(64, problem);
+    }
+    if (!json && !web) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
 
     // State-command routing happens BEFORE prompt assembly, so inspection and
     // deliberate configuration never consume stdin or become model prompts.
-    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "reasoning", "capabilities"] as const;
+    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "reasoning", "capabilities", "web"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 
@@ -745,6 +743,67 @@ export const main = async (argv: string[]): Promise<void> => {
         });
         return resolvedWorld;
     };
+    if (web) {
+        try {
+            if (positionals.length > 1) {
+                throw new ProblemError(clientSubcommandUnknownVerb(`web ${positionals.slice(1).join(" ")}`));
+            }
+            const w = await world();
+            const { settings } = await workspaceOptions();
+            const workspaceOptionsForAction = {
+                ...(projectRoot !== null ? { projectRoot } : {}),
+                ...(Object.keys(settings).length > 0 ? { settings } : {}),
+            };
+            const threadId = workerName ?? w;
+            const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
+            if (modelSelector !== undefined) {
+                await actionViaBridge(target, {
+                    threadId,
+                    workspace: w,
+                    workspaceOptions: workspaceOptionsForAction,
+                    kind: "worker.model.set",
+                    params: { selector: modelSelector },
+                });
+            }
+            if (reasoningPolicy !== undefined) {
+                await actionViaBridge(target, {
+                    threadId,
+                    workspace: w,
+                    workspaceOptions: workspaceOptionsForAction,
+                    kind: "worker.reasoning.set",
+                    params: { policy: reasoningPolicy },
+                });
+            }
+            process.exitCode = await launchWeb({
+                ...(typeof values.host === "string" ? { host: values.host } : {}),
+                ...(typeof values.port === "string" ? { port: values.port } : {}),
+                upstream: new URL(bridgeUrl),
+                ...(process.env.PLURNK_AGUI_TOKEN === undefined ? {} : { token: process.env.PLURNK_AGUI_TOKEN }),
+                session: { workspace: w, threadId },
+                runProperties: {
+                    ...(projectRoot !== null ? { projectRoot } : {}),
+                    ...(Object.keys(settings).length > 0 ? { settings } : {}),
+                    policy: loopPolicy,
+                    ...(maxTurns === undefined ? {} : { maxTurns }),
+                },
+                autoAcceptProposals: yolo,
+            }, {
+                announce: (origin) => process.stderr.write(`plurnk web: ${origin}\n`),
+            });
+        } catch (cause) {
+            if (cause instanceof ProblemError) {
+                report(cause.problem);
+                process.exitCode = cause.exitCode;
+            } else if (isUnreachable(cause)) {
+                report(clientConnectionRefused(bridgeUrl, cause));
+                process.exitCode = 1;
+            } else {
+                report(clientRuntimeError(cause));
+                process.exitCode = 1;
+            }
+        }
+        return;
+    }
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             // Thread-per-worker (svc#366): --worker names the CONVERSATION (the threadId);

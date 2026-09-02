@@ -36,3 +36,5 @@ complete -c plurnk -l provider
 complete -c plurnk -l all
 complete -c plurnk -l offset
 complete -c plurnk -l width
+complete -c plurnk -l host
+complete -c plurnk -l port

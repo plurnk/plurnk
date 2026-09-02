@@ -45,6 +45,7 @@
         "build:local:uninstall": "node scripts/install-sandbox.mjs uninstall",
         "test:installation": "node scripts/test-installation.mjs",
         "test:composition": "node scripts/test-composition.mjs",
+        "test:web-composition": "node scripts/test-web-composition.mjs",
         "release:publish": "node scripts/release-publish.mjs",
         "build:posix": "node scripts/generate-posix.mjs"
     },

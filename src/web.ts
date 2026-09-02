@@ -1,37 +1,70 @@
-import { spawnSync } from "node:child_process";
-import { constants } from "node:os";
 import { ProblemError, clientWebNotInstalled } from "./diagnostics.ts";
 
-interface WebProcessResult {
-    status: number | null;
-    signal: NodeJS.Signals | null;
-    error?: Error;
+export interface WebPortalLaunch {
+    host?: string;
+    port?: string;
+    upstream: URL;
+    token?: string;
+    session: { workspace: string; threadId: string };
+    // Already-resolved AG-UI properties. The optional presentation module
+    // forwards this opaque record; it does not own client configuration.
+    runProperties: Readonly<Record<string, unknown>>;
+    autoAcceptProposals: boolean;
 }
 
-export type WebSpawner = (
-    executable: string,
-    args: readonly string[],
-    options: { env: NodeJS.ProcessEnv; stdio: "inherit" },
-) => WebProcessResult;
+interface RunningWebPortal {
+    origin: string;
+    close(): Promise<void>;
+}
 
-const spawnWeb: WebSpawner = (executable, args, options) =>
-    spawnSync(executable, [...args], options) as WebProcessResult;
+interface WebModule {
+    startClientPortal(options: WebPortalLaunch): Promise<RunningWebPortal>;
+}
 
-export const launchWeb = (
-    args: readonly string[],
-    options: { env?: NodeJS.ProcessEnv; spawn?: WebSpawner } = {},
-): number => {
-    const result = (options.spawn ?? spawnWeb)("plurnk-web", args, {
-        env: options.env ?? process.env,
-        stdio: "inherit",
-    });
-    if (result.error !== undefined) {
-        if ((result.error as NodeJS.ErrnoException).code === "ENOENT") {
-            throw new ProblemError(clientWebNotInstalled(), 127);
-        }
-        throw result.error;
+export type WebModuleLoader = () => Promise<WebModule>;
+
+const loadWebModule: WebModuleLoader = async () => {
+    const packageName = "@plurnk/plurnk-web";
+    return await import(packageName) as WebModule;
+};
+
+const waitForStop = (): Promise<void> => new Promise((resolve) => {
+    const stop = (): void => {
+        process.off("SIGINT", stop);
+        process.off("SIGTERM", stop);
+        resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+});
+
+const packageMissing = (cause: unknown): boolean => {
+    const error = cause as NodeJS.ErrnoException;
+    return error?.code === "ERR_MODULE_NOT_FOUND"
+        && /Cannot find package ['"]@plurnk\/plurnk-web['"]/.test(error.message);
+};
+
+export const launchWeb = async (
+    options: WebPortalLaunch,
+    dependencies: {
+        load?: WebModuleLoader;
+        wait?: () => Promise<void>;
+        announce?: (origin: string) => void;
+    } = {},
+): Promise<number> => {
+    let module: WebModule;
+    try {
+        module = await (dependencies.load ?? loadWebModule)();
+    } catch (cause) {
+        if (packageMissing(cause)) throw new ProblemError(clientWebNotInstalled(), 127);
+        throw cause;
     }
-    if (result.status !== null) return result.status;
-    if (result.signal !== null) return 128 + constants.signals[result.signal];
-    throw new Error("plurnk-web exited without a status or signal");
+    const portal = await module.startClientPortal(options);
+    dependencies.announce?.(portal.origin);
+    try {
+        await (dependencies.wait ?? waitForStop)();
+    } finally {
+        await portal.close();
+    }
+    return 0;
 };

@@ -42,10 +42,12 @@ plurnk --help                                # full flag list
 `plurnk render` is a daemon-free stdin/stdout filter for clients that want the
 terminal client's width-aware GFM and Beautiful Mermaid projection as plain Unicode.
 
-`plurnk web` foreground-launches an already installed
-`@plurnk/plurnk-web` package. It inherits the same environment cascade and
-forwards every following argument to `plurnk-web`; it never downloads a package
-or starts the daemon. Install the optional client with
+`plurnk web` loads an already installed `@plurnk/plurnk-web` presentation
+module after the normal client has resolved its workspace, Worker, model,
+reasoning, policy, and proposal behavior. The web package does not duplicate
+that configuration surface; it receives one resolved AG-UI session and opaque
+Run properties. The command never downloads a package or starts the daemon.
+Install the optional client with
 `npm install -g @plurnk/plurnk-web`.
 
 **Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. On a terminal, one replaceable status row shows authoritative lifecycle, durable model, packet count, and current activity; indexing repaints at most every 15 seconds and redirected stderr omits routine progress history. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `notices` + the daemon's exact `usage.accounting` envelope), stderr silent, failures as RFC 9457 Problems under `{"problem":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.

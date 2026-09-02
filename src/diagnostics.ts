@@ -298,8 +298,8 @@ export const clientFlagMissingDependency = (flag: string, requires: string): Pro
     clientProblem("flag", "missing-dependency", 400, `${flag} requires ${requires}`, { flag, requires });
 
 export const clientWebNotInstalled = (): ProblemDetails =>
-    clientProblem("web", "not-installed", 424, "The optional plurnk-web executable is not installed.", {
-        executable: "plurnk-web",
+    clientProblem("web", "not-installed", 424, "The optional @plurnk/plurnk-web package is not installed.", {
+        package: "@plurnk/plurnk-web",
         hints: ["Install it: npm install -g @plurnk/plurnk-web"],
         retryable: false,
     });

@@ -14,7 +14,7 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--r
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
-       plurnk web [plurnk-web options...]
+       plurnk web [options]
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
@@ -83,6 +83,8 @@ log read / read <coord>) inspect daemon state without running a loop.
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
+      --host <host>       (web) local browser portal host (default: 127.0.0.1)
+      --port <n>          (web) local browser portal port (default: 10660)
 .fi
 .SH SUBCOMMANDS
 .nf
@@ -96,8 +98,9 @@ log read / read <coord>) inspect daemon state without running a loop.
   capabilities [json]    inspect the capability cascade or set the Worker layer
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
-  web [options...]        foreground-launch the separately installed plurnk-web;
-                          inherits the env cascade and performs no package install
+  web [options]           serve the optional browser client using this invocation's
+                          resolved workspace, Worker, model, reasoning, and policy;
+                          performs no package install or daemon startup
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo

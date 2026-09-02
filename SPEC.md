@@ -49,6 +49,8 @@ Options:
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | CLI mode only: cancel the loop via `loop.cancel` after `<s>` seconds; exits 3 with `"timedOut":true` in the result envelope. |
+| `--host <host>` | string | Web mode only: local browser portal host. Defaults to `PLURNK_WEB_HOST`, then `127.0.0.1`. |
+| `--port <n>` | string | Web mode only: local browser portal port. Defaults to `PLURNK_WEB_PORT`, then `10660`. |
 | `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. |
 | `--md <name=path>` | string, repeatable | Pin a markdown doc into the workspace (read at turn 0). Reads the local file and sends its content; unions with the operator's `PLURNK_MD_*` (client wins a collision). Create-time only. See §1.4. |
 
@@ -682,21 +684,33 @@ choices; JSON mode emits the daemon result unchanged.
 
 ### §7.6 `plurnk web [options...]` {§cli-web-launcher}
 
-Foreground-launches the separately installed `plurnk-web` executable with
-inherited stdio and the resolved PLURNK environment. Every argument after
-`web` is forwarded unchanged. The launcher never downloads code, starts the
-daemon, or puts credentials in argv. If the executable is absent, it exits 127
-and names the exact opt-in installation command. Child exit status and
-termination signals retain their conventional shell status.
+Uses the canonical client invocation path to resolve the environment cascade,
+workspace creation options, workspace and Worker identity, durable model and
+reasoning selections, LoopPolicy, turn limit, and proposal behavior. It then
+loads the separately installed `@plurnk/plurnk-web` module in-process and gives
+it only the resolved AG-UI session, opaque per-Run properties, proposal
+behavior, daemon target, and its web-owned host/port. The web package does not
+parse, mirror, or reinterpret client or daemon configuration.
+
+The client persists explicit model and reasoning selections before opening the
+portal. Create-time workspace options accompany both those management actions
+and every browser Run, preserving atomic named-workspace creation. `--yolo`
+remains client-side proposal behavior; the browser auto-resolves proposal
+interrupts while interaction requests still require user input.
+
+The launcher never downloads code or starts the daemon. If the optional module
+is absent, it exits 127 and names the exact installation command. `SIGINT` and
+`SIGTERM` close the portal before the foreground process exits.
 
 ### §7.7 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
 - Hide state changes: workspace rename and an explicit reasoning policy are the
   only mutations; every other subcommand is read-only.
-- Honor flags that only matter to loop workers (`--model`, `--reasoning`,
-  `--yolo`, `--auto`) — those parse without error but have no effect in
-  subcommand mode. Reasoning mutation uses the positional policy above.
+- Honor flags that only matter to a conversation (`--model`, `--reasoning`,
+  `--yolo`, `--auto`) in state-command mode. Those parse without effect there;
+  `web` is a client presentation mode and therefore does honor them. Reasoning
+  mutation uses the positional policy above.
 
 ---
 

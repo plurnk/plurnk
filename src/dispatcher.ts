@@ -189,7 +189,7 @@ options:
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true. Web retains the Worker.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
-                          (## FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
+                          (### FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.

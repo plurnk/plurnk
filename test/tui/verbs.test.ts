@@ -77,7 +77,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("\x1b[200~## EDIT0 (worker:///pasted.md)\nline one\nline two\x1b[201~\r");
+            tui.write("\x1b[200~### EDIT0 (worker:///pasted.md)\nline one\nline two\x1b[201~\r");
             const output = await tui.waitFor(/final 2\d\d/, 15_000);
             assert.equal(output.match(/worker:\/\/\/pasted\.md/g)?.length, 2, "one submitted prompt echo and one operation receipt");
         } finally { tui.kill(); }

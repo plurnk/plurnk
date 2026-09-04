@@ -21,7 +21,7 @@ export const pathPartial = (line: string): string | null => {
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);
     if (at) return at[1];
-    // DSL target path inside an unclosed `## OP0 (...`: strip a leading scheme://
+    // DSL target path inside an unclosed `### OP0 (...`: strip a leading scheme://
     // and complete the path part. Bare/file:// resolve against the fs; other
     // schemes (worker://, log://, …) simply find nothing — harmless.
     const target = line.match(DSL_TARGET_PARTIAL);
@@ -29,24 +29,24 @@ export const pathPartial = (line: string): string | null => {
     return null;
 };
 
-// The model-facing H2 operations. PLAN owns H1 and is deliberately separate.
+// The model-facing H3 operations. PLAN owns H2 and is deliberately separate.
 const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND"] as const;
 
-// Client pseudo-op: `## LOOK0 (target)` rewrites to READ on a side run
+// Client pseudo-op: `### LOOK0 (target)` rewrites to READ on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The
 // daemon never sees "LOOK" — but it completes like a real op so the surface rhymes.
 const CLIENT_OPS = ["LOOK"] as const;
-const H2_OPS = [...OPS, ...CLIENT_OPS] as const;
-const H2_OP_ALTERNATION = H2_OPS.join("|");
-const H2_DSL_PREFIX = new RegExp(`^## (?:${H2_OP_ALTERNATION})`);
+const H3_OPS = [...OPS, ...CLIENT_OPS] as const;
+const H3_OP_ALTERNATION = H3_OPS.join("|");
+const H3_DSL_PREFIX = new RegExp(`^### (?:${H3_OP_ALTERNATION})`);
 const DSL_TARGET_PARTIAL = new RegExp(
-    `^## (?:${H2_OP_ALTERNATION})[A-Za-z0-9_]* \\(([^)\\n]*)$`,
+    `^### (?:${H3_OP_ALTERNATION})[A-Za-z0-9_]* \\(([^)\\n]*)$`,
 );
 
 // Coarse dispatch classification only. The daemon remains the grammar owner
 // and returns exact diagnostics for malformed headings/modifiers/bodies.
 export const dslStatement = (text: string): string | null =>
-    text.startsWith("# PLAN") || H2_DSL_PREFIX.test(text) ? text : null;
+    text.startsWith("## PLAN") || H3_DSL_PREFIX.test(text) ? text : null;
 
 export interface DslOpPartial {
     level: 1 | 2;
@@ -57,17 +57,17 @@ export interface DslOpPartial {
 // emits the taught lane (`0`); arbitrary suffixes remain the daemon parser's
 // tolerance and do not need a completion matrix.
 export const dslOpPartial = (line: string): DslOpPartial | null => {
-    const h1 = line.match(/^# ([A-Za-z]*)$/);
+    const h1 = line.match(/^## ([A-Za-z]*)$/);
     if (h1) return { level: 1, typed: h1[1] };
-    const h2 = line.match(/^## ([A-Za-z]*)$/);
+    const h2 = line.match(/^### ([A-Za-z]*)$/);
     return h2 ? { level: 2, typed: h2[1] } : null;
 };
 
 // Complete a partially typed heading into the canonical lane-0 form.
 export const completeOps = ({ level, typed }: DslOpPartial): [string[], string] => {
     const up = typed.toUpperCase();
-    const prefix = level === 1 ? "# " : "## ";
-    const operations: readonly string[] = level === 1 ? ["PLAN"] : H2_OPS;
+    const prefix = level === 1 ? "## " : "### ";
+    const operations: readonly string[] = level === 1 ? ["PLAN"] : H3_OPS;
     return [
         operations.filter((operation) => operation.startsWith(up)).map((operation) => `${prefix}${operation}0`),
         `${prefix}${typed}`,

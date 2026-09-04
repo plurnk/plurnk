@@ -95,24 +95,24 @@ From the model's perspective, plurnk is an operating environment, not a bag of t
 The model emits operations in a compact grammar; the daemon executes them, persists state, and the client renders the trace. An action turn:
 
 ```
-# PLAN0
+## PLAN0
 [{"content":"Update the capital, then answer.","status":"in_progress"}]
-## EDIT0 (worker:///countries/france/capital)
+### EDIT0 (worker:///countries/france/capital)
 Paris
-## SEND0 (NEXT)
+### SEND0 (NEXT)
 Next: Confirm the update, then answer.
 ```
 
 Then its completion turn:
 
 ```
-# PLAN0
+## PLAN0
 [{"content":"The capital is updated and confirmed.","status":"completed"}]
-## SEND0 (TERM)
+### SEND0 (TERM)
 Paris
 ```
 
-Multi-turn loops emerge from the structure — `## SEND0 (NEXT)` continues, `## SEND0 (TERM)` terminates. Every operation returns a real receipt; the model reads them and plans the next turn. The full grammar and its rationale live in [plurnk-service](https://github.com/plurnk/plurnk-service) (`plurnk-contracts/plurnk.md` — the model-facing contract).
+Multi-turn loops emerge from the structure — `### SEND0 (NEXT)` continues, `### SEND0 (TERM)` terminates. Every operation returns a real receipt; the model reads them and plans the next turn. The full grammar and its rationale live in [plurnk-service](https://github.com/plurnk/plurnk-service) (`plurnk-contracts/plurnk.md` — the model-facing contract).
 
 What the daemon brings to those turns:
 
@@ -147,7 +147,7 @@ What the daemon brings to those turns:
 
 - `plurnk read <loop>/<turn>/<seq> --json` — inspect the exact operation result at a log coordinate.
 - `--json` mode carries `notices` and `usage.accounting` — cost and diagnostics without a UI.
-- Exit codes: `0` success (`## SEND0 (TERM)`) · `1` runtime error · `2` maxTurns cap · `3` cancelled (`## SEND0 (FAIL)` / `--timeout`) · `4` loop failed (4xx/5xx final) · `64` usage error.
+- Exit codes: `0` success (`### SEND0 (TERM)`) · `1` runtime error · `2` maxTurns cap · `3` cancelled (`### SEND0 (FAIL)` / `--timeout`) · `4` loop failed (4xx/5xx final) · `64` usage error.
 - Deeper forensics (per-turn packet capture, the budget grinder's records, edit receipts) live in the daemon's digest — see plurnk-service's README.
 
 ## related

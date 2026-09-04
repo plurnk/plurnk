@@ -7,7 +7,7 @@ import { USAGE } from "./dispatcher.ts";
 
 test("[§cli-tui-mode] the public README's model-turn specimens parse under the installed contract", async () => {
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-    const specimens = [...readme.matchAll(/```\n(# PLAN0[\s\S]*?)\n```/gu)].map((match) => match[1]);
+    const specimens = [...readme.matchAll(/```\n(## PLAN0[\s\S]*?)\n```/gu)].map((match) => match[1]);
     assert.equal(specimens.length, 2, "README must show the action and completion turns separately");
     for (const specimen of specimens) {
         assert.doesNotMatch(specimen, /"entries"\s*:/u, "README teaches the retired PLAN wrapper");

@@ -24,7 +24,7 @@
     ],
     "scripts": {
         "test:lint": "tsc --noEmit",
-        "test:unit": "node --test 'src/**/*.test.ts'",
+        "test:unit": "node --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'",
         "pretest:intg": "npm run build",
         "test:intg": "node --test --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
         "test": "npm run test:lint && npm run test:unit && npm run test:intg && npm run test:tui",
@@ -35,7 +35,7 @@
         "build:info": "node scripts/write-build-info.mjs",
         "build": "npm run build:clean && npm run build:dist && npm run build:info",
         "prepare": "git config core.hooksPath .githooks && npm run build",
-        "prepublishOnly": "npm run test && npm audit --audit-level=high && npm run deps:fresh && npm run test:composition",
+        "prepublishOnly": "npm run test && node scripts/audit-gate.mjs && npm run deps:fresh && npm run test:composition",
         "pretest:tui": "npm run build",
         "test:tui": "node --test --test-timeout=600000 --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
         "test:tui:live": "PLURNK_CLIENT_LIVE=1 node --test --test-timeout=600000 --env-file-if-exists=.env test/tui/live.test.ts",

@@ -299,7 +299,7 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entr
     }));
     assert.deepEqual(out.split("\n"), [
         "✅ Contract settled.",
-        "💾 One baseline owns the schema.",
+        "✅ Memory: One baseline owns the schema.",
         "🚧 [high] Update clients.",
         "⬜ [low] Run drills.",
     ], "a routine PLAN carries neither coordinates nor a status code (plurnk#21)");

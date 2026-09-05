@@ -462,7 +462,7 @@ exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🎲 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 💾 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
+**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🎲 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's corresponding actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is therefore skipped to avoid duplication.
 
@@ -513,13 +513,12 @@ PLAN renders its complete entries in source order, one human line each:
 |---|---|
 | `completed` | ✅ |
 | `in_progress` | 🚧 |
-| `completed` content beginning `Memory: ` | 💾 |
 | `pending` | ⬜ |
 
 Every entry glyph begins at column zero. A failed PLAN may append its failure
 glyph and numeric status to the first entry; routine PLANs show neither. The
-client consumes the ACP Plan projection; projected memory omits its `Memory: `
-prefix. Entry whitespace collapses to one line.
+client consumes the ACP Plan projection without interpreting or stripping
+content prefixes. Entry whitespace collapses to one line.
 Neutral `medium` priority is implicit; `high` and `low` render as
 `[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
 trace retains its PLAN header and applies the same entry projection below it.

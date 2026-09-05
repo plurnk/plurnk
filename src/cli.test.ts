@@ -98,7 +98,7 @@ test("formatPlain: PLAN preserves the trace header and renders one line per entr
     })), [
         "[200] model PLAN",
         "  ✅ Inspect the parser.",
-        "  💾 One baseline owns the schema.",
+        "  ✅ Memory: One baseline owns the schema.",
         "  🚧 [high] Run the tests.",
     ].join("\n"));
 });

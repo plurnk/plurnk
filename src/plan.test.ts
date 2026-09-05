@@ -18,7 +18,7 @@ test("presentPlan: preserves Plan order and projects statuses as width-stable gl
     ]);
 });
 
-test("presentPlan: ACP-projected memory retains its Plurnk presentation", () => {
+test("presentPlan: task content never overrides its status or loses a prefix", () => {
     assert.deepEqual(presentPlan({
         body: {
             entries: [{
@@ -27,7 +27,7 @@ test("presentPlan: ACP-projected memory retains its Plurnk presentation", () => 
                 status: "completed",
             }],
         },
-    }), [{ glyph: "💾", text: "One baseline owns the schema" }]);
+    }), [{ glyph: "✅", text: "Memory: One baseline owns the schema" }]);
 });
 
 test("presentPlan: collapses each entry to one human line", () => {
@@ -45,6 +45,6 @@ test("presentPlan: collapses each entry to one human line", () => {
 test("presentPlan: rejects a PLAN row without the canonical body", () => {
     assert.throws(() => presentPlan(null), /canonical Plan body/);
     assert.throws(() => presentPlan({
-        body: [{ content: "internal memory", priority: "medium", status: "memory" }],
+        body: [{ content: "internal task", status: "pending" }],
     }), /canonical Plan body/, "the client consumes ACP, never the daemon's model-native array");
 });

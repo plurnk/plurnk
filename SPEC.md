@@ -270,8 +270,10 @@ action after the cursor reaches an alias-taking position. A failed lazy lookup
 produces no completion and never changes the editor value.
 
 ### §3.1.2 Worker topology and attach {§cli-workers-topology}
-One AG-UI stream binds one conversation worker; the client never renders a
-second worker inside a session. Navigation between workers is explicit.
+One AG-UI stream binds one conversation worker. Descendants of that worker reach
+a client only through the daemon's correlated projection (plurnk-service#440, the
+lane presentation of #38), never by inference; unrelated workspace workers never
+render inside a session. Navigation between workers is explicit.
 `/attach <name>` rebinds the session's thread to that name with the world
 unchanged: an existing worker is bound, a new name mints a fresh conversation on
 the next run, exactly as `--worker <name>` at invocation. The verb reports

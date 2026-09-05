@@ -235,7 +235,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `### READ0`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name (§3.1.2), `/workers` lists; `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `### READ0`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`## PLAN…` or `### OP…`) → `op.parse`; `### LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy denies EXEC and selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -257,7 +257,7 @@ the generated man page are checked against the same inventory.
 |---|---|
 | Inspect | `/help /models /workspaces /workers /log` |
 | Policy | `/model /child /reasoning /yolo` |
-| Workspace | `/workspace /rename /worker` |
+| Workspace | `/workspace /rename /worker /attach` |
 | Functionality | `/mcp /skills /agents /members` |
 | Compose | `/import /script /editor` |
 | Review | `/accept /reject /cancel /edit` |
@@ -268,6 +268,15 @@ model aliases without I/O; provider-qualified models use one bounded provider
 page; MCP, Skill, and A2A aliases call only that Functionality family's list
 action after the cursor reaches an alias-taking position. A failed lazy lookup
 produces no completion and never changes the editor value.
+
+### §3.1.2 Worker topology and attach {§cli-workers-topology}
+One AG-UI stream binds one conversation worker; the client never renders a
+second worker inside a session. Navigation between workers is explicit.
+`/attach <name>` rebinds the session's thread to that name with the world
+unchanged: an existing worker is bound, a new name mints a fresh conversation on
+the next run, exactly as `--worker <name>` at invocation. The verb reports
+`(bound)` or `(new)` from the workspace directory, re-reads the worker's durable
+policy, and the header and status line adopt the name.
 
 ### §3.2 Cancellation {§cli-cancellation}
 

@@ -95,6 +95,10 @@ export interface Transport {
     // workspace.create; the bridge re-maps its threadId (the bridge lazy-creates the
     // workspace on the next run). Returns the workspace handle for the header.
     useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string }): Promise<{ id: number; name: string }>;
+    // Rebind this session's conversation to a worker by name, keeping the world:
+    // the daemon binds an existing conversation or mints a fresh one on the next
+    // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
+    useWorker(name: string, world: string): void;
 }
 
 // ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
@@ -398,6 +402,10 @@ export class BridgeTransport implements Transport {
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
         return { id: 0, name: threadId };
+    }
+    useWorker(name: string, world: string): void {
+        this.#threadId = name;
+        this.#world = world;
     }
 
     // Project one standard reasoning event or un-project one CUSTOM plurnk.*

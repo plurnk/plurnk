@@ -1,4 +1,4 @@
-.TH PLURNK 1 "" "plurnk 0.81.2" "User Commands"
+.TH PLURNK 1 "" "plurnk 0.83.3" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -38,7 +38,9 @@ log read / read <coord>) inspect daemon state without running a loop.
                           if none exists (attach-or-create). Without it, a fresh
                           auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Requires --workspace. Overrides PLURNK_CLIENT_WORKER.
+                          Requires --workspace except in web mode, which resolves
+                          the workspace before applying this constraint. Overrides
+                          PLURNK_CLIENT_WORKER.
       --model <selector>  persistently select the conversation worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -63,13 +65,11 @@ log read / read <coord>) inspect daemon state without running a loop.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
-      --timeout <s>       CLI mode: cancel the loop (loop.cancel) after <s>
-                          seconds; exits 3 with "timedOut":true in the result.
+      --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
+                          CLI exits 3 with "timedOut":true. Web retains the Worker.
       --files-items <n>   workspace-open preview of the TRACKED-FILE list
                           (### FIND0 (file:///**)): -1 full / 0 off / N first-N. Memory
                           (known/unknown/worker/plurnk) always foists full. Create-time.
-      --md <name=path>    pin a markdown doc into the workspace (read at turn 0);
-                          merges with operator PLURNK_MD_*. Repeatable. Create-time.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + working-tree status for the workspace (never
@@ -99,7 +99,8 @@ log read / read <coord>) inspect daemon state without running a loop.
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
   web [options]           serve the optional browser client using this invocation's
-                          resolved workspace, Worker, model, reasoning, and policy;
+                          resolved configuration and optional workspace/Worker
+                          constraints; each tab is URL-addressed as /workspace/threadId;
                           performs no package install or daemon startup
   mcp ...                 list and manage MCP servers for --workspace
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
@@ -123,6 +124,7 @@ The no-argument interactive terminal accepts these slash commands:
 /workspace [name]              Create and enter a fresh workspace.
 /rename <name>                 Rename this workspace's mutable handle.
 /worker [name]                 Fork and enter a new worker.
+/attach <name>                 Bind this session to a worker by name; a new name mints a fresh conversation.
 /mcp [subcommand]              List or manage this worker's MCP servers.
 /skills [subcommand]           List or manage this worker's Agent Skills.
 /agents [subcommand]           List or manage this worker's outbound A2A agents.
@@ -144,7 +146,8 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         Works with no config at all.
   PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
                         mints a fresh, uniquely-named workspace per invocation.
-  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace
+  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace;
+                        web mode resolves an unconstrained workspace first
   PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).

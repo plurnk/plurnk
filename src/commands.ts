@@ -77,6 +77,7 @@ export const COMMANDS = [
     { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace" },
     { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace" },
     { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace" },
+    { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace" },
 
     { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this worker's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },

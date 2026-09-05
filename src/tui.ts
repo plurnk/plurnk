@@ -290,6 +290,11 @@ export interface VerbContext {
     // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
     // bridge threadId re-map). Returns the new workspace handle.
     switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult>;
+    // The bound conversation worker's name (null until a loop or /attach names it).
+    getWorker: () => string | null;
+    // Rebind the session's thread to a worker by name, world unchanged
+    // ({§cli-workers-topology}); the daemon binds or mints on the next run.
+    attachWorker: (name: string) => void;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
     // Resolve the pending proposal (no-op if none) — the typed no-modifier
@@ -441,6 +446,17 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             await rpc.call("workspace.attach", { id: ctx.getWorkspace().id, workerId: forked.workerId });
             await refreshWorkerPolicy();
             write(`  worker: ${forked.workerName} (new)\n`);
+            return;
+        }
+        case "attach": {
+            // {§cli-workers-topology} — an existing worker is bound, a new name mints a
+            // fresh conversation on the next run (the `--worker` path); the world stays.
+            if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
+            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: Array<{ name: string }> };
+            const known = workers.some((worker) => worker.name === rest);
+            ctx.attachWorker(rest);
+            await refreshWorkerPolicy();
+            write(`  worker: ${rest} (${known ? "bound" : "new"})\n`);
             return;
         }
         case "import":
@@ -963,6 +979,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client }),
+        getWorker: () => conversationWorker,
+        attachWorker: (name) => {
+            transport.useWorker(name, current.name);
+            conversationWorker = name;
+            conversationWorkerId = null;
+        },
         write: (text) => { printAbove(text); },
         importFile: async (rest) => {
             const abs = isAbsolute(rest) ? rest : resolve(process.cwd(), rest);

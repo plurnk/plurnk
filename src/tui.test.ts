@@ -56,6 +56,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         onClose: () => {},
         shutdown: () => {},
         useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
+        useWorker: () => {},
     };
 
     await assert.rejects(
@@ -78,6 +79,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
         onClose: () => {},
         shutdown: () => {},
         useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
+        useWorker: () => {},
     };
 
     await assert.rejects(
@@ -216,7 +218,7 @@ test("buildHeader: reasoning is a distinct durable policy label", () => {
     assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /reasoning:/);
 });
 
-interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[] }
+interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[]; attached: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
     const calls: Array<{ method: string; params?: unknown }> = [];
@@ -225,6 +227,8 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const resolved: string[] = [];
     const composed: boolean[] = [];
     let workspace = { id: 1, name: "sess" };
+    let worker: string | null = "sess";
+    const attached: string[] = [];
     const modelState = {
         model: null as ResolvedModelSpec | null,
         spawnModel: null as ResolvedModelSpec | null,
@@ -251,6 +255,8 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         setReasoning: (reasoning) => { modelState.reasoning = reasoning; },
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
+        getWorker: () => worker,
+        attachWorker: (name) => { attached.push(name); worker = name; },
         switchWorkspace: async (name) => {
             calls.push({ method: "workspace.create", params: { name } });
             const r = results["workspace.create"];
@@ -261,9 +267,33 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         importFile: async (p) => { imports.push(p); },
         resolveProposal: async (action) => { resolved.push(action); },
         composeInEditor: async () => { composed.push(true); },
-        calls, out, imports, resolved, composed,
+        calls, out, imports, resolved, composed, attached,
     };
 };
+
+// ─── /attach (bind or mint a conversation worker by name) ─────────────
+test("[§cli-workers-topology] handleVerb /attach <known> rebinds the thread and reports the bound worker", async () => {
+    const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }, { id: 2, name: "sess-fork" }] } });
+    await handleVerb("/attach sess-fork", ctx);
+    assert.deepEqual(ctx.attached, ["sess-fork"]);
+    assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: { id: 1 } });
+    assert.ok(ctx.calls.some((c) => c.method === "worker.model.get"), "policy is re-read for the newly bound worker");
+    assert.equal(ctx.out.join(""), "  worker: sess-fork (bound)\n");
+});
+
+test("[§cli-workers-topology] handleVerb /attach <new> rebinds and reports a fresh conversation", async () => {
+    const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }] } });
+    await handleVerb("/attach recheck", ctx);
+    assert.deepEqual(ctx.attached, ["recheck"]);
+    assert.equal(ctx.out.join(""), "  worker: recheck (new)\n");
+});
+
+test("handleVerb /attach without a name prints usage and binds nothing", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/attach", ctx);
+    assert.deepEqual(ctx.attached, []);
+    assert.equal(ctx.out.join(""), "  usage: /attach <name>\n");
+});
 
 // ─── /members (file members Functionality family through AG-UI+) ─────
 

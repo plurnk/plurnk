@@ -31,7 +31,8 @@ import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
-import { runModels, runWorkspaceList, runWorkspaceWorkers, runLogRead } from "./subcommands.ts";
+import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
+import { renderWorkerTopology, type WorkerRow } from "./workers.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -352,7 +353,12 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             query: rest.length === 0 ? {} : { search: rest },
         }); return;
         case "workspaces": await runWorkspaceList(rpc, { json: false }); return;
-        case "workers": await runWorkspaceWorkers(rpc, ctx.getWorkspace().name, { json: false }); return;
+        case "workers": {
+            // {§cli-workers-topology} — the directory as a forest rooted at the bound worker.
+            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };
+            write(renderWorkerTopology(workers, ctx.getWorker()));
+            return;
+        }
         case "log": {
             const limit = rest.length > 0 ? Number(rest) : undefined;
             const filters = Number.isInteger(limit) && (limit as number) > 0 ? { limit: limit as number } : {};
@@ -452,7 +458,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // {§cli-workers-topology} — an existing worker is bound, a new name mints a
             // fresh conversation on the next run (the `--worker` path); the world stays.
             if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
-            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: Array<{ name: string }> };
+            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };
             const known = workers.some((worker) => worker.name === rest);
             ctx.attachWorker(rest);
             await refreshWorkerPolicy();

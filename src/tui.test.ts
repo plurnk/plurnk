@@ -288,6 +288,16 @@ test("[§cli-workers-topology] handleVerb /attach <new> rebinds and reports a fr
     assert.equal(ctx.out.join(""), "  worker: recheck (new)\n");
 });
 
+test("[§cli-workers-topology] handleVerb /workers renders the directory as a tree rooted at the bound worker", async () => {
+    const ctx = makeCtx({ "workspace.workers": { workers: [
+        { id: 1, name: "sess", created_at: "2026-09-04T10:01:00Z", origin: "model", parentWorkerId: null },
+        { id: 2, name: "sess-fork", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1 },
+    ] } });
+    await handleVerb("/workers", ctx);
+    assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: { id: 1 } });
+    assert.match(ctx.out.join(""), /^ {2}● sess .*← bound\n {2}└─ ○ sess-fork /u);
+});
+
 test("handleVerb /attach without a name prints usage and binds nothing", async () => {
     const ctx = makeCtx();
     await handleVerb("/attach", ctx);

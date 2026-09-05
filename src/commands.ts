@@ -65,7 +65,7 @@ export const COMMANDS = [
     { name: "help", usage: "/help [verb]", summary: "Show the command index or one command's usage.", group: "inspect" },
     { name: "models", usage: "/models [search]", summary: "Search the bounded model catalog.", group: "inspect" },
     { name: "workspaces", usage: "/workspaces", summary: "List daemon workspaces.", group: "inspect" },
-    { name: "workers", usage: "/workers", summary: "List workers in this workspace.", group: "inspect" },
+    { name: "workers", usage: "/workers", summary: "List this workspace's workers as a topology rooted at the bound worker.", group: "inspect" },
     { name: "log", usage: "/log [limit]", summary: "Read recent log entries.", group: "inspect" },
 
     { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },

@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderWorkerTopology, type WorkerRow } from "./workers.ts";
+import { renderWorkerTopology, workerNameFromTarget, type WorkerRow } from "./workers.ts";
+
+test("[§cli-workers-topology] worker:// references name workers; worker file paths name none", () => {
+    assert.equal(workerNameFromTarget("worker://recheck"), "recheck");
+    assert.equal(workerNameFromTarget("worker://guesser1"), "guesser1");
+    assert.equal(workerNameFromTarget("worker://~/plan.md"), null);
+    assert.equal(workerNameFromTarget("worker:///notes.md"), null);
+    assert.equal(workerNameFromTarget("worker://recheck/report.md"), null);
+    assert.equal(workerNameFromTarget("file:///src/a.ts"), null);
+});
 
 const at = (n: number): string => `2026-09-04T10:0${n}:00Z`;
 const forest: WorkerRow[] = [

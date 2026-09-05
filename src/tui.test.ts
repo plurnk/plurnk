@@ -298,6 +298,25 @@ test("[§cli-workers-topology] handleVerb /workers renders the directory as a tr
     assert.match(ctx.out.join(""), /^ {2}● sess .*← bound\n {2}└─ ○ sess-fork /u);
 });
 
+test("[§cli-workers-topology] /attach completion offers worker names lazily and survives a failed directory read", async () => {
+    let reads = 0;
+    const complete = (line: string, names: () => Promise<string[]>) => completeInput(line, {
+        getAliases: () => [],
+        cwd: process.cwd(),
+        getWorkerNames: async () => { reads += 1; return await names(); },
+    });
+    const ok = await complete("/attach ma", async () => ["main", "main-fork", "guesser1"]);
+    assert.deepEqual(ok.suggestions.map((s) => s.value), ["main", "main-fork"]);
+    assert.equal(ok.prefix, "ma");
+    assert.equal(ok.suggestions[0].description, "worker");
+    const down = await complete("/attach ", async () => { throw new Error("directory unavailable"); });
+    assert.deepEqual(down.suggestions, []);
+    assert.equal(reads, 2, "names are fetched only when the cursor consumes them");
+    const unrelated = await complete("/model ma", async () => ["main"]);
+    assert.equal(reads, 2, "other verbs never read the worker directory");
+    assert.deepEqual(unrelated.suggestions, []);
+});
+
 test("handleVerb /attach without a name prints usage and binds nothing", async () => {
     const ctx = makeCtx();
     await handleVerb("/attach", ctx);

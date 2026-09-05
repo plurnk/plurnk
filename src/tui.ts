@@ -32,7 +32,7 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
-import { renderWorkerTopology, type WorkerRow } from "./workers.ts";
+import { renderWorkerTopology, workerNameFromTarget, type WorkerRow } from "./workers.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -140,6 +140,7 @@ export interface CompletionOptions {
     getReasoningPolicies?: () => string[];
     getProviderModels?: (provider: string) => Promise<string[]>;
     getFunctionalityAliases?: (family: FunctionalityFamily) => Promise<string[]>;
+    getWorkerNames?: () => Promise<string[]>;
 }
 
 export interface InputCompletion {
@@ -165,6 +166,16 @@ export const completeInput = async (line: string, options: CompletionOptions): P
                     .filter((alias) => alias.startsWith(command.prefix))
                     .map((value) => ({ value, description: `${command.family} alias` })),
                 prefix: command.prefix,
+            };
+        }
+        const workerFrag = line.match(/^\/attach\s+(\S*)$/);
+        if (workerFrag) {
+            let names: string[] = [];
+            try { names = await options.getWorkerNames?.() ?? []; }
+            catch { /* completion failure is an empty result; the editor remains intact */ }
+            return {
+                suggestions: names.filter((name) => name.startsWith(workerFrag[1])).map((value) => ({ value, description: "worker" })),
+                prefix: workerFrag[1],
             };
         }
         const aliasFrag = line.match(/^\/(model|child)\s+(\S*)$/);
@@ -685,6 +696,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     surface.setAutocompleteProvider(makeAutocompleteProvider({
             getAliases: () => aliasCache,
             cwd: process.cwd(),
+            // {§cli-workers-topology} — the directory plus the worker:// references
+            // the waterfall has shown (the same harvest the LOOK cycler keeps).
+            getWorkerNames: async () => {
+                const { workers } = await transport.rpc("workspace.workers", { id: current.id }) as { workers: WorkerRow[] };
+                const seen = priorTargets.map(workerNameFromTarget).filter((name): name is string => name !== null);
+                return [...new Set([...workers.map((worker) => worker.name), ...seen])];
+            },
             getReasoningPolicies: () => workerReasoning.supportedPolicies,
             getProviderModels: async (provider) => {
                 // One bounded page per provider, cached for the session: lazy,

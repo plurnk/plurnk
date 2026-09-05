@@ -8,6 +8,11 @@ export interface WorkerRow {
     parentWorkerId?: number | null;
 }
 
+// A `worker://<name>` reference names a worker; `worker://~/…` and `worker:///…`
+// are files in a worker's tree and name none.
+export const workerNameFromTarget = (target: string): string | null =>
+    /^worker:\/\/([^/~\s][^/\s]*)$/u.exec(target)?.[1] ?? null;
+
 const byCreated = (a: WorkerRow, b: WorkerRow): number =>
     a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id - b.id;
 

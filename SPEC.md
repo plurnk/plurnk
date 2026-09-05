@@ -825,15 +825,15 @@ interface Notice {
 }
 ```
 
-AG-UI projects daemon `notice/event {loopId, notice}` notifications as
-`CUSTOM plurnk.notice`. The client consumes that event name only. Notices
-interleave with trace lines in text mode and accumulate under `notices` in the
-version-2 JSON record.
+Diagnostic Notices arrive as `CUSTOM plurnk.notice`, interleave with trace
+lines in text mode and accumulate under `notices` in the version-2 JSON record.
 
-`engine:derivation/embed_progress` and `exec:*/search_progress` are interactive
-edge state: they replace the prompt's activity position and their terminal
-phase clears it. The one-shot TTY repaints routine derivation progress no more
-than once per 15 seconds; non-TTY stderr omits it. Neither client appends
+Indexing activity arrives only through the ordinary AG-UI status snapshot/delta
+stream; clients do not poll or interpret a second progress Notice. The one-shot
+TTY repaints routine activity changes no more than once per 15 seconds;
+non-TTY stderr omits them. Indexing warnings and failures remain explicit
+diagnostic Notices. `exec:*/search_progress` replaces search acquisition's
+activity position and its terminal phase clears it. Neither client appends
 progress ticks or live-renders durable `entry_materialized` narration.
 
 Serialized Git branch batches arrive separately as `CUSTOM

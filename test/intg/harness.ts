@@ -86,8 +86,6 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         PLURNK_MODEL: "",
         PLURNK_MCP_ENABLED: "[]",
         OPENAI_BASE_URL: "http://127.0.0.1:11435",
-        PLURNK_SERVICE_EMBED_DISABLE: "1",
-        PLURNK_EMBED_WORKERS: "2",
         ...opts.extraEnv,
     }).map(([key, value]) => `${key}=${value}`).join("\n");
     const overridesPath = join(dirname(dbPath), "test.env");

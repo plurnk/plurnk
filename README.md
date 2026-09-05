@@ -118,7 +118,7 @@ What the daemon brings to those turns:
 
 - **Private by default** — the embedding model and the per-model tokenizer vocabularies are bundled and offline. No network, no vendor sees your files.
 - **One language, not a tool catalog** — explore and transform the environment with globs, regex, jsonpath, xpath, and cosine similarity, all in the same grammar. The model learns one interface instead of dozens of schemas.
-- **A real environment** — a filesystem jail per project (configurable to any security posture, including none); `~phrase` FIND runs semantic search against the embedded model; the packet shows the model exactly what every row costs, from token-accurate budgets.
+- **A real environment** — a filesystem jail per project (configurable to any security posture, including none); `~query` FIND uses native SQLite FTS5 text search; the packet shows the model exactly what every row costs, from token-accurate budgets.
 - **Curation, not compaction** — no context-compaction algorithms, no garbage collection. The model `KILL`s superseded log items or selected ranges by address, usually in bulk patterns; the corresponding source material survives log curation.
 - **Topology on demand** — the model forks sister subagents, spawns children, or fires bare one-shot requests, shaping its own graph; parent and child endpoints can be different models, for cheap orchestrator-driven workflows.
 - **Rails & recovery** — GBNF grammar constraints keep low-end models reliable; the model-managed context optimizes tiny KV footprints; structured failure recovery keeps extended runs alive on modest models.

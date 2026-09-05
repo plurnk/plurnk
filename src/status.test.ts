@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import TerminalStatusLine, { turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, derivationActivity, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
@@ -27,20 +27,12 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
     assert.equal(renderStatusLine({ lifecycle: "idle", model: null, packetCount: null, activity: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { idleGlyph: "🔥" }), "🔥 idle");
 });
 
-test("derivationActivity recognizes progress, terminal clear, and failure", () => {
-    assert.deepEqual(derivationActivity({
-        source: "engine:derivation", kind: "embed_progress", level: "info",
-        phase: "indexing", completed: 3, total: 10,
-    }), { label: "indexing", percent: 30 });
-    assert.equal(derivationActivity({
-        source: "engine:derivation", kind: "embed_progress", level: "info",
-        phase: "complete", completed: 10, total: 10,
-    }), null);
-    assert.deepEqual(derivationActivity({
-        source: "engine:derivation", kind: "embed_progress", level: "warn",
-        phase: "failed",
-    }), { label: "indexing failed", percent: null });
-    assert.equal(derivationActivity({ source: "engine", kind: "note", level: "info" }), undefined);
+test("the authoritative status gauge projects indexing phases without a Notice reducer", () => {
+    const gauge = { lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null as unknown };
+    for (const [phase, label] of [["preparing", "preparing"], ["indexing", "indexing"], ["failed", "indexing failed"]]) {
+        assert.deepEqual(projectStatusGauge({ ...gauge, activity: { kind: "derivation", phase, percent: 30 } }).activity, { label, percent: 30 });
+    }
+    assert.equal(projectStatusGauge(gauge).activity, null);
 });
 
 test("TerminalStatusLine coalesces routine progress and leaves non-TTY output silent", () => {
@@ -50,12 +42,12 @@ test("TerminalStatusLine coalesces routine progress and leaves non-TTY output si
         intervalMs: 15_000,
         now: () => now,
     });
-    line.update({ activity: { label: "indexing", percent: 1 } }, { routine: true });
+    line.update({ activity: { label: "indexing", percent: 1 } });
     now = 5_000;
-    line.update({ activity: { label: "indexing", percent: 20 } }, { routine: true });
+    line.update({ activity: { label: "indexing", percent: 20 } });
     now = 15_000;
-    line.update({ activity: { label: "indexing", percent: 60 } }, { routine: true });
-    line.update({ activity: null }, { routine: true });
+    line.update({ activity: { label: "indexing", percent: 60 } });
+    line.update({ activity: null });
     line.settle();
     assert.equal(writes.length, 4, "start, one 15-second heartbeat, terminal clear, and settle");
     assert.match(writes[0] ?? "", /🧮 1%/);
@@ -64,7 +56,7 @@ test("TerminalStatusLine coalesces routine progress and leaves non-TTY output si
 
     const quiet: string[] = [];
     const nonTty = new TerminalStatusLine((value) => quiet.push(value), false, running, CONTEXT);
-    nonTty.update({ activity: { label: "indexing", percent: 25 } }, { routine: true });
+    nonTty.update({ activity: { label: "indexing", percent: 25 } });
     assert.deepEqual(quiet, []);
 });
 

@@ -1,4 +1,3 @@
-import type { Notice } from "./diagnostics.ts";
 import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
 import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
 import type { LoopUsage } from "./render.ts";
@@ -200,31 +199,6 @@ export const reduceStatusGauge = (
     return { handled: true, gauge: next };
 };
 
-const finitePercent = (value: unknown): number | null => {
-    const percent = Number(value);
-    return Number.isFinite(percent)
-        ? Math.max(0, Math.min(100, Math.floor(percent)))
-        : null;
-};
-
-// Derivation Notices are an ephemeral activity source, not durable trace rows.
-// `undefined` means "not this Notice family"; `null` is the terminal clear.
-export const derivationActivity = (notice: Notice): StatusActivity | null | undefined => {
-    if (notice.source !== "engine:derivation" || notice.kind !== "embed_progress") return undefined;
-    const phase = typeof notice.phase === "string" ? notice.phase : null;
-    if (phase === "complete") return null;
-    if (phase === "failed") return { label: "indexing failed", percent: null };
-
-    const completed = Number(notice.completed);
-    const total = Number(notice.total);
-    if (Number.isFinite(completed) && Number.isFinite(total) && total > 0 && completed >= total) return null;
-    const explicit = finitePercent(notice.percent);
-    const derived = Number.isFinite(completed) && Number.isFinite(total) && total > 0
-        ? finitePercent((completed / total) * 100)
-        : null;
-    return { label: "indexing", percent: explicit ?? derived };
-};
-
 const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => value === "running" ? "⌛︎"
     : value === "parked" ? "💤"
         : value === "completed" ? "⏹️"
@@ -307,19 +281,20 @@ export default class TerminalStatusLine {
         this.#now = options.now ?? Date.now;
     }
 
-    update(patch: Partial<ClientStatus>, options: { routine?: boolean } = {}): void {
-        const priorActivity = this.#status.activity;
+    update(patch: Partial<ClientStatus>): void {
+        const prior = this.#status;
         this.#status = { ...this.#status, ...patch };
         const rendered = renderStatusLine(this.#status, this.#context);
         if (rendered === this.#current) return;
         this.#current = rendered;
         if (!this.#enabled) return;
 
-        if (options.routine === true) {
+        if (Object.hasOwn(patch, "activity") && prior.lifecycle === this.#status.lifecycle
+            && prior.model === this.#status.model && prior.packetCount === this.#status.packetCount) {
             const now = this.#now();
             const terminal = this.#status.activity === null
                 || this.#status.activity.label === "indexing failed";
-            const starting = priorActivity === null && this.#status.activity !== null;
+            const starting = prior.activity === null && this.#status.activity !== null;
             if (!terminal && !starting && this.#lastRoutinePaint !== null
                 && now - this.#lastRoutinePaint < this.#intervalMs) return;
             this.#lastRoutinePaint = now;

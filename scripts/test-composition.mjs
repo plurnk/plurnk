@@ -150,7 +150,6 @@ try {
             PLURNK_HOST: "127.0.0.1",
             PLURNK_PORT: "0",
             PLURNK_SERVICE_DB_PATH: db,
-            PLURNK_SERVICE_EMBED_DISABLE: "1",
             PLURNK_SCHEMES_HTTP_PLAYWRIGHT_METHOD: "disabled",
             PLURNK_MODEL: "composition",
             PLURNK_MODEL_composition: "openai/composition",

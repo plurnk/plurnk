@@ -205,21 +205,31 @@ test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice 
     assert.equal(err.join(""), "", "no row → no trace");
 });
 
-test("consumeCliRun: derivation Notices drive ephemeral progress without duplicating durable trace", async () => {
+test("consumeCliRun: indexing state is quiet and indexing failures remain diagnostics", async () => {
     const progress: unknown[] = [];
     const notices: unknown[] = [];
     const { io } = sink({
-        onProgress: (activity) => progress.push(activity),
+        onStatus: (status) => progress.push(status.activity),
         notice: (notice) => notices.push(notice),
     });
     await consumeCliRun(stream([
-        { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine:derivation", kind: "embed_progress", level: "info", phase: "indexing", completed: 3, total: 10, percent: 30 } },
-        { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine:derivation", kind: "embed_progress", level: "info", phase: "complete", completed: 10, total: 10, percent: 100 } },
+        { type: EventType.STATE_SNAPSHOT, snapshot: {
+            plurnk: { status: { lifecycle: "running", model: null, loopId: 1, packetCount: 0,
+                activity: { kind: "derivation", phase: "indexing", completed: 3, total: 10, percent: 30 } } }, budget: {},
+        } },
+        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/activity", value: null }] },
+        { type: EventType.CUSTOM, name: "plurnk.notice", value: {
+            source: "engine:derivation", kind: "search_progress", level: "error", phase: "failed",
+            message: "Search indexing failed: SQLite database is locked",
+        } },
         terminated(),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(progress, [{ label: "indexing", percent: 30 }, null]);
-    assert.deepEqual(notices, [], "progress is not a second durable display channel");
+    assert.deepEqual(notices, [{
+        source: "engine:derivation", kind: "search_progress", level: "error", phase: "failed",
+        message: "Search indexing failed: SQLite database is locked",
+    }], "only the explicit failure enters the transcript");
 });
 
 test("consumeCliRun projects the authoritative AG-UI status gauge", async () => {

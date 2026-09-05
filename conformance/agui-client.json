@@ -177,19 +177,6 @@
         "durability"
       ]
     },
-    "workspace.derivation": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — derivation status"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
-    },
     "entry.read": {
       "posture": "native",
       "evidence": [

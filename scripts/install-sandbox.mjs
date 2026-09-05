@@ -14,8 +14,7 @@ import { tmpdir } from "node:os";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Outside the repo tree, so node's module resolution can't walk up into the
-// repo's own node_modules (which carries the dev-installed optional service +
-// embedder) — a nested sandbox would defeat the lean-client isolation check.
+// repo's own node_modules — a nested sandbox would defeat the client isolation check.
 export const sandbox = resolve(tmpdir(), "plurnk-client-sandbox");
 
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", ...opts });

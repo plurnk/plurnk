@@ -51,7 +51,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { EMPTY_TALLY, derivationActivity, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
+import { EMPTY_TALLY, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
 import {
     COMMANDS,
     completeCommandSyntax,
@@ -563,8 +563,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let runningSince: number | null = null;
     let conversationWorkerId: number | null = null;
     let conversationWorker: string | null = opts.workerName ?? null;
-    let embedding = false;
-    let embeddingPercent: number | null = null;
     let searchFetching = false;
     let searchPercent: number | null = null;
     let branchBatch: BranchBatchEvent | null = null;
@@ -677,8 +675,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             && branchTotal > 0
             ? Math.floor((branchCompleted / branchTotal) * 100)
             : null;
-        const activity = embedding ? { label: "indexing", percent: embeddingPercent }
-            : searchFetching ? { label: "search", percent: searchPercent }
+        const activity = searchFetching ? { label: "search", percent: searchPercent }
                 : branchPercent !== null ? { label: "branches", percent: branchPercent }
                     : null;
         const model = workerModel === null
@@ -854,15 +851,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const handleNotice = (notice: Notice): void => {
         // engine:turn liveness is owned by the run state, not a waterfall line.
         if (notice.source === "engine:turn") return;
-        // Derivation progress is ephemeral status, never an append-only waterfall.
-        const derivation = derivationActivity(notice);
-        if (derivation !== undefined) {
-            embedding = derivation !== null && derivation.label !== "indexing failed";
-            embeddingPercent = embedding && derivation !== null ? derivation.percent : null;
-            if (derivation?.label === "indexing failed") printAbove(renderDiagnostic(notice));
-            else repromptPreserving();
-            return;
-        }
         // Search acquisition is the same compact lifecycle shape: update the
         // prompt percentage, never append one notice line per tick.
         if (notice.kind === "search_progress" && notice.source.startsWith("exec:")) {
@@ -952,37 +940,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onTerminated: () => {},
     });
 
-    // Startup warming begins while AG-UI is still establishing the workspace, before a
-    // request-scoped SSE exists. Poll the engine's latest structured state until terminal;
-    // later updates arrive as Notices on the run stream.
-    let lastDerivationState = "";
-    let derivationPoll: ReturnType<typeof setInterval> | null = null;
-    const pollDerivation = async (): Promise<void> => {
-        try {
-            const { status } = await transport.rpc<{ status: Notice | null }>("workspace.derivation");
-            if (status === null) {
-                if (derivationPoll !== null) clearInterval(derivationPoll);
-                derivationPoll = null;
-                return;
-            }
-            const signature = JSON.stringify(status);
-            if (signature !== lastDerivationState) {
-                lastDerivationState = signature;
-                handleNotice({ ...status, source: "engine:derivation", kind: "embed_progress" });
-            }
-            if (status.phase === "complete" || status.phase === "failed") {
-                if (derivationPoll !== null) clearInterval(derivationPoll);
-                derivationPoll = null;
-            }
-        } catch {
-            // A real connection failure is surfaced by the transport's normal close path.
-        }
-    };
-    derivationPoll = setInterval(() => { void pollDerivation(); }, 1_000);
     // The running loop's elapsed time ticks in the status row.
     const statusTick = setInterval(() => { if (inFlight) reprompt(); }, 1_000);
     statusTick.unref();
-    void pollDerivation();
 
     // Verbs + read-only subcommands call rpc.call(...) only; route that through the
     // live transport (WS, or the bridge's management plane over /plurnk/rpc). A
@@ -1054,7 +1014,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (closed) return;
             closed = true;
             shuttingDown = true;
-            if (derivationPoll !== null) clearInterval(derivationPoll);
             transport.shutdown();
             removeInputListener();
             surface.stop();

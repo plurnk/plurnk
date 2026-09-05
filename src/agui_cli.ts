@@ -29,7 +29,7 @@ import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { LoopPolicy, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
-import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, derivationActivity, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusActivity, type StatusGaugeEnvelope } from "./status.ts";
+import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 import { composeLoopPolicy, NONINTERACTIVE_CAPABILITIES } from "./policy.ts";
 
@@ -68,7 +68,6 @@ export interface CliRunSinks {
     noReviewChannel: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
     onActionResult?: (v: ActionOutcome) => void;
-    onProgress?: (activity: StatusActivity | null) => void;
     onTurnAccounting?: (turn: TurnAccounting) => void;
     onStatus?: (status: ClientStatus) => void;
 }
@@ -199,11 +198,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const turn = turnAccountingFromNotice(notice);
             if (turn !== null) io.onTurnAccounting?.(turn);
             if (io.json) notices.push(notice);
-            else {
-                const progress = derivationActivity(notice);
-                if (progress !== undefined) io.onProgress?.(progress);
-                else io.notice(notice);
-            }
+            else io.notice(notice);
         } else if (name === "plurnk.stream") {
             // plurnk.stream carries the whole lifecycle: a concluded payload has
             // its exact result; a start/event payload has state. (json: streams aren't in
@@ -279,7 +274,6 @@ export const runCliViaBridge = async (
         ),
         err: (s: string) => statusLine.durable(s),
         notice: (notice: Parameters<typeof report>[0]) => statusLine.durable(`${renderDiagnostic(notice)}\n`),
-        onProgress: (activity: StatusActivity | null) => statusLine.update({ activity }, { routine: true }),
         // (#465) accrue running loop cost; PLURNK_STATUS_STREAM=1 also prints a
         // greppable plain row per turn (stderr), the benchlet's live price feed.
         onTurnAccounting: (turn: TurnAccounting) => {

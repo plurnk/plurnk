@@ -96,14 +96,21 @@ export const accrueTurnAccounting = (
 // {plurnk#41} — effort is identity-grade: contracts ≥1.14 routes carry the worker's
 // durable reasoning policy; when absent (older daemon, or a model with no reasoning
 // dimension) the identity renders bare. Structural input so both contract eras format.
+// {§cli-identity-effort} — effort is identity-grade: `alias[low]` is a chosen level, `alias(low)`
+// a provider default the daemon seeded (brackets read as chosen, parentheses as given); bare when
+// the model has no effort dimension. The daemon states the source; the client never infers it.
 export const formatRouteIdentity = (route: {
     alias?: string;
     provider: string;
     model: string;
     reasoningPolicy?: string;
+    reasoningSource?: "default" | "explicit";
 }): string => {
     const name = route.alias ?? `${route.provider}/${route.model}`;
-    return route.reasoningPolicy === undefined ? name : `${name}[${route.reasoningPolicy}]`;
+    if (route.reasoningPolicy === undefined) return name;
+    return route.reasoningSource === "default"
+        ? `${name}(${route.reasoningPolicy})`
+        : `${name}[${route.reasoningPolicy}]`;
 };
 
 export interface ClientStatus {

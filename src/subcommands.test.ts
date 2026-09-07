@@ -83,6 +83,7 @@ const modelPage = {
             capabilities: {
                 attachment: true,
                 reasoning: true,
+                reasoningPolicies: ["off", "low", "high"],
                 toolCall: true,
                 inputModalities: ["text", "image"],
                 outputModalities: ["text"],
@@ -99,6 +100,7 @@ const modelPage = {
             capabilities: {
                 attachment: true,
                 reasoning: true,
+                reasoningPolicies: ["adaptive", "max"],
                 toolCall: true,
                 inputModalities: ["text"],
                 outputModalities: ["text"],
@@ -114,7 +116,7 @@ const modelPage = {
     nextOffset: 2,
 };
 
-test("[§cli-plurnk-models] runModels: bounded catalog table and continuation hint", async () => {
+test("[§cli-plurnk-models] [§cli-models-efforts] runModels: bounded catalog table, efforts column, and continuation hint", async () => {
     const { rpc, calls } = fakeRpc({
         "models.list": modelPage,
     });
@@ -127,6 +129,10 @@ test("[§cli-plurnk-models] runModels: bounded catalog table and continuation hi
     assert.match(out, /Gemini 3 Pro/);
     assert.match(out, /GOOGLE_GENERATIVE_AI_API_KEY/);
     assert.match(out, /next --offset 2/);
+    // {§cli-models-efforts} — the daemon's admitted efforts per route (service#529), never inferred.
+    assert.match(out, /efforts/);
+    assert.match(out, /off,low,high/);
+    assert.match(out, /adaptive,max/);
 });
 
 test("runModels: --json emits the complete page without client projection", async () => {

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, answerForQuestion } = await import("./proposal.ts");
+const { renderBody, formatTarget, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices } = await import("./proposal.ts");
 
 const proposal = () => ({
     logEntryId: 1,
@@ -28,24 +28,6 @@ test("questionChoices: the schema's single-property enum choices surface", () =>
     assert.deepEqual(questionChoices({ properties: { branch: { type: "string", enum: ["main", "feat/x"] } } }), ["main", "feat/x"]);
     assert.deepEqual(questionChoices({ properties: {} }), []);
     assert.deepEqual(questionChoices({}), []);
-});
-
-test("answerForQuestion: a digit picks that enum choice into the content object", () => {
-    const schema = { properties: { branch: { type: "string", enum: ["main", "feat/x"] } } };
-    assert.deepEqual(answerForQuestion("2", schema), { branch: "feat/x" });
-    assert.deepEqual(answerForQuestion("1", schema), { branch: "main" });
-});
-
-test("answerForQuestion: free text lands the single property's value; empty → null", () => {
-    const schema = { properties: { branch: { type: "string", enum: ["main"] } } };
-    assert.deepEqual(answerForQuestion("anything at all", schema), { branch: "anything at all" });
-    assert.equal(answerForQuestion("   ", schema), null);
-});
-
-test("answerForQuestion: a multi-property schema expects raw JSON content", () => {
-    const schema = { properties: { a: { type: "string" }, b: { type: "string" } } };
-    assert.deepEqual(answerForQuestion('{"a":"x","b":"y"}', schema), { a: "x", b: "y" });
-    assert.equal(answerForQuestion("not json", schema), null);
 });
 
 test("renderQuestionMenu: numbers the choices + free-response hint; open question just prompts", () => {

@@ -116,7 +116,7 @@ export const renderProposalMenu = (params: ProposalParams): string => {
 // single-property enum choices as a numbered menu with a free-response escape.
 
 // The schema's single-property enum choices, if any. Multi-property or
-// non-enum schemas yield [] (the user types a JSON answer).
+// non-enum schemas yield []. QuestionForm calls this for each named field.
 export const questionChoices = (schema: Record<string, unknown>): string[] => {
     const properties = schema.properties;
     if (typeof properties !== "object" || properties === null) return [];
@@ -127,34 +127,6 @@ export const questionChoices = (schema: Record<string, unknown>): string[] => {
     return Array.isArray(enums) ? enums.filter((c): c is string => typeof c === "string") : [];
 };
 
-// Map a typed line to the standard answer payload for a single-property schema:
-// a digit picks that enum choice; anything else is the property's free-text
-// value. Multi-property schemas expect raw JSON. Empty → null (re-prompt).
-export const answerForQuestion = (line: string, schema: Record<string, unknown>): Record<string, unknown> | null => {
-    const t = line.trim();
-    if (t.length === 0) return null;
-    const properties = schema.properties;
-    if (typeof properties !== "object" || properties === null) return null;
-    const keys = Object.keys(properties);
-    const choices = questionChoices(schema);
-    if (keys.length === 1) {
-        const key = keys[0]!;
-        const n = Number(t);
-        const value = choices.length > 0 && Number.isInteger(n) && n >= 1 && n <= choices.length
-            ? choices[n - 1]
-            : t;
-        return { [key]: value };
-    }
-    try {
-        const parsed = JSON.parse(t) as unknown;
-        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-            ? parsed as Record<string, unknown>
-            : null;
-    } catch {
-        return null;
-    }
-};
-
 // The question menu: the question, numbered choices, and the always-present
 // free-response escape. An open question (no choices) is just "type your answer".
 export const renderQuestionMenu = (question: string, choices: string[]): string => {
@@ -163,6 +135,7 @@ export const renderQuestionMenu = (question: string, choices: string[]): string 
     lines.push(choices.length > 0
         ? `${DIM}  type 1–${choices.length} to pick, or type your own answer (Free Response)${RESET} `
         : `${DIM}  type your answer${RESET} `);
+    lines.push(`${DIM}  /cancel cancels the question${RESET}`);
     return lines.join("\n");
 };
 

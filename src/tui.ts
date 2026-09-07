@@ -24,7 +24,8 @@ import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTar
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, answerForQuestion, editInEditor } from "./proposal.ts";
+import { renderProposalMenu, keyToResolution, renderQuestionMenu, editInEditor } from "./proposal.ts";
+import QuestionForm from "./QuestionForm.ts";
 import { BridgeTransport, type BranchBatchEvent, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -573,7 +574,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let lookCursor: number | null = null;
     let liveReasoning: { messageId: string; rendered: string } | null = null;
     let pendingProposal: ProposalParams | null = null;
-    let pendingQuestion: { interactionId: number; schema: Record<string, unknown> } | null = null;
+    let pendingQuestion: { interactionId: number; form: QuestionForm } | null = null;
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
@@ -929,11 +930,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             showNextProposal();
         },
         onInteraction: (i) => {
-            // The question tool paused its loop: render the standard message + the
-            // schema's single-property enum choices; the line handler resolves the
-            // typed answer back into the paused run.
-            pendingQuestion = { interactionId: i.interactionId, schema: i.responseSchema };
-            printAbove(renderQuestionMenu(i.message, questionChoices(i.responseSchema)));
+            const form = new QuestionForm(i.responseSchema);
+            pendingQuestion = { interactionId: i.interactionId, form };
+            printAbove(renderQuestionMenu(`${i.message}\n${form.prompt}`, form.choices));
             reprompt();
         },
         // The summary is rendered from the run's own done below.
@@ -1024,18 +1023,25 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
         const submit = async (line: string): Promise<void> => {
             if (line.trim().length > 0) printAbove(renderSubmittedInput(line, opts.yolo));
-            // A pending request-user-input question consumes the typed line as its
-            // answer, BEFORE any verb/prompt/inject handling: a number picks an
-            // enum choice, anything else is free response (or raw JSON for a
-            // multi-property schema). Empty → re-ask. Resolves the paused run with
-            // the standard ElicitResult payload.
-            if (pendingQuestion !== null) {
-                const content = answerForQuestion(line, pendingQuestion.schema);
-                if (content === null) { reprompt(); return; }
-                const { interactionId } = pendingQuestion;
+            // Named fields consume input before prompt injection. No answer is
+            // sent until the form is complete; invalid input stays visible here.
+            if (pendingQuestion !== null && !/^\/(?:stop|quit|help)(?:\s|$)/.test(line.trim())) {
+                const { interactionId, form } = pendingQuestion;
+                if (line.trim() === "/cancel") {
+                    await transport.resolveInteraction(interactionId, "cancel");
+                    pendingQuestion = null;
+                    reprompt();
+                    return;
+                }
+                const answer = form.submit(line);
+                if (answer.kind !== "complete") {
+                    if (answer.kind === "invalid") printAbove(answer.message);
+                    printAbove(renderQuestionMenu(form.prompt, form.choices));
+                    reprompt();
+                    return;
+                }
+                await transport.resolveInteraction(interactionId, { action: "accept", content: answer.content });
                 pendingQuestion = null;
-                await transport.resolveInteraction(interactionId, { action: "accept", content })
-                    .catch((e) => printAbove(`  \x1b[31manswer failed: ${e instanceof Error ? e.message : String(e)}\x1b[0m`));
                 reprompt();
                 return;
             }
@@ -1161,7 +1167,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
         surface.editor.onSubmit = (line) => {
             if (line.trim().length > 0) surface.editor.addToHistory(line);
-            void submit(line);
+            void submit(line).catch((cause) => {
+                printAbove(renderTuiFailure(cause));
+                reprompt();
+            });
         };
         reprompt();
         surface.start();

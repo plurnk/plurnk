@@ -636,7 +636,20 @@ The one-shot client also attenuates `{access:"interact"}` because it has no inte
 
 Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`.
 
-### §6.5 Proposal-review boundaries {§cli-proposal-review-boundaries}
+### §6.5 Questions {§cli-question-forms}
+
+AG-UI `request_user_input` interrupts present the message and collect the
+response schema's named fields individually. Each field shows its type,
+required/optional status, and description; optional fields may be skipped
+with Enter. String enums offer numbered choices and free response. Non-string
+values use JSON notation. Invalid input explains the expected value and stays
+on that field without losing earlier answers. Empty forms explicitly submit
+an empty object. Completed forms resume with `{action:"accept",content}`;
+`/cancel` sends a cancelled resolution. `/stop`, `/quit`, and `/help` remain
+available. Resolution failures are visible, never swallowed. `--yolo` does not
+invent answers.
+
+### §6.6 Proposal-review boundaries {§cli-proposal-review-boundaries}
 
 - Concurrent proposals. The daemon pauses one dispatch per proposal; at most one proposal is pending per loop at any time. Client handles them sequentially as they arrive.
 - Patch validation. The client does not parse the udiff. `body` is treated as opaque text for display and (when edited) re-submission.

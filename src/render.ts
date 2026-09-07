@@ -5,10 +5,10 @@ import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
-import type { OperationResult } from "@plurnk/plurnk-contracts";
+import type { OperationResult, PlurnkOp } from "@plurnk/plurnk-contracts";
 import { presentPlan } from "./plan.ts";
 
-// Operation glyphs are plain East-Asian-Wide so their secondary fields align.
+// Operation glyphs occupy two display columns, including KILL's emoji sequence.
 // SEND lifecycle glyphs are left-anchored append-only output and may use a
 // standard variation sequence: no cursor or shared-column arithmetic follows.
 export const OP_GLYPHS: Record<string, string> = {
@@ -17,12 +17,13 @@ export const OP_GLYPHS: Record<string, string> = {
     EDIT: "📝",
     COPY: "📋",
     MOVE: "📦",
-    SHOW: "➕",
-    HIDE: "➖",
+    KILL: "✂️",
+    WORK: "🐜",
+    FORK: "👥",
     SEND: "💬",
     EXEC: "🔧",
     BARE: "🔮",
-};
+} satisfies Record<Exclude<PlurnkOp, "PLAN">, string>;
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🎲",

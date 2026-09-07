@@ -35,6 +35,12 @@ test("the authoritative status gauge projects indexing phases without a Notice r
     assert.equal(projectStatusGauge(gauge).activity, null);
 });
 
+test("queued tasks retain their lifecycle without accruing execution time", () => {
+    const projected = projectStatusGauge({ lifecycle: "queued", model: null, loopId: 7, packetCount: 0, activity: null });
+    assert.equal(projected.lifecycle, "queued");
+    assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳ queued");
+});
+
 test("TerminalStatusLine coalesces routine progress and leaves non-TTY output silent", () => {
     const writes: string[] = [];
     let now = 0;

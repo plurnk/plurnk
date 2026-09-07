@@ -231,7 +231,7 @@ Triggered when `argv` has no positional prompt.
    and a compact status row rendering §1.2.1's aggregate line. Before AG-UI
    state arrives, derivation, search, and
    branch activity share the fallback activity position. The
-   lifecycle glyph is `⌛︎` while running, 💤 while parked, `⏹️` when complete,
+   lifecycle glyph is ⏳ while queued, `⌛︎` while running, 💤 while parked, `⏹️` when complete,
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
@@ -462,7 +462,7 @@ exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Glyph palette (both clients).** Operation, origin, PLAN, and secondary-status glyphs are plain East-Asian-Wide so fields following them remain stable: 🎲 ❯ 🧰 🔌 (origins) · 🔍 📖 📝 📋 📦 ➕ ➖ 💬 🔧 🔮 (ops) · ✅ 🚧 ⬜ 📭 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
+**Glyph palette (both clients).** Operation glyphs occupy two display columns: 🔍 📖 📝 📋 📦 ✂️ 🐜 👥 💬 🔧 🔮 (FIND, READ, EDIT, COPY, MOVE, KILL, WORK, FORK, SEND, EXEC, BARE). Origin, PLAN, and secondary-status glyphs remain 🎲 ❯ 🧰 🔌 (origins) · ✅ 🚧 ⬜ 📭 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). SEND lifecycle glyphs are `▶️` (102 continuing), `⏹️` (200 complete), 💤 (202 parked), 🤔 (300 decision), and ✋ (499 cancelled).
 
 **Exceptions:** broadcast SEND (op == `SEND` with `target_scheme === null`) is rendered as a multi-line block per §5.4, not as a single trace line. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's corresponding actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is therefore skipped to avoid duplication.
 

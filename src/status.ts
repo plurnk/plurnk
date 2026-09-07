@@ -52,7 +52,7 @@ export interface StatusContext {
     now?: number;
 }
 
-export type StatusLifecycle = "idle" | "running" | "parked" | "completed" | "cancelled" | "failed";
+export type StatusLifecycle = "idle" | "queued" | "running" | "parked" | "completed" | "cancelled" | "failed";
 
 export interface StatusActivity {
     label: string;
@@ -127,7 +127,7 @@ export interface StatusGaugeEnvelope {
 }
 
 const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
-    "idle", "running", "parked", "completed", "cancelled", "failed",
+    "idle", "queued", "running", "parked", "completed", "cancelled", "failed",
 ]);
 
 export const projectStatusGauge = (value: RuntimeStatusGauge): ClientStatus => {
@@ -200,6 +200,7 @@ export const reduceStatusGauge = (
 };
 
 const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => value === "running" ? "⌛︎"
+    : value === "queued" ? "⏳"
     : value === "parked" ? "💤"
         : value === "completed" ? "⏹️"
             : value === "cancelled" ? "✋"

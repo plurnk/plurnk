@@ -4,6 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
 
 // Set NO_COLOR before importing render.ts so its module-load-time check
 // returns false and all color helpers emit empty strings.
@@ -29,6 +30,18 @@ const {
 type LogEntryWire = Awaited<ReturnType<typeof import("./render.ts")["renderLogEntry"]>> extends string
     ? Parameters<typeof import("./render.ts")["renderLogEntry"]>[0]
     : never;
+
+test("every runtime operation has a named renderer or an operation glyph", () => {
+    for (const op of PLURNK_OPS) {
+        if (op === "PLAN") continue;
+        assert.ok(OP_GLYPHS[op], `${op} must not render as an unknown operation`);
+    }
+    for (const [op, glyph] of [["KILL", "✂️"], ["WORK", "🐜"], ["FORK", "👥"]]) {
+        const rendered = renderLogEntry(entry({ op, scheme: "worker", hostname: "reviewer", pathname: "/", tx: { op }, rx: { status: 200 } }));
+        assert.ok(rendered.startsWith(glyph), `${op} uses its operation glyph: ${rendered}`);
+        assert.match(rendered, /worker:\/\/reviewer\//, "the target remains visible");
+    }
+});
 
 // Minimal entry factory — fills in plausible defaults; callers override what matters.
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({

@@ -38,4 +38,13 @@ test("reasoning text distinguishes the effective policy from daemon-supported ch
         formatWorkerReasoning({ policy: null, supportedPolicies: [] }),
         "reasoning: (unavailable)\nsupported: none\n",
     );
+    // {§cli-identity-effort} — the daemon's provenance in words (service#528).
+    assert.equal(
+        formatWorkerReasoning({ policy: "low", source: "default", supportedPolicies: ["low", "high"] }),
+        "reasoning: low (provider default)\nsupported: low, high\n",
+    );
+    assert.equal(
+        formatWorkerReasoning({ policy: "high", source: "explicit", supportedPolicies: ["low", "high"] }),
+        "reasoning: high (chosen with /reasoning)\nsupported: low, high\n",
+    );
 });

@@ -4,6 +4,8 @@ export interface ReasoningCaller {
 
 export interface WorkerReasoning {
     policy: string | null;
+    // {§cli-identity-effort} — the daemon's provenance for `policy`; absent on older daemons.
+    source?: "default" | "explicit";
     supportedPolicies: string[];
 }
 
@@ -17,7 +19,10 @@ export const setWorkerReasoning = async (
     await rpc.call("worker.reasoning.set", { policy }) as WorkerReasoning;
 
 export const formatWorkerReasoning = (reasoning: WorkerReasoning): string => {
-    const policy = reasoning.policy ?? "(unavailable)";
+    const provenance = reasoning.policy === null || reasoning.source === undefined
+        ? ""
+        : reasoning.source === "explicit" ? " (chosen with /reasoning)" : " (provider default)";
+    const policy = reasoning.policy === null ? "(unavailable)" : `${reasoning.policy}${provenance}`;
     const supported = reasoning.supportedPolicies.length === 0
         ? "none"
         : reasoning.supportedPolicies.join(", ");

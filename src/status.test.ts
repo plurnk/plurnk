@@ -84,6 +84,14 @@ test("formatRouteIdentity renders effort with the identity and stays bare withou
     assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m" }), "plain", "no reasoning dimension - no brackets");
 });
 
+test("[§cli-identity-effort] brackets read as chosen, parentheses as given (plurnk#41 ask 2, service#528)", () => {
+    const route = { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", reasoningPolicy: "low" };
+    assert.equal(formatRouteIdentity({ ...route, reasoningSource: "explicit" }), "deepdumb[low]", "a /reasoning selection");
+    assert.equal(formatRouteIdentity({ ...route, reasoningSource: "default" }), "deepdumb(low)", "the daemon seeded it from the alias");
+    assert.equal(formatRouteIdentity(route), "deepdumb[low]", "an older daemon that states no source renders as before");
+    assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m", reasoningSource: "default" }), "plain", "no policy, no marker");
+});
+
 test("#465: turn accounting parses, accrues decimal-exact, and rides the running status line", () => {
     const turn = turnAccountingFromNotice({ source: "engine:turn", kind: "turn_generated", accounting: { costUsd: "0.01", inputTokens: 100, outputTokens: 20 } });
     assert.deepEqual(turn, { costUsd: "0.01", inputTokens: 100, outputTokens: 20 });

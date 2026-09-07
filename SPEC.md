@@ -142,6 +142,18 @@ without maintaining a provider capability catalog, uses `supportedPolicies` for
 completion, and never encodes policy in an alias or loop request. Reattachment
 reads the durable value; descendants follow the daemon's snapshot inheritance.
 
+#### Effort in the identity {§cli-identity-effort}
+
+Effort is identity-grade. Wherever the client names a route (status line, model
+and child labels, loop headers) one formatter renders the daemon's durable policy
+with the identity, and the daemon's stated provenance decides the marker:
+`deepdumb[low]` is a chosen level (`worker.reasoning.set`), `deepdumb(low)` a
+provider default the daemon seeded from the alias; brackets read as chosen,
+parentheses as given. A route without an effort dimension renders bare, and a
+daemon that states no source renders brackets as before. `/reasoning` says the
+same in words. The client never infers provenance (plurnk#41 ask 2,
+plurnk-service#528).
+
 ### §1.3 Project root {§cli-project-root}
 
 **Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. NULL = headless (file ops 400 with "workspace has no project_root").
@@ -674,7 +686,7 @@ When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatc
 
 Queries one bounded page from the daemon's release-pinned catalog through `models.list`. No workspace is attached and no provider request is made. Positional words form a case-insensitive search; `--provider <name>` narrows the provider, `--all` includes models missing local configuration, and `--offset`/`--limit` page without loading the full catalog.
 
-Default output is a column-aligned table of `selector / name / context / reasoning / readiness` plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
+Default output is a column-aligned table of `selector / name / context / efforts / readiness`, where `efforts` {§cli-models-efforts} lists the daemon's admitted reasoning policies for the exact route (`capabilities.reasoningPolicies`, plurnk-service#529) or `-` for a model without an effort dimension, plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
 
 ### §7.2 `plurnk workspace list` {§cli-plurnk-workspace-list}
 

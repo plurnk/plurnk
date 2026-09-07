@@ -71,10 +71,11 @@ export const runModels = async (
         model.selector,
         model.modelName,
         contextLabel(model.limits.contextTokens),
-        model.capabilities.reasoning ? "yes" : "no",
+        // {§cli-models-efforts} — the daemon's admitted reasoning policies for the exact route; never inferred.
+        model.capabilities.reasoning ? model.capabilities.reasoningPolicies.join(",") : "-",
         readinessLabel(model),
     ]);
-    process.stdout.write(`${renderTable(["selector", "name", "context", "reasoning", "readiness"], rows)}\n`);
+    process.stdout.write(`${renderTable(["selector", "name", "context", "efforts", "readiness"], rows)}\n`);
     if (page.nextOffset !== undefined) {
         process.stdout.write(`(showing ${page.offset + 1}-${page.offset + page.items.length} of ${page.total}; next --offset ${page.nextOffset})\n`);
     }

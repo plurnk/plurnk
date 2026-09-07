@@ -250,8 +250,10 @@ Triggered when `argv` has no positional prompt.
 One command registry owns the supported slash verbs, their groups, exact usage,
 summaries, nested Functionality verbs, root completion, and contextual help.
 Dispatch is exhaustive over that inventory. `/help` renders a compact grouped
-index; `/help <verb>` renders that verb's usage and nested forms. Public docs and
-the generated man page are checked against the same inventory.
+index; `/help <verb>` renders that verb's usage and nested forms. This reference
+and the generated man page are checked against the same inventory. The README
+provides onboarding and examples, linking to this reference and pointing to
+`/help` rather than repeating the full command inventory.
 
 | Group | Verbs |
 |---|---|

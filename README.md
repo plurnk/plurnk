@@ -1,161 +1,153 @@
-# plurnk
+# Plurnk
 
-A terminal client for [plurnk-service](https://github.com/plurnk/plurnk-service). Type a prompt, drive a real model loop through the plurnk DSL — a compact grammar where the model emits operations, the daemon executes them against real workspaces, and the client renders the trace. One-shot CLI, scrollback-native interactive terminal, and Neovim integration share ONE wire: AG-UI+ (the daemon's sole client surface).
+**The [Bitter Lesson](https://bitterlesson.ai/) applies to the harness, too.**
 
-Plurnk gets its power from structure, not raw model capability: the grammar forces disciplined multi-turn loops, real receipts for every operation, and a budget the model can actually see and manage. Fancy agent behavior on weak models.
+The model should decide what to remember, where to look, when to delegate, and
+how to proceed. Plurnk is an agentic operating system and programming language
+that puts those decisions in the model's hands.
 
-## install
+Files, tools, and the agent's own context become an addressable environment.
+Composable operations let it search that environment, make precise changes,
+curate its memory, and build its own delegation topology. The runtime provides
+reliable machinery; the model supplies the strategy.
 
-Try it instantly — zero install, npx fetches both (always latest):
+Use local or cloud models to build software, investigate a codebase, or automate
+work across tools. Interact from your terminal or editor, or compose Plurnk
+with ordinary shell pipelines.
 
+This repository provides the CLI and interactive terminal client for
+[plurnk-service](https://github.com/plurnk/plurnk-service), the shared daemon.
+
+## Why Plurnk
+
+- **Curation, not compaction.** The agent retrieves the passages it needs and
+  removes stale items or individual lines from its active context. Its working
+  set changes; source material and original execution evidence survive.
+- **Precision without ceremony.** Line ranges, character regions, and
+  hash-anchored edits make surgical changes possible. Stale anchors reject
+  conflicting edits before they overwrite the wrong text.
+- **The model chooses the topology.** Fork with existing context, start a
+  worker with a fresh log, or delegate pure inference without an agent loop.
+  Parent and child models can use different endpoints: a cloud model can
+  orchestrate local workers through the same primitives.
+- **Execution with evidence.** ANTLR parses model output into executable
+  operations. The runtime records their results and returns structured errors
+  the model can act on. Full packet digests make the work inspectable.
+  Compatible local servers can enforce the operation grammar during generation
+  with GBNF.
+
+Workspaces and worker conversations live in the daemon, independently of the
+client session. Choose your model, context limits, tools, and capability
+policies without replacing the environment. No Plurnk account is required.
+
+## Patterns that compose
+
+The pattern engine connects discovery and context management. Path globs
+combine with full-text search, regex, JSONPath, XPath, and symbol-graph queries.
+The model can search for phrases, inspect structured data, or follow symbol
+relationships without writing a script for each question.
+
+For example, these model-side operations find TypeScript files matching
+`retry` or `timeout`, then trim older READ receipts to their first 16 lines:
+
+```text
+### FIND0 (src/**/*.{ts,tsx})
+~retry OR timeout
+
+### KILL0 (log:///1/[1-7]/*/READ) <17,-1>
 ```
-export PLURNK_API_KEY="…"                # your plurnk key (optional! works with everything.)
-npx @plurnk/plurnk-service start         # daemon — terminal 1
-npx @plurnk/plurnk "what is 2+2?"        # client — terminal 2
-```
 
-Or install for keeps:
+The second operation targets READ results from turns 1–7 of loop 1. It curates
+the log, not the source files. One expression can manage many entries: the
+agent has bulk operations over its own context, not just over your code.
 
-```
-npm install -g @plurnk/plurnk           # the client — lean, a pure AG-UI+ consumer
-npm install -g @plurnk/plurnk-service   # the daemon — its own (lean) install story
-plurnk-service                          # start the background daemon
-```
+## Get started
 
-The client never starts a daemon. It POSTs runs/actions to the daemon's module at `http://PLURNK_HOST:PLURNK_PORT` (default `127.0.0.1:1066`). All engine config — models, providers, turns — lives in the daemon's environment.
-
-## use
-
-```
-plurnk                                       # interactive terminal (no args, a TTY)
-plurnk "what is the capital of France?"      # one-shot — bare answer on stdout
-plurnk --json "…" | jq -r .response          # json mode: ONE complete record document
-plurnk --workspace project mcp enable gitea  # activate project-specialized config
-cat notes.md | plurnk "summarize this"       # piped stdin (appended)
-plurnk models | workspace list | log read …  # inspect daemon state
-plurnk reasoning high --workspace my-work   # persist worker reasoning policy
-plurnk web --workspace my-work              # foreground browser client (optional package)
-printf '# Result\n\n| a | b |\n| - | - |' | plurnk render --width 80
-plurnk --help                                # full flag list
-```
-
-`plurnk render` is a daemon-free stdin/stdout filter for clients that want the
-terminal client's width-aware GFM and Beautiful Mermaid projection as plain Unicode.
-
-`plurnk web` loads an already installed `@plurnk/plurnk-web` presentation
-module after the normal client has resolved its complete environment cascade.
-The browser uses `/<workspace>/<threadId>` URLs: without configured constraints
-it can create or select many workspaces and Workers; configured workspace or
-Worker values lock only their respective coordinates. The web package receives
-a safe resolved projection rather than duplicating configuration parsing. The
-command never downloads a package or starts the daemon.
-Install the optional client with
-`npm install -g @plurnk/plurnk-web`.
-
-To run both sibling working trees without publishing either package, build the
-web checkout and link it into the client checkout:
+Requires Node.js 26+, npm, Git, and a local or cloud model endpoint.
 
 ```sh
-cd ../plurnk-web
-npm install
-npm run build
-
-cd ../plurnk
-npm install
-npm link --no-save --package-lock=false ../plurnk-web
-npm run build
-./bin/plurnk.js web --yolo --model=fireox
+npm install -g @plurnk/plurnk @plurnk/plurnk-service
 ```
 
-**Two output modes.** Default: stdout is the bare answer, stderr the trace — `plurnk "X" > a.txt` captures just the answer. On a terminal, one replaceable status row shows authoritative lifecycle, durable model, packet count, and current activity; indexing repaints at most every 15 seconds and redirected stderr omits routine progress history. `--json` (or `PLURNK_CLIENT_JSON`): one complete structured document on stdout (`response` + `turns[].ops` + `notices` + the daemon's exact `usage.accounting` envelope), stderr silent, failures as RFC 9457 Problems under `{"problem":…}`. Op *content* isn't inlined — fetch it on demand with `plurnk read <coord>`. The CLI is the integration layer: shell out, parse — no protocol client to build.
+In one terminal, configure a model and start the daemon. This example uses
+DeepSeek; see [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/docs/models.md)
+for other providers and local servers.
 
-The one-shot CLI is the pipeline surface, the interactive terminal is a
-readline-style main-buffer conversation with real multiline editing, and
-plurnk.nvim is a native editor surface. None is a protocol intermediary for
-another; each speaks AG-UI+ directly.
-
-Readable provider reasoning appears as a distinct `💭` trace before the paired
-SEND. It comes from AG-UI's standard reasoning events; PLAN remains the model's
-durable public work inventory.
-
-**Line language** (converged across the TUI, the CLI prefixes, and plurnk.nvim's `:AI`):
-
-| | |
-|---|---|
-| `text` | a prompt (`?` denies EXEC and keeps proposal review; `:` is ordinary) |
-| `/verb` | `/help /models /workspaces /workers /log` · `/model /child /reasoning /capabilities /yolo` · `/workspace /rename /worker /attach` · `/mcp /skills /agents /members` · `/import /script /editor` · `/accept /reject /cancel /edit /stop /quit` |
-| `! cmd` | exec via the daemon |
-
-**Key flags:** `--model <selector>` · `--reasoning <policy>` · `--policy <json>` · `--capabilities <json>` · `--yolo` (client auto-accept) · `--auto` (loop authority) · `--json` · `--workspace/--worker <name>` · `--project-root <p>` · `--max-turns <n>` · `--timeout <s>` · `--files-items <n>` · `--max-commands <n>` · `--no-git`.
-
-## what plurnk is
-
-From the model's perspective, plurnk is an operating environment, not a bag of tools: the log is its address space, the materialized packet is its working set, and the OPs are a small, stable system-call vocabulary over heterogeneous resources.
-
-The model emits operations in a compact grammar; the daemon executes them, persists state, and the client renders the trace. An action turn:
-
-```
-## PLAN0
-[{"content":"Update the capital, then answer.","status":"in_progress"}]
-### EDIT0 (worker:///countries/france/capital)
-Paris
-### SEND0 (NEXT)
-Next: Confirm the update, then answer.
+```sh
+export DEEPSEEK_API_KEY="your-api-key"
+export PLURNK_MODEL=deepseek/deepseek-v4-flash
+plurnk-service start
 ```
 
-Then its completion turn:
+In another terminal, open a project:
 
-```
-## PLAN0
-[{"content":"The capital is updated and confirmed.","status":"completed"}]
-### SEND0 (TERM)
-Paris
+```sh
+cd /path/to/your/project
+plurnk --workspace my-project
 ```
 
-Multi-turn loops emerge from the structure — `### SEND0 (NEXT)` continues, `### SEND0 (TERM)` terminates. Every operation returns a real receipt; the model reads them and plans the next turn. The full grammar and its rationale live in [plurnk-service](https://github.com/plurnk/plurnk-service) (`plurnk-contracts/plurnk.md` — the model-facing contract).
+Give it a task in ordinary language. The model uses the operation language;
+you do not need to learn it to use Plurnk. Run the same command later to return
+to that workspace's conversation.
 
-What the daemon brings to those turns:
+The client connects to `127.0.0.1:1066` by default and never starts the daemon.
+Provider credentials belong in the daemon's environment. Proposal review is
+interactive by default; `--yolo` automatically accepts proposals but does not
+override capability restrictions.
 
-- **Private by default** — the embedding model and the per-model tokenizer vocabularies are bundled and offline. No network, no vendor sees your files.
-- **One language, not a tool catalog** — explore and transform the environment with globs, regex, jsonpath, xpath, and cosine similarity, all in the same grammar. The model learns one interface instead of dozens of schemas.
-- **A real environment** — a filesystem jail per project (configurable to any security posture, including none); `~query` FIND uses native SQLite FTS5 text search; the packet shows the model exactly what every row costs, from token-accurate budgets.
-- **Curation, not compaction** — no context-compaction algorithms, no garbage collection. The model `KILL`s superseded log items or selected ranges by address, usually in bulk patterns; the corresponding source material survives log curation.
-- **Topology on demand** — the model forks sister subagents, spawns children, or fires bare one-shot requests, shaping its own graph; parent and child endpoints can be different models, for cheap orchestrator-driven workflows.
-- **Rails & recovery** — GBNF grammar constraints keep low-end models reliable; the model-managed context optimizes tiny KV footprints; structured failure recovery keeps extended runs alive on modest models.
-- **Interop** — universal Agent Skills, and MCP hosting (stdio, remote HTTP, interactive OAuth, client credentials); attached tools materialize in the model's discovery surface like native ones.
-- **Forensics** — every run is reproducible: per-op receipts, structured notices, and the daemon's digest with full packet capture.
+## Use it your way
 
-## configuration
+```sh
+plurnk "Explain how this project's request handling works"
+plurnk "Summarize this repository" > overview.md
+git diff | plurnk "Review this patch for correctness"
+plurnk --json "Explain the test layout" | jq -r .response
+```
 
-**Env cascade** (the client's side): packaged `.env.defaults` floor < `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` < project `./.env` < repeated `--env-file` flags (last wins) < shell. `plurnk-service config defaults` prints the complete owner-labelled catalog on demand.
+One-shot commands put the answer on stdout and progress on stderr. `--json`
+returns one structured document containing the answer, operation trace,
+diagnostics, and usage. The interactive terminal supports multiline prompts,
+streaming reasoning when the provider supplies it, Markdown, and Mermaid
+diagrams while preserving terminal scrollback.
 
-**Client env:** `PLURNK_HOST`/`PLURNK_PORT` (the daemon's one client surface, default `127.0.0.1:1066`; `PLURNK_AGUI_URL` overrides for a remote portal) · `PLURNK_CLIENT_WORKSPACE` / `PLURNK_CLIENT_WORKER` · `PLURNK_CLIENT_YOLO` · `PLURNK_AUTO` · `PLURNK_CLIENT_PROJECT_ROOT` · `PLURNK_CLIENT_LOOP_POLICY` · `PLURNK_CLIENT_WORKSPACE_CAPABILITIES`.
+Use `/help` for interactive commands or `plurnk --help` for CLI options.
+`plurnk models` lists available model routes; `/model` and `/child` select the
+conversation and delegated models.
 
-**Capabilities** use the daemon's one subtractive policy contract at every scope. `--capabilities` applies a workspace ceiling at creation; `plurnk capabilities [json]` and `/capabilities [json]` inspect the service/workspace/inherited/Worker cascade or replace its mutable Worker layer; `--policy` supplies the complete per-loop policy. Child Workers inherit the parent's effective ceiling and may only narrow it.
+For an editor-native interface, use [plurnk.nvim](https://github.com/plurnk/plurnk.nvim)
+against the same daemon.
 
-**Models** are daemon-side. A worker durably owns its selected route; `--model` and `/model` accept either a declared alias or an exact `provider/model` selector and persist it without adding model policy to subsequent loops. `plurnk models [search]` and `/models [search]` query the daemon's bounded catalog only when requested. Provider credentials and the `PLURNK_MODEL` default live in the daemon's environment — the client never holds a key or guesses readiness.
+## Extend and configure
 
-**Agents:** `/agents` lists this Worker's outbound A2A agents; `/agents discover <url>|add <alias> <url> [options.json]|enable|disable|remove` are the daemon's common Functionality actions; an enabled agent is `a2a://<alias>` to the model.
+Plurnk uses **AG-UI** for clients, **MCP** for external tools, **Agent Skills**
+for reusable instructions, and **A2A** for remote agents. Tools, skills, and
+agents can be discovered and enabled per worker without restarting the daemon.
+Their documentation is retrieved on demand rather than loading every tool's
+schema into every prompt.
 
-**Skills:** `/skills` lists this Worker's Agent Skills; `/skills discover|add <name> <source> [--global]|enable|disable|remove` are the daemon's common Functionality actions — the client runs no package manager. Project skills live in `.agents/skills`; global skills live in `~/.agents/skills`.
+Configuration uses cascading environment variables and `.env` files, including
+the XDG user configuration at `~/.config/plurnk/.env`. Model discovery uses
+[models.dev](https://models.dev). Inspect the complete, documented configuration
+catalog with:
 
-**Members:** `/members` lists this Worker's file members — what the model may see; `/members discover <path|glob>|add <alias> <glob>|enable|disable|remove` are the daemon's common Functionality actions. Git-tracked files are members on their own; a gitignore-style glob adds untracked files, and a leading `!` excludes matching members.
+```sh
+plurnk-service config defaults
+```
 
-**MCP:** project-local `PLURNK_MCP_*` declarations accompany `/mcp` and `plurnk mcp enable`; the daemon remains their sole parser and activation owner. See the plurnk-mcp docs in plurnk-service for the declaration shapes (npx servers, remote endpoints, `_TOOLS`/`_READ` policies).
+## Documentation
 
-## troubleshooting & forensics
+- [Installation and configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
+- [Architecture and extension points](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)
+- [The model-facing language](https://github.com/plurnk/plurnk-service/blob/main/plurnk-contracts/plurnk.md)
+- [Client reference](SPEC.md) and [terminal design](TUI.md)
 
-- `plurnk read <loop>/<turn>/<seq> --json` — inspect the exact operation result at a log coordinate.
-- `--json` mode carries `notices` and `usage.accounting` — cost and diagnostics without a UI.
-- Exit codes: `0` success (`### SEND0 (TERM)`) · `1` runtime error · `2` maxTurns cap · `3` cancelled (`### SEND0 (FAIL)` / `--timeout`) · `4` loop failed (4xx/5xx final) · `64` usage error.
-- Deeper forensics (per-turn packet capture, the budget grinder's records, edit receipts) live in the daemon's digest — see plurnk-service's README.
+## Contributing
 
-## related
+Questions, bug reports, and feedback are welcome in
+[GitHub issues](https://github.com/plurnk/plurnk/issues). See the shared
+[contributing guide](https://github.com/plurnk/plurnk-service/blob/main/CONTRIBUTING.md)
+for development guidance.
 
-- [plurnk-service](https://github.com/plurnk/plurnk-service) — the daemon, contracts, and grammar authority
-- [plurnk.nvim](https://github.com/plurnk/plurnk.nvim) — Neovim-integrated Plurnk client (`:AI`)
-- [SPEC.md](SPEC.md) — the client's behavioral contract; [TUI.md](TUI.md) — terminal design rationale
+## License
 
-## license
-
-MIT. Standards-oriented, not lock-in: the client speaks AG-UI, the tooling surface is MCP2, and the whole stack is open source.
+[MIT](LICENSE).

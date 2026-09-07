@@ -45,14 +45,14 @@ test("Functionality completion identifies only alias-taking positions", () => {
     assert.equal(completeCommandSyntax("/agents add res"), null);
 });
 
-test("public command inventories contain every interactive verb", async () => {
-    const [readme, spec, generator] = await Promise.all([
-        readFile(new URL("../README.md", import.meta.url), "utf8"),
+test("[§cli-interactive-command-discovery] help and reference inventories contain every interactive verb", async () => {
+    const [spec, generator] = await Promise.all([
         readFile(new URL("../SPEC.md", import.meta.url), "utf8"),
         readFile(new URL("../scripts/generate-posix.mjs", import.meta.url), "utf8"),
     ]);
+    const help = renderCommandHelp();
     for (const { name } of COMMANDS) {
-        assert.match(readme, new RegExp(`/${name}\\b`, "u"), `README omits /${name}`);
+        assert.match(help, new RegExp(`/${name}\\b`, "u"), `/help omits /${name}`);
         assert.match(spec, new RegExp(`/${name}\\b`, "u"), `SPEC omits /${name}`);
     }
     assert.match(generator, /renderCommandReference\(\)/u, "the generated man page does not derive interactive commands from the registry");

@@ -83,7 +83,7 @@ In another terminal, open a project:
 
 ```sh
 cd /path/to/your/project
-plurnk --workspace my-project
+plurnk --workspace="myProject" --yolo
 ```
 
 Give it a task in ordinary language. The model uses the operation language;
@@ -95,7 +95,20 @@ Provider credentials belong in the daemon's environment. Proposal review is
 interactive by default; `--yolo` automatically accepts proposals but does not
 override capability restrictions.
 
-## Use it your way
+## TUI, CLI, and Neovim
+
+### Interactive terminal
+
+```sh
+plurnk --workspace="myProject" --yolo
+```
+
+A scrollback-native TUI with multiline prompts, streaming reasoning when the
+provider supplies it, Markdown and Mermaid rendering, and slash commands for
+managing models, workers, and tools. Run `/help` to explore; `/model` and
+`/child` select the conversation and delegated models.
+
+### CLI and pipelines
 
 ```sh
 plurnk "Explain how this project's request handling works"
@@ -106,13 +119,12 @@ plurnk --json "Explain the test layout" | jq -r .response
 
 One-shot commands put the answer on stdout and progress on stderr. `--json`
 returns one structured document containing the answer, operation trace,
-diagnostics, and usage. The interactive terminal supports multiline prompts,
-streaming reasoning when the provider supplies it, Markdown, and Mermaid
-diagrams while preserving terminal scrollback.
+diagnostics, and usage.
 
-Use `/help` for interactive commands or `plurnk --help` for CLI options.
-`plurnk models` lists available model routes; `/model` and `/child` select the
-conversation and delegated models.
+Use `plurnk --help` for CLI options. `plurnk models` lists available model
+routes.
+
+### Neovim
 
 For an editor-native interface, use [plurnk.nvim](https://github.com/plurnk/plurnk.nvim)
 against the same daemon.

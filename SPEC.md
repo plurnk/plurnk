@@ -883,10 +883,14 @@ the same `📡` glyph so daemon-pushed activity has one visual lane.
 
 ```
 stream/event     { entryId, workerId, target, channel, state, contentLength }
-stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction, wakeLoopId? }
+stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction }
 ```
 
 `workerId` is the entry-read perspective and `target` is the entry's URI (`scheme://pathname`). Rendering is coalesced per §5.3:
+
+`wake-pending` renders as “→ wake pending”: the stream has concluded, but
+settlement may still be waiting or lose to cancellation. It does not claim
+that a loop resumed; ordinary loop events remain the execution evidence.
 
 ```
 📡 ⏳ exec://python/1/2/1

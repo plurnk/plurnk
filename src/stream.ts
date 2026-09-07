@@ -50,8 +50,7 @@ export interface StreamConcludedPayload extends StreamCoord {
     scheme: string;
     result: OperationResult;
     summary: string;
-    wakeAction: string;     // resumed-loop | no-op-active-loop | no-loop | skipped-aborted | skipped-cancelled
-    wakeLoopId?: number;
+    wakeAction: string;     // wake-pending | no-op-active-loop | no-loop | skipped-aborted | skipped-cancelled
 }
 
 // The human waterfall carries no coordinates (plurnk#21); stream lines
@@ -85,13 +84,13 @@ export default class StreamTrace {
 
     // One conclusion line in the waterfall grammar. The daemon's summary
     // leads with the target we already printed — strip the echo. Wake is
-    // engine bookkeeping except when it resumed the parked loop.
+    // engine bookkeeping except when settlement is pending.
     concluded(ev: StreamConcludedPayload): string {
         this.#started.delete(ev.entryId);
         const status = ev.result.status;
         let summary = ev.summary ?? "";
         if (summary.startsWith(ev.target)) summary = summary.slice(ev.target.length).replace(/^\s+/, "");
-        const wake = ev.wakeAction === "resumed-loop" ? " → resumed loop" : "";
+        const wake = ev.wakeAction === "wake-pending" ? " → wake pending" : "";
         // The code renders only when it means something: cancellation or error
         // (plurnk#21). A routine 200 conclusion is the quiet default.
         const parts = [

@@ -55,9 +55,11 @@ test("[§cli-stream-event-and-stream-concluded] StreamTrace: conclusion speaks t
     assert.doesNotMatch(line, /no-op-active-loop/);
 });
 
-test("StreamTrace: only resumed-loop wakes are user-visible", () => {
+test("StreamTrace: a pending wake is visible without claiming the loop resumed", () => {
     const t = new StreamTrace();
-    assert.match(t.concluded(concluded({ wakeAction: "resumed-loop" })), /→ resumed loop$/);
+    const pending = t.concluded(concluded({ wakeAction: "wake-pending" }));
+    assert.match(pending, /→ wake pending$/);
+    assert.doesNotMatch(pending, /resumed/);
     assert.doesNotMatch(t.concluded(concluded({ wakeAction: "skipped-aborted", status: 499 })), /resumed/);
 });
 

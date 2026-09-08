@@ -33,7 +33,7 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
-import { renderWorkerTopology, workerNameFromTarget, type WorkerRow } from "./workers.ts";
+import { renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -94,14 +94,16 @@ export const TUI_HELP = renderCommandHelp();
 // editor control keys. Alt-b/f/d remain the editor's word operations.
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     m: "/models", s: "/workspaces", R: "/workers", L: "/log",
-    Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", h: "/help", e: "/editor",
+    Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", "?": "/help", e: "/editor",
+    // {§cli-workers-topology} — vim's tree orientation: depth is horizontal, siblings vertical.
+    h: "/parent", l: "/enter", j: "/next", k: "/prev",
 });
 
-// An Alt-<letter> keypress (ESC then a single letter, no `[`/`O` → not an arrow
+// An Alt-<key> keypress (ESC then a single letter or `?`, no `[`/`O` → not an arrow
 // or function key) mapped to its verb, or null. Case-sensitive (mirrors nvim).
 // pi-tui's terminal buffer reassembles split escape sequences.
 export const altShortcut = (forward: string): string | null => {
-    const m = forward.match(/^\x1b([a-zA-Z])$/);
+    const m = forward.match(/^\x1b([a-zA-Z?])$/);
     return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
 };
 
@@ -477,6 +479,21 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  worker: ${rest} (${known ? "bound" : "new"})\n`);
             return;
         }
+        case "parent":
+        case "enter":
+        case "next":
+        case "prev": {
+            // {§cli-workers-topology} — one hop over the workspace tree is a full attach: the prompt
+            // then speaks to that worker. The directory is re-read on every hop; nothing is inferred.
+            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };
+            const { target, notice } = traverse(workers, ctx.getWorker(), verb as Hop);
+            if (target === null) { write(`  (${notice ?? "nowhere to go"})\n`); return; }
+            ctx.attachWorker(target.name);
+            await refreshWorkerPolicy();
+            const position = siblingPosition(workers, target.name);
+            write(`  worker: ${target.name} [${workerPath(workers, target.name)}]${position === null ? "" : ` (${position.index}/${position.count})`}\n`);
+            return;
+        }
         case "import":
             // Dump a LOCAL file's content into the multiline composer.
             if (rest.length === 0) { write("  usage: /import <path>\n"); return; }
@@ -563,6 +580,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let tally: SessionTally = EMPTY_TALLY;
     let runningSince: number | null = null;
     let conversationWorkerId: number | null = null;
+    // {§cli-workers-topology} — where the session is in the tree: the prompt's path prefix and the
+    // status line's sibling position, re-read from the directory on every hop or rebind.
+    let workerPosition: { index: number; count: number } | null = null;
     let conversationWorker: string | null = opts.workerName ?? null;
     let searchFetching = false;
     let searchPercent: number | null = null;
@@ -659,11 +679,18 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const statusContext = () => ({
         workspace: current.name,
         worker: conversationWorker,
+        position: workerPosition,
         child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
         tally,
         runningSince,
         now: Date.now(),
     });
+    const refreshTopology = async (): Promise<void> => {
+        const { workers } = await transport.rpc("workspace.workers", { id: current.id }) as { workers: WorkerRow[] };
+        workerPosition = siblingPosition(workers, conversationWorker);
+        surface.setPrompt(`[${workerPath(workers, conversationWorker)}]`);
+        reprompt();
+    };
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
             return renderStatusLine(authoritativeStatus, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
@@ -687,9 +714,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             model,
             packetCount: null,
             activity,
+            children: null,
         }, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
+    surface.setPrompt("[~]");
+    void refreshTopology().catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
     surface.setAutocompleteProvider(makeAutocompleteProvider({
             getAliases: () => aliasCache,
@@ -967,6 +997,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.useWorker(name, current.name);
             conversationWorker = name;
             conversationWorkerId = null;
+            void refreshTopology().catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
         },
         write: (text) => { printAbove(text); },
         importFile: async (rest) => {
@@ -1144,6 +1175,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                         const hit = workers.find((worker) => worker.id === conversationWorkerId);
                         if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
                         conversationWorker = hit.name;
+                        workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
+                        surface.setPrompt(`[${workerPath(workers as WorkerRow[], conversationWorker)}]`);
                     }
                 }
                 lifecycle = terminalResult.status === 202 ? "parked"

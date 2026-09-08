@@ -78,6 +78,10 @@ export const COMMANDS = [
     { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace" },
     { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace" },
     { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace" },
+    { name: "parent", usage: "/parent", summary: "Hop to the bound worker's parent (Alt-h).", group: "workspace" },
+    { name: "enter", usage: "/enter", summary: "Hop into the bound worker's newest child (Alt-l).", group: "workspace" },
+    { name: "next", usage: "/next", summary: "Hop to the next (older) sibling worker, wrapping (Alt-j).", group: "workspace" },
+    { name: "prev", usage: "/prev", summary: "Hop to the previous (newer) sibling worker, wrapping (Alt-k).", group: "workspace" },
 
     { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this worker's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },
@@ -170,7 +174,8 @@ export const renderCommandHelp = (name: string = ""): string => {
     return [
         ...groups,
         "  language     ## PLAN_ · ### OP0 · ### LOOK_ · ! command · ? ask · ... steer",
-        "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc cancel/clear · Alt-h help",
+        "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc cancel/clear · Alt-? help",
+        "  tree         Alt-h parent · Alt-l newest child · Alt-j/Alt-k next/prev sibling — the prompt then speaks to that worker",
         "  /help <verb> for exact usage",
         "",
     ].join("\n");

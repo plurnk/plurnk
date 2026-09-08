@@ -108,8 +108,16 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 Human status is the summary line's shape aggregated over the session:
 
 ```
-<glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜 <child>] · <workspace> · worker://<name>/ [· 🧮 <percent>%]
+<glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜<children> [<child>]] · <workspace> · worker://<name>/ [(<i>/<n>)] [· 🧮 <percent>%]
 ```
+
+§cli-status-children The ant is the daemon's count of the bound worker's alive
+direct children (`snapshot.plurnk.status.children`: queued, running, or parked —
+a parked child still owes a result), followed by the child model while a spawn
+override is set: `🐜0`, `🐜2 dumbox`. A transport without the gauge shows only
+the bare `🐜 <child>` as before. The count is never derived from the directory;
+the user hops to a child (§3.1.2) rather than watching it. `(<i>/<n>)` after the
+worker is its sibling position, newest first, present only with siblings.
 
 Turns and wall time include the running loop — its packet count from the
 authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
@@ -247,7 +255,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `### READ_`), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /next /prev /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **PLURNK headings** (`## RE` → `### READ_`), and PLURNK target paths.
     - Lines beginning with a recognized PLURNK operation heading (`## PLAN…` or `### OP…`) → `op.parse`; `### LOOK…` instead uses the non-logging `op.look` observation action. The daemon owns parsing and diagnostics. Prefix `: ` to force prompt treatment when prose intentionally begins with a reserved operation heading.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy denies EXEC and selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -271,7 +279,7 @@ provides onboarding and examples, linking to this reference and pointing to
 |---|---|
 | Inspect | `/help /models /workspaces /workers /log` |
 | Policy | `/model /child /reasoning /yolo` |
-| Workspace | `/workspace /rename /worker /attach` |
+| Workspace | `/workspace /rename /worker /attach /parent /enter /next /prev` |
 | Functionality | `/mcp /skills /agents /members` |
 | Compose | `/import /script /editor` |
 | Review | `/accept /reject /cancel /edit` |
@@ -295,12 +303,36 @@ the next run, exactly as `--worker <name>` at invocation. The verb reports
 policy, and the header and status line adopt the name.
 `/workers` renders `workspace.workers` as a forest of parent/child trees from
 `parentWorkerId`: the bound worker's tree first with the bound worker marked `●`,
-other workers `○`, each row carrying the worker's origin (`model`, `client`,
-`_plurnk`) and creation time, a worker whose parent is not in the directory
-standing as a root. Lifecycle glyphs for workers other than the bound one render
-only once the daemon exposes per-worker lifecycle (plurnk-service#653); the
-client never infers them from row coordinates. `plurnk workspace workers <name>`
-(§7.3) keeps its flat table.
+other workers `○`, siblings newest first, each row carrying the worker's origin
+(`model`, `client`, `_plurnk`) and creation time, a worker whose parent is not in
+the directory standing as a root. The map carries no lifecycle: a worker's state
+is seen by being in it. `plurnk workspace workers <name>` (§7.3) keeps its flat
+table.
+
+**Topology is navigation, not a dashboard** (plurnk-service#523). A child worker
+is a first-class place the user goes to, prompts, forks, or makes the root of
+another session. One hop is a full `/attach` of the target, never a read-only
+visit; the composer then speaks to that worker. The hops follow vim's tree
+orientation, depth horizontal and siblings vertical, as `Alt-h/j/k/l` and as
+verbs for terminals that swallow Alt:
+
+| Hop | Key | Verb | Target |
+|---|---|---|---|
+| parent | `Alt-h` | `/parent` | the bound worker's parent; at a root, `(at the root: no parent)` |
+| enter | `Alt-l` | `/enter` | the newest child; none, `(no children)` |
+| next | `Alt-j` | `/next` | the next older sibling, wrapping |
+| prev | `Alt-k` | `/prev` | the next newer sibling, wrapping |
+
+Places are conversations and their descendants (`origin: model`); the daemon's
+maintenance worker and a connection's scratch worker are never hop targets, so a
+lone conversation has `(no siblings)`. Every hop re-reads the directory; nothing
+is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
+
+**Position.** The line above the composer is the path from the tree root to the
+bound worker: `[~]` at a root, `[~/fork-1/recheck]` two hops down. `~` is the
+tree root wherever the session started, so a session opened on a child shows
+that child's full path. The status line's worker segment carries the sibling
+position when there is one: `worker://recheck/ (2/3)`, newest first (§1.2.1).
 
 ### §3.2 Cancellation {§cli-cancellation}
 

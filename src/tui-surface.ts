@@ -32,6 +32,8 @@ export default class TuiSurface {
     readonly #tui = new TuiMainScreen(this.#terminal, true);
     readonly #transcript = new Container();
     readonly #live = new Text("", 0, 0);
+    // {§cli-workers-topology} — the prompt's path prefix, the line above the composer.
+    readonly #prompt = new Text("", 0, 0);
     readonly #status = new Text("", 0, 0);
     readonly editor = new Editor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 });
     #started = false;
@@ -39,6 +41,7 @@ export default class TuiSurface {
     constructor() {
         this.#tui.addChild(this.#transcript);
         this.#tui.addChild(this.#live);
+        this.#tui.addChild(this.#prompt);
         this.#tui.addChild(this.editor);
         this.#tui.addChild(this.#status);
         this.#tui.setFocus(this.editor);
@@ -70,6 +73,11 @@ export default class TuiSurface {
 
     setLive(text: string | null): void {
         this.#live.setText(text ?? "");
+        this.#tui.requestRender();
+    }
+
+    setPrompt(text: string): void {
+        this.#prompt.setText(text);
         this.#tui.requestRender();
     }
 

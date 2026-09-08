@@ -43,6 +43,8 @@ export const tallyOutcome = (tally: SessionTally, outcome: { turns: number; wall
 export interface StatusContext {
     workspace: string | null;
     worker: string | null;
+    // {§cli-workers-topology} — the bound worker's place among its siblings, newest first.
+    position?: { index: number; count: number } | null;
     child: string | null;
     tally: SessionTally;
     // Running-loop accrual from turn_generated notices (#465); concluded totals
@@ -118,6 +120,9 @@ export interface ClientStatus {
     model: string | null;
     packetCount: number | null;
     activity: StatusActivity | null;
+    // {§cli-status-children} — the daemon's count of the bound worker's alive direct children; null
+    // when the transport carries no gauge.
+    children: number | null;
 }
 
 export interface RuntimeStatusGauge {
@@ -126,6 +131,7 @@ export interface RuntimeStatusGauge {
     loopId: number | null;
     packetCount: number;
     activity: unknown;
+    children?: unknown;
 }
 
 export interface StatusGaugeEnvelope {
@@ -156,11 +162,19 @@ export const projectStatusGauge = (value: RuntimeStatusGauge): ClientStatus => {
             percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.floor(percent))) : null,
         };
     }
+    let children: number | null = null;
+    if (value.children !== undefined) {
+        if (!Number.isSafeInteger(value.children) || (value.children as number) < 0) {
+            throw new TypeError(`Invalid runtime children count '${String(value.children)}'.`);
+        }
+        children = value.children as number;
+    }
     return {
         lifecycle: value.lifecycle as StatusLifecycle,
         model: model === null ? null : formatRouteIdentity(model),
         packetCount: value.packetCount,
         activity,
+        children,
     };
 };
 
@@ -253,9 +267,15 @@ export const renderStatusLine = (
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${inputTokens ?? "?"} ↑${outputTokens ?? "?"}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${costUsd}`);
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
-    if (context.child !== null) parts.push(`🐜 ${context.child}`);
+    // {§cli-status-children} — the ant counts alive children when the daemon states it, and names the
+    // model those children run when one is selected: `🐜2 dumbox`, `🐜0`, or the bare `🐜 dumbox`.
+    const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
+    if (ant.length > 0) parts.push(`🐜${value.children === null ? " " : ""}${ant.join(" ")}`);
     if (context.workspace !== null) parts.push(context.workspace);
-    if (context.worker !== null) parts.push(`worker://${context.worker}/`);
+    if (context.worker !== null) {
+        const position = context.position ?? null;
+        parts.push(`worker://${context.worker}/${position === null ? "" : ` (${position.index}/${position.count})`}`);
+    }
     if (value.activity !== null) parts.push(activityText(value.activity));
     return parts.join(" · ");
 };

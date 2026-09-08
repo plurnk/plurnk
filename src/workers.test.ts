@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderWorkerTopology, workerNameFromTarget, type WorkerRow } from "./workers.ts";
+import { renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type WorkerRow } from "./workers.ts";
 
 test("[§cli-workers-topology] worker:// references name workers; worker file paths name none", () => {
     assert.equal(workerNameFromTarget("worker://recheck"), "recheck");
@@ -12,6 +12,7 @@ test("[§cli-workers-topology] worker:// references name workers; worker file pa
 });
 
 const at = (n: number): string => `2026-09-04T10:0${n}:00Z`;
+const at2 = at;
 const forest: WorkerRow[] = [
     { id: 5, name: "plurnk", created_at: at(0), origin: "_plurnk", parentWorkerId: null },
     { id: 6, name: "client-1", created_at: at(0), origin: "client", parentWorkerId: null },
@@ -21,21 +22,50 @@ const forest: WorkerRow[] = [
     { id: 3, name: "recheck", created_at: at(4), origin: "model", parentWorkerId: 2 },
 ];
 
-test("[§cli-workers-topology] the bound worker's tree renders first, marked, with its descendants as a tree", () => {
+test("[§cli-workers-topology] the bound worker's tree renders first, marked, with its descendants as a tree, siblings newest first", () => {
     const lines = renderWorkerTopology(forest, "main").trimEnd().split("\n");
     assert.match(lines[0], /^ {2}● main +model +2026-09-04T10:01:00Z {2}← bound$/u);
-    assert.match(lines[1], /^ {2}├─ ○ main-fork +model/u);
-    assert.match(lines[2], /^ {2}│ {2}└─ ○ recheck +model/u);
-    assert.match(lines[3], /^ {2}└─ ○ guesser1 +model/u);
-    assert.match(lines[4], /^ {2}○ plurnk +_plurnk/u);
-    assert.match(lines[5], /^ {2}○ client-1 +client/u);
+    assert.match(lines[1], /^ {2}├─ ○ guesser1 +model/u, "the newest child heads its siblings — the one `l` enters");
+    assert.match(lines[2], /^ {2}└─ ○ main-fork +model/u);
+    assert.match(lines[3], /^ {2} {3}└─ ○ recheck +model/u);
+    assert.match(lines[4], /^ {2}○ client-1 +client/u);
+    assert.match(lines[5], /^ {2}○ plurnk +_plurnk/u);
     assert.equal(lines.length, 6);
+});
+
+// {§cli-workers-topology} — one hop is a full attach; the map's order is the hop order.
+test("[§cli-workers-topology] traversal: h climbs, l enters the newest child, j/k walk siblings and wrap, edges say why", () => {
+    const at = (name: string, hop: "parent" | "enter" | "next" | "prev") => traverse(forest, name, hop);
+    assert.equal(at("main", "enter").target?.name, "guesser1", "the newest child");
+    assert.equal(at("guesser1", "parent").target?.name, "main");
+    assert.equal(at("guesser1", "next").target?.name, "main-fork", "next is older");
+    assert.equal(at("main-fork", "next").target?.name, "guesser1", "and wraps");
+    assert.equal(at("guesser1", "prev").target?.name, "main-fork", "prev wraps the other way");
+    assert.equal(at("main-fork", "enter").target?.name, "recheck");
+    assert.deepEqual(at("recheck", "enter"), { target: null, notice: "no children" });
+    assert.deepEqual(at("recheck", "next"), { target: null, notice: "no siblings" });
+    assert.deepEqual(at("main", "parent"), { target: null, notice: "at the root: no parent" });
+    assert.deepEqual(at("main", "next"), { target: null, notice: "no siblings" }, "scratch workers are not places: a lone conversation has no siblings");
+    assert.equal(traverse(forest, null, "enter").target, null, "nothing bound, nowhere to hop");
+    const two = [...forest, { id: 7, name: "second", created_at: at2(6), origin: "model" as const, parentWorkerId: null }];
+    assert.equal(traverse(two, "main", "next").target?.name, "second", "root conversations are siblings of each other");
+    assert.deepEqual(siblingPosition(two, "second"), { index: 1, count: 2 }, "newest first");
+    assert.deepEqual(siblingPosition(two, "main"), { index: 2, count: 2 });
+    assert.equal(siblingPosition(forest, "recheck"), null, "an only child has no position");
+});
+
+test("[§cli-workers-topology] the path from the tree root is the prompt prefix's truth", () => {
+    assert.equal(workerPath(forest, "main"), "~");
+    assert.equal(workerPath(forest, "main-fork"), "~/main-fork");
+    assert.equal(workerPath(forest, "recheck"), "~/main-fork/recheck");
+    assert.equal(workerPath(forest, null), "~", "unbound reads as home");
+    assert.equal(workerPath(forest, "stranger"), "~", "an unknown name reads as home until the directory learns it");
 });
 
 test("[§cli-workers-topology] a bound descendant still puts its whole tree first and marks only itself", () => {
     const out = renderWorkerTopology(forest, "recheck");
     assert.match(out, /^ {2}○ main /u, "the tree root stays a root");
-    assert.match(out, /│ {2}└─ ● recheck .*← bound/u);
+    assert.match(out, / {3}└─ ● recheck .*← bound/u);
     assert.equal(out.match(/●/gu)?.length, 1);
 });
 

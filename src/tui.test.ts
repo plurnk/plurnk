@@ -94,6 +94,12 @@ test("altShortcut: lowercase mnemonics map (nvim's lowercase: m, s, x)", () => {
     assert.equal(altShortcut("\x1bm"), "/models");
     assert.equal(altShortcut("\x1bs"), "/workspaces");
     assert.equal(altShortcut("\x1bx"), "/stop");
+    // {§cli-workers-topology} — vim's tree orientation; help moved to Alt-? to free h.
+    assert.equal(altShortcut("\x1bh"), "/parent");
+    assert.equal(altShortcut("\x1bl"), "/enter");
+    assert.equal(altShortcut("\x1bj"), "/next");
+    assert.equal(altShortcut("\x1bk"), "/prev");
+    assert.equal(altShortcut("\x1b?"), "/help");
 });
 
 test("altShortcut: CASE matches nvim — capitals are distinct (R/L/Y/N/M)", () => {
@@ -315,6 +321,38 @@ test("[§cli-workers-topology] /attach completion offers worker names lazily and
     const unrelated = await complete("/model ma", async () => ["main"]);
     assert.equal(reads, 2, "other verbs never read the worker directory");
     assert.deepEqual(unrelated.suggestions, []);
+});
+
+// {§cli-workers-topology} — a hop is a full attach of the daemon-named target; the notice names
+// where the session landed and its sibling position; an edge names why nothing moved.
+test("[§cli-workers-topology] handleVerb /enter, /next, /prev, /parent hop the tree and report the path", async () => {
+    const directory = { workers: [
+        { id: 1, name: "sess", created_at: "2026-09-04T10:01:00Z", origin: "model", parentWorkerId: null },
+        { id: 2, name: "sess-fork", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1 },
+        { id: 4, name: "guesser1", created_at: "2026-09-04T10:03:00Z", origin: "model", parentWorkerId: 1 },
+        { id: 5, name: "plurnk", created_at: "2026-09-04T10:00:00Z", origin: "_plurnk", parentWorkerId: null },
+    ] };
+    const ctx = makeCtx({ "workspace.workers": directory });
+    await handleVerb("/enter", ctx);
+    assert.deepEqual(ctx.attached, ["guesser1"], "l enters the newest child");
+    assert.equal(ctx.out.at(-1), "  worker: guesser1 [~/guesser1] (1/2)\n");
+    assert.ok(ctx.calls.some((c) => c.method === "worker.model.get"), "policy is re-read for the newly bound worker");
+    await handleVerb("/next", ctx);
+    assert.deepEqual(ctx.attached, ["guesser1", "sess-fork"], "j walks to the older sibling");
+    assert.equal(ctx.out.at(-1), "  worker: sess-fork [~/sess-fork] (2/2)\n");
+    await handleVerb("/next", ctx);
+    assert.equal(ctx.attached.at(-1), "guesser1", "and wraps");
+    await handleVerb("/prev", ctx);
+    assert.equal(ctx.attached.at(-1), "sess-fork", "k wraps the other way");
+    await handleVerb("/parent", ctx);
+    assert.equal(ctx.attached.at(-1), "sess");
+    assert.equal(ctx.out.at(-1), "  worker: sess [~]\n", "a lone root has no sibling position");
+    const before = ctx.attached.length;
+    await handleVerb("/parent", ctx);
+    assert.equal(ctx.out.at(-1), "  (at the root: no parent)\n");
+    await handleVerb("/next", ctx);
+    assert.equal(ctx.out.at(-1), "  (no siblings)\n", "the daemon's maintenance worker is not a place");
+    assert.equal(ctx.attached.length, before, "an edge attaches nothing");
 });
 
 test("handleVerb /attach without a name prints usage and binds nothing", async () => {

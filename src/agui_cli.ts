@@ -262,7 +262,7 @@ export const runCliViaBridge = async (
     const statusLine = new TerminalStatusLine(
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
-        { lifecycle: "running", model: opts.modelLabel ?? null, packetCount: null, activity: null },
+        { lifecycle: "running", model: opts.modelLabel ?? null, packetCount: null, activity: null, children: null },
         { workspace: opts.workspace ?? null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: started },
     );
     statusLine.update({});

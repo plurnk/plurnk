@@ -248,8 +248,8 @@ test("consumeCliRun projects the authoritative AG-UI status gauge", async () => 
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", packetCount: 0, activity: null },
-        { lifecycle: "running", model: "deepdumb", packetCount: 3, activity: null },
+        { lifecycle: "running", model: "deepdumb", packetCount: 0, activity: null, children: null },
+        { lifecycle: "running", model: "deepdumb", packetCount: 3, activity: null, children: null },
     ]);
 });
 

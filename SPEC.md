@@ -111,7 +111,7 @@ Human status is the summary line's shape aggregated over the session:
 <glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜<children> [<child>]] · <workspace> · worker://<name>/ [(<i>/<n>)] [· 🧮 <percent>%]
 ```
 
-§cli-status-children The ant is the daemon's count of the bound worker's alive
+{§cli-status-children} The ant is the daemon's count of the bound worker's alive
 direct children (`snapshot.plurnk.status.children`: queued, running, or parked —
 a parked child still owes a result), followed by the child model while a spawn
 override is set: `🐜0`, `🐜2 dumbox`. A transport without the gauge shows only

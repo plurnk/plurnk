@@ -328,11 +328,13 @@ maintenance worker and a connection's scratch worker are never hop targets, so a
 lone conversation has `(no siblings)`. Every hop re-reads the directory; nothing
 is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
 
-**Position.** The line above the composer is the path from the tree root to the
-bound worker: `[~]` at a root, `[~/fork-1/recheck]` two hops down. `~` is the
-tree root wherever the session started, so a session opened on a child shows
-that child's full path. The status line's worker segment carries the sibling
-position when there is one: `worker://recheck/ (2/3)`, newest first (§1.2.1).
+**Position.** The line above the composer is the lineage from the tree root to
+the bound worker with `~` marking the worker the session is in — the same `~`
+that means "this worker" in `worker://~/`: `[/~main]` at a root,
+`[/main/fork-1/~recheck]` two hops down, `[/~]` before the worker is named. A
+child always shows that it is a child, so a session opened on a child reads its
+full lineage. The status line's worker segment carries the sibling position
+when there is one: `worker://recheck/ (2/3)`, newest first (§1.2.1).
 
 ### §3.2 Cancellation {§cli-cancellation}
 

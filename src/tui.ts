@@ -718,7 +718,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
-    surface.setPrompt("[~]");
+    surface.setPrompt(`[${workerPath([], conversationWorker)}]`);
     void refreshTopology().catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
     surface.setAutocompleteProvider(makeAutocompleteProvider({

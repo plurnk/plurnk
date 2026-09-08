@@ -54,12 +54,12 @@ test("[§cli-workers-topology] traversal: h climbs, l enters the newest child, j
     assert.equal(siblingPosition(forest, "recheck"), null, "an only child has no position");
 });
 
-test("[§cli-workers-topology] the path from the tree root is the prompt prefix's truth", () => {
-    assert.equal(workerPath(forest, "main"), "~");
-    assert.equal(workerPath(forest, "main-fork"), "~/main-fork");
-    assert.equal(workerPath(forest, "recheck"), "~/main-fork/recheck");
-    assert.equal(workerPath(forest, null), "~", "unbound reads as home");
-    assert.equal(workerPath(forest, "stranger"), "~", "an unknown name reads as home until the directory learns it");
+test("[§cli-workers-topology] the lineage path marks the bound worker with ~, the prompt prefix's truth", () => {
+    assert.equal(workerPath(forest, "main"), "/~main", "a root is still named; ~ marks where the session is");
+    assert.equal(workerPath(forest, "main-fork"), "/main/~main-fork");
+    assert.equal(workerPath(forest, "recheck"), "/main/main-fork/~recheck", "a child always shows that it is a child");
+    assert.equal(workerPath(forest, null), "/~", "unbound: here, unnamed");
+    assert.equal(workerPath(forest, "stranger"), "/~stranger", "a name the directory has not learned yet is still where the session is");
 });
 
 test("[§cli-workers-topology] a bound descendant still puts its whole tree first and marks only itself", () => {

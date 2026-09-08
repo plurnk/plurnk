@@ -27,7 +27,7 @@ export const presentPlan = (tx: unknown): PresentedPlanEntry[] => {
     try {
         plan = AcpPlanValue.assertCanonical(body);
     } catch (error) {
-        throw new TypeError("A PLAN row must carry its canonical Plan body.", { cause: error });
+        throw new TypeError("A continuation row must carry its canonical Plan body.", { cause: error });
     }
     return plan.entries.map((entry) => ({
         glyph: PLAN_STATUS_GLYPHS[entry.status],

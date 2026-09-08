@@ -28,7 +28,7 @@ export const OP_GLYPHS: Record<string, string> = {
     FAIL: "✋",
     EXEC: "🔧",
     BARE: "🔮",
-} satisfies Record<Exclude<PlurnkOp, "PLAN">, string>;
+} satisfies Record<PlurnkOp, string>;
 
 export const ORIGIN_GLYPHS: Record<string, string> = {
     model: "🎲",
@@ -267,7 +267,7 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // Broadcast SEND (model → user) — multi-line block, content rather than a Notice.
 // Per TUI.md §3.4.1 / SPEC.md §5.4. The lifecycle glyph begins at column zero;
 // continuation body lines nest under its following separator.
-const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
+const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns - 3))): string => {
     const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
     const idGlyph = TurnDisposition.isOp(entry.op) ? sendLifecycleGlyph(signal) : OP_GLYPHS.SEND;
 
@@ -275,7 +275,6 @@ const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
     const header = idGlyph
         + (annotation === null ? "" : ` ${DIM}— ${annotation}${RESET}`);
 
-    const body = extractSendBody(entry.tx, /* prettify */ true, Math.max(1, columns - 3));
     const multiLine = body.includes("\n");
     // Short single-line replies inline after the header (nvim's
     // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
@@ -294,13 +293,12 @@ const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
 };
 
 const renderPlan = (entry: LogEntryWire): string => {
-    // A routine PLAN carries no status code (plurnk#21); a failed one keeps
+    // A routine inventory carries no status code; a failed one keeps
     // its error code and glyph on the first row.
     const status = String(entry.status_rx);
     const failed = entry.status_rx >= 400;
     const firstSlot = failed ? `${sendSubGlyph(entry.status_rx)} ${colorForStatus(entry.status_rx)}${status}${RESET} ` : "";
     const laterSlot = failed ? `${" ".repeat(3 + status.length + 1)}` : "";
-    const note = entryAnnotation(entry);
     const presented = presentPlan(entry.tx);
     const rows = presented.length === 0
         ? [{ glyph: "📭", text: "no entries" }]
@@ -310,8 +308,7 @@ const renderPlan = (entry: LogEntryWire): string => {
         const prefix = index === 0
             ? `${glyph} ${firstSlot}`
             : `${glyph} ${laterSlot}`;
-        const annotation = index === 0 && note !== null ? ` ${DIM}— ${note}${RESET}` : "";
-        return `${prefix}${DIM}${ModelText.plain(text)}${RESET}${annotation}`;
+        return `${prefix}${DIM}${ModelText.plain(text)}${RESET}`;
     }).join("\n");
 };
 
@@ -346,8 +343,8 @@ export const renderLogEntry = (
     // Broadcast SEND has no path at all (both scheme AND pathname null).
     // A SEND directed at file:// would have scheme=null but pathname set —
     // not a broadcast.
+    if (TurnDisposition.isContinuationOp(entry.op)) return `${renderBroadcast(entry, columns, "")}\n${renderPlan(entry)}`;
     if (TurnDisposition.isOp(entry.op) || entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
-    if (entry.op === "PLAN") return renderPlan(entry);
 
     // ONE identity/action glyph, not origin+op (they were redundant on SEND and
     // cluttered elsewhere). A SEND shows its lifecycle; any other op shows its

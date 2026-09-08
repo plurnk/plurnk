@@ -247,7 +247,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "REASONING_MESSAGE_CONTENT", messageId: "1/1/2/SEND/reasoning", delta: "the evidence" }));
         res.write(frame({ type: "REASONING_MESSAGE_END", messageId: "1/1/2/SEND/reasoning" }));
         res.write(frame({ type: "REASONING_END", messageId: "1/1/2/SEND/reasoning" }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "PLAN" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "NEXT" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.branch_batch", value: { batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 } }));
@@ -260,7 +260,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", { policy: REVIEW_POLICY }).done;
-        assert.deepEqual(seen.entries, [{ id: 5, op: "PLAN" }]);
+        assert.deepEqual(seen.entries, [{ id: 5, op: "NEXT" }]);
         assert.deepEqual(seen.reasoning, [
             { phase: "start", messageId: "1/1/2/SEND/reasoning" },
             { phase: "content", messageId: "1/1/2/SEND/reasoning", delta: "checked ", content: "checked " },

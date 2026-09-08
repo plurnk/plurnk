@@ -16,7 +16,7 @@ const REVIEW_POLICY = { capabilities: {}, proposals: "review" as const };
 test("help is a compact grouped index over commands and interaction grammar", () => {
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);
     assert.match(TUI_HELP, /functionality\s+\/mcp \/skills \/agents \/members/);
-    assert.match(TUI_HELP, /language\s+```PLAN/);
+    assert.match(TUI_HELP, /language\s+```OP/);
     assert.match(TUI_HELP, /\/help <verb>/);
 });
 

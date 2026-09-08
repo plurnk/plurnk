@@ -46,9 +46,6 @@ before(async () => {
             args: [legacyFixture],
         })),
         writeFile(currentCall, [
-            "```PLAN",
-            '[{"content":"Call the attached current MCP tool through the installed daemon.","status":"in_progress"}]',
-            "```",
             "```current (echo)",
             '{"message":"installed daemon current peer"}',
             "```",
@@ -73,7 +70,7 @@ describe("TUI workspace MCP dogfood", () => {
             await tui.waitFor(/added: current \(active\)/, 20_000);
 
             tui.write(`/script ${currentCall}\r`);
-            const used = await tui.waitFor(/script: 2 ops ok/, 20_000);
+            const used = await tui.waitFor(/script: 1 op ok/, 20_000);
             assert.match(used, /echo/);  // the EXEC row keeps its target; routine codes left the waterfall (plurnk#21)
 
             tui.write("/mcp\r");

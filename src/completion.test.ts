@@ -94,10 +94,11 @@ test("dslOpPartial: retains the opening fence width without delimiter suffixes",
 });
 
 test("completeOps: completes native names and retains a longer opening fence", () => {
-    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [["```PLAN"], "```pl"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "ne" }), [["```NEXT"], "```ne"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], "```pl"]);
     assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"]);
     assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], ["```BARE"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND", "NEXT", "WAIT", "DONE", "FAIL", "LOOK"].map((op) => `\`\`\`${op}`));
+    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "EXEC", "BARE", "WORK", "FORK", "KILL", "NEXT", "WAIT", "DONE", "FAIL", "LOOK"].map((op) => `\`\`\`${op}`));
 });
 
 test("completeOps: LOOK completes alongside daemon operations", () => {
@@ -112,7 +113,7 @@ test("pathPartial: native and executor fence targets, scheme stripped", () => {
 });
 
 test("dslStatement: sends named fences verbatim; the daemon owns registration and syntax validation", () => {
-    for (const text of ["```PLAN\n[]\n```\n```DONE\ndone\n```", "```EDIT (a.md)\nbody\n```", "```BARE\nWhat is the capital of Germany?\n```", "````LOOK (a.md)````", "```sh\necho hi\n```", "```gitea (issue_list)\n{}\n```", "```unregistered (bad"])
+    for (const text of ["```NEXT\n[]\n```", "```EDIT (a.md)\nbody\n```", "```BARE\nWhat is the capital of Germany?\n```", "````LOOK (a.md)````", "```sh\necho hi\n```", "```gitea (issue_list)\n{}\n```", "```unregistered (bad"])
         assert.equal(dslStatement(text), text);
     for (const text of ["## PLAN_", "### Results", "plain prompt", "```\nquoted code\n```", ": ```sh\necho hi\n```", "``READ (a)"])
         assert.equal(dslStatement(text), null);

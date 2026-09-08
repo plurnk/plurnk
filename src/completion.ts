@@ -6,6 +6,7 @@
 
 import { readdir } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
+import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
 
 // Detect a path-seeking partial in the line up to the cursor; null if the
 // cursor isn't in a path position. One case per call site: membership globs,
@@ -29,7 +30,7 @@ export const pathPartial = (line: string): string | null => {
     return null;
 };
 
-const OPS = ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND", "NEXT", "WAIT", "DONE", "FAIL", "LOOK"] as const;
+const OPS = [...PLURNK_OPS, "LOOK"] as const;
 const DSL_TARGET_PARTIAL = /^`{3,}[A-Za-z0-9_.+-]+[ \t]*\(([^)\n]*)$/;
 
 // Coarse dispatch classification only. The daemon remains the grammar owner

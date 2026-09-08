@@ -32,9 +32,6 @@ before(async () => {
     source = join(scratch, "source");
     await mkdir(join(source, "extra"), { recursive: true });
     await writeFile(join(scratch, "delegate.plk"), [
-        "```PLAN",
-        '[{"content":"Delegate one comparison to the configured remote agent.","status":"in_progress"}]',
-        "```",
         "```SEND (a2a://researcher)",
         "Compare mangoes and pineapples in one concise sentence.",
         "```",
@@ -89,7 +86,7 @@ describe("TUI Functionality dogfood", () => {
             // scripted SEND routes to the enabled alias and answers its Task
             // receipt (a 4xx/5xx would print a worst-status diagnosis instead).
             tui.write(`/script ${join(scratch, "delegate.plk")}\r`);
-            await tui.waitFor(/script: 2 ops ok/, 20_000);
+            await tui.waitFor(/script: 1 op ok/, 20_000);
             tui.write(`/agents add peer ${agent!.baseUrl}\r`);
             await tui.waitFor(/added: peer \(active\)/, 20_000);
             tui.write("/agents disable researcher\r");

@@ -400,7 +400,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         }
         // The conversation run: one row, then HELD OPEN (a loop that never ends on its own).
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "PLAN" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "NEXT" } }));
         holdOpen = () => {
             res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
@@ -428,7 +428,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     // The stream dies without terminal truth: no terminated, no RUN_FINISHED.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "PLAN" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "NEXT" } }));
         res.end();   // abrupt end — no terminal event
     });
     const outs: string[] = [];

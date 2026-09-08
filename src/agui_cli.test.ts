@@ -256,7 +256,7 @@ test("consumeCliRun projects the authoritative AG-UI status gauge", async () => 
 test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {
     const { io, out, err } = sink({ json: true });
     const res = await consumeCliRun(stream([
-        rowRun({ op: "PLAN", origin: "model" }, 42),
+        rowRun({ op: "NEXT", origin: "model" }, 42),
         rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
         terminated({

@@ -89,7 +89,7 @@ test("formatPlain: preserves numeric and hash scopes after the target", () => {
 
 test("formatPlain: PLAN preserves the trace header and renders one line per entry", () => {
     assert.equal(formatPlain(entry({
-        op: "PLAN",
+        op: "NEXT", status_rx: 102,
         tx: {
             body: {
                 entries: [
@@ -100,7 +100,7 @@ test("formatPlain: PLAN preserves the trace header and renders one line per entr
             },
         },
     })), [
-        "[200] model PLAN",
+        "[102] model NEXT",
         "  ✅ Inspect the parser.",
         "  ✅ Memory: One baseline owns the schema.",
         "  🚧 [high] Run the tests.",

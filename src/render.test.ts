@@ -33,7 +33,6 @@ type LogEntryWire = Awaited<ReturnType<typeof import("./render.ts")["renderLogEn
 
 test("every runtime operation has a named renderer or an operation glyph", () => {
     for (const op of PLURNK_OPS) {
-        if (op === "PLAN") continue;
         assert.ok(OP_GLYPHS[op], `${op} must not render as an unknown operation`);
     }
     for (const [op, glyph] of [["KILL", "✂️"], ["WORK", "🐜"], ["FORK", "👥"]]) {
@@ -66,7 +65,11 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
 
 test("native dispositions render their bodies and lifecycle glyphs while SEND remains messaging", () => {
     for (const [op, signal, glyph] of [["NEXT", 102, "▶️"], ["WAIT", 202, "💤"], ["DONE", 200, "⏹️"], ["FAIL", 499, "✋"]] as const) {
-        assert.equal(renderLogEntry(entry({ op, signal, status_rx: signal, tx: { op, body: { raw: "Update.", json: null } } })), `${glyph} Update.`);
+        const continuation = op === "NEXT" || op === "WAIT";
+        const body = continuation
+            ? { entries: [{ content: "Update.", priority: "medium", status: "pending" }] }
+            : { raw: "Update.", json: null };
+        assert.equal(renderLogEntry(entry({ op, signal, status_rx: signal, tx: { op, body } })), continuation ? `${glyph}\n⬜ Update.` : `${glyph} Update.`);
     }
     assert.equal(renderLogEntry(entry({ op: "SEND", tx: { op: "SEND", body: { raw: "Update.", json: null } } })), "💬 Update.");
 });
@@ -281,30 +284,30 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
     assert.match(narrow, /words\./);
 });
 
-test("renderLogEntry: intermediate 102 broadcast → single plain line, no blanks (the per-turn ping)", () => {
+test("renderLogEntry: NEXT presents lifecycle followed by its structured inventory", () => {
     const out = renderLogEntry(entry({
         op: "NEXT",
         scheme: null,
         pathname: null,
         signal: 102,
         status_rx: 102,
-        tx: { body: { raw: "still working…", json: null } },
+        tx: { body: { entries: [{ content: "still working…", priority: "medium", status: "in_progress" }] } },
     }));
     assert.doesNotMatch(out, /^\n/);
     assert.doesNotMatch(out, /\n$/);
-    assert.ok(!out.includes("\n"), `102 ping is one line, got: ${JSON.stringify(out)}`);
+    assert.equal(out, "▶️\n🚧 still working…");
     assert.match(out, /^▶️/);
     assert.doesNotMatch(out, /(?:^|\s)102(?:\s|$)/);
 });
 
 test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entry", () => {
     const out = renderLogEntry(entry({
-        op: "PLAN",
+        op: "NEXT",
         origin: "model",
         scheme: null,
         pathname: null,
-        signal: null,
-        status_rx: 200,
+        signal: 102,
+        status_rx: 102,
         tx: {
             body: {
                 entries: [
@@ -317,6 +320,7 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entr
         } as unknown as { body: { raw: string; json: null } },
     }));
     assert.deepEqual(out.split("\n"), [
+        "▶️",
         "✅ Contract settled.",
         "✅ Memory: One baseline owns the schema.",
         "🚧 [high] Update clients.",
@@ -327,10 +331,10 @@ test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entr
 
 test("renderLogEntry: an empty PLAN remains a visible durable row", () => {
     const out = renderLogEntry(entry({
-        op: "PLAN",
+        op: "NEXT", signal: 102, status_rx: 102,
         tx: { body: { entries: [] } } as unknown as { body: { raw: string; json: null } },
     }));
-    assert.equal(out, "📭 no entries", "an empty PLAN stays visible, without coordinate or routine code");
+    assert.equal(out, "▶️\n📭 no entries", "an empty inventory remains visible with its lifecycle, without coordinates or routine codes");
 });
 
 test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line", () => {
@@ -448,7 +452,7 @@ test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=102");
     process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({ ...sendEntry, op: "NEXT", signal: 102, status_rx: 102, tx: { body: { raw: "working…", json: null } } }));
+    const out = colored.renderLogEntry(entry({ ...sendEntry, op: "NEXT", signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "working…", priority: "medium", status: "in_progress" }] } } }));
     assert.doesNotMatch(out, /\x1b\[1m/);   // plain
 });
 
@@ -491,8 +495,8 @@ test("renderLogEntry: trace glyph starts at column zero", () => {
 });
 
 test("renderLogEntry: every SEND shows its lifecycle rather than a producer mascot", () => {
-    const runtime = renderLogEntry(entry({ op: "NEXT", origin: "_plurnk", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { raw: "Next: Address the prompt." } } }));
-    assert.equal(runtime, "▶️ Next: Address the prompt.");
+    const runtime = renderLogEntry(entry({ op: "NEXT", origin: "_plurnk", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "Address the prompt.", priority: "medium", status: "pending" }] } } }));
+    assert.equal(runtime, "▶️\n⬜ Address the prompt.");
     assert.ok(!runtime.includes(OP_GLYPHS.SEND), "the 💬 op glyph is dropped — lifecycle conveys the SEND state");
     assert.ok(!runtime.includes("?"), "the wire-standard _plurnk producer is never an unknown actor");
 });

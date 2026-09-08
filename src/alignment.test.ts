@@ -22,9 +22,9 @@ test("[§cli-rendering] glyph-bearing waterfall rows share the left edge and SEN
     const rows: Array<[string, string]> = [
         ["operation", renderLogEntry(entry({}))],
         ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
-        ["PLAN", renderLogEntry(entry({ op: "PLAN", tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
+        ["PLAN", renderLogEntry(entry({ op: "NEXT", tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
         ["reasoning", renderReasoning("Inspect the contract.")],
-        ["model SEND 102", renderLogEntry(entry({ op: "NEXT", origin: "model", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { raw: "continuing" } } }))],
+        ["model SEND 102", renderLogEntry(entry({ op: "NEXT", origin: "model", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "continuing", priority: "medium", status: "in_progress" }] } } }))],
         ["model SEND 200", renderLogEntry(entry({ op: "DONE", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
         ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410 }))],

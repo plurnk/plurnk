@@ -238,7 +238,7 @@ export const parseCoord = (raw: string): [number, number, number] | null => {
 };
 
 // The human-readable body of an entry: a READ's result content, else the op's
-// own body (SEND/PLAN/EDIT carry it on tx.body). Pure DISPLAY logic — the
+// own body (SEND/NEXT/WAIT/EDIT carry it on tx.body). Pure DISPLAY logic — the
 // service already resolved the coordinate; this just picks what to show.
 const extractEntryContent = (entry: LogEntryWire): string | null => {
     const rx = entry.rx as { content?: unknown } | null;

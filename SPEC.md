@@ -492,7 +492,7 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
-One line per dispatched op, except the structured PLAN block below. Format
+One line per dispatched op, except the structured continuation inventory below. Format
 (vanilla ANSI, no framework):
 
 ```
@@ -555,7 +555,8 @@ answer and JSON mode remains silent.
 
 #### §5.1.2 Plan {§cli-plan-rendering}
 
-PLAN renders its complete entries in source order, one human line each:
+NEXT and WAIT render their lifecycle header followed by the complete inventory
+in source order, one human line per entry:
 
 | Status | Glyph |
 |---|---|
@@ -563,13 +564,13 @@ PLAN renders its complete entries in source order, one human line each:
 | `in_progress` | 🚧 |
 | `pending` | ⬜ |
 
-Every entry glyph begins at column zero. A failed PLAN may append its failure
-glyph and numeric status to the first entry; routine PLANs show neither. The
+Every entry glyph begins at column zero. A failed continuation may append its failure
+glyph and numeric status to the first entry; routine inventories show neither. The
 client consumes the ACP Plan projection without interpreting or stripping
 content prefixes. Entry whitespace collapses to one line.
 Neutral `medium` priority is implicit; `high` and `low` render as
 `[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
-trace retains its PLAN header and applies the same entry projection below it.
+trace retains its NEXT or WAIT header and applies the same entry projection below it.
 
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
@@ -589,14 +590,14 @@ Input and output are the conventional aggregate fields from the daemon's account
 
 ### §5.4 Messages and dispositions {§cli-broadcast-send-rendering}
 
-A targetless SEND and each native disposition carry user-facing content. Both scheme and pathname must be absent for SEND to be targetless. The interactive client renders their full bodies, not a diagnostic preview.
+A targetless SEND, DONE, and FAIL carry message content. NEXT and WAIT carry the inventory (§5.1.2). Both scheme and pathname must be absent for SEND to be targetless. The interactive client renders their full bodies, not a diagnostic preview.
 
 TUI mode contract:
 
 - Header line: one glyph at column zero, no redundant numeric disposition code or path. Disposition glyphs are `▶️` (NEXT), `⏹️` (DONE), 💤 (WAIT), and ✋ (FAIL), regardless of producer. SEND messages use 💬; directed messages retain their target and any failure status.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
-- Empty body is legal and renders as just the header.
+- Empty message content is legal and renders as just the header. An empty continuation inventory retains its `📭 no entries` row.
 
 The model's DONE or FAIL response is bold so the answer stands out from
 operation records; intermediate and non-model messages remain plain. Inner ANSI
@@ -605,7 +606,7 @@ preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode: trace entries use stderr per §5.1; only DONE or FAIL supplies the final body on stdout (§2).
 
-The body source is `entry.tx.body`, a `SendBody` object (`{ raw: string, json: any }` in `plurnk-contracts/schema/PlurnkStatement.json`), not a plain string.
+The message body source is `entry.tx.body`, a `SendBody` object (`{ raw: string, json: any }` in `plurnk-contracts/schema/PlurnkStatement.json`), not a plain string. Continuations use the canonical ACP Plan projection.
 
 The operation name, not a SEND signal, identifies DONE or FAIL. Ordinary messages never replace the one-shot conclusion.
 

@@ -13,6 +13,7 @@ import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts
 import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { presentPlan } from "./plan.ts";
+import { TurnDisposition } from "@plurnk/plurnk-contracts";
 
 interface WorkspaceResult { id: number; name: string }
 
@@ -111,7 +112,7 @@ export const formatPlain = (entry: LogEntryWire): string => {
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op} ${address}`.trim();
     const annotation = entryAnnotation(entry);
     if (annotation !== null) line += ` — ${annotation}`;
-    if (entry.op === "PLAN") {
+    if (TurnDisposition.isContinuationOp(entry.op)) {
         const presented = presentPlan(entry.tx);
         const rows = presented.length === 0
             ? ["📭 no entries"]

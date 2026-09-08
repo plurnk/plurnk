@@ -283,7 +283,7 @@ test("runWorkspaceWorkers: workspace has no workers → friendly message in tabl
 // ─── runLogRead ───────────────────────────────────────────────────────
 
 const entry = (id: number, op = "READ"): unknown => ({
-    id, op, suffix: "", origin: "model", signal: null,
+    id, op, origin: "model", signal: null,
     scheme: "worker", pathname: `/x${id}`, hostname: null, fragment: null,
     lineMarker: null, status_rx: 200, tx: null, rx: null,
 });

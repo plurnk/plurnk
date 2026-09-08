@@ -3,8 +3,8 @@
 //
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
 //   /verb [args]   command verbs (see VERBS); never call loop.run
-//   ## PLAN / ### OP raw DSL through op.parse
-//   ### LOOK_ (uri) off-run READ — inspect a uri's content for ME, not the model
+//   named executable fences through op.parse
+//   LOOK fences via op.look — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         deny EXEC for this loop and keep proposal review client-owned
@@ -110,7 +110,7 @@ export const altShortcut = (forward: string): string | null => {
 // Recognize the client-only LOOK surface so it can be routed to `op.look`.
 // The AG-UI observation action owns validation and the single LOOK→READ rewrite.
 export const lookStatement = (line: string): string | null =>
-    line.startsWith("### LOOK") ? line : null;
+    /^`{3,}LOOK(?![A-Za-z0-9_.+-])/.test(line) ? line : null;
 
 export const linePolicy = promptPolicy;
 
@@ -778,12 +778,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const setLine = (text: string): void => surface.setInput(text);
 
     // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
-    // `### LOOK_ (<that uri>)` line into the buffer — an editable starting point
+    // a complete LOOK fence into the buffer — an editable starting point
     // (hand-edit before Enter). Nothing to cycle → leave the line be.
     const cycleLook = (dir: "up" | "down"): void => {
         lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine(`### LOOK_ (${priorTargets[lookCursor]})`);
+        setLine("```LOOK (" + priorTargets[lookCursor] + ")```");
     };
 
     // LOOK is a pure query: AG-UI validates and rewrites the original statement, then

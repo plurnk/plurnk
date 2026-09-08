@@ -46,11 +46,12 @@ before(async () => {
             args: [legacyFixture],
         })),
         writeFile(currentCall, [
-            "## PLAN_",
+            "```PLAN",
             '[{"content":"Call the attached current MCP tool through the installed daemon.","status":"in_progress"}]',
-            "### EXEC_ [current] (echo)",
+            "```",
+            "```current (echo)",
             '{"message":"installed daemon current peer"}',
-            "",
+            "```",
         ].join("\n")),
     ]);
     daemon = await bootDaemon(bin);

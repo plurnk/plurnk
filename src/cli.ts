@@ -1,6 +1,6 @@
 // CLI mode — single loop.run, plain text, no glyphs. Unix-tool posture
 // per SPEC.md §2 / TUI.md §2. Subscribes to log/entry notifications and
-// prints each op as a plain trace line on stderr; only the terminal SEND
+// prints each op as a plain trace line on stderr; only the DONE/FAIL
 // body lands on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
@@ -108,8 +108,7 @@ export const formatPlain = (entry: LogEntryWire): string => {
     const path = entryTarget(entry) ?? "";
     const scope = entryScope(entry);
     const address = [path, scope].filter((part) => part !== null && part.length > 0).join(" ");
-    const sub = entry.op === "SEND" && typeof entry.signal === "number" ? ` [${entry.signal}]` : "";
-    let line = `[${entry.status_rx}] ${entry.origin} ${entry.op}${sub} ${address}`.trim();
+    let line = `[${entry.status_rx}] ${entry.origin} ${entry.op} ${address}`.trim();
     const annotation = entryAnnotation(entry);
     if (annotation !== null) line += ` — ${annotation}`;
     if (entry.op === "PLAN") {
@@ -122,16 +121,11 @@ export const formatPlain = (entry: LogEntryWire): string => {
     return line;
 };
 
-// Per plurnk-service Engine.ts, only broadcast SENDs carrying signal 200 or 499
-// terminate a loop. Intermediate broadcasts are protocol mechanics, not the answer.
-// Broadcast = no target at all (both scheme AND pathname null), to distinguish
-// from a SEND directed at file:// which has scheme=null but pathname set.
+// DONE and FAIL carry the final answer; SEND only delivers a message.
 export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>
-    entry.op === "SEND"
+    (entry.op === "DONE" || entry.op === "FAIL")
     && entry.scheme === null
-    && entry.pathname === null
-    && typeof entry.signal === "number"
-    && (entry.signal === 200 || entry.signal === 499);
+    && entry.pathname === null;
 
 // One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
 export const buildScriptJsonRecord = (input: {

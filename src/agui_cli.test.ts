@@ -12,7 +12,7 @@ import type { LogEntryWire } from "./render.ts";
 import type { Resolution } from "./proposal.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
-    id: 1, op: "READ", suffix: "", origin: "model", signal: null,
+    id: 1, op: "READ", origin: "model", signal: null,
     loop_seq: 1, turn_seq: 1, sequence: 1,
     scheme: null, pathname: null, hostname: null, fragment: null,
     lineMarker: null, status_rx: 200, tx: null, rx: null, tags: [], ...o,
@@ -20,7 +20,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
-const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
+const terminalSend = (text: string): AguiEvent => row({ op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
         requests: [{
@@ -99,7 +99,7 @@ test("[§cli-provider-reasoning] consumeCliRun: standard readable reasoning rend
     assert.deepEqual(err.slice(0, 3), ["💭 compare ", "the evidence", "\n"], "reasoning deltas reach stderr before completion");
     const trace = err.join("");
     assert.match(trace, /💭 compare the evidence/);
-    assert.ok(trace.indexOf("💭") < trace.indexOf("SEND"), "reasoning precedes the SEND row");
+    assert.ok(trace.indexOf("💭") < trace.indexOf("DONE"), "reasoning precedes the DONE row");
 });
 
 test("[§cli-provider-reasoning] multiline reasoning preserves indentation across delta boundaries", async () => {
@@ -323,8 +323,8 @@ test("consumeCliRun: plurnk.terminated is authoritative for the exit code", asyn
 test("consumeCliRun: a child worker's terminal SEND cannot replace the run response", async () => {
     const { io } = sink({ json: true });
     const result = await consumeCliRun(stream([
-        rowRun({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
-        rowRun({ op: "SEND", signal: 499, tx: { body: { raw: "child cancelled" } } }, 12),
+        rowRun({ op: "DONE", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
+        rowRun({ op: "FAIL", signal: 499, tx: { body: { raw: "child cancelled" } } }, 12),
         terminated({ workerId: 11 }),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);

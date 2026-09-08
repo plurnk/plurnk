@@ -5,6 +5,7 @@ import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
+import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import type { OperationResult, PlurnkOp } from "@plurnk/plurnk-contracts";
 import { presentPlan } from "./plan.ts";
 
@@ -21,6 +22,10 @@ export const OP_GLYPHS: Record<string, string> = {
     WORK: "🐜",
     FORK: "👥",
     SEND: "💬",
+    NEXT: "▶️",
+    WAIT: "💤",
+    DONE: "⏹️",
+    FAIL: "✋",
     EXEC: "🔧",
     BARE: "🔮",
 } satisfies Record<Exclude<PlurnkOp, "PLAN">, string>;
@@ -32,13 +37,8 @@ export const ORIGIN_GLYPHS: Record<string, string> = {
     plugin: "🔌",
 };
 
-// Status → sub-glyph, aligned to the grammar's terminal SEND set
-// [102, 200, 202, 300, 499] (plurnk-grammar plurnk.md) plus the directed-SEND
-// and error families. Specific codes before ranges. Every glyph is EAW width-2,
-// VS16-free (column-stable). The COLOR (colorForStatus) carries the class; the
-// glyph carries the state. Converged with plurnk.nvim's STATUS_GLYPHS.
-// A SEND's lifecycle is its one human-facing identity. Numeric SEND codes
-// remain wire truth but do not repeat beside these glyphs in the waterfall.
+// Lifecycle status appears once as a glyph; numeric codes remain wire truth.
+// Receipt/error glyphs below align with plurnk.nvim's STATUS_GLYPHS.
 export const sendLifecycleGlyph = (status: number): string => {
     if (status === 102) return "▶️";
     if (status === 202) return "💤";
@@ -145,7 +145,6 @@ export interface LogEntryWire {
     id: number;
     worker_id?: number;
     op: string;
-    suffix: string;
     origin: string;
     signal: unknown;
     scheme: string | null;
@@ -209,7 +208,7 @@ export const progressLabel = (percent: number): string =>
 // Every status remains exact on the wire and in JSON.
 export const statusCodeVisible = (entry: Pick<LogEntryWire, "op" | "status_rx" | "scheme" | "pathname">): boolean =>
     entry.status_rx >= 400
-    && (entry.op !== "SEND" || entry.scheme !== null || entry.pathname !== null);
+    && !TurnDisposition.isOp(entry.op);
 
 const BOLD = code("1");
 const ITALIC = code("3");
@@ -252,10 +251,8 @@ export const renderReasoning = (content: string): string => ModelText.plain(cont
     .map((line, index) => `${index === 0 ? "💭 " : "   "}${DIM}${line}${RESET}`)
     .join("\n");
 
-// Bold the model's ANSWER. The model's terminal SEND (200 done / 499 cancelled
-// — a signal, not a directed target) is its reply to the user; its body renders
-// BOLD so it stands out against the operation-record grid. Intermediate 102
-// "continue" pings and non-model SENDs stay plain. Re-arm BOLD after every inner
+// Bold model DONE/FAIL bodies; intermediate and non-model messages stay plain.
+// Re-arm BOLD after every inner
 // RESET (markdown spans, status color) so a styled span can't cut the bold
 // mid-line. No background band: background-color-erase (\x1b[K) isn't universal,
 // so a full-width green stripe rendered jagged on terminals without it — bold is
@@ -272,7 +269,7 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
 // continuation body lines nest under its following separator.
 const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
     const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
-    const idGlyph = sendLifecycleGlyph(signal);
+    const idGlyph = TurnDisposition.isOp(entry.op) ? sendLifecycleGlyph(signal) : OP_GLYPHS.SEND;
 
     const annotation = entryAnnotation(entry);
     const header = idGlyph
@@ -290,9 +287,9 @@ const renderBroadcast = (entry: LogEntryWire, columns: number): string => {
         : !multiLine && displayWidth(body) <= inlineCapacity ? [`${header} ${body}`]
         : [header, ...body.split("\n").map((l) => `   ${l}`)];
 
-    // The model's answer (terminal SEND) is bold; everything else plain. No
+    // The model's DONE/FAIL answer is bold; everything else plain. No
     // surrounding blank lines — the bold body is the standout on its own.
-    const isAnswer = entry.origin === "model" && (entry.signal === 200 || entry.signal === 499);
+    const isAnswer = entry.origin === "model" && (entry.op === "DONE" || entry.op === "FAIL");
     return emphasizeLines(lines, isAnswer);
 };
 
@@ -349,16 +346,14 @@ export const renderLogEntry = (
     // Broadcast SEND has no path at all (both scheme AND pathname null).
     // A SEND directed at file:// would have scheme=null but pathname set —
     // not a broadcast.
-    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
+    if (TurnDisposition.isOp(entry.op) || entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
     if (entry.op === "PLAN") return renderPlan(entry);
 
     // ONE identity/action glyph, not origin+op (they were redundant on SEND and
     // cluttered elsewhere). A SEND shows its lifecycle; any other op shows its
     // OP glyph (🧠/🔍/📖/📝/🔧 — self-evidently
     // the agent working). The 💬 and the origin column are both gone.
-    const idGlyph = entry.op === "SEND"
-        ? sendLifecycleGlyph(typeof entry.signal === "number" ? entry.signal : entry.status_rx)
-        : (OP_GLYPHS[entry.op] ?? "?");
+    const idGlyph = OP_GLYPHS[entry.op] ?? "?";
     // Operation rows retain an outcome slot. SEND rows use only their lifecycle
     // glyph: adding a second state and numeric code repeats one fact.
     const subGlyph = sendSubGlyph(entry.status_rx);
@@ -377,7 +372,7 @@ export const renderLogEntry = (
 
     const extra = buildExtra(entry);
 
-    const parts = entry.op === "SEND" ? [idGlyph] : [idGlyph, subGlyph];
+    const parts = [idGlyph, subGlyph];
     if (statusText.length > 0) parts.push(statusText);
     if (pathText.length > 0) parts.push(pathText);
     if (scopeText.length > 0) parts.push(scopeText);

@@ -57,7 +57,7 @@ const jsonBody = async (request: IncomingMessage): Promise<{ model?: unknown }> 
 };
 
 const answer = (response: ServerResponse, model: string): void => {
-    const content = `## PLAN_\n[{"content":"Confirm the selected route.","status":"completed"}]\n### SEND_ (TERM)\nselected ${model}`;
+    const content = "```PLAN\n[{\"content\":\"Confirm the selected route.\",\"status\":\"completed\"}]\n```\n```DONE\nselected " + model + "\n```";
     response.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",

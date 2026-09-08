@@ -84,38 +84,36 @@ test("pathPartial: @file completes after a word-boundary @, ignores emails", () 
     assert.equal(pathPartial("mail me@example.com"), null);
 });
 
-test("dslOpPartial: distinguishes the PLAN H1 from operation H2 headings", () => {
-    assert.deepEqual(dslOpPartial("## PL"), { level: 1, typed: "PL" });
-    assert.deepEqual(dslOpPartial("### RE"), { level: 2, typed: "RE" });
-    assert.deepEqual(dslOpPartial("### "), { level: 2, typed: "" });
+test("dslOpPartial: retains the opening fence width without delimiter suffixes", () => {
+    assert.deepEqual(dslOpPartial("```PL"), { fence: "```", typed: "PL" });
+    assert.deepEqual(dslOpPartial("````RE"), { fence: "````", typed: "RE" });
+    assert.deepEqual(dslOpPartial("```"), { fence: "```", typed: "" });
     assert.equal(dslOpPartial("explain this"), null);
-    assert.equal(dslOpPartial("### READ_ (x)"), null);
+    assert.equal(dslOpPartial("```READ (x)"), null);
+    assert.equal(dslOpPartial("## PL"), null);
 });
 
-test("completeOps: emits the canonical lane `_` heading at the right level", () => {
-    assert.deepEqual(completeOps({ level: 1, typed: "pl" }), [["## PLAN_"], "## pl"]);
-    assert.deepEqual(completeOps({ level: 2, typed: "re" }), [["### READ_"], "### re"]);
-    assert.deepEqual(completeOps({ level: 2, typed: "ba" })[0], ["### BARE_"]);
-    assert.equal(completeOps({ level: 2, typed: "" })[0].length, 12);   // 11 daemon H3 ops + LOOK
+test("completeOps: completes native names and retains a longer opening fence", () => {
+    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [["```PLAN"], "```pl"]);
+    assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], ["```BARE"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["PLAN", "FIND", "READ", "EDIT", "COPY", "MOVE", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND", "NEXT", "WAIT", "DONE", "FAIL", "LOOK"].map((op) => `\`\`\`${op}`));
 });
 
-test("completeOps: LOOK completes alongside daemon H2 operations", () => {
-    assert.deepEqual(completeOps({ level: 2, typed: "lo" })[0], ["### LOOK_"]);
+test("completeOps: LOOK completes alongside daemon operations", () => {
+    assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], ["```LOOK"]);
 });
 
-test("pathPartial: DSL target path inside a canonical H2 heading, scheme stripped", () => {
-    assert.equal(pathPartial("### READ_ (src/fo"), "src/fo");
-    assert.equal(pathPartial("### READ_ (file://src/fo"), "src/fo");
-    assert.equal(pathPartial("### EDIT_ (docs/re"), "docs/re");
-    assert.equal(pathPartial("### READ_ (src/foo.ts)"), null);
+test("pathPartial: native and executor fence targets, scheme stripped", () => {
+    assert.equal(pathPartial("```READ (src/fo"), "src/fo");
+    assert.equal(pathPartial("````READ(file://src/fo"), "src/fo");
+    assert.equal(pathPartial("```node (docs/re"), "docs/re");
+    assert.equal(pathPartial("```READ (src/foo.ts)"), null);
 });
 
-test("dslStatement: routes only known PLURNK heading prefixes", () => {
-    assert.equal(dslStatement("## PLAN_\n[]\n\n### SEND_ (TERM)\ndone"), "## PLAN_\n[]\n\n### SEND_ (TERM)\ndone");
-    assert.equal(dslStatement("### EDIT_ (a.md)\nbody"), "### EDIT_ (a.md)\nbody");
-    assert.equal(dslStatement("### BARE_\nWhat is the capital of Germany?"), "### BARE_\nWhat is the capital of Germany?");
-    assert.equal(dslStatement("### LOOK_lane (a.md)"), "### LOOK_lane (a.md)");
-    assert.equal(dslStatement("## Notes"), null);
-    assert.equal(dslStatement("### Results"), null);
-    assert.equal(dslStatement("plain prompt"), null);
+test("dslStatement: sends named fences verbatim; the daemon owns registration and syntax validation", () => {
+    for (const text of ["```PLAN\n[]\n```\n```DONE\ndone\n```", "```EDIT (a.md)\nbody\n```", "```BARE\nWhat is the capital of Germany?\n```", "````LOOK (a.md)````", "```sh\necho hi\n```", "```gitea (issue_list)\n{}\n```", "```unregistered (bad"])
+        assert.equal(dslStatement(text), text);
+    for (const text of ["## PLAN_", "### Results", "plain prompt", "```\nquoted code\n```", ": ```sh\necho hi\n```", "``READ (a)"])
+        assert.equal(dslStatement(text), null);
 });

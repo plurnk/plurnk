@@ -47,7 +47,6 @@ test("every runtime operation has a named renderer or an operation glyph", () =>
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1,
     op: "READ",
-    suffix: "",
     origin: "model",
     signal: null,
     scheme: null,
@@ -63,6 +62,13 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     turn_seq: 1,
     sequence: 1,
     ...overrides,
+});
+
+test("native dispositions render their bodies and lifecycle glyphs while SEND remains messaging", () => {
+    for (const [op, signal, glyph] of [["NEXT", 102, "▶️"], ["WAIT", 202, "💤"], ["DONE", 200, "⏹️"], ["FAIL", 499, "✋"]] as const) {
+        assert.equal(renderLogEntry(entry({ op, signal, status_rx: signal, tx: { op, body: { raw: "Update.", json: null } } })), `${glyph} Update.`);
+    }
+    assert.equal(renderLogEntry(entry({ op: "SEND", tx: { op: "SEND", body: { raw: "Update.", json: null } } })), "💬 Update.");
 });
 
 // ─── sendSubGlyph ─────────────────────────────────────────────────────
@@ -128,7 +134,7 @@ test("model-authored text never reaches the terminal with its own control sequen
     const body = extractSendBody({ body: { raw: "safe \x1b]52;c;aGVsbG8=\x07 text", json: null } }, true);
     assert.doesNotMatch(body, /\x1b\]52/, "an OSC 52 clipboard write inside a SEND body is stripped");
     assert.match(body, /safe/); assert.match(body, /text/);
-    const send = renderLogEntry(entry({ op: "SEND", signal: 200, tx: { body: { raw: "done \x1b[31mRED\x1b[0m\rgone", json: null } } }));
+    const send = renderLogEntry(entry({ op: "DONE", signal: 200, tx: { body: { raw: "done \x1b[31mRED\x1b[0m\rgone", json: null } } }));
     assert.doesNotMatch(send, /\x1b\[31m/, "a model SGR sequence in a SEND body is stripped");
     assert.doesNotMatch(send, /\r/, "a carriage-return overwrite is stripped");
     const reasoning = renderReasoning("think \x1b]8;;https://evil.test\x07here\x1b]8;;\x07");
@@ -207,7 +213,7 @@ test("renderLogEntry: a durable annotation renders as sanitized plain text", () 
 
 test("renderLogEntry: a broadcast SEND retains its annotation on the header", () => {
     const out = renderLogEntry(entry({
-        op: "SEND",
+        op: "DONE",
         signal: 200,
         tx: { annotation: "Answer ready", body: { raw: "Paris", json: null } },
     }));
@@ -219,7 +225,7 @@ test("renderLogEntry: a broadcast SEND retains its annotation on the header", ()
 
 test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bold line, NO surrounding blanks", () => {
     const out = renderLogEntry(entry({
-        op: "SEND",
+        op: "DONE",
         scheme: null,
         pathname: null,
         signal: 200,
@@ -237,7 +243,7 @@ test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bo
 
 test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, still no surrounding blanks", () => {
     const out = renderLogEntry(entry({
-        op: "SEND",
+        op: "DONE",
         scheme: null,
         pathname: null,
         signal: 200,
@@ -258,7 +264,7 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
         "| Wire | short |",
     ].join("\n");
     const value = entry({
-        op: "SEND",
+        op: "DONE",
         scheme: null,
         pathname: null,
         signal: 200,
@@ -277,7 +283,7 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
 
 test("renderLogEntry: intermediate 102 broadcast → single plain line, no blanks (the per-turn ping)", () => {
     const out = renderLogEntry(entry({
-        op: "SEND",
+        op: "NEXT",
         scheme: null,
         pathname: null,
         signal: 102,
@@ -344,7 +350,7 @@ test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line",
 
 test("renderLogEntry: broadcast SEND with empty body → header only, no body lines", () => {
     const out = renderLogEntry(entry({
-        op: "SEND",
+        op: "DONE",
         scheme: null,
         pathname: null,
         signal: 200,
@@ -418,7 +424,7 @@ test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
 const freshRender = async (tag: string): Promise<typeof import("./render.ts")> =>
     await import(`./render.ts?${tag}`) as typeof import("./render.ts");
 
-const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
+const sendEntry = { op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
 test("bold: the model's terminal SEND (200) renders bold, with NO background band", async () => {
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
@@ -434,7 +440,7 @@ test("bold: a cancelled terminal SEND (499) is also bold (it's a terminal answer
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=499");
     process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 499, status_rx: 499 }));
+    const out = colored.renderLogEntry(entry({ ...sendEntry, op: "FAIL", signal: 499, status_rx: 499 }));
     assert.match(out, /\x1b\[1m/);
 });
 
@@ -442,7 +448,7 @@ test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=102");
     process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({ ...sendEntry, signal: 102, status_rx: 102, tx: { body: { raw: "working…", json: null } } }));
+    const out = colored.renderLogEntry(entry({ ...sendEntry, op: "NEXT", signal: 102, status_rx: 102, tx: { body: { raw: "working…", json: null } } }));
     assert.doesNotMatch(out, /\x1b\[1m/);   // plain
 });
 
@@ -461,7 +467,7 @@ test("bold: a client-origin broadcast is NOT bold (only the MODEL's answer)", as
     const colored = await freshRender("bold=client");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({
-        op: "SEND", origin: "client", scheme: null, pathname: null,
+        op: "DONE", origin: "client", scheme: null, pathname: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     }));
     assert.doesNotMatch(out, /\x1b\[1m/);
@@ -469,7 +475,7 @@ test("bold: a client-origin broadcast is NOT bold (only the MODEL's answer)", as
 
 test("bold: NO_COLOR build emits no bold (or background) codes", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
     assert.doesNotMatch(out, /\x1b\[1m/);  // no bold
@@ -485,7 +491,7 @@ test("renderLogEntry: trace glyph starts at column zero", () => {
 });
 
 test("renderLogEntry: every SEND shows its lifecycle rather than a producer mascot", () => {
-    const runtime = renderLogEntry(entry({ op: "SEND", origin: "_plurnk", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { raw: "Next: Address the prompt." } } }));
+    const runtime = renderLogEntry(entry({ op: "NEXT", origin: "_plurnk", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { raw: "Next: Address the prompt." } } }));
     assert.equal(runtime, "▶️ Next: Address the prompt.");
     assert.ok(!runtime.includes(OP_GLYPHS.SEND), "the 💬 op glyph is dropped — lifecycle conveys the SEND state");
     assert.ok(!runtime.includes("?"), "the wire-standard _plurnk producer is never an unknown actor");
@@ -656,7 +662,7 @@ test("renderSummary: pluralizes turns", () => {
 
 test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines after the header", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
     const inner = out.replace(/^\n|\n$/g, "");
@@ -666,7 +672,7 @@ test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines
 
 test("broadcast: multi-line body starts on the second line", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "line one\nline two", json: null } },
     }));
     const lines = out.replace(/^\n|\n$/g, "").split("\n");
@@ -678,7 +684,7 @@ test("broadcast: multi-line body starts on the second line", () => {
 test("broadcast: long single-line body breaks to the second line", () => {
     const long = "x".repeat(81);
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: long, json: null } },
     }));
     assert.equal(out.replace(/^\n|\n$/g, "").split("\n").length, 2);
@@ -734,7 +740,7 @@ test("coordinates never leak into rows, from ordinals or DB ids", () => {
 
 test("broadcasts replace human SEND codes with lifecycle glyphs", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200,
         loop_seq: 1, turn_seq: 4, sequence: 1, tx: { body: { raw: "Paris", json: null } },
     }));
     assert.doesNotMatch(out, /01\/04\/01/);

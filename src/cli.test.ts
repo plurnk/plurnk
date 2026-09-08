@@ -11,7 +11,6 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1,
     op: "READ",
-    suffix: "",
     origin: "model",
     worker_id: 39,
     signal: null,
@@ -28,6 +27,11 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     rx: null,
     tags: [],
     ...overrides,
+});
+
+test("only DONE and FAIL select a one-shot conclusion, never a SEND message", () => {
+    for (const [op, signal] of [["DONE", 200], ["FAIL", 499]] as const) assert.equal(isTerminalBroadcast(entry({ op, signal })), true);
+    for (const [op, signal] of [["NEXT", 102], ["WAIT", 202], ["SEND", null]] as const) assert.equal(isTerminalBroadcast(entry({ op, signal })), false);
 });
 
 // ─── formatPlain ──────────────────────────────────────────────────────
@@ -53,8 +57,8 @@ test("formatPlain: a durable annotation labels the operation without its comment
 });
 
 test("formatPlain: SEND with numeric signal → '[N]' sub", () => {
-    const s = formatPlain(entry({ op: "SEND", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
-    assert.equal(s, "[200] model SEND [200]");
+    const s = formatPlain(entry({ op: "DONE", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
+    assert.equal(s, "[200] model DONE");
 });
 
 test("formatPlain: SEND without numeric signal → no sub", () => {
@@ -106,15 +110,15 @@ test("formatPlain: PLAN preserves the trace header and renders one line per entr
 // ─── isTerminalBroadcast ──────────────────────────────────────────────
 
 test("isTerminalBroadcast: SEND, no path, signal 200 → true", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: 200 })), true);
+    assert.equal(isTerminalBroadcast(entry({ op: "DONE", scheme: null, pathname: null, signal: 200 })), true);
 });
 
 test("isTerminalBroadcast: SEND, no path, signal 499 → true", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: 499 })), true);
+    assert.equal(isTerminalBroadcast(entry({ op: "FAIL", scheme: null, pathname: null, signal: 499 })), true);
 });
 
 test("isTerminalBroadcast: SEND, no path, signal 102 → false (intermediate)", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: 102 })), false);
+    assert.equal(isTerminalBroadcast(entry({ op: "NEXT", scheme: null, pathname: null, signal: 102 })), false);
 });
 
 test("isTerminalBroadcast: SEND, no path, signal 400 → false", () => {
@@ -169,7 +173,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
     response: "Paris",
     entries: [
         entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", lineMarker: { marks: [4, 12] }, status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1, tags: ["init", "research"] }),
-        entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
+        entry({ op: "DONE", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
     result: {
@@ -244,8 +248,8 @@ test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate +
 });
 
 test("buildJsonRecord: ambient rows from another worker never enter this run's turns", () => {
-    const own = entry({ worker_id: 39, op: "SEND", signal: 200, turn_seq: 2 });
-    const child = entry({ worker_id: 40, op: "SEND", signal: 499, turn_seq: 9 });
+    const own = entry({ worker_id: 39, op: "DONE", signal: 200, turn_seq: 2 });
+    const child = entry({ worker_id: 40, op: "FAIL", signal: 499, turn_seq: 9 });
     const doc = buildJsonRecord(recordInput({ entries: [own, child] })) as {
         workerId: number;
         turns: Array<{ turn: number; ops: Array<Record<string, unknown>> }>;

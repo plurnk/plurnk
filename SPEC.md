@@ -295,12 +295,15 @@ the next run, exactly as `--worker <name>` at invocation. The verb reports
 policy, and the header and status line adopt the name.
 `/workers` renders `workspace.workers` as a forest of parent/child trees from
 `parentWorkerId`: the bound worker's tree first with the bound worker marked `●`,
-other workers `○`, each row carrying the worker's origin (`model`, `client`,
-`_plurnk`) and creation time, a worker whose parent is not in the directory
-standing as a root. Lifecycle glyphs for workers other than the bound one render
-only once the daemon exposes per-worker lifecycle (plurnk-service#653); the
-client never infers them from row coordinates. `plurnk workspace workers <name>`
-(§7.3) keeps its flat table.
+other workers `○`, each row carrying the worker's mint kind (`conversation`,
+`fork`, `work`), its lifecycle as the status gauge's glyph beside the daemon's
+word (`⌛︎ running`, `💤 parked`, `⏹️ completed`, `❌ failed`, `· idle`), its
+origin (`model`, `client`, `_plurnk`), and creation time, a worker whose parent
+is not in the directory standing as a root. Kind and lifecycle are the daemon's
+own per-worker facts (plurnk-service#523, `{§application-worker-observation}`);
+a daemon that states neither gets neither column, and the client never infers
+them from row coordinates. `plurnk workspace workers <name>` (§7.3) keeps its
+flat table.
 
 ### §3.2 Cancellation {§cli-cancellation}
 

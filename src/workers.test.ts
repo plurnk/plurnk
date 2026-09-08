@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderWorkerTopology, workerNameFromTarget, type WorkerRow } from "./workers.ts";
+import { formatWorkerLifecycle, renderWorkerTopology, workerNameFromTarget, type WorkerRow } from "./workers.ts";
 
 test("[§cli-workers-topology] worker:// references name workers; worker file paths name none", () => {
     assert.equal(workerNameFromTarget("worker://recheck"), "recheck");
@@ -47,4 +47,24 @@ test("[§cli-workers-topology] an unknown parent makes the worker a root; an unk
 
 test("[§cli-workers-topology] no workers renders one honest line", () => {
     assert.equal(renderWorkerTopology([], "main"), "  (no workers)\n");
+});
+
+// plurnk-service#523 — the daemon states each worker's mint kind and lifecycle; the client renders
+// the status gauge's glyph beside the word and infers neither from row coordinates.
+test("[§cli-workers-topology] kind and lifecycle columns render the daemon's own facts with the shared lifecycle glyph", () => {
+    const stated: WorkerRow[] = [
+        { id: 1, name: "main", created_at: at(1), origin: "model", parentWorkerId: null, kind: "conversation", lifecycle: "parked" },
+        { id: 2, name: "main-fork", created_at: at(2), origin: "model", parentWorkerId: 1, kind: "fork", lifecycle: "running" },
+        { id: 4, name: "guesser1", created_at: at(3), origin: "model", parentWorkerId: 1, kind: "work", lifecycle: "completed" },
+        { id: 7, name: "stalled", created_at: at(4), origin: "model", parentWorkerId: 1, kind: "work", lifecycle: "failed" },
+        { id: 8, name: "fresh", created_at: at(5), origin: "model", parentWorkerId: null, kind: "conversation", lifecycle: "idle" },
+    ];
+    const lines = renderWorkerTopology(stated, "main").trimEnd().split("\n");
+    assert.match(lines[0], /^ {2}● main +conversation {2}💤 parked +model +2026-09-04T10:01:00Z {2}← bound$/u);
+    assert.match(lines[1], /^ {2}├─ ○ main-fork +fork +⌛︎ running +model/u);
+    assert.match(lines[2], /^ {2}├─ ○ guesser1 +work +⏹️ completed +model/u);
+    assert.match(lines[3], /^ {2}└─ ○ stalled +work +❌ failed +model/u);
+    assert.match(lines[4], /^ {2}○ fresh +conversation {2}· idle +model/u, "idle carries a placeholder glyph so the column stays aligned");
+    assert.equal(formatWorkerLifecycle(undefined), "", "a daemon that states no lifecycle gets no column");
+    assert.equal(formatWorkerLifecycle("hibernating"), "hibernating", "an unknown word renders as itself, never a guessed glyph");
 });

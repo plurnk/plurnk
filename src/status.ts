@@ -133,7 +133,7 @@ export interface StatusGaugeEnvelope {
     budget: Record<string, unknown>;
 }
 
-const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
+export const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
     "idle", "queued", "running", "parked", "completed", "cancelled", "failed",
 ]);
 
@@ -206,7 +206,7 @@ export const reduceStatusGauge = (
     return { handled: true, gauge: next };
 };
 
-const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => value === "running" ? "⌛︎"
+export const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => value === "running" ? "⌛︎"
     : value === "queued" ? "⏳"
     : value === "parked" ? "💤"
         : value === "completed" ? "⏹️"

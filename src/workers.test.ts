@@ -35,20 +35,20 @@ test("[§cli-workers-topology] the bound worker's tree renders first, marked, wi
 
 // {§cli-workers-topology} — one hop is a full attach; the map's order is the hop order.
 test("[§cli-workers-topology] traversal: h climbs, l enters the newest child, j/k walk siblings and wrap, edges say why", () => {
-    const at = (name: string, hop: "parent" | "enter" | "next" | "prev") => traverse(forest, name, hop);
+    const at = (name: string, hop: "parent" | "enter" | "older" | "newer") => traverse(forest, name, hop);
     assert.equal(at("main", "enter").target?.name, "guesser1", "the newest child");
     assert.equal(at("guesser1", "parent").target?.name, "main");
-    assert.equal(at("guesser1", "next").target?.name, "main-fork", "next is older");
-    assert.equal(at("main-fork", "next").target?.name, "guesser1", "and wraps");
-    assert.equal(at("guesser1", "prev").target?.name, "main-fork", "prev wraps the other way");
+    assert.equal(at("guesser1", "older").target?.name, "main-fork", "j walks to the older sibling");
+    assert.equal(at("main-fork", "older").target?.name, "guesser1", "and wraps");
+    assert.equal(at("guesser1", "newer").target?.name, "main-fork", "k wraps the other way");
     assert.equal(at("main-fork", "enter").target?.name, "recheck");
     assert.deepEqual(at("recheck", "enter"), { target: null, notice: "no children" });
-    assert.deepEqual(at("recheck", "next"), { target: null, notice: "no siblings" });
+    assert.deepEqual(at("recheck", "older"), { target: null, notice: "no siblings" });
     assert.deepEqual(at("main", "parent"), { target: null, notice: "at the root: no parent" });
-    assert.deepEqual(at("main", "next"), { target: null, notice: "no siblings" }, "scratch workers are not places: a lone conversation has no siblings");
+    assert.deepEqual(at("main", "older"), { target: null, notice: "no siblings" }, "scratch workers are not places: a lone conversation has no siblings");
     assert.equal(traverse(forest, null, "enter").target, null, "nothing bound, nowhere to hop");
     const two = [...forest, { id: 7, name: "second", created_at: at2(6), origin: "model" as const, parentWorkerId: null }];
-    assert.equal(traverse(two, "main", "next").target?.name, "second", "root conversations are siblings of each other");
+    assert.equal(traverse(two, "main", "older").target?.name, "second", "root conversations are siblings of each other");
     assert.deepEqual(siblingPosition(two, "second"), { index: 1, count: 2 }, "newest first");
     assert.deepEqual(siblingPosition(two, "main"), { index: 2, count: 2 });
     assert.equal(siblingPosition(forest, "recheck"), null, "an only child has no position");

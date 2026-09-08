@@ -39,10 +39,10 @@ export const workerPath = (workers: readonly WorkerRow[], bound: string | null):
     return segments.length === 0 ? "~" : `~/${segments.join("/")}`;
 };
 
-export type Hop = "parent" | "enter" | "next" | "prev";
+export type Hop = "parent" | "enter" | "older" | "newer";
 
 // One traversal step over the workspace tree ({§cli-workers-topology}): `parent` climbs, `enter`
-// descends to the newest child, `next`/`prev` walk siblings (older/newer) and wrap. A step with
+// descends to the newest child, `older`/`newer` walk siblings and wrap. A step with
 // nowhere to go names why. Position is the bound worker's place among its siblings, newest first.
 export const traverse = (
     workers: readonly WorkerRow[],
@@ -64,7 +64,7 @@ export const traverse = (
     const siblings = siblingsOf(workers, current);
     const index = siblings.findIndex((worker) => worker.id === current.id);
     if (siblings.length < 2) return { target: null, notice: "no siblings" };
-    const step = hop === "next" ? 1 : -1;
+    const step = hop === "older" ? 1 : -1;
     return { target: siblings[(index + step + siblings.length) % siblings.length]!, notice: null };
 };
 

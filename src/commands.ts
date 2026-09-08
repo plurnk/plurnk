@@ -80,8 +80,8 @@ export const COMMANDS = [
     { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace" },
     { name: "parent", usage: "/parent", summary: "Hop to the bound worker's parent (Alt-h).", group: "workspace" },
     { name: "enter", usage: "/enter", summary: "Hop into the bound worker's newest child (Alt-l).", group: "workspace" },
-    { name: "next", usage: "/next", summary: "Hop to the next (older) sibling worker, wrapping (Alt-j).", group: "workspace" },
-    { name: "prev", usage: "/prev", summary: "Hop to the previous (newer) sibling worker, wrapping (Alt-k).", group: "workspace" },
+    { name: "older", usage: "/older", summary: "Hop to the next older sibling worker, wrapping (Alt-j).", group: "workspace" },
+    { name: "newer", usage: "/newer", summary: "Hop to the next newer sibling worker, wrapping (Alt-k).", group: "workspace" },
 
     { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this worker's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },

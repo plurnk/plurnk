@@ -96,7 +96,7 @@ export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
     m: "/models", s: "/workspaces", R: "/workers", L: "/log",
     Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", "?": "/help", e: "/editor",
     // {§cli-workers-topology} — vim's tree orientation: depth is horizontal, siblings vertical.
-    h: "/parent", l: "/enter", j: "/next", k: "/prev",
+    h: "/parent", l: "/enter", j: "/older", k: "/newer",
 });
 
 // An Alt-<key> keypress (ESC then a single letter or `?`, no `[`/`O` → not an arrow
@@ -481,8 +481,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "parent":
         case "enter":
-        case "next":
-        case "prev": {
+        case "older":
+        case "newer": {
             // {§cli-workers-topology} — one hop over the workspace tree is a full attach: the prompt
             // then speaks to that worker. The directory is re-read on every hop; nothing is inferred.
             const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };

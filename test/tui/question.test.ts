@@ -29,8 +29,8 @@ for (const action of ["accept", "cancel"]) {
             for await (const chunk of request) body += chunk;
             requests.push(body);
             const content = requests.length === 1
-                ? `## PLAN0\n[]\n### EXEC0 [question] (question)\n${question}\n### SEND0 (WAIT)\nAwaiting branch details.`
-                : `## PLAN0\n[]\n### SEND0 (TERM)\nQuestion ${action} continuation finished.`;
+                ? `## PLAN_\n[]\n### EXEC_ [question] (question)\n${question}\n### SEND_ (WAIT)\nAwaiting branch details.`
+                : `## PLAN_\n[]\n### SEND_ (TERM)\nQuestion ${action} continuation finished.`;
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(`data: ${JSON.stringify({
                 id: "question-fixture", object: "chat.completion.chunk", created: 1, model: "question-fixture",

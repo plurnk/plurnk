@@ -118,7 +118,7 @@ try {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
             const response = scriptedResponses.shift()
-                ?? `## PLAN0\n[{"content":"Verify the packed client and service compose.","status":"completed"}]\n### SEND0 (TERM)\ncomposition ok: ${request.model}`;
+                ?? `## PLAN_\n[{"content":"Verify the packed client and service compose.","status":"completed"}]\n### SEND_ (TERM)\ncomposition ok: ${request.model}`;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -243,16 +243,16 @@ try {
     const delegatedRoot = join(temp, "delegated-root");
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
-        "## PLAN0\n[{\"content\":\"Delegate the file creation and wait.\",\"status\":\"in_progress\"}]\n"
-            + "### WORK0 (worker://guesser1)\nCreate child.txt and conclude.\n\n"
-            + "### SEND0 (WAIT) <-1>\nWaiting for guesser1.",
-        "## PLAN0\n[{\"content\":\"Create the delegated file.\",\"status\":\"in_progress\"}]\n"
-            + "### EDIT0 (child.txt)\ncreated by packed child\n\n"
-            + "### SEND0 (NEXT)\nConfirming the write.",
-        "## PLAN0\n[{\"content\":\"The delegated file exists.\",\"status\":\"completed\"}]\n"
-            + "### SEND0 (TERM)\nChild work complete.",
-        "## PLAN0\n[{\"content\":\"The delegated child completed successfully.\",\"status\":\"completed\"}]\n"
-            + "### SEND0 (TERM)\npacked descendant proposal complete",
+        "## PLAN_\n[{\"content\":\"Delegate the file creation and wait.\",\"status\":\"in_progress\"}]\n"
+            + "### WORK_ (worker://guesser1)\nCreate child.txt and conclude.\n\n"
+            + "### SEND_ (WAIT) <-1>\nWaiting for guesser1.",
+        "## PLAN_\n[{\"content\":\"Create the delegated file.\",\"status\":\"in_progress\"}]\n"
+            + "### EDIT_ (child.txt)\ncreated by packed child\n\n"
+            + "### SEND_ (NEXT)\nConfirming the write.",
+        "## PLAN_\n[{\"content\":\"The delegated file exists.\",\"status\":\"completed\"}]\n"
+            + "### SEND_ (TERM)\nChild work complete.",
+        "## PLAN_\n[{\"content\":\"The delegated child completed successfully.\",\"status\":\"completed\"}]\n"
+            + "### SEND_ (TERM)\npacked descendant proposal complete",
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [

@@ -32,9 +32,9 @@ before(async () => {
     source = join(scratch, "source");
     await mkdir(join(source, "extra"), { recursive: true });
     await writeFile(join(scratch, "delegate.plk"), [
-        "## PLAN0",
+        "## PLAN_",
         '[{"content":"Delegate one comparison to the configured remote agent.","status":"in_progress"}]',
-        "### SEND0 (a2a://researcher)",
+        "### SEND_ (a2a://researcher)",
         "Compare mangoes and pineapples in one concise sentence.",
         "",
     ].join("\n"));

@@ -32,7 +32,7 @@ export const pathPartial = (line: string): string | null => {
 // The model-facing H3 operations. PLAN owns H2 and is deliberately separate.
 const OPS = ["FIND", "READ", "EDIT", "COPY", "MOVE", "KILL", "EXEC", "BARE", "WORK", "FORK", "SEND"] as const;
 
-// Client pseudo-op: `### LOOK0 (target)` rewrites to READ on a side run
+// Client pseudo-op: `### LOOK_ (target)` rewrites to READ on a side run
 // for off-conversation inspection ("READ, but for me instead of the model"). The
 // daemon never sees "LOOK" — but it completes like a real op so the surface rhymes.
 const CLIENT_OPS = ["LOOK"] as const;
@@ -63,13 +63,13 @@ export const dslOpPartial = (line: string): DslOpPartial | null => {
     return h2 ? { level: 2, typed: h2[1] } : null;
 };
 
-// Complete a partially typed heading into the canonical lane-0 form.
+// Complete a partially typed heading into the canonical lane `_` form.
 export const completeOps = ({ level, typed }: DslOpPartial): [string[], string] => {
     const up = typed.toUpperCase();
     const prefix = level === 1 ? "## " : "### ";
     const operations: readonly string[] = level === 1 ? ["PLAN"] : H3_OPS;
     return [
-        operations.filter((operation) => operation.startsWith(up)).map((operation) => `${prefix}${operation}0`),
+        operations.filter((operation) => operation.startsWith(up)).map((operation) => `${prefix}${operation}_`),
         `${prefix}${typed}`,
     ];
 };

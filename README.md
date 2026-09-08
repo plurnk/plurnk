@@ -51,10 +51,10 @@ For example, these model-side operations find TypeScript files matching
 `retry` or `timeout`, then trim older READ receipts to their first 16 lines:
 
 ```text
-### FIND0 (src/**/*.{ts,tsx})
+### FIND_ (src/**/*.{ts,tsx})
 ~retry OR timeout
 
-### KILL0 (log:///1/[1-7]/*/READ) <17,-1>
+### KILL_ (log:///1/[1-7]/*/READ) <17,-1>
 ```
 
 The second operation targets READ results from turns 1–7 of loop 1. It curates

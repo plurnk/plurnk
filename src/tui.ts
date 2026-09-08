@@ -4,7 +4,7 @@
 // Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
 //   /verb [args]   command verbs (see VERBS); never call loop.run
 //   ## PLAN / ### OP raw DSL through op.parse
-//   ### LOOK0 (uri) off-run READ — inspect a uri's content for ME, not the model
+//   ### LOOK_ (uri) off-run READ — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         deny EXEC for this loop and keep proposal review client-owned
@@ -748,12 +748,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const setLine = (text: string): void => surface.setInput(text);
 
     // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
-    // `### LOOK0 (<that uri>)` line into the buffer — an editable starting point
+    // `### LOOK_ (<that uri>)` line into the buffer — an editable starting point
     // (hand-edit before Enter). Nothing to cycle → leave the line be.
     const cycleLook = (dir: "up" | "down"): void => {
         lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine(`### LOOK0 (${priorTargets[lookCursor]})`);
+        setLine(`### LOOK_ (${priorTargets[lookCursor]})`);
     };
 
     // LOOK is a pure query: AG-UI validates and rewrites the original statement, then

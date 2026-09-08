@@ -46,9 +46,9 @@ before(async () => {
             args: [legacyFixture],
         })),
         writeFile(currentCall, [
-            "## PLAN0",
+            "## PLAN_",
             '[{"content":"Call the attached current MCP tool through the installed daemon.","status":"in_progress"}]',
-            "### EXEC0 [current] (echo)",
+            "### EXEC_ [current] (echo)",
             '{"message":"installed daemon current peer"}',
             "",
         ].join("\n")),

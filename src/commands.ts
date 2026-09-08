@@ -169,7 +169,7 @@ export const renderCommandHelp = (name: string = ""): string => {
     });
     return [
         ...groups,
-        "  language     ## PLAN0 · ### OP0 · ### LOOK0 · ! command · ? ask · ... steer",
+        "  language     ## PLAN_ · ### OP0 · ### LOOK_ · ! command · ? ask · ... steer",
         "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc cancel/clear · Alt-h help",
         "  /help <verb> for exact usage",
         "",

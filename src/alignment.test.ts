@@ -22,10 +22,10 @@ test("[§cli-rendering] glyph-bearing waterfall rows share the left edge and SEN
     const rows: Array<[string, string]> = [
         ["operation", renderLogEntry(entry({}))],
         ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
-        ["PLAN", renderLogEntry(entry({ op: "NEXT", tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
+        ["PLAN", renderLogEntry(entry({ op: "TASK", tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
         ["reasoning", renderReasoning("Inspect the contract.")],
-        ["model SEND 102", renderLogEntry(entry({ op: "NEXT", origin: "model", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "continuing", priority: "medium", status: "in_progress" }] } } }))],
-        ["model SEND 200", renderLogEntry(entry({ op: "DONE", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
+        ["model SEND 102", renderLogEntry(entry({ op: "TASK", origin: "model", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "continuing", priority: "medium", status: "in_progress" }] } } }))],
+        ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
         ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410 }))],
         ["stream event", streams.event({ entryId: 8, workerId: 7, target: "sh:///1/1/8/EXEC", channel: "stdout", state: "active", contentLength: 0 }) ?? ""],
@@ -41,7 +41,7 @@ test("[§cli-rendering] glyph-bearing waterfall rows share the left edge and SEN
     const complete = stripAnsi(rows[5][1]);
     assert.match(continuing, /^▶️/);
     assert.doesNotMatch(continuing, /(?:^|\s)102(?:\s|$)/);
-    assert.match(complete, /^⏹️/);
+    assert.match(complete, /^💬/);
     assert.doesNotMatch(complete, /(?:^|\s)200(?:\s|$)/);
     assert.match(stripAnsi(rows[1][1]), /❌ 404/, "non-SEND failures retain their exact diagnostic code");
     assert.match(stripAnsi(rows[7][1]), /💬 💥 410/, "a directed SEND failure remains diagnosable");

@@ -201,7 +201,7 @@ The prompt's first character carries the same habits as nvim's `:AI` and the TUI
 Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_CLIENT_JSON` — not a flag on one output, but two distinct contracts:
 
 **text mode (default):**
-- **stdout** — the body of DONE or FAIL, per §5.4. Exactly one value per invocation (none if the loop hit maxTurns and never terminated). NEXT, WAIT, and SEND messages are not the final answer and do not appear on stdout.
+- **stdout** — successfully delivered, targetless model SEND bodies, verbatim in operation order and separated by a blank line (§5.4). A later failure or cancellation does not retract them. TASK inventories and directed or failed messages do not appear on stdout.
 - **stderr** — one mutable status row on a TTY, durable action trace lines
   (including intermediate broadcasts), diagnostics, and the terminal summary.
   Non-TTY stderr omits routine status/progress instead of accumulating heartbeat
@@ -214,7 +214,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 
 Consequence:
 
-- `plurnk "X" > answer.txt` captures just the terminal answer.
+- `plurnk "X" > answer.txt` captures just the delivered response messages.
 - `plurnk "X" 2>/dev/null` suppresses the trace.
 - A TTY user sees both interleaved as before (the terminal merges streams).
 - `plurnk "X" | tool` pipes only the answer.
@@ -226,8 +226,7 @@ Consequence:
 2. Consume the SSE: `CUSTOM plurnk.row` events advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
-   The DONE or FAIL body goes to stdout (§5.4);
-   intermediate broadcasts do not.
+   Successful targetless model SEND bodies go to stdout (§5.4).
 3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. `CUSTOM plurnk.terminated` is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
 5. Exit with the appropriate code (§4).
@@ -255,7 +254,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NEXT, DONE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, TASK, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence instead uses the non-logging `op.look` observation action. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy denies EXEC and selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -492,7 +491,7 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
-One line per dispatched op, except the structured continuation inventory below. Format
+One line per dispatched op, except the structured TASK inventory below. Format
 (vanilla ANSI, no framework):
 
 ```
@@ -510,7 +509,7 @@ exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
 A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
-**Glyph palette (both clients).** Operation glyphs occupy two display columns: 🔍 📖 📝 📋 📦 ✂️ 🐜 👥 💬 🔧 🔮 (FIND, READ, EDIT, COPY, MOVE, KILL, WORK, FORK, SEND, EXEC, BARE). Origin, PLAN, and secondary-status glyphs remain 🎲 ❯ 🧰 🔌 (origins) · ✅ 🚧 ⬜ 📭 (PLAN) · ⏳ 💤 🤔 💥 ✋ ❌ (secondary status). Disposition glyphs are `▶️` (NEXT), `⏹️` (DONE), 💤 (WAIT), and ✋ (FAIL).
+**Glyph palette (both clients).** Operation glyphs occupy two display columns: 🔍 📖 📝 📋 📦 ✂️ 🐜 👥 💬 🔧 🔮 (FIND, READ, EDIT, COPY, MOVE, KILL, WORK, FORK, SEND, EXEC, BARE). Origin glyphs are 🎲 ❯ 🧰 🔌. TASK's header derives from its settled lifecycle: `▶️` continuing, `⏹️` completed, 💤 waiting, ✋ failed/cancelled, or ❌ error. Inventory glyphs follow §5.1.2; secondary-status glyphs remain ⏳ 💤 🤔 💥 ✋ ❌.
 
 **Exceptions:** targetless SEND and native dispositions render as content blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's corresponding actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is therefore skipped to avoid duplication.
 
@@ -543,19 +542,19 @@ must not send semantic content to an unproven executable.
 
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
-Readable provider reasoning is neither PLAN nor assistant speech. The client
+Readable provider reasoning is neither task inventory nor assistant speech. The client
 consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle,
 commits complete terminal-width rows to one growing dim `💭` block and keeps
 only its incomplete tail in a replaceable row above the live prompt. Each row
 enters scrollback once, and the completed block precedes the paired SEND without
 being replayed. It never infers reasoning
-from PLAN, renders encrypted reasoning as text, or invents an empty transcript.
+from TASK, renders encrypted reasoning as text, or invents an empty transcript.
 The one-shot client streams this human trace to stderr; stdout remains the bare
 answer and JSON mode remains silent.
 
 #### §5.1.2 Plan {§cli-plan-rendering}
 
-NEXT and WAIT render their lifecycle header followed by the complete inventory
+TASK renders its lifecycle header followed by the complete inventory
 in source order, one human line per entry:
 
 | Status | Glyph |
@@ -563,14 +562,16 @@ in source order, one human line per entry:
 | `completed` | ✅ |
 | `in_progress` | 🚧 |
 | `pending` | ⬜ |
+| `waiting` (ACP `in_progress` with explicit subtype) | 💤 |
+| `failed` (ACP `completed` with explicit subtype) | ✋ |
 
-Every entry glyph begins at column zero. A failed continuation may append its failure
-glyph and numeric status to the first entry; routine inventories show neither. The
-client consumes the ACP Plan projection without interpreting or stripping
-content prefixes. Entry whitespace collapses to one line.
+Every entry glyph begins at column zero. The client recognizes native subtypes only
+from `_meta["plurnk.xyz/status"]` with the matching ACP base status, never from prose.
+Visible `Waiting:` and `Failed:` labels remain intact. Entry whitespace collapses to one line.
+An unsuccessful TASK receipt retains its diagnostic status on the first inventory row.
 Neutral `medium` priority is implicit; `high` and `low` render as
 `[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
-trace retains its NEXT or WAIT header and applies the same entry projection below it.
+trace retains its TASK lifecycle header and applies the same entry projection below it.
 
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
@@ -590,36 +591,34 @@ Input and output are the conventional aggregate fields from the daemon's account
 
 ### §5.4 Messages and dispositions {§cli-broadcast-send-rendering}
 
-A targetless SEND, DONE, and FAIL carry message content. NEXT and WAIT carry the inventory (§5.1.2). Both scheme and pathname must be absent for SEND to be targetless. The interactive client renders their full bodies, not a diagnostic preview.
+A targetless SEND carries message content; TASK carries the inventory (§5.1.2). Both scheme and pathname must be absent for SEND to be targetless. The interactive client renders their full bodies, not a diagnostic preview.
 
 TUI mode contract:
 
-- Header line: one glyph at column zero, no redundant numeric disposition code or path. Disposition glyphs are `▶️` (NEXT), `⏹️` (DONE), 💤 (WAIT), and ✋ (FAIL), regardless of producer. SEND messages use 💬; directed messages retain their target and any failure status.
+- Header line: one glyph at column zero, no redundant numeric disposition code or path. TASK uses its settled lifecycle glyph regardless of producer. SEND messages use 💬; failed messages retain their diagnostic status.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
-- Empty message content is legal and renders as just the header. An empty continuation inventory retains its `📭 no entries` row.
+- Empty message content is legal and renders as just the header. An empty TASK inventory retains its `📭 no entries` row.
 
-The model's DONE or FAIL response is bold so the answer stands out from
-operation records; intermediate and non-model messages remain plain. Inner ANSI
+Successfully delivered targetless model SENDs are bold so response messages stand out from
+operation records; failed, directed, inherited, and non-model messages remain plain. Inner ANSI
 resets re-arm bold across Markdown spans. `NO_COLOR` removes the emphasis while
 preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
-CLI/one-shot mode: trace entries use stderr per §5.1; only DONE or FAIL supplies the final body on stdout (§2).
+CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messages use stdout (§2).
 
-The message body source is `entry.tx.body`, a `SendBody` object (`{ raw: string, json: any }` in `plurnk-contracts/schema/PlurnkStatement.json`), not a plain string. Continuations use the canonical ACP Plan projection.
+The message body source is `entry.tx.body`, a `SendBody` object (`{ raw: string, json: any }` in `plurnk-contracts/schema/PlurnkStatement.json`), not a plain string. TASK uses the canonical ACP Plan projection.
 
-The operation name, not a SEND signal, identifies DONE or FAIL. Ordinary messages never replace the one-shot conclusion.
+Only successful (`200 ≤ status_rx < 300`), targetless model SEND rows owned by the
+run contribute to its response. Source-mirror and inherited rows cannot deliver
+the same message again. Bodies accumulate in operation order, separated by a blank
+line; workflow outcome remains independent. TASK never supplies synthetic speech.
 
-**CLI default** emits `tx.body.raw` of DONE or FAIL verbatim on stdout — no transformation. Pretty-printing is a TUI convenience; piped consumers receive exactly what the model emitted.
+**CLI default** emits each qualifying `tx.body.raw` verbatim, without Markdown or
+JSON transformation. **CLI `--json`** includes the aggregated `response` in the
+single complete run record defined in §2.1, not a second body-only output format.
 
-**CLI `--json`** emits the DONE or FAIL body as exactly one JSON value on stdout:
-
-- If `tx.body.json !== null` (the grammar parsed `raw` as JSON), emit `JSON.stringify(json)` — compact, validated, no double-wrap.
-- Otherwise emit `JSON.stringify(raw)` — the reply wrapped as a JSON string literal.
-
-This makes `plurnk --json "X" | jq` always valid regardless of whether the model emitted JSON or prose.
-
-**TUI mode** (no `--json`; the flag is CLI-only) renders *every* broadcast (terminal and intermediate alike) as a block per §3.4.1, dispatching by content type:
+**TUI mode** (no `--json`; the flag is CLI-only) renders every targetless SEND as a block, dispatching by content type:
 
 - **JSON** — `tx.body.json !== null`. Render `JSON.stringify(json, null, 2)`.
 - **Markdown** — `raw` matches structural markdown markers (heading `# `, bold `**…**`, list `- `, fenced code ` ``` `, or `[text](url)` link). Minimal vanilla-ANSI transform: bold, italic, dim inline code, `• ` bullets, header text bolded. Rich-client prose also normalizes the common inline token `$\rightarrow$` to `→`; this is not general LaTeX support. CLI output remains verbatim.

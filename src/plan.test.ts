@@ -42,6 +42,18 @@ test("presentPlan: collapses each entry to one human line", () => {
     }), [{ glyph: "🚧", text: "Inspect the parser then verify the result." }]);
 });
 
+test("presentPlan: ACP waiting and failed subtypes keep their native meaning", () => {
+    assert.deepEqual(presentPlan({ body: { entries: [
+        { content: "Waiting: Child results", priority: "medium", status: "in_progress", _meta: { "plurnk.xyz/status": "waiting" } },
+        { content: "Failed: Command failed", priority: "high", status: "completed", _meta: { "plurnk.xyz/status": "failed" } },
+        { content: "Failed: is literal prose", priority: "medium", status: "completed" },
+    ] } }), [
+        { glyph: "💤", text: "Waiting: Child results" },
+        { glyph: "✋", text: "[high] Failed: Command failed" },
+        { glyph: "✅", text: "Failed: is literal prose" },
+    ]);
+});
+
 test("presentPlan: rejects a PLAN row without the canonical body", () => {
     assert.throws(() => presentPlan(null), /canonical Plan body/);
     assert.throws(() => presentPlan({

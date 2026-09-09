@@ -1,7 +1,7 @@
 // CLI mode — single loop.run, plain text, no glyphs. Unix-tool posture
 // per SPEC.md §2 / TUI.md §2. Subscribes to log/entry notifications and
-// prints each op as a plain trace line on stderr; only the DONE/FAIL
-// body lands on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
+// prints each op as a plain trace line on stderr; delivered response messages
+// land on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { extractSendBody, contextGauge, entryAnnotation, entryScope, entryTarget } from "./render.ts";
@@ -112,7 +112,7 @@ export const formatPlain = (entry: LogEntryWire): string => {
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op} ${address}`.trim();
     const annotation = entryAnnotation(entry);
     if (annotation !== null) line += ` — ${annotation}`;
-    if (TurnDisposition.isContinuationOp(entry.op)) {
+    if (TurnDisposition.isOp(entry.op)) {
         const presented = presentPlan(entry.tx);
         const rows = presented.length === 0
             ? ["📭 no entries"]
@@ -121,12 +121,6 @@ export const formatPlain = (entry: LogEntryWire): string => {
     }
     return line;
 };
-
-// DONE and FAIL carry the final answer; SEND only delivers a message.
-export const isTerminalBroadcast = (entry: LogEntryWire): boolean =>
-    (entry.op === "DONE" || entry.op === "FAIL")
-    && entry.scheme === null
-    && entry.pathname === null;
 
 // One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
 export const buildScriptJsonRecord = (input: {

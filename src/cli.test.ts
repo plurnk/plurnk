@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatPlain, isTerminalBroadcast, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
+import { formatPlain, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
+import { isResponseMessage } from "./render.ts";
 import { clientFlagInvalid } from "./diagnostics.ts";
 import type { FunctionalityFamily } from "./commands.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
@@ -29,9 +30,13 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     ...overrides,
 });
 
-test("only DONE and FAIL select a one-shot conclusion, never a SEND message", () => {
-    for (const [op, signal] of [["DONE", 200], ["FAIL", 499]] as const) assert.equal(isTerminalBroadcast(entry({ op, signal })), true);
-    for (const [op, signal] of [["NEXT", 102], ["WAIT", 202], ["SEND", null]] as const) assert.equal(isTerminalBroadcast(entry({ op, signal })), false);
+test("successful own targetless SEND messages contribute to the response independently of TASK", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND" })), true);
+    for (const overrides of [
+        { op: "TASK" }, { op: "SEND", origin: "_plurnk" }, { op: "SEND", status_rx: 400 },
+        { op: "SEND", source: 9 }, { op: "SEND", inherited_history: 1 },
+        { op: "SEND", scheme: "worker", hostname: "child", pathname: "/" },
+    ]) assert.equal(isResponseMessage(entry(overrides)), false, JSON.stringify(overrides));
 });
 
 // ─── formatPlain ──────────────────────────────────────────────────────
@@ -57,8 +62,8 @@ test("formatPlain: a durable annotation labels the operation without its comment
 });
 
 test("formatPlain: SEND with numeric signal → '[N]' sub", () => {
-    const s = formatPlain(entry({ op: "DONE", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
-    assert.equal(s, "[200] model DONE");
+    const s = formatPlain(entry({ op: "SEND", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
+    assert.equal(s, "[200] model SEND");
 });
 
 test("formatPlain: SEND without numeric signal → no sub", () => {
@@ -89,7 +94,7 @@ test("formatPlain: preserves numeric and hash scopes after the target", () => {
 
 test("formatPlain: PLAN preserves the trace header and renders one line per entry", () => {
     assert.equal(formatPlain(entry({
-        op: "NEXT", status_rx: 102,
+        op: "TASK", status_rx: 102,
         tx: {
             body: {
                 entries: [
@@ -100,46 +105,46 @@ test("formatPlain: PLAN preserves the trace header and renders one line per entr
             },
         },
     })), [
-        "[102] model NEXT",
+        "[102] model TASK",
         "  ✅ Inspect the parser.",
         "  ✅ Memory: One baseline owns the schema.",
         "  🚧 [high] Run the tests.",
     ].join("\n"));
 });
 
-// ─── isTerminalBroadcast ──────────────────────────────────────────────
+// ─── isResponseMessage ──────────────────────────────────────────────
 
-test("isTerminalBroadcast: SEND, no path, signal 200 → true", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "DONE", scheme: null, pathname: null, signal: 200 })), true);
+test("isResponseMessage: SEND, no path, signal 200 → true", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: null, signal: 200 })), true);
 });
 
-test("isTerminalBroadcast: SEND, no path, signal 499 → true", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "FAIL", scheme: null, pathname: null, signal: 499 })), true);
+test("isResponseMessage: a failed SEND contributes no delivered message", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 499 })), false);
 });
 
-test("isTerminalBroadcast: SEND, no path, signal 102 → false (intermediate)", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "NEXT", scheme: null, pathname: null, signal: 102 })), false);
+test("isResponseMessage: SEND, no path, signal 102 → false (intermediate)", () => {
+    assert.equal(isResponseMessage(entry({ op: "TASK", scheme: null, pathname: null, signal: 102 })), false);
 });
 
-test("isTerminalBroadcast: SEND, no path, signal 400 → false", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: 400 })), false);
+test("isResponseMessage: SEND, no path, status 400 → false", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400 })), false);
 });
 
-test("isTerminalBroadcast: SEND directed at file:// (pathname set) → false", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: "/tmp/x", signal: 200 })), false);
+test("isResponseMessage: SEND directed at file:// (pathname set) → false", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: "/tmp/x", signal: 200 })), false);
 });
 
-test("isTerminalBroadcast: SEND directed via scheme → false", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: "slack", pathname: "/x", signal: 200 })), false);
+test("isResponseMessage: SEND directed via scheme → false", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: "slack", pathname: "/x", signal: 200 })), false);
 });
 
-test("isTerminalBroadcast: non-SEND op → false even with matching signal", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "EDIT", scheme: null, pathname: null, signal: 200 })), false);
+test("isResponseMessage: non-SEND op → false even with matching signal", () => {
+    assert.equal(isResponseMessage(entry({ op: "EDIT", scheme: null, pathname: null, signal: 200 })), false);
 });
 
-test("isTerminalBroadcast: signal not a number → false", () => {
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: null })), false);
-    assert.equal(isTerminalBroadcast(entry({ op: "SEND", scheme: null, pathname: null, signal: "200" as unknown as number })), false);
+test("isResponseMessage: delivered status is authoritative, not signal", () => {
+    assert.equal(isResponseMessage(entry({ op: "SEND", status_rx: 200, signal: null })), true);
+    assert.equal(isResponseMessage(entry({ op: "SEND", status_rx: 400, signal: 200 })), false);
 });
 
 // ─── buildJsonRecord (the complete client-observed run record) ────────
@@ -173,7 +178,7 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
     response: "Paris",
     entries: [
         entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", lineMarker: { marks: [4, 12] }, status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1, tags: ["init", "research"] }),
-        entry({ op: "DONE", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
+        entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
     result: {
@@ -248,8 +253,8 @@ test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate +
 });
 
 test("buildJsonRecord: ambient rows from another worker never enter this run's turns", () => {
-    const own = entry({ worker_id: 39, op: "DONE", signal: 200, turn_seq: 2 });
-    const child = entry({ worker_id: 40, op: "FAIL", signal: 499, turn_seq: 9 });
+    const own = entry({ worker_id: 39, op: "SEND", signal: 200, turn_seq: 2 });
+    const child = entry({ worker_id: 40, op: "SEND", signal: null, turn_seq: 9 });
     const doc = buildJsonRecord(recordInput({ entries: [own, child] })) as {
         workerId: number;
         turns: Array<{ turn: number; ops: Array<Record<string, unknown>> }>;

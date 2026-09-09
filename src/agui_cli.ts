@@ -4,13 +4,13 @@
 // plurnk.row for full fidelity and provider reasoning from AG-UI's standard
 // reasoning lifecycle. Generic TEXT_MESSAGE events remain third-party speech.
 // This reuses runCli's exact text-mode rendering:
-// stdout = the terminal broadcast body (the answer), stderr = the per-row trace.
+// stdout = delivered response messages, stderr = the per-row trace.
 //
 // JSON mode uses the terminal projection's complete loop identity and usage.
 
 import process from "node:process";
-import { formatPlain, isTerminalBroadcast, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
-import { extractSendBody } from "./render.ts";
+import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
+import { extractSendBody, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import {
@@ -166,10 +166,12 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const workerId = (entry as { worker_id?: number }).worker_id;
             if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
             const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
-            if (belongsToRun && isTerminalBroadcast(entry)) response = extractSendBody(entry.tx, false);
+            const message = belongsToRun && isResponseMessage(entry) ? extractSendBody(entry.tx, false) : "";
+            const separator = response.length > 0 ? "\n\n" : "";
+            if (message.length > 0) response += separator + message;
             if (io.json) { entries.push(entry); continue; }
             io.err(`${formatPlain(entry)}\n`);
-            if (isTerminalBroadcast(entry) && response.length > 0) io.out(`${response}\n`);
+            if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
         } else if (name === "plurnk.terminated") {
             const raw = value as TerminatedValue;
             terminated = { ...raw, result: operationResult(raw.result) };

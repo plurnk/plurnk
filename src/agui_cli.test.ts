@@ -20,7 +20,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
-const terminalSend = (text: string): AguiEvent => row({ op: "DONE", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
+const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
         requests: [{
@@ -99,7 +99,7 @@ test("[§cli-provider-reasoning] consumeCliRun: standard readable reasoning rend
     assert.deepEqual(err.slice(0, 3), ["💭 compare ", "the evidence", "\n"], "reasoning deltas reach stderr before completion");
     const trace = err.join("");
     assert.match(trace, /💭 compare the evidence/);
-    assert.ok(trace.indexOf("💭") < trace.indexOf("DONE"), "reasoning precedes the DONE row");
+    assert.ok(trace.indexOf("💭") < trace.indexOf("SEND"), "reasoning precedes the SEND row");
 });
 
 test("[§cli-provider-reasoning] multiline reasoning preserves indentation across delta boundaries", async () => {
@@ -256,7 +256,7 @@ test("consumeCliRun projects the authoritative AG-UI status gauge", async () => 
 test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {
     const { io, out, err } = sink({ json: true });
     const res = await consumeCliRun(stream([
-        rowRun({ op: "NEXT", origin: "model" }, 42),
+        rowRun({ op: "TASK", origin: "model", tx: { body: { entries: [{ content: "Find evidence", status: "in_progress", priority: "medium" }] } } }, 42),
         rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
         terminated({
@@ -320,15 +320,36 @@ test("consumeCliRun: plurnk.terminated is authoritative for the exit code", asyn
     assert.equal(exitCode, 3, "499 cancel → exit 3 (exitCodeForLoop)");
 });
 
-test("consumeCliRun: a child worker's terminal SEND cannot replace the run response", async () => {
-    const { io } = sink({ json: true });
+test("consumeCliRun: a child worker's SEND cannot duplicate or replace the run response", async () => {
+    const { io, out } = sink();
     const result = await consumeCliRun(stream([
-        rowRun({ op: "DONE", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
-        rowRun({ op: "FAIL", signal: 499, tx: { body: { raw: "child cancelled" } } }, 12),
+        rowRun({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
+        rowRun({ op: "SEND", signal: null, tx: { body: { raw: "child cancelled" } } }, 12),
         terminated({ workerId: 11 }),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(result.response, "parent answer");
+    assert.equal(out.join(""), "parent answer\n", "a foreign message must not repeat the parent's output");
+});
+
+for (const json of [false, true]) test(`consumeCliRun: ordered response messages survive failure (json=${json})`, async () => {
+    const { io, out } = sink({ json });
+    const result = await consumeCliRun(stream([
+        rowRun({ id: 10, op: "SEND", tx: { body: { raw: "First." } } }, 11),
+        rowRun({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
+        rowRun({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
+        rowRun({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
+        rowRun({ id: 14, op: "TASK", status_rx: 499, tx: { body: { entries: [
+            { content: "Failed: Verification failed.", status: "completed", priority: "medium", _meta: { "plurnk.xyz/status": "failed" } },
+        ] } } }, 11),
+        terminated({ workerId: 11, result: { status: 499, problem: {
+            type: "https://problems.plurnk.xyz/lifecycle/failed", title: "Task failed", status: 499, detail: "Verification failed.",
+        } } }),
+    ]), io);
+    assert.equal(result.response, "First.\n\nSecond.");
+    assert.equal(result.terminated?.result.status, 499);
+    assert.equal(result.exitCode, 3);
+    assert.equal(out.join(""), json ? "" : "First.\n\nSecond.\n");
 });
 
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) to the trace", async () => {

@@ -57,7 +57,7 @@ const jsonBody = async (request: IncomingMessage): Promise<{ model?: unknown }> 
 };
 
 const answer = (response: ServerResponse, model: string): void => {
-    const content = "```DONE\nselected " + model + "\n```";
+    const content = "```SEND\nselected " + model + "\n```\n```TASK\n[{\"content\":\"Selection confirmed.\",\"status\":\"completed\"}]\n```";
     response.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",

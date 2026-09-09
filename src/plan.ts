@@ -21,16 +21,23 @@ const entryText = (entry: AcpPlanEntry): string => {
         : `[${entry.priority}] ${content}`;
 };
 
+const entryGlyph = (entry: AcpPlanEntry): string => {
+    const subtype = entry._meta?.["plurnk.xyz/status"];
+    if (subtype === "waiting" && entry.status === "in_progress") return "💤";
+    if (subtype === "failed" && entry.status === "completed") return "✋";
+    return PLAN_STATUS_GLYPHS[entry.status];
+};
+
 export const presentPlan = (tx: unknown): PresentedPlanEntry[] => {
     const body = (tx as { body?: unknown } | null)?.body;
     let plan;
     try {
         plan = AcpPlanValue.assertCanonical(body);
     } catch (error) {
-        throw new TypeError("A continuation row must carry its canonical Plan body.", { cause: error });
+        throw new TypeError("A TASK row must carry its canonical Plan body.", { cause: error });
     }
     return plan.entries.map((entry) => ({
-        glyph: PLAN_STATUS_GLYPHS[entry.status],
+        glyph: entryGlyph(entry),
         text: entryText(entry),
     }));
 };

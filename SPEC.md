@@ -692,10 +692,11 @@ required/optional status, and description; optional fields may be skipped
 with Enter. String enums offer numbered choices and free response. Non-string
 values use JSON notation. Invalid input explains the expected value and stays
 on that field without losing earlier answers. Empty forms explicitly submit
-an empty object. Completed forms resume with `{action:"accept",content}`;
+an empty object. Completed forms resume with the exact response-schema object;
 `/cancel` sends a cancelled resolution. `/stop`, `/quit`, and `/help` remain
 available. Resolution failures are visible, never swallowed. `--yolo` does not
-invent answers.
+invent answers. The originating tool constructs its own result envelope. A stale
+interaction identity cannot answer a subsequent interrupt.
 
 ### §6.6 Proposal-review boundaries {§cli-proposal-review-boundaries}
 

@@ -117,7 +117,10 @@ export class BridgeTransport implements Transport {
     #h: RunHandlers | null = null;
     #gauge: StatusGauge | null = null;
     #pendingResolve: ((r: { logEntryId: number; decision: string; body?: string }) => void) | null = null;
-    #pendingInteractionResolve: ((r: Record<string, unknown> | "cancel") => void) | null = null;
+    #pendingInteractionResolve: {
+        interactionId: number;
+        resolve: (r: Record<string, unknown> | "cancel") => void;
+    } | null = null;
     #reasoning = new ReasoningEvents();
 
     constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
@@ -256,9 +259,12 @@ export class BridgeTransport implements Transport {
                                 : undefined;
                             interrupted = interrupt !== undefined;
                             if (pausedInteraction !== null && interrupt !== undefined && interactionArguments !== null) {
-                                interactionResolution = new Promise((resolve) => { this.#pendingInteractionResolve = resolve; });
+                                const interactionId = pausedInteraction;
+                                interactionResolution = new Promise((resolve) => {
+                                    this.#pendingInteractionResolve = { interactionId, resolve };
+                                });
                                 this.#h?.onInteraction?.({
-                                    interactionId: pausedInteraction,
+                                    interactionId,
                                     toolName,
                                     arguments: interactionArguments,
                                     message: typeof interrupt.message === "string"
@@ -390,8 +396,9 @@ export class BridgeTransport implements Transport {
     async resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void> {
         const pending = this.#pendingInteractionResolve;
         if (pending === null) throw new Error("resolveInteraction without a delivered interaction interrupt");
+        if (pending.interactionId !== interactionId) throw new Error(`Interaction ${interactionId} is not the pending interaction.`);
         this.#pendingInteractionResolve = null;
-        pending(payload);
+        pending.resolve(payload);
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
     async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ name: string }> {

@@ -1067,7 +1067,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     reprompt();
                     return;
                 }
-                await transport.resolveInteraction(interactionId, { action: "accept", content: answer.content });
+                await transport.resolveInteraction(interactionId, answer.content);
                 pendingQuestion = null;
                 reprompt();
                 return;

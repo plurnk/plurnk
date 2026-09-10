@@ -555,6 +555,8 @@ test("BridgeTransport: a client interaction uses interrupt guidance and resumes 
             message: "Choose one repository.",
             responseSchema,
         }]);
+        await assert.rejects(bt.resolveInteraction(7, { repository: "wrong-request" }), /Interaction 7 is not the pending interaction/u);
+        assert.equal(mock.captured.length, 1, "a stale UI callback cannot answer the active interrupt");
         await bt.resolveInteraction(8, { repository: "plurnk-service" });
         assert.equal((await handle.done).finalStatus, 200);
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };

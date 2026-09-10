@@ -194,7 +194,7 @@ export class BridgeTransport implements Transport {
             if (problem !== undefined) throw new ProblemError(problem);
             if (sawResult) return result as T;
             if (pausedProp === null) throw new ProblemError(clientActionResultMissing(method));
-            if (!interrupted) throw new ProblemError(clientTransportInterruptMismatch(pausedProp));
+            if (!interrupted) throw new ProblemError(clientTransportInterruptMismatch(`prop:${pausedProp}`));
             if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
             const resolution = await proposalResolution;
             next = resolution.decision === "cancel"
@@ -340,7 +340,7 @@ export class BridgeTransport implements Transport {
                 }
                 if (terminated !== null) return terminated;
                 if ((pausedProp !== null || pausedInteraction !== null) && !interrupted) {
-                    const problem = clientTransportInterruptMismatch(pausedProp ?? pausedInteraction ?? -1);
+                    const problem = clientTransportInterruptMismatch(pausedProp === null ? `int:${pausedInteraction}` : `prop:${pausedProp}`);
                     this.#h?.onProblem?.(problem);
                     return {
                         finalStatus: problem.status,

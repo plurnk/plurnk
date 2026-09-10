@@ -16,7 +16,7 @@ const launch: WebPortalLaunch = {
     runProperties: {
         projectRoot: "/workspace",
         settings: { filesItems: 16 },
-        policy: { capabilities: {}, proposals: "review" },
+        policy: { proposals: "review" },
         maxTurns: 9,
     },
     prepareSession: async () => undefined,

@@ -1,18 +1,9 @@
 import {
-    CapabilityAdmission,
     DEFAULT_LOOP_POLICY,
     Validator,
     type CapabilityPolicy,
     type LoopPolicy,
 } from "@plurnk/plurnk-contracts";
-
-export const EXEC_DENIED_CAPABILITIES: CapabilityPolicy = Object.freeze({
-    deny: [{ operation: "EXEC" as const }],
-});
-
-export const NONINTERACTIVE_CAPABILITIES: CapabilityPolicy = Object.freeze({
-    deny: [{ access: "interact" as const }],
-});
 
 const parseJson = (label: string, raw: string): unknown => {
     try {
@@ -31,34 +22,29 @@ export const parseLoopPolicy = (label: string, raw: string): LoopPolicy => {
         throw new TypeError(`${label} must be a JSON object.`);
     }
     const partial = parsed as Partial<LoopPolicy>;
-    if (Object.keys(partial).some((key) => key !== "capabilities" && key !== "proposals")) {
+    if (Object.keys(partial).some((key) => key !== "proposals")) {
         throw new TypeError(`${label} contains an unsupported field.`);
     }
     return Validator.assertLoopPolicy({
-        capabilities: partial.capabilities ?? DEFAULT_LOOP_POLICY.capabilities,
         proposals: partial.proposals ?? DEFAULT_LOOP_POLICY.proposals,
     });
 };
 
 export const composeLoopPolicy = (
     base: LoopPolicy = DEFAULT_LOOP_POLICY,
-    capabilities: readonly CapabilityPolicy[] = [],
     proposals: LoopPolicy["proposals"] = base.proposals,
 ): LoopPolicy => Validator.assertLoopPolicy({
-    capabilities: CapabilityAdmission.intersect([base.capabilities, ...capabilities]),
     proposals,
 });
 
 export const resolveLoopPolicy = (raw: string | undefined, auto = false): LoopPolicy => {
     const base = raw === undefined ? DEFAULT_LOOP_POLICY : parseLoopPolicy("--policy", raw);
-    return composeLoopPolicy(base, [], auto ? "accept" : base.proposals);
+    return composeLoopPolicy(base, auto ? "accept" : base.proposals);
 };
 
 export const formatCapabilityProjection = (projection: Readonly<Record<string, CapabilityPolicy>>): string => [
     "capabilities:",
     `  effective: ${JSON.stringify(projection.effective)}`,
-    `  worker: ${JSON.stringify(projection.worker)}`,
-    `  workerBound: ${JSON.stringify(projection.workerBound)}`,
     `  workspace: ${JSON.stringify(projection.workspace)}`,
     `  service: ${JSON.stringify(projection.service)}`,
     "",
@@ -71,7 +57,7 @@ export const promptPolicy = (
     const prefix = prompt[0];
     return {
         policy: prefix === "?"
-            ? composeLoopPolicy(base, [EXEC_DENIED_CAPABILITIES], "review")
+            ? composeLoopPolicy(base, "review")
             : base,
         prompt: prompt.replace(/^(\.\.\.|[?:]+)\s*/, ""),
     };

@@ -11,7 +11,7 @@ import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut,
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
-const REVIEW_POLICY = { capabilities: {}, proposals: "review" as const };
+const REVIEW_POLICY = { proposals: "review" as const };
 
 test("help is a compact grouped index over commands and interaction grammar", () => {
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);
@@ -364,26 +364,26 @@ test("handleVerb /attach without a name prints usage and binds nothing", async (
 
 // ─── /members (file members Functionality family through AG-UI+) ─────
 
-test("[§cli-file-members] handleVerb /members lists this worker's file members", async () => {
+test("[§cli-file-members] handleVerb /members lists this workspace's file members", async () => {
     const ctx = makeCtx({
-        "worker.members.list": {
+        "workspace.members.list": {
             definitions: [
                 { alias: "docs", origin: "service", state: "active", definition: { glob: "docs/**" }, detail: { effect: "include", pattern: "docs/**", matched: 12, files: [], ignored: 3 } },
-                { alias: "no-tokenizer", origin: "worker", state: "disabled", definition: { glob: "!**/tokenizer.json" } },
+                { alias: "no-tokenizer", origin: "workspace", state: "disabled", definition: { glob: "!**/tokenizer.json" } },
             ],
         },
     });
     await handleVerb("/members", ctx);
     await handleVerb("/members", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "worker.members.list", params: {} }, { method: "worker.members.list", params: {} }]);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.members.list", params: {} }, { method: "workspace.members.list", params: {} }]);
     assert.match(ctx.out.join(""), /docs\s+service\s+active\s+include docs\/\*\* → 12 files \(3 ignored\)/);
-    assert.match(ctx.out.join(""), /no-tokenizer\s+worker\s+disabled\s+exclude \*\*\/tokenizer\.json/);
+    assert.match(ctx.out.join(""), /no-tokenizer\s+workspace\s+disabled\s+exclude \*\*\/tokenizer\.json/);
 });
 
 test("[§cli-file-members] handleVerb /members add posts one exact { glob } definition", async () => {
-    const ctx = makeCtx({ "worker.members.add": { status: 201, alias: "no-tokenizer", definition: { alias: "no-tokenizer", state: "active" } } });
+    const ctx = makeCtx({ "workspace.members.add": { status: 201, alias: "no-tokenizer", definition: { alias: "no-tokenizer", state: "active" } } });
     await handleVerb("/members add no-tokenizer !**/tokenizer.json", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "worker.members.add", params: { alias: "no-tokenizer", definition: { glob: "!**/tokenizer.json" } } }]);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.members.add", params: { alias: "no-tokenizer", definition: { glob: "!**/tokenizer.json" } } }]);
     assert.match(ctx.out.join(""), /added: no-tokenizer \(active\)/);
 });
 
@@ -624,15 +624,15 @@ test("handleVerb /script on a missing file → throws (fail-hard, surfaced by th
 
 test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", async () => {
     const ctx = makeCtx({
-        "worker.mcp.list": {
+        "workspace.mcp.list": {
             definitions: [
-                { alias: "gitea", origin: "worker", state: "active", definition: { name: "gitea", transport: "http", url: "https://gitea.test/mcp", tools: ["issue_read"] }, detail: { tools: ["issue_read", "issue_search"] } },
+                { alias: "gitea", origin: "workspace", state: "active", definition: { name: "gitea", transport: "http", url: "https://gitea.test/mcp", tools: ["issue_read"] }, detail: { tools: ["issue_read", "issue_search"] } },
                 { alias: "local", origin: "service", state: "disabled", definition: { name: "local", transport: "stdio", command: "local-mcp", args: [] }, detail: { tools: [] } },
             ],
         },
     });
     await handleVerb("/mcp", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "worker.mcp.list", params: {} }]);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: {} }]);
     assert.match(ctx.out.join(""), /gitea\s+active\s+http\s+https:\/\/gitea\.test\/mcp\s+1\/2 tools/);
     assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+local-mcp\s+0 tools\s+\(service\)/);
 });
@@ -657,23 +657,22 @@ test("seedPromptHistory: empty / error → history untouched", async () => {
     assert.equal(calls, 0);
 });
 
-test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] linePolicy: '?' attenuates EXEC; ':' preserves ordinary policy", () => {
+test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] linePolicy: '?' selects review; ':' preserves ordinary policy", () => {
     assert.deepEqual(linePolicy("? what is truth"), {
-        policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "review" },
+        policy: { proposals: "review" },
         prompt: "what is truth",
     });
     assert.deepEqual(linePolicy(": do the thing"), {
-        policy: { capabilities: {}, proposals: "review" },
+        policy: { proposals: "review" },
         prompt: "do the thing",
     });
 });
 
-test("linePolicy: '?' intersects the base policy and selects review", () => {
-    const base = { capabilities: { deny: [{ traits: ["web"] as [string] }] }, proposals: "accept" as const };
+test("linePolicy: '?' replaces proposal acceptance with review", () => {
+    const base = { proposals: "accept" as const };
     assert.deepEqual(linePolicy("hello", base), { policy: base, prompt: "hello" });
     assert.deepEqual(linePolicy("? hello", base), {
         policy: {
-            capabilities: { deny: [{ operation: "EXEC" }, { traits: ["web"] }] },
             proposals: "review",
         },
         prompt: "hello",
@@ -682,7 +681,7 @@ test("linePolicy: '?' intersects the base policy and selects review", () => {
 
 test("linePolicy: '...' strips without altering the base policy", () => {
     assert.deepEqual(linePolicy("... btw also"), {
-        policy: { capabilities: {}, proposals: "review" },
+        policy: { proposals: "review" },
         prompt: "btw also",
     });
 });

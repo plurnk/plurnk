@@ -118,8 +118,8 @@ const usage = (write: (text: string) => void, subcommand?: string): void => {
 };
 
 const list = async (rpc: ActionCaller, write: (text: string) => void): Promise<unknown> => {
-    const result = await rpc.call("worker.members.list", {}) as { definitions?: unknown };
-    if (!Array.isArray(result.definitions)) throw new Error("worker.members.list returned an invalid result.");
+    const result = await rpc.call("workspace.members.list", {}) as { definitions?: unknown };
+    if (!Array.isArray(result.definitions)) throw new Error("workspace.members.list returned an invalid result.");
     if (result.definitions.length === 0) write("  file members: none\n");
     else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
     return result;
@@ -142,8 +142,8 @@ export const handleMembers = async (
             usage(write, "discover");
             return null;
         }
-        const result = await rpc.call("worker.members.discover", { query }) as { candidates?: unknown };
-        if (!Array.isArray(result.candidates)) throw new Error("worker.members.discover returned an invalid result.");
+        const result = await rpc.call("workspace.members.discover", { query }) as { candidates?: unknown };
+        if (!Array.isArray(result.candidates)) throw new Error("workspace.members.discover returned an invalid result.");
         if (result.candidates.length === 0) write("  candidates: none\n");
         else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
         return result;
@@ -156,7 +156,7 @@ export const handleMembers = async (
             return null;
         }
         const definition: MembersDefinition = { glob };
-        const result = await rpc.call("worker.members.add", { alias: name, definition }) as MutationResult;
+        const result = await rpc.call("workspace.members.add", { alias: name, definition }) as MutationResult;
         renderMutation(result, "added", name, write);
         return result;
     }
@@ -166,7 +166,7 @@ export const handleMembers = async (
             usage(write, command);
             return null;
         }
-        const result = await rpc.call(`worker.members.${command}`, { alias: name }) as MutationResult;
+        const result = await rpc.call(`workspace.members.${command}`, { alias: name }) as MutationResult;
         renderMutation(result, command === "enable" ? "enabled" : "disabled", name, write);
         return result;
     }
@@ -176,7 +176,7 @@ export const handleMembers = async (
             usage(write, "remove");
             return null;
         }
-        const result = await rpc.call("worker.members.remove", { alias: name });
+        const result = await rpc.call("workspace.members.remove", { alias: name });
         write(`  removed: ${name}\n`);
         return result;
     }

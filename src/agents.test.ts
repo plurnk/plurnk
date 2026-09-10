@@ -17,47 +17,47 @@ const harness = (results: Record<string, unknown> = {}) => {
     return { rpc, write: (text: string) => out.push(text), calls, out };
 };
 
-test("[§cli-outbound-agents] list renders every definition state from the Worker's agents family", async () => {
+test("[§cli-outbound-agents] list renders every definition state from the workspace's agents family", async () => {
     const h = harness({
-        "worker.agents.list": {
+        "workspace.agents.list": {
             definitions: [
                 { alias: "researcher", origin: "service", state: "active", definition: { name: "researcher", url: "https://agent.example" }, detail: { name: "Research Assistant", version: "2.1", description: "Finds sources", skills: ["search", "summarize"] } },
-                { alias: "scribe", origin: "worker", state: "disabled", definition: { name: "scribe", url: "https://scribe.example" } },
+                { alias: "scribe", origin: "workspace", state: "disabled", definition: { name: "scribe", url: "https://scribe.example" } },
                 { alias: "ghost", origin: "service", state: "unavailable", definition: { name: "ghost", url: "http://127.0.0.1:9" }, problem: { detail: "no discoverable standard Agent Card" } },
             ],
         },
     });
     await handleAgents([], h.rpc, h.write);
-    assert.deepEqual(h.calls, [{ method: "worker.agents.list", params: {} }]);
+    assert.deepEqual(h.calls, [{ method: "workspace.agents.list", params: {} }]);
     const text = h.out.join("");
     assert.match(text, /researcher\s+active\s+https:\/\/agent\.example\s+Research Assistant v2\.1\s+2 skills\s+\(service\)/);
     assert.match(text, /scribe\s+disabled\s+https:\/\/scribe\.example/);
     assert.match(text, /ghost\s+unavailable\s+http:\/\/127\.0\.0\.1:9\s+\(service\)\s+— no discoverable standard Agent Card/);
-    const empty = harness({ "worker.agents.list": { definitions: [] } });
+    const empty = harness({ "workspace.agents.list": { definitions: [] } });
     await handleAgents("", empty.rpc, empty.write);
     assert.match(empty.out.join(""), /A2A agents: none/);
 });
 
 test("[§cli-outbound-agents] discover sends one URL and renders inert card-derived candidates", async () => {
     const h = harness({
-        "worker.agents.discover": { candidates: [{ alias: "research-assistant", summary: "Finds sources", definition: { name: "research-assistant", url: "https://agent.example" }, provenance: { kind: "agent-card", source: "https://agent.example" } }] },
+        "workspace.agents.discover": { candidates: [{ alias: "research-assistant", summary: "Finds sources", definition: { name: "research-assistant", url: "https://agent.example" }, provenance: { kind: "agent-card", source: "https://agent.example" } }] },
     });
     await handleAgents("discover https://agent.example", h.rpc, h.write);
-    assert.deepEqual(h.calls, [{ method: "worker.agents.discover", params: { source: "https://agent.example" } }]);
+    assert.deepEqual(h.calls, [{ method: "workspace.agents.discover", params: { source: "https://agent.example" } }]);
     assert.match(h.out.join(""), /research-assistant\s+candidate\s+https:\/\/agent\.example\s+Finds sources/);
 });
 
-test("[§cli-outbound-agents] add composes one exact A2aAgentDefinition; enable, disable, and remove map to Worker actions", async (t) => {
+test("[§cli-outbound-agents] add composes one exact A2aAgentDefinition; enable, disable, and remove map to workspace actions", async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "agents-options-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const file = join(dir, "researcher options.json");
     const options = { cardPath: "/cards/research.json", authorization: { type: "bearer", token: "${RESEARCH_TOKEN}" } };
     await writeFile(file, JSON.stringify(options));
     const h = harness({
-        "worker.agents.add": { status: 201, alias: "researcher", definition: { alias: "researcher", state: "active" } },
-        "worker.agents.enable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "active" } },
-        "worker.agents.disable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "disabled" } },
-        "worker.agents.remove": { status: 200, alias: "researcher", removed: true },
+        "workspace.agents.add": { status: 201, alias: "researcher", definition: { alias: "researcher", state: "active" } },
+        "workspace.agents.enable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "active" } },
+        "workspace.agents.disable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "disabled" } },
+        "workspace.agents.remove": { status: 200, alias: "researcher", removed: true },
     });
     await handleAgents(["add", "researcher", "https://agent.example", file], h.rpc, h.write);
     await handleAgents("add scribe https://scribe.example", h.rpc, h.write);
@@ -65,11 +65,11 @@ test("[§cli-outbound-agents] add composes one exact A2aAgentDefinition; enable,
     await handleAgents("disable researcher", h.rpc, h.write);
     await handleAgents("remove researcher", h.rpc, h.write);
     assert.deepEqual(h.calls, [
-        { method: "worker.agents.add", params: { alias: "researcher", definition: { name: "researcher", url: "https://agent.example", ...options } } },
-        { method: "worker.agents.add", params: { alias: "scribe", definition: { name: "scribe", url: "https://scribe.example" } } },
-        { method: "worker.agents.enable", params: { alias: "researcher" } },
-        { method: "worker.agents.disable", params: { alias: "researcher" } },
-        { method: "worker.agents.remove", params: { alias: "researcher" } },
+        { method: "workspace.agents.add", params: { alias: "researcher", definition: { name: "researcher", url: "https://agent.example", ...options } } },
+        { method: "workspace.agents.add", params: { alias: "scribe", definition: { name: "scribe", url: "https://scribe.example" } } },
+        { method: "workspace.agents.enable", params: { alias: "researcher" } },
+        { method: "workspace.agents.disable", params: { alias: "researcher" } },
+        { method: "workspace.agents.remove", params: { alias: "researcher" } },
     ]);
     assert.deepEqual(composeDefinition("peer", "https://peer.example"), { name: "peer", url: "https://peer.example" });
     const text = h.out.join("");

@@ -31,7 +31,7 @@ before(async () => {
             },
         });
         const discovery = await actionViaBridge<{ actions: Record<string, unknown> }>({ bridgeUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
-        members = "worker.members.list" in discovery.actions;
+        members = "workspace.members.list" in discovery.actions;
     }
 });
 after(async () => { await daemon?.cleanup(); });
@@ -95,13 +95,13 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             tui.write("/members add note note.md\r");
             await tui.waitFor(/added: note \(active\)/, 20_000);
             tui.write("/members\r");
-            await tui.waitFor(/note\s+worker\s+active\s+include note\.md → 1 file/, 20_000);
+            await tui.waitFor(/note\s+workspace\s+active\s+include note\.md → 1 file/, 20_000);
             tui.write("/members discover note.md\r");
             await tui.waitFor(/note-md\s+member\s+note\.md\s+member — /, 20_000);
             tui.write("/members add no-txt !*.txt\r");
             await tui.waitFor(/added: no-txt \(active\)/, 20_000);
             tui.write("/members\r");
-            await tui.waitFor(/no-txt\s+worker\s+active\s+exclude \*\.txt → 0 members/, 20_000);
+            await tui.waitFor(/no-txt\s+workspace\s+active\s+exclude \*\.txt → 0 members/, 20_000);
             tui.write("/members disable note\r");
             await tui.waitFor(/disabled: note \(disabled\)/, 20_000);
             tui.write("/members remove note\r");

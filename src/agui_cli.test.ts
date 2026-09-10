@@ -148,7 +148,7 @@ test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERRO
 test("[§cli-one-shot-flow] consumeCliRun: a proposal tool-call is reviewed; the decision rides pendingResume", async () => {
     const { io } = sink({ review: async () => ({ decision: "accept", body: "edited" }) });
     const r = await consumeCliRun(stream(proposalCall(9)), io);
-    assert.deepEqual(r.pendingResume, { logEntryId: 9, decision: "accept", body: "edited" }, "the resume tool-result carries the reviewed decision");
+    assert.deepEqual(r.pendingResume, { interruptId: "prop:9", status: "resolved", payload: { decision: "accept", body: "edited" } }, "the resume tool-result carries the reviewed decision");
 });
 
 test("consumeCliRun: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
@@ -157,7 +157,7 @@ test("consumeCliRun: a proposal without the matching interrupt outcome returns a
     const result = await consumeCliRun(stream(events), io);
     assert.equal(result.pendingResume, null);
     assert.equal(result.problem?.type, "https://problems.plurnk.xyz/client/transport/interrupt-mismatch");
-    assert.equal(result.problem?.logEntryId, 9);
+    assert.equal(result.problem?.interruptId, "prop:9");
 });
 
 test("consumeCliRun: malformed proposal arguments return an exact Problem", async () => {
@@ -176,19 +176,33 @@ test("[§cli-yolo-plurnkyolo] consumeCliRun: yolo auto-accepts a proposal withou
     const { io } = sink({ yolo: true, review: async () => { reviewed = true; return { decision: "accept" }; } });
     const r = await consumeCliRun(stream(proposalCall(3)), io);
     assert.equal(reviewed, false, "yolo skips review");
-    assert.deepEqual(r.pendingResume, { logEntryId: 3, decision: "accept" });
+    assert.deepEqual(r.pendingResume, { interruptId: "prop:3", status: "resolved", payload: { decision: "accept" } });
 });
 
 test("[§cli-fail-closed-no-review-channel] consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
     const { io } = sink({ noReviewChannel: true });
     const r = await consumeCliRun(stream(proposalCall(4)), io);
-    assert.deepEqual(r.pendingResume, { logEntryId: 4, decision: "reject" });
+    assert.deepEqual(r.pendingResume, { interruptId: "prop:4", status: "resolved", payload: { decision: "reject" } });
 });
 
 test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals never reach the wire)", async () => {
     const { io } = sink();
     const r = await consumeCliRun(stream([terminated(), { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } }]), io);
     assert.equal(r.pendingResume, null, "a clean run carries no resume");
+});
+
+test("consumeCliRun: one-shot input requests return ordinary cancelled resumes, without changing workspace permissions", async () => {
+    const { io } = sink({ noReviewChannel: true, yolo: true });
+    const r = await consumeCliRun(stream([
+        { type: EventType.TOOL_CALL_START, toolCallId: "int:8", toolCallName: "question" },
+        { type: EventType.TOOL_CALL_ARGS, toolCallId: "int:8", delta: '{"message":"Which branch?"}' },
+        { type: EventType.TOOL_CALL_END, toolCallId: "int:8" },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "interrupt", interrupts: [
+            { id: "int:8", toolCallId: "int:8", reason: "tool_call" },
+        ] } },
+    ]), io);
+    assert.deepEqual(r.pendingResume, { interruptId: "int:8", status: "cancelled" });
+    assert.equal(r.problem, null, "a supported interruption is not a missing terminal outcome");
 });
 
 test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice sink; generic AG-UI events are ignored", async () => {

@@ -79,42 +79,42 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
 
     await from("a", "worker.reasoning.set", { policy: "adaptive" });
     assert.equal((await from<{ policy: string }>("b", "worker.reasoning.get")).policy, "adaptive");
-    await from("a", "worker.capabilities.set", {
+    await from("a", "workspace.capabilities.set", {
         policy: { deny: [{ runtime: "sh" }] },
     });
-    const capabilities = await from<{ worker: object; effective: object }>("b", "worker.capabilities.get");
-    assert.deepEqual(capabilities.worker, { deny: [{ runtime: "sh" }] });
+    const capabilities = await from<{ workspace: object; effective: object }>("b", "workspace.capabilities.get");
+    assert.deepEqual(capabilities.workspace, { deny: [{ runtime: "sh" }] });
     assert.deepEqual(capabilities.effective, { deny: [{ runtime: "sh" }] });
 
     const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
-    await from("a", "worker.mcp.add", {
+    await from("a", "workspace.mcp.add", {
         alias: "durable",
         definition: { name: "durable", transport: "stdio", command: process.execPath, args: [fixture], tools: ["echo"], read: ["echo"] },
     });
     const servers = async (): Promise<Array<{ alias: string; state: string }>> =>
-        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "worker.mcp.list")).definitions;
+        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.mcp.list")).definitions;
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "active");
-    await from("a", "worker.mcp.disable", { alias: "durable" });
+    await from("a", "workspace.mcp.disable", { alias: "durable" });
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "disabled");
-    await from("a", "worker.mcp.enable", { alias: "durable" });
+    await from("a", "workspace.mcp.enable", { alias: "durable" });
     assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "active");
-    await from("a", "worker.mcp.remove", { alias: "durable" });
+    await from("a", "workspace.mcp.remove", { alias: "durable" });
     assert.equal((await servers()).some(({ alias }) => alias === "durable"), false);
 
     const skills = async (): Promise<Array<{ alias: string; state: string }>> =>
-        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "worker.skills.list")).definitions;
+        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.skills.list")).definitions;
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "active");
 
     const agents = async (): Promise<Array<{ alias: string; state: string }>> =>
-        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "worker.agents.list")).definitions;
+        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.agents.list")).definitions;
     assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "active");
-    await from("a", "worker.agents.disable", { alias: "durable" });
+    await from("a", "workspace.agents.disable", { alias: "durable" });
     assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "disabled");
-    await from("a", "worker.agents.enable", { alias: "durable" });
+    await from("a", "workspace.agents.enable", { alias: "durable" });
     assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "active");
-    await from("a", "worker.skills.disable", { alias: "durable-skill" });
+    await from("a", "workspace.skills.disable", { alias: "durable-skill" });
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "disabled");
-    await from("a", "worker.skills.enable", { alias: "durable-skill" });
+    await from("a", "workspace.skills.enable", { alias: "durable-skill" });
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "active");
 
     const renamed = `${original}-renamed`;
@@ -136,7 +136,7 @@ test("[§cli-file-members] separate client connections observe the durable file 
     t.after(daemon.cleanup);
     const target = { bridgeUrl: daemon.url };
     const discovery = await actionViaBridge<{ actions: Record<string, unknown> }>(target, { threadId: "terminal-members-discovery", kind: "discover" });
-    if (!("worker.members.list" in discovery.actions)) { t.skip("the daemon does not serve the members family"); return; }
+    if (!("workspace.members.list" in discovery.actions)) { t.skip("the daemon does not serve the members family"); return; }
 
     const project = await mkdtemp(join(tmpdir(), "plurnk-members-durable-"));
     t.after(() => rm(project, { recursive: true, force: true }));
@@ -149,19 +149,19 @@ test("[§cli-file-members] separate client connections observe the durable file 
     const connectionB = new BridgeTransport(target, "terminal-members-worker", { workspace: name });
     type Definition = { alias: string; origin: string; state: string; detail?: { effect: string; pattern: string; matched: number; files: string[]; ignored: number } };
     const members = async (): Promise<Definition[]> =>
-        (await connectionB.rpc<{ definitions: Definition[] }>("worker.members.list", {})).definitions;
+        (await connectionB.rpc<{ definitions: Definition[] }>("workspace.members.list", {})).definitions;
 
     const docs = (await members()).find(({ alias }) => alias === "docs");
     assert.equal(docs?.origin, "service");
     assert.equal(docs?.state, "active");
     assert.deepEqual(docs?.detail, { effect: "include", pattern: "docs/**", matched: 1, files: ["docs/guide.md"], ignored: 0 });
 
-    await connectionA.rpc("worker.members.add", { alias: "note", definition: { glob: "note.md" } });
+    await connectionA.rpc("workspace.members.add", { alias: "note", definition: { glob: "note.md" } });
     assert.equal((await members()).find(({ alias }) => alias === "note")?.state, "active");
-    await connectionA.rpc("worker.members.disable", { alias: "note" });
+    await connectionA.rpc("workspace.members.disable", { alias: "note" });
     assert.equal((await members()).find(({ alias }) => alias === "note")?.state, "disabled");
-    await connectionA.rpc("worker.members.enable", { alias: "note" });
+    await connectionA.rpc("workspace.members.enable", { alias: "note" });
     assert.equal((await members()).find(({ alias }) => alias === "note")?.state, "active");
-    await connectionA.rpc("worker.members.remove", { alias: "note" });
+    await connectionA.rpc("workspace.members.remove", { alias: "note" });
     assert.equal((await members()).some(({ alias }) => alias === "note"), false);
 });

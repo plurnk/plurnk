@@ -7,7 +7,7 @@
 //   LOOK fences via op.look — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
-//   ? text         deny EXEC for this loop and keep proposal review client-owned
+//   ? text         select proposal review for this loop
 //   : text         act (the default)
 //   text           prompt
 import { readFile } from "node:fs/promises";
@@ -407,8 +407,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "capabilities":
             try {
                 const projection = rest.length === 0
-                    ? await rpc.call("worker.capabilities.get") as Record<string, CapabilityPolicy>
-                    : await rpc.call("worker.capabilities.set", {
+                    ? await rpc.call("workspace.capabilities.get") as Record<string, CapabilityPolicy>
+                    : await rpc.call("workspace.capabilities.set", {
                         policy: parseCapabilityPolicy("/capabilities", rest),
                     }) as Record<string, CapabilityPolicy>;
                 write(`${formatCapabilityProjection(projection).trimEnd().replace(/^/gm, "  ")}\n`);
@@ -741,8 +741,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return selectors;
             },
             getFunctionalityAliases: async (family) => {
-                const result = await transport.rpc(`worker.${family}.list`, {}) as { definitions?: unknown };
-                if (!Array.isArray(result.definitions)) throw new TypeError(`worker.${family}.list returned an invalid result.`);
+                const result = await transport.rpc(`workspace.${family}.list`, {}) as { definitions?: unknown };
+                if (!Array.isArray(result.definitions)) throw new TypeError(`workspace.${family}.list returned an invalid result.`);
                 return result.definitions
                     .map((definition) => definition !== null && typeof definition === "object"
                         ? (definition as { alias?: unknown }).alias
@@ -1147,9 +1147,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const command = trimmed.replace(/^!+\s*/, "");
                     terminalResult = await transport.rpc("op.exec", { command }) as OperationResult;
                 } else {
-                    // Prompt prefixes are client policy projections. `?` narrows
-                    // the ordinary loop by denying EXEC and retaining review;
-                    // `:` is the unmodified base policy.
+                    // `?` selects proposal review; `:` uses the base policy.
                     const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
                     // {§worker-model-selection} — no model selector rides the loop: the
                     // worker owns the model; /model and /child persisted it server-side.

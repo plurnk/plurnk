@@ -89,17 +89,15 @@ test("buildSettings does not reinterpret service executor configuration as works
 });
 
 test("resolveLoopPolicy: undefined selects the canonical default", () => {
-    assert.deepEqual(resolveLoopPolicy(undefined), { capabilities: {}, proposals: "review" });
+    assert.deepEqual(resolveLoopPolicy(undefined), { proposals: "review" });
 });
 
 test("[§cli-invocation] resolveLoopPolicy validates canonical policy and --auto selects acceptance", () => {
-    const raw = '{"capabilities":{"deny":[{"traits":["web"]}]},"proposals":"reject"}';
+    const raw = '{"proposals":"reject"}';
     assert.deepEqual(resolveLoopPolicy(raw), {
-        capabilities: { deny: [{ traits: ["web"] }] },
         proposals: "reject",
     });
     assert.deepEqual(resolveLoopPolicy(raw, true), {
-        capabilities: { deny: [{ traits: ["web"] }] },
         proposals: "accept",
     });
 });

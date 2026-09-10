@@ -49,15 +49,14 @@ const runClient = async (
     });
 };
 
-const jsonBody = async (request: IncomingMessage): Promise<{ model?: unknown }> => {
+const jsonBody = async (request: IncomingMessage): Promise<{ model?: unknown; messages?: unknown }> => {
     let body = "";
     request.setEncoding("utf8");
     for await (const chunk of request) body += chunk;
-    return JSON.parse(body) as { model?: unknown };
+    return JSON.parse(body) as { model?: unknown; messages?: unknown };
 };
 
-const answer = (response: ServerResponse, model: string): void => {
-    const content = "```SEND\nselected " + model + "\n```\n```TASK\n[{\"content\":\"Selection confirmed.\",\"status\":\"completed\"}]\n```";
+const answer = (response: ServerResponse, model: string, content = "```SEND\nselected " + model + "\n```\n```TASK\n[{\"content\":\"Selection confirmed.\",\"status\":\"completed\"}]\n```"): void => {
     response.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -162,4 +161,44 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
         "client-family/selected",
         "client-family/selected",
     ]);
+});
+
+test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels input requests and the worker resumes with that result", { timeout: 120_000 }, async (t) => {
+    const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
+    const packets: string[] = [];
+    const endpoint = createServer(async (request, response) => {
+        if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+            response.writeHead(404).end();
+            return;
+        }
+        const body = await jsonBody(request);
+        packets.push(JSON.stringify(body.messages));
+        answer(response, "interaction-fixture", packets.length === 1
+            ? '```question\n{"message":"Choose a branch","requestedSchema":{"type":"object","properties":{"branch":{"type":"string"}},"required":["branch"]}}\n```\n```TASK\n[{"content":"Await the branch choice.","status":"waiting"}]\n```'
+            : '```SEND\nNo input channel; continuing without a fabricated answer.\n```\n```TASK\n[{"content":"Report cancelled input.","status":"completed"}]\n```');
+    });
+    const endpointPort = await listen(endpoint);
+    t.after(() => close(endpoint));
+    const daemon = await bootDaemon(service, {
+        readyTimeoutMs: 30_000,
+        extraEnv: {
+            PLURNK_MODEL: "inputfixture",
+            PLURNK_MODEL_inputfixture: "openai/interaction-fixture",
+            PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
+            OPENAI_API_KEY: "input-fixture",
+            PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
+            PLURNK_PROVIDERS_REASONING: "off",
+            PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
+        },
+    });
+    t.after(daemon.cleanup);
+    const result = await runClient(daemon.url, [
+        "--json", "--yolo", "--workspace", "cli-input", "--worker", "input-worker",
+        "--project-root", "", "--max-turns", "3", "--timeout", "20", "Choose a branch.",
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).response, "No input channel; continuing without a fabricated answer.");
+    assert.equal(packets.length, 2, "the interaction resolves without losing or restarting the worker loop");
+    assert.match(packets[1]!, /\\"action\\": ?\\"cancel\\"/, "the next model packet contains the actual tool cancellation");
+    assert.doesNotMatch(packets[1]!, /capability-denied|interaction-denied/, "input topology is not a workspace permission change");
 });

@@ -321,7 +321,7 @@
         "durability"
       ]
     },
-    "worker.capabilities.get": {
+    "workspace.capabilities.get": {
       "posture": "generic",
       "evidence": [
         "src/agui.test.ts — arbitrary action round-trip",
@@ -334,7 +334,7 @@
         "composition"
       ]
     },
-    "worker.capabilities.set": {
+    "workspace.capabilities.set": {
       "posture": "generic",
       "evidence": [
         "src/agui.test.ts — arbitrary action round-trip",
@@ -349,7 +349,7 @@
         "composition"
       ]
     },
-    "worker.skills.list": {
+    "workspace.skills.list": {
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
@@ -364,7 +364,7 @@
         "composition"
       ]
     },
-    "worker.skills.discover": {
+    "workspace.skills.discover": {
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
@@ -379,7 +379,7 @@
         "composition"
       ]
     },
-    "worker.skills.add": {
+    "workspace.skills.add": {
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
@@ -395,7 +395,7 @@
         "durability"
       ]
     },
-    "worker.skills.enable": {
+    "workspace.skills.enable": {
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
@@ -411,7 +411,7 @@
         "durability"
       ]
     },
-    "worker.skills.disable": {
+    "workspace.skills.disable": {
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
@@ -427,7 +427,7 @@
         "durability"
       ]
     },
-    "worker.skills.remove": {
+    "workspace.skills.remove": {
       "posture": "native",
       "evidence": [
         "src/skills.test.ts — Agent Skills management",
@@ -443,7 +443,7 @@
         "durability"
       ]
     },
-    "worker.agents.list": {
+    "workspace.agents.list": {
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
@@ -458,7 +458,7 @@
         "composition"
       ]
     },
-    "worker.agents.discover": {
+    "workspace.agents.discover": {
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
@@ -473,7 +473,7 @@
         "composition"
       ]
     },
-    "worker.agents.add": {
+    "workspace.agents.add": {
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
@@ -489,7 +489,7 @@
         "durability"
       ]
     },
-    "worker.agents.enable": {
+    "workspace.agents.enable": {
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
@@ -505,7 +505,7 @@
         "durability"
       ]
     },
-    "worker.agents.disable": {
+    "workspace.agents.disable": {
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
@@ -521,7 +521,7 @@
         "durability"
       ]
     },
-    "worker.agents.remove": {
+    "workspace.agents.remove": {
       "posture": "native",
       "evidence": [
         "src/agents.test.ts — outbound agents management",
@@ -537,7 +537,7 @@
         "durability"
       ]
     },
-    "worker.members.list": {
+    "workspace.members.list": {
       "posture": "native",
       "evidence": [
         "src/members.test.ts — file members management",
@@ -552,7 +552,7 @@
         "composition"
       ]
     },
-    "worker.members.discover": {
+    "workspace.members.discover": {
       "posture": "native",
       "evidence": [
         "src/members.test.ts — file members management",
@@ -567,7 +567,7 @@
         "composition"
       ]
     },
-    "worker.members.add": {
+    "workspace.members.add": {
       "posture": "native",
       "evidence": [
         "src/members.test.ts — file members management",
@@ -583,7 +583,7 @@
         "durability"
       ]
     },
-    "worker.members.enable": {
+    "workspace.members.enable": {
       "posture": "native",
       "evidence": [
         "src/members.test.ts — file members management",
@@ -599,7 +599,7 @@
         "durability"
       ]
     },
-    "worker.members.disable": {
+    "workspace.members.disable": {
       "posture": "native",
       "evidence": [
         "src/members.test.ts — file members management",
@@ -615,7 +615,7 @@
         "durability"
       ]
     },
-    "worker.members.remove": {
+    "workspace.members.remove": {
       "posture": "native",
       "evidence": [
         "src/members.test.ts — file members management",
@@ -631,7 +631,7 @@
         "durability"
       ]
     },
-    "worker.mcp.list": {
+    "workspace.mcp.list": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -646,7 +646,7 @@
         "composition"
       ]
     },
-    "worker.mcp.discover": {
+    "workspace.mcp.discover": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -661,7 +661,7 @@
         "composition"
       ]
     },
-    "worker.mcp.add": {
+    "workspace.mcp.add": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -676,7 +676,7 @@
         "durability"
       ]
     },
-    "worker.mcp.enable": {
+    "workspace.mcp.enable": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -691,7 +691,7 @@
         "durability"
       ]
     },
-    "worker.mcp.disable": {
+    "workspace.mcp.disable": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -706,7 +706,7 @@
         "durability"
       ]
     },
-    "worker.mcp.remove": {
+    "workspace.mcp.remove": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
@@ -721,7 +721,7 @@
         "durability"
       ]
     },
-    "worker.mcp.oauth.complete": {
+    "workspace.mcp.oauth.complete": {
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP authorization",
@@ -736,7 +736,7 @@
         "durability"
       ]
     },
-    "worker.mcp.complete": {
+    "workspace.mcp.complete": {
       "posture": "generic",
       "evidence": [
         "src/agui.test.ts — arbitrary action round-trip"

@@ -179,8 +179,7 @@ options:
       --auto              keep proposal authority inside the loop; proposals
                           resolve automatically without a client review round-trip.
       --policy <json>     LoopPolicy JSON applied to every loop. --auto selects
-                          proposal acceptance; '?' additionally denies EXEC and
-                          selects proposal review for that prompt.
+                          proposal acceptance; '?' selects review for that prompt.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -215,7 +214,7 @@ subcommands:
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   reasoning [policy]      inspect or set a worker's durable reasoning policy
-  capabilities [json]    inspect the capability cascade or set the Worker layer
+  capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
   web [options]           serve the optional browser client using this invocation's
@@ -512,8 +511,8 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             throw new ProblemError(clientSubcommandUnknownVerb(`capabilities ${positionals.slice(1).join(" ")}`));
         }
         const projection = sub === undefined
-            ? await rpc.call("worker.capabilities.get") as Record<string, CapabilityPolicy>
-            : await rpc.call("worker.capabilities.set", {
+            ? await rpc.call("workspace.capabilities.get") as Record<string, CapabilityPolicy>
+            : await rpc.call("workspace.capabilities.set", {
                 policy: parseCapabilityPolicy("capabilities", sub),
             }) as Record<string, CapabilityPolicy>;
         process.stdout.write(opts.json
@@ -683,7 +682,7 @@ export const main = async (argv: string[]): Promise<void> => {
     }
 
     // Loop policy is one contracts-owned surface. --auto is proposal-disposition
-    // sugar; prompt-prefix attenuation is composed immediately before each run.
+    // sugar; prompt-prefix proposal disposition is composed immediately before each run.
     let loopPolicy!: LoopPolicy;
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;

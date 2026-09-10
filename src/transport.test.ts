@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { BridgeTransport, type RunHandlers } from "./transport.ts";
 import { ProblemError } from "./diagnostics.ts";
 
-const REVIEW_POLICY = { capabilities: {}, proposals: "review" as const };
+const REVIEW_POLICY = { proposals: "review" as const };
 import { runViaBridge } from "./agui.ts";
 
 interface ConformanceKit {
@@ -687,8 +687,8 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
-        await bt.run("first", { policy: { capabilities: {}, proposals: "accept" } }).done;
-        await bt.run("second", { policy: { capabilities: {}, proposals: "review" } }).done;
+        await bt.run("first", { policy: { proposals: "accept" } }).done;
+        await bt.run("second", { policy: { proposals: "review" } }).done;
         const runs = mock.captured.filter((c) => (c.body as { messages?: unknown[] }).messages !== undefined && ((c.body as { messages: unknown[] }).messages.length > 0 || (c.body as { forwardedProps?: { plurnk?: { action?: unknown } } }).forwardedProps?.plurnk?.action === undefined));
         assert.equal(runs.length, 2, "two loops drove");
         for (const c of runs) {
@@ -700,8 +700,8 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
         assert.deepEqual(
             runs.map((c) => (c.body as { forwardedProps: { plurnk: { policy: unknown } } }).forwardedProps.plurnk.policy),
             [
-                { capabilities: {}, proposals: "accept" },
-                { capabilities: {}, proposals: "review" },
+                { proposals: "accept" },
+                { proposals: "review" },
             ],
         );
     } finally { await mock.close(); }

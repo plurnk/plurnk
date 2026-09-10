@@ -165,8 +165,8 @@ const usage = (write: (text: string) => void, subcommand?: string): void => {
 
 const candidatesFrom = async (rpc: ActionCaller, overlay: Readonly<Record<string, string>>): Promise<Candidate[]> => {
     if (Object.keys(overlay).length === 0) return [];
-    const discovered = await rpc.call("worker.mcp.discover", { configuration: overlay }) as { candidates?: unknown };
-    if (!Array.isArray(discovered.candidates)) throw new Error("worker.mcp.discover returned an invalid result.");
+    const discovered = await rpc.call("workspace.mcp.discover", { configuration: overlay }) as { candidates?: unknown };
+    if (!Array.isArray(discovered.candidates)) throw new Error("workspace.mcp.discover returned an invalid result.");
     return discovered.candidates as Candidate[];
 };
 
@@ -178,8 +178,8 @@ export const handleMcp = async (
 ): Promise<unknown | null> => {
     const overlay = { ...configuration.overlay };
     if (input.length === 0) {
-        const result = await rpc.call("worker.mcp.list", {}) as { definitions?: unknown };
-        if (!Array.isArray(result.definitions)) throw new Error("worker.mcp.list returned an invalid result.");
+        const result = await rpc.call("workspace.mcp.list", {}) as { definitions?: unknown };
+        if (!Array.isArray(result.definitions)) throw new Error("workspace.mcp.list returned an invalid result.");
         if (result.definitions.length === 0) write("  MCP servers: none\n");
         else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
         const candidates = await candidatesFrom(rpc, overlay);
@@ -199,8 +199,8 @@ export const handleMcp = async (
             usage(write, "discover");
             return null;
         }
-        const result = await rpc.call("worker.mcp.discover", { source: alias }) as { candidates?: unknown };
-        if (!Array.isArray(result.candidates)) throw new Error("worker.mcp.discover returned an invalid result.");
+        const result = await rpc.call("workspace.mcp.discover", { source: alias }) as { candidates?: unknown };
+        if (!Array.isArray(result.candidates)) throw new Error("workspace.mcp.discover returned an invalid result.");
         if (result.candidates.length === 0) write("  candidates: none\n");
         else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
         return result;
@@ -213,7 +213,7 @@ export const handleMcp = async (
         }
         const [, , target, path] = args;
         const options = path === undefined ? {} : await readOptions(path);
-        const result = await rpc.call("worker.mcp.add", { alias, definition: composeDefinition(alias, target, options) }) as MutationResult;
+        const result = await rpc.call("workspace.mcp.add", { alias, definition: composeDefinition(alias, target, options) }) as MutationResult;
         renderMutation(result, "added", alias, write);
         return result;
     }
@@ -228,18 +228,18 @@ export const handleMcp = async (
             // available definition is enabled.
             const candidate = (await candidatesFrom(rpc, overlay)).find((entry) => entry.alias === alias);
             const result = candidate?.definition === undefined
-                ? await rpc.call("worker.mcp.enable", { alias }) as MutationResult
-                : await rpc.call("worker.mcp.add", { alias, definition: candidate.definition }) as MutationResult;
+                ? await rpc.call("workspace.mcp.enable", { alias }) as MutationResult
+                : await rpc.call("workspace.mcp.add", { alias, definition: candidate.definition }) as MutationResult;
             renderMutation(result, candidate === undefined ? "enabled" : "added", alias, write);
             return result;
         }
         // Options specialize the alias's current definition into this Worker's own.
         const options = await readOptions(args[2]);
-        const listed = await rpc.call("worker.mcp.list", {}) as { definitions?: DefinitionState[] };
+        const listed = await rpc.call("workspace.mcp.list", {}) as { definitions?: DefinitionState[] };
         const current = listed.definitions?.find((entry) => entry.alias === alias)?.definition
             ?? (await candidatesFrom(rpc, overlay)).find((entry) => entry.alias === alias)?.definition;
         if (current === undefined) throw new Error(`MCP server '${alias}' is not available to this Worker or your configuration.`);
-        const result = await rpc.call("worker.mcp.add", { alias, definition: { ...current, ...options } }) as MutationResult;
+        const result = await rpc.call("workspace.mcp.add", { alias, definition: { ...current, ...options } }) as MutationResult;
         renderMutation(result, "added", alias, write);
         return result;
     }
@@ -249,7 +249,7 @@ export const handleMcp = async (
             usage(write, "disable");
             return null;
         }
-        const result = await rpc.call("worker.mcp.disable", { alias }) as MutationResult;
+        const result = await rpc.call("workspace.mcp.disable", { alias }) as MutationResult;
         renderMutation(result, "disabled", alias, write);
         return result;
     }
@@ -259,7 +259,7 @@ export const handleMcp = async (
             usage(write, "remove");
             return null;
         }
-        const result = await rpc.call("worker.mcp.remove", { alias });
+        const result = await rpc.call("workspace.mcp.remove", { alias });
         write(`  removed: ${alias}\n`);
         return result;
     }
@@ -269,7 +269,7 @@ export const handleMcp = async (
             usage(write, "oauth");
             return null;
         }
-        const result = await rpc.call("worker.mcp.oauth.complete", {
+        const result = await rpc.call("workspace.mcp.oauth.complete", {
             alias,
             callbackUrl: args[2],
         }) as MutationResult;

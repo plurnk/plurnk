@@ -46,7 +46,7 @@ Options:
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_CLIENT_YOLO`. |
 | `--auto` | flag | Set the loop proposal disposition to `accept`; no client review/resume round-trip. |
-| `--policy <json>` | string | Complete LoopPolicy applied to every loop: capability attenuation plus `review`, `accept`, or `reject` proposal disposition. |
+| `--policy <json>` | string | Complete LoopPolicy applied to every loop: `review`, `accept`, or `reject` proposal disposition. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
 | `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. |
@@ -194,7 +194,7 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes (converged with plurnk.nvim and the TUI) {§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui}
 
-The prompt's first character carries the same habits as nvim's `:AI` and the TUI line. `plurnk "? question"` intersects the base loop policy with `{deny:[{operation:"EXEC"}]}` and selects proposal `review`; `": text"` uses the base policy unchanged. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
+The prompt's first character carries the same habits as nvim's `:AI` and the TUI line. `plurnk "? question"` selects proposal `review` without changing workspace capabilities; `": text"` uses the base policy unchanged. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
 
 ### §2.1 Output channels {§cli-output-channels}
 
@@ -254,10 +254,10 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the attached Worker's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, TASK, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs (one vocabulary with nvim's `:AI/`): `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, TASK, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence instead uses the non-logging `op.look` observation action. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
-    - Lines starting with `? ` → a conversation run whose loop policy denies EXEC and selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
+    - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
     (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
@@ -381,14 +381,14 @@ result.
 
 | TUI / CLI input | AG-UI+ action |
 |---|---|
-| `/mcp` / `plurnk mcp` | `worker.mcp.list {}`, then `worker.mcp.discover {configuration}` when the client holds `PLURNK_MCP_*` declarations |
-| `/mcp discover <url\|command>` | `worker.mcp.discover {source}` |
-| `/mcp add <alias> <target> [options.json]` | `worker.mcp.add {alias, definition}` — the client composes the exact `McpServerDefinition`: `name = alias`; an absolute `http(s)://` target is `{transport: "http", url}`, anything else `{transport: "stdio", command, args: []}`; `options.json` supplies the remaining definition members |
-| `/mcp enable <alias>` | `worker.mcp.enable {alias}` for an available definition; `worker.mcp.add {alias, definition}` when `alias` is a candidate of the client's own configuration |
-| `/mcp enable <alias> options.json` | `worker.mcp.add {alias, definition}` with the alias's current (listed or discovered) definition specialized by `options.json` |
-| `/mcp disable <alias>` | `worker.mcp.disable {alias}` |
-| `/mcp remove <alias>` | `worker.mcp.remove {alias}` |
-| `/mcp oauth <alias> <callback-url>` | `worker.mcp.oauth.complete {alias, callbackUrl}` |
+| `/mcp` / `plurnk mcp` | `workspace.mcp.list {}`, then `workspace.mcp.discover {configuration}` when the client holds `PLURNK_MCP_*` declarations |
+| `/mcp discover <url\|command>` | `workspace.mcp.discover {source}` |
+| `/mcp add <alias> <target> [options.json]` | `workspace.mcp.add {alias, definition}` — the client composes the exact `McpServerDefinition`: `name = alias`; an absolute `http(s)://` target is `{transport: "http", url}`, anything else `{transport: "stdio", command, args: []}`; `options.json` supplies the remaining definition members |
+| `/mcp enable <alias>` | `workspace.mcp.enable {alias}` for an available definition; `workspace.mcp.add {alias, definition}` when `alias` is a candidate of the client's own configuration |
+| `/mcp enable <alias> options.json` | `workspace.mcp.add {alias, definition}` with the alias's current (listed or discovered) definition specialized by `options.json` |
+| `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
+| `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
+| `/mcp oauth <alias> <callback-url>` | `workspace.mcp.oauth.complete {alias, callbackUrl}` |
 
 Every slash-command row also admits the same arguments after `plurnk mcp`.
 
@@ -411,13 +411,13 @@ tool is admitted by the daemon at the next turn.
 
 | TUI input | AG-UI+ action |
 |---|---|
-| `/skills` | `worker.skills.list {}` |
-| `/skills discover <query>` | `worker.skills.discover {query}` — registry search |
-| `/skills discover <source>` | `worker.skills.discover {source}` — a single term holding `/`, `:`, or `\\`, or starting with `.` or `~`, is a package reference |
-| `/skills add <name> <source> [--global]` | `worker.skills.add {alias, definition: {name, scope, source}}` with `scope` `project` unless `--global` |
-| `/skills enable <name>` | `worker.skills.enable {alias}` |
-| `/skills disable <name>` | `worker.skills.disable {alias}` |
-| `/skills remove <name>` | `worker.skills.remove {alias}` |
+| `/skills` | `workspace.skills.list {}` |
+| `/skills discover <query>` | `workspace.skills.discover {query}` — registry search |
+| `/skills discover <source>` | `workspace.skills.discover {source}` — a single term holding `/`, `:`, or `\\`, or starting with `.` or `~`, is a package reference |
+| `/skills add <name> <source> [--global]` | `workspace.skills.add {alias, definition: {name, scope, source}}` with `scope` `project` unless `--global` |
+| `/skills enable <name>` | `workspace.skills.enable {alias}` |
+| `/skills disable <name>` | `workspace.skills.disable {alias}` |
+| `/skills remove <name>` | `workspace.skills.remove {alias}` |
 
 Daemon Problems — an uninstallable source, a missing project root, a
 service-owned skill that cannot be removed — cross the existing diagnostic
@@ -433,12 +433,12 @@ service, and the model addresses an enabled agent as `a2a://<alias>`.
 
 | TUI input | AG-UI+ action |
 |---|---|
-| `/agents` | `worker.agents.list {}` |
-| `/agents discover <url>` | `worker.agents.discover {source}` — one inert card-derived candidate |
-| `/agents add <alias> <url> [options.json]` | `worker.agents.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
-| `/agents enable <alias>` | `worker.agents.enable {alias}` |
-| `/agents disable <alias>` | `worker.agents.disable {alias}` |
-| `/agents remove <alias>` | `worker.agents.remove {alias}` |
+| `/agents` | `workspace.agents.list {}` |
+| `/agents discover <url>` | `workspace.agents.discover {source}` — one inert card-derived candidate |
+| `/agents add <alias> <url> [options.json]` | `workspace.agents.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
+| `/agents enable <alias>` | `workspace.agents.enable {alias}` |
+| `/agents disable <alias>` | `workspace.agents.disable {alias}` |
+| `/agents remove <alias>` | `workspace.agents.remove {alias}` |
 
 Invalid or unreadable local JSON fails before dispatch; daemon Problems — an
 unreachable card, an unsupported interface, an unresolved symbolic credential —
@@ -458,13 +458,13 @@ exactly as the sibling families tokenize theirs (quote it to keep whitespace).
 
 | TUI input | AG-UI+ action |
 |---|---|
-| `/members` | `worker.members.list {}` — one line per definition with what its glob resolved to: `docs  service  active  include docs/** → 12 files (3 ignored)`, `no-tokenizer  worker  active  exclude **/tokenizer.json → 4 members` |
-| `/members discover <path>` | `worker.members.discover {query}` — one candidate explaining why the file is or is not a member |
-| `/members discover <glob>` | `worker.members.discover {query}` — one candidate previewing what `add` would include or exclude |
-| `/members add <alias> <glob>` | `worker.members.add {alias, definition: {glob}}` |
-| `/members enable <alias>` | `worker.members.enable {alias}` |
-| `/members disable <alias>` | `worker.members.disable {alias}` |
-| `/members remove <alias>` | `worker.members.remove {alias}` |
+| `/members` | `workspace.members.list {}` — one line per definition with what its glob resolved to: `docs  service  active  include docs/** → 12 files (3 ignored)`, `no-tokenizer  worker  active  exclude **/tokenizer.json → 4 members` |
+| `/members discover <path>` | `workspace.members.discover {query}` — one candidate explaining why the file is or is not a member |
+| `/members discover <glob>` | `workspace.members.discover {query}` — one candidate previewing what `add` would include or exclude |
+| `/members add <alias> <glob>` | `workspace.members.add {alias, definition: {glob}}` |
+| `/members enable <alias>` | `workspace.members.enable {alias}` |
+| `/members disable <alias>` | `workspace.members.disable {alias}` |
+| `/members remove <alias>` | `workspace.members.remove {alias}` |
 
 Daemon Problems — a headless workspace, an invalid pattern, a service-owned
 definition that cannot be removed — cross the existing diagnostic path without
@@ -642,7 +642,7 @@ loop/proposal {
     target: { scheme: string | null, pathname: string | null },
     body: string,                 // udiff for EDIT; command summary for EXEC
     attrs: object,                // scheme-specific payload (opaque to client)
-    policy: LoopPolicy,           // loop's immutable capability/proposal policy
+    policy: LoopPolicy,           // loop's immutable proposal disposition
 }
 ```
 
@@ -680,7 +680,7 @@ This is distinct from **loop auto** (`--auto`, or a policy with `proposals:"acce
 
 When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. If the selected policy requests `review`, the client projects `proposals:"reject"`; Core settles admitted side effects without a client round-trip. An explicitly selected `accept` or `reject` disposition remains authoritative.
 
-The one-shot client also attenuates `{access:"interact"}` because it has no interactive question channel. This is a topology restriction through the same capability contract, not a question-specific boolean.
+The one-shot client cancels input-request interrupts through the standard AG-UI resume contract because it has no interactive form. It does not alter workspace capabilities or invent an answer; the worker receives the cancellation and can continue.
 
 Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`.
 
@@ -714,7 +714,7 @@ prompt-driven flow, but skip `loop.run` entirely. They support `--json` for
 machine-readable output (stdout product per §2.1; trace and errors stay on
 stderr). `reasoning [policy]` reads or changes the durable reasoning policy.
 `capabilities [json]` projects every durable capability layer and its effective
-intersection, or replaces the mutable Worker layer. Prompt runs only carry loop
+intersection, or replaces the workspace policy. Prompt runs only carry proposal
 policy. Local `render` and launcher `web` subcommands do not contact the daemon.
 
 When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
@@ -777,12 +777,12 @@ There is one configuration owner and one interpretation of every shared knob:
 | project root, files preview, command ceiling, git policy, workspace capabilities | Create-time properties accompanying every selected workspace |
 | explicit model and reasoning | Durable Worker actions before that session's first prompt |
 | LoopPolicy and `--auto` | Base policy on every prompt Run |
-| `?` prompt prefix | Per-prompt EXEC attenuation and proposal review, using the same projector as CLI/TUI |
+| `?` prompt prefix | Per-prompt proposal review, using the same projector as CLI/TUI |
 | prompt `@path` references | Per-prompt `openPaths` turn-0 projection |
 | `--max-turns` | Per-prompt daemon turn ceiling |
 | `--timeout` | Portal-owned deadline followed by `loop.cancel {reason:"client_timeout"}` for the exact workspace/Worker |
 | `--yolo` | Automatic acceptance of client-owned proposals; interactions remain user-owned |
-| client `PLURNK_MCP_*` declarations | Host-side discovery overlay for the browser's ordinary `worker.mcp.*` management actions; never bootstrap data |
+| client `PLURNK_MCP_*` declarations | Host-side discovery overlay for the browser's ordinary `workspace.mcp.*` management actions; never bootstrap data |
 
 Terminal output controls (`--json`, `--width`) and state-subcommand filters do
 not project into browser behavior. The web package parses no second environment

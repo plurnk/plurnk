@@ -9,6 +9,7 @@
 // JSON mode uses the terminal projection's complete loop identity and usage.
 
 import process from "node:process";
+import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
@@ -31,7 +32,7 @@ import type { LoopPolicy, OperationResult, ProblemDetails } from "@plurnk/plurnk
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
-import { composeLoopPolicy, NONINTERACTIVE_CAPABILITIES } from "./policy.ts";
+import { composeLoopPolicy } from "./policy.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
@@ -50,7 +51,7 @@ export interface CliRunResult {
     exitCode: number;
     // Terminate-resume: set when the segment ended on a client-owned proposal
     // tool-call — the caller POSTs this as the next run's standard resume.
-    pendingResume: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string } | null;
+    pendingResume: ResumeEntry | null;
     entries: LogEntryWire[];
     notices: Notice[];
     response: string;
@@ -133,7 +134,14 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                 finalStatus = problem.status;
                 continue;
             }
-            pendingResume = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
+            const r = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
+            pendingResume = r.decision === "cancel"
+                ? { interruptId: toolId, status: "cancelled" }
+                : { interruptId: toolId, status: "resolved", payload: { decision: r.decision, ...(r.body === undefined ? {} : { body: r.body }) } };
+            continue;
+        }
+        if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
+            pendingResume = { interruptId: toolId, status: "cancelled" };
             continue;
         }
         const state = reduceStatusGauge(statusGauge, e);
@@ -215,8 +223,8 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             }
         }
     }
-    if (pendingResume !== null && !interrupts.has(`prop:${pendingResume.logEntryId}`)) {
-        problem = clientTransportInterruptMismatch(pendingResume.logEntryId);
+    if (pendingResume !== null && !interrupts.has(pendingResume.interruptId)) {
+        problem = clientTransportInterruptMismatch(pendingResume.interruptId);
         pendingResume = null;
         finalStatus = problem.status;
     }
@@ -245,7 +253,6 @@ export const runCliViaBridge = async (
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     const policy = composeLoopPolicy(
         opts.policy,
-        [NONINTERACTIVE_CAPABILITIES],
         noReviewChannel && opts.policy.proposals === "review" ? "reject" : opts.policy.proposals,
     );
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
@@ -349,10 +356,7 @@ export const runCliViaBridge = async (
     process.once("SIGTERM", onTerm);
     try {
         while (result.pendingResume !== null) {
-            const r = result.pendingResume;
-            next = r.decision === "cancel"
-                ? { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "cancelled" }] }
-                : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
+            next = { resume: [result.pendingResume] };
             const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
             result = {
                 ...seg,
@@ -420,10 +424,7 @@ export const runScriptViaBridge = async (
     let next: { resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { forwardedProps };
     let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }), io);
     while (result.pendingResume !== null) {
-        const r = result.pendingResume;
-        next = r.decision === "cancel"
-            ? { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "cancelled" }] }
-            : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
+        next = { resume: [result.pendingResume] };
         result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
     }
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse

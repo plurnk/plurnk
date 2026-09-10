@@ -250,10 +250,10 @@ export const clientTransportStateInvalid = (reason: string): ProblemDetails =>
         retryable: false,
     });
 
-export const clientTransportInterruptMismatch = (logEntryId: number): ProblemDetails =>
-    clientProblem("transport", "interrupt-mismatch", 502, `Proposal ${logEntryId} ended without its matching AG-UI interrupt outcome.`, {
-        stage: "proposal-resolution",
-        logEntryId,
+export const clientTransportInterruptMismatch = (interruptId: string): ProblemDetails =>
+    clientProblem("transport", "interrupt-mismatch", 502, `Tool call '${interruptId}' ended without its matching AG-UI interrupt outcome.`, {
+        stage: "interrupt-resolution",
+        interruptId,
         retryable: false,
     });
 

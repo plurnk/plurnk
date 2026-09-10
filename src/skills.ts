@@ -1,6 +1,6 @@
 // Thin TUI projection of the daemon-owned Agent Skills Functionality family:
 // the common lifecycle (list | discover | add | enable | disable | remove)
-// over the Worker's `skills` actions. The client composes exact definitions
+// over the workspace's `skills` actions. The client composes exact definitions
 // and renders the daemon's states; installation, discovery, and enablement
 // policy live in the service.
 
@@ -80,7 +80,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const scope = typeof entry.definition?.scope === "string" ? entry.definition.scope : "unknown";
     const source = typeof entry.definition?.source === "string" ? `  ${entry.definition.source}` : "";
     const description = typeof entry.detail?.description === "string" ? `  ${entry.detail.description}` : "";
-    const origin = entry.origin === "worker" ? "  (worker)" : "";
+    const origin = entry.origin === "workspace" ? "  (workspace)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
     return `  ${alias}  ${state}  ${scope}${source}${description}${origin}${problem}\n`;
 };
@@ -110,8 +110,8 @@ export const handleSkills = async (
     write: (text: string) => void,
 ): Promise<unknown | null> => {
     if (input.length === 0) {
-        const result = await rpc.call("worker.skills.list", {}) as { definitions?: unknown };
-        if (!Array.isArray(result.definitions)) throw new Error("worker.skills.list returned an invalid result.");
+        const result = await rpc.call("workspace.skills.list", {}) as { definitions?: unknown };
+        if (!Array.isArray(result.definitions)) throw new Error("workspace.skills.list returned an invalid result.");
         if (result.definitions.length === 0) write("  Agent Skills: none\n");
         else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
         return result;
@@ -128,8 +128,8 @@ export const handleSkills = async (
             return null;
         }
         const query = args.length === 2 && isSource(term) ? { source: term } : { query: term };
-        const result = await rpc.call("worker.skills.discover", query) as { candidates?: unknown };
-        if (!Array.isArray(result.candidates)) throw new Error("worker.skills.discover returned an invalid result.");
+        const result = await rpc.call("workspace.skills.discover", query) as { candidates?: unknown };
+        if (!Array.isArray(result.candidates)) throw new Error("workspace.skills.discover returned an invalid result.");
         if (result.candidates.length === 0) write("  candidates: none\n");
         else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
         return result;
@@ -144,7 +144,7 @@ export const handleSkills = async (
         }
         const [alias, source] = positional;
         const definition: SkillDefinition = { name: alias, scope: global ? "global" : "project", source };
-        const result = await rpc.call("worker.skills.add", { alias, definition }) as MutationResult;
+        const result = await rpc.call("workspace.skills.add", { alias, definition }) as MutationResult;
         renderMutation(result, "added", alias, write);
         return result;
     }
@@ -154,7 +154,7 @@ export const handleSkills = async (
             usage(write, command);
             return null;
         }
-        const result = await rpc.call(`worker.skills.${command}`, { alias: name }) as MutationResult;
+        const result = await rpc.call(`workspace.skills.${command}`, { alias: name }) as MutationResult;
         renderMutation(result, command === "enable" ? "enabled" : "disabled", name, write);
         return result;
     }
@@ -164,7 +164,7 @@ export const handleSkills = async (
             usage(write, "remove");
             return null;
         }
-        const result = await rpc.call("worker.skills.remove", { alias: name });
+        const result = await rpc.call("workspace.skills.remove", { alias: name });
         write(`  removed: ${name}\n`);
         return result;
     }

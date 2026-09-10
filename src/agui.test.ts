@@ -312,7 +312,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "w",
             workspace: "w",
-            policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "accept" },
+            policy: { proposals: "accept" },
             maxTurns: 7,
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
@@ -329,15 +329,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         assert.equal(fp.childAlias, undefined);
         assert.equal(fp.childModel, undefined);
         assert.equal(fp.childSelector, undefined);
-        assert.deepEqual(fp.policy, {
-            capabilities: {
-                deny: [
-                    { access: "interact" },
-                    { operation: "EXEC" },
-                ],
-            },
-            proposals: "accept",
-        }, "loop policy reaches the wire with one-shot client attenuation");
+        assert.deepEqual(fp.policy, { proposals: "accept" }, "proposal policy reaches the wire without hidden capability restrictions");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
         assert.deepEqual(fp.openPaths, ["README.md", "src/index.ts"], "prompt file references reach the wire");
     } finally { await mock.close(); }
@@ -367,7 +359,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "conversation",
             workspace: "world",
-            policy: { capabilities: {}, proposals: "review" },
+            policy: { proposals: "review" },
             yolo: true,
             json: true,
             projectRoot: null,
@@ -411,7 +403,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { capabilities: {}, proposals: "review" }, timeoutSec: 1, yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -435,7 +427,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { capabilities: {}, proposals: "review" }, yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

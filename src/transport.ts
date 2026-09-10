@@ -94,7 +94,7 @@ export interface Transport {
     // Switch to (or create) a named workspace. WS rebinds the connection via
     // workspace.create; the bridge re-maps its threadId (the bridge lazy-creates the
     // workspace on the next run). Returns the workspace handle for the header.
-    useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string }): Promise<{ id: number; name: string }>;
+    useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string }): Promise<{ name: string }>;
     // Rebind this session's conversation to a worker by name, keeping the world:
     // the daemon binds an existing conversation or mints a fresh one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
@@ -394,14 +394,14 @@ export class BridgeTransport implements Transport {
         pending(payload);
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
-    async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ id: number; name: string }> {
+    async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ name: string }> {
         // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
         // switch is a new world + its default conversation; a split thread comes from
         // --worker at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
-        return { id: 0, name: threadId };
+        return { name: threadId };
     }
     useWorker(name: string, world: string): void {
         this.#threadId = name;

@@ -60,7 +60,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
     };
 
     await assert.rejects(
-        runTui(transport, { id: 1, name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
+        runTui(transport, { name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
         /model control plane unavailable/,
     );
     assert.deepEqual(calls, ["providers.list", "worker.model.get"]);
@@ -83,7 +83,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
     };
 
     await assert.rejects(
-        runTui(transport, { id: 1, name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
+        runTui(transport, { name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
         /invalid ModelRoute/,
     );
 });
@@ -232,7 +232,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const imports: string[] = [];
     const resolved: string[] = [];
     const composed: boolean[] = [];
-    let workspace = { id: 1, name: "sess" };
+    let workspace = { name: "sess" };
     let worker: string | null = "sess";
     const attached: string[] = [];
     const modelState = {
@@ -282,7 +282,7 @@ test("[§cli-workers-topology] handleVerb /attach <known> rebinds the thread and
     const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }, { id: 2, name: "sess-fork" }] } });
     await handleVerb("/attach sess-fork", ctx);
     assert.deepEqual(ctx.attached, ["sess-fork"]);
-    assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: { id: 1 } });
+    assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: undefined });
     assert.ok(ctx.calls.some((c) => c.method === "worker.model.get"), "policy is re-read for the newly bound worker");
     assert.equal(ctx.out.join(""), "  worker: sess-fork (bound)\n");
 });
@@ -300,7 +300,7 @@ test("[§cli-workers-topology] handleVerb /workers renders the directory as a tr
         { id: 2, name: "sess-fork", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1 },
     ] } });
     await handleVerb("/workers", ctx);
-    assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: { id: 1 } });
+    assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: undefined });
     assert.match(ctx.out.join(""), /^ {2}● sess .*← bound\n {2}└─ ○ sess-fork /u);
 });
 
@@ -405,18 +405,17 @@ test("handleVerb /rename with no name → usage, no rpc", async () => {
 test("handleVerb /worker [name] → run.fork (new worker) then binds to it", async () => {
     const ctx = makeCtx({
         "run.fork": { workerId: 42, workerName: "main-fork" },
-        "workspace.attach": { id: 1, name: "sess", workerId: 42, workerName: "main-fork" },
     });
     await handleVerb("/worker branch-a", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: { name: "branch-a" } });
-    assert.deepEqual(ctx.calls[1], { method: "workspace.attach", params: { id: 1, workerId: 42 } });
+    assert.deepEqual(ctx.attached, ["main-fork"], "the fork uses the same conversation binding as /attach");
+    assert.ok(ctx.calls.every(({ method }) => method !== "workspace.attach"));
     assert.match(ctx.out.join(""), /worker: main-fork \(new\)/);
 });
 
-test("handleVerb /worker with no name → run.fork with no name (auto <parent>-fork)", async () => {
+test("handleVerb /worker with no name → run.fork with a daemon-assigned name", async () => {
     const ctx = makeCtx({
         "run.fork": { workerId: 42, workerName: "main-fork" },
-        "workspace.attach": { id: 1, name: "sess", workerId: 42, workerName: "main-fork" },
     });
     await handleVerb("/worker", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
@@ -645,16 +644,16 @@ test("seedPromptHistory delegates newest-first workspace prompts to the editor s
     const rpc = { call: async (m: string, p?: unknown) => { calls.push({ m, p }); return { prompts: ["latest", "older"] }; } } as unknown as VerbContext["rpc"];
     const received: string[][] = [];
     const history = { addHistory: (prompts: readonly string[]) => received.push([...prompts]) };
-    await seedPromptHistory(rpc, 7, history);
-    assert.deepEqual(calls, [{ m: "workspace.prompts", p: { id: 7, limit: 100 } }]);
+    await seedPromptHistory(rpc, history);
+    assert.deepEqual(calls, [{ m: "workspace.prompts", p: { limit: 100 } }]);
     assert.deepEqual(received, [["latest", "older"]]);
 });
 
 test("seedPromptHistory: empty / error → history untouched", async () => {
     let calls = 0;
     const history = { addHistory: () => { calls += 1; } };
-    await seedPromptHistory({ call: async () => ({ prompts: [] }) } as unknown as VerbContext["rpc"], 1, history);
-    await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], 1, history);
+    await seedPromptHistory({ call: async () => ({ prompts: [] }) } as unknown as VerbContext["rpc"], history);
+    await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], history);
     assert.equal(calls, 0);
 });
 

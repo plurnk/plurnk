@@ -32,6 +32,7 @@ describe("TUI pty harness", () => {
             assert.doesNotMatch(output, /🐹|🧮/, "the prompt has no identity or embedder glyph");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
+            assert.doesNotMatch(tui.output(), /problem:/, "unnamed startup must not emit Problems");
         } finally {
             tui.kill();
         }
@@ -39,7 +40,7 @@ describe("TUI pty harness", () => {
 
     test("[§cli-tui-mode] banner renders, a verb dispatches, /quit exits clean", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", "tui-startup-contract", "--worker", "startup-worker"]);
         try {
             // 1. The startup header proves the TUI connected and is at the prompt.
             await tui.waitFor(/plurnk.*\/help/);
@@ -48,11 +49,14 @@ describe("TUI pty harness", () => {
             const afterHelp = await tui.waitFor(/\/yolo/);
             assert.match(afterHelp, /\/models .*\/workspaces/, "help lists inspection verbs");
             assert.match(afterHelp, /\/yolo/, "help lists the verb surface");
+            tui.write("/workers\r");
+            await tui.waitFor(/● startup-worker[^\n]*← bound/);
             // 3. /quit closes the REPL with a clean exit code + the resume hint.
             tui.write("/quit\r");
             await tui.waitFor(/resume this workspace:\s+plurnk --workspace /);
             assert.equal(await tui.exited, 0, "/quit exits 0");
             assert.match(tui.output(), /resume this workspace:\s+plurnk --workspace /, "quit prints the resume one-liner");
+            assert.doesNotMatch(tui.output(), /problem:/, "startup and bound-workspace inspection must not emit Problems");
         } finally {
             tui.kill();
         }

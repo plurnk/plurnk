@@ -76,7 +76,7 @@ export const renderTuiFailure = (cause: unknown): string => {
 // the outcome on loop/terminated; a synchronous 501/error surfaces immediately)
 // now lives in the Transport (WsTransport's loopId-keyed done, TerminatedInfo).
 
-interface WorkspaceResult { id: number; name: string }
+interface WorkspaceResult { name: string }
 
 // One verb vocabulary across nvim's :AI/, the TUI, and (where they exist)
 // the argv subcommands. Convergence is policy: divergence needs a reason.
@@ -255,14 +255,10 @@ export const makeAutocompleteProvider = (
 // first; the surface owns the insertion order required by its editor.
 export const seedPromptHistory = async (
     rpc: VerbCaller,
-    workspaceId: number,
     history: { addHistory(promptsNewestFirst: readonly string[]): void },
 ): Promise<void> => {
     try {
-        // Bridge mode has no client-known workspace id → omit it (the connection's
-        // attached workspace answers); WS passes the real id.
-        const params = workspaceId > 0 ? { id: workspaceId, limit: 100 } : { limit: 100 };
-        const { prompts } = await rpc.call("workspace.prompts", params) as { prompts?: string[] };
+        const { prompts } = await rpc.call("workspace.prompts", { limit: 100 }) as { prompts?: string[] };
         if (Array.isArray(prompts) && prompts.length > 0) history.addHistory(prompts);
     } catch { /* history is a convenience; never block the REPL */ }
 };
@@ -369,7 +365,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "workspaces": await runWorkspaceList(rpc, { json: false }); return;
         case "workers": {
             // {§cli-workers-topology} — the directory as a forest rooted at the bound worker.
-            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };
+            const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             write(renderWorkerTopology(workers, ctx.getWorker()));
             return;
         }
@@ -463,7 +459,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // named at instantiation (immutable after). Bind to the fork so the
             // next prompt speaks there. The workspace (the world) is unchanged.
             const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
-            await rpc.call("workspace.attach", { id: ctx.getWorkspace().id, workerId: forked.workerId });
+            ctx.attachWorker(forked.workerName);
             await refreshWorkerPolicy();
             write(`  worker: ${forked.workerName} (new)\n`);
             return;
@@ -472,7 +468,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // {§cli-workers-topology} — an existing worker is bound, a new name mints a
             // fresh conversation on the next run (the `--worker` path); the world stays.
             if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
-            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };
+            const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             const known = workers.some((worker) => worker.name === rest);
             ctx.attachWorker(rest);
             await refreshWorkerPolicy();
@@ -485,7 +481,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "newer": {
             // {§cli-workers-topology} — one hop over the workspace tree is a full attach: the prompt
             // then speaks to that worker. The directory is re-read on every hop; nothing is inferred.
-            const { workers } = await rpc.call("workspace.workers", { id: ctx.getWorkspace().id }) as { workers: WorkerRow[] };
+            const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             const { target, notice } = traverse(workers, ctx.getWorker(), verb as Hop);
             if (target === null) { write(`  (${notice ?? "nowhere to go"})\n`); return; }
             ctx.attachWorker(target.name);
@@ -686,7 +682,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         now: Date.now(),
     });
     const refreshTopology = async (): Promise<void> => {
-        const { workers } = await transport.rpc("workspace.workers", { id: current.id }) as { workers: WorkerRow[] };
+        const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
         workerPosition = siblingPosition(workers, conversationWorker);
         surface.setPrompt(`[${workerPath(workers, conversationWorker)}]`);
         reprompt();
@@ -727,7 +723,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // {§cli-workers-topology} — the directory plus the worker:// references
             // the waterfall has shown (the same harvest the LOOK cycler keeps).
             getWorkerNames: async () => {
-                const { workers } = await transport.rpc("workspace.workers", { id: current.id }) as { workers: WorkerRow[] };
+                const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
                 const seen = priorTargets.map(workerNameFromTarget).filter((name): name is string => name !== null);
                 return [...new Set([...workers.map((worker) => worker.name), ...seen])];
             },
@@ -833,7 +829,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (verb !== null) { dispatchShortcut(verb); return { consume: true }; }
         return undefined;
     });
-    void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, current.id, surface);
+    void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, surface);
 
     // Proposal lifecycle stays non-blocking. The editor remains available for
     // a/e/r/c or the equivalent typed verbs; only $EDITOR takes terminal custody.

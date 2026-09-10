@@ -928,11 +928,7 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     }
 
-    // TUI through the bridge (no prompt): skip the WS connect + workspace.create — a
-    // pure-bridge client has no direct daemon WS. The bridge owns the workspace; we
-    // pass a threadId-named stub (the daemon workspace id is bridge-created). projectRoot
-    // rides forwardedProps.
-    // (Per-workspace settings over the bridge are a follow-up.)
+    // The transport owns the workspace binding; the TUI receives its name, not a fabricated database ID.
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         const w = await world();
         const threadId = workerName ?? w;
@@ -948,7 +944,7 @@ export const main = async (argv: string[]): Promise<void> => {
             settings,
         });
         try {
-            await runTui(transport, { id: 0, name: w }, {
+            await runTui(transport, { name: w }, {
                 modelSelector,
                 modelExplicit: values.model !== undefined,
                 reasoningPolicy,

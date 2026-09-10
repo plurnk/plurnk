@@ -379,15 +379,12 @@ test("[§cli-what-is-not-rendered] isPromptEntry classifies only the service's a
     assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "worker", pathname: "/notes.md" })), false);
 });
 
-test("[§cli-log-entry-line-format] entryTarget round-trips all four authority faces raw — the LOOK re-address source, no synthesis", () => {
-    // core sends the addressable form as-typed on `hostname`; entryTarget renders it verbatim
-    // so LOOK can re-address it. commons=empty, self=~, named, kernel=plurnk — each a valid
-    // worker:// address; the face is the raw URI, legible AND round-trippable (one source).
+test("[§cli-log-entry-line-format] entryTarget preserves literal resource addresses without caller-relative synthesis", () => {
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: null, pathname: "/plan.md" })), "worker:///plan.md", "empty authority = commons, verbatim");
-    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "~", pathname: "/plan.md" })), "worker://~/plan.md", "~ = self, kept literal");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "extract-host", pathname: "/plan.md" })), "worker://extract-host/plan.md", "named worker verbatim");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare");
-    assert.equal(entryTarget(entry({ scheme: "prompt", hostname: null, pathname: "/loop/2" })), "prompt:///loop/2", "prompt self-only, no authority slot");
+    assert.equal(entryTarget(entry({ scheme: "prompt", hostname: "extract-host", pathname: "/1/2" })), "prompt://extract-host/1/2");
+    assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
 });
 
 test("[§cli-log-entry-line-format] renderLogEntry preserves the operation scope", () => {

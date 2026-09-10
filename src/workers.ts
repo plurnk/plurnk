@@ -8,8 +8,7 @@ export interface WorkerRow {
     parentWorkerId?: number | null;
 }
 
-// A `worker://<name>` reference names a worker; `worker://~/…` and `worker:///…`
-// are files in a worker's tree and name none.
+// Only a pathless `worker://<name>` references an actor; scratch paths do not.
 export const workerNameFromTarget = (target: string): string | null =>
     /^worker:\/\/([^/~\s][^/\s]*)$/u.exec(target)?.[1] ?? null;
 
@@ -24,9 +23,8 @@ const isPlace = (worker: WorkerRow): boolean => worker.origin === "model";
 const parentIn = (byId: ReadonlyMap<number, WorkerRow>) => (worker: WorkerRow): WorkerRow | null =>
     worker.parentWorkerId !== undefined && worker.parentWorkerId !== null ? byId.get(worker.parentWorkerId) ?? null : null;
 
-// The lineage from the tree root to the bound worker, `~` marking the worker the session is in —
-// the same `~` that means "this worker" in `worker://~/`: `/~main` at a root, `/main/fork-1/~recheck`
-// two hops down, `/~` before the worker is named. A child always shows that it is a child.
+// The lineage from the tree root to the bound worker. `~` is a display cursor,
+// not a resource alias: `/~main`, `/main/fork-1/~recheck`, or `/~` before binding.
 export const workerPath = (workers: readonly WorkerRow[], bound: string | null): string => {
     const byId = new Map(workers.map((worker) => [worker.id, worker]));
     const parentOf = parentIn(byId);

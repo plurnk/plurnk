@@ -56,8 +56,8 @@ test("formatPlain: no target at all → no trailing path", () => {
     assert.equal(s, "[200] model SHOW");
 });
 
-test("formatPlain: a durable annotation labels the operation without its comment delimiters", () => {
-    const s = formatPlain(entry({ op: "EXEC", tx: { annotation: "Lists issues", body: "{}" } }));
+test("formatPlain: a durable aside labels the operation without its comment delimiters", () => {
+    const s = formatPlain(entry({ op: "EXEC", tx: { aside: "Lists issues", body: "{}" } }));
     assert.equal(s, "[200] model EXEC — Lists issues");
 });
 

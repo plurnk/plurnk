@@ -4,7 +4,7 @@
 // land on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { extractSendBody, contextGauge, entryAnnotation, entryScope, entryTarget } from "./render.ts";
+import { extractSendBody, contextGauge, entryAside, entryScope, entryTarget } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -49,14 +49,14 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
     const byTurn = new Map<number, Array<Record<string, unknown>>>();
     for (const e of entries) {
         const ops = byTurn.get(e.turn_seq) ?? [];
-        const annotation = entryAnnotation(e);
+        const aside = entryAside(e);
         ops.push({
             coord: entryCoord(e), op: e.op, origin: e.origin,
             target: entryTarget(e), status: e.status_rx,
             scope: e.lineMarker?.marks ?? null,
             signal: typeof e.signal === "number" ? e.signal : null,
             tags: e.tags,
-            ...(annotation === null ? {} : { annotation }),
+            ...(aside === null ? {} : { aside }),
         });
         byTurn.set(e.turn_seq, ops);
     }
@@ -110,8 +110,8 @@ export const formatPlain = (entry: LogEntryWire): string => {
     const scope = entryScope(entry);
     const address = [path, scope].filter((part) => part !== null && part.length > 0).join(" ");
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op} ${address}`.trim();
-    const annotation = entryAnnotation(entry);
-    if (annotation !== null) line += ` — ${annotation}`;
+    const aside = entryAside(entry);
+    if (aside !== null) line += ` — ${aside}`;
     if (TurnDisposition.isOp(entry.op)) {
         const presented = presentPlan(entry.tx);
         const rows = presented.length === 0

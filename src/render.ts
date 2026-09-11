@@ -163,12 +163,12 @@ export interface LogEntryWire {
     sequence: number;
 }
 
-export const entryAnnotation = (entry: LogEntryWire): string | null => {
+export const entryAside = (entry: LogEntryWire): string | null => {
     const tx = typeof entry.tx === "string"
         ? (() => { try { return JSON.parse(entry.tx) as unknown; } catch { return null; } })()
         : entry.tx;
     const raw = tx !== null && typeof tx === "object"
-        ? (tx as { annotation?: unknown }).annotation
+        ? (tx as { aside?: unknown }).aside
         : null;
     if (typeof raw !== "string") return null;
     const plain = stripVTControlCharacters(raw)
@@ -270,10 +270,10 @@ const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSen
     const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
     const idGlyph = TurnDisposition.isOp(entry.op) ? sendLifecycleGlyph(signal) : OP_GLYPHS.SEND;
 
-    const annotation = entryAnnotation(entry);
+    const aside = entryAside(entry);
     const header = idGlyph
         + (statusCodeVisible(entry) ? ` ${sendSubGlyph(entry.status_rx)} ${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}` : "")
-        + (annotation === null ? "" : ` ${DIM}— ${annotation}${RESET}`);
+        + (aside === null ? "" : ` ${DIM}— ${aside}${RESET}`);
 
     const multiLine = body.includes("\n");
     // Short single-line replies inline after the header (nvim's
@@ -375,8 +375,8 @@ export const renderLogEntry = (
     if (pathText.length > 0) parts.push(pathText);
     if (scopeText.length > 0) parts.push(scopeText);
     if (extra.length > 0) parts.push(extra);
-    const annotation = entryAnnotation(entry);
-    if (annotation !== null) parts.push(`${DIM}— ${annotation}${RESET}`);
+    const aside = entryAside(entry);
+    if (aside !== null) parts.push(`${DIM}— ${aside}${RESET}`);
 
     return parts.join(" ");
 };

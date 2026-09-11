@@ -207,20 +207,20 @@ test("renderLogEntry: no path at all (both scheme + pathname null) for non-SEND 
     assert.doesNotMatch(line, /:\/\//);
 });
 
-test("renderLogEntry: a durable annotation renders as sanitized plain text", () => {
+test("renderLogEntry: a durable aside renders as sanitized plain text", () => {
     const line = renderLogEntry(entry({
         op: "EXEC",
-        tx: { annotation: "Lists **issues**\u001b[31m", body: "{}" },
+        tx: { aside: "Lists **issues**\u001b[31m", body: "{}" },
     }));
     assert.match(line, /— Lists \*\*issues\*\*/);
     assert.doesNotMatch(line, /\u001b\[31m/);
 });
 
-test("renderLogEntry: a broadcast SEND retains its annotation on the header", () => {
+test("renderLogEntry: a broadcast SEND retains its aside on the header", () => {
     const out = renderLogEntry(entry({
         op: "SEND",
         signal: 200,
-        tx: { annotation: "Answer ready", body: { raw: "Paris", json: null } },
+        tx: { aside: "Answer ready", body: { raw: "Paris", json: null } },
     }));
     assert.match(out, /^💬 — Answer ready Paris$/);
     assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/);
@@ -459,9 +459,9 @@ test("bold: inner RESET re-arms bold so header styling cannot cut the answer", a
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
     const colored = await freshRender("bold=rearm");
     process.env.NO_COLOR = "1";
-    // The annotation's dim span emits its own RESET; answer bold must resume
+    // The aside's dim span emits its own RESET; answer bold must resume
     // immediately afterward instead of dying before the body.
-    const out = colored.renderLogEntry(entry({ ...sendEntry, tx: { annotation: "ready", body: { raw: "strong then more", json: null } } }));
+    const out = colored.renderLogEntry(entry({ ...sendEntry, tx: { aside: "ready", body: { raw: "strong then more", json: null } } }));
     assert.match(out, /\x1b\[0m\x1b\[1m/);
 });
 

@@ -495,7 +495,7 @@ One line per dispatched op, except the structured TASK inventory below. Format
 (vanilla ANSI, no framework):
 
 ```
-<primary-glyph> [<status-glyph>] [<error-status>] <target> <scope> <body-preview> [— <annotation>]
+<primary-glyph> [<status-glyph>] [<error-status>] <target> <scope> <body-preview> [— <aside>]
 ```
 
 Width-tolerant; no fixed column widths. Every glyph-bearing waterfall row
@@ -507,7 +507,7 @@ A failed directed SEND retains its code like any other failed operation. The
 human waterfall carries no log coordinates; coordinates and every
 exact status remain on the wire and in `--json`.
 The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
-A present durable operation annotation is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
+A present durable operation aside is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
 
 **Glyph palette (both clients).** Operation glyphs occupy two display columns: 🔍 📖 📝 📋 📦 ✂️ 🐜 👥 💬 🔧 🔮 (FIND, READ, EDIT, COPY, MOVE, KILL, WORK, FORK, SEND, EXEC, BARE). Origin glyphs are 🎲 ❯ 🧰 🔌. TASK's header derives from its settled lifecycle: `▶️` continuing, `⏹️` completed, 💤 waiting, ✋ failed/cancelled, or ❌ error. Inventory glyphs follow §5.1.2; secondary-status glyphs remain ⏳ 💤 🤔 💥 ✋ ❌.
 

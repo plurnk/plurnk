@@ -32,9 +32,8 @@ This repository provides the CLI and interactive terminal client for
   orchestrate local workers through the same primitives.
 - **Execution with evidence.** ANTLR parses model output into executable
   operations. The runtime records their results and returns structured errors
-  the model can act on. Full packet digests make the work inspectable.
-  Compatible local servers can enforce the operation grammar during generation
-  with GBNF.
+  the model can act on. Full packet digests make the work inspectable. A
+  compatible local server can run under a grammar you wrote, carried verbatim.
 
 Workspaces and worker conversations live in the daemon, independently of the
 client session. Choose your model, context limits, tools, and capability

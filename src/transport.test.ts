@@ -449,6 +449,13 @@ test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/
         assert.deepEqual((injectRun?.body as { forwardedProps: { plurnk: { action: unknown } } }).forwardedProps.plurnk.action, { kind: "loop.inject", prompt: "steer mid-run" });
         const rpcRun = mock.captured.find((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "providers.list");
         assert.ok(rpcRun !== undefined, "verbs ride action runs");
+        // A worker thread injects into ITS world: the bridge would otherwise fall back to the
+        // thread name and address a world named after the worker (the 2026-09-11 dogfood).
+        bt.useWorker("designer", "plurnkpromo");
+        await bt.inject("what are you waiting on?");
+        const workerInject = mock.captured.filter((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "loop.inject").at(-1);
+        assert.equal((workerInject?.body as { threadId: string }).threadId, "designer");
+        assert.equal((workerInject?.body as { forwardedProps: { plurnk: { workspace: string } } }).forwardedProps.plurnk.workspace, "plurnkpromo", "inject names the worker's world beside the thread");
     } finally { await mock.close(); }
 });
 

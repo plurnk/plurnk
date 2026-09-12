@@ -383,7 +383,7 @@ export class BridgeTransport implements Transport {
     // §4 — inject rides the action surface; the steered effect streams on the
     // original run's open SSE (the ack rides this action run).
     async inject(prompt: string): Promise<void> {
-        await actionViaBridge(this.#target, { threadId: this.#threadId, kind: "loop.inject", params: { prompt } });
+        await actionViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), kind: "loop.inject", params: { prompt } });
     }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> {
         // Terminate-resume: the decision releases the paused run loop, which POSTs the

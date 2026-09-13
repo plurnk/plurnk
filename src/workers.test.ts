@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type WorkerRow } from "./workers.ts";
+import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type WorkerRow } from "./workers.ts";
 
 test("[§cli-workers-topology] worker:// references name workers; worker file paths name none", () => {
     assert.equal(workerNameFromTarget("worker://recheck"), "recheck");
@@ -77,4 +77,12 @@ test("[§cli-workers-topology] an unknown parent makes the worker a root; an unk
 
 test("[§cli-workers-topology] no workers renders one honest line", () => {
     assert.equal(renderWorkerTopology([], "main"), "  (no workers)\n");
+});
+
+// {plurnk#58} — the prompt prefix is the place: which world, which loop, which turn, which worker.
+test("promptPrefix names the place, and elides what the client has not been told", () => {
+    assert.equal(promptPrefix("/~plurnkpk", { workspace: "plurnkpk", loopId: 3, turn: 12 }), "[plurnkpk/3/12:~plurnkpk]");
+    assert.equal(promptPrefix("/main/fork-1/~recheck", { workspace: "w", loopId: 1, turn: 0 }), "[w/1/0:main/fork-1/~recheck]");
+    assert.equal(promptPrefix("/~", {}), "[/~]", "before binding, the bare lineage");
+    assert.equal(promptPrefix("/~solo", { workspace: "w" }), "[w:~solo]", "no loop yet, no placeholder");
 });

@@ -25,6 +25,8 @@ const parentIn = (byId: ReadonlyMap<number, WorkerRow>) => (worker: WorkerRow): 
 
 // The lineage from the tree root to the bound worker. `~` is a display cursor,
 // not a resource alias: `/~main`, `/main/fork-1/~recheck`, or `/~` before binding.
+// {plurnk#58} — `promptPrefix` wraps this as `[workspace/loop/turn:lineage]`, so the place a
+// prompt goes to is one line: which world, which loop, which turn, which worker.
 export const workerPath = (workers: readonly WorkerRow[], bound: string | null): string => {
     const byId = new Map(workers.map((worker) => [worker.id, worker]));
     const parentOf = parentIn(byId);
@@ -36,6 +38,20 @@ export const workerPath = (workers: readonly WorkerRow[], bound: string | null):
         segments.unshift(current.name);
     }
     return `/${segments.join("/")}`;
+};
+
+// {plurnk#58} — the prompt's place. Any unknown part is elided rather than shown as a
+// placeholder, so a prefix never claims a loop or turn the client has not been told about.
+export const promptPrefix = (
+    lineage: string,
+    place: { workspace?: string | null; loopId?: number | null; turn?: number | null } = {},
+): string => {
+    const { workspace = null, loopId = null, turn = null } = place;
+    const head = [workspace, loopId === null ? null : String(loopId), turn === null ? null : String(turn)]
+        .filter((part): part is string => part !== null && part !== "")
+        .join("/");
+    const path = lineage.startsWith("/") ? lineage.slice(1) : lineage;
+    return head === "" ? `[${lineage}]` : `[${head}:${path}]`;
 };
 
 export type Hop = "parent" | "enter" | "older" | "newer";

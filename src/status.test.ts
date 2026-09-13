@@ -7,14 +7,15 @@ const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: n
 const running: ClientStatus = {
     lifecycle: "running",
     model: "deepdumb",
+    loopId: null,
     packetCount: 2,
     activity: null,
     children: null,
 };
 
 test("[§cli-worker-status] status presentation uses only client-owned facts", () => {
-    assert.equal(renderStatusLine(running, CONTEXT), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · k3Zp9 · worker://model-1/");
-    assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · 🐜 rtx5070 · k3Zp9 · worker://model-1/", "a spawn override rides beside the model");
+    assert.equal(renderStatusLine(running, CONTEXT), "⌛︎ · 3.2s · 🎲 deepdumb");
+    assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎ · 3.2s · 🎲 deepdumb · 🐜 rtx5070", "a spawn override rides beside the model");
     const concluded = tallyOutcome(tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5_000 }), {
         turns: 2, wallMs: 60_000,
         usage: { accounting: { usage: { inputTokens: 1200, outputTokens: 345 }, costUsd: "0.024" } } as never,
@@ -23,18 +24,18 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
     assert.equal(tallyOutcome(concluded, { turns: 1, wallMs: 1, usage: { accounting: { usage: { inputTokens: 10, outputTokens: 5 }, costUsd: "0.0125" } } as never }).costUsd, "0.0365");
     assert.equal(
         renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }, { ...CONTEXT, tally: concluded, runningSince: null }),
-        "⏹️ completed · 3 turns · 1m05s · ↓1200 ↑345 · $0.024 · 🎲 deepdumb · k3Zp9 · worker://model-1/ · 🧮 55%",
+        "⏹️ · 1m05s · ↓1,200 ↑345 · $0.024 · 🎲 deepdumb · 🧮 55%",
     );
-    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, packetCount: null, activity: null, children: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { idleGlyph: "🔥" }), "🔥 idle");
+    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, loopId: null, packetCount: null, activity: null, children: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { idleGlyph: "🔥" }), "🔥");
 });
 
 // {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the
 // child model rides beside it, and the worker segment carries the sibling position.
 test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {
-    assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · 🐜0 · k3Zp9 · worker://model-1/");
-    assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · 🐜2 dumbox · k3Zp9 · worker://model-1/");
-    assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · 🐜 dumbox · k3Zp9 · worker://model-1/", "no gauge, no count: the bare child model as before");
-    assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎ running · 2 turns · 3.2s · 🎲 deepdumb · 🐜1 · k3Zp9 · worker://recheck/ (2/3)");
+    assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎ · 3.2s · 🎲 deepdumb · 🐜 0");
+    assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎ · 3.2s · 🎲 deepdumb · 🐜 2 dumbox");
+    assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎ · 3.2s · 🎲 deepdumb · 🐜 dumbox", "no gauge, no count: the bare child model");
+    assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎ · 3.2s · 🎲 deepdumb · 🐜 1", "the place is the prompt prefix's, not the status line's");
     assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: 3 }).children, 3);
     assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null }).children, null, "an older daemon states no count");
     assert.throws(() => projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: -1 }), /Invalid runtime children count/u);
@@ -51,7 +52,7 @@ test("the authoritative status gauge projects indexing phases without a Notice r
 test("queued tasks retain their lifecycle without accruing execution time", () => {
     const projected = projectStatusGauge({ lifecycle: "queued", model: null, loopId: 7, packetCount: 0, activity: null });
     assert.equal(projected.lifecycle, "queued");
-    assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳ queued");
+    assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳", "{plurnk#58} the glyph is the lifecycle");
 });
 
 test("TerminalStatusLine coalesces routine progress and leaves non-TTY output silent", () => {
@@ -113,13 +114,17 @@ test("#465: turn accounting parses, accrues decimal-exact, and rides the running
     const accrued = accrueTurnAccounting(turn!, { costUsd: "0.005", inputTokens: 50, outputTokens: 5 });
     assert.deepEqual(accrued, { costUsd: "0.015", inputTokens: 150, outputTokens: 25 });
     const line = renderStatusLine(
-        { lifecycle: "running", model: null, packetCount: 2, activity: null, children: null },
+        { lifecycle: "running", model: null, loopId: null, packetCount: 2, activity: null, children: null },
         { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: 1000, now: 3000 },
     );
     assert.match(line, /↓150 ↑25/);
+    assert.match(renderStatusLine(
+        { lifecycle: "running", model: null, loopId: null, packetCount: 2, activity: null, children: null },
+        { workspace: null, worker: null, child: null, tally: { ...EMPTY_TALLY, inputTokens: 1234567, outputTokens: 9876 }, runningSince: null },
+    ), /↓1,234,567 ↑9,876/u, "{plurnk#58} token counts carry thousands separators");
     assert.match(line, /\$0\.015/);
     const idle = renderStatusLine(
-        { lifecycle: "completed", model: null, packetCount: null, activity: null, children: null },
+        { lifecycle: "completed", model: null, loopId: null, packetCount: null, activity: null, children: null },
         { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
     );
     assert.doesNotMatch(idle, /\$0\.015/, "a concluded line shows only the concluded tally");

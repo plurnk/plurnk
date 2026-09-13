@@ -33,7 +33,7 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
-import { renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
+import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -579,6 +579,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {§cli-workers-topology} — where the session is in the tree: the prompt's path prefix and the
     // status line's sibling position, re-read from the directory on every hop or rebind.
     let workerPosition: { index: number; count: number } | null = null;
+    // {plurnk#58} — the prompt prefix names workspace/loop/turn; the gauge is the only authority
+    // for both numbers, and an unknown one is elided rather than guessed.
+    let placeLoop: number | null = null;
+    let placeTurn: number | null = null;
+    let placeWorkers: readonly WorkerRow[] = [];
     let conversationWorker: string | null = opts.workerName ?? null;
     let searchFetching = false;
     let searchPercent: number | null = null;
@@ -681,10 +686,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         runningSince,
         now: Date.now(),
     });
+    const paintPrompt = (): void => surface.setPrompt(promptPrefix(
+        workerPath(placeWorkers, conversationWorker),
+        { workspace: current.name, loopId: placeLoop, turn: placeTurn },
+    ));
     const refreshTopology = async (): Promise<void> => {
         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
         workerPosition = siblingPosition(workers, conversationWorker);
-        surface.setPrompt(`[${workerPath(workers, conversationWorker)}]`);
+        placeWorkers = workers;
+        paintPrompt();
         reprompt();
     };
     const buildStatus = (): string => {
@@ -708,13 +718,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         return renderStatusLine({
             lifecycle: inFlight ? "running" : lifecycle,
             model,
+            loopId: placeLoop,
             packetCount: null,
             activity,
             children: null,
         }, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
-    surface.setPrompt(`[${workerPath([], conversationWorker)}]`);
+    paintPrompt();
     void refreshTopology().catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
     surface.setAutocompleteProvider(makeAutocompleteProvider({
@@ -928,6 +939,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onBranchBatch: handleBranchBatch,
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
+            // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
+            placeLoop = authoritativeStatus.loopId;
+            placeTurn = authoritativeStatus.packetCount;
+            paintPrompt();
             repromptPreserving();
         },
         onStream: (payload) => {
@@ -1172,7 +1187,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                         if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
                         conversationWorker = hit.name;
                         workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
-                        surface.setPrompt(`[${workerPath(workers as WorkerRow[], conversationWorker)}]`);
+                        placeWorkers = workers as WorkerRow[];
+                        paintPrompt();
                     }
                 }
                 lifecycle = terminalResult.status === 202 ? "parked"

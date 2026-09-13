@@ -118,6 +118,8 @@ export const formatRouteIdentity = (route: {
 export interface ClientStatus {
     lifecycle: StatusLifecycle;
     model: string | null;
+    // {plurnk#58} — the prompt prefix names the place as workspace/loop/turn; the gauge owns both numbers.
+    loopId: number | null;
     packetCount: number | null;
     activity: StatusActivity | null;
     // {§cli-status-children} — the daemon's count of the bound worker's alive direct children; null
@@ -172,6 +174,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge): ClientStatus => {
     return {
         lifecycle: value.lifecycle as StatusLifecycle,
         model: model === null ? null : formatRouteIdentity(model),
+        loopId: value.loopId,
         packetCount: value.packetCount,
         activity,
         children,
@@ -244,6 +247,9 @@ const activityText = ({ label, percent }: StatusActivity): string => {
     return `🧮 ${label}`;
 };
 
+// {plurnk#58} — thousands separators; an unknown count stays "?".
+const grouped = (value: number | null): string => value === null ? "?" : value.toLocaleString("en-US");
+
 // The summary line's shape, aggregated over the session: the running loop adds
 // its packets as turns and its elapsed time; tokens and cost are concluded totals.
 export const renderStatusLine = (
@@ -251,12 +257,13 @@ export const renderStatusLine = (
     context: StatusContext,
     options: { idleGlyph?: string } = {},
 ): string => {
+    // {plurnk#58} — the glyph IS the lifecycle; the word beside it said the same thing twice, and
+    // the turn count moved into the prompt prefix where the place is named.
     const glyph = lifecycleGlyph(value.lifecycle, options.idleGlyph ?? "");
-    const parts = [glyph.length > 0 ? `${glyph} ${value.lifecycle}` : value.lifecycle];
+    const parts = [glyph.length > 0 ? glyph : value.lifecycle];
     const running = value.lifecycle === "running";
-    const turns = context.tally.turns + (running ? value.packetCount ?? 0 : 0);
     const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
-    if (turns > 0 || running) parts.push(`${turns} turn${turns === 1 ? "" : "s"}`, formatDuration(context.tally.wallMs + elapsed));
+    if (context.tally.turns > 0 || running) parts.push(formatDuration(context.tally.wallMs + elapsed));
     const accrued = running ? context.accrued ?? null : null;
     const combined = accrued === null ? context.tally : accrueTurnAccounting({
         costUsd: context.tally.costUsd,
@@ -264,18 +271,13 @@ export const renderStatusLine = (
         outputTokens: context.tally.outputTokens,
     }, accrued);
     const { inputTokens, outputTokens, costUsd } = combined;
-    if (inputTokens !== null || outputTokens !== null) parts.push(`↓${inputTokens ?? "?"} ↑${outputTokens ?? "?"}`);
+    if (inputTokens !== null || outputTokens !== null) parts.push(`↓${grouped(inputTokens)} ↑${grouped(outputTokens)}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${costUsd}`);
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
     // {§cli-status-children} — the ant counts alive children when the daemon states it, and names the
     // model those children run when one is selected: `🐜2 dumbox`, `🐜0`, or the bare `🐜 dumbox`.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
-    if (ant.length > 0) parts.push(`🐜${value.children === null ? " " : ""}${ant.join(" ")}`);
-    if (context.workspace !== null) parts.push(context.workspace);
-    if (context.worker !== null) {
-        const position = context.position ?? null;
-        parts.push(`worker://${context.worker}/${position === null ? "" : ` (${position.index}/${position.count})`}`);
-    }
+    if (ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
     return parts.join(" · ");
 };

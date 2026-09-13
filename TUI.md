@@ -16,6 +16,12 @@ client.
 - `plurnk` is a readline-style, main-buffer interaction built on pi-tui's
   main-screen renderer and multiline editor. It preserves normal terminal
   scrollback rather than taking over the alternate screen.
+- Provider reasoning streams into the reasoning scroll: a live region between the
+  transcript and the composer, at most a third of the terminal tall, that shows the
+  newest lines and overwrites itself as the reasoning grows. It empties when the
+  turn's operations arrive and never enters the transcript; the log keeps every
+  turn's reasoning at `reasoning:///L/T` for a READ, so a model with a fat reasoning
+  habit costs a third of the screen, not the session.
 - Prompts, command verbs, and raw DSL use the same AG-UI+ action/run transport.
   There is no client side channel or persistent socket.
 

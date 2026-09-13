@@ -8,6 +8,7 @@ import {
     type AutocompleteProvider,
     type TuiInputListener,
 } from "@earendil-works/pi-tui";
+import TailText from "./tail-text.ts";
 
 const ansi = (code: number): ((text: string) => string) => (text) =>
     process.env.NO_COLOR !== undefined ? text : `\x1b[${code}m${text}\x1b[0m`;
@@ -31,7 +32,8 @@ export default class TuiSurface {
     readonly #terminal = new ProcessTerminal();
     readonly #tui = new TuiMainScreen(this.#terminal, true);
     readonly #transcript = new Container();
-    readonly #live = new Text("", 0, 0);
+    // The reasoning scroll: at most a third of the terminal, newest lines only, never durable.
+    readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
     // {§cli-workers-topology} — the prompt's path prefix, the line above the composer.
     readonly #prompt = new Text("", 0, 0);
     readonly #status = new Text("", 0, 0);

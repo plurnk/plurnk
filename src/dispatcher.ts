@@ -888,6 +888,8 @@ export const main = async (argv: string[]): Promise<void> => {
             }
             const projected = promptPolicy(prompt, loopPolicy);
             const openPaths = extractOpenPaths(projected.prompt);
+            // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
+            const reviewRequested = /^\s*\?/u.test(prompt);
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, projected.prompt, {
                 threadId: workerName ?? w,
                 workspace: w,
@@ -896,7 +898,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 ...(maxTurns !== undefined ? { maxTurns } : {}),
                 ...(openPaths.length === 0 ? {} : { openPaths }),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-                yolo,
+                yolo: yolo && !reviewRequested,
                 json,
                 projectRoot,
                 settings,

@@ -82,7 +82,7 @@ In another terminal, open a project:
 
 ```sh
 cd /path/to/your/project
-plurnk --workspace="myProject" --yolo
+plurnk --workspace="myProject"
 ```
 
 Give it a task in ordinary language. The model uses the operation language;
@@ -90,16 +90,16 @@ you do not need to learn it to use Plurnk. Run the same command later to return
 to that workspace's conversation.
 
 The client connects to `127.0.0.1:1066` by default and never starts the daemon.
-Provider credentials belong in the daemon's environment. Proposal review is
-interactive by default; `--yolo` automatically accepts proposals but does not
-override capability restrictions.
+Provider credentials belong in the daemon's environment. Proposals are accepted
+automatically by default (`PLURNK_CLIENT_YOLO=1`); set it to `0` or start a prompt
+with `?` to review them. Neither overrides capability restrictions.
 
 ## TUI, CLI, and Neovim
 
 ### Interactive terminal
 
 ```sh
-plurnk --workspace="myProject" --yolo
+plurnk --workspace="myProject"
 ```
 
 A scrollback-native TUI with multiline prompts, streaming reasoning when the

@@ -44,7 +44,7 @@ Options:
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
 | `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
-| `--yolo` | flag | Auto-accept every proposal locally without prompting. See §6. Overrides `PLURNK_CLIENT_YOLO`. |
+| `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
 | `--auto` | flag | Set the loop proposal disposition to `accept`; no client review/resume round-trip. |
 | `--policy <json>` | string | Complete LoopPolicy applied to every loop: `review`, `accept`, or `reject` proposal disposition. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
@@ -64,7 +64,7 @@ Env:
 | `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
 | `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE` outside web mode. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
-| `PLURNK_CLIENT_YOLO` | _unset_ | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally. See §6. Equivalent to `--yolo`. |
+| `PLURNK_CLIENT_YOLO` | `1` | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally; `0` reviews each one. See §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
 | `PLURNK_CLIENT_LOOP_POLICY` | _unset_ | Default LoopPolicy JSON. `--policy` overrides it. |
 | `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` | _unset_ | Create-time workspace CapabilityPolicy JSON. `--capabilities` overrides it. |
@@ -676,7 +676,7 @@ AG-UI emits this client surface only for proposals whose durable disposition own
 
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
-When a proposal arrives, a TTY is present, and `--yolo` is not set, the client renders the proposal to stderr and prompts:
+When a proposal arrives, a TTY is present, and yolo is off (or the prompt asked for review with `?`), the client renders the proposal to stderr and prompts:
 
 ```
 ── proposal EDIT file:///path/to/file ──
@@ -698,17 +698,17 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 
 ### §6.3 `--yolo` / `PLURNK_CLIENT_YOLO` {§cli-yolo-plurnkyolo}
 
-Client-side opt-in. When set, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted).
+Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. When on, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted). A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
 
 This is distinct from **loop auto** (`--auto`, or a policy with `proposals:"accept"`), where proposal authority never crosses into client review.
 
 ### §6.4 Fail-closed (non-TTY, no yolo) {§cli-fail-closed-no-review-channel}
 
-When stdin is not a TTY and `--yolo` is not set, the client cannot interactively review. If the selected policy requests `review`, the client projects `proposals:"reject"`; Core settles admitted side effects without a client round-trip. An explicitly selected `accept` or `reject` disposition remains authoritative.
+When stdin is not a TTY and yolo is off, the client cannot interactively review. If the selected policy requests `review`, the client projects `proposals:"reject"`; Core settles admitted side effects without a client round-trip. An explicitly selected `accept` or `reject` disposition remains authoritative.
 
 The one-shot client cancels input-request interrupts through the standard AG-UI resume contract because it has no interactive form. It does not alter workspace capabilities or invent an answer; the worker receives the cancellation and can continue.
 
-Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations without `--yolo`.
+Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations with `PLURNK_CLIENT_YOLO=0`.
 
 ### §6.5 Questions {§cli-question-forms}
 

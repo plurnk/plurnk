@@ -279,7 +279,8 @@ export const buildHeader = (opts: {
     const reasoning = opts.reasoningPolicy === undefined || opts.reasoningPolicy === null
         ? ""
         : ` · reasoning: ${opts.reasoningPolicy}`;
-    const yolo = opts.yolo ? " · yolo: on" : "";
+    // The header names the non-default: yolo is on unless the operator turned it off.
+    const yolo = opts.yolo === false ? " · yolo: off" : "";
     return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${reasoning}${yolo} · /help`;
 };
 
@@ -593,6 +594,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let conversationWorker: string | null = opts.workerName ?? null;
     let searchFetching = false;
     let searchPercent: number | null = null;
+    // A `?` prompt asks for review of that run; the request outranks the standing yolo setting.
+    let reviewRequested = false;
     // LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -939,7 +942,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         },
         onProposal: (p) => {
-            if (opts.yolo) {
+            if (opts.yolo && !reviewRequested) {
                 void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
                     .catch((cause) => printAbove(`  \x1b[31mauto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
                 return;
@@ -1141,6 +1144,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 } else {
                     // `?` selects proposal review; `:` uses the base policy.
                     const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
+                    reviewRequested = trimmed.startsWith("?");
                     // {§worker-model-selection} — no model selector rides the loop: the
                     // worker owns the model; /model and /child persisted it server-side.
                     const loopParams: { policy: LoopPolicy; maxTurns?: number; openPaths?: string[] } = { policy };
@@ -1151,6 +1155,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     // with the loop's outcome. A pre-stream HTTP failure surfaces as
                     // an exact ProblemError (caught below; 501 gets the .env pointer).
                     const t = await transport.run(promptText, loopParams).done;
+                    reviewRequested = false;
                     terminalResult = t.result;
                     hitMaxTurns = t.hitMaxTurns;
                     turnCount = t.turnIds?.length ?? 0;

@@ -39,13 +39,13 @@ before(async () => {
 after(async () => { await daemon?.cleanup(); });
 
 describe("TUI verbs + input (model-independent; was HITL-only)", () => {
-    test("/yolo toggles local auto-accept on then off", async (t) => {
+    test("/yolo toggles local auto-accept off then on (it starts on)", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("/yolo\r"); await tui.waitFor(/yolo: ON/);
             tui.write("/yolo\r"); await tui.waitFor(/yolo: OFF/);
+            tui.write("/yolo\r"); await tui.waitFor(/yolo: ON/);
         } finally { tui.kill(); }
     });
 

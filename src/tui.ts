@@ -26,7 +26,7 @@ import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, renderQuestionMenu, editInEditor } from "./proposal.ts";
 import QuestionForm from "./QuestionForm.ts";
-import { BridgeTransport, type BranchBatchEvent, type Transport } from "./transport.ts";
+import { BridgeTransport, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
@@ -593,7 +593,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let conversationWorker: string | null = opts.workerName ?? null;
     let searchFetching = false;
     let searchPercent: number | null = null;
-    let branchBatch: BranchBatchEvent | null = null;
     // LOOK off-run inspection: the REAL target URIs of prior operations the
     // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
     // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
@@ -707,17 +706,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (authoritativeStatus !== null) {
             return renderStatusLine(authoritativeStatus, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
         }
-        const branchCompleted = Number(branchBatch?.completed);
-        const branchTotal = Number(branchBatch?.total);
-        const branchPercent = branchBatch !== null
-            && Number.isFinite(branchCompleted)
-            && Number.isFinite(branchTotal)
-            && branchTotal > 0
-            ? Math.floor((branchCompleted / branchTotal) * 100)
-            : null;
-        const activity = searchFetching ? { label: "search", percent: searchPercent }
-                : branchPercent !== null ? { label: "branches", percent: branchPercent }
-                    : null;
+        const activity = searchFetching ? { label: "search", percent: searchPercent } : null;
         const model = workerModel === null
             ? opts.modelSelector ?? activeAlias ?? null
             : resolvedModelLabel(workerModel);
@@ -908,25 +897,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
         printAbove(renderDiagnostic(notice));
     };
-    const handleBranchBatch = (event: BranchBatchEvent): void => {
-        let rendered = false;
-        if (event.state === "completed") {
-            branchBatch = null;
-            printAbove(`🌿 branch batch ${event.batchId} complete (${event.completed ?? event.total ?? 0}/${event.total ?? event.completed ?? 0})`);
-            rendered = true;
-        } else if (event.state === "failed") {
-            branchBatch = null;
-            printAbove(`\x1b[31m❌ branch batch ${event.batchId} failed: ${event.problem?.detail ?? "branch preflight failed"}\x1b[0m`);
-            rendered = true;
-        } else {
-            branchBatch = event;
-            if (event.state === "recovery_required") {
-                printAbove(`\x1b[31m❌ branch batch ${event.batchId} requires recovery: ${event.problem?.detail ?? "inspect the workspace Git state"}\x1b[0m`);
-                rendered = true;
-            }
-        }
-        if (!rendered) repromptPreserving();
-    };
 
     transport.subscribe({
         onReasoning: presentReasoning,
@@ -942,7 +912,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         },
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
-        onBranchBatch: handleBranchBatch,
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.

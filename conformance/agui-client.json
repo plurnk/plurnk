@@ -950,20 +950,6 @@
         "presentation"
       ]
     },
-    "workspace/branch-batch": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — branch batch delivery",
-        "src/transport.test.ts — shared lifecycle corpus"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
     "loop/packet": {
       "posture": "native",
       "evidence": [

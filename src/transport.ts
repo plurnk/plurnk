@@ -39,15 +39,6 @@ export interface TerminatedInfo {
     result: OperationResult;
 }
 
-export interface BranchBatchEvent {
-    workspaceId?: number;
-    batchId: number;
-    state: "queued" | "running" | "completed" | "failed" | "recovery_required";
-    branch?: string;
-    completed?: number;
-    total?: number;
-    problem?: { detail?: string };
-}
 
 // The run's status gauge — the AG-UI state the bridge snapshots on RUN_STARTED and
 // patches per packet, termination, and derivation (plurnk-agui SPEC, `loop/packet`).
@@ -69,7 +60,6 @@ export interface RunHandlers {
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
-    onBranchBatch: (event: BranchBatchEvent) => void;
     onQuiesced?: (payload: unknown) => void;
     onStatus?: (gauge: StatusGauge) => void;
     onTerminated: (t: TerminatedInfo) => void;
@@ -436,7 +426,6 @@ export class BridgeTransport implements Transport {
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));
-        else if (name === "plurnk.branch_batch") this.#h?.onBranchBatch(value as BranchBatchEvent);
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
         else if (name === "plurnk.terminated") {
             const raw = value as Omit<TerminatedInfo, "finalStatus"> & { finalStatus?: unknown };

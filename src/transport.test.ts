@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,17 +37,15 @@ interface ConformanceKit {
 }
 
 const loadConformanceKit = async (): Promise<ConformanceKit> => {
-    let path: string;
-    try {
-        path = fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/conformance/agui-v1.json"));
-    } catch {
-        path = resolve(import.meta.dirname, "../../plurnk-service/plurnk-contracts/conformance/agui-v1.json");
-    }
+    const sibling = resolve(import.meta.dirname, "../../plurnk-service/plurnk-contracts/conformance/agui-v1.json");
+    const path = existsSync(sibling)
+        ? sibling
+        : fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/conformance/agui-v1.json"));
     return JSON.parse(await readFile(path, "utf8")) as ConformanceKit;
 };
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; branches: unknown[]; terminated: unknown[]; status: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], branches: [], terminated: [], status: [] };
+    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; terminated: unknown[]; status: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], terminated: [], status: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
         onReasoning: (reasoning) => seen.reasoning.push(reasoning),
@@ -55,7 +54,6 @@ const collectingHandlers = () => {
         onStream: (s) => seen.streams.push(s),
         onNotice: (notice) => seen.notices.push(notice),
         onProblem: (problem) => seen.problems.push(problem),
-        onBranchBatch: (event) => seen.branches.push(event),
         onTerminated: (t) => seen.terminated.push(t),
         onStatus: (gauge) => seen.status.push(gauge),
     };
@@ -179,7 +177,6 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                 if (seen.reasoning.length > 0) families.add("reasoning/event");
                 if (seen.notices.length > 0) families.add("notice/event");
                 if (seen.problems.length > 0) families.add("problem/event");
-                if (seen.branches.length > 0) families.add("workspace/branch-batch");
                 if (seen.streams.some((value) => "result" in (value as object))) families.add("stream/concluded");
                 if (seen.streams.some((value) => !("result" in (value as object)))) families.add("stream/event");
                 if (seen.terminated.length > 0) families.add("loop/terminated");
@@ -250,7 +247,6 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "TASK" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.branch_batch", value: { batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
@@ -268,7 +264,6 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
             { phase: "end", messageId: "1/1/2/SEND/reasoning", content: "checked the evidence" },
         ]);
         assert.equal((seen.notices[0] as { source: string }).source, "grammar");
-        assert.deepEqual(seen.branches, [{ batchId: 9, state: "running", branch: "feature/x", completed: 1, total: 2 }]);
         assert.equal(seen.entries.length, 1, "the generic TEXT_MESSAGE was ignored");
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, {

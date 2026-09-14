@@ -923,13 +923,6 @@ diagnostic Notices. `exec:*/search_progress` replaces search acquisition's
 activity position and its terminal phase clears it. Neither client appends
 progress ticks or live-renders durable `entry_materialized` narration.
 
-Serialized Git branch batches arrive separately as `CUSTOM
-plurnk.branch_batch`, preserving the daemon's full lifecycle payload. Queued and
-running transitions replace the prompt actor with 🌿 and show aggregate
-completion in the coordinate slot. Completion and failure clear that state and
-append one summary; `recovery_required` remains visible and appends one
-operator-facing error. Per-child progress never becomes waterfall spam.
-
 Client `daemon_stale` and `edits_blocked` observations are also Notices because
 they advise without terminating an operation. Client failures are Problems.
 

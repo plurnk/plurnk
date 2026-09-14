@@ -58,3 +58,25 @@ test("[§cli-render-filter] installed command renders stdin without daemon or st
     assert.match(result.stdout, /^💻 json$/m);
     assert.doesNotMatch(result.stdout, /\x1b\[/, "filter output is plain Unicode even when NO_COLOR is empty");
 });
+
+test("[§cli-render-filter] built filter reorients a wide vertical diagram for terminal and editor consumers", async () => {
+    const result = await runFilter([
+        "```mermaid",
+        "graph TD",
+        "    root[Root] --> a[First detailed topic with a complete label]",
+        "    root --> b[Second detailed topic with a complete label]",
+        "    root --> c[Third detailed topic with a complete label]",
+        "    root --> d[Fourth detailed topic with a complete label]",
+        "```",
+    ].join("\n"), 80);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.stderr, "");
+    assert.doesNotMatch(result.stdout, /mermaid source|graph TD|\x1b\[/);
+    assert.match(result.stdout, /┌/);
+    assert.match(result.stdout, /►/);
+    for (const label of ["First", "Second", "Third", "Fourth"]) {
+        assert.ok(result.stdout.includes(`${label} detailed topic with a complete label`));
+    }
+    assert.ok(result.stdout.split("\n").every((line) => line.length <= 80));
+});

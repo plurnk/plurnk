@@ -549,8 +549,9 @@ logical row; headings, inline markup, lists, and links retain conventional
 terminal presentation, while ordinary fenced code begins with a `💻 language`
 header. A ```mermaid fence projects as
 a topology- and label-preserving Unicode diagram when it fits the same live
-viewport. Authored direction is preserved when possible; horizontal flowchart
-and subgraph directions may be reprojected vertically. Invalid, unsupported,
+viewport. Preserve the authored layout when it fits; otherwise try one alternate
+flowchart layout exchanging horizontal and vertical directions, including explicit
+subgraph directions. Invalid, unsupported,
 or still-overwide diagrams fall back to labeled verbatim source with the
 reason, never a half-drawn diagram. The wire always carries semantic source;
 no pre-rendered channel exists at the protocol boundary.

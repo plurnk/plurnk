@@ -162,6 +162,59 @@ test("[§cli-markdown-projection] invalid Mermaid falls back to its verbatim sou
     assert.deepEqual(renderMermaid(source), ["◇ mermaid source — unsupported or invalid", "│ notMermaid", "│   A->>B: hi"]);
 });
 
+for (const direction of ["TD", "TB", "BT"]) {
+    test(`[§cli-markdown-projection] a wide ${direction} fan-out tries horizontal layout without losing labels or edges`, () => {
+        const body = [
+            "    root[Project documentation] --> a[Language contract]",
+            "    root --> b[Public APIs]",
+            "    root --> c[Configuration]",
+            "    root --> d[Verification]",
+            "    a --> aa[Describe language syntax and recovery behavior]",
+            "    b --> bb[Document stable interfaces and their guarantees]",
+            "    c --> cc[Explain environment layering and sensible defaults]",
+            "    d --> dd[Cover behavior boundaries and regression cases]",
+        ].join("\n");
+        const source = `graph ${direction}\n${body}`;
+        const authored = renderMermaid(source, 1000);
+        assert.ok(authored.some((line) => displayWidth(line) > 132), "the authored fan-out really exceeds the viewport");
+        assert.deepEqual(renderMermaid(source, Math.max(...authored.map(displayWidth))), authored, "an exactly fitting viewport preserves the authored layout");
+        const horizontal = renderMermaid(`graph LR\n${body}`, 1000);
+        assert.ok(horizontal.every((line) => displayWidth(line) <= 132), "the alternate layout fits");
+        assert.deepEqual(renderMermaid(source, 132), horizontal, "the complete alternate diagram survives, not its source");
+    });
+}
+
+for (const direction of ["LR", "RL"]) {
+    test(`[§cli-markdown-projection] a wide ${direction} chain still tries vertical layout`, () => {
+        const body = "a[First stage of the process] --> b[Second stage of the process] --> c[Final stage of the process]";
+        const source = `flowchart ${direction}\n${body}`;
+        const authored = renderMermaid(source, 1000);
+        assert.ok(authored.some((line) => displayWidth(line) > 60));
+        const vertical = renderMermaid(`flowchart TD\n${body}`, 1000);
+        assert.ok(vertical.every((line) => displayWidth(line) <= 60));
+        assert.deepEqual(renderMermaid(source, 60), vertical);
+    });
+}
+
+test("[§cli-markdown-projection] alternate layout transposes explicit subgraph directions too", () => {
+    const body = [
+        "subgraph details[Details]",
+        "    direction TB",
+        "    root[Root] --> a[First detailed topic]",
+        "    root --> b[Second detailed topic]",
+        "    root --> c[Third detailed topic]",
+        "    root --> d[Fourth detailed topic]",
+        "end",
+    ].join("\n");
+    const source = `flowchart TB\n${body}`;
+    const authored = renderMermaid(source, 1000);
+    assert.ok(authored.some((line) => displayWidth(line) > 70));
+    const horizontal = renderMermaid(`flowchart LR\n${body.replace("direction TB", "direction LR")}`, 1000);
+    assert.ok(horizontal.every((line) => displayWidth(line) <= 70));
+    assert.deepEqual(renderMermaid(source, 70), horizontal);
+    assert.deepEqual(renderMermaid(source.replaceAll("\n", "\r\n"), 70), horizontal, "CRLF source follows the same fallback");
+});
+
 test("[§cli-markdown-projection] Mermaid admission follows the supplied viewport rather than a fixed width", () => {
     const source = [
         "flowchart TB",
@@ -174,10 +227,16 @@ test("[§cli-markdown-projection] Mermaid admission follows the supplied viewpor
         "root --> g[Golf surface]",
         "root --> h[Hotel surface]",
     ].join("\n");
-    assert.match(renderMermaid(source, 120)[0]!, /rendered width 129 exceeds 120/);
+    const tooNarrow = renderMermaid(source, 10);
+    assert.match(tooNarrow[0]!, /rendered width \d+ exceeds 10/);
+    assert.deepEqual(tooNarrow.slice(1), source.split("\n").map((line) => `│ ${line}`), "source fallback remains verbatim when neither orientation fits");
+    const narrow = renderMermaid(source, 120);
+    assert.doesNotMatch(narrow.join("\n"), /◇ mermaid source/);
+    assert.ok(narrow.every((line) => displayWidth(line) <= 120));
     const roomy = renderMermaid(source, 140);
     assert.doesNotMatch(roomy.join("\n"), /◇ mermaid source/);
     assert.ok(roomy.every((line) => displayWidth(line) <= 140));
+    assert.deepEqual(roomy, renderMermaid(source, 1000), "do not rotate an authored layout that already fits");
 });
 
 test("[§cli-markdown-projection] the document projector composes prose, tables, and mermaid fences", () => {

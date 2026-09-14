@@ -66,15 +66,19 @@ const renderMermaidLines = (source: string): string[] | null => {
     }
 };
 
-const verticalizeFlowchart = (source: string): string => source
-    .replace(/^(\s*(?:graph|flowchart)\s+)(?:LR|RL)(?=\s*(?:;|$))/im, "$1TD")
-    .replace(/^(\s*direction\s+)(?:LR|RL)(\s*)$/gim, "$1TB$2");
+const transposeFlowchart = (source: string): string => {
+    const transpose = (_match: string, prefix: string, direction: string): string =>
+        `${prefix}${/^(?:LR|RL)$/i.test(direction) ? "TD" : "LR"}`;
+    return source
+        .replace(/^([ \t]*(?:graph|flowchart)[ \t]+)(TD|TB|BT|LR|RL)(?=[ \t]*(?:;|\r?$))/im, transpose)
+        .replace(/^([ \t]*direction[ \t]+)(TD|TB|BT|LR|RL)(?=[ \t]*\r?$)/gim, transpose);
+};
 
 const widestLine = (lines: string[]): number =>
     Math.max(0, ...lines.map(displayWidth));
 
 // Preserve the authored layout whenever it fits the current viewport. A
-// vertical projection is the one bounded alternative; invalid, unsupported,
+// transposed projection is the one bounded alternative; invalid, unsupported,
 // or still-overwide diagrams remain inspectable as labeled source.
 export const renderMermaid = (
     source: string,
@@ -84,11 +88,11 @@ export const renderMermaid = (
     const authored = renderMermaidLines(source);
     if (authored !== null && widestLine(authored) <= width) return authored;
 
-    const verticalSource = verticalizeFlowchart(source);
-    const vertical = verticalSource === source ? null : renderMermaidLines(verticalSource);
-    if (vertical !== null && widestLine(vertical) <= width) return vertical;
+    const alternateSource = transposeFlowchart(source);
+    const alternate = alternateSource === source ? null : renderMermaidLines(alternateSource);
+    if (alternate !== null && widestLine(alternate) <= width) return alternate;
 
-    const attemptedWidths = [authored, vertical]
+    const attemptedWidths = [authored, alternate]
         .filter((lines): lines is string[] => lines !== null)
         .map(widestLine);
     const reason = attemptedWidths.length === 0

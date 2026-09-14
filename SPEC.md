@@ -470,6 +470,32 @@ Daemon Problems — a headless workspace, an invalid pattern, a service-owned
 definition that cannot be removed — cross the existing diagnostic path without
 rewriting or retry.
 
+### §3.8 Environment {§cli-environment}
+
+The environment is a thin projection of the daemon's `env` Functionality
+family — the same common lifecycle as `/mcp`, `/skills`, `/agents`, and
+`/members` — with one difference the client must respect: the family is
+worker-scoped. An environment is how one worker's commands run, not a workspace
+capability, so its actions are `worker.env.*` and the transport binds this
+tab's worker exactly as it does for `worker.model.*`. The client composes one
+exact definition, `{value}`, and renders the daemon's states; admission (the
+shell's name grammar, never plurnk's own names), the operator's ceiling, and
+the composition at the spawn live in the service. A value is used verbatim by
+the daemon, so `add` hands over the rest of the line as typed, never tokenized.
+
+| TUI input | AG-UI+ action |
+|---|---|
+| `/env` | `worker.env.list {}` — one line per name with origin, state, value, and the worker it was inherited from: `PATH  service  active  /usr/bin:/bin`, `TOOLCHAIN  worker  active  stable  (from alice)` |
+| `/env discover [query]` | `worker.env.discover {query?}` — the names this worker may set, each with its owning package and the declaration's comment; an empty query is the whole catalog |
+| `/env add <NAME> <value>` | `worker.env.add {alias, definition: {value}}` |
+| `/env enable <NAME>` | `worker.env.enable {alias}` |
+| `/env disable <NAME>` | `worker.env.disable {alias}` — an ambient name disabled here is withheld from this worker's commands alone |
+| `/env remove <NAME>` | `worker.env.remove {alias}` |
+
+Daemon Problems — a name a shell cannot export, one of plurnk's own names, a
+service-owned definition that cannot be removed — cross the existing
+diagnostic path without rewriting or retry.
+
 ---
 
 ## §4 Exit codes {§cli-exit-codes}

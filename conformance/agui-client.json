@@ -632,69 +632,87 @@
       ]
     },
     "worker.env.list": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "worker.env.discover": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "worker.env.add": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "worker.env.enable": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "worker.env.disable": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "worker.env.remove": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.mcp.list": {

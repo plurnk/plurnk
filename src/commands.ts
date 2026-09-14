@@ -9,7 +9,13 @@ export const COMMAND_GROUPS = [
 ] as const;
 
 export type CommandGroup = typeof COMMAND_GROUPS[number]["id"];
-export type FunctionalityFamily = "mcp" | "skills" | "agents" | "members";
+export type FunctionalityFamily = "mcp" | "skills" | "agents" | "members" | "env";
+
+// The action prefix each family's verbs live under. Env is worker-scoped — an environment is how one
+// worker's commands run, not a workspace capability — so its actions are `worker.env.*`.
+export const FAMILY_ACTIONS: Readonly<Record<FunctionalityFamily, string>> = Object.freeze({
+    mcp: "workspace.mcp", skills: "workspace.skills", agents: "workspace.agents", members: "workspace.members", env: "worker.env",
+});
 
 export interface CommandSubcommand {
     name: string;
@@ -61,6 +67,12 @@ const MEMBERS_SUBCOMMANDS = lifecycle(
     { name: "add", usage: "add <alias> <glob>", summary: "Add and enable a members glob; a leading ! excludes.", alias: false },
 );
 
+const ENV_SUBCOMMANDS = lifecycle(
+    "name",
+    { name: "discover", usage: "discover [query]", summary: "List the names you may set, with their owning package; a query matches a name or its comment.", alias: false },
+    { name: "add", usage: "add <NAME> <value>", summary: "Set a variable for every command this worker runs; the value is used verbatim.", alias: false },
+);
+
 export const COMMANDS = [
     { name: "help", usage: "/help [verb]", summary: "Show the command index or one command's usage.", group: "inspect" },
     { name: "models", usage: "/models [search]", summary: "Search the bounded model catalog.", group: "inspect" },
@@ -87,6 +99,7 @@ export const COMMANDS = [
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },
     { name: "agents", usage: "/agents [subcommand]", summary: "List or manage this worker's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
     { name: "members", usage: "/members [subcommand]", summary: "List or manage this worker's file members.", group: "functionality", subcommands: MEMBERS_SUBCOMMANDS },
+    { name: "env", usage: "/env [subcommand]", summary: "List or manage this worker's environment.", group: "functionality", subcommands: ENV_SUBCOMMANDS },
 
     { name: "import", usage: "/import <path>", summary: "Insert a local file into the composer.", group: "compose" },
     { name: "script", usage: "/script <path>", summary: "Submit a local .plk program through op.parse.", group: "compose" },

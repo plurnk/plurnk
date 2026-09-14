@@ -15,6 +15,7 @@ import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
 let members = false;   // the daemon serves the members Functionality family
+let env = false;       // the daemon serves the env Functionality family
 
 before(async () => {
     const bin = await locateDaemon();
@@ -32,6 +33,7 @@ before(async () => {
         });
         const discovery = await actionViaBridge<{ actions: Record<string, unknown> }>({ bridgeUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
         members = "workspace.members.list" in discovery.actions;
+        env = "worker.env.list" in discovery.actions;
     }
 });
 after(async () => { await daemon?.cleanup(); });
@@ -107,6 +109,25 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             tui.write("/members remove note\r");
             await tui.waitFor(/removed: note/, 20_000);
         } finally { tui.kill(); await rm(project, { recursive: true, force: true }); }
+    });
+
+    test("[§cli-environment] /env shares the Functionality lifecycle grammar against the built daemon, for this tab's worker", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        if (!env) { t.skip("the daemon does not serve the env family"); return; }
+        const tui = spawnTui(daemon.url);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("/env add CARGO_TARGET_DIR /tmp/plurnk-verbs\r");
+            await tui.waitFor(/added: CARGO_TARGET_DIR \(active\)/, 20_000);
+            tui.write("/env\r");
+            await tui.waitFor(/CARGO_TARGET_DIR\s+worker\s+active\s+\/tmp\/plurnk-verbs/, 20_000);
+            tui.write("/env discover PAGER\r");
+            await tui.waitFor(/PAGER\s+@plurnk\/plurnk-execs/, 20_000);
+            tui.write("/env disable CARGO_TARGET_DIR\r");
+            await tui.waitFor(/disabled: CARGO_TARGET_DIR \(disabled\)/, 20_000);
+            tui.write("/env remove CARGO_TARGET_DIR\r");
+            await tui.waitFor(/removed: CARGO_TARGET_DIR/, 20_000);
+        } finally { tui.kill(); }
     });
 
     test("Tab completes a verb prefix (/mo → /model)", async (t) => {

@@ -46,6 +46,7 @@ import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
 import { handleAgents } from "./agents.ts";
 import { handleMembers } from "./members.ts";
+import { handleEnv } from "./env.ts";
 import {
     formatWorkerReasoning,
     readWorkerReasoning,
@@ -55,6 +56,7 @@ import {
 import { EMPTY_TALLY, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
 import {
     COMMANDS,
+    FAMILY_ACTIONS,
     completeCommandSyntax,
     isCommandName,
     renderCommandHelp,
@@ -523,6 +525,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             await handleMembers(rest, rpc, write);
             return;
         }
+        case "env": {
+            await handleEnv(rest, rpc, write);
+            return;
+        }
         case "accept":
         case "reject":
         case "cancel":
@@ -752,8 +758,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return selectors;
             },
             getFunctionalityAliases: async (family) => {
-                const result = await transport.rpc(`workspace.${family}.list`, {}) as { definitions?: unknown };
-                if (!Array.isArray(result.definitions)) throw new TypeError(`workspace.${family}.list returned an invalid result.`);
+                const result = await transport.rpc(`${FAMILY_ACTIONS[family]}.list`, {}) as { definitions?: unknown };
+                if (!Array.isArray(result.definitions)) throw new TypeError(`${FAMILY_ACTIONS[family]}.list returned an invalid result.`);
                 return result.definitions
                     .map((definition) => definition !== null && typeof definition === "object"
                         ? (definition as { alias?: unknown }).alias

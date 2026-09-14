@@ -1,4 +1,4 @@
-.TH PLURNK 1 "" "plurnk 0.83.5" "User Commands"
+.TH PLURNK 1 "" "plurnk 0.84.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -58,8 +58,7 @@ log read / read <coord>) inspect daemon state without running a loop.
       --auto              keep proposal authority inside the loop; proposals
                           resolve automatically without a client review round-trip.
       --policy <json>     LoopPolicy JSON applied to every loop. --auto selects
-                          proposal acceptance; '?' additionally denies EXEC and
-                          selects proposal review for that prompt.
+                          proposal acceptance; '?' selects review for that prompt.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -95,7 +94,7 @@ log read / read <coord>) inspect daemon state without running a loop.
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   reasoning [policy]      inspect or set a worker's durable reasoning policy
-  capabilities [json]    inspect the capability cascade or set the Worker layer
+  capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
   web [options]           serve the optional browser client using this invocation's
@@ -133,6 +132,7 @@ The no-argument interactive terminal accepts these slash commands:
 /skills [subcommand]           List or manage this worker's Agent Skills.
 /agents [subcommand]           List or manage this worker's outbound A2A agents.
 /members [subcommand]          List or manage this worker's file members.
+/env [subcommand]              List or manage this worker's environment.
 /import <path>                 Insert a local file into the composer.
 /script <path>                 Submit a local .plk program through op.parse.
 /editor                        Compose the current value in $EDITOR.

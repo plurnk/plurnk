@@ -60,3 +60,30 @@ test("presentPlan: rejects a PLAN row without the canonical body", () => {
         body: [{ content: "internal task", status: "pending" }],
     }), /canonical Plan body/, "the client consumes ACP, never the daemon's model-native array");
 });
+
+const { planColumns } = await import("./plan.ts");
+
+test("[§cli-plan-rendering] planColumns groups entries under their native status in the stable order, populated columns only", () => {
+    assert.deepEqual(planColumns({ body: { entries: [
+        { content: "Compose the response", priority: "medium", status: "pending" },
+        { content: "Read the docs", priority: "medium", status: "completed" },
+        { content: "Map the workspaces", priority: "high", status: "in_progress" },
+        { content: "Verify the build", priority: "medium", status: "completed" },
+    ] } }), [
+        { status: "todo", entries: ["Compose the response"] },
+        { status: "in_progress", entries: ["[high] Map the workspaces"] },
+        { status: "completed", entries: ["Read the docs", "Verify the build"] },
+    ], "todo is the native name of ACP pending; waiting and failed columns are absent when empty");
+});
+
+test("[§cli-plan-rendering] planColumns keeps the waiting and failed subtypes as their own columns", () => {
+    assert.deepEqual(planColumns({ body: { entries: [
+        { content: "Receive the review", priority: "medium", status: "in_progress", _meta: { "plurnk.xyz/status": "waiting" } },
+        { content: "Run the tests", priority: "medium", status: "completed", _meta: { "plurnk.xyz/status": "failed" } },
+    ] } }), [
+        { status: "waiting", entries: ["Receive the review"] },
+        { status: "failed", entries: ["Run the tests"] },
+    ]);
+    assert.deepEqual(planColumns({ body: { entries: [] } }), []);
+    assert.throws(() => planColumns(null), /canonical Plan body/);
+});

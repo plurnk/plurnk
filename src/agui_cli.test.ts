@@ -369,14 +369,14 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) to the trace", async () => {
     const { io, err } = sink();
     await consumeCliRun(stream([
-        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, target: "python:///1/1/1/EXEC", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
-        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, workerId: 7, target: "python:///1/1/1/EXEC", subscriptionId: 1, scheme: "python", result: { status: 200 }, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, target: "python:///0c0ffee1", channel: "stdout", state: "active", contentLength: 5, loop_seq: 1, turn_seq: 1, sequence: 1 } },
+        { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 1, workerId: 7, target: "python:///0c0ffee1", subscriptionId: 1, scheme: "python", result: { status: 200 }, summary: "done", wakeAction: "no-op-active-loop", loop_seq: 1, turn_seq: 1, sequence: 1 } },
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
-    const trace = err.join("");
-    assert.match(trace, /python:\/\/\/1\/1\/1/, "stream lines traced to stderr");
+    const trace = err.join("").replace(/\x1b\[[0-9;]*m/g, "");   // the row is styled; the assertion is about its words
+    assert.match(trace, /python:\/\/\/0c0ffee1/, "stream lines traced to stderr");
     assert.doesNotMatch(trace, /(?:^|\s)200(?:\s|$)/, "a routine conclusion carries no code (plurnk#21)");
-    assert.match(trace, /📡/, "the conclusion still traces");
+    assert.match(trace, /python \(python:\/\/\/0c0ffee1\)/, "the conclusion traces as the stream in the operation grammar");
 });
 
 test("runScript segments: a run with NO parse result must not report success", async () => {

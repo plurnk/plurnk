@@ -1,142 +1,29 @@
-// Glyph palette + line formatting for the TUI log waterfall.
-// Glyphs per TUI.md §4 (canonical for the constellation).
+// Waterfall row grammar for the TUI ({§cli-log-entry-line-format}). An operation row is the
+// authored heading, `OP (target) <scope> /pattern/ {n} aside — problem title`, rendered as
+// literal text with this module's own styling and never through Markdown; only delivered
+// SEND bodies are Markdown ({§cli-broadcast-send-rendering}). Rows carry no bodies.
 
 import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
+import Table from "cli-table3";
 import { TurnDisposition } from "@plurnk/plurnk-contracts";
-import type { OperationResult, PlurnkOp } from "@plurnk/plurnk-contracts";
-import { presentPlan } from "./plan.ts";
-
-// Operation glyphs occupy two display columns, including KILL's emoji sequence.
-// TASK lifecycle glyphs are left-anchored append-only output and may use a
-// standard variation sequence: no cursor or shared-column arithmetic follows.
-export const OP_GLYPHS: Record<string, string> = {
-    FIND: "🔍",
-    READ: "📖",
-    EDIT: "📝",
-    COPY: "📋",
-    MOVE: "📦",
-    KILL: "✂️",
-    WORK: "🐜",
-    FORK: "👥",
-    SEND: "💬",
-    TASK: "▶️",
-    EXEC: "🔧",
-    BARE: "🔮",
-} satisfies Record<PlurnkOp, string>;
-
-export const ORIGIN_GLYPHS: Record<string, string> = {
-    model: "🎲",
-    client: "❯",
-    _plurnk: "🧰",
-    plugin: "🔌",
-};
-
-// Lifecycle status appears once as a glyph; numeric codes remain wire truth.
-// Receipt/error glyphs below align with plurnk.nvim's STATUS_GLYPHS.
-export const sendLifecycleGlyph = (status: number): string => {
-    if (status === 102) return "▶️";
-    if (status === 202) return "💤";
-    if (status === 300) return "🤔";
-    if (status === 499) return "✋";
-    if (status >= 200 && status < 300) return "⏹️";
-    if (status >= 400 && status < 600) return "❌";
-    return "⏹️";
-};
-
-export const sendSubGlyph = (status: number): string => {
-    if (status === 102) return "⏳";   // continuing — more turns coming
-    if (status === 202) return "💤";   // parked/waiting on an external event
-    if (status === 300) return "🤔";   // needs a decision (multiple choices)
-    if (status === 410) return "💥";   // directed SEND to a gone resource
-    if (status === 499) return "✋";   // failed / aborted / cancelled
-    // Routine success (2xx) badges NOTHING — a check on every row is noise; leave
-    // the slot empty. Two blanks keep the width-2 column so `code` stays aligned.
-    if (status >= 200 && status < 300) return "  ";
-    // Single failure glyph for 4xx/5xx — the colored status carries 4xx vs 5xx.
-    if (status >= 400 && status < 600) return "❌";
-    return "  ";   // reserve the slot — never a bare, width-shifting empty string
-};
+import type { OperationResult } from "@plurnk/plurnk-contracts";
+import { planColumns } from "./plan.ts";
 
 // ANSI escape codes. NO_COLOR support per Unix convention.
 const useColor = colorEnabled();
 
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
+const BOLD = code("1");
 const DIM = code("2");
-const CYAN = code("36");
+const ITALIC = code("3");
 const GREEN = code("32");
-const YELLOW = code("33");
-const RED = code("31");
-const BRIGHT_RED = code("1;31");
-
-const colorForStatus = (status: number): string => {
-    // In-progress / parked / needs-decision share yellow (attention, not done);
-    // 202 is explicitly NOT green — parked ≠ success (aligns with the 💤 glyph).
-    if (status === 102 || status === 202 || (status >= 300 && status < 400)) return YELLOW;
-    if (status >= 200 && status < 300) return GREEN;
-    if (status >= 400 && status < 500) return RED;
-    if (status >= 500 && status < 600) return BRIGHT_RED;
-    return "";
-};
-
-const ellipsize = (s: string, max: number): string => {
-    if (s.length <= max) return s;
-    return s.slice(0, max - 1) + "…";
-};
-
-// Build the EXTRA segment based on the op + entry shape.
-const buildExtra = (entry: LogEntryWire): string => {
-    const tx = entry.tx as {
-        op?: string;
-        body?: unknown;
-        signal?: unknown;
-        path?: unknown;
-        destination?: { target?: { raw?: unknown } };
-    } | null;
-    const rx = entry.rx as Record<string, unknown> | null;
-    if (tx === null) return "";
-
-    switch (entry.op) {
-        case "EDIT": {
-            const body = typeof tx.body === "string" ? tx.body : "";
-            return body.length > 0 ? `${DIM}"${ellipsize(body.replace(/\n/g, " "), 40)}"${RESET}` : "";
-        }
-        case "COPY":
-        case "MOVE": {
-            const raw = tx.destination?.target?.raw;
-            return typeof raw === "string" ? `${DIM}→ ${raw}${RESET}` : "";
-        }
-        case "FIND": {
-            // rx.results is an ARRAY of matches on the current wire (uniform
-            // matcher, svc#286; client #129 — the old string read printed
-            // "0 results" against a 33-item rx). Older stored rows replayed via
-            // log hydration still carry the newline-joined string — count both
-            // known shapes, never re-derive from content.
-            const raw = rx?.results;
-            const count = Array.isArray(raw) ? raw.length
-                : typeof raw === "string" && raw.length > 0 ? raw.split("\n").filter((l) => l.length > 0).length
-                : 0;
-            return `${DIM}→ ${count} result${count === 1 ? "" : "s"}${RESET}`;
-        }
-        case "READ": {
-            const content = rx !== null && typeof rx.content === "string" ? ModelText.plain(rx.content) : "";
-            return content.length > 0 ? `${DIM}"${ellipsize(content.replace(/\n/g, " "), 40)}"${RESET}` : "";
-        }
-        case "SEND": {
-            // Broadcast (scheme === null) is handled by renderBroadcast — not reached here.
-            return `${DIM}→ ${entry.scheme}://${entry.pathname ?? ""}${RESET}`;
-        }
-        case "EXEC": {
-            const body = typeof tx.body === "string" ? tx.body : "";
-            return body.length > 0 ? `${DIM}"${ellipsize(body.replace(/\n/g, " "), 40)}"${RESET}` : "";
-        }
-        default:
-            return "";
-    }
-};
+// The outcome color for anything unsuccessful: pink, so it is neither the error red of a
+// diagnostic nor the green of a settled success.
+const PINK = code("95");
 
 export interface LogEntryWire {
     id: number;
@@ -163,13 +50,18 @@ export interface LogEntryWire {
     sequence: number;
 }
 
-export const entryAside = (entry: LogEntryWire): string | null => {
-    const tx = typeof entry.tx === "string"
-        ? (() => { try { return JSON.parse(entry.tx) as unknown; } catch { return null; } })()
-        : entry.tx;
-    const raw = tx !== null && typeof tx === "object"
-        ? (tx as { aside?: unknown }).aside
+// A wire field that may arrive as JSON text or as the parsed object.
+export const objectOf = (value: unknown): Record<string, unknown> | null => {
+    const parsed = typeof value === "string"
+        ? (() => { try { return JSON.parse(value) as unknown; } catch { return null; } })()
+        : value;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
         : null;
+};
+
+export const entryAside = (entry: LogEntryWire): string | null => {
+    const raw = objectOf(entry.tx)?.aside;
     if (typeof raw !== "string") return null;
     const plain = stripVTControlCharacters(raw)
         .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
@@ -181,14 +73,10 @@ export const entryAside = (entry: LogEntryWire): string | null => {
 // Machine acquisition is durable ambience, not a live action trace. It remains
 // available through log/replay; interactive clients collapse it into the
 // producer's aggregate progress signal instead of redrawing once per page.
-export const isEntryMaterialization = (entry: LogEntryWire): boolean => {
-    const attrs = typeof entry.attrs === "string"
-        ? (() => { try { return JSON.parse(entry.attrs) as unknown; } catch { return null; } })()
-        : entry.attrs;
-    return entry.origin === "_plurnk"
-        && entry.op === "EDIT"
-        && (attrs as { kind?: unknown } | null)?.kind === "entry_materialized";
-};
+export const isEntryMaterialization = (entry: LogEntryWire): boolean =>
+    entry.origin === "_plurnk"
+    && entry.op === "EDIT"
+    && objectOf(entry.attrs)?.kind === "entry_materialized";
 
 // Human output carries no coordinate gutter. Coordinates remain forensic
 // truth on the wire and in --json; this label survives for machine-adjacent
@@ -201,17 +89,6 @@ export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): 
 // The active prompt only represents progress below completion in three cells.
 export const progressLabel = (percent: number): string =>
     `${DIM}${`${Math.max(0, Math.min(99, Math.trunc(percent)))}%`.padStart(3, " ")}${RESET}`;
-
-// TASK lifecycle glyphs carry the human state without repeating protocol codes.
-// Other failures retain their exact code because it remains useful diagnosis.
-// Every status remains exact on the wire and in JSON.
-export const statusCodeVisible = (entry: Pick<LogEntryWire, "op" | "status_rx" | "scheme" | "pathname">): boolean =>
-    entry.status_rx >= 400
-    && !TurnDisposition.isOp(entry.op);
-
-const BOLD = code("1");
-const ITALIC = code("3");
-void ITALIC;
 
 // A common model-authored inline-math spelling with an exact terminal glyph.
 // This is typographic normalization, not a claim of general LaTeX support.
@@ -263,54 +140,6 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
         .join("\n");
 };
 
-// Broadcast SEND (model → user) — multi-line block, content rather than a Notice.
-// Per TUI.md §3.4.1 / SPEC.md §5.4. The lifecycle glyph begins at column zero;
-// continuation body lines nest under its following separator.
-const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns - 3))): string => {
-    const signal = typeof entry.signal === "number" ? entry.signal : entry.status_rx;
-    const idGlyph = TurnDisposition.isOp(entry.op) ? sendLifecycleGlyph(signal) : OP_GLYPHS.SEND;
-
-    const aside = entryAside(entry);
-    const header = idGlyph
-        + (statusCodeVisible(entry) ? ` ${sendSubGlyph(entry.status_rx)} ${colorForStatus(entry.status_rx)}${entry.status_rx}${RESET}` : "")
-        + (aside === null ? "" : ` ${DIM}— ${aside}${RESET}`);
-
-    const multiLine = body.includes("\n");
-    // Short single-line replies inline after the header (nvim's
-    // BROADCAST_INLINE_LIMIT convergence); longer/multi-line bodies
-    // start on the next line, indented under the speaker.
-    // Single space before the body — the same separator op rows use before their
-    // target, so inline SEND bodies sit in the target column, not one right of it.
-    const inlineCapacity = Math.max(0, columns - displayWidth(header) - 1);
-    const lines = body.length === 0 ? [header]
-        : !multiLine && displayWidth(body) <= inlineCapacity ? [`${header} ${body}`]
-        : [header, ...body.split("\n").map((l) => `   ${l}`)];
-
-    // Delivered response messages are bold; everything else plain. No
-    // surrounding blank lines — the bold body is the standout on its own.
-    return emphasizeLines(lines, isResponseMessage(entry));
-};
-
-const renderPlan = (entry: LogEntryWire): string => {
-    // A routine inventory carries no status code; a failed one keeps
-    // its error code and glyph on the first row.
-    const status = String(entry.status_rx);
-    const failed = entry.status_rx >= 400;
-    const firstSlot = failed ? `${sendSubGlyph(entry.status_rx)} ${colorForStatus(entry.status_rx)}${status}${RESET} ` : "";
-    const laterSlot = failed ? `${" ".repeat(3 + status.length + 1)}` : "";
-    const presented = presentPlan(entry.tx);
-    const rows = presented.length === 0
-        ? [{ glyph: "📭", text: "no entries" }]
-        : presented;
-
-    return rows.map(({ glyph, text }, index) => {
-        const prefix = index === 0
-            ? `${glyph} ${firstSlot}`
-            : `${glyph} ${laterSlot}`;
-        return `${prefix}${DIM}${ModelText.plain(text)}${RESET}`;
-    }).join("\n");
-};
-
 // The TUI moves submitted editor values into its transcript, so the durable
 // prompt row would duplicate them.
 export const isPromptEntry = (entry: LogEntryWire): boolean =>
@@ -322,11 +151,6 @@ export const isResponseMessage = (entry: LogEntryWire): boolean =>
     && entry.source == null && entry.inherited_history !== 1
     && entry.scheme === null && entry.pathname === null;
 
-// Render a log entry as one waterfall line.
-// Returns the full ANSI-formatted line(s) WITHOUT trailing newline. A
-// broadcast SEND returns one striped line (single-line body) or a striped
-// block (multi-line body) — no surrounding blank lines; the stripe's
-// background color is the standout.
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
 // the bare pathname when scheme is null (the daemon's file:// shortcut). null
 // when the entry has no path at all (a broadcast SEND). One source for both the
@@ -341,44 +165,213 @@ export const entryTarget = (entry: LogEntryWire): string | null => {
 export const entryScope = (entry: LogEntryWire): string | null =>
     entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;
 
+// The row names the operation as the model wrote it: the registered executor for an
+// EXEC fence (the runtime the daemon resolved when the fence named none), the op otherwise.
+export const operationIdentity = (entry: LogEntryWire): string => {
+    if (entry.op !== "EXEC") return entry.op;
+    const executor = objectOf(entry.tx)?.executor;
+    if (typeof executor === "string" && executor.length > 0) return executor;
+    const runtime = objectOf(entry.attrs)?.runtime;
+    return typeof runtime === "string" && runtime.length > 0 ? runtime : "EXEC";
+};
+
+// The authored target text when the wire carries it; the daemon's address otherwise.
+export const authoredTarget = (entry: LogEntryWire): string | null => {
+    const raw = (objectOf(entry.tx)?.target as { raw?: unknown } | null | undefined)?.raw;
+    if (typeof raw === "string") return raw;
+    // An EXEC row's address is its stream, not a target the fence named.
+    return entry.op === "EXEC" ? null : entryTarget(entry);
+};
+
+// The matcher as authored on the heading (`/regex/i`, `~query`, `&symbol`, a bare glob).
+export const authoredPattern = (entry: LogEntryWire): string | null => {
+    const raw = (objectOf(entry.tx)?.matcher as { raw?: unknown } | null | undefined)?.raw;
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+};
+
+// One COPY/MOVE operand keeps its own target, scope, and matcher together.
+const selectionText = (selection: unknown): string | null => {
+    const operand = objectOf(selection);
+    if (operand === null) return null;
+    const raw = (operand.target as { raw?: unknown } | null | undefined)?.raw;
+    const marks = (operand.lineMarker as { marks?: unknown } | null | undefined)?.marks;
+    const matcher = (operand.matcher as { raw?: unknown } | null | undefined)?.raw;
+    const parts = [typeof raw === "string" ? `(${raw})` : null, Array.isArray(marks) ? `<${marks.join(",")}>` : null, typeof matcher === "string" ? matcher : null];
+    const text = parts.filter((part): part is string => part !== null).join(" ");
+    return text.length === 0 ? null : text;
+};
+
+const spanLength = (returned: unknown): number | null => {
+    if (!Array.isArray(returned) || returned.length !== 2) return null;
+    const [start, end] = returned;
+    if (typeof start !== "number" || typeof end !== "number") return null;
+    return Math.max(0, end - start + 1);
+};
+
+// What the receipt returned, in the receipt's own unit: a FIND's returned items, a READ's
+// returned lines (a pattern read carries its matched lines as `lineOrdinals`). Other
+// operations return no countable thing. Never derived from a body.
+export const receiptCount = (entry: LogEntryWire): number | null => {
+    const rx = objectOf(entry.rx);
+    if (rx === null) return null;
+    const range = objectOf(rx.range);
+    if (entry.op === "READ") {
+        if (Array.isArray(rx.lineOrdinals)) return rx.lineOrdinals.length;
+        return spanLength(range?.returned);
+    }
+    if (entry.op === "FIND") {
+        const returned = spanLength(range?.returned);
+        if (returned !== null) return returned;
+        return typeof range?.total === "number" ? range.total : null;
+    }
+    return null;
+};
+
+// The structured result's own words for an unsuccessful outcome: the Problem title, else
+// the detail, else the bare status. A 204 with nothing countable carries its detail too.
+export const outcomeTitle = (entry: LogEntryWire): string | null => {
+    const rx = objectOf(entry.rx);
+    if (entry.status_rx >= 400) {
+        const title = objectOf(rx?.problem)?.title;
+        if (typeof title === "string" && title.length > 0) return title;
+        return typeof rx?.detail === "string" && rx.detail.length > 0 ? rx.detail : String(entry.status_rx);
+    }
+    if (entry.status_rx === 204 && typeof rx?.detail === "string" && receiptCount(entry) === null) return rx.detail;
+    return null;
+};
+
+// A collapsed fan-out or a concluded execution renders the row with facts the wire settled
+// elsewhere than on this one entry.
+export interface RowOverride {
+    target?: string;
+    count?: number | null;
+    failed?: boolean;
+    failure?: string | null;
+}
+
+const styledOutcome = (text: string, failed: boolean): string =>
+    `— ${failed ? PINK : DIM}${ModelText.plain(text)}${RESET}`;
+
+// `OP (target) <scope> /pattern/ {n} aside — problem title`, one line, literal text.
+export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
+    const failed = override.failed ?? (override.failure !== undefined && override.failure !== null || entry.status_rx >= 400);
+    const parts = [`${BOLD}${failed ? PINK : GREEN}${ModelText.plain(operationIdentity(entry))}${RESET}`];
+    const tx = objectOf(entry.tx);
+    if (entry.op === "COPY" || entry.op === "MOVE") {
+        for (const operand of [selectionText(tx?.source), selectionText(tx?.destination)]) {
+            if (operand !== null) parts.push(ModelText.plain(operand));
+        }
+    } else {
+        const target = override.target ?? authoredTarget(entry);
+        if (target !== null) parts.push(`(${ModelText.plain(target)})`);
+        const scope = entryScope(entry);
+        if (scope !== null) parts.push(scope);
+        const pattern = authoredPattern(entry);
+        if (pattern !== null) parts.push(ModelText.plain(pattern));
+    }
+    const count = override.count === undefined ? receiptCount(entry) : override.count;
+    if (count !== null) parts.push(`{${count}}`);
+    const aside = entryAside(entry);
+    if (aside !== null) parts.push(`${DIM}${ITALIC}${aside}${RESET}`);
+    const outcome = override.failure === undefined ? outcomeTitle(entry) : override.failure;
+    if (outcome !== null) parts.push(styledOutcome(outcome, failed));
+    return parts.join(" ");
+};
+
+interface Fanout { target: string; matched: number; index: number; count: number }
+
+const fanoutOf = (entry: LogEntryWire): Fanout | null => {
+    const fanout = objectOf(objectOf(entry.attrs)?.fanout);
+    if (fanout === null) return null;
+    const { target, matched, index, count } = fanout;
+    return typeof target === "string" && typeof matched === "number" && typeof index === "number" && typeof count === "number"
+        ? { target, matched, index, count }
+        : null;
+};
+
+export type FanoutVerdict =
+    | { kind: "row" }
+    | { kind: "suppressed" }
+    | { kind: "collapsed"; override: RowOverride };
+
+// A glob READ lands one receipt row per path ({§read-fan-out} in the service SPEC), each
+// stamped with the authored glob. The waterfall shows the authored statement once, when its
+// last row has arrived, counting the paths it read; a failed path names the collapsed row.
+export class FanoutCollapse {
+    #failures = new Map<string, string>();
+
+    admit(entry: LogEntryWire): FanoutVerdict {
+        const fanout = fanoutOf(entry);
+        if (fanout === null) return { kind: "row" };
+        const key = `${entry.loop_seq}/${entry.turn_seq}/${fanout.target}`;
+        if (entry.status_rx >= 400 && !this.#failures.has(key)) {
+            this.#failures.set(key, outcomeTitle(entry) ?? String(entry.status_rx));
+        }
+        if (fanout.index < fanout.count - 1) return { kind: "suppressed" };
+        const failure = this.#failures.get(key) ?? null;
+        this.#failures.delete(key);
+        return { kind: "collapsed", override: { target: fanout.target, count: fanout.count, failed: failure !== null, failure } };
+    }
+}
+
+// TASK: the header carries the receipt's own words (a deferral's or join's `detail`, a
+// failure's Problem title); the inventory is a status-column table with only the columns
+// that have entries ({§cli-plan-rendering}).
+const renderTask = (entry: LogEntryWire, columns: number): string => {
+    const failed = entry.status_rx >= 400;
+    const header = [`${BOLD}${failed ? PINK : GREEN}TASK${RESET}`];
+    const aside = entryAside(entry);
+    if (aside !== null) header.push(`${DIM}${ITALIC}${aside}${RESET}`);
+    const rx = objectOf(entry.rx);
+    if (failed) header.push(styledOutcome(outcomeTitle(entry) ?? String(entry.status_rx), true));
+    else if (entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) header.push(styledOutcome(rx.detail, false));
+    const inventory = planColumns(entry.tx);
+    if (inventory.length === 0) return header.join(" ");
+    const usable = Math.max(24, columns - 1);
+    const perColumn = Math.max(8, Math.floor(usable / inventory.length) - 3);
+    const table = new Table({
+        head: inventory.map(({ status }) => `${BOLD}${status}${RESET}`),
+        colWidths: inventory.map(({ status, entries }) => Math.min(perColumn, Math.max(displayWidth(status), ...entries.map(displayWidth)) + 2)),
+        wordWrap: true,
+        wrapOnWordBoundary: true,
+        style: { border: [], compact: false, head: [], "padding-left": 1, "padding-right": 1 },
+    });
+    const height = Math.max(...inventory.map(({ entries }) => entries.length));
+    for (let row = 0; row < height; row += 1) table.push(inventory.map(({ entries }) => ModelText.plain(entries[row] ?? "")));
+    return `${header.join(" ")}\n${table.toString()}`;
+};
+
+// Targetless SEND: the message block. The header is the operation, styled; the body keeps
+// its Markdown ({§cli-broadcast-send-rendering}).
+const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns - 3))): string => {
+    const failed = entry.status_rx >= 400;
+    const header = [`${BOLD}${failed ? PINK : GREEN}SEND${RESET}`];
+    const aside = entryAside(entry);
+    if (aside !== null) header.push(`${DIM}${ITALIC}${aside}${RESET}`);
+    if (failed) header.push(styledOutcome(outcomeTitle(entry) ?? String(entry.status_rx), true));
+    const headerLine = header.join(" ");
+    const multiLine = body.includes("\n");
+    // Short single-line replies inline after the header; longer/multi-line bodies
+    // start on the next line, indented under the speaker.
+    const inlineCapacity = Math.max(0, columns - displayWidth(headerLine) - 1);
+    const lines = body.length === 0 ? [headerLine]
+        : !multiLine && displayWidth(body) <= inlineCapacity ? [`${headerLine} ${body}`]
+        : [headerLine, ...body.split("\n").map((l) => `   ${l}`)];
+    // Delivered response messages are bold; everything else plain. No
+    // surrounding blank lines — the bold body is the standout on its own.
+    return emphasizeLines(lines, isResponseMessage(entry));
+};
+
+// Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
+// its table, a targetless SEND its block, every other operation one literal row.
 export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
+    override?: RowOverride,
 ): string => {
-    // Broadcast SEND has no path at all (both scheme AND pathname null).
-    // A SEND directed at file:// would have scheme=null but pathname set —
-    // not a broadcast.
-    if (TurnDisposition.isOp(entry.op)) return `${renderBroadcast(entry, columns, "")}\n${renderPlan(entry)}`;
+    if (TurnDisposition.isOp(entry.op)) return renderTask(entry, columns);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
-
-    // Operation identity is separate from its settled outcome.
-    const idGlyph = OP_GLYPHS[entry.op] ?? "?";
-    // Routine success is quiet; failures retain their diagnostic outcome.
-    const subGlyph = sendSubGlyph(entry.status_rx);
-
-    const statusColor = colorForStatus(entry.status_rx);
-    const statusText = statusCodeVisible(entry) ? `${statusColor}${entry.status_rx}${RESET}` : "";
-
-    // Render whatever target the daemon supplied — no synthesis. If scheme
-    // is null but pathname is set, that's the daemon's choice (e.g. file://
-    // shortcut) and we render the bare path.
-    const authoredTarget = entryTarget(entry);
-    const target = authoredTarget === null ? null : ModelText.plain(authoredTarget);
-    const pathText = target !== null ? `${CYAN}${target}${RESET}` : "";
-    const scope = entryScope(entry);
-    const scopeText = scope !== null ? `${CYAN}${scope}${RESET}` : "";
-
-    const extra = buildExtra(entry);
-
-    const parts = [idGlyph, subGlyph];
-    if (statusText.length > 0) parts.push(statusText);
-    if (pathText.length > 0) parts.push(pathText);
-    if (scopeText.length > 0) parts.push(scopeText);
-    if (extra.length > 0) parts.push(extra);
-    const aside = entryAside(entry);
-    if (aside !== null) parts.push(`${DIM}— ${aside}${RESET}`);
-
-    return parts.join(" ");
+    return renderOperationRow(entry, override);
 };
 
 export interface LoopUsage {

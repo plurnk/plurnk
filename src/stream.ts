@@ -1,28 +1,22 @@
-// Stream trace rendering for plurnk-service's stream/event and
-// plurnk.stream events projected by the AG-UI+ interface.
-//
-// Optics discipline (v0.12.0): a 12-byte exec used to produce four raw
-// metadata lines and never show its output. Now: ONE start line per
-// stream (first event; growth ticks and close transitions are silent),
-// one conclusion line in the waterfall grammar (📡 in the origin slot,
-// status glyph, status, target), and tiny concluded outputs are inlined
-// by the caller via entry.read — the single, bounded exception to "the
-// TUI doesn't fetch content" (SPEC §5.3), because the content IS the
-// optics when it's two lines long.
+// Executions in the waterfall ({§cli-what-is-not-rendered}): no start row, no growth ticks,
+// no byte counts. An execution appears once, when its outcome is known, as the operation row
+// of the EXEC fence that launched it, colored by that outcome. Activity while it runs is the
+// status line's business, not the transcript's.
 
 import ModelText from "./model-text.ts";
 import { colorEnabled } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
+import { renderOperationRow, objectOf, type LogEntryWire } from "./render.ts";
 
 const useColor = colorEnabled();
 const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
+const BOLD = code("1");
 const DIM = code("2");
 const GREEN = code("32");
+const PINK = code("95");
 const RED = code("31");
-
-const STREAM_GLYPH = "📡";
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -36,7 +30,7 @@ interface StreamCoord {
 export interface StreamEventPayload extends StreamCoord {
     entryId: number;
     workerId: number;       // owning worker and entry.read perspective
-    target: string;         // entry URI (scheme://pathname)
+    target: string;         // the stream address stamped on the launching row (attrs.stream)
     channel: string;
     state: string;          // static | active | closed | errored
     contentLength: number;
@@ -45,7 +39,7 @@ export interface StreamEventPayload extends StreamCoord {
 export interface StreamConcludedPayload extends StreamCoord {
     entryId: number;
     workerId: number;
-    target: string;         // entry URI (scheme://pathname)
+    target: string;         // the stream address stamped on the launching row (attrs.stream)
     subscriptionId: number;
     scheme: string;
     result: OperationResult;
@@ -53,60 +47,67 @@ export interface StreamConcludedPayload extends StreamCoord {
     wakeAction: string;     // wake-pending | no-op-active-loop | no-loop | skipped-aborted | skipped-cancelled
 }
 
-// The human waterfall carries no coordinates (plurnk#21); stream lines
-// align with the coordinate-free rows.
-const streamCoord = (_ev: StreamCoord): string => "";
-
-const statusGlyph = (status: number): string => {
-    if (status === 200) return "  ";   // routine success — empty slot, not a check on every conclusion
-    if (status === 499) return "✋";
-    return "❌";
+// A started execution's row carries its stream address: the daemon stamps `attrs.stream` on the
+// EXEC row it started (status 200, outcome `started`), and every stream/event and stream/concluded
+// for that execution names the same address as `target`. Opaque to the client, never composed.
+// A detached execution (`<-1>`) is nobody's obligation: its row stands when it starts, and its
+// eventual conclusion renders on its own.
+export const streamAddress = (entry: LogEntryWire): string | null => {
+    if (entry.op !== "EXEC") return null;
+    const attrs = objectOf(entry.attrs);
+    if (attrs?.detached === true) return null;
+    const stream = attrs?.stream;
+    return typeof stream === "string" && stream.length > 0 ? stream : null;
 };
 
-const statusColor = (status: number): string => status === 200 ? GREEN : RED;
+// The daemon's summary leads with the target; the remainder is the outcome in its words.
+const summaryTail = (ev: StreamConcludedPayload): string => {
+    const summary = ev.summary ?? "";
+    return (summary.startsWith(ev.target) ? summary.slice(ev.target.length) : summary).replace(/^\s+/, "");
+};
 
-// Per-connection coalescing state: which streams have announced their
-// start. Cleared per entry on conclusion; plain Map, no timers.
+// Launched executions awaiting their conclusion, keyed by stream address. Plain Map, no timers.
 export default class StreamTrace {
-    #started = new Set<number>();
+    #launched = new Map<string, LogEntryWire>();
 
-    // First event for an entry announces the stream; every later tick
-    // (growth, per-channel close) is silent — a line-oriented view has
-    // nothing actionable to say about len changing.
-    // The stream glyph begins at the waterfall's common left edge; its lifecycle
-    // glyph follows because both fields remain useful for a non-SEND resource.
-    event(ev: StreamEventPayload): string | null {
-        if (this.#started.has(ev.entryId)) return null;
-        this.#started.add(ev.entryId);
-        // Identity and active-state both matter here; routine numeric codes do not.
-        return `${streamCoord(ev)}${STREAM_GLYPH} ⏳ ${ev.target}`;
+    // A started execution has no outcome yet; its row waits for its stream's conclusion.
+    // False for any other row, including an EXEC the daemon refused to start.
+    launch(entry: LogEntryWire): boolean {
+        const address = streamAddress(entry);
+        if (address === null) return false;
+        this.#launched.set(address, entry);
+        return true;
     }
 
-    // One conclusion line in the waterfall grammar. The daemon's summary
-    // leads with the target we already printed — strip the echo. Wake is
-    // engine bookkeeping except when settlement is pending.
+    // The fence that launched a stream, while its conclusion is still awaited.
+    launchedBy(target: string): LogEntryWire | undefined {
+        return this.#launched.get(target);
+    }
+
+    // Growth and per-channel close carry nothing a line-oriented view should say.
+    event(_ev: StreamEventPayload): string | null {
+        return null;
+    }
+
+    // One row per execution, at its conclusion, in the operation grammar: the launching
+    // fence when it is known, the stream's own scheme and address otherwise.
     concluded(ev: StreamConcludedPayload): string {
-        this.#started.delete(ev.entryId);
-        const status = ev.result.status;
-        let summary = ev.summary ?? "";
-        if (summary.startsWith(ev.target)) summary = summary.slice(ev.target.length).replace(/^\s+/, "");
-        const wake = ev.wakeAction === "wake-pending" ? " → wake pending" : "";
-        // The code renders only when it means something: cancellation or error
-        // (plurnk#21). A routine 200 conclusion is the quiet default.
-        const parts = [
-            STREAM_GLYPH,   // lane 1: identity (the stream)
-            statusGlyph(status),   // lane 2: status (reserved blank on 2xx)
-            ...(status === 200 ? [] : [`${statusColor(status)}${status}${RESET}`]),
-            ev.target,
-        ];
-        let line = `${streamCoord(ev)}${parts.join(" ")}`;
-        if (summary.length > 0) line += ` ${DIM}"${summary}"${RESET}`;
-        return line + wake;
+        const launch = this.#launched.get(ev.target);
+        this.#launched.delete(ev.target);
+        const status = ev.result.status ?? 0;
+        const failed = status !== 200;
+        const title = ev.result.problem?.title;
+        const failure = !failed ? null : typeof title === "string" && title.length > 0 ? title : summaryTail(ev) || String(status);
+        if (launch !== undefined) return renderOperationRow(launch, { failed, failure });
+        const parts = [`${BOLD}${failed ? PINK : GREEN}${ModelText.plain(ev.scheme)}${RESET}`, `(${ModelText.plain(ev.target)})`];
+        if (failure !== null) parts.push(`— ${PINK}${ModelText.plain(failure)}${RESET}`);
+        return parts.join(" ");
     }
 }
 
 // Inline-worthiness for concluded channel content: short enough that the
 // content IS the better optics. Anything larger stays behind the summary.
+// The one-shot CLI trace keeps this bounded exception; the waterfall does not.
 export const inlineable = (content: string): boolean => {
     if (content.length === 0 || content.length > 160) return false;
     return content.trimEnd().split("\n").length <= 2;
@@ -116,7 +117,7 @@ export const inlineable = (content: string): boolean => {
 // conclusion; stderr is marked and tinted.
 export const renderInline = (channel: string, content: string): string =>
     ModelText.plain(content).trimEnd().split("\n")
-        .map((l) => channel === "stderr" ? `   ${RED}!${RESET} ${l}` : `   ${l}`)
+        .map((l) => channel === "stderr" ? `   ${RED}!${RESET} ${l}` : `   ${DIM}${l}${RESET}`)
         .join("\n");
 
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in

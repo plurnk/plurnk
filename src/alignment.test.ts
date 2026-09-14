@@ -1,6 +1,5 @@
-// The waterfall's stable alignment contract is its left edge. Glyph-bearing
-// rows begin at column zero; SEND lifecycle glyphs replace redundant human
-// protocol codes, while non-SEND failures retain useful diagnostic codes.
+// The waterfall's stable alignment contract is its left edge: every row begins at column
+// zero with the operation as written, no glyph column, no protocol code.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,36 +12,35 @@ const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     id: 1, loop_seq: 1, turn_seq: 1, sequence: 5, op: "READ", origin: "model",
     signal: null, scheme: "file", pathname: "/x", hostname: null, fragment: null,
-    lineMarker: null, tx: { body: "b" }, rx: "ok", status_rx: 200, tags: [],
+    lineMarker: null, tx: { target: { raw: "/x" } }, rx: { status: 200 }, status_rx: 200, tags: [],
     ...over,
 });
 
-test("[§cli-rendering] glyph-bearing waterfall rows share the left edge and SENDs are codeless", () => {
+test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares the left edge and reads as the operation written", () => {
     const streams = new StreamTrace();
+    streams.launch(entry({ op: "EXEC", scheme: null, pathname: null, sequence: 8, status_rx: 200, rx: { status: 200, outcome: "started" }, tx: { op: "EXEC", executor: "sh", aside: "list the files" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
     const rows: Array<[string, string]> = [
         ["operation", renderLogEntry(entry({}))],
-        ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404 }))],
-        ["PLAN", renderLogEntry(entry({ op: "TASK", tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
+        ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not found", status: 404 } } }))],
+        ["TASK", renderLogEntry(entry({ op: "TASK", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
         ["reasoning", renderReasoning("Inspect the contract.")],
-        ["model SEND 102", renderLogEntry(entry({ op: "TASK", origin: "model", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "continuing", priority: "medium", status: "in_progress" }] } } }))],
         ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
-        ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410 }))],
-        ["stream event", streams.event({ entryId: 8, workerId: 7, target: "sh:///1/1/8/EXEC", channel: "stdout", state: "active", contentLength: 0 }) ?? ""],
-        ["stream conclusion", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1/1/8/EXEC", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "done", wakeAction: "no-loop" })],
+        ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410, tx: { target: { raw: "worker:///gone" } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } }))],
+        ["execution", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "sh:///1a2b3c4d completed (exit 0)", wakeAction: "no-op-active-loop" })],
     ];
 
     for (const [label, value] of rows) {
         const first = stripAnsi(value).split("\n")[0];
         assert.doesNotMatch(first, /^\s/, `${label} did not begin at column zero: ${JSON.stringify(first)}`);
+        if (label !== "reasoning") assert.doesNotMatch(first, /^[^\p{L}]/u, `${label} begins with the operation's name, not a glyph: ${JSON.stringify(first)}`);
     }
 
-    const continuing = stripAnsi(rows[4][1]);
-    const complete = stripAnsi(rows[5][1]);
-    assert.match(continuing, /^▶️/);
-    assert.doesNotMatch(continuing, /(?:^|\s)102(?:\s|$)/);
-    assert.match(complete, /^💬/);
-    assert.doesNotMatch(complete, /(?:^|\s)200(?:\s|$)/);
-    assert.match(stripAnsi(rows[1][1]), /❌ 404/, "non-SEND failures retain their exact diagnostic code");
-    assert.match(stripAnsi(rows[7][1]), /💬 💥 410/, "a directed SEND failure remains diagnosable");
+    assert.equal(stripAnsi(rows[0][1]), "READ (/x)");
+    assert.equal(stripAnsi(rows[1][1]), "FIND (/x) — Entry not found", "a failure carries its title, not a numeric code");
+    assert.match(stripAnsi(rows[2][1]), /^TASK\n/, "a routine TASK carries no code");
+    assert.equal(stripAnsi(rows[4][1]), "SEND done");
+    assert.equal(stripAnsi(rows[6][1]), "SEND (worker:///gone) — Worker gone");
+    assert.equal(stripAnsi(rows[7][1]), "sh list the files", "an execution is its fence, once, at its conclusion");
+    assert.equal(streams.event({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", channel: "stdout", state: "active", contentLength: 0 }), null);
 });

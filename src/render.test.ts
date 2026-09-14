@@ -11,8 +11,6 @@ import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
 process.env.NO_COLOR = "1";
 
 const {
-    sendSubGlyph,
-    sendLifecycleGlyph,
     extractSendBody,
     renderLogEntry,
     renderReasoning,
@@ -24,23 +22,13 @@ const {
     isEntryMaterialization,
     isPromptEntry,
     entryTarget,
-    OP_GLYPHS,
-    ORIGIN_GLYPHS,
+    receiptCount,
+    outcomeTitle,
+    FanoutCollapse,
 } = await import("./render.ts");
 type LogEntryWire = Awaited<ReturnType<typeof import("./render.ts")["renderLogEntry"]>> extends string
     ? Parameters<typeof import("./render.ts")["renderLogEntry"]>[0]
     : never;
-
-test("every runtime operation has a named renderer or an operation glyph", () => {
-    for (const op of PLURNK_OPS) {
-        assert.ok(OP_GLYPHS[op], `${op} must not render as an unknown operation`);
-    }
-    for (const [op, glyph] of [["KILL", "✂️"], ["WORK", "🐜"], ["FORK", "👥"]]) {
-        const rendered = renderLogEntry(entry({ op, scheme: "worker", hostname: "reviewer", pathname: "/", tx: { op }, rx: { status: 200 } }));
-        assert.ok(rendered.startsWith(glyph), `${op} uses its operation glyph: ${rendered}`);
-        assert.match(rendered, /worker:\/\/reviewer\//, "the target remains visible");
-    }
-});
 
 // Minimal entry factory — fills in plausible defaults; callers override what matters.
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -63,38 +51,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     ...overrides,
 });
 
-test("native dispositions render their bodies and lifecycle glyphs while SEND remains messaging", () => {
-    for (const [signal, glyph, status, subtype, taskGlyph] of [
-        [102, "▶️", "in_progress", null, "🚧"], [202, "💤", "in_progress", "waiting", "💤"],
-        [200, "⏹️", "completed", null, "✅"], [499, "✋", "completed", "failed", "✋"],
-    ] as const) {
-        const body = { entries: [{ content: "Update.", priority: "medium", status, ...(subtype === null ? {} : { _meta: { "plurnk.xyz/status": subtype } }) }] };
-        const out = renderLogEntry(entry({ op: "TASK", signal, status_rx: signal, tx: { op: "TASK", body } }));
-        assert.ok(out.startsWith(`${glyph}\n${taskGlyph} `), out);
-        assert.ok(out.endsWith("Update."), out);
-    }
-    assert.equal(renderLogEntry(entry({ op: "SEND", tx: { op: "SEND", body: { raw: "Update.", json: null } } })), "💬 Update.");
-});
-
 // ─── sendSubGlyph ─────────────────────────────────────────────────────
-
-test("sendSubGlyph: routine 2xx badges nothing — blank width-2 slot (not ✅)", () => {
-    assert.equal(sendSubGlyph(200), "  ");
-    assert.equal(sendSubGlyph(201), "  ");
-    assert.equal(sendSubGlyph(204), "  ");
-});
-test("sendSubGlyph: 102 → ⏳ (continuing)", () => assert.equal(sendSubGlyph(102), "⏳"));
-test("sendSubGlyph: 202 → 💤 (parked/waiting — NOT the generic 2xx ✅)", () => assert.equal(sendSubGlyph(202), "💤"));
-test("sendSubGlyph: 300 → 🤔 (needs a decision)", () => assert.equal(sendSubGlyph(300), "🤔"));
-test("sendSubGlyph: 499 → ✋ (failed/aborted)", () => assert.equal(sendSubGlyph(499), "✋"));
-test("sendSubGlyph: 410 → 💥 (directed SEND, gone)", () => assert.equal(sendSubGlyph(410), "💥"));
-test("sendSubGlyph: 404 → ❌ (single failure glyph, nvim-converged)", () => assert.equal(sendSubGlyph(404), "❌"));
-test("sendSubGlyph: 500 → ❌ (single failure glyph)", () => assert.equal(sendSubGlyph(500), "❌"));
-test("sendSubGlyph: unknown range → reserved blank slot (width-2, keeps alignment)", () => assert.equal(sendSubGlyph(100), "  "));
-test("SEND lifecycle glyphs replace human protocol codes regardless of producer", () => {
-    assert.equal(sendLifecycleGlyph(102), "▶️");
-    assert.equal(sendLifecycleGlyph(200), "⏹️");
-});
 
 // ─── extractSendBody ──────────────────────────────────────────────────
 
@@ -153,113 +110,7 @@ test("renderReasoning: distinct, compact block with no coordinate or status code
 
 // ─── renderLogEntry: target rendering ────────────────────────────────
 
-test("renderLogEntry: directed op with full scheme → 'scheme://...'", () => {
-    const line = renderLogEntry(entry({
-        op: "EDIT",
-        scheme: "slack",
-        pathname: "/channel/general",
-        status_rx: 201,
-    }));
-    assert.match(line, /slack:\/\/\/channel\/general/);
-});
-
-test("renderLogEntry: file:// (scheme=null, pathname set) → bare pathname, no synthesized prefix", () => {
-    const line = renderLogEntry(entry({
-        op: "EDIT",
-        scheme: null,
-        pathname: "/tmp/foo.txt",
-        status_rx: 202,
-    }));
-    // Bare pathname; explicitly NOT 'file:///tmp/foo.txt' (no synthesis)
-    assert.match(line, /\/tmp\/foo\.txt/);
-    assert.doesNotMatch(line, /file:\/\//);
-});
-
-test("renderLogEntry: hostname + pathname assembles correctly", () => {
-    const line = renderLogEntry(entry({
-        op: "READ",
-        scheme: "https",
-        hostname: "example.com",
-        pathname: "/path",
-        status_rx: 200,
-    }));
-    assert.match(line, /https:\/\/example\.com\/path/);
-});
-
-test("renderLogEntry: fragment appended with '#'", () => {
-    const line = renderLogEntry(entry({
-        op: "READ",
-        scheme: "worker",
-        pathname: "/doc",
-        fragment: "section-2",
-        status_rx: 200,
-    }));
-    assert.match(line, /worker:\/\/\/doc#section-2/);
-});
-
-test("renderLogEntry: no path at all (both scheme + pathname null) for non-SEND op → no path text", () => {
-    const line = renderLogEntry(entry({
-        op: "SHOW",
-        scheme: null,
-        pathname: null,
-        status_rx: 200,
-    }));
-    assert.doesNotMatch(line, /:\/\//);
-});
-
-test("renderLogEntry: a durable aside renders as sanitized plain text", () => {
-    const line = renderLogEntry(entry({
-        op: "EXEC",
-        tx: { aside: "Lists **issues**\u001b[31m", body: "{}" },
-    }));
-    assert.match(line, /— Lists \*\*issues\*\*/);
-    assert.doesNotMatch(line, /\u001b\[31m/);
-});
-
-test("renderLogEntry: a broadcast SEND retains its aside on the header", () => {
-    const out = renderLogEntry(entry({
-        op: "SEND",
-        signal: 200,
-        tx: { aside: "Answer ready", body: { raw: "Paris", json: null } },
-    }));
-    assert.match(out, /^💬 — Answer ready Paris$/);
-    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/);
-});
-
 // ─── renderLogEntry: broadcast SEND ──────────────────────────────────
-
-test("renderLogEntry: broadcast SEND (scheme + pathname both null) → single bold line, NO surrounding blanks", () => {
-    const out = renderLogEntry(entry({
-        op: "SEND",
-        scheme: null,
-        pathname: null,
-        signal: 200,
-        status_rx: 200,
-        tx: { body: { raw: "Hello.", json: null } },
-    }));
-    // The bold body is the standout — no blank-line wrapping.
-    assert.doesNotMatch(out, /^\n/);
-    assert.doesNotMatch(out, /\n$/);
-    assert.ok(!out.includes("\n"), `short broadcast inlines to one line, got: ${JSON.stringify(out)}`);
-    assert.match(out, /Hello\./);
-    assert.match(out, /^💬/);
-    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/);
-});
-
-test("renderLogEntry: multi-line broadcast SEND → bold block, body indented, still no surrounding blanks", () => {
-    const out = renderLogEntry(entry({
-        op: "SEND",
-        scheme: null,
-        pathname: null,
-        signal: 200,
-        status_rx: 200,
-        tx: { body: { raw: "line one\nline two", json: null } },
-    }));
-    assert.doesNotMatch(out, /^\n/);
-    assert.doesNotMatch(out, /\n$/);
-    assert.match(out, /line one/);
-    assert.match(out, /line two/);
-});
 
 test("[§cli-markdown-projection] broadcast GFM uses the current screen width after its body indent", () => {
     const body = [
@@ -286,89 +137,6 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
     assert.match(narrow, /words\./);
 });
 
-test("renderLogEntry: TASK presents lifecycle followed by its structured inventory", () => {
-    const out = renderLogEntry(entry({
-        op: "TASK",
-        scheme: null,
-        pathname: null,
-        signal: 102,
-        status_rx: 102,
-        tx: { body: { entries: [{ content: "still working…", priority: "medium", status: "in_progress" }] } },
-    }));
-    assert.doesNotMatch(out, /^\n/);
-    assert.doesNotMatch(out, /\n$/);
-    assert.equal(out, "▶️\n🚧 still working…");
-    assert.match(out, /^▶️/);
-    assert.doesNotMatch(out, /(?:^|\s)102(?:\s|$)/);
-});
-
-test("[§cli-plan-rendering] PLAN renders one ordered status-glyph line per entry", () => {
-    const out = renderLogEntry(entry({
-        op: "TASK",
-        origin: "model",
-        scheme: null,
-        pathname: null,
-        signal: 102,
-        status_rx: 102,
-        tx: {
-            body: {
-                entries: [
-                    { content: "Contract settled.", priority: "medium", status: "completed" },
-                    { content: "Memory: One baseline owns the schema.", priority: "medium", status: "completed" },
-                    { content: "Update\nclients.", priority: "high", status: "in_progress" },
-                    { content: "Run drills.", priority: "low", status: "pending" },
-                ],
-            },
-        } as unknown as { body: { raw: string; json: null } },
-    }));
-    assert.deepEqual(out.split("\n"), [
-        "▶️",
-        "✅ Contract settled.",
-        "✅ Memory: One baseline owns the schema.",
-        "🚧 [high] Update clients.",
-        "⬜ [low] Run drills.",
-    ], "a routine PLAN carries neither coordinates nor a status code (plurnk#21)");
-    assert.doesNotMatch(out, /🧠/);
-});
-
-test("renderLogEntry: an empty PLAN remains a visible durable row", () => {
-    const out = renderLogEntry(entry({
-        op: "TASK", signal: 102, status_rx: 102,
-        tx: { body: { entries: [] } } as unknown as { body: { raw: string; json: null } },
-    }));
-    assert.equal(out, "▶️\n📭 no entries", "an empty inventory remains visible with its lifecycle, without coordinates or routine codes");
-});
-
-test("renderLogEntry: SEND directed at file:// is NOT broadcast → trace line", () => {
-    const out = renderLogEntry(entry({
-        op: "SEND",
-        scheme: null,
-        pathname: "/tmp/somewhere.txt",
-        signal: 200,
-        status_rx: 200,
-        tx: { body: { raw: "Hello", json: null } },
-    }));
-    // Directed SENDs share the left edge with every other waterfall glyph.
-    assert.doesNotMatch(out, /^\n/);
-    assert.doesNotMatch(out, /^\s/);
-    assert.match(out, /\/tmp\/somewhere\.txt/);
-});
-
-test("renderLogEntry: broadcast SEND with empty body → header only, no body lines", () => {
-    const out = renderLogEntry(entry({
-        op: "SEND",
-        scheme: null,
-        pathname: null,
-        signal: 200,
-        status_rx: 200,
-        tx: { body: { raw: "", json: null } },
-    }));
-    // Single header line, no surrounding blanks.
-    assert.doesNotMatch(out, /^\n/);
-    assert.doesNotMatch(out, /\n$/);
-    assert.ok(!out.includes("\n"), `expected single line, got: ${JSON.stringify(out)}`);
-});
-
 // ─── user prompt entries ─────────────────────────────────────────────
 
 test("[§cli-what-is-not-rendered] isPromptEntry classifies only the service's actionless prompt row", () => {
@@ -385,37 +153,6 @@ test("[§cli-log-entry-line-format] entryTarget preserves literal resource addre
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare");
     assert.equal(entryTarget(entry({ scheme: "prompt", hostname: "extract-host", pathname: "/1/2" })), "prompt://extract-host/1/2");
     assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
-});
-
-test("[§cli-log-entry-line-format] renderLogEntry preserves the operation scope", () => {
-    const out = renderLogEntry(entry({
-        scheme: null,
-        pathname: "evaluator/functions.go",
-        lineMarker: { marks: ["@Xb59M", "@KPohD"] },
-    }));
-    assert.match(out, /evaluator\/functions\.go <@Xb59M,@KPohD>/);
-});
-
-test("renderLogEntry does not reinterpret an actionless prompt as EDIT", () => {
-    const out = renderLogEntry(entry({
-        op: "prompt", origin: "plurnk", scheme: "prompt", pathname: "/1/1",
-        status_rx: 200, rx: { content: "What is the capital of France?" },
-    }));
-    assert.doesNotMatch(out, /^\n/);
-    assert.doesNotMatch(out, /📝/);
-});
-
-test("renderLogEntry: non-prompt plurnk:// EDIT stays a trace line", () => {
-    const out = renderLogEntry(entry({
-        op: "EDIT",
-        origin: "plurnk",
-        scheme: "plurnk",
-        pathname: "manifest.json",
-        status_rx: 201,
-        tx: { body: "{}" },
-    }));
-    assert.doesNotMatch(out, /^\n/);
-    assert.match(out, /📝/);
 });
 
 // ─── Conversation bold (color-enabled import) ────────────────────────
@@ -444,15 +181,7 @@ test("bold: a failed SEND is not presented as a delivered answer", async () => {
     const colored = await freshRender("bold=499");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({ ...sendEntry, op: "SEND", signal: null, status_rx: 499 }));
-    assert.doesNotMatch(out, /\x1b\[1m/);
-});
-
-test("bold: an intermediate 102 ping is NOT bold (only the terminal answer pops)", async () => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("bold=102");
-    process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({ ...sendEntry, op: "TASK", signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "working…", priority: "medium", status: "in_progress" }] } } }));
-    assert.doesNotMatch(out, /\x1b\[1m/);   // plain
+    assert.doesNotMatch(out, /\x1b\[1m[^\x1b]*Paris/, "the header word is styled; the undelivered body is not the bold answer");
 });
 
 test("bold: inner RESET re-arms bold so header styling cannot cut the answer", async () => {
@@ -473,7 +202,7 @@ test("bold: a client-origin broadcast is NOT bold (only the MODEL's answer)", as
         op: "SEND", origin: "client", scheme: null, pathname: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     }));
-    assert.doesNotMatch(out, /\x1b\[1m/);
+    assert.doesNotMatch(out, /\x1b\[1m[^\x1b]*hi/, "a client's message body is not presented as the model's answer");
 });
 
 test("bold: NO_COLOR build emits no bold (or background) codes", () => {
@@ -486,48 +215,201 @@ test("bold: NO_COLOR build emits no bold (or background) codes", () => {
     assert.doesNotMatch(out, /\x1b\[K/);
 });
 
-// ─── renderLogEntry: trace line shape ─────────────────────────────────
+// ─── the literal row grammar ({§cli-log-entry-line-format}) ─────────────────
 
-test("renderLogEntry: trace glyph starts at column zero", () => {
-    const line = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x" }));
-    assert.match(line, /^📖/);
+const read = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => entry({
+    op: "READ", scheme: null, pathname: "AGENTS.md", tx: { op: "READ", target: { kind: "local", raw: "AGENTS.md" }, matcher: null, aside: null },
+    rx: { status: 200, content: "…", range: { unit: "line", total: 256, requested: [17, -1], returned: [17, 256] } },
+    lineMarker: { marks: [17, -1] },
+    ...overrides,
 });
 
-test("[§cli-broadcast-send-rendering] an unsuccessful targetless SEND retains its diagnostic status", () => {
-    const line = renderLogEntry(entry({
-        op: "SEND", origin: "model", scheme: null, pathname: null, status_rx: 400,
-        tx: { body: { raw: "Undelivered." } },
+test("[§cli-log-entry-line-format] a READ row is the authored heading with the lines it returned", () => {
+    assert.equal(renderLogEntry(read()), "READ (AGENTS.md) <17,-1> {240}");
+});
+
+test("[§cli-log-entry-line-format] a pattern READ keeps the pattern literal and counts its matched lines", () => {
+    const line = renderLogEntry(read({
+        pathname: "plurnk-core/SPEC.md",
+        tx: { op: "READ", target: { kind: "local", raw: "plurnk-core/SPEC.md" }, matcher: { dialect: "regex", raw: "/^#{1,2} /", pattern: "^#{1,2} ", flags: "" }, aside: null },
+        rx: { status: 200, content: "…", lineOrdinals: [1, 5, 35], range: { unit: "line", total: 5244, requested: [1, 35], returned: [1, 35] } },
+        lineMarker: null,
     }));
-    assert.equal(line, "💬 ❌ 400 Undelivered.");
+    assert.equal(line, "READ (plurnk-core/SPEC.md) /^#{1,2} / {3}", "the pattern is not a Markdown heading and the count is the matched lines, not the span");
 });
 
-test("renderLogEntry: every SEND shows its lifecycle rather than a producer mascot", () => {
-    const runtime = renderLogEntry(entry({ op: "TASK", origin: "_plurnk", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "Address the prompt.", priority: "medium", status: "pending" }] } } }));
-    assert.equal(runtime, "▶️\n⬜ Address the prompt.");
-    assert.ok(!runtime.includes(OP_GLYPHS.SEND), "the 💬 op glyph is dropped — lifecycle conveys the SEND state");
-    assert.ok(!runtime.includes("?"), "the wire-standard _plurnk producer is never an unknown actor");
+test("[§cli-log-entry-line-format] a FIND counts the items it returned and carries its aside last", () => {
+    const line = renderLogEntry(entry({
+        op: "FIND", pathname: "plurnk-parser/**",
+        tx: { op: "FIND", target: { kind: "local", raw: "plurnk-parser/**" }, matcher: null, aside: "what the new package contains" },
+        rx: { status: 200, results: [], range: { unit: "resource", total: 28, requested: [1, 16], returned: [1, 16] }, matchingPathCount: 28, matchLocationCount: 0 },
+    }));
+    assert.equal(line, "FIND (plurnk-parser/**) {16} what the new package contains", "a glob is not emphasis; the aside is a styled field after the count");
 });
 
-test("renderLogEntry: an operation shows its OP glyph, no origin column", () => {
-    const line = renderLogEntry(entry({ op: "READ", origin: "model", scheme: "worker", pathname: "/x", status_rx: 200 }));
-    assert.ok(line.includes(OP_GLYPHS.READ), `expected 📖 in ${line}`);
-    assert.ok(!line.includes(ORIGIN_GLYPHS.model), "op rows drop the origin — the op glyph is self-evidently the agent working");
+test("[§cli-log-entry-line-format] a 204 FIND counts zero and is not a failure", () => {
+    const line = renderLogEntry(entry({
+        op: "FIND", pathname: "src/**/*.ts", status_rx: 204,
+        tx: { op: "FIND", target: { kind: "local", raw: "src/**/*.ts" }, matcher: null, aside: null },
+        rx: { status: 204, content: null, results: [], range: { unit: "resource", total: 0, requested: [1, 16] } },
+    }));
+    assert.equal(line, "FIND (src/**/*.ts) {0}");
 });
 
-test("renderLogEntry: includes op glyph", () => {
-    const line = renderLogEntry(entry({ op: "FIND" }));
-    assert.ok(line.includes(OP_GLYPHS.FIND));
+test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, and aside, then the Problem title at the right", () => {
+    assert.equal(renderLogEntry(read({
+        pathname: "plurnk-parser/README.md", status_rx: 404,
+        tx: { op: "READ", target: { kind: "local", raw: "plurnk-parser/README.md" }, matcher: null, aside: null },
+        rx: { status: 404, content: null, problem: { type: "https://problems.plurnk.xyz/scheme/file/entry-not-member", title: "Entry not member", status: 404, detail: "'plurnk-parser/README.md' exists on disk but is not a member of this workspace." } },
+        lineMarker: { marks: [1, -1] },
+    })), "READ (plurnk-parser/README.md) <1,-1> — Entry not member");
+    assert.equal(renderLogEntry(read({
+        pathname: "belfry.md", status_rx: 404, lineMarker: null,
+        tx: { op: "READ", target: { kind: "local", raw: "belfry.md" }, matcher: { dialect: "regex", raw: "/\\bbats?\\b/i", pattern: "\\bbats?\\b", flags: "i" }, aside: "only the lines matching \"bat\" or \"bats\"" },
+        rx: { status: 404, content: null, problem: { type: "https://problems.plurnk.xyz/scheme/file/entry-not-found", title: "Entry not found", status: 404, detail: "No entry exists at belfry.md." } },
+    })), "READ (belfry.md) /\\bbats?\\b/i only the lines matching \"bat\" or \"bats\" — Entry not found", "one line; the title is to the right of the aside");
 });
 
-test("renderLogEntry: BARE has an isolated-inference glyph", () => {
-    const line = renderLogEntry(entry({ op: "BARE" }));
-    assert.ok(line.includes(OP_GLYPHS.BARE));
-    assert.doesNotMatch(line, /\?/);
+test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the daemon's detail, not a count", () => {
+    assert.equal(renderLogEntry(read({
+        pathname: "pets_*.md", status_rx: 204, lineMarker: null,
+        tx: { op: "READ", target: { kind: "local", raw: "pets_*.md" }, matcher: null, aside: null },
+        rx: { status: 204, detail: "No path matched pets_*.md." },
+    })), "READ (pets_*.md) — No path matched pets_*.md.");
 });
 
-test("renderLogEntry: unknown op → '?' glyph", () => {
-    const line = renderLogEntry(entry({ op: "WHATEVER" }));
-    assert.match(line, /\?/);
+test("[§cli-log-entry-line-format] an EXEC row is named by its registered executor and carries no body", () => {
+    const line = renderLogEntry(entry({
+        op: "EXEC", scheme: null, pathname: null,
+        tx: { op: "EXEC", executor: "sh", target: null, aside: "Run the focused tests", body: "npm test -- --grep focused" },
+        rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
+    }));
+    assert.equal(line, "sh Run the focused tests");
+    assert.doesNotMatch(line, /npm test/, "invocation bodies never reach the waterfall");
+});
+
+test("[§cli-log-entry-line-format] an EXEC whose fence named no executor is named by the runtime the daemon resolved", () => {
+    const started = entry({
+        op: "EXEC", origin: "client", scheme: null, pathname: null, status_rx: 200,
+        tx: { op: "EXEC", executor: null, target: null, aside: null, body: "printf x" },
+        rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
+    });
+    assert.equal(renderLogEntry(started), "sh", "the human's `!` command names no executor; the daemon's choice is the row");
+    const refused = entry({
+        op: "EXEC", scheme: null, pathname: null, status_rx: 404,
+        tx: { op: "EXEC", executor: "cobol", target: null, aside: null, body: "x" },
+        rx: { status: 404, problem: { type: "x", title: "Unknown executor", status: 404 } },
+    });
+    assert.equal(renderLogEntry(refused), "cobol — Unknown executor", "a refused EXEC is an ordinary failed row under its authored executor");
+});
+
+test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own path", () => {
+    const line = renderLogEntry(entry({
+        op: "COPY", pathname: "notes.md",
+        tx: { op: "COPY", aside: null, source: { target: { kind: "local", raw: "notes.md" }, lineMarker: { marks: [1, 3] }, matcher: null, metadata: null }, destination: { target: { kind: "url", raw: "worker:///archive/notes.md" }, lineMarker: { marks: [-1] }, matcher: null, metadata: null } },
+        rx: { status: 201 },
+    }));
+    assert.equal(line, "COPY (notes.md) <1,3> (worker:///archive/notes.md) <-1>");
+});
+
+test("[§cli-log-entry-line-format] the row is literal text: no Markdown, no glyphs, the op name at column zero", () => {
+    const line = renderLogEntry(entry({ op: "FIND", pathname: "*.md", tx: { op: "FIND", target: { kind: "local", raw: "*.md" }, matcher: null, aside: null }, rx: { status: 200, results: [], range: { unit: "resource", total: 7, requested: [1, 16], returned: [1, 7] } } }));
+    assert.equal(line, "FIND (*.md) {7}");
+    assert.match(renderLogEntry(entry({ op: "WHATEVER", pathname: "/x", tx: { op: "WHATEVER", target: { raw: "/x" } } })), /^WHATEVER \(\/x\)/, "an unknown op still renders as itself");
+    assert.match(renderLogEntry(entry({ op: "BARE", tx: { op: "BARE", target: null, aside: "ask the model" } })), /^BARE ask the model$/);
+});
+
+test("receiptCount and outcomeTitle read only the receipt", () => {
+    assert.equal(receiptCount(read()), 240);
+    assert.equal(receiptCount(read({ rx: { status: 200, lineOrdinals: [2, 4] } })), 2);
+    assert.equal(receiptCount(read({ op: "EDIT", rx: { status: 201 } })), null);
+    assert.equal(receiptCount(read({ rx: null })), null);
+    assert.equal(outcomeTitle(read()), null);
+    assert.equal(outcomeTitle(read({ status_rx: 500, rx: { status: 500, detail: "The scheme threw." } })), "The scheme threw.");
+    assert.equal(outcomeTitle(read({ status_rx: 500, rx: null })), "500");
+});
+
+test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored glob once its last row is in", () => {
+    const collapse = new FanoutCollapse();
+    const row = (index: number, over: Partial<LogEntryWire> = {}) => read({
+        id: 100 + index, sequence: 5 + index, pathname: `pets_${index}.md`, lineMarker: null,
+        tx: { op: "READ", target: { kind: "local", raw: `pets_${index}.md` }, matcher: { dialect: "regex", raw: "/dogs/i", pattern: "dogs", flags: "i" }, aside: "every dog" },
+        rx: { status: 200, content: "…", lineOrdinals: [2], range: { unit: "line", total: 9, requested: [1, -1], returned: [1, 9] } },
+        attrs: { fanout: { target: "pets_*.md", matched: 3, index, count: 3 } },
+        ...over,
+    });
+    assert.deepEqual(collapse.admit(row(0)), { kind: "suppressed" });
+    assert.deepEqual(collapse.admit(row(1)), { kind: "suppressed" });
+    const last = collapse.admit(row(2));
+    assert.equal(last.kind, "collapsed");
+    if (last.kind !== "collapsed") return;
+    assert.equal(renderLogEntry(row(2), 80, last.override), "READ (pets_*.md) /dogs/i {3} every dog", "one line for the authored statement, counting the paths it read");
+    assert.deepEqual(collapse.admit(read()), { kind: "row" }, "an ordinary row is untouched");
+    collapse.admit(row(0, { status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not member", status: 404 } } }));
+    collapse.admit(row(1));
+    const failed = collapse.admit(row(2));
+    if (failed.kind !== "collapsed") { assert.fail("expected the collapsed row"); return; }
+    assert.equal(renderLogEntry(row(2), 80, failed.override), "READ (pets_*.md) /dogs/i {3} every dog — Entry not member", "a failed path names the collapsed row");
+});
+
+// ─── SEND blocks and TASK tables ({§cli-broadcast-send-rendering}, {§cli-plan-rendering}) ─────
+
+test("[§cli-broadcast-send-rendering] a delivered message is the SEND block with its Markdown body; a failed one names its outcome", () => {
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "SEND Paris.");
+    const block = renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
+    assert.deepEqual(block.split("\n"), ["SEND the answer", "   line one", "   line two"], "no surrounding blank rows; body lines indent under the speaker");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown Undelivered.");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "SEND", "an empty message is the header alone");
+});
+
+test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a message block", () => {
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: "worker", pathname: "/gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone");
+});
+
+const inventory = (entries: unknown[], over: Partial<LogEntryWire> = {}): LogEntryWire => entry({
+    op: "TASK", scheme: null, pathname: null, signal: 102, status_rx: 102,
+    tx: { op: "TASK", aside: null, body: { entries } } as unknown as { body: { raw: string; json: null } },
+    rx: { status: 102 },
+    ...over,
+});
+
+test("[§cli-plan-rendering] TASK renders a status-column table with only the populated columns, under the native names", () => {
+    const out = renderLogEntry(inventory([
+        { content: "Read core docs (AGENTS, ARCHITECTURE, package.json, README)", priority: "medium", status: "in_progress" },
+        { content: "Compose project description response", priority: "medium", status: "pending" },
+    ]), 100);
+    const lines = out.split("\n");
+    assert.equal(lines[0], "TASK");
+    assert.match(out, /todo/);
+    assert.match(out, /in_progress/);
+    assert.doesNotMatch(out, /pending|completed|waiting|failed/, "empty columns are absent and ACP's pending is shown as todo");
+    assert.match(out, /Read core docs/);
+    assert.match(out, /Compose project description response/);
+    assert.doesNotMatch(out, /✅|🚧|⬜|▶️|102/);
+});
+
+test("[§cli-plan-rendering] a deferred completion carries the receipt's detail on the TASK line, and a failed TASK its Problem title", () => {
+    const deferred = renderLogEntry(inventory([{ content: "Compose the response", priority: "medium", status: "completed" }], {
+        rx: { status: 102, detail: "Completion deferred: 1 operation failed in the same turn. The failure is in this packet; address it or complete with a TASK now." },
+        attrs: { failures: 1 },
+    }), 100);
+    assert.match(deferred.split("\n")[0]!, /^TASK — Completion deferred: 1 operation failed in the same turn\./);
+    assert.match(deferred, /completed/);
+    const failed = renderLogEntry(inventory([{ content: "Verify", priority: "medium", status: "completed", _meta: { "plurnk.xyz/status": "failed" } }], {
+        status_rx: 409, rx: { status: 409, problem: { type: "x", title: "Loop already terminal", status: 409 } },
+    }), 100);
+    assert.equal(failed.split("\n")[0], "TASK — Loop already terminal");
+    assert.match(failed, /failed/);
+    assert.equal(renderLogEntry(inventory([], { status_rx: 200, rx: { status: 200 } })), "TASK", "an empty inventory is the header alone");
+});
+
+test("[§cli-plan-rendering] the TASK table wraps to the live width instead of overflowing it", () => {
+    const out = renderLogEntry(inventory([
+        { content: "A rather long description of a task that must wrap without losing any of its words at all", priority: "medium", status: "in_progress" },
+        { content: "Another long description that sits in the second column and must wrap independently", priority: "medium", status: "pending" },
+    ]), 60);
+    assert.ok(out.split("\n").every((line) => line.length <= 60), out);
+    assert.match(out, /losing any/);
 });
 
 // ─── renderSummary ────────────────────────────────────────────────────
@@ -701,12 +583,6 @@ test("broadcast: long single-line body breaks to the second line", () => {
     assert.equal(out.replace(/^\n|\n$/g, "").split("\n").length, 2);
 });
 
-test("status glyph: routine 2xx badges NOTHING (no ✅); only notable statuses glyph", () => {
-    assert.doesNotMatch(renderLogEntry(entry({ op: "EDIT", scheme: "unknown", pathname: "/x", status_rx: 201, tx: { body: "p" } })), /✅/);
-    assert.match(renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "search/1", status_rx: 501, tx: { body: "q" } })), /❌/);
-    assert.match(renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/y", status_rx: 404, rx: {}, tx: {} })), /❌/);
-});
-
 // ─── Coordinate-free human waterfall (plurnk#21) ──────────────────────
 
 test("[§cli-log-entry-line-format] the human waterfall carries no log coordinates", () => {
@@ -749,63 +625,7 @@ test("coordinates never leak into rows, from ordinals or DB ids", () => {
     assert.doesNotMatch(out, /38\/412/);
 });
 
-test("broadcasts identify a deliberate SEND without inventing a workflow outcome", () => {
-    const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
-        loop_seq: 1, turn_seq: 4, sequence: 1, tx: { body: { raw: "Paris", json: null } },
-    }));
-    assert.doesNotMatch(out, /01\/04\/01/);
-    assert.match(out, /^💬/);
-    assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/, "wire status is not repeated in the human waterfall");
-});
-
 // ─── buildExtra: per-op branch coverage ──────────────────────────────
-
-test("renderLogEntry: FIND shows the result count", () => {
-    const out = renderLogEntry(entry({ op: "FIND", scheme: "worker", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "a\nb\nc" } }));
-    assert.match(out, /→ 3 results/);
-    assert.match(out, /🔍/);
-});
-
-test("renderLogEntry: FIND with one result is singular", () => {
-    const out = renderLogEntry(entry({ op: "FIND", scheme: "worker", pathname: "/**", status_rx: 200, tx: {}, rx: { results: "only" } }));
-    assert.match(out, /→ 1 result\b/);
-});
-
-test("renderLogEntry: FIND counts an ARRAY rx.results (uniform matcher, #129)", () => {
-    const items = Array.from({ length: 33 }, (_, i) => ({ pathname: `/f${i}` }));
-    const out = renderLogEntry(entry({ op: "FIND", scheme: "file", pathname: "/**", status_rx: 200, tx: {}, rx: { results: items } }));
-    assert.match(out, /→ 33 results/);
-});
-
-test("renderLogEntry: FIND with missing/empty rx → 0 results", () => {
-    const out = renderLogEntry(entry({ op: "FIND", scheme: "file", pathname: "/**", status_rx: 200, tx: {}, rx: {} }));
-    assert.match(out, /→ 0 results/);
-});
-
-test("renderLogEntry: COPY shows the destination", () => {
-    const out = renderLogEntry(entry({
-        op: "COPY",
-        scheme: "worker",
-        pathname: "/a",
-        status_rx: 200,
-        tx: { destination: { target: { raw: "worker://b" } } },
-    }));
-    assert.match(out, /→ worker:\/\/b/);
-    assert.match(out, /📋/);
-});
-
-test("renderLogEntry: COPY/MOVE without a destination invents no obsolete body semantics", () => {
-    const out = renderLogEntry(entry({ op: "MOVE", scheme: "worker", pathname: "/a", status_rx: 200, tx: {} }));
-    assert.doesNotMatch(out, /→|deleted/);
-    assert.match(out, /📦/);
-});
-
-test("renderLogEntry: EXEC shows the command body", () => {
-    const out = renderLogEntry(entry({ op: "EXEC", scheme: "exec", pathname: "/1/1/1", status_rx: 200, tx: { body: "ls -la" } }));
-    assert.match(out, /"ls -la"/);
-    assert.match(out, /🔧/);
-});
 
 // ─── colorForStatus: each status class is exercised ──────────────────
 

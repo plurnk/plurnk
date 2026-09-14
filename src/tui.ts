@@ -20,7 +20,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization, FanoutCollapse } from "./render.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -608,6 +608,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
     const streams = new StreamTrace();
+    // A client-typed execution's inline peek is part of its presentation: the op's summary and
+    // the prompt wait for it, so the next command never races the read's turn on the daemon.
+    const peeks: Promise<void>[] = [];
+    const settlePeeks = async (): Promise<void> => { await Promise.all(peeks.splice(0)); };
+    const fanout = new FanoutCollapse();
 
     // A dropped connection can't carry a pending question's answer. shuttingDown
     // (set on an intentional quit) tells the transport to suppress its reject.
@@ -911,7 +916,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push(target);
-            printAbove(renderLogEntry(entry, surface.columns || 80));
+            // {§cli-what-is-not-rendered} — a started execution appears when its outcome is known.
+            if (streams.launch(entry)) return;
+            // A glob READ's rows collapse to the authored statement once the last row is in.
+            const verdict = fanout.admit(entry);
+            if (verdict.kind === "suppressed") return;
+            printAbove(renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined));
         },
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
@@ -924,18 +934,23 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             repromptPreserving();
         },
         onStream: (payload) => {
-            // One channel for the lifecycle: concluded carries its exact result, a start
-            // event carries state. One start line, one conclusion line, tiny outputs inlined.
+            // One channel for the lifecycle: a conclusion carries its exact result and is the
+            // execution's one row; start and growth events say nothing in the transcript.
             if (typeof (payload as { result?: { status?: unknown } }).result?.status === "number") {
                 const p = payload as StreamConcludedPayload;
+                const launch = streams.launchedBy(p.target);
                 printAbove(streams.concluded(p));
-                void transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
-                    const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
-                    for (const name of ["stdout", "stderr"]) {
-                        const content = channels[name]?.content;
-                        if (typeof content === "string" && inlineable(content)) printAbove(renderInline(name, content));
-                    }
-                }).catch(() => { /* peek is best-effort */ });
+                // A command the human typed (`!`) is asked for its output: a tiny result inlines
+                // under its row. The model's executions stay bodiless ({§cli-what-is-not-rendered}).
+                if (launch?.origin === "client") {
+                    peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
+                        const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+                        for (const name of ["stdout", "stderr"]) {
+                            const content = channels[name]?.content;
+                            if (typeof content === "string" && inlineable(content)) printAbove(renderInline(name, content));
+                        }
+                    }).catch(() => { /* peek is best-effort */ }));
+                }
             } else {
                 const line = streams.event(payload as StreamEventPayload);
                 if (line !== null) printAbove(line);
@@ -968,7 +983,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // live transport (WS, or the bridge's management plane over /plurnk/rpc). A
     // .call-only adapter — no verb/subcommand here subscribes, so the other Rpc
     // methods are never reached.
-    const verbRpc = { call: (method: string, params?: object): Promise<unknown> => transport.rpc(method, params) } as VerbCaller;
+    const verbRpc = {
+        call: async (method: string, params?: object): Promise<unknown> => {
+            const result = await transport.rpc(method, params);
+            await settlePeeks();
+            return result;
+        },
+    } as VerbCaller;
 
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live workspace / opts / stdout / import glue.
@@ -1136,11 +1157,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     // Raw DSL: send to op.parse
                     const result = await transport.rpc("op.parse", { text: statementText }) as { results: OperationResult[] };
                     terminalResult = result.results[result.results.length - 1] ?? { status: 0 };
+                    await settlePeeks();
                 } else if (trimmed.startsWith("!")) {
                     // `! cmd` — exec via the daemon (proposal-gated like any
                     // side effect; output streams as stream/event traces).
                     const command = trimmed.replace(/^!+\s*/, "");
                     terminalResult = await transport.rpc("op.exec", { command }) as OperationResult;
+                    await settlePeeks();
                 } else {
                     // `?` selects proposal review; `:` uses the base policy.
                     const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);

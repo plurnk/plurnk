@@ -517,27 +517,44 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
-One line per dispatched op, except the structured TASK inventory below. Format
-(vanilla ANSI, no framework):
+One row per dispatched op, except the TASK table below and the targetless SEND block (§5.4).
+A row is the operation as written, literal text with the client's own styling and never a
+Markdown pass:
 
 ```
-<primary-glyph> [<status-glyph>] [<error-status>] <target> <scope> <body-preview> [— <aside>]
+<OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <problem title>]
 ```
 
-Width-tolerant; no fixed column widths. Every glyph-bearing waterfall row
-begins at column zero. A non-disposition operation carries its operation glyph plus a
-status-glyph slot and retains a colored numeric status only for failures
-(≥400). A disposition carries one lifecycle glyph regardless of its producer and no numeric
-status: the glyph is the human state, so repeating its protocol code is noise.
-A failed directed SEND retains its code like any other failed operation. The
-human waterfall carries no log coordinates; coordinates and every
-exact status remain on the wire and in `--json`.
-The target and scope are omitted independently when absent; a present scope renders in canonical `<mark,...>` form.
-A present durable operation aside is appended as sanitized, literal plain text; clients do not interpret its Markdown or HTML syntax.
+- `OP` is the operation's name, bold: green when the outcome succeeded, pink otherwise. An
+  EXEC row is named by its registered executor (`sh`, `python`), never a generic EXEC.
+- `(target)` is the authored target text, in its parentheses; `<scope>` is the canonical
+  `<mark,...>` form; `<pattern>` is the matcher as authored (`/regex/i`, `~query`, `&symbol`).
+  COPY and MOVE render `(source) <scope> (destination) <scope>`, each scope beside its own path.
+  `*.md` is not emphasis, `<17,-1>` is not markup, `/^# /` is not a heading.
+- `{n}` is what the receipt returned, in the receipt's own unit, on every READ and FIND row:
+  a FIND's returned items, an exact READ's returned lines (a pattern READ carries its matched
+  lines as `lineOrdinals`), a collapsed glob READ's paths. Pattern, scope, and metadata compose
+  into what is returned and are never operative for the count. No other operation carries a count.
+- The aside is the durable operation aside as sanitized literal text, italic and dim, never
+  interpreted as Markdown or HTML.
+- An unsuccessful outcome (`status_rx >= 400`) names the structured result's own `problem.title`
+  (else its `detail`, else the bare status) at the right of the row. A 204 is not a failure: a
+  FIND counts `{0}`; a glob READ that matched no path carries the daemon's detail instead of a count.
+- No body, preview, hit count beyond `{n}`, byte count, numeric status, glyph, or log coordinate
+  reaches the row; coordinates and every exact status remain on the wire and in `--json`.
 
-**Glyph palette (both clients).** Operation glyphs occupy two display columns: 🔍 📖 📝 📋 📦 ✂️ 🐜 👥 💬 🔧 🔮 (FIND, READ, EDIT, COPY, MOVE, KILL, WORK, FORK, SEND, EXEC, BARE). Origin glyphs are 🎲 ❯ 🧰 🔌. TASK's header derives from its settled lifecycle: `▶️` continuing, `⏹️` completed, 💤 waiting, ✋ failed/cancelled, or ❌ error. Inventory glyphs follow §5.1.2; secondary-status glyphs remain ⏳ 💤 🤔 💥 ✋ ❌.
+A glob READ lands one receipt row per path, each stamped `attrs.fanout` by the service
+(`{target, matched, index, count}`). The waterfall shows the authored statement once, when
+the row with the last index arrives: the glob as the target and `count` as `{n}`; a failed
+path names the collapsed row. A started execution (status 200, outcome `started`) has no
+outcome yet: the service stamps its stream address on the row (`attrs.stream`), and the row
+appears once, when that stream concludes, colored by the conclusion (§5.3). A detached
+execution (`<-1>`) is nobody's obligation: its row stands when it starts, and its eventual
+conclusion renders on its own.
 
-**Exceptions:** targetless SEND and native dispositions render as content blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's corresponding actionless lowercase `prompt` row at `prompt:///<loop>/<turn>` is therefore skipped to avoid duplication.
+Width-tolerant; no fixed column widths. Every row begins at column zero.
+
+**Exceptions:** targetless SEND and native dispositions render as blocks per §5.4 and §5.1.2. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's durable prompt row is not rendered again (`isPromptEntry`).
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
@@ -581,24 +598,23 @@ answer and JSON mode remains silent.
 
 #### §5.1.2 Plan {§cli-plan-rendering}
 
-TASK renders its lifecycle header followed by the complete inventory
-in source order, one human line per entry:
+TASK renders a `TASK` header row followed by its inventory as a status-column table:
 
-| Status | Glyph |
-|---|---|
-| `completed` | ✅ |
-| `in_progress` | 🚧 |
-| `pending` | ⬜ |
-| `waiting` (ACP `in_progress` with explicit subtype) | 💤 |
-| `failed` (ACP `completed` with explicit subtype) | ✋ |
+- Columns are the native statuses present in the inventory, in the stable relative order
+  `todo`, `in_progress`, `waiting`, `completed`, `failed`; an empty status has no column,
+  so a typical snapshot shows one or two. ACP's `pending` is shown as `todo`. The client
+  recognizes `waiting` and `failed` only from `_meta["plurnk.xyz/status"]` with the matching
+  ACP base status, never from prose.
+- Each column lists its entries in source order; entry whitespace collapses to one line;
+  `high` and `low` priorities render as `[high]` and `[low]`, `medium` is implicit.
+- Columns wrap to the live width; rows are independent buckets, never dependencies.
+- The header carries the receipt's own words when the receipt is not a plain 200: a deferred or
+  joined completion appends its `detail` (`TASK — Completion deferred: ...`), an unsuccessful
+  receipt appends its Problem title in pink. The model's inventory is shown as its claim; the
+  loop's disposition arrives with the terminal event and is never inferred from the table.
+- An empty inventory is the header alone. No lifecycle glyph, entry glyph, or numeric code.
 
-Every entry glyph begins at column zero. The client recognizes native subtypes only
-from `_meta["plurnk.xyz/status"]` with the matching ACP base status, never from prose.
-Visible `Waiting:` and `Failed:` labels remain intact. Entry whitespace collapses to one line.
-An unsuccessful TASK receipt retains its diagnostic status on the first inventory row.
-Neutral `medium` priority is implicit; `high` and `low` render as
-`[high]` and `[low]`. An empty Plan renders `📭 no entries`. The one-shot plain
-trace retains its TASK lifecycle header and applies the same entry projection below it.
+The one-shot plain trace (§2) keeps its glyph-per-entry projection below its TASK line.
 
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
@@ -612,9 +628,9 @@ Input and output are the conventional aggregate fields from the daemon's account
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
-- Raw bodies for non-broadcast ops. SEND and disposition bodies are rendered (§5.4); other op bodies surface only via `entry.read` or a READ fence targeting `log://...`.
+- Raw bodies for non-broadcast ops: command snippets, JSON arguments, edit replacements, and result previews. SEND bodies and TASK inventories are rendered (§5.4, §5.1.2); other op bodies surface only via `entry.read` or a READ fence targeting `log://...`.
 - Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
-- Content fetching from streaming channels — with ONE bounded exception. Streams render coalesced: a single start line on the first `stream/event` (`📡 ⏳ <target>`; growth ticks and per-channel closes are silent) and a single conclusion line (`📡 <target> "<summary>"` for routine success; failures add their glyph and code), with target echo stripped from the summary and `→ resumed loop` only when the wake resumed one. On conclusion the client makes one `entry.read` and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`) — at that size the content IS the better optics (a 12-byte exec answer should be visible, not described). Larger outputs remain summary-only; fetching them is the consumer's job. See §8.7.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching EXEC fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.7.
 
 ### §5.4 Messages and dispositions {§cli-broadcast-send-rendering}
 
@@ -622,10 +638,10 @@ A targetless SEND carries message content; TASK carries the inventory (§5.1.2).
 
 TUI mode contract:
 
-- Header line: one glyph at column zero, no redundant numeric disposition code or path. TASK uses its settled lifecycle glyph regardless of producer. SEND messages use 💬; failed messages retain their diagnostic status.
+- Header line: the operation's name at column zero (`SEND`, bold, green when delivered and pink when not), then the sanitized aside, then a failed message's Problem title; no glyph, no numeric code, no path.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
-- Empty message content is legal and renders as just the header. An empty TASK inventory retains its `📭 no entries` row.
+- Empty message content is legal and renders as just the header. TASK renders its table per §5.1.2.
 
 Successfully delivered targetless model SENDs are bold so response messages stand out from
 operation records; failed, directed, inherited, and non-model messages remain plain. Inner ANSI
@@ -947,27 +963,28 @@ without colliding with the active prompt.
 ### §8.4 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
 
 The daemon also projects streaming-channel metadata as `plurnk.stream` events.
-Streams are content lifecycle, not Problems or Notices. The client merely uses
-the same `📡` glyph so daemon-pushed activity has one visual lane.
+Streams are content lifecycle, not Problems or Notices. The client renders no
+stream lifecycle of its own: a start or growth event writes nothing, and a
+conclusion renders the launching EXEC fence's operation row once (§5.3).
 
 ```
 stream/event     { entryId, workerId, target, channel, state, contentLength }
 stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction }
 ```
 
-`workerId` is the entry-read perspective and `target` is the entry's URI (`scheme://pathname`). Rendering is coalesced per §5.3:
-
-`wake-pending` renders as “→ wake pending”: the stream has concluded, but
-settlement may still be waiting or lose to cancellation. It does not claim
-that a loop resumed; ordinary loop events remain the execution evidence.
+`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the started EXEC row as `attrs.stream` (`python:///0c0ffee1`), opaque to the client and never composed. The TUI keeps the started row until that address concludes, then renders it once, per §5.1:
 
 ```
-📡 ⏳ exec://python/1/2/1
-📡    exec://python/1/2/1 "completed (exit 0); stdout=12 bytes, stderr=0 bytes"
-   Ulaanbaatar
+python Run the focused tests
+python Run the focused tests — failed (exit 2); stdout=0 bytes, stderr=41 bytes
 ```
 
-CLI mode writes to stderr; TUI mode interleaves in the waterfall with the prompt-wipe prefix. **The client does not fetch the actual streamed content** — that's not the CLI's job. Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.
+`wakeAction` is engine bookkeeping and never a row: a concluded stream does not
+claim that a loop resumed; ordinary loop events remain the execution evidence.
+A conclusion whose launch the client never saw renders as its scheme and address in
+the same grammar. The one-shot CLI writes its trace to stderr and keeps its bounded
+inline exception for tiny concluded outputs. **The TUI fetches no streamed content for a model's execution**; the human's own `!`
+command is the one bounded exception (§5.3). Consumers who want the body (e.g. `plurnk.nvim`) call `entry.read` themselves.
 
 ### §8.5 Boundaries
 

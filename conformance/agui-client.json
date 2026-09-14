@@ -631,6 +631,72 @@
         "durability"
       ]
     },
+    "worker.env.list": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "worker.env.discover": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "worker.env.add": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "worker.env.enable": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "worker.env.disable": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "worker.env.remove": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
     "workspace.mcp.list": {
       "posture": "native",
       "evidence": [

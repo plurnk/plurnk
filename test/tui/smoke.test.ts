@@ -95,10 +95,30 @@ describe("TUI pty harness", () => {
             await resumed.waitFor(/● second[^\n]*← bound/);
             resumed.write("/workspace fresh-resume\r");
             await resumed.waitFor(/workspace: fresh-resume \(new\)/);
+            resumed.write("/env add RESUME_WITNESS before-rename\r");
+            await resumed.waitFor(/added: RESUME_WITNESS \(active\)/);
+            resumed.write("/rename renamed-resume\r");
+            await resumed.waitFor(/workspace: renamed-resume/);
+            const since = resumed.output().length;
+            resumed.write("/env\r");
+            await resumed.waitFor(/RESUME_WITNESS\s+worker\s+active\s+before-rename/, 10000, since);
             resumed.write("/quit\r");
             assert.equal(await resumed.exited, 0);
-            assert.match(resumed.output(), /plurnk --workspace fresh-resume --worker fresh-resume/);
+            assert.match(resumed.output(), /plurnk --workspace renamed-resume --worker fresh-resume/);
         } finally { resumed.kill(); }
+    });
+
+    test("[§cli-tui-flow] renaming a workspace retains its initially implicit worker in the resume command", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--workspace", "implicit-resume"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("/rename implicit-renamed\r");
+            await tui.waitFor(/workspace: implicit-renamed/);
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+            assert.match(tui.output(), /plurnk --workspace implicit-renamed --worker implicit-resume/);
+        } finally { tui.kill(); }
     });
 
     test("bare Esc clears the composed line while idle (plurnk#25)", async (t) => {

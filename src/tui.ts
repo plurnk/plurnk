@@ -1141,7 +1141,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  \x1b[2mresume this workspace:  ${resumeCommand(current.name, conversationWorker ?? current.name)}\x1b[0m\n`);
+            process.stdout.write(`  \x1b[2mresume this workspace:  ${resumeCommand(current.name, conversationWorker ?? workspace.name)}\x1b[0m\n`);
             resolve();
         };
         requestClose = close;

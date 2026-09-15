@@ -269,7 +269,8 @@ Triggered when `argv` has no positional prompt.
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
     (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
 4. Input remains available during a run under {§cli-active-command-admission}; typed commands and shortcuts share admission.
-5. `Ctrl-C` or `EOF` exits cleanly.
+5. `Ctrl-C`, `EOF`, and `/quit` exit cleanly. The resume command identifies the
+   current workspace and worker with shell-safe arguments, including after rebinding.
 
 ### §3.1.1 Interactive command discovery {§cli-interactive-command-discovery}
 
@@ -539,10 +540,10 @@ rewriting or retry.
 
 The environment is a thin projection of the daemon's `env` Functionality
 family — the same common lifecycle as `/mcp`, `/skills`, `/agents`, and
-`/members` — with one difference the client must respect: the family is
-worker-scoped. An environment is how one worker's commands run, not a workspace
-capability, so its actions are `worker.env.*` and the transport binds this
-tab's worker exactly as it does for `worker.model.*`. The client composes one
+`/members`. Unqualified commands use `worker.env.*`; `--scope workspace` before
+the verb selects `workspace.env.*` for shared defaults. `--scope worker` is
+explicitly local; both space-separated and `--scope=workspace` forms are accepted.
+The transport binds the active workspace and worker. The client composes one
 exact definition, `{value}`, and renders the daemon's states; admission (the
 shell's name grammar, never plurnk's own names), the operator's ceiling, and
 the composition at the spawn live in the service. A value is used verbatim by
@@ -556,6 +557,11 @@ the daemon, so `add` hands over the rest of the line as typed, never tokenized.
 | `/env enable <NAME>` | `worker.env.enable {alias}` |
 | `/env disable <NAME>` | `worker.env.disable {alias}` — an ambient name disabled here is withheld from this worker's commands alone |
 | `/env remove <NAME>` | `worker.env.remove {alias}` |
+| `/env --scope workspace [verb]` | The same verb and input under `workspace.env.*`; no verb, or `list`, lists that scope. |
+
+Worker lists include workspace defaults with `origin: "workspace"`. These defaults
+also reach shared MCP launches; worker overrides do not. Existing processes retain
+their launch environment; clients do not restart them automatically.
 
 Daemon Problems — a name a shell cannot export, one of plurnk's own names, a
 service-owned definition that cannot be removed — cross the existing

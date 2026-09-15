@@ -633,6 +633,90 @@
         "durability"
       ]
     },
+    "workspace.env.list": {
+      "posture": "native",
+      "evidence": [
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "workspace.env.discover": {
+      "posture": "native",
+      "evidence": [
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "workspace.env.add": {
+      "posture": "native",
+      "evidence": [
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "workspace.env.enable": {
+      "posture": "native",
+      "evidence": [
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "workspace.env.disable": {
+      "posture": "native",
+      "evidence": [
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "workspace.env.remove": {
+      "posture": "native",
+      "evidence": [
+        "src/env.test.ts — environment management",
+        "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "worker.env.list": {
       "posture": "native",
       "evidence": [

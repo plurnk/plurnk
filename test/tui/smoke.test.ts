@@ -55,7 +55,7 @@ describe("TUI pty harness", () => {
             tui.write("/quit\r");
             await tui.waitFor(/resume this workspace:\s+plurnk --workspace /);
             assert.equal(await tui.exited, 0, "/quit exits 0");
-            assert.match(tui.output(), /resume this workspace:\s+plurnk --workspace /, "quit prints the resume one-liner");
+            assert.match(tui.output(), /resume this workspace:\s+plurnk --workspace tui-startup-contract --worker startup-worker/, "quit identifies the same workspace and worker");
             assert.doesNotMatch(tui.output(), /problem:/, "startup and bound-workspace inspection must not emit Problems");
         } finally {
             tui.kill();
@@ -74,6 +74,31 @@ describe("TUI pty harness", () => {
         } finally {
             tui.kill();
         }
+    });
+
+    test("[§cli-tui-flow] resume follows a worker switch and reconnects to that conversation", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const args = ["--workspace", "resume-workers", "--worker", "second"];
+        const tui = spawnTui(daemon.url, ["--workspace", "resume-workers", "--worker", "first"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("/attach second\r");
+            await tui.waitFor(/worker: second \(new\)/);
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+            assert.match(tui.output(), /plurnk --workspace resume-workers --worker second/);
+        } finally { tui.kill(); }
+        const resumed = spawnTui(daemon.url, args);
+        try {
+            await resumed.waitFor(/plurnk.*\/help/);
+            resumed.write("/workers\r");
+            await resumed.waitFor(/● second[^\n]*← bound/);
+            resumed.write("/workspace fresh-resume\r");
+            await resumed.waitFor(/workspace: fresh-resume \(new\)/);
+            resumed.write("/quit\r");
+            assert.equal(await resumed.exited, 0);
+            assert.match(resumed.output(), /plurnk --workspace fresh-resume --worker fresh-resume/);
+        } finally { resumed.kill(); }
     });
 
     test("bare Esc clears the composed line while idle (plurnk#25)", async (t) => {

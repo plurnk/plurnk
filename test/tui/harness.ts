@@ -17,13 +17,13 @@ export interface Tui {
     write: (data: string) => void;
     // Resolve once the cumulative output matches; reject on timeout (dumping
     // the tail so a failure is legible).
-    waitFor: (pattern: RegExp, timeoutMs?: number) => Promise<string>;
+    waitFor: (pattern: RegExp, timeoutMs?: number, since?: number) => Promise<string>;
     output: () => string;
     kill: () => void;
     exited: Promise<number>;
 }
 
-interface Waiter { re: RegExp; resolve: (s: string) => void; timer: ReturnType<typeof setTimeout> }
+interface Waiter { re: RegExp; since: number; resolve: (s: string) => void; timer: ReturnType<typeof setTimeout> }
 
 // Spawn `node bin/plurnk.js <args>` in a 100×30 pty against the given daemon URL.
 export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<string, string> = {}, cwd: string = process.cwd()): Tui => {
@@ -45,7 +45,7 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<stri
     term.onData((d) => {
         buf += d;
         for (let i = waiters.length - 1; i >= 0; i--) {
-            if (waiters[i].re.test(buf)) {
+            if (waiters[i].re.test(buf.slice(waiters[i].since))) {
                 clearTimeout(waiters[i].timer);
                 waiters[i].resolve(buf);
                 waiters.splice(i, 1);
@@ -58,13 +58,13 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<stri
 
     return {
         write: (data) => term.write(data),
-        waitFor: (re, timeoutMs = 10_000) => new Promise((res, rej) => {
-            if (re.test(buf)) { res(buf); return; }
+        waitFor: (re, timeoutMs = 10_000, since = 0) => new Promise((res, rej) => {
+            if (re.test(buf.slice(since))) { res(buf); return; }
             const timer = setTimeout(
                 () => rej(new Error(`waitFor ${re} timed out after ${timeoutMs}ms.\n── tail ──\n${buf.slice(-600)}`)),
                 timeoutMs,
             );
-            waiters.push({ re, resolve: res, timer });
+            waiters.push({ re, since, resolve: res, timer });
         }),
         output: () => buf,
         kill: () => { try { term.kill(); } catch { /* already gone */ } },

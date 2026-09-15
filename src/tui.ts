@@ -122,6 +122,11 @@ export const linePolicy = promptPolicy;
 export const renderSubmittedInput = (text: string, yolo: boolean): string =>
     text.split("\n").map((line, index) => `${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}`).join("\n");
 
+export const resumeCommand = (workspace: string, worker: string): string => {
+    const quote = (value: string): string => /^[A-Za-z0-9_.:/-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\"'\"'")}'`;
+    return `plurnk --workspace ${quote(workspace)} --worker ${quote(worker)}`;
+};
+
 // Alt-p / Alt-n cycle the LOOK target through prior operations (prev/next op).
 // null = not a cycle key.
 export const cycleKey = (forward: string): "up" | "down" | null =>
@@ -147,7 +152,7 @@ export interface CompletionOptions {
     cwd: string;
     getReasoningPolicies?: () => string[];
     getProviderModels?: (provider: string) => Promise<string[]>;
-    getFunctionalityAliases?: (family: FunctionalityFamily) => Promise<string[]>;
+    getFunctionalityAliases?: (family: FunctionalityFamily, scope?: "worker" | "workspace") => Promise<string[]>;
     getWorkerNames?: () => Promise<string[]>;
 }
 
@@ -167,7 +172,7 @@ export const completeInput = async (line: string, options: CompletionOptions): P
         if (command?.kind === "syntax") return { suggestions: command.suggestions, prefix: command.prefix };
         if (command?.kind === "aliases") {
             let aliases: string[] = [];
-            try { aliases = await options.getFunctionalityAliases?.(command.family) ?? []; }
+            try { aliases = await options.getFunctionalityAliases?.(command.family, command.scope) ?? []; }
             catch { /* completion failure is an empty result; the editor remains intact */ }
             return {
                 suggestions: aliases
@@ -778,9 +783,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 providerModelCache.set(provider, selectors);
                 return selectors;
             },
-            getFunctionalityAliases: async (family) => {
-                const result = await transport.rpc(`${FAMILY_ACTIONS[family]}.list`, {}) as { definitions?: unknown };
-                if (!Array.isArray(result.definitions)) throw new TypeError(`${FAMILY_ACTIONS[family]}.list returned an invalid result.`);
+            getFunctionalityAliases: async (family, scope) => {
+                const action = family === "env" && scope === "workspace" ? "workspace.env" : FAMILY_ACTIONS[family];
+                const result = await transport.rpc(`${action}.list`, {}) as { definitions?: unknown };
+                if (!Array.isArray(result.definitions)) throw new TypeError(`${action}.list returned an invalid result.`);
                 return result.definitions
                     .map((definition) => definition !== null && typeof definition === "object"
                         ? (definition as { alias?: unknown }).alias
@@ -1056,7 +1062,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         setReasoning: (reasoning) => { workerReasoning = reasoning; },
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
-        switchWorkspace: (name) => transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client }),
+        switchWorkspace: async (name) => {
+            const workspace = await transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client });
+            conversationWorker = workspace.name;
+            conversationWorkerId = null;
+            return workspace;
+        },
         getWorker: () => conversationWorker,
         attachWorker: (name) => {
             transport.useWorker(name, current.name);
@@ -1130,7 +1141,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  \x1b[2mresume this workspace:  plurnk --workspace ${current.name}\x1b[0m\n`);
+            process.stdout.write(`  \x1b[2mresume this workspace:  ${resumeCommand(current.name, conversationWorker ?? current.name)}\x1b[0m\n`);
             resolve();
         };
         requestClose = close;

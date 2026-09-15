@@ -1,12 +1,4 @@
-// Thin TUI projection of the daemon-owned environment Functionality family:
-// the common lifecycle (list | discover | add | enable | disable | remove)
-// over the Worker's `env` actions. The family is worker-scoped — the transport
-// binds this tab's worker — so `list` is what this worker's commands receive:
-// the ambient names the operator's ceiling admits (service origin) and the
-// worker's own entries (worker origin, `from` naming an ancestor when
-// inherited). A definition is one exact `{ value }`, used verbatim. The client
-// composes definitions and renders the daemon's states; admission, the
-// ceiling, and composition at the spawn live in the service.
+// {§cli-environment} Scope selects the daemon action; composition stays server-side.
 
 import { commandUsage } from "./commands.ts";
 
@@ -58,9 +50,9 @@ const usage = (write: (text: string) => void, subcommand?: string): void => {
     write(`  usage: ${commandUsage("env", subcommand)}\n`);
 };
 
-const list = async (rpc: ActionCaller, write: (text: string) => void): Promise<unknown> => {
-    const result = await rpc.call("worker.env.list", {}) as { definitions?: unknown };
-    if (!Array.isArray(result.definitions)) throw new Error("worker.env.list returned an invalid result.");
+const list = async (rpc: ActionCaller, write: (text: string) => void, scope: string): Promise<unknown> => {
+    const result = await rpc.call(`${scope}.env.list`, {}) as { definitions?: unknown };
+    if (!Array.isArray(result.definitions)) throw new Error(`${scope}.env.list returned an invalid result.`);
     if (result.definitions.length === 0) write("  environment: none\n");
     else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
     return result;
@@ -83,16 +75,28 @@ export const handleEnv = async (
     rpc: ActionCaller,
     write: (text: string) => void,
 ): Promise<unknown | null> => {
-    if (input.length === 0) return list(rpc, write);
+    let scope = "worker";
+    const tokens = typeof input === "string" ? input.trim().split(/\s+/u) : input;
+    if (tokens[0] === "--scope" || tokens[0]?.startsWith("--scope=")) {
+        const selected = tokens[0] === "--scope" ? tokens[1] : tokens[0].slice("--scope=".length);
+        if (selected !== "worker" && selected !== "workspace") { usage(write); return null; }
+        scope = selected;
+        input = typeof input === "string"
+            ? input.trimStart().replace(/^--scope(?:=\S+|\s+\S+)\s*/u, "")
+            : input.slice(tokens[0] === "--scope" ? 2 : 1);
+    }
+    if (input.length === 0) return list(rpc, write, scope);
 
     const args = typeof input === "string" ? input.trim().split(/\s+/u) : [...input];
     if (args.length === 0 || args[0]!.length === 0) { usage(write); return null; }
     const [command, name] = args;
 
+    if (command === "list" && args.length === 1) return list(rpc, write, scope);
+
     if (command === "discover") {
         const query = args.slice(1).join(" ");
-        const result = await rpc.call("worker.env.discover", query.length === 0 ? {} : { query }) as { candidates?: unknown };
-        if (!Array.isArray(result.candidates)) throw new Error("worker.env.discover returned an invalid result.");
+        const result = await rpc.call(`${scope}.env.discover`, query.length === 0 ? {} : { query }) as { candidates?: unknown };
+        if (!Array.isArray(result.candidates)) throw new Error(`${scope}.env.discover returned an invalid result.`);
         if (result.candidates.length === 0) write("  candidates: none\n");
         else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
         return result;
@@ -105,7 +109,7 @@ export const handleEnv = async (
             return null;
         }
         const definition: EnvDefinition = { value: parsed.value };
-        const result = await rpc.call("worker.env.add", { alias: parsed.name, definition }) as MutationResult;
+        const result = await rpc.call(`${scope}.env.add`, { alias: parsed.name, definition }) as MutationResult;
         renderMutation(result, "added", parsed.name, write);
         return result;
     }
@@ -115,7 +119,7 @@ export const handleEnv = async (
             usage(write, command);
             return null;
         }
-        const result = await rpc.call(`worker.env.${command}`, { alias: name }) as MutationResult;
+        const result = await rpc.call(`${scope}.env.${command}`, { alias: name }) as MutationResult;
         renderMutation(result, command === "enable" ? "enabled" : "disabled", name, write);
         return result;
     }
@@ -125,7 +129,7 @@ export const handleEnv = async (
             usage(write, "remove");
             return null;
         }
-        const result = await rpc.call("worker.env.remove", { alias: name });
+        const result = await rpc.call(`${scope}.env.remove`, { alias: name });
         write(`  removed: ${name}\n`);
         return result;
     }

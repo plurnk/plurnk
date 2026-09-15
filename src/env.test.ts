@@ -104,3 +104,27 @@ test("[§cli-environment] malformed client command shapes never dispatch", async
         assert.match(h.out.join(""), /usage:/, command);
     }
 });
+
+test("[§cli-environment] workspace scope selects the same verbs and preserves values verbatim", async () => {
+    const h = harness({ "workspace.env.list": { definitions: [] }, "workspace.env.discover": { candidates: [] } });
+    await handleEnv("--scope workspace", h.rpc, h.write);
+    await handleEnv("--scope=workspace discover PAGER", h.rpc, h.write);
+    await handleEnv('--scope workspace add GREETING hello  "friend"', h.rpc, h.write);
+    await handleEnv("--scope workspace enable GREETING", h.rpc, h.write);
+    await handleEnv("--scope workspace disable GREETING", h.rpc, h.write);
+    await handleEnv("--scope workspace remove GREETING", h.rpc, h.write);
+    assert.deepEqual(h.calls, [
+        { method: "workspace.env.list", params: {} },
+        { method: "workspace.env.discover", params: { query: "PAGER" } },
+        { method: "workspace.env.add", params: { alias: "GREETING", definition: { value: 'hello  "friend"' } } },
+        { method: "workspace.env.enable", params: { alias: "GREETING" } },
+        { method: "workspace.env.disable", params: { alias: "GREETING" } },
+        { method: "workspace.env.remove", params: { alias: "GREETING" } },
+    ]);
+    for (const input of ["--scope", "--scope nowhere", "--scope workspace disable", "--scope=workspace list extra"]) {
+        const invalid = harness();
+        await handleEnv(input, invalid.rpc, invalid.write);
+        assert.deepEqual(invalid.calls, [], input);
+        assert.match(invalid.out.join(""), /usage:/, input);
+    }
+});

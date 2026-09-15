@@ -127,6 +127,19 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             await tui.waitFor(/disabled: CARGO_TARGET_DIR \(disabled\)/, 20_000);
             tui.write("/env remove CARGO_TARGET_DIR\r");
             await tui.waitFor(/removed: CARGO_TARGET_DIR/, 20_000);
+            const step = async (command: string, result: RegExp) => {
+                const since = tui.output().length;
+                tui.write(`${command}\r`);
+                await tui.waitFor(result, 10000, since);
+            };
+            await step("/env --scope workspace add SHARED_NAME shared-value", /added: SHARED_NAME \(active\)/);
+            await step("/env", /SHARED_NAME\s+workspace\s+active\s+shared-value/);
+            await step("/env add SHARED_NAME worker-value", /added: SHARED_NAME \(active\)/);
+            await step("/env --scope=workspace", /SHARED_NAME\s+workspace\s+active\s+shared-value/);
+            await step("/env --scope workspace disable SHARED_NAME", /disabled: SHARED_NAME \(disabled\)/);
+            await step("/env --scope workspace enable SHARED_NAME", /enabled: SHARED_NAME \(active\)/);
+            await step("/env --scope workspace discover PAGER", /PAGER\s+@plurnk\/plurnk-execs/);
+            await step("/env --scope workspace remove SHARED_NAME", /removed: SHARED_NAME/);
         } finally { tui.kill(); }
     });
 

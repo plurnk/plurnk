@@ -7,12 +7,31 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { execFileSync } from "node:child_process";
+import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
 const REVIEW_POLICY = { proposals: "review" as const };
+
+test("[§cli-tui-flow] the resume command preserves workspace and worker as literal shell arguments", () => {
+    assert.equal(resumeCommand("project", "primary"), "plurnk --workspace project --worker primary");
+    const workspace = "Matt's project; $not_an_expansion";
+    const worker = "$(not-a-command)";
+    const result = execFileSync("sh", ["-c", `plurnk() { printf '%s\\n' "$@"; }; ${resumeCommand(workspace, worker)}`], { encoding: "utf8" });
+    assert.equal(result, `--workspace\n${workspace}\n--worker\n${worker}\n`);
+});
+
+test("[§cli-environment] scoped env completion uses that scope's variable names", async () => {
+    const calls: unknown[] = [];
+    const options = { getAliases: () => [], cwd: "/tmp", getFunctionalityAliases: async (family: string, scope?: string) => { calls.push([family, scope]); return ["SHARED"]; } };
+    const verbs = await completeInput("/env --scope workspace di", options);
+    assert.deepEqual(verbs.suggestions.map(({ value }) => value), ["discover", "disable"]);
+    const names = await completeInput("/env --scope=workspace enable SH", options);
+    assert.deepEqual(names.suggestions.map(({ value }) => value), ["SHARED"]);
+    assert.deepEqual(calls, [["env", "workspace"]]);
+});
 
 test("help is a compact grouped index over commands and interaction grammar", () => {
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);

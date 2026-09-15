@@ -44,7 +44,7 @@ describe("TUI live (model-gated)", () => {
             // is already in the transcript; the status row carries lifecycle.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
             await tui.waitFor(/⌛︎/);
-            await tui.waitFor(/^(?:READ|FIND|EDIT|TASK|SEND) /m, 540_000);
+            await tui.waitFor(/^(?:READ|FIND|EDIT) /m, 540_000);   // TASK and SEND blocks carry no keyword (§5.1.2, §5.4)
             tui.write("btw keep the summary short\r");
             await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop.run)
         } finally { tui.kill(); }

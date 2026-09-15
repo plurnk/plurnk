@@ -38,8 +38,8 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
 
     assert.equal(stripAnsi(rows[0][1]), "READ (/x)");
     assert.equal(stripAnsi(rows[1][1]), "FIND (/x) — Entry not found", "a failure carries its title, not a numeric code");
-    assert.match(stripAnsi(rows[2][1]), /^TASK\n/, "a routine TASK carries no code");
-    assert.equal(stripAnsi(rows[4][1]), "SEND done");
+    assert.match(stripAnsi(rows[2][1]), /^\n/, "a routine TASK leads with a blank line, no keyword, no code");
+    assert.equal(stripAnsi(rows[4][1]), "\ndone", "a delivered message is its body under a blank line");
     assert.equal(stripAnsi(rows[6][1]), "SEND (worker:///gone) — Worker gone");
     assert.equal(stripAnsi(rows[7][1]), "sh list the files", "an execution is its fence, once, at its conclusion");
     assert.equal(streams.event({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", channel: "stdout", state: "active", contentLength: 0 }), null);

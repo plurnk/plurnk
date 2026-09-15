@@ -598,7 +598,8 @@ answer and JSON mode remains silent.
 
 #### §5.1.2 Plan {§cli-plan-rendering}
 
-TASK renders a `TASK` header row followed by its inventory as a status-column table:
+TASK renders no keyword. A lead line stands where `TASK` was, blank unless the receipt has
+words of its own, then the inventory as a status-column table:
 
 - Columns are the native statuses present in the inventory, in the stable relative order
   `todo`, `in_progress`, `waiting`, `completed`, `failed`; an empty status has no column,
@@ -608,11 +609,13 @@ TASK renders a `TASK` header row followed by its inventory as a status-column ta
 - Each column lists its entries in source order; entry whitespace collapses to one line;
   `high` and `low` priorities render as `[high]` and `[low]`, `medium` is implicit.
 - Columns wrap to the live width; rows are independent buckets, never dependencies.
-- The header carries the receipt's own words when the receipt is not a plain 200: a deferred or
-  joined completion appends its `detail` (`TASK — Completion deferred: ...`), an unsuccessful
-  receipt appends its Problem title in pink. The model's inventory is shown as its claim; the
+- The lead line carries the receipt's own words when the receipt is not a plain 200: a deferred or
+  joined completion states its `detail` (`Completion deferred: ...`), an unsuccessful receipt its
+  Problem title in pink; the sanitized aside follows either.
+- The table's outlines are green; a `completed` column's head and entries are green, a `failed`
+  column's pink; other columns are unstyled. The model's inventory is shown as its claim; the
   loop's disposition arrives with the terminal event and is never inferred from the table.
-- An empty inventory is the header alone. No lifecycle glyph, entry glyph, or numeric code.
+- An empty inventory is the lead line alone. No lifecycle glyph, entry glyph, or numeric code.
 
 The one-shot plain trace (§2) keeps its glyph-per-entry projection below its TASK line.
 
@@ -638,10 +641,10 @@ A targetless SEND carries message content; TASK carries the inventory (§5.1.2).
 
 TUI mode contract:
 
-- Header line: the operation's name at column zero (`SEND`, bold, green when delivered and pink when not), then the sanitized aside, then a failed message's Problem title; no glyph, no numeric code, no path.
+- Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in pink; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
-- Empty message content is legal and renders as just the header. TASK renders its table per §5.1.2.
+- Empty message content is legal and renders as just the lead line. TASK renders its table per §5.1.2.
 
 Successfully delivered targetless model SENDs are bold so response messages stand out from
 operation records; failed, directed, inherited, and non-model messages remain plain. Inner ANSI

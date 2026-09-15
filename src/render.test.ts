@@ -354,12 +354,12 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
 
 // ─── SEND blocks and TASK tables ({§cli-broadcast-send-rendering}, {§cli-plan-rendering}) ─────
 
-test("[§cli-broadcast-send-rendering] a delivered message is the SEND block with its Markdown body; a failed one names its outcome", () => {
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "SEND Paris.");
+test("[§cli-broadcast-send-rendering] a delivered message is its body under a blank lead line; a failed one leads with its outcome", () => {
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "\nParis.", "no keyword: a blank line, then the body at column zero");
     const block = renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
-    assert.deepEqual(block.split("\n"), ["SEND the answer", "   line one", "   line two"], "no surrounding blank rows; body lines indent under the speaker");
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown Undelivered.");
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "SEND", "an empty message is the header alone");
+    assert.deepEqual(block.split("\n"), ["the answer", "line one", "line two"], "the aside takes the lead line; body lines stay at column zero");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "Recipient unknown\nUndelivered.", "a failed message leads with its Problem title");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "", "an empty message is the blank lead line alone");
 });
 
 test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a message block", () => {
@@ -379,7 +379,8 @@ test("[§cli-plan-rendering] TASK renders a status-column table with only the po
         { content: "Compose project description response", priority: "medium", status: "pending" },
     ]), 100);
     const lines = out.split("\n");
-    assert.equal(lines[0], "TASK");
+    assert.equal(lines[0], "", "no keyword: the lead line is blank");
+    assert.doesNotMatch(out, /TASK/);
     assert.match(out, /todo/);
     assert.match(out, /in_progress/);
     assert.doesNotMatch(out, /pending|completed|waiting|failed/, "empty columns are absent and ACP's pending is shown as todo");
@@ -393,14 +394,14 @@ test("[§cli-plan-rendering] a deferred completion carries the receipt's detail 
         rx: { status: 102, detail: "Completion deferred: 1 operation failed in the same turn. The failure is in this packet; address it or complete with a TASK now." },
         attrs: { failures: 1 },
     }), 100);
-    assert.match(deferred.split("\n")[0]!, /^TASK — Completion deferred: 1 operation failed in the same turn\./);
+    assert.match(deferred.split("\n")[0]!, /^Completion deferred: 1 operation failed in the same turn\./);
     assert.match(deferred, /completed/);
     const failed = renderLogEntry(inventory([{ content: "Verify", priority: "medium", status: "completed", _meta: { "plurnk.xyz/status": "failed" } }], {
         status_rx: 409, rx: { status: 409, problem: { type: "x", title: "Loop already terminal", status: 409 } },
     }), 100);
-    assert.equal(failed.split("\n")[0], "TASK — Loop already terminal");
+    assert.equal(failed.split("\n")[0], "Loop already terminal");
     assert.match(failed, /failed/);
-    assert.equal(renderLogEntry(inventory([], { status_rx: 200, rx: { status: 200 } })), "TASK", "an empty inventory is the header alone");
+    assert.equal(renderLogEntry(inventory([], { status_rx: 200, rx: { status: 200 } })), "", "an empty inventory is the blank lead line alone");
 });
 
 test("[§cli-plan-rendering] the TASK table wraps to the live width instead of overflowing it", () => {
@@ -563,24 +564,12 @@ test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines
     assert.match(inner, /Paris\.$/);
 });
 
-test("broadcast: multi-line body starts on the second line", () => {
+test("broadcast: a multi-line body follows the blank lead line at column zero", () => {
     const out = renderLogEntry(entry({
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "line one\nline two", json: null } },
     }));
-    const lines = out.replace(/^\n|\n$/g, "").split("\n");
-    assert.equal(lines.length, 3);
-    assert.doesNotMatch(lines[0], /line one/);
-    assert.match(lines[1], /^   line one/);
-});
-
-test("broadcast: long single-line body breaks to the second line", () => {
-    const long = "x".repeat(81);
-    const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
-        tx: { body: { raw: long, json: null } },
-    }));
-    assert.equal(out.replace(/^\n|\n$/g, "").split("\n").length, 2);
+    assert.deepEqual(out.split("\n"), ["", "line one", "line two"]);
 });
 
 // ─── Coordinate-free human waterfall (plurnk#21) ──────────────────────

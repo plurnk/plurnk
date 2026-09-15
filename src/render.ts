@@ -306,51 +306,50 @@ export class FanoutCollapse {
     }
 }
 
-// TASK: the header carries the receipt's own words (a deferral's or join's `detail`, a
-// failure's Problem title); the inventory is a status-column table with only the columns
-// that have entries ({§cli-plan-rendering}).
-const renderTask = (entry: LogEntryWire, columns: number): string => {
-    const failed = entry.status_rx >= 400;
-    const header = [`${BOLD}${failed ? PINK : GREEN}TASK${RESET}`];
-    const aside = entryAside(entry);
-    if (aside !== null) header.push(`${DIM}${ITALIC}${aside}${RESET}`);
+// The lead line of a TASK or SEND block: no keyword. A blank line stands where the keyword
+// was; a failure puts its Problem title there in pink, a deferred or joined completion its
+// `detail`; the sanitized aside follows either.
+const leadLine = (entry: LogEntryWire, detail: boolean): string => {
+    const parts: string[] = [];
     const rx = objectOf(entry.rx);
-    if (failed) header.push(styledOutcome(outcomeTitle(entry) ?? String(entry.status_rx), true));
-    else if (entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) header.push(styledOutcome(rx.detail, false));
+    if (entry.status_rx >= 400) parts.push(`${PINK}${ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx))}${RESET}`);
+    else if (detail && entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) parts.push(ModelText.plain(rx.detail));
+    const aside = entryAside(entry);
+    if (aside !== null) parts.push(`${DIM}${ITALIC}${aside}${RESET}`);
+    return parts.join(" ");
+};
+
+// A status column's tint: completed entries green, failed entries pink, the rest unstyled.
+const STATUS_TINT: Readonly<Record<string, string>> = { completed: GREEN, failed: PINK };
+const tinted = (status: string, text: string): string => {
+    const color = STATUS_TINT[status] ?? "";
+    return color.length === 0 ? text : `${color}${text}${RESET}`;
+};
+
+// TASK: the lead line, then the inventory as a status-column table with only the columns that
+// have entries, outlined green ({§cli-plan-rendering}).
+const renderTask = (entry: LogEntryWire, columns: number): string => {
+    const lead = leadLine(entry, true);
     const inventory = planColumns(entry.tx);
-    if (inventory.length === 0) return header.join(" ");
+    if (inventory.length === 0) return lead;
     const usable = Math.max(24, columns - 1);
     const perColumn = Math.max(8, Math.floor(usable / inventory.length) - 3);
     const table = new Table({
-        head: inventory.map(({ status }) => `${BOLD}${status}${RESET}`),
+        head: inventory.map(({ status }) => tinted(status, `${BOLD}${status}${RESET}`)),
         colWidths: inventory.map(({ status, entries }) => Math.min(perColumn, Math.max(displayWidth(status), ...entries.map(displayWidth)) + 2)),
         wordWrap: true,
         wrapOnWordBoundary: true,
-        style: { border: [], compact: false, head: [], "padding-left": 1, "padding-right": 1 },
+        style: { border: GREEN.length === 0 ? [] : ["green"], compact: false, head: [], "padding-left": 1, "padding-right": 1 },
     });
     const height = Math.max(...inventory.map(({ entries }) => entries.length));
-    for (let row = 0; row < height; row += 1) table.push(inventory.map(({ entries }) => ModelText.plain(entries[row] ?? "")));
-    return `${header.join(" ")}\n${table.toString()}`;
+    for (let row = 0; row < height; row += 1) table.push(inventory.map(({ status, entries }) => tinted(status, ModelText.plain(entries[row] ?? ""))));
+    return `${lead}\n${table.toString()}`;
 };
 
-// Targetless SEND: the message block. The header is the operation, styled; the body keeps
-// its Markdown ({§cli-broadcast-send-rendering}).
-const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns - 3))): string => {
-    const failed = entry.status_rx >= 400;
-    const header = [`${BOLD}${failed ? PINK : GREEN}SEND${RESET}`];
-    const aside = entryAside(entry);
-    if (aside !== null) header.push(`${DIM}${ITALIC}${aside}${RESET}`);
-    if (failed) header.push(styledOutcome(outcomeTitle(entry) ?? String(entry.status_rx), true));
-    const headerLine = header.join(" ");
-    const multiLine = body.includes("\n");
-    // Short single-line replies inline after the header; longer/multi-line bodies
-    // start on the next line, indented under the speaker.
-    const inlineCapacity = Math.max(0, columns - displayWidth(headerLine) - 1);
-    const lines = body.length === 0 ? [headerLine]
-        : !multiLine && displayWidth(body) <= inlineCapacity ? [`${headerLine} ${body}`]
-        : [headerLine, ...body.split("\n").map((l) => `   ${l}`)];
-    // Delivered response messages are bold; everything else plain. No
-    // surrounding blank lines — the bold body is the standout on its own.
+// Targetless SEND: the message block. The lead line, then the body with its Markdown at
+// column zero ({§cli-broadcast-send-rendering}); a delivered response is bold.
+const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns))): string => {
+    const lines = body.length === 0 ? [leadLine(entry, false)] : [leadLine(entry, false), ...body.split("\n")];
     return emphasizeLines(lines, isResponseMessage(entry));
 };
 

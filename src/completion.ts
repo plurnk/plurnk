@@ -31,7 +31,7 @@ export const pathPartial = (line: string): string | null => {
 };
 
 // The language has no EXEC (plurnk-service #659); the installed contracts predate its retirement.
-const OPS = [...PLURNK_OPS.filter((op) => op !== "EXEC"), "LOOK"] as const;
+const OPS: readonly string[] = [...(PLURNK_OPS as readonly string[]).filter((op) => op !== "EXEC"), "LOOK"];
 const DSL_TARGET_PARTIAL = /^`{3,}[A-Za-z0-9_.+-]+[ \t]*\(([^)\n]*)$/;
 
 // Coarse dispatch classification only. The daemon remains the grammar owner

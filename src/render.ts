@@ -245,6 +245,11 @@ export interface RowOverride {
 const styledOutcome = (text: string, failed: boolean): string =>
     `— ${failed ? PINK : DIM}${ModelText.plain(text)}${RESET}`;
 
+// An execution still open when the following turn begins: its row once, in grey, with no
+// outcome yet; the conclusion renders it again ({§cli-what-is-not-rendered}).
+export const renderPendingRow = (entry: LogEntryWire): string =>
+    `${DIM}${stripVTControlCharacters(renderOperationRow(entry, { failed: false, failure: null }))}${RESET}`;
+
 // `OP (target) <scope> /pattern/ {n} aside — problem title`, one line, literal text.
 export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
     const failed = override.failed ?? (override.failure !== undefined && override.failure !== null || entry.status_rx >= 400);

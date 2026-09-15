@@ -44,7 +44,7 @@ test("[§cli-what-is-not-rendered] start and growth events say nothing in the tr
 test("streamAddress: a started execution's row carries the address the daemon stamped on it", () => {
     assert.equal(streamAddress(launch()), "python:///0c0ffee1");
     assert.equal(streamAddress(unstarted()), null, "an execution the daemon refused has no stream");
-    assert.equal(streamAddress(launch({ attrs: { runtime: "sh", stream: "sh:///0c0ffee1", detached: true } })), null, "a detached execution's row is never held for a conclusion");
+    assert.equal(streamAddress(launch({ attrs: { runtime: "sh", stream: "sh:///0c0ffee1", detached: true } })), "sh:///0c0ffee1", "a detached execution launches like any other; the following turn shows it grey");
     assert.equal(streamAddress(launch({ attrs: { runtime: "python" } })), null, "no stamped stream, no launch");
 });
 
@@ -97,4 +97,14 @@ test("inlineable: short one-or-two-line content only", () => {
 test("renderInline: indents under the conclusion; stderr is marked", () => {
     assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "   Ulaanbaatar");
     assert.match(renderInline("stderr", "oh no\n"), /^   ! oh no$/);
+});
+
+test("[§cli-what-is-not-rendered] an execution still open when the following turn begins is reported once as stale, then concludes normally", () => {
+    const t = new StreamTrace();
+    t.launch(launch());
+    assert.deepEqual(t.staleBefore(1, 2), [], "its own turn: nothing is stale");
+    assert.equal(t.staleBefore(1, 3).length, 1, "the following turn: once");
+    assert.deepEqual(t.staleBefore(1, 4), [], "never twice");
+    assert.equal(t.concluded(concluded()), "python Run the focused tests", "the conclusion is its second and final appearance");
+    assert.deepEqual(t.staleBefore(2, 1), [], "concluded: nothing left");
 });

@@ -20,7 +20,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization, FanoutCollapse } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -40,6 +40,7 @@ import {
     type LoopPolicy,
     type ModelRoute,
     type OperationResult,
+    TurnDisposition,
 } from "@plurnk/plurnk-contracts";
 import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
 import { handleMcp } from "./mcp.ts";
@@ -64,6 +65,7 @@ import {
     type CommandSuggestion,
     type FunctionalityFamily,
 } from "./commands.ts";
+import TurnBuffer from "./turn.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     // A Problem may quote the model's own line; a thrown message may carry anything (plurnk#35).
@@ -613,6 +615,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const peeks: Promise<void>[] = [];
     const settlePeeks = async (): Promise<void> => { await Promise.all(peeks.splice(0)); };
     const fanout = new FanoutCollapse();
+    const turns = new TurnBuffer();
 
     // A dropped connection can't carry a pending question's answer. shuttingDown
     // (set on an intentional quit) tells the transport to suppress its reject.
@@ -921,7 +924,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // A glob READ's rows collapse to the authored statement once the last row is in.
             const verdict = fanout.admit(entry);
             if (verdict.kind === "suppressed") return;
-            printAbove(renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined));
+            const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined);
+            if (entry.origin !== "model") { printAbove(rendered); return; }
+            // An execution still open when the following turn begins shows once in grey, and
+            // again when it concludes.
+            if (turns.begins(entry)) for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq)) printAbove(renderPendingRow(stale));
+            // {§cli-plan-rendering} — the turn's TASK table stands before the turn's rows.
+            for (const line of turns.admit(entry, rendered, TurnDisposition.isOp(entry.op))) printAbove(line);
         },
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
@@ -1178,6 +1187,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     // with the loop's outcome. A pre-stream HTTP failure surfaces as
                     // an exact ProblemError (caught below; 501 gets the .env pointer).
                     const t = await transport.run(promptText, loopParams).done;
+                    for (const line of turns.flush()) printAbove(line);
                     reviewRequested = false;
                     terminalResult = t.result;
                     hitMaxTurns = t.hitMaxTurns;

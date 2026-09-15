@@ -50,12 +50,8 @@ export interface StreamConcludedPayload extends StreamCoord {
 // A started execution's row carries its stream address: the daemon stamps `attrs.stream` on the
 // execution row it started (status 200, outcome `started`), and every stream/event and stream/concluded
 // for that execution names the same address as `target`. Opaque to the client, never composed.
-// A detached execution (`<-1>`) is nobody's obligation: its row stands when it starts, and its
-// eventual conclusion renders on its own.
 export const streamAddress = (entry: LogEntryWire): string | null => {
-    const attrs = objectOf(entry.attrs);
-    if (attrs?.detached === true) return null;
-    const stream = attrs?.stream;
+    const stream = objectOf(entry.attrs)?.stream;
     return typeof stream === "string" && stream.length > 0 ? stream : null;
 };
 
@@ -68,6 +64,7 @@ const summaryTail = (ev: StreamConcludedPayload): string => {
 // Launched executions awaiting their conclusion, keyed by stream address. Plain Map, no timers.
 export default class StreamTrace {
     #launched = new Map<string, LogEntryWire>();
+    #greyed = new Set<string>();
 
     // A started execution has no outcome yet; its row waits for its stream's conclusion.
     // False for any other row, including an execution the daemon refused to start.
@@ -83,6 +80,19 @@ export default class StreamTrace {
         return this.#launched.get(target);
     }
 
+    // Executions launched before the given turn and still open: each is returned once, for the
+    // grey row that says the model moved on while it runs ({§cli-what-is-not-rendered}).
+    staleBefore(loopSeq: number, turnSeq: number): LogEntryWire[] {
+        const stale: LogEntryWire[] = [];
+        for (const [address, launch] of this.#launched) {
+            if (this.#greyed.has(address)) continue;
+            if (launch.loop_seq > loopSeq || (launch.loop_seq === loopSeq && launch.turn_seq >= turnSeq)) continue;
+            this.#greyed.add(address);
+            stale.push(launch);
+        }
+        return stale;
+    }
+
     // Growth and per-channel close carry nothing a line-oriented view should say.
     event(_ev: StreamEventPayload): string | null {
         return null;
@@ -93,6 +103,7 @@ export default class StreamTrace {
     concluded(ev: StreamConcludedPayload): string {
         const launch = this.#launched.get(ev.target);
         this.#launched.delete(ev.target);
+        this.#greyed.delete(ev.target);
         const status = ev.result.status ?? 0;
         const failed = status !== 200;
         const title = ev.result.problem?.title;

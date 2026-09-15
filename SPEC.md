@@ -558,9 +558,10 @@ A glob READ lands one receipt row per path, each stamped `attrs.fanout` by the s
 the row with the last index arrives: the glob as the target and `count` as `{n}`; a failed
 path names the collapsed row. A started execution (status 200, outcome `started`) has no
 outcome yet: the service stamps its stream address on the row (`attrs.stream`), and the row
-appears once, when that stream concludes, colored by the conclusion (§5.3). A detached
-execution (`<-1>`) is nobody's obligation: its row stands when it starts, and its eventual
-conclusion renders on its own.
+appears when that stream concludes, colored by the conclusion (§5.3). An execution still open
+when the following turn begins shows once in grey, with no outcome, and again when it concludes;
+a detached execution (`<-1>`) is covered by the same rule, greyed at the next turn and shown
+again when it eventually ends.
 
 Width-tolerant; no fixed column widths. Every row begins at column zero.
 
@@ -609,7 +610,11 @@ answer and JSON mode remains silent.
 #### §5.1.2 Plan {§cli-plan-rendering}
 
 TASK renders no keyword. A lead line stands where `TASK` was, blank unless the receipt has
-words of its own, then the inventory as a status-column table:
+words of its own, then the inventory as a status-column table. The table stands before the
+turn's operation rows: the waterfall holds a turn's model rows until its TASK arrives, then
+renders the table and the rows in authored order, so the model's response ends the turn rather
+than its checklist; a turn without a TASK releases its rows when the next turn begins or the
+loop concludes.
 
 - Columns are the native statuses present in the inventory, in the stable relative order
   `todo`, `in_progress`, `waiting`, `completed`, `failed`; an empty status has no column,

@@ -13,6 +13,7 @@ process.env.NO_COLOR = "1";
 const {
     extractSendBody,
     renderLogEntry,
+    renderPendingRow,
     renderReasoning,
     renderSummary,
     curationGauge,
@@ -703,4 +704,10 @@ test("[§cli-summary-line-per-looprun] renderSummary takes both gauge denominato
     assert.match(line, /ctx 25%\/48k/, "the window came from the loop's usage, not a client-side alias lookup");
     // A loop whose window the daemon can't report → no gauge (never a stale number).
     assert.doesNotMatch(renderSummary(2, 1000, terminalResult(200), false, { ...loopUsage, contextCapacity: null }), /ctx /);
+});
+
+test("[§cli-what-is-not-rendered] a pending execution's grey row is the plain row with no outcome", () => {
+    const row = renderPendingRow(entry({ op: "sh", scheme: null, pathname: null, tx: { runtime: "sh", target: null, aside: "Run the suite", body: "npm test" }, rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
+    assert.equal(row, "sh Run the suite");
+    assert.doesNotMatch(row, /npm test|started/);
 });

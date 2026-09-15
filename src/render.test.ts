@@ -278,29 +278,29 @@ test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the
     })), "READ (pets_*.md) — No path matched pets_*.md.");
 });
 
-test("[§cli-log-entry-line-format] an EXEC row is named by its registered executor and carries no body", () => {
+test("[§cli-log-entry-line-format] an execution row is named by its runtime and carries no body", () => {
     const line = renderLogEntry(entry({
-        op: "EXEC", scheme: null, pathname: null,
-        tx: { op: "EXEC", executor: "sh", target: null, aside: "Run the focused tests", body: "npm test -- --grep focused" },
+        op: "sh", scheme: null, pathname: null,
+        tx: { runtime: "sh", target: null, aside: "Run the focused tests", body: "npm test -- --grep focused" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     }));
     assert.equal(line, "sh Run the focused tests");
     assert.doesNotMatch(line, /npm test/, "invocation bodies never reach the waterfall");
 });
 
-test("[§cli-log-entry-line-format] an EXEC whose fence named no executor is named by the runtime the daemon resolved", () => {
+test("[§cli-log-entry-line-format] a client `!` row is named by its op, the daemon's default runtime", () => {
     const started = entry({
-        op: "EXEC", origin: "client", scheme: null, pathname: null, status_rx: 200,
-        tx: { op: "EXEC", executor: null, target: null, aside: null, body: "printf x" },
+        op: "sh", origin: "client", scheme: null, pathname: null, status_rx: 200,
+        tx: { runtime: "sh", target: null, aside: null, body: "printf x" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
-    assert.equal(renderLogEntry(started), "sh", "the human's `!` command names no executor; the daemon's choice is the row");
+    assert.equal(renderLogEntry(started), "sh", "the human's `!` command runs in the default shell; its row says so");
     const refused = entry({
-        op: "EXEC", scheme: null, pathname: null, status_rx: 404,
-        tx: { op: "EXEC", executor: "cobol", target: null, aside: null, body: "x" },
+        op: "cobol", scheme: null, pathname: null, status_rx: 404,
+        tx: { runtime: "cobol", target: null, aside: null, body: "x" },
         rx: { status: 404, problem: { type: "x", title: "Unknown executor", status: 404 } },
     });
-    assert.equal(renderLogEntry(refused), "cobol — Unknown executor", "a refused EXEC is an ordinary failed row under its authored executor");
+    assert.equal(renderLogEntry(refused), "cobol — Unknown executor", "a refused execution is an ordinary failed row under its runtime");
 });
 
 test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own path", () => {

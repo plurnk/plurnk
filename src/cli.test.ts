@@ -57,8 +57,8 @@ test("formatPlain: no target at all → no trailing path", () => {
 });
 
 test("formatPlain: a durable aside labels the operation without its comment delimiters", () => {
-    const s = formatPlain(entry({ op: "EXEC", tx: { aside: "Lists issues", body: "{}" } }));
-    assert.equal(s, "[200] model EXEC — Lists issues");
+    const s = formatPlain(entry({ op: "gitea", tx: { aside: "Lists issues", body: "{}" } }));
+    assert.equal(s, "[200] model gitea — Lists issues");
 });
 
 test("formatPlain: SEND with numeric signal → '[N]' sub", () => {

@@ -153,7 +153,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); await rm(dir, { recursive: true, force: true }); }
     });
 
-    test("a concluded client EXEC reads inline output from the notified entry owner", async (t) => {
+    test("a concluded client execution reads inline output from the notified entry owner", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {

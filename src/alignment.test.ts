@@ -18,7 +18,7 @@ const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
 
 test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares the left edge and reads as the operation written", () => {
     const streams = new StreamTrace();
-    streams.launch(entry({ op: "EXEC", scheme: null, pathname: null, sequence: 8, status_rx: 200, rx: { status: 200, outcome: "started" }, tx: { op: "EXEC", executor: "sh", aside: "list the files" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
+    streams.launch(entry({ op: "sh", scheme: null, pathname: null, sequence: 8, status_rx: 200, rx: { status: 200, outcome: "started" }, tx: { runtime: "sh", aside: "list the files" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
     const rows: Array<[string, string]> = [
         ["operation", renderLogEntry(entry({}))],
         ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not found", status: 404 } } }))],

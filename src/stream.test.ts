@@ -27,8 +27,8 @@ const concluded = (over: Partial<{ status: number; summary: string; wakeAction: 
 // A started execution's row as the daemon journals it: scheme and pathname null, the stream
 // address and the resolved runtime stamped on `attrs`, status 200 with outcome `started`.
 const launch = (over: Partial<LogEntryWire> = {}): LogEntryWire => ({
-    id: 8, op: "EXEC", origin: "model", signal: null, scheme: null, pathname: null, hostname: null, fragment: null,
-    lineMarker: null, status_rx: 200, tx: { op: "EXEC", executor: "python", aside: "Run the focused tests", body: "print(1)" },
+    id: 8, op: "python", origin: "model", signal: null, scheme: null, pathname: null, hostname: null, fragment: null,
+    lineMarker: null, status_rx: 200, tx: { runtime: "python", aside: "Run the focused tests", body: "print(1)" },
     rx: { status: 200, outcome: "started" }, attrs: { runtime: "python", stream: "python:///0c0ffee1", coordinate: { loop_seq: 1, turn_seq: 2, sequence: 1 } },
     tags: [], loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
@@ -43,15 +43,15 @@ test("[§cli-what-is-not-rendered] start and growth events say nothing in the tr
 
 test("streamAddress: a started execution's row carries the address the daemon stamped on it", () => {
     assert.equal(streamAddress(launch()), "python:///0c0ffee1");
-    assert.equal(streamAddress(unstarted()), null, "an EXEC the daemon refused has no stream");
+    assert.equal(streamAddress(unstarted()), null, "an execution the daemon refused has no stream");
     assert.equal(streamAddress(launch({ attrs: { runtime: "sh", stream: "sh:///0c0ffee1", detached: true } })), null, "a detached execution's row is never held for a conclusion");
-    assert.equal(streamAddress(launch({ op: "READ" })), null);
+    assert.equal(streamAddress(launch({ attrs: { runtime: "python" } })), null, "no stamped stream, no launch");
 });
 
 test("StreamTrace: launch records a started execution only; a client `!` with no authored executor concludes under the resolved runtime", () => {
     const t = new StreamTrace();
-    assert.equal(t.launch(unstarted()), false, "a refused EXEC is an ordinary row");
-    assert.equal(t.launch(launch({ origin: "client", tx: { op: "EXEC", executor: null, aside: null, target: null, body: "printf x" } })), true);
+    assert.equal(t.launch(unstarted()), false, "a refused execution is an ordinary row");
+    assert.equal(t.launch(launch({ origin: "client", tx: { runtime: "python", aside: null, target: null, body: "printf x" } })), true);
     assert.equal(t.concluded(concluded()), "python", "no executor authored, no aside: the runtime the daemon resolved, alone");
 });
 

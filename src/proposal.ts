@@ -5,7 +5,7 @@
 //
 // Wire shape per plurnk-service Daemon.ts: loop/proposal carries an op kind,
 // a target {scheme, pathname}, a body string (udiff for EDIT, command summary
-// for EXEC), and an opaque attrs object. loop.resolve takes {logEntryId,
+// for an execution), and an opaque attrs object. loop.resolve takes {logEntryId,
 // decision, body?, outcome?}.
 
 import ModelText from "./model-text.ts";
@@ -15,6 +15,9 @@ import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LoopPolicy } from "@plurnk/plurnk-contracts";
+
+// An execution's op is its lowercase runtime tag; operation keywords are uppercase (plurnk-service #659).
+const isRuntimeOp = (op: string): boolean => /^[a-z]/.test(op);
 
 export interface ProposalParams {
     logEntryId: number;
@@ -54,11 +57,11 @@ export const renderBody = (op: string, body: string): string => {
     }).join("\n");
 };
 
-// EXEC with no explicit target runs in the default shell (`sh`) — name it,
+// An execution with no explicit target is named by its runtime (`sh` is the default shell):
 // don't render "(no target)" as if the proposal were malformed. Every other op
 // without a target is genuinely targetless.
 export const formatTarget = ({ scheme, pathname }: ProposalParams["target"], op?: string): string => {
-    if (scheme === null) return op === "EXEC" ? "sh" : "(no target)";
+    if (scheme === null) return op !== undefined && isRuntimeOp(op) ? op : "(no target)";
     return `${scheme}://${pathname ?? ""}`;
 };
 
@@ -148,7 +151,7 @@ export const keyToResolution = async (key: string, params: ProposalParams): Prom
         case "a":
             return { decision: "accept" };
         case "e": {
-            const edited = await editInEditor(params.body, params.op === "EDIT" ? ".diff" : params.op === "EXEC" ? ".sh" : ".txt");
+            const edited = await editInEditor(params.body, params.op === "EDIT" ? ".diff" : isRuntimeOp(params.op) ? ".sh" : ".txt");
             if (edited === null) return { decision: "cancel", outcome: "empty_editor_buffer" };
             return { decision: "accept", body: edited };
         }

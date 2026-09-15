@@ -65,7 +65,7 @@ test("[§cli-notification-shape] renderProposalMenu: shows the op, target, and t
 
 test("renderBody: non-EDIT op → body unchanged (no diff coloring)", () => {
     const body = "ls -la /tmp";
-    assert.equal(renderBody("EXEC", body), body);
+    assert.equal(renderBody("sh", body), body);
 });
 
 test("renderBody: EDIT with udiff → coloring applied per line", () => {
@@ -109,8 +109,8 @@ test("formatTarget: scheme + null pathname → 'scheme://'", () => {
     assert.equal(formatTarget({ scheme: "exec", pathname: null }), "exec://");
 });
 
-test("formatTarget: EXEC with no target → 'sh' (the default shell), not '(no target)'", () => {
-    assert.equal(formatTarget({ scheme: null, pathname: null }, "EXEC"), "sh");
-    // Non-EXEC ops with no target are genuinely targetless.
+test("formatTarget: an execution with no target → its runtime, not '(no target)'", () => {
+    assert.equal(formatTarget({ scheme: null, pathname: null }, "sh"), "sh");
+    // Keyword ops with no target are genuinely targetless.
     assert.equal(formatTarget({ scheme: null, pathname: null }, "EDIT"), "(no target)");
 });

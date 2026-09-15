@@ -383,7 +383,7 @@ test("BridgeTransport.rpc: a proposal-gated action resumes and returns its resul
         res.writeHead(200, { "content-type": "text/event-stream" });
         if (call === 1) {
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
-            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EXEC", target: null, body: "printf done" }) }));
+            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "sh", target: null, body: "printf done" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
             res.write(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "prop:42", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
@@ -614,7 +614,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
         res.writeHead(200, { "content-type": "text/event-stream" });
         if (call === 1) {
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:575", toolCallName: "request_approval" }));
-            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:575", delta: JSON.stringify({ op: "EXEC", target: null, body: "gh issue view 573" }) }));
+            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:575", delta: JSON.stringify({ op: "sh", target: null, body: "gh issue view 573" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:575" }));
             res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:575", reason: "tool_call", toolCallId: "prop:575" }] } }));
         } else {

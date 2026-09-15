@@ -526,7 +526,7 @@ Markdown pass:
 ```
 
 - `OP` is the operation's name, bold: green when the outcome succeeded, pink otherwise. An
-  EXEC row is named by its registered executor (`sh`, `python`), never a generic EXEC.
+  execution row is named by its runtime (`sh`, `python`): the row's `op` is the fence name as written, never a generic keyword.
 - `(target)` is the authored target text, in its parentheses; `<scope>` is the canonical
   `<mark,...>` form; `<pattern>` is the matcher as authored (`/regex/i`, `~query`, `&symbol`).
   COPY and MOVE render `(source) <scope> (destination) <scope>`, each scope beside its own path.
@@ -630,7 +630,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
 - Raw bodies for non-broadcast ops: command snippets, JSON arguments, edit replacements, and result previews. SEND bodies and TASK inventories are rendered (§5.4, §5.1.2); other op bodies surface only via `entry.read` or a READ fence targeting `log://...`.
 - Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
-- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching EXEC fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.7.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.7.
 
 ### §5.4 Messages and dispositions {§cli-broadcast-send-rendering}
 
@@ -681,9 +681,9 @@ Side-effecting operations (file writes, exec) emit a `plurnk.proposal` event whe
 loop/proposal {
     logEntryId: number,           // pending log_entries row
     loopId, turnId: number,
-    op: "EDIT" | "EXEC" | ...,
+    op: "EDIT" | <runtime tag> | ...,
     target: { scheme: string | null, pathname: string | null },
-    body: string,                 // udiff for EDIT; command summary for EXEC
+    body: string,                 // udiff for EDIT; command summary for an execution
     attrs: object,                // scheme-specific payload (opaque to client)
     policy: LoopPolicy,           // loop's immutable proposal disposition
 }
@@ -711,7 +711,7 @@ Single-keypress menu (raw stdin):
 | `c` | `loop.resolve({decision: "cancel"})`. |
 | any other | `cancel` with outcome `"unknown_key"`. Safe default; includes ctrl-c. |
 
-Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. EXEC bodies render plain.
+Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. Execution bodies render plain.
 
 ### §6.3 `--yolo` / `PLURNK_CLIENT_YOLO` {§cli-yolo-plurnkyolo}
 
@@ -965,14 +965,14 @@ without colliding with the active prompt.
 The daemon also projects streaming-channel metadata as `plurnk.stream` events.
 Streams are content lifecycle, not Problems or Notices. The client renders no
 stream lifecycle of its own: a start or growth event writes nothing, and a
-conclusion renders the launching EXEC fence's operation row once (§5.3).
+conclusion renders the launching fence's operation row once (§5.3).
 
 ```
 stream/event     { entryId, workerId, target, channel, state, contentLength }
 stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction }
 ```
 
-`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the started EXEC row as `attrs.stream` (`python:///0c0ffee1`), opaque to the client and never composed. The TUI keeps the started row until that address concludes, then renders it once, per §5.1:
+`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the started execution row as `attrs.stream` (`python:///0c0ffee1`), opaque to the client and never composed. The TUI keeps the started row until that address concludes, then renders it once, per §5.1:
 
 ```
 python Run the focused tests

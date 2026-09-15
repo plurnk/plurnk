@@ -165,22 +165,14 @@ export const entryTarget = (entry: LogEntryWire): string | null => {
 export const entryScope = (entry: LogEntryWire): string | null =>
     entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;
 
-// The row names the operation as the model wrote it: the registered executor for an
-// EXEC fence (the runtime the daemon resolved when the fence named none), the op otherwise.
-export const operationIdentity = (entry: LogEntryWire): string => {
-    if (entry.op !== "EXEC") return entry.op;
-    const executor = objectOf(entry.tx)?.executor;
-    if (typeof executor === "string" && executor.length > 0) return executor;
-    const runtime = objectOf(entry.attrs)?.runtime;
-    return typeof runtime === "string" && runtime.length > 0 ? runtime : "EXEC";
-};
+// The row names the operation as the model wrote it: the row's `op` is the heading token, an
+// operation keyword or an execution's runtime tag (plurnk-service #659).
+export const operationIdentity = (entry: LogEntryWire): string => entry.op;
 
 // The authored target text when the wire carries it; the daemon's address otherwise.
 export const authoredTarget = (entry: LogEntryWire): string | null => {
     const raw = (objectOf(entry.tx)?.target as { raw?: unknown } | null | undefined)?.raw;
-    if (typeof raw === "string") return raw;
-    // An EXEC row's address is its stream, not a target the fence named.
-    return entry.op === "EXEC" ? null : entryTarget(entry);
+    return typeof raw === "string" ? raw : entryTarget(entry);
 };
 
 // The matcher as authored on the heading (`/regex/i`, `~query`, `&symbol`, a bare glob).

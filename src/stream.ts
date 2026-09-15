@@ -1,6 +1,6 @@
 // Executions in the waterfall ({§cli-what-is-not-rendered}): no start row, no growth ticks,
 // no byte counts. An execution appears once, when its outcome is known, as the operation row
-// of the EXEC fence that launched it, colored by that outcome. Activity while it runs is the
+// of the fence that launched it, colored by that outcome. Activity while it runs is the
 // status line's business, not the transcript's.
 
 import ModelText from "./model-text.ts";
@@ -48,12 +48,11 @@ export interface StreamConcludedPayload extends StreamCoord {
 }
 
 // A started execution's row carries its stream address: the daemon stamps `attrs.stream` on the
-// EXEC row it started (status 200, outcome `started`), and every stream/event and stream/concluded
+// execution row it started (status 200, outcome `started`), and every stream/event and stream/concluded
 // for that execution names the same address as `target`. Opaque to the client, never composed.
 // A detached execution (`<-1>`) is nobody's obligation: its row stands when it starts, and its
 // eventual conclusion renders on its own.
 export const streamAddress = (entry: LogEntryWire): string | null => {
-    if (entry.op !== "EXEC") return null;
     const attrs = objectOf(entry.attrs);
     if (attrs?.detached === true) return null;
     const stream = attrs?.stream;
@@ -71,7 +70,7 @@ export default class StreamTrace {
     #launched = new Map<string, LogEntryWire>();
 
     // A started execution has no outcome yet; its row waits for its stream's conclusion.
-    // False for any other row, including an EXEC the daemon refused to start.
+    // False for any other row, including an execution the daemon refused to start.
     launch(entry: LogEntryWire): boolean {
         const address = streamAddress(entry);
         if (address === null) return false;

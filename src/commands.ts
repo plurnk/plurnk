@@ -79,6 +79,7 @@ export const COMMANDS = [
     { name: "workspaces", usage: "/workspaces", summary: "List daemon workspaces.", group: "inspect" },
     { name: "workers", usage: "/workers", summary: "List this workspace's workers as a topology rooted at the bound worker.", group: "inspect" },
     { name: "log", usage: "/log [limit]", summary: "Read recent log entries.", group: "inspect" },
+    { name: "look", usage: "/look <address> [scope] [pattern]", summary: "Inspect a resource for yourself: no loop, no log entry, no wait on the model.", group: "inspect" },
 
     { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },

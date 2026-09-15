@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { RUNNING_VERBS, handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
@@ -224,7 +224,7 @@ test("buildHeader: reasoning is a distinct durable policy label", () => {
     assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /reasoning:/);
 });
 
-interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[]; attached: string[] }
+interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[]; looks: string[]; attached: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
     const calls: Array<{ method: string; params?: unknown }> = [];
@@ -232,6 +232,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const imports: string[] = [];
     const resolved: string[] = [];
     const composed: boolean[] = [];
+    const looks: string[] = [];
     let workspace = { name: "sess" };
     let worker: string | null = "sess";
     const attached: string[] = [];
@@ -273,9 +274,23 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         importFile: async (p) => { imports.push(p); },
         resolveProposal: async (action) => { resolved.push(action); },
         composeInEditor: async () => { composed.push(true); },
-        calls, out, imports, resolved, composed, attached,
+        look: async (rest) => { looks.push(rest); },
+        calls, out, imports, resolved, composed, attached, looks,
     };
 };
+
+// ─── /look (the human's inspection) ────────────────────────────────────
+test("[§cli-inspection] handleVerb /look hands the address to the session's inspector, no rpc of its own", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/look worker:///plan.md <1,20>", ctx);
+    assert.deepEqual(ctx.looks, ["worker:///plan.md <1,20>"]);
+    assert.deepEqual(ctx.calls, []);
+});
+
+test("[§cli-inspection] inspection stays reachable while a loop runs; policy verbs do not", () => {
+    assert.ok(RUNNING_VERBS.has("look") && RUNNING_VERBS.has("stop") && RUNNING_VERBS.has("quit"));
+    assert.ok(!RUNNING_VERBS.has("model") && !RUNNING_VERBS.has("workspace"));
+});
 
 // ─── /attach (bind or mint a conversation worker by name) ─────────────
 test("[§cli-workers-topology] handleVerb /attach <known> rebinds the thread and reports the bound worker", async () => {

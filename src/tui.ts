@@ -21,6 +21,7 @@ import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } fr
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -115,6 +116,10 @@ export const altShortcut = (forward: string): string | null => {
 // The AG-UI observation action owns validation and the single LOOK→READ rewrite.
 export const lookStatement = (line: string): string | null =>
     /^`{3,}LOOK(?![A-Za-z0-9_.+-])/.test(line) ? line : null;
+
+// Verbs that stay reachable while a loop is in flight: the mid-loop controls, the proposal
+// verbs, the universal escape, and the human's own inspection ({§cli-inspection}).
+export const RUNNING_VERBS: ReadonlySet<string> = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit", "quit", "look"]);
 
 export const linePolicy = promptPolicy;
 
@@ -319,6 +324,8 @@ export interface VerbContext {
     // Compose the prompt line in $EDITOR (plurnk#26) — places the result back
     // on the line (zsh edit-command-line convention); Enter submits.
     composeInEditor: () => Promise<void>;
+    // /look <address> [<scope>] [pattern] — inspect a resource for the human ({§cli-inspection}).
+    look: (rest: string) => Promise<void>;
 }
 
 export type ResolvedModelSpec = ModelRoute;
@@ -363,6 +370,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "help":
             write(renderCommandHelp(rest));
             return;
+        case "look": await ctx.look(rest); return;
         case "models": await runModels(rpc, {
             json: false,
             query: rest.length === 0 ? {} : { search: rest },
@@ -598,11 +606,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let searchPercent: number | null = null;
     // A `?` prompt asks for review of that run; the request outranks the standing yolo setting.
     let reviewRequested = false;
-    // LOOK off-run inspection: the REAL target URIs of prior operations the
-    // waterfall has shown (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/
-    // Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
-    const priorTargets: string[] = [];
+    // Inspection: the REAL target URIs of prior operations the waterfall has shown
+    // (oldest→newest, e.g. worker:///plan.md), each with the worker it was seen under, feed
+    // the Alt-p/Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
+    const priorTargets: Array<{ target: string; workerId: number | null }> = [];
     let lookCursor: number | null = null;
+    // The cycler offers the bound conversation's targets only: a hop is a full attach, and an
+    // address harvested under another worker would resolve against the wrong log.
+    const lookCandidates = (): string[] => priorTargets
+        .filter(({ workerId }) => workerId === null || conversationWorkerId === null || workerId === conversationWorkerId)
+        .map(({ target }) => target);
     let liveReasoning: { messageId: string; rendered: string } | null = null;
     let pendingProposal: ProposalParams | null = null;
     let pendingQuestion: { interactionId: number; form: QuestionForm } | null = null;
@@ -741,7 +754,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // the waterfall has shown (the same harvest the LOOK cycler keeps).
             getWorkerNames: async () => {
                 const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
-                const seen = priorTargets.map(workerNameFromTarget).filter((name): name is string => name !== null);
+                const seen = priorTargets.map(({ target }) => workerNameFromTarget(target)).filter((name): name is string => name !== null);
                 return [...new Set([...workers.map((worker) => worker.name), ...seen])];
             },
             getReasoningPolicies: () => workerReasoning.supportedPolicies,
@@ -792,23 +805,34 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     const setLine = (text: string): void => surface.setInput(text);
 
-    // Alt-p/Alt-n: walk the REAL target URIs of prior operations and template a
-    // a complete LOOK fence into the buffer — an editable starting point
-    // (hand-edit before Enter). Nothing to cycle → leave the line be.
+    // Alt-p/Alt-n: walk the REAL target URIs of the bound conversation's prior operations and
+    // put `/look <target>` into an EMPTY composer — an editable starting point (hand-edit
+    // before Enter). A composer holding anything else is the user's; leave it alone.
     const cycleLook = (dir: "up" | "down"): void => {
-        lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
+        const current = surface.editor.getText();
+        if (current.length > 0 && !current.startsWith("/look ")) return;
+        const candidates = lookCandidates();
+        lookCursor = cycleCoord(candidates.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine("```LOOK (" + priorTargets[lookCursor] + ")```");
+        setLine(`/look ${candidates[lookCursor]}`);
     };
 
-    // LOOK is a pure query: AG-UI validates and rewrites the original statement, then
-    // resolves READ without writing a log entry. Run it on the conversation connection
-    // so run-relative targets resolve against the right run.
-    const runLook = async (lookText: string): Promise<OperationResult> => {
-        const r = await transport.rpc("op.look", { text: lookText }) as OperationResult & { content: string | null };
-        const content = r.content ?? "";
-        printAbove(content.length > 0 ? content : `  \x1b[2m(look ${r.status}: no content)\x1b[0m`);
-        return r;
+    // Inspection is the human's, never the loop's ({§cli-inspection}): op.look validates and
+    // rewrites the LOOK, resolves the READ as the bound conversation, and writes no log entry;
+    // the readout prints above the composer. No lifecycle, summary, or tally, and no wait on
+    // a running model.
+    const runLook = async (lookText: string): Promise<void> => {
+        try {
+            const r = await transport.rpc("op.look", { text: lookText }) as LookResult;
+            printAbove(renderLook(lookText, r));
+        } catch (cause) {
+            // An unsuccessful READ reaches the client as its exact Problem: that is the look's outcome.
+            if (!(cause instanceof ProblemError)) throw cause;
+            printAbove(renderLook(lookText, { status: cause.problem.status, problem: cause.problem }));
+        }
+    };
+    const inspect = (lookText: string): void => {
+        void runLook(lookText).catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
     };
 
     // pi-tui owns multiline input, paste normalization, modern keyboard
@@ -918,7 +942,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (isEntryMaterialization(entry)) return;
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
-            if (target !== null) priorTargets.push(target);
+            if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
             // {§cli-what-is-not-rendered} — a started execution appears when its outcome is known.
             if (streams.launch(entry)) return;
             // A glob READ's rows collapse to the authored statement once the last row is in.
@@ -1033,6 +1057,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (action === "edit") { await editAndResolve(); return; }
             await resolvePending({ decision: action });
         },
+        look: async (rest) => {
+            const fence = lookFence(rest);
+            if (fence === null) { printAbove("  /look <address> [<scope>] [pattern]"); return; }
+            await runLook(fence);
+        },
         // /editor · Alt-e: place the edited multiline value back in the composer;
         // Enter remains the only submit gesture.
         composeInEditor: async () => {
@@ -1112,8 +1141,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // /quit is the universal escape: NEVER "busy"-blocked, so a wedged
                 // or disconnected loop is always exitable (the daemon owns the loop;
                 // quitting the client just drops the connection — resumable).
-                const PASS = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit", "quit"]);
-                if (inFlight && !PASS.has(verb)) {
+                if (inFlight && !RUNNING_VERBS.has(verb)) {
                     printAbove("  \x1b[2m(busy; /stop to cancel, /quit to exit, /help for the language)\x1b[0m");
                     return;
                 }
@@ -1131,7 +1159,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // steering case (loop.inject, #193), NOT a conflict — inject it
                 // into the live loop. (Raw DSL / exec are separate client-run
                 // ops; keep them out of a running conversation for now.)
-                if (dslStatement(trimmed) !== null || trimmed.startsWith("!")) {
+                // Inspection is not a client op: it runs beside the loop ({§cli-inspection}).
+                const runningDsl = dslStatement(trimmed);
+                const runningLook = runningDsl !== null ? lookStatement(runningDsl) : null;
+                if (runningLook !== null) { inspect(runningLook); reprompt(); return; }
+                if (runningDsl !== null || trimmed.startsWith("!")) {
                     printAbove("  \x1b[2m(loop running — /stop before a client op)\x1b[0m");
                     return;
                 }
@@ -1142,6 +1174,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reprompt();
                 return;
             }
+
+            // A typed LOOK fence is inspection, not a run ({§cli-inspection}).
+            const statementText = dslStatement(trimmed);
+            const typedLook = statementText !== null ? lookStatement(statementText) : null;
+            if (typedLook !== null) { inspect(typedLook); reprompt(); return; }
 
             inFlight = true;
             lifecycle = "running";
@@ -1157,12 +1194,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             let usage: LoopUsage | undefined;
 
             try {
-                const statementText = dslStatement(trimmed);
-                const lookText = statementText !== null ? lookStatement(statementText) : null;
-                if (lookText !== null) {
-                    // LOOK: off-run READ on the side connection — for me, not the model.
-                    terminalResult = await runLook(lookText);
-                } else if (statementText !== null) {
+                if (statementText !== null) {
                     // Raw DSL: send to op.parse
                     const result = await transport.rpc("op.parse", { text: statementText }) as { results: OperationResult[] };
                     terminalResult = result.results[result.results.length - 1] ?? { status: 0 };

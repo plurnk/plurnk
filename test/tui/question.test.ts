@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-for (const action of ["accept", "cancel"]) {
+for (const action of ["accept", "cancel", "stop"]) {
     test(`[§cli-question-forms]: ${action} resumes a question's WAIT through the TUI and AG-UI`, { timeout: 90_000 }, async (t) => {
         const service = await locateDaemon();
         if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
@@ -67,9 +67,24 @@ for (const action of ["accept", "cancel"]) {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("Ask for branch details.\r");
             await tui.waitFor(/branch \(string; optional; Enter skips\)/, 30_000);
+            tui.write("/model\r");
+            await tui.waitFor(/model: questionfixture/);
+            tui.write("/look worker:///question-check.md\r");
+            await tui.waitFor(/LOOK \(worker:\/\/\/question-check\.md\) —/);
+            assert.equal(requests.length, 1, "inspection and commands do not answer the question");
+            if (action === "stop") {
+                tui.write("/stop\r");
+                await tui.waitFor(/cancelled|final 499/);
+                assert.equal(requests.length, 1, "stopping does not generate a continuation");
+                tui.write("/attach after-stop\r");
+                await tui.waitFor(/worker: after-stop \(new\)/);
+                tui.write("/quit\r");
+                assert.equal(await tui.exited, 0);
+                return;
+            }
             if (action === "cancel") tui.write("/cancel\r");
             else {
-                tui.write("\r");
+                tui.write("\\/model\r");
                 await tui.waitFor(/count \(integer; required\)/);
                 tui.write("wrong-type\r");
                 await tui.waitFor(/count requires a JSON integer value/);
@@ -82,6 +97,7 @@ for (const action of ["accept", "cancel"]) {
             const packet = JSON.parse(requests[1]!).messages.map((message: { content: unknown }) => JSON.stringify(message.content)).join("\n");
             assert.match(packet, new RegExp(action), "the continuation receives the elicitation result");
             if (action === "accept") {
+                assert.match(packet, /\/model/, "an escaped command is a literal answer, not a client command");
                 assert.match(packet, /typed-through-the-tui/);
                 assert.match(packet, /count/);
             }

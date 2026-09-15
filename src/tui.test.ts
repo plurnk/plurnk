@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RUNNING_VERBS, handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
 
@@ -287,9 +288,12 @@ test("[§cli-inspection] handleVerb /look hands the address to the session's ins
     assert.deepEqual(ctx.calls, []);
 });
 
-test("[§cli-inspection] inspection stays reachable while a loop runs; policy verbs do not", () => {
-    assert.ok(RUNNING_VERBS.has("look") && RUNNING_VERBS.has("stop") && RUNNING_VERBS.has("quit"));
-    assert.ok(!RUNNING_VERBS.has("model") && !RUNNING_VERBS.has("workspace"));
+test("{§cli-active-command-admission} only commands that change the conversation binding require it to settle", () => {
+    assert.deepEqual(COMMANDS.filter(({ name }) => commandSpec(name)?.rebinds).map(({ name }) => name),
+        ["workspace", "rename", "worker", "attach", "parent", "enter", "older", "newer"]);
+    for (const name of ["look", "model", "reasoning", "mcp", "script", "stop", "quit"]) {
+        assert.notEqual(commandSpec(name)?.rebinds, true, `${name} does not rebind the conversation`);
+    }
 });
 
 // ─── /attach (bind or mint a conversation worker by name) ─────────────
@@ -534,14 +538,14 @@ test("{§worker-model-selection}: a failed /model surfaces the server's rejectio
     const ctx = makeCtx({ "worker.model.set": () => { throw new Error("No provider is configured for this worker."); } });
     await handleVerb("/model mystery", ctx);
     assert.equal(ctx.model, null, "the failed set changes nothing client-side");
-    assert.match(ctx.out.join(""), /model set failed: No provider is configured/);
+    assert.match(ctx.out.join(""), /error: No provider is configured for this worker\./);
 });
 
 test("{§worker-model-selection}: /model rejects a malformed route projection", async () => {
     const ctx = makeCtx({ "worker.model.set": { provider: "openai" } });
     await handleVerb("/model broken", ctx);
     assert.equal(ctx.model, null);
-    assert.match(ctx.out.join(""), /model set failed: invalid ModelRoute/);
+    assert.match(ctx.out.join(""), /error: invalid ModelRoute/);
 });
 
 test("handleVerb /workspace → workspace.create (new) + setWorkspace", async () => {

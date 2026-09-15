@@ -268,7 +268,7 @@ Triggered when `argv` has no positional prompt.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
     (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
-4. While a dispatch is in flight, additional input is rejected with a "busy" notice (except `/stop`, `/help`, and a bare `...`/`?`/`:` prompt, which injects).
+4. Input remains available during a run under {§cli-active-command-admission}; typed commands and shortcuts share admission.
 5. `Ctrl-C` or `EOF` exits cleanly.
 
 ### §3.1.1 Interactive command discovery {§cli-interactive-command-discovery}
@@ -358,6 +358,38 @@ recovery beneath. Inspection touches no loop lifecycle, summary, or tally, and s
 available while a loop runs. Alt-p and Alt-n cycle the real targets of the bound
 conversation's prior operations into an empty composer as `/look <target>`, an editable
 starting point; a composer holding anything else is left alone.
+
+### §cli-active-command-admission Commands during an active run
+
+Model inference and client actions are independent AG-UI runs. A command is not
+refused merely because inference is active. The daemon owns admission of model,
+reasoning, capability, and Functionality changes; its exact Problem is shown
+without changing the client's selected policy after a refusal.
+
+| Input | During a model run, including an interrupt awaiting review |
+|---|---|
+| Inspect, Functionality, model/policy commands | Ordinary action path; no inference, model-run summary, or tally of their own |
+| `/help`, `/import`, `/editor`, `/yolo` | Ordinary local behavior; the composer remains editable |
+| `!`, executable fences, `/script` | Client-owned operation run; its results and proposal resolutions remain separate from the model run |
+| Plain prompt or `...` | Inject into the bound conversation; no second local model stream |
+| `?`, or `:` removing an active `?` request | Explain that the requested policy belongs to a new loop; do not silently strip it and inject |
+| `/stop`, proposal responses, question responses, `/quit` | Remain reachable; resolve the identified owner, never whichever request arrived last |
+| `/workspace`, `/rename`, `/worker`, `/attach`, topology hops | Refused until the attached model run and submitted commands settle, with that specific reason |
+
+The TUI presents one attached conversation. Navigation does not implicitly cancel
+or detach its stream. Its binding cannot change halfway through a command; a
+navigation already underway admits no new bound work until confirmation. An
+action and every interrupt resume retain the workspace and thread captured at
+submission. Overlapping proposals resolve by proposal ID. This single-view
+restriction is TUI-owned, not a daemon restriction on independent conversations.
+Each stream reduces its own state; action snapshots do not replace the active
+model's status. Cancellation retires only the cancelled run's interrupts and
+local waits, including when its SSE has already ended at a question or proposal.
+
+During a question, recognized slash commands retain their normal meaning;
+`/cancel` dismisses the question. Other input answers the current field. A literal
+command can be entered with a leading backslash. Command completion or
+failure never consumes the question's answer slot.
 
 ### §3.2 Cancellation {§cli-cancellation}
 

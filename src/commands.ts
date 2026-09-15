@@ -29,6 +29,7 @@ export interface CommandSpec {
     usage: string;
     summary: string;
     group: CommandGroup;
+    rebinds?: boolean;
     subcommands?: readonly CommandSubcommand[];
 }
 
@@ -87,14 +88,14 @@ export const COMMANDS = [
     { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect or restrict this worker's capabilities.", group: "policy" },
     { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept.", group: "policy" },
 
-    { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace" },
-    { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace" },
-    { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace" },
-    { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace" },
-    { name: "parent", usage: "/parent", summary: "Hop to the bound worker's parent (Alt-h).", group: "workspace" },
-    { name: "enter", usage: "/enter", summary: "Hop into the bound worker's newest child (Alt-l).", group: "workspace" },
-    { name: "older", usage: "/older", summary: "Hop to the next older sibling worker, wrapping (Alt-j).", group: "workspace" },
-    { name: "newer", usage: "/newer", summary: "Hop to the next newer sibling worker, wrapping (Alt-k).", group: "workspace" },
+    { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace", rebinds: true },
+    { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace", rebinds: true },
+    { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace", rebinds: true },
+    { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace", rebinds: true },
+    { name: "parent", usage: "/parent", summary: "Hop to the bound worker's parent (Alt-h).", group: "workspace", rebinds: true },
+    { name: "enter", usage: "/enter", summary: "Hop into the bound worker's newest child (Alt-l).", group: "workspace", rebinds: true },
+    { name: "older", usage: "/older", summary: "Hop to the next older sibling worker, wrapping (Alt-j).", group: "workspace", rebinds: true },
+    { name: "newer", usage: "/newer", summary: "Hop to the next newer sibling worker, wrapping (Alt-k).", group: "workspace", rebinds: true },
 
     { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this worker's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },

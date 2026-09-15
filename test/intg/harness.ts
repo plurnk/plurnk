@@ -52,6 +52,7 @@ export interface Daemon {
     workspace: string;
     home: string;
     pid: number;
+    output: () => string;
     cleanup: () => Promise<void>;
 }
 
@@ -164,5 +165,5 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         await rm(workspace, { recursive: true, force: true });
     };
 
-    return { url, workspace, home, pid: child.pid ?? -1, cleanup };
+    return { url, workspace, home, pid: child.pid ?? -1, output: () => `${stdout}\n${stderr}`, cleanup };
 };

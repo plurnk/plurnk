@@ -58,6 +58,7 @@ import {
 import { EMPTY_TALLY, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
 import {
     COMMANDS,
+    commandSpec,
     FAMILY_ACTIONS,
     completeCommandSyntax,
     isCommandName,
@@ -116,10 +117,6 @@ export const altShortcut = (forward: string): string | null => {
 // The AG-UI observation action owns validation and the single LOOK→READ rewrite.
 export const lookStatement = (line: string): string | null =>
     /^`{3,}LOOK(?![A-Za-z0-9_.+-])/.test(line) ? line : null;
-
-// Verbs that stay reachable while a loop is in flight: the mid-loop controls, the proposal
-// verbs, the universal escape, and the human's own inspection ({§cli-inspection}).
-export const RUNNING_VERBS: ReadonlySet<string> = new Set(["stop", "help", "", "accept", "reject", "cancel", "edit", "quit", "look"]);
 
 export const linePolicy = promptPolicy;
 
@@ -397,7 +394,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
                 ctx.setModel(Validator.assertModelRoute(await rpc.call("worker.model.set", { selector: rest })));
                 write(`  model: ${rest}\n`);
             } catch (cause) {
-                write(`  model set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+                write(`${renderTuiFailure(cause)}\n`);
                 return;
             }
             try {
@@ -440,7 +437,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
                 )));
                 write(`  child: ${rest}\n`);
             } catch (cause) {
-                write(`  child set failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+                write(`${renderTuiFailure(cause)}\n`);
             }
             return;
         case "yolo":
@@ -573,8 +570,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let current = workspace;
     // Loop state, hoisted so the line handler and SIGINT can share it.
     let inFlight = false;
+    let pendingCommands = 0;
+    let rebinding = false;
     let cancelRequested = false;
+    let activeRun: ReturnType<Transport["run"]> | null = null;
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
+    const cancelLoop = async (reason: string): Promise<unknown> => {
+        const run = activeRun;
+        const result = await transport.rpc("loop.cancel", { reason });
+        run?.cancel();
+        return result;
+    };
     // One cancel path for every interrupt gesture (Ctrl-C, Esc, /stop): the
     // run's active drain cancels via loop.cancel; the pending loop resolves
     // 499 and the REPL continues. A failed cancel SURFACES — a stop button
@@ -583,7 +589,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (cancelRequested) return;
         cancelRequested = true;
         printAbove("  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m");
-        void transport.rpc("loop.cancel", { reason }).catch((err: unknown) => {
+        void cancelLoop(reason).catch((err: unknown) => {
+            cancelRequested = false;
             printAbove(`  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m`);
         });
     };
@@ -832,7 +839,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
     };
     const inspect = (lookText: string): void => {
-        void runLook(lookText).catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
+        pendingCommands += 1;
+        void runLook(lookText)
+            .catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); })
+            .finally(() => { pendingCommands -= 1; });
     };
 
     // pi-tui owns multiline input, paste normalization, modern keyboard
@@ -989,13 +999,20 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 if (line !== null) printAbove(line);
             }
         },
-        onProposal: (p) => {
-            if (opts.yolo && !reviewRequested) {
+        onProposal: (p, source = "model") => {
+            if (opts.yolo && !(source === "model" && reviewRequested)) {
                 void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
                     .catch((cause) => printAbove(`  \x1b[31mauto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
                 return;
             }
             proposalQueue.push(p);
+            showNextProposal();
+        },
+        onInterruptEnd: (id) => {
+            if (id === `int:${pendingQuestion?.interactionId}`) pendingQuestion = null;
+            if (id === `prop:${pendingProposal?.logEntryId}`) pendingProposal = null;
+            const index = proposalQueue.findIndex((proposal) => id === `prop:${proposal.logEntryId}`);
+            if (index !== -1) proposalQueue.splice(index, 1);
             showNextProposal();
         },
         onInteraction: (i) => {
@@ -1018,7 +1035,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // methods are never reached.
     const verbRpc = {
         call: async (method: string, params?: object): Promise<unknown> => {
-            const result = await transport.rpc(method, params);
+            const result = method === "loop.cancel"
+                ? await cancelLoop(String((params as { reason?: string } | undefined)?.reason ?? "user_stop"))
+                : await transport.rpc(method, params);
             await settlePeeks();
             return result;
         },
@@ -1076,17 +1095,30 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         },
     };
 
-    // Alt-<letter> shortcut → the same verb contract as typed `/verb`.
-    dispatchShortcut = (verb: string): void => {
-        void (async () => {
-            try {
-                if (await handleVerb(verb, verbCtx) === "quit") { requestClose(); return; }
-            } catch (cause) {
-                printAbove(renderTuiFailure(cause));
-            }
+    const dispatchVerb = async (line: string): Promise<void> => {
+        const { verb } = parseSlash(line);
+        const rebinds = commandSpec(verb)?.rebinds === true;
+        if (rebinds && (inFlight || pendingCommands > 0)) {
+            printAbove("  The conversation stays attached until its run and submitted commands settle; /stop cancels the run.");
+            return;
+        }
+        if (rebinding && !["help", "quit", "stop", ""].includes(verb)) {
+            printAbove("  Changing conversation; retry this command after the new binding is confirmed.");
+            return;
+        }
+        pendingCommands += 1;
+        if (rebinds) rebinding = true;
+        try {
+            if (await handleVerb(line, verbCtx) === "quit") requestClose();
+        } catch (cause) {
+            printAbove(renderTuiFailure(cause));
+        } finally {
+            pendingCommands -= 1;
+            if (rebinds) rebinding = false;
             reprompt();
-        })();
+        }
     };
+    dispatchShortcut = (line) => { void dispatchVerb(line); };
 
     return new Promise<void>((resolve) => {
         let closed = false;
@@ -1104,17 +1136,24 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
         const submit = async (line: string): Promise<void> => {
             if (line.trim().length > 0) printAbove(renderSubmittedInput(line, opts.yolo));
+            const trimmed = line.trim();
+            if (trimmed === "/cancel" && pendingQuestion !== null) {
+                const question = pendingQuestion;
+                await transport.resolveInteraction(question.interactionId, "cancel");
+                if (pendingQuestion === question) pendingQuestion = null;
+                reprompt();
+                return;
+            }
+            if (trimmed.startsWith("/") && (pendingQuestion === null || isCommandName(parseSlash(trimmed).verb))) {
+                await dispatchVerb(trimmed);
+                return;
+            }
             // Named fields consume input before prompt injection. No answer is
             // sent until the form is complete; invalid input stays visible here.
-            if (pendingQuestion !== null && !/^\/(?:stop|quit|help)(?:\s|$)/.test(line.trim())) {
-                const { interactionId, form } = pendingQuestion;
-                if (line.trim() === "/cancel") {
-                    await transport.resolveInteraction(interactionId, "cancel");
-                    pendingQuestion = null;
-                    reprompt();
-                    return;
-                }
-                const answer = form.submit(line);
+            if (pendingQuestion !== null) {
+                const question = pendingQuestion;
+                const { interactionId, form } = question;
+                const answer = form.submit(trimmed.startsWith("\\/") ? trimmed.slice(1) : line);
                 if (answer.kind !== "complete") {
                     if (answer.kind === "invalid") printAbove(answer.message);
                     printAbove(renderQuestionMenu(form.prompt, form.choices));
@@ -1122,63 +1161,50 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     return;
                 }
                 await transport.resolveInteraction(interactionId, answer.content);
-                pendingQuestion = null;
+                if (pendingQuestion === question) pendingQuestion = null;
                 reprompt();
                 return;
             }
-            const trimmed = line.trim();
             if (trimmed.length === 0) {
                 reprompt();
                 return;
             }
 
-            // Verbs: /stop and /help stay reachable while a loop is in
-            // flight — /stop is precisely the mid-loop verb.
-            if (trimmed.startsWith("/")) {
-                const { verb } = parseSlash(trimmed);
-                // /stop, /help, and the proposal verbs stay reachable mid-loop —
-                // a proposal pauses the loop and must be resolvable by typing.
-                // /quit is the universal escape: NEVER "busy"-blocked, so a wedged
-                // or disconnected loop is always exitable (the daemon owns the loop;
-                // quitting the client just drops the connection — resumable).
-                if (inFlight && !RUNNING_VERBS.has(verb)) {
-                    printAbove("  \x1b[2m(busy; /stop to cancel, /quit to exit, /help for the language)\x1b[0m");
-                    return;
-                }
-                try {
-                    if (await handleVerb(trimmed, verbCtx) === "quit") { close(); return; }
-                } catch (cause) {
-                    printAbove(renderTuiFailure(cause));
-                }
-                reprompt();
+            if (rebinding) {
+                printAbove("  Changing conversation; submit after the new binding is confirmed.");
                 return;
             }
-
-            if (inFlight) {
-                // A model loop is running. A prompt typed now is the "btw"
-                // steering case (loop.inject, #193), NOT a conflict — inject it
-                // into the live loop. (Raw DSL / exec are separate client-run
-                // ops; keep them out of a running conversation for now.)
-                // Inspection is not a client op: it runs beside the loop ({§cli-inspection}).
-                const runningDsl = dslStatement(trimmed);
-                const runningLook = runningDsl !== null ? lookStatement(runningDsl) : null;
-                if (runningLook !== null) { inspect(runningLook); reprompt(); return; }
-                if (runningDsl !== null || trimmed.startsWith("!")) {
-                    printAbove("  \x1b[2m(loop running — /stop before a client op)\x1b[0m");
-                    return;
-                }
-                const inject = trimmed.replace(/^(\.\.\.|[?:])\s*/, "");
-                void transport.inject(inject)
-                    .then(() => printAbove("  \x1b[2m↳ added to the run\x1b[0m"))
-                    .catch((cause) => printAbove(`  \x1b[31minject failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
-                reprompt();
-                return;
-            }
-
             // A typed LOOK fence is inspection, not a run ({§cli-inspection}).
             const statementText = dslStatement(trimmed);
             const typedLook = statementText !== null ? lookStatement(statementText) : null;
             if (typedLook !== null) { inspect(typedLook); reprompt(); return; }
+
+            if (statementText !== null || trimmed.startsWith("!")) {
+                pendingCommands += 1;
+                const start = Date.now();
+                try {
+                    const result = statementText !== null
+                        ? (await transport.rpc("op.parse", { text: statementText }) as { results: OperationResult[] }).results.at(-1) ?? { status: 0 }
+                        : await transport.rpc("op.exec", { command: trimmed.replace(/^!+\s*/, "") }) as OperationResult;
+                    await settlePeeks();
+                    printAbove(renderSummary(0, Date.now() - start, result, false));
+                } finally {
+                    pendingCommands -= 1;
+                    reprompt();
+                }
+                return;
+            }
+
+            if (inFlight) {
+                if (trimmed.startsWith("?") || (trimmed.startsWith(":") && reviewRequested)) {
+                    printAbove("  Explicit review policy selects a new loop; use ... to steer this run, or /stop before starting another.");
+                    return;
+                }
+                await transport.inject(linePolicy(trimmed, opts.loopPolicy).prompt);
+                printAbove("  \x1b[2m↳ added to the run\x1b[0m");
+                reprompt();
+                return;
+            }
 
             inFlight = true;
             lifecycle = "running";
@@ -1194,47 +1220,35 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             let usage: LoopUsage | undefined;
 
             try {
-                if (statementText !== null) {
-                    // Raw DSL: send to op.parse
-                    const result = await transport.rpc("op.parse", { text: statementText }) as { results: OperationResult[] };
-                    terminalResult = result.results[result.results.length - 1] ?? { status: 0 };
-                    await settlePeeks();
-                } else if (trimmed.startsWith("!")) {
-                    // `! cmd` — exec via the daemon (proposal-gated like any
-                    // side effect; output streams as stream/event traces).
-                    const command = trimmed.replace(/^!+\s*/, "");
-                    terminalResult = await transport.rpc("op.exec", { command }) as OperationResult;
-                    await settlePeeks();
-                } else {
-                    // `?` selects proposal review; `:` uses the base policy.
-                    const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
-                    reviewRequested = trimmed.startsWith("?");
-                    // {§worker-model-selection} — no model selector rides the loop: the
-                    // worker owns the model; /model and /child persisted it server-side.
-                    const loopParams: { policy: LoopPolicy; maxTurns?: number; openPaths?: string[] } = { policy };
-                    if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
-                    const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
-                    if (openPaths.length > 0) loopParams.openPaths = openPaths;
-                    // The transport owns the ack→terminated bridge; done resolves
-                    // with the loop's outcome. A pre-stream HTTP failure surfaces as
-                    // an exact ProblemError (caught below; 501 gets the .env pointer).
-                    const t = await transport.run(promptText, loopParams).done;
-                    for (const line of turns.flush()) printAbove(line);
-                    reviewRequested = false;
-                    terminalResult = t.result;
-                    hitMaxTurns = t.hitMaxTurns;
-                    turnCount = t.turnIds?.length ?? 0;
-                    usage = t.usage;
-                    if (t.workerId !== undefined && t.workerId !== conversationWorkerId) {
-                        conversationWorkerId = t.workerId;
-                        const { workers } = await transport.rpc("workspace.workers") as { workers: Array<{ id: number; name: string }> };
-                        const hit = workers.find((worker) => worker.id === conversationWorkerId);
-                        if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
-                        conversationWorker = hit.name;
-                        workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
-                        placeWorkers = workers as WorkerRow[];
-                        paintPrompt();
-                    }
+                // `?` selects proposal review; `:` uses the base policy.
+                const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
+                reviewRequested = trimmed.startsWith("?");
+                // {§worker-model-selection} — no model selector rides the loop: the
+                // worker owns the model; /model and /child persisted it server-side.
+                const loopParams: { policy: LoopPolicy; maxTurns?: number; openPaths?: string[] } = { policy };
+                if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
+                const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
+                if (openPaths.length > 0) loopParams.openPaths = openPaths;
+                // The transport owns the ack→terminated bridge; done resolves
+                // with the loop's outcome. A pre-stream HTTP failure surfaces as
+                // an exact ProblemError (caught below; 501 gets the .env pointer).
+                activeRun = transport.run(promptText, loopParams);
+                const t = await activeRun.done;
+                for (const line of turns.flush()) printAbove(line);
+                reviewRequested = false;
+                terminalResult = t.result;
+                hitMaxTurns = t.hitMaxTurns;
+                turnCount = t.turnIds?.length ?? 0;
+                usage = t.usage;
+                if (t.workerId !== undefined && t.workerId !== conversationWorkerId) {
+                    conversationWorkerId = t.workerId;
+                    const { workers } = await transport.rpc("workspace.workers") as { workers: Array<{ id: number; name: string }> };
+                    const hit = workers.find((worker) => worker.id === conversationWorkerId);
+                    if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
+                    conversationWorker = hit.name;
+                    workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
+                    placeWorkers = workers as WorkerRow[];
+                    paintPrompt();
                 }
                 lifecycle = terminalResult.status === 202 ? "parked"
                     : terminalResult.status === 499 ? "cancelled"
@@ -1249,8 +1263,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 tally = tallyOutcome(tally, { turns: turnCount, wallMs: Date.now() - start, usage });
                 runningSince = null;
                 inFlight = false;
+                activeRun = null;
                 cancelRequested = false;
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
+                reviewRequested = false;
                 reprompt();
             }
         };

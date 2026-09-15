@@ -234,6 +234,44 @@ test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state
     }
 });
 
+test("{§cli-active-command-admission}: an action cannot replace or lend state to a concurrent model stream", async () => {
+    const kit = await loadConformanceKit();
+    const ordinary = kit.lifecycles.find(({ name }) => name === "ordinary-run")!.events;
+    const snapshot = ordinary.find((event) => event.type === "STATE_SNAPSHOT")!;
+    const terminal = ordinary.filter((event) => event.type === "RUN_FINISHED" || event.name === "plurnk.terminated");
+    const ready = Promise.withResolvers<void>();
+    let modelResponse: ServerResponse;
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        if (mock.captured.length === 1) {
+            modelResponse = response;
+            response.write(frame(snapshot));
+            return;
+        }
+        const ownSnapshot = structuredClone(snapshot) as { snapshot: { plurnk: { status: { packetCount: number } } } };
+        ownSnapshot.snapshot.plurnk.status.packetCount = 99;
+        response.write(frame(ownSnapshot));
+        response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "providers.list", ok: true, result: { aliases: [] } } }));
+        response.end(frame({ type: "RUN_FINISHED" }));
+    });
+    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "thread");
+    try {
+        const { h, seen } = collectingHandlers();
+        transport.subscribe({ ...h, onStatus: (status) => { seen.status.push(status); ready.resolve(); } });
+        const run = transport.run("fixture", { policy: REVIEW_POLICY });
+        await ready.promise;
+        await transport.rpc("providers.list");
+        assert.equal(seen.status.length, 1, "action status does not repaint the model's status");
+        modelResponse!.write(frame({ type: "STATE_DELTA", delta: [{ op: "replace", path: "/plurnk/status/lifecycle", value: "running" }] }));
+        for (const event of terminal) modelResponse!.write(frame(event));
+        modelResponse!.end();
+        assert.equal((await run.done).finalStatus, 200);
+        const last = seen.status.at(-1) as { plurnk: { status: { lifecycle: string; packetCount: number } } };
+        assert.equal(last.plurnk.status.lifecycle, "running");
+        assert.equal(last.plurnk.status.packetCount, 0, "the model delta uses its own preceding snapshot");
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
 test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -426,6 +464,56 @@ test("BridgeTransport.rpc: an action stream without a result or interrupt fails 
     } finally { await mock.close(); }
 });
 
+for (const order of [[42, 99], [99, 42]]) {
+    test(`concurrent model and action proposals resume their own requests (${order.join(", ")})`, async () => {
+        const resumed: number[] = [];
+        const announced = new Map<number, ReturnType<typeof Promise.withResolvers<void>>>();
+        announced.set(42, Promise.withResolvers<void>());
+        announced.set(99, Promise.withResolvers<void>());
+        const mock = await bootMock((_req, res) => {
+            const input = mock.captured.at(-1)!.body as {
+                forwardedProps?: { plurnk?: { action?: unknown } };
+                resume?: Array<{ interruptId: string }>;
+            };
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            if (input.resume !== undefined) {
+                const id = Number(input.resume[0]!.interruptId.slice(5));
+                resumed.push(id);
+                res.write(frame(id === 42
+                    ? { type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } }
+                    : { type: "CUSTOM", name: "plurnk.action.result", value: { kind: "op.exec", ok: true, result: { status: 201 } } }));
+                res.end(frame({ type: "RUN_FINISHED" }));
+                return;
+            }
+            const id = input.forwardedProps?.plurnk?.action === undefined ? 42 : 99;
+            const toolCallId = `prop:${id}`;
+            res.write(frame({ type: "TOOL_CALL_START", toolCallId, toolCallName: "request_approval" }));
+            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId, delta: JSON.stringify({ op: "sh", body: `echo ${id}` }) }));
+            res.write(frame({ type: "TOOL_CALL_END", toolCallId }));
+            res.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: toolCallId, reason: "tool_call", toolCallId }] } }));
+        });
+        try {
+            const transport = new BridgeTransport({ bridgeUrl: mock.url }, "worker", { workspace: "world" });
+            transport.subscribe({ ...collectingHandlers().h, onProposal: (proposal) => announced.get(proposal.logEntryId)!.resolve() });
+            const model = transport.run("do the work", { policy: REVIEW_POLICY }).done;
+            await announced.get(42)!.promise;
+            const action = transport.rpc<{ status: number }>("op.exec", { command: "echo human" });
+            await announced.get(99)!.promise;
+            transport.useWorker("other-worker", "other-world");
+            await assert.rejects(transport.resolve({ logEntryId: 123, decision: "accept" }), /123/, "an unknown proposal cannot consume an existing continuation");
+            for (const id of order) await transport.resolve({ logEntryId: id, decision: "accept" });
+            assert.equal((await model).finalStatus, 200);
+            assert.equal((await action).status, 201);
+            assert.deepEqual(resumed.sort(), [42, 99]);
+            for (const request of mock.captured) {
+                const input = request.body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
+                assert.equal(input.threadId, "worker", "resumes retain the submitted conversation");
+                assert.equal(input.forwardedProps.plurnk.workspace, "world", "resumes retain the submitted workspace");
+            }
+        } finally { await mock.close(); }
+    });
+}
+
 test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/rpc side-channel)", async () => {
     const mock = await bootMock((req, res) => {
         // An action run answers on its own SSE: result custom + RUN_FINISHED.
@@ -511,6 +599,28 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
     } finally { await mock.close(); }
 });
 
+test("cancelling a model run waiting for a proposal settles it and retires its resolver", async () => {
+    const ready = Promise.withResolvers<void>();
+    const mock = await bootMock((_req, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:17", toolCallName: "request_approval" }));
+        response.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:17", delta: '{"op":"sh"}' }));
+        response.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:17" }));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "prop:17", reason: "tool_call" }] } }));
+    });
+    try {
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "worker");
+        transport.subscribe({ ...collectingHandlers().h, onProposal: () => ready.resolve() });
+        const run = transport.run("review", { policy: REVIEW_POLICY });
+        await ready.promise;
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+        run.cancel();
+        assert.equal((await run.done).finalStatus, 499);
+        await assert.rejects(transport.resolve({ logEntryId: 17, decision: "accept" }), /Proposal 17 has no pending/);
+        assert.equal(mock.captured.length, 1, "cancel never submits a resume to execute the proposal");
+    } finally { await mock.close(); }
+});
+
 test("BridgeTransport: a client interaction uses interrupt guidance and resumes with the answer", async () => {
     let call = 0;
     const responseSchema = {
@@ -557,7 +667,7 @@ test("BridgeTransport: a client interaction uses interrupt guidance and resumes 
             message: "Choose one repository.",
             responseSchema,
         }]);
-        await assert.rejects(bt.resolveInteraction(7, { repository: "wrong-request" }), /Interaction 7 is not the pending interaction/u);
+        await assert.rejects(bt.resolveInteraction(7, { repository: "wrong-request" }), /Interaction 7 has no pending AG-UI interrupt\./u);
         assert.equal(mock.captured.length, 1, "a stale UI callback cannot answer the active interrupt");
         await bt.resolveInteraction(8, { repository: "plurnk-service" });
         assert.equal((await handle.done).finalStatus, 200);
@@ -640,7 +750,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
 
 test("BridgeTransport: resolve without a delivered interrupt fails hard", async () => {
     const bt = new BridgeTransport({ bridgeUrl: "http://127.0.0.1:1" }, "th");
-    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /without a delivered AG-UI interrupt/);
+    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /Proposal 1 has no pending AG-UI interrupt\./);
 });
 
 test("BridgeTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {

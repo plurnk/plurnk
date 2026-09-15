@@ -110,6 +110,7 @@
       "posture": "native",
       "evidence": [
         "src/subcommands.test.ts — log reading",
+        "src/transport.test.ts — bounded sync recovery preserves unseen rows without inventing a loop outcome",
         "scripts/test-composition.mjs — packed client and installed candidate service"
       ],
       "dimensions": [
@@ -124,7 +125,8 @@
     "loop.inject": {
       "posture": "native",
       "evidence": [
-        "src/transport.test.ts — loop injection"
+        "src/transport.test.ts — loop injection",
+        "test/tui/injection-boundary.test.ts — real daemon admission/termination orderings and completed-successor observation"
       ],
       "dimensions": [
         "admission",

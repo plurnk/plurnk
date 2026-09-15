@@ -371,7 +371,7 @@ without changing the client's selected policy after a refusal.
 | Inspect, Functionality, model/policy commands | Ordinary action path; no inference, model-run summary, or tally of their own |
 | `/help`, `/import`, `/editor`, `/yolo` | Ordinary local behavior; the composer remains editable |
 | `!`, executable fences, `/script` | Client-owned operation run; its results and proposal resolutions remain separate from the model run |
-| Plain prompt or `...` | Inject into the bound conversation; no second local model stream |
+| Plain prompt or `...` | Inject into the bound conversation; observe an admitted successor through the standard sync Run after the existing stream settles |
 | `?`, or `:` removing an active `?` request | Explain that the requested policy belongs to a new loop; do not silently strip it and inject |
 | `/stop`, proposal responses, question responses, `/quit` | Remain reachable; resolve the identified owner, never whichever request arrived last |
 | `/workspace`, `/rename`, `/worker`, `/attach`, topology hops | Refused until the attached model run and submitted commands settle, with that specific reason |
@@ -385,6 +385,15 @@ restriction is TUI-owned, not a daemon restriction on independent conversations.
 Each stream reduces its own state; action snapshots do not replace the active
 model's status. Cancellation retires only the cancelled run's interrupts and
 local waits, including when its SSE has already ended at a question or proposal.
+
+Pending injection acknowledgements keep the conversation attached through terminal
+observation. `injected_next_turn` stays on the existing stream;
+`enqueued_new_loop` requests one successor observer, not a replayed prompt. Sync
+uses {§agui-conversation-sync} and restores unseen durable rows with bounded
+`log.read`, retaining its pre-attachment conversation-row cursor; independent
+client-operation rows cannot advance that cursor. A successful observation without a
+new `plurnk.terminated` event adds no synthetic loop summary, usage, or tally.
+Malformed or incomplete history fails visibly rather than claiming lossless recovery.
 
 During a question, recognized slash commands retain their normal meaning;
 `/cancel` dismisses the question. Other input answers the current field. A literal

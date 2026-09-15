@@ -23,11 +23,10 @@ export interface VerbCaller { call(method: string, params?: object): Promise<unk
 import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
-import type { LoopUsage } from "./render.ts";
 import type { LogEntryWire } from "./render.ts";
 import { renderProposalMenu, keyToResolution, renderQuestionMenu, editInEditor } from "./proposal.ts";
 import QuestionForm from "./QuestionForm.ts";
-import { BridgeTransport, type Transport } from "./transport.ts";
+import { BridgeTransport, type ObservationHandle, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
@@ -573,7 +572,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let pendingCommands = 0;
     let rebinding = false;
     let cancelRequested = false;
-    let activeRun: ReturnType<Transport["run"]> | null = null;
+    let activeRun: ObservationHandle | null = null;
+    const pendingInjections = new Set<Promise<void>>();
+    let followAdmission = false;
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
     const cancelLoop = async (reason: string): Promise<unknown> => {
         const run = activeRun;
@@ -1200,9 +1201,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     printAbove("  Explicit review policy selects a new loop; use ... to steer this run, or /stop before starting another.");
                     return;
                 }
-                await transport.inject(linePolicy(trimmed, opts.loopPolicy).prompt);
-                printAbove("  \x1b[2m↳ added to the run\x1b[0m");
-                reprompt();
+                const admitted = transport.inject(linePolicy(trimmed, opts.loopPolicy).prompt).then((result) => {
+                    if (result.action === "enqueued_new_loop") followAdmission = true;
+                });
+                pendingInjections.add(admitted);
+                try {
+                    await admitted;
+                    printAbove("  \x1b[2m↳ added to the run\x1b[0m");
+                } finally {
+                    pendingInjections.delete(admitted);
+                    reprompt();
+                }
                 return;
             }
 
@@ -1212,13 +1221,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.
             reprompt();
-            const start = Date.now();
+            let start = Date.now();
             runningSince = start;
-            let turnCount = 0;
-            let terminalResult: OperationResult = { status: 0 };
-            let hitMaxTurns = false;
-            let usage: LoopUsage | undefined;
-
             try {
                 // `?` selects proposal review; `:` uses the base policy.
                 const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
@@ -1233,40 +1237,50 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // with the loop's outcome. A pre-stream HTTP failure surfaces as
                 // an exact ProblemError (caught below; 501 gets the .env pointer).
                 activeRun = transport.run(promptText, loopParams);
-                const t = await activeRun.done;
-                for (const line of turns.flush()) printAbove(line);
-                reviewRequested = false;
-                terminalResult = t.result;
-                hitMaxTurns = t.hitMaxTurns;
-                turnCount = t.turnIds?.length ?? 0;
-                usage = t.usage;
-                if (t.workerId !== undefined && t.workerId !== conversationWorkerId) {
-                    conversationWorkerId = t.workerId;
-                    const { workers } = await transport.rpc("workspace.workers") as { workers: Array<{ id: number; name: string }> };
-                    const hit = workers.find((worker) => worker.id === conversationWorkerId);
-                    if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
-                    conversationWorker = hit.name;
-                    workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
-                    placeWorkers = workers as WorkerRow[];
-                    paintPrompt();
+                for (;;) {
+                    const t = await activeRun.done;
+                    for (const line of turns.flush()) printAbove(line);
+                    reviewRequested = false;
+                    if (t !== null) {
+                        const turnCount = t.turnIds?.length ?? 0;
+                        if (t.workerId !== undefined && t.workerId !== conversationWorkerId) {
+                            conversationWorkerId = t.workerId;
+                            const { workers } = await transport.rpc("workspace.workers") as { workers: Array<{ id: number; name: string }> };
+                            const hit = workers.find((worker) => worker.id === conversationWorkerId);
+                            if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
+                            conversationWorker = hit.name;
+                            workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
+                            placeWorkers = workers as WorkerRow[];
+                            paintPrompt();
+                        }
+                        lifecycle = t.result.status === 202 ? "parked"
+                            : t.result.status === 499 ? "cancelled"
+                                : t.result.status >= 400 ? "failed"
+                                    : "completed";
+                        const wallMs = Date.now() - start;
+                        printAbove(renderSummary(turnCount, wallMs, t.result, t.hitMaxTurns, t.usage));
+                        tally = tallyOutcome(tally, { turns: turnCount, wallMs, usage: t.usage });
+                    }
+                    // No asynchronous presentation work follows this admission barrier:
+                    // another prompt must not sneak into the completion/idle gap.
+                    while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
+                    if (!followAdmission || shuttingDown) break;
+                    followAdmission = false;
+                    start = Date.now();
+                    runningSince = start;
+                    activeRun = transport.observe();
                 }
-                lifecycle = terminalResult.status === 202 ? "parked"
-                    : terminalResult.status === 499 ? "cancelled"
-                        : terminalResult.status >= 400 ? "failed"
-                            : "completed";
-                const wallMs = Date.now() - start;
-                printAbove(renderSummary(turnCount, wallMs, terminalResult, hitMaxTurns, usage));
             } catch (cause) {
                 lifecycle = "failed";
                 printAbove(renderTuiFailure(cause));
             } finally {
-                tally = tallyOutcome(tally, { turns: turnCount, wallMs: Date.now() - start, usage });
                 runningSince = null;
                 inFlight = false;
                 activeRun = null;
                 cancelRequested = false;
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
                 reviewRequested = false;
+                followAdmission = false;
                 reprompt();
             }
         };

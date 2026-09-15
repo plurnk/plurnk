@@ -13,10 +13,11 @@ import {
     clientTransportProposalInvalid,
     clientTransportTerminalMissing,
     clientActionResultMissing,
+    clientTransportResultInvalid,
     type ProblemDetails,
 } from "./diagnostics.ts";
-import type { LoopPolicy, OperationResult } from "@plurnk/plurnk-contracts";
-import { runViaBridge, actionViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import type { ApplicationPort, LoopPolicy, OperationResult } from "@plurnk/plurnk-contracts";
+import { runViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
 
@@ -59,6 +60,8 @@ export interface RunHandlers {
 }
 
 export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
+export interface ObservationHandle { done: Promise<TerminatedInfo | null>; cancel: () => void }
+export type LoopAdmission = Awaited<ReturnType<ApplicationPort["runLoop"]>>;
 
 type ProposalResolution = { logEntryId: number; decision: string; body?: string };
 type InteractionResolution = Record<string, unknown> | "cancel";
@@ -73,7 +76,8 @@ export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
     subscribe(handlers: RunHandlers): void;
     run(prompt: string, opts: RunOpts): RunHandle;
-    inject(prompt: string): Promise<void>;
+    observe(): ObservationHandle;
+    inject(prompt: string): Promise<LoopAdmission>;
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void>;
     onClose(handler: () => void): void;   // WS: the daemon socket dropped. Bridge: no-op (each run is its own SSE).
@@ -88,10 +92,8 @@ export interface Transport {
     useWorker(name: string, world: string): void;
 }
 
-// ── Bridge transport — the AG-UI exclusive portal. run() consumes the SSE, feeds
-// the persistent handlers via un-projection, and `done` resolves with the outcome
-// from plurnk.terminated. inject rides an action run on the same thread (reaching
-// the active loop); cancel aborts the SSE (the bridge cancels).
+// Model and sync Runs share event projection and interrupt handling. An idle sync
+// can finish without a loop terminal; it cannot manufacture accounting evidence.
 // Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
 // (§agui-forwarded-props) — the bridge applies them at workspace.create.
 export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object }
@@ -106,6 +108,8 @@ export class BridgeTransport implements Transport {
     #pendingProposals = new Map<number, (r: ProposalResolution | undefined) => void>();
     #pendingInteractions = new Map<number, (r: InteractionResolution | undefined) => void>();
     #controllers = new Set<AbortController>();
+    #seenRows = new Set<number>();
+    #lastConversationRowId = 0;
 
     constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
         this.#target = target;
@@ -131,8 +135,8 @@ export class BridgeTransport implements Transport {
         }
     }
 
-    async #action<T>(method: string, params: object | undefined, signal: AbortSignal): Promise<T> {
-        const binding = { threadId: this.#threadId, workspace: this.#world };
+    async #action<T>(method: string, params: object | undefined, signal: AbortSignal,
+        binding = { threadId: this.#threadId, workspace: this.#world }): Promise<T> {
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
@@ -216,7 +220,18 @@ export class BridgeTransport implements Transport {
     }
 
     run(prompt: string, opts: RunOpts): RunHandle {
+        const handle = this.#run(prompt, opts);
+        return { ...handle, done: handle.done.then((terminal) => {
+            if (terminal === null) throw new ProblemError(clientTransportTerminalMissing());
+            return terminal;
+        }) };
+    }
+
+    observe(): ObservationHandle { return this.#run(); }
+
+    #run(prompt?: string, opts?: RunOpts): ObservationHandle {
         const binding = { threadId: this.#threadId, workspace: this.#world };
+        const sinceId = this.#lastConversationRowId;
         const ac = new AbortController();
         this.#controllers.add(ac);
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
@@ -225,8 +240,11 @@ export class BridgeTransport implements Transport {
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
             ...this.#workspaceOpts(),
-            policy: opts.policy,
-            ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
+            ...(opts === undefined ? { mode: "sync" } : {
+                policy: opts.policy,
+                ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
+                ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
+            }),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
         // AG-UI interrupt/resume: a stopped-world ends the run as a
@@ -234,7 +252,7 @@ export class BridgeTransport implements Transport {
         // in-engine). resolve() supplies the decision; we POST a standard resume as the
         // resume run and keep consuming — done spans the whole pause/resume chain, so
         // the TUI's seam contract never changes.
-        const done = (async (): Promise<TerminatedInfo> => {
+        const done = (async (): Promise<TerminatedInfo | null> => {
             let terminated: TerminatedInfo | null = null;
             let sawRunError = false;
             let runProblem: ProblemDetails | null = null;
@@ -246,6 +264,7 @@ export class BridgeTransport implements Transport {
                 let proposalResolution: Promise<ProposalResolution | undefined> | null = null;
                 let interactionResolution: Promise<InteractionResolution | undefined> | null = null;
                 let interrupted = false;
+                let observed = false;
                 let toolId = "";
                 let toolName = "";
                 let toolArgs = "";
@@ -256,6 +275,7 @@ export class BridgeTransport implements Transport {
                             sawRunError = true;
                         } else if (e.type === "RUN_FINISHED") {
                             const outcome = e.outcome;
+                            observed = outcome?.type === "success";
                             const interrupt = outcome?.type === "interrupt"
                                 ? outcome.interrupts.find((candidate) => candidate.id === toolId || candidate.toolCallId === toolId)
                                 : undefined;
@@ -349,6 +369,7 @@ export class BridgeTransport implements Transport {
                     };
                 }
                 if (pausedProp === null && pausedInteraction === null) {
+                    if (prompt === undefined && observed && !sawRunError && runProblem === null) return null;
                     // NO fabricated success (fabrication audit, 2026-07-11): a stream that
                     // ends without terminal truth is a broken wire — 502, never 200.
                     const problem = runProblem
@@ -380,7 +401,19 @@ export class BridgeTransport implements Transport {
                     : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
                 fp = undefined;
             }
-        })().catch((cause: unknown): TerminatedInfo => {
+        })().then(async (terminal) => {
+            if (prompt === undefined && !ac.signal.aborted && (terminal === null || terminal.loopId !== undefined)) {
+                const history = await this.#action<{ entries: LogEntryWire[] }>("log.read", { sinceId, limit: 1000 }, ac.signal, binding);
+                if (history === null || !Array.isArray(history.entries) || history.entries.length >= 1000
+                    || history.entries.some((entry) => !Number.isSafeInteger(entry?.id) || entry.id <= sinceId)) {
+                    throw new ProblemError(clientTransportResultInvalid("log.read did not supply a complete bounded history window."));
+                }
+                for (const entry of history.entries.toSorted((a, b) => a.id - b.id)) {
+                    if (!this.#seenRows.has(entry.id)) this.#row(entry, true);
+                }
+            }
+            return terminal;
+        }).catch((cause: unknown): TerminatedInfo => {
             if (!ac.signal.aborted) throw cause;
             const problem = clientTransportCancelled();
             return { finalStatus: problem.status, hitMaxTurns: false, result: operationResult({ status: problem.status, problem }) };
@@ -392,10 +425,14 @@ export class BridgeTransport implements Transport {
         return { done, cancel: () => ac.abort() };
     }
 
-    // §4 — inject rides the action surface; the steered effect streams on the
-    // original run's open SSE (the ack rides this action run).
-    async inject(prompt: string): Promise<void> {
-        await actionViaBridge(this.#target, { threadId: this.#threadId, ...(this.#world !== undefined ? { workspace: this.#world } : {}), kind: "loop.inject", params: { prompt } });
+    async inject(prompt: string): Promise<LoopAdmission> {
+        const admission = await this.rpc<LoopAdmission>("loop.inject", { prompt });
+        operationResult(admission);
+        if (!Number.isSafeInteger(admission.loopId) || admission.loopId <= 0
+            || !["injected_next_turn", "enqueued_new_loop"].includes(admission.action)) {
+            throw new ProblemError(clientTransportResultInvalid("loop.inject omitted its loop identity or admission disposition."));
+        }
+        return admission;
     }
     async resolve(r: Parameters<Transport["resolve"]>[0]): Promise<void> {
         // Terminate-resume: the decision releases the paused run loop, which POSTs the
@@ -432,11 +469,21 @@ export class BridgeTransport implements Transport {
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
+        this.#seenRows.clear();
+        this.#lastConversationRowId = 0;
         return { name: threadId };
     }
     useWorker(name: string, world: string): void {
         this.#threadId = name;
         this.#world = world;
+        this.#seenRows.clear();
+        this.#lastConversationRowId = 0;
+    }
+
+    #row(entry: LogEntryWire, conversation: boolean): void {
+        this.#seenRows.add(entry.id);
+        if (conversation) this.#lastConversationRowId = Math.max(this.#lastConversationRowId, entry.id);
+        this.#h?.onEntry(entry);
     }
 
     // Project one standard reasoning event or un-project one CUSTOM plurnk.*
@@ -458,7 +505,7 @@ export class BridgeTransport implements Transport {
         if (e.type !== "CUSTOM") return null;
         const name = (e as { name?: string }).name;
         const value = (e as { value?: unknown }).value;
-        if (name === "plurnk.row") this.#h?.onEntry(value as LogEntryWire);
+        if (name === "plurnk.row") this.#row(value as LogEntryWire, projection === this.#modelProjection);
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));

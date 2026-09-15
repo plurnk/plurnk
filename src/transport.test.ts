@@ -518,13 +518,13 @@ test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/
     const mock = await bootMock((req, res) => {
         // An action run answers on its own SSE: result custom + RUN_FINISHED.
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "x", ok: true, result: { action: "injected_next_turn", loopId: 7 } } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "x", ok: true, result: { status: 100, action: "injected_next_turn", loopId: 7 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
     try {
         const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
-        await bt.inject("steer mid-run");
+        assert.deepEqual(await bt.inject("steer mid-run"), { status: 100, action: "injected_next_turn", loopId: 7 });
         const providers = await bt.rpc<{ action: string }>("providers.list");
         assert.equal(providers.action, "injected_next_turn", "the action result returns verbatim");
         const injectRun = mock.captured.find((c) => c.url === "/" && (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } }).forwardedProps?.plurnk?.action?.kind === "loop.inject");
@@ -539,6 +539,146 @@ test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/
         const workerInject = mock.captured.filter((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "loop.inject").at(-1);
         assert.equal((workerInject?.body as { threadId: string }).threadId, "designer");
         assert.equal((workerInject?.body as { forwardedProps: { plurnk: { workspace: string } } }).forwardedProps.plurnk.workspace, "plurnkpromo", "inject names the worker's world beside the thread");
+    } finally { await mock.close(); }
+});
+
+test("{§cli-active-command-admission}: sync restores the admission gap without fabricating a terminal outcome", async () => {
+    const snapshot = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events
+        .find((event) => event.type === "STATE_SNAPSHOT")!;
+    const early = { id: 8, op: "SEND", origin: "model", tx: { body: "committed before attachment" } };
+    const late = { id: 9, op: "TASK", origin: "model", tx: { body: { entries: [] } } };
+    const mock = await bootMock((_request, response) => {
+        const input = mock.captured.at(-1)!.body as { messages: unknown[]; threadId: string; forwardedProps: { plurnk: { workspace: string; mode?: string; action?: object } } };
+        assert.equal(input.threadId, "alice");
+        assert.equal(input.forwardedProps.plurnk.workspace, "world");
+        assert.deepEqual(input.messages, [], "observation does not resubmit a prompt");
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(frame({ type: "RUN_STARTED" }));
+        response.write(frame(snapshot));
+        if (mock.captured.length === 1) {
+            assert.equal(input.forwardedProps.plurnk.mode, "sync");
+            response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: late }));
+        } else {
+            assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
+            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true, result: { entries: [late, early] } } }));
+        }
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "alice", { workspace: "world" });
+    try {
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        assert.equal(await transport.observe().done, null, "a successful sync with no terminal event has no loop result");
+        assert.deepEqual(seen.entries, [late, early], "a later live row cannot skip an earlier missing row or duplicate itself");
+        assert.deepEqual(seen.terminated, [], "no model terminal or usage was synthesized");
+        assert.deepEqual(seen.problems, []);
+        assert.equal(mock.captured.length, 2, "one sync and one bounded history read");
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
+test("{§cli-active-command-admission}: client operation rows do not advance the conversation history cursor", async () => {
+    const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
+    const previous = { id: 7, op: "SEND", origin: "model", tx: { body: "previous loop" } };
+    const unseen = { id: 8, op: "SEND", origin: "model", tx: { body: "successor finished before attachment" } };
+    const human = { id: 10, op: "sh", origin: "client", tx: { body: "independent client operation" } };
+    const mock = await bootMock((_request, response) => {
+        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string; action?: { kind: string; sinceId?: number } } } };
+        const action = input.forwardedProps.plurnk.action;
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        if (action === undefined && input.forwardedProps.plurnk.mode === undefined) {
+            for (const event of events) {
+                if (event.type === "CUSTOM" && event.name === "plurnk.row") continue;
+                if (event.type === "CUSTOM" && event.name === "plurnk.terminated") {
+                    response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: previous }));
+                }
+                response.write(frame(event));
+            }
+            response.end();
+            return;
+        }
+        response.write(frame({ type: "RUN_STARTED" }));
+        if (action?.kind === "op.exec") {
+            response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: human }));
+            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: { status: 200 } } }));
+        } else if (action?.kind === "log.read") {
+            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true,
+                result: { entries: [previous, unseen].filter((entry) => entry.id > action.sinceId!) } } }));
+        }
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+    try {
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        await transport.run("first", { policy: REVIEW_POLICY }).done;
+        await transport.rpc("op.exec", { command: "echo human" });
+        assert.equal(await transport.observe().done, null);
+        assert.deepEqual(seen.entries, [previous, human, unseen]);
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
+test("{§cli-active-command-admission}: injection refuses missing admission identity", async () => {
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "loop.inject", ok: true, result: { status: 100 } } }));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    try {
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        await assert.rejects(transport.inject("next"), (error: unknown) =>
+            error instanceof ProblemError && error.problem.kind === "result-invalid"
+                && String(error.problem.reason).includes("admission disposition"));
+    } finally { await mock.close(); }
+});
+
+for (const entries of [null, [{ id: null }], Array.from({ length: 1000 }, (_, index) => ({ id: index + 1 }))]) {
+    test(`{§cli-active-command-admission}: incomplete sync history is not presented (${entries?.length ?? "missing"})`, async () => {
+        const mock = await bootMock((_request, response) => {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.write(frame({ type: "RUN_STARTED" }));
+            if (mock.captured.length > 1) response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true, result: { entries } } }));
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+        });
+        try {
+            const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+            const { h, seen } = collectingHandlers();
+            transport.subscribe(h);
+            await assert.rejects(transport.observe().done, (error: unknown) =>
+                error instanceof ProblemError && error.problem.kind === "result-invalid"
+                    && String(error.problem.reason).includes("complete bounded history window"));
+            assert.deepEqual(seen.entries, [], "a partial or malformed history is not silently admitted");
+            assert.deepEqual(seen.terminated, []);
+        } finally { await mock.close(); }
+    });
+}
+
+test("{§cli-active-command-admission}: a dead sync stream retains its original failure without attempting history", async () => {
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(frame({ type: "RUN_STARTED" }));
+    });
+    try {
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        const result = await transport.observe().done;
+        assert.equal(result?.result.problem?.kind, "terminal-missing");
+        assert.equal(mock.captured.length, 1);
+    } finally { await mock.close(); }
+});
+
+test("[§cli-conformance] run preserves explicitly requested file paths beside its policy", async () => {
+    const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        for (const event of events) response.write(frame(event));
+        response.end();
+    });
+    try {
+        const paths = ["src/main.ts", "docs/use.md"];
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        await transport.run("inspect the referenced files", { policy: REVIEW_POLICY, openPaths: paths }).done;
+        const input = mock.captured[0].body as { forwardedProps: { plurnk: { policy: unknown; openPaths: unknown } } };
+        assert.deepEqual(input.forwardedProps.plurnk.openPaths, paths);
+        assert.deepEqual(input.forwardedProps.plurnk.policy, REVIEW_POLICY);
     } finally { await mock.close(); }
 });
 

@@ -330,7 +330,7 @@ test("[§cli-workers-topology] handleVerb /enter, /older, /newer, /parent hop th
         { id: 1, name: "sess", created_at: "2026-09-04T10:01:00Z", origin: "model", parentWorkerId: null },
         { id: 2, name: "sess-fork", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1 },
         { id: 4, name: "guesser1", created_at: "2026-09-04T10:03:00Z", origin: "model", parentWorkerId: 1 },
-        { id: 5, name: "plurnk", created_at: "2026-09-04T10:00:00Z", origin: "_plurnk", parentWorkerId: null },
+        { id: 5, name: "_plurnk", created_at: "2026-09-04T10:00:00Z", origin: "_plurnk", parentWorkerId: null },
     ] };
     const ctx = makeCtx({ "workspace.workers": directory });
     await handleVerb("/enter", ctx);

@@ -1,6 +1,7 @@
 import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
 import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
 import type { LoopUsage } from "./render.ts";
+import { abbreviatedCount, money } from "./figures.ts";
 
 // The session's running total in the summary line's shape — every concluded
 // loop adds its turns, wall time, and exact accounting.
@@ -248,7 +249,6 @@ const activityText = ({ label, percent }: StatusActivity): string => {
 };
 
 // {plurnk#58} — thousands separators; an unknown count stays "?".
-const grouped = (value: number | null): string => value === null ? "?" : value.toLocaleString("en-US");
 
 // The summary line's shape, aggregated over the session: the running loop adds
 // its packets as turns and its elapsed time; tokens and cost are concluded totals.
@@ -260,7 +260,8 @@ export const renderStatusLine = (
     // {plurnk#58} — the glyph IS the lifecycle; the word beside it said the same thing twice, and
     // the turn count moved into the prompt prefix where the place is named.
     const glyph = lifecycleGlyph(value.lifecycle, options.idleGlyph ?? "");
-    const parts = [glyph.length > 0 ? glyph : value.lifecycle];
+    const head = glyph.length > 0 ? glyph : value.lifecycle;
+    const parts: string[] = [];
     const running = value.lifecycle === "running";
     const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
     if (context.tally.turns > 0 || running) parts.push(formatDuration(context.tally.wallMs + elapsed));
@@ -271,15 +272,16 @@ export const renderStatusLine = (
         outputTokens: context.tally.outputTokens,
     }, accrued);
     const { inputTokens, outputTokens, costUsd } = combined;
-    if (inputTokens !== null || outputTokens !== null) parts.push(`↓${grouped(inputTokens)} ↑${grouped(outputTokens)}`);
-    if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${costUsd}`);
+    if (inputTokens !== null || outputTokens !== null) parts.push(`↓${abbreviatedCount(inputTokens)} ↑${abbreviatedCount(outputTokens)}`);
+    if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${money(costUsd)}`);
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
     // {§cli-status-children} — the ant counts alive children when the daemon states it, and names the
     // model those children run when one is selected: `🐜2 dumbox`, `🐜0`, or the bare `🐜 dumbox`.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
     if (ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
-    return parts.join(" · ");
+    // The glyph is two columns wide: a second space keeps the first dot off its shoulder.
+    return parts.length === 0 ? head : `${head}${glyph.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
 };
 
 // One mutable human status row. Routine progress repaints at most once per

@@ -81,8 +81,9 @@ test("[§cli-workers-topology] no workers renders one honest line", () => {
 
 // {plurnk#58} — the prompt prefix is the place: which world, which loop, which turn, which worker.
 test("promptPrefix names the place, and elides what the client has not been told", () => {
-    assert.equal(promptPrefix("/~plurnkpk", { workspace: "plurnkpk", loopId: 3, turn: 12 }), "[plurnkpk/3/12:~plurnkpk]");
-    assert.equal(promptPrefix("/main/fork-1/~recheck", { workspace: "w", loopId: 1, turn: 0 }), "[w/1/0:main/fork-1/~recheck]");
+    assert.equal(promptPrefix("/~plurnkpk", { workspace: "plurnkpk", loopId: 3, turn: 12 }), "[plurnkpk/~plurnkpk(3/12)]", "the loop and turn sit beside the worker they belong to");
+    assert.equal(promptPrefix("/main/fork-1/~recheck", { workspace: "w", loopId: 1, turn: 0 }), "[w/main/fork-1/~recheck(1/0)]");
+    assert.equal(promptPrefix("/~main", { workspace: "w", loopId: 4 }), "[w/~main(4)]", "a turn the client has not been told about is elided");
     assert.equal(promptPrefix("/~", {}), "[/~]", "before binding, the bare lineage");
-    assert.equal(promptPrefix("/~solo", { workspace: "w" }), "[w:~solo]", "no loop yet, no placeholder");
+    assert.equal(promptPrefix("/~solo", { workspace: "w" }), "[w/~solo]", "no loop yet, no placeholder");
 });

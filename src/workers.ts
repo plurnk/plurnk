@@ -40,18 +40,18 @@ export const workerPath = (workers: readonly WorkerRow[], bound: string | null):
     return `/${segments.join("/")}`;
 };
 
-// {plurnk#58} — the prompt's place. Any unknown part is elided rather than shown as a
+// {plurnk#58} — the prompt's place: `[<workspace>/<lineage>(<loop>/<turn>)]`, the loop and turn
+// beside the worker they belong to. Any unknown part is elided rather than shown as a
 // placeholder, so a prefix never claims a loop or turn the client has not been told about.
 export const promptPrefix = (
     lineage: string,
     place: { workspace?: string | null; loopId?: number | null; turn?: number | null } = {},
 ): string => {
     const { workspace = null, loopId = null, turn = null } = place;
-    const head = [workspace, loopId === null ? null : String(loopId), turn === null ? null : String(turn)]
-        .filter((part): part is string => part !== null && part !== "")
-        .join("/");
     const path = lineage.startsWith("/") ? lineage.slice(1) : lineage;
-    return head === "" ? `[${lineage}]` : `[${head}:${path}]`;
+    const where = [loopId, turn].filter((part): part is number => part !== null).join("/");
+    const head = workspace === null || workspace === "" ? lineage : `${workspace}/${path}`;
+    return `[${head}${where === "" ? "" : `(${where})`}]`;
 };
 
 export type Hop = "parent" | "enter" | "older" | "newer";

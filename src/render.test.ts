@@ -478,8 +478,8 @@ test("renderSummary: an unmapped non-200 still falls back to 'final <N>'", () =>
 
 test("renderSummary: real usage renders conventional input/output + exact loop cost", () => {
     const s = renderSummary(2, 500, terminalResult(200), false, usage(1200, 345, "0.00042"));
-    assert.match(s, /↓1200 ↑345/);
-    assert.match(s, /loop \$0\.00042/);
+    assert.match(s, /↓1k ↑345/);
+    assert.match(s, /loop \$0\.0004$/, "spend to the hundredth of a cent");
 });
 
 // ─── dimensionally independent terminal gauges ───────────────────────

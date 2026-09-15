@@ -108,7 +108,14 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 Human status is the summary line's shape aggregated over the session:
 
 ```
-<glyph> <lifecycle> · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜<children> [<child>]] · <workspace> · worker://<name>/ [(<i>/<n>)] [· 🧮 <percent>%]
+<glyph>  · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜<children> [<child>]] · <workspace> · worker://<name>/ [(<i>/<n>)] [· 🧮 <percent>%]
+```
+
+The glyph is two columns wide, so two spaces separate it from the first dot. Token counts are
+abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is stated to the
+hundredth of a cent with grouped thousands (`$3,333.3333`).
+
+```
 ```
 
 {§cli-status-children} The ant is the daemon's count of the bound worker's alive
@@ -247,7 +254,7 @@ Triggered when `argv` has no positional prompt.
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
-   and a compact status row rendering §1.2.1's aggregate line. Before AG-UI
+   and §1.2.1's aggregate line on the place line above the composer. Before AG-UI
    state arrives, derivation, search, and
    branch activity share the fallback activity position. The
    lifecycle glyph is ⏳ while queued, `⌛︎` while running, 💤 while parked, `⏹️` when complete,
@@ -327,13 +334,16 @@ maintenance worker and a connection's scratch worker are never hop targets, so a
 lone conversation has `(no siblings)`. Every hop re-reads the directory; nothing
 is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
 
-**Position.** The line above the composer is the lineage from the tree root to
-the bound worker with `~` marking the worker the session is in — the same `~`
-that means "this worker" in `worker://~/`: `[/~main]` at a root,
-`[/main/fork-1/~recheck]` two hops down, `[/~]` before the worker is named. A
-child always shows that it is a child, so a session opened on a child reads its
-full lineage. The status line's worker segment carries the sibling position
-when there is one: `worker://recheck/ (2/3)`, newest first (§1.2.1).
+**Position.** The line above the composer names the place, `[<workspace>/<lineage>(<loop>/<turn>)]`:
+the lineage from the tree root to the bound worker with `~` marking the worker the session
+is in — the same `~` that means "this worker" in `worker://~/` — and the loop and turn beside
+the worker they belong to. `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
+hops down, `[/~]` before the worker is named; an unknown loop or turn is elided. A child
+always shows that it is a child, so a session opened on a child reads its full lineage. The
+§1.2.1 status line follows the place on the same line, so the composer has one line above it
+and the transcript keeps the line a separate status row used to take. The status line's
+worker segment carries the sibling position when there is one: `worker://recheck/ (2/3)`,
+newest first (§1.2.1).
 
 ### §3.2 Cancellation {§cli-cancellation}
 
@@ -622,7 +632,7 @@ The one-shot plain trace (§2) keeps its glyph-per-entry projection below its TA
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
 ```
-  <tag> · <N> turns · <wall>ms · ↓<input> ↑<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<exact-usd|unknown>]
+  <tag> · <N> turns · <wall>ms · ↓<input> ↑<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<usd to the hundredth of a cent>]
 ```
 
 `tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; exhausted invalid emission is `invalid emission`, and another 500 is `failed`.

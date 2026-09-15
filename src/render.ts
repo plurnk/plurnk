@@ -11,6 +11,7 @@ import Table from "cli-table3";
 import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { planColumns } from "./plan.ts";
+import { abbreviatedCount, money } from "./figures.ts";
 
 // ANSI escape codes. NO_COLOR support per Unix convention.
 const useColor = colorEnabled();
@@ -435,12 +436,12 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
     let tokenPart = "";
     if (usage !== undefined) {
         const aggregate = usage.accounting.usage;
-        tokenPart = ` · ↓${aggregate?.inputTokens ?? "?"} ↑${aggregate?.outputTokens ?? "?"}`;
+        tokenPart = ` · ↓${abbreviatedCount(aggregate?.inputTokens)} ↑${abbreviatedCount(aggregate?.outputTokens)}`;
         tokenPart += curationGauge(usage.curationWeight, usage.curationBudget);
         tokenPart += contextGauge(usage.contextTokens, usage.contextCapacity);
         const costUsd = usage.accounting.costUsd;
         if (costUsd !== null && !isZeroDecimal(costUsd)) {
-            tokenPart += ` · loop $${costUsd}`;
+            tokenPart += ` · loop $${money(costUsd)}`;
         }
     }
     return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;

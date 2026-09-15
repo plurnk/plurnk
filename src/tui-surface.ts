@@ -34,9 +34,10 @@ export default class TuiSurface {
     readonly #transcript = new Container();
     // The reasoning scroll: at most a third of the terminal, newest lines only, never durable.
     readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
-    // {§cli-workers-topology} — the prompt's path prefix, the line above the composer.
+    // {§cli-workers-topology} — one line above the composer: the place, then the status line.
     readonly #prompt = new Text("", 0, 0);
-    readonly #status = new Text("", 0, 0);
+    #promptText = "";
+    #statusText = "";
     readonly editor = new Editor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 });
     #started = false;
 
@@ -45,7 +46,6 @@ export default class TuiSurface {
         this.#tui.addChild(this.#live);
         this.#tui.addChild(this.#prompt);
         this.#tui.addChild(this.editor);
-        this.#tui.addChild(this.#status);
         this.#tui.setFocus(this.editor);
     }
 
@@ -79,12 +79,17 @@ export default class TuiSurface {
     }
 
     setPrompt(text: string): void {
-        this.#prompt.setText(text);
-        this.#tui.requestRender();
+        this.#promptText = text;
+        this.#paintPlace();
     }
 
     setStatus(text: string): void {
-        this.#status.setText(text);
+        this.#statusText = text;
+        this.#paintPlace();
+    }
+
+    #paintPlace(): void {
+        this.#prompt.setText([this.#promptText, this.#statusText].filter((part) => part.length > 0).join(" "));
         this.#tui.requestRender();
     }
 

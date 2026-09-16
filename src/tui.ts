@@ -1181,7 +1181,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 const { interactionId, form } = question;
                 const answer = form.submit(trimmed.startsWith("\\/") ? trimmed.slice(1) : line);
                 if (answer.kind !== "complete") {
-                    if (answer.kind === "invalid") printAbove(answer.message);
+                    if (answer.kind === "invalid") printAbove(ModelText.plain(answer.message));
                     printAbove(renderQuestionMenu(form.prompt, form.choices));
                     reprompt();
                     return;

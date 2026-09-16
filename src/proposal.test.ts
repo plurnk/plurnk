@@ -30,11 +30,11 @@ test("questionChoices: the schema's single-property enum choices surface", () =>
     assert.deepEqual(questionChoices({}), []);
 });
 
-test("renderQuestionMenu: numbers the choices + free-response hint; open question just prompts", () => {
+test("renderQuestionMenu: numbers enum choices without promising arbitrary values; open question just prompts", () => {
     const mc = renderQuestionMenu("Which?", ["Alpha", "Beta"]);
     assert.match(mc, /1\. Alpha/);
     assert.match(mc, /2\. Beta/);
-    assert.match(mc, /Free Response/);
+    assert.match(mc, /enter a listed value/);
     assert.match(renderQuestionMenu("Name?", []), /type your answer/);
 });
 

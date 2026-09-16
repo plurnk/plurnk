@@ -812,13 +812,17 @@ Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripte
 
 ### §6.5 Questions {§cli-question-forms}
 
-AG-UI `request_user_input` interrupts present the message and collect the
-response schema's named fields individually. Each field shows its type,
-required/optional status, and description; optional fields may be skipped
-with Enter. String enums offer numbered choices and free response. Non-string
-values use JSON notation. Invalid input explains the expected value and stays
-on that field without losing earlier answers. Empty forms explicitly submit
-an empty object. Completed forms resume with the exact response-schema object;
+AG-UI `request_user_input` interrupts present the message and the exact response
+contract. Independent, directly typed fields are collected individually; each
+shows its type, required/optional status, and description. Optional fields may
+be skipped with Enter. String enums offer numbered choices or a listed value;
+unrestricted strings accept free text. Non-string values use JSON notation.
+Complex schemas (including composed or referenced schemas and nested forms)
+are shown whole and accept one JSON response object, without detaching schema
+fragments from their reference or cross-field context. The contracts-owned JSON
+Schema validator checks answers before submission. Invalid input remains
+editable without advancing or losing earlier field answers. Empty forms
+explicitly submit an empty object. Completed forms resume with the exact response-schema object;
 `/cancel` sends a cancelled resolution. `/stop`, `/quit`, and `/help` remain
 available. Resolution failures are visible, never swallowed. `--yolo` does not
 invent answers. The originating tool constructs its own result envelope. A stale

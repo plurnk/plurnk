@@ -116,7 +116,7 @@ export const renderProposalMenu = (params: ProposalParams): string => {
 // The question tool's body is the MCP2 form-elicitation shape — { message,
 // requestedSchema } — and the answer is the standard ElicitResult payload
 // { action, content }. The client renders the message plus the schema's
-// single-property enum choices as a numbered menu with a free-response escape.
+// single-property enum choices as a numbered menu.
 
 // The schema's single-property enum choices, if any. Multi-property or
 // non-enum schemas yield []. QuestionForm calls this for each named field.
@@ -131,12 +131,12 @@ export const questionChoices = (schema: Record<string, unknown>): string[] => {
 };
 
 // The question menu: the question, numbered choices, and the always-present
-// free-response escape. An open question (no choices) is just "type your answer".
+// literal-value alternative. An open question (no choices) is just "type your answer".
 export const renderQuestionMenu = (question: string, choices: string[]): string => {
     const lines = [`\n${BOLD}── question ──${RESET}`, `  ${ModelText.plain(question)}`];
     choices.forEach((c, i) => lines.push(`  ${DIM}${i + 1}.${RESET} ${ModelText.plain(c)}`));
     lines.push(choices.length > 0
-        ? `${DIM}  type 1–${choices.length} to pick, or type your own answer (Free Response)${RESET} `
+        ? `${DIM}  type 1–${choices.length} to pick, or enter a listed value${RESET} `
         : `${DIM}  type your answer${RESET} `);
     lines.push(`${DIM}  /cancel cancels the question${RESET}`);
     return lines.join("\n");

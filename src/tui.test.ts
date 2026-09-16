@@ -77,6 +77,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         shutdown: () => {},
         useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
+        threadId: () => "test-thread",
     };
 
     await assert.rejects(
@@ -101,6 +102,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
         shutdown: () => {},
         useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
+        threadId: () => "test-thread",
     };
 
     await assert.rejects(

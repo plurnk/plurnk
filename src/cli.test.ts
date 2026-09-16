@@ -34,7 +34,7 @@ test("successful own targetless SEND messages contribute to the response indepen
     assert.equal(isResponseMessage(entry({ op: "SEND" })), true);
     for (const overrides of [
         { op: "TASK" }, { op: "SEND", origin: "_plurnk" }, { op: "SEND", status_rx: 400 },
-        { op: "SEND", source: 9 }, { op: "SEND", inherited_history: 1 },
+        { op: "SEND", source: "worker://peer" }, { op: "SEND", inherited_history: 1 },
         { op: "SEND", scheme: "worker", hostname: "child", pathname: "/" },
     ]) assert.equal(isResponseMessage(entry(overrides)), false, JSON.stringify(overrides));
 });

@@ -90,6 +90,9 @@ export interface Transport {
     // the daemon binds an existing conversation or mints a fresh one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
     useWorker(name: string, world: string): void;
+    // The conversation this transport speaks for: the AG-UI threadId the daemon sources this
+    // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
+    threadId(): string;
 }
 
 // Model and sync Runs share event projection and interrupt handling. An idle sync
@@ -117,6 +120,8 @@ export class BridgeTransport implements Transport {
         this.#world = workspace.workspace;
         this.#workspace = workspace;
     }
+
+    threadId(): string { return this.#threadId; }
 
     // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch

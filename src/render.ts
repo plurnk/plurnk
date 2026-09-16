@@ -29,7 +29,8 @@ const PINK = code("95");
 export interface LogEntryWire {
     id: number;
     worker_id?: number;
-    source?: number | null;
+    // {§message-causal-source} — the causal actor's address; null is the worker's own doing.
+    source?: string | null;
     inherited_history?: number;
     op: string;
     origin: string;
@@ -141,10 +142,16 @@ const emphasizeLines = (lines: string[], on: boolean): string => {
         .join("\n");
 };
 
-// The TUI moves submitted editor values into its transcript, so the durable
-// prompt row would duplicate them.
-export const isPromptEntry = (entry: LogEntryWire): boolean =>
-    entry.op === "prompt" && entry.scheme === "prompt";
+// {§message-arrival} — an arrival is an inbound SEND row the daemon published: the sender's
+// statement, with the causal `source` when another actor caused it (plurnk-service #706).
+export const isArrivalEntry = (entry: LogEntryWire): boolean =>
+    entry.op === "SEND" && entry.origin === "_plurnk" && objectOf(entry.attrs)?.kind === "message";
+
+// The viewer's own messages: the typed line at the prompt is already their record, so the
+// arrivals the bridge sourced to this thread render nowhere else (#79).
+export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
+    isArrivalEntry(entry) && typeof entry.source === "string"
+    && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
 
 export const isResponseMessage = (entry: LogEntryWire): boolean =>
     entry.op === "SEND" && entry.origin === "model"
@@ -359,14 +366,25 @@ const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSen
     return emphasizeLines(lines, isResponseMessage(entry));
 };
 
+// An arrival from another actor: SEND with the sender where a target would sit, then the
+// body block, never emphasized (emphasis marks this worker's own delivered responses).
+const renderArrival = (entry: LogEntryWire, columns: number): string => {
+    const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
+    const lead = `${BOLD}${GREEN}SEND${RESET}${sender}`;
+    const body = extractSendBody(entry.tx, true, Math.max(1, columns));
+    return body.length === 0 ? lead : `${lead}\n${body}`;
+};
+
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
-// its table, a targetless SEND its block, every other operation one literal row.
+// its table, an arrival its sender and block, a targetless SEND its block, every other
+// operation one literal row.
 export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
     override?: RowOverride,
 ): string => {
     if (TurnDisposition.isOp(entry.op)) return renderTask(entry, columns);
+    if (isArrivalEntry(entry)) return renderArrival(entry, columns);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
     return renderOperationRow(entry, override);
 };

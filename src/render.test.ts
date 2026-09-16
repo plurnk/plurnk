@@ -21,7 +21,8 @@ const {
     progressLabel,
     coordLabel,
     isEntryMaterialization,
-    isPromptEntry,
+    isArrivalEntry,
+    isOwnArrival,
     entryTarget,
     receiptCount,
     outcomeTitle,
@@ -140,19 +141,28 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
 
 // ─── user prompt entries ─────────────────────────────────────────────
 
-test("[§cli-what-is-not-rendered] isPromptEntry classifies only the service's actionless prompt row", () => {
-    assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "prompt", pathname: "/1/1" })), true);
-    assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "prompt", pathname: "/3/2" })), true);
-    assert.equal(isPromptEntry(entry({ op: "EDIT", scheme: "prompt", pathname: "/1/1" })), false, "the obsolete synthetic EDIT shape is not tolerated");
-    assert.equal(isPromptEntry(entry({ op: "READ", scheme: "prompt", pathname: "/1/1" })), false);
-    assert.equal(isPromptEntry(entry({ op: "prompt", scheme: "worker", pathname: "/notes.md" })), false);
+test("[§cli-what-is-not-rendered] an arrival is the daemon's inbound SEND row; only the viewer's own is withheld", () => {
+    const own = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/my%20thread/runs/r-1/messages/m-1", tx: { body: { raw: "hi" } } });
+    const peer = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://reviewer", tx: { body: { raw: "done" } } });
+    const other = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/elsewhere/runs/r-2/messages/m-2", tx: { body: { raw: "hey" } } });
+    assert.equal(isArrivalEntry(own), true);
+    assert.equal(isArrivalEntry(peer), true);
+    assert.equal(isArrivalEntry(entry({ op: "SEND", origin: "model", tx: { body: { raw: "reply" } } })), false, "the model's own SEND is not an arrival");
+    assert.equal(isArrivalEntry(entry({ op: "READ", origin: "_plurnk" })), false, "a harness READ is not an arrival");
+    assert.equal(isArrivalEntry(entry({ op: "SEND", origin: "_plurnk", source: "worker://counter", attrs: { kind: "loop_termination" } })), false, "a child's conclusion narration is not an arrival");
+    assert.equal(isOwnArrival(own, "my thread"), true, "the thread id is URI-encoded in the source");
+    assert.equal(isOwnArrival(other, "my thread"), false, "another thread's message renders");
+    assert.equal(isOwnArrival(peer, "my thread"), false, "a peer worker's message renders");
+    const rendered = renderLogEntry(peer, 80);
+    assert.match(rendered, /SEND/);
+    assert.match(rendered, /\(worker:\/\/reviewer\)/, "the sender sits where a target would");
+    assert.match(rendered, /done/, "the body follows");
 });
 
 test("[§cli-log-entry-line-format] entryTarget preserves literal resource addresses without caller-relative synthesis", () => {
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: null, pathname: "/plan.md" })), "worker:///plan.md", "empty authority = commons, verbatim");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "extract-host", pathname: "/plan.md" })), "worker://extract-host/plan.md", "named worker verbatim");
     assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare");
-    assert.equal(entryTarget(entry({ scheme: "prompt", hostname: "extract-host", pathname: "/1/2" })), "prompt://extract-host/1/2");
     assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
 });
 

@@ -20,7 +20,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -958,9 +958,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     transport.subscribe({
         onReasoning: presentReasoning,
         onEntry: (entry) => {
-            // The typed line at the prompt is the user's record — rendering the
-            // prompt broadcast too would duplicate it (see isPromptEntry).
-            if (isPromptEntry(entry)) return;
+            // The typed line at the prompt is the user's record — rendering the arrival
+            // the bridge sourced to this thread would duplicate it (see isOwnArrival);
+            // another actor's arrival renders with its sender (#79).
+            if (isOwnArrival(entry, transport.threadId())) return;
             if (isEntryMaterialization(entry)) return;
             const turn = `${entry.worker_id}/${entry.loop_seq}/${entry.turn_seq}`;
             if (entry.origin === "model" && turn !== presentedTurn) {

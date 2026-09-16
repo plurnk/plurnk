@@ -651,7 +651,7 @@ again when it eventually ends.
 
 Width-tolerant; no fixed column widths. Every row begins at column zero.
 
-**Exceptions:** targetless SEND and native dispositions render as blocks per §5.4 and §5.1.2. The TUI moves each submitted editor value into ordinary terminal scrollback; the service's durable prompt row is not rendered again (`isPromptEntry`).
+**Exceptions:** targetless SEND and native dispositions render as blocks per §5.4 and §5.1.2. The TUI moves each submitted editor value into ordinary terminal scrollback; its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 

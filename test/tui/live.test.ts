@@ -40,7 +40,7 @@ describe("TUI live (model-gated)", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             // Anything multi-step keeps the loop alive beyond its first model row.
-            // Durable prompt rows are suppressed because the submitted editor value
+            // This viewer's own arrival echoes are suppressed because the submitted editor value
             // is already in the transcript; the status row carries lifecycle.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
             await tui.waitFor(/⌛︎/);

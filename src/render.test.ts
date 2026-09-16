@@ -139,7 +139,7 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
     assert.match(narrow, /words\./);
 });
 
-// ─── user prompt entries ─────────────────────────────────────────────
+// ─── message arrivals ────────────────────────────────────────────────
 
 test("[§cli-what-is-not-rendered] an arrival is the daemon's inbound SEND row; only the viewer's own is withheld", () => {
     const own = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/my%20thread/runs/r-1/messages/m-1", tx: { body: { raw: "hi" } } });

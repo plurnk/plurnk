@@ -244,7 +244,7 @@ try {
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
         "```WORK (worker://guesser1)\nCreate child.txt and conclude.\n```\n"
-            + "```TASK <-1>\n[{\"content\":\"Waiting for guesser1.\",\"status\":\"waiting\"}]\n```",
+            + "```TASK\n[{\"content\":\"Waiting for guesser1.\",\"status\":\"waiting\"}]\n```",
         "```EDIT (child.txt)\ncreated by packed child\n```\n"
             + "```TASK\n[{\"content\":\"Confirming the write.\",\"status\":\"in_progress\"}]\n```",
         "```SEND\nChild work complete.\n```\n"
@@ -259,6 +259,13 @@ try {
         "Exercise descendant proposal composition.",
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);
+    const parentTasks = delegatedResult.turns?.flatMap(({ ops }) => ops)
+        .filter(({ op, origin }) => op === "TASK" && origin === "model");
+    // Settlement may beat parking; either outcome must admit the unscoped inventory.
+    if (parentTasks?.length !== 2 || ![102, 202].includes(parentTasks[0].status)
+        || parentTasks[1].status !== 200 || parentTasks.some(({ scope }) => scope !== null)) {
+        throw new Error(`descendant proposal did not admit and settle its parent's wait: ${JSON.stringify(parentTasks)}`);
+    }
     if (delegatedResult.response !== "packed descendant proposal complete") {
         throw new Error(`descendant proposal run returned ${JSON.stringify(delegatedResult.response)}`);
     }

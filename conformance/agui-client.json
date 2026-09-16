@@ -891,6 +891,72 @@
         "durability"
       ]
     },
+    "workspace.schedule.list": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "workspace.schedule.discover": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "workspace.schedule.add": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "workspace.schedule.enable": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "workspace.schedule.disable": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "workspace.schedule.remove": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
     "workspace.mcp.oauth.complete": {
       "posture": "native",
       "evidence": [

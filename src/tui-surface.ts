@@ -9,6 +9,8 @@ import {
     type TuiInputListener,
 } from "@earendil-works/pi-tui";
 import TailText from "./tail-text.ts";
+import TurnDisplay from "./turn.ts";
+import type { LogEntryWire } from "./render.ts";
 
 const ansi = (code: number): ((text: string) => string) => (text) =>
     process.env.NO_COLOR !== undefined ? text : `\x1b[${code}m${text}\x1b[0m`;
@@ -34,6 +36,7 @@ export default class TuiSurface {
     readonly #transcript = new Container();
     // The reasoning scroll: at most a third of the terminal, newest lines only, never durable.
     readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
+    readonly #turn = new TurnDisplay();
     // {§cli-workers-topology} — one line above the composer: the place, then the status line.
     readonly #prompt = new Text("", 0, 0);
     #promptText = "";
@@ -44,6 +47,7 @@ export default class TuiSurface {
     constructor() {
         this.#tui.addChild(this.#transcript);
         this.#tui.addChild(this.#live);
+        this.#tui.addChild(this.#turn);
         this.#tui.addChild(this.#prompt);
         this.#tui.addChild(this.editor);
         this.#tui.setFocus(this.editor);
@@ -75,6 +79,28 @@ export default class TuiSurface {
 
     setLive(text: string | null): void {
         this.#live.setText(text ?? "");
+        this.#tui.requestRender();
+    }
+
+    setTask(entry: LogEntryWire): void {
+        this.#turn.setTask(entry);
+        this.#tui.requestRender();
+    }
+
+    addResponse(entry: LogEntryWire): void {
+        this.#turn.addResponse(entry);
+        this.#tui.requestRender();
+    }
+
+    archiveResponses(): void {
+        const previous = this.#turn.takeResponses();
+        if (!previous.empty) this.#transcript.addChild(previous);
+        this.#tui.requestRender();
+    }
+
+    archiveActivity(): void {
+        const previous = this.#turn.take();
+        if (!previous.empty) this.#transcript.addChild(previous);
         this.#tui.requestRender();
     }
 

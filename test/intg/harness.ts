@@ -9,7 +9,6 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, mkdir, rm, access, writeFile, constants as fsConstants } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,7 +61,7 @@ interface BootOptions {
     readyTimeoutMs?: number;             // default 10s
 }
 
-// Boot the daemon and wait until its WS server prints the ready line. Returns
+// Boot the daemon and wait until its AG-UI listener prints the ready line. Returns
 // the resolved URL plus a cleanup function that MUST be awaited (otherwise
 // orphan subprocess — see memory:feedback-background-task-cleanup).
 export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promise<Daemon> => {
@@ -72,17 +71,11 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
     await mkdir(home, { recursive: true });
     const workspace = await mkdtemp(join(tmpdir(), "plurnk-intg-ws-"));
     const daemonEnv = opts.inheritOperatorConfig === true ? await locateDaemonEnv(binPath) : null;
-    // The service loads env IN-SCRIPT (process.loadEnvFile OVERRIDES spawn env), so
-    // spawn-env pins don't survive; its own --env-file flags, loaded LAST, are the
-    // sanctioned override. Also: PLURNK_PORT=0 makes the banner lie (prints the
-    // configured 0) — allocate a concrete port so the module is addressable.
-    const port = await new Promise<number>((r) => {
-        const srv = createServer();
-        srv.listen(0, "127.0.0.1", () => { const p = (srv.address() as { port: number }).port; srv.close(() => r(p)); });
-    });
+    // Let the daemon own ephemeral port allocation; reserving and releasing one
+    // here races other parallel tests. Read the actual bound address from readiness.
     const overrides = Object.entries({
         PLURNK_SERVICE_DB_PATH: dbPath,
-        PLURNK_PORT: String(port),
+        PLURNK_PORT: "0",
         PLURNK_WS_PORT: "0",
         PLURNK_MODEL: "",
         PLURNK_MCP_ENABLED: "[]",

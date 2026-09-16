@@ -251,7 +251,7 @@ const activityText = ({ label, percent }: StatusActivity): string => {
 // {plurnk#58} — thousands separators; an unknown count stays "?".
 
 // The summary line's shape, aggregated over the session: the running loop adds
-// its packets as turns and its elapsed time; tokens and cost are concluded totals.
+// its packets as turns, elapsed time, and settled per-turn accounting.
 export const renderStatusLine = (
     value: ClientStatus,
     context: StatusContext,
@@ -265,7 +265,7 @@ export const renderStatusLine = (
     const running = value.lifecycle === "running";
     const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
     if (context.tally.turns > 0 || running) parts.push(formatDuration(context.tally.wallMs + elapsed));
-    const accrued = running ? context.accrued ?? null : null;
+    const accrued = running || value.lifecycle === "parked" || value.lifecycle === "queued" ? context.accrued ?? null : null;
     const combined = accrued === null ? context.tally : accrueTurnAccounting({
         costUsd: context.tally.costUsd,
         inputTokens: context.tally.inputTokens,

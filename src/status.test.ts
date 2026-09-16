@@ -128,4 +128,8 @@ test("#465: turn accounting parses, accrues decimal-exact, and rides the running
         { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
     );
     assert.doesNotMatch(idle, /\$0\.0150/, "a concluded line shows only the concluded tally");
+    assert.match(renderStatusLine(
+        { lifecycle: "parked", model: null, loopId: 1, packetCount: 2, activity: null, children: null },
+        { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
+    ), /↓150 ↑25.*\$0\.0150/, "parking does not hide already-settled spend");
 });

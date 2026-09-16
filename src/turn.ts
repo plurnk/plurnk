@@ -1,43 +1,33 @@
-// {§cli-plan-rendering} — a turn's TASK table stands before the turn's operation rows, so the
-// model's response is what ends the turn, not its checklist. The daemon dispatches the
-// disposition last; the waterfall holds a turn's model rows until its TASK arrives, then renders
-// the table and the rows in authored order. A turn without a TASK releases its rows when the
-// next turn's first row arrives or the loop concludes.
+import type { Component } from "@earendil-works/pi-tui";
+import { renderLogEntry, type LogEntryWire } from "./render.ts";
 
-import type { LogEntryWire } from "./render.ts";
+// {§cli-plan-rendering}: current inventory above deliberate messages; operations are not buffered.
+export default class TurnDisplay implements Component {
+    #task: LogEntryWire | null = null;
+    #responses: LogEntryWire[] = [];
 
-export default class TurnBuffer {
-    #key: string | null = null;
-    #rows: string[] = [];
+    get empty(): boolean { return this.#task === null && this.#responses.length === 0; }
 
-    // Whether this entry begins a turn the buffer has not seen.
-    begins(entry: LogEntryWire): boolean {
-        return TurnBuffer.#keyOf(entry) !== this.#key;
+    setTask(entry: LogEntryWire): void { this.#task = entry; }
+    addResponse(entry: LogEntryWire): void { this.#responses.push(entry); }
+    invalidate(): void {}
+
+    render(width: number): string[] {
+        const entries = [...(this.#task === null ? [] : [this.#task]), ...this.#responses];
+        return entries.flatMap((entry) => renderLogEntry(entry, width).split("\n"));
     }
 
-    // The lines to print now, in order: a previous turn's leftovers, then, on a disposition,
-    // the table followed by this turn's held rows.
-    admit(entry: LogEntryWire, rendered: string, disposition: boolean): string[] {
-        const key = TurnBuffer.#keyOf(entry);
-        const flushed = key === this.#key ? [] : this.flush();
-        this.#key = key;
-        if (!disposition) {
-            this.#rows.push(rendered);
-            return flushed;
-        }
-        const held = this.#rows;
-        this.#rows = [];
-        return [...flushed, rendered, ...held];
+    takeResponses(): TurnDisplay {
+        const previous = new TurnDisplay();
+        previous.#responses = this.#responses;
+        this.#responses = [];
+        return previous;
     }
 
-    flush(): string[] {
-        const held = this.#rows;
-        this.#rows = [];
-        this.#key = null;
-        return held;
-    }
-
-    static #keyOf(entry: LogEntryWire): string {
-        return `${entry.loop_seq}/${entry.turn_seq}`;
+    take(): TurnDisplay {
+        const previous = this.takeResponses();
+        previous.#task = this.#task;
+        this.#task = null;
+        return previous;
     }
 }

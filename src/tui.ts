@@ -20,7 +20,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { renderLogEntry, renderReasoning, renderSummary, isPromptEntry, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -54,7 +54,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { EMPTY_TALLY, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -66,7 +66,6 @@ import {
     type CommandSuggestion,
     type FunctionalityFamily,
 } from "./commands.ts";
-import TurnBuffer from "./turn.ts";
 
 export const renderTuiFailure = (cause: unknown): string => {
     // A Problem may quote the model's own line; a thrown message may carry anything (plurnk#35).
@@ -604,6 +603,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let lifecycle: StatusLifecycle = "idle";
     let authoritativeStatus: ClientStatus | null = null;
     let tally: SessionTally = EMPTY_TALLY;
+    let accrued: TurnAccounting | null = null;
     let runningSince: number | null = null;
     let conversationWorkerId: number | null = null;
     // {§cli-workers-topology} — where the session is in the tree: the prompt's path prefix and the
@@ -641,7 +641,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const peeks: Promise<void>[] = [];
     const settlePeeks = async (): Promise<void> => { await Promise.all(peeks.splice(0)); };
     const fanout = new FanoutCollapse();
-    const turns = new TurnBuffer();
+    let presentedTurn: string | null = null;
 
     // A dropped connection can't carry a pending question's answer. shuttingDown
     // (set on an intentional quit) tells the transport to suppress its reject.
@@ -725,6 +725,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         position: workerPosition,
         child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
         tally,
+        accrued,
         runningSince,
         now: Date.now(),
     });
@@ -798,6 +799,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const presentReasoning = (update: ReasoningUpdate): void => {
         if (update.phase === "start") {
             if (liveReasoning !== null) throw new TypeError("A second reasoning message started before the first ended.");
+            surface.archiveResponses();
             liveReasoning = { messageId: update.messageId, rendered: "" };
             return;
         }
@@ -936,8 +938,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // they render the shared workspace's activity whether this REPL started the loop
     // or a worker/second client did (multi-client observability).
     const handleNotice = (notice: Notice): void => {
-        // engine:turn liveness is owned by the run state, not a waterfall line.
-        if (notice.source === "engine:turn") return;
+        if (notice.source === "engine:turn") {
+            const accounting = turnAccountingFromNotice(notice);
+            if (inFlight && accounting !== null) {
+                accrued = accrueTurnAccounting(accrued, accounting);
+                repromptPreserving();
+            }
+            return;
+        }
         // Search acquisition is the same compact lifecycle shape: update the
         // prompt percentage, never append one notice line per tick.
         if (notice.kind === "search_progress" && notice.source.startsWith("exec:")) {
@@ -957,6 +965,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // prompt broadcast too would duplicate it (see isPromptEntry).
             if (isPromptEntry(entry)) return;
             if (isEntryMaterialization(entry)) return;
+            const turn = `${entry.worker_id}/${entry.loop_seq}/${entry.turn_seq}`;
+            if (entry.origin === "model" && turn !== presentedTurn) {
+                surface.archiveResponses();
+                for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq)) printAbove(renderPendingRow(stale));
+                presentedTurn = turn;
+            }
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
@@ -966,17 +980,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const verdict = fanout.admit(entry);
             if (verdict.kind === "suppressed") return;
             const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined);
-            if (entry.origin !== "model") { printAbove(rendered); return; }
-            // An execution still open when the following turn begins shows once in grey, and
-            // again when it concludes.
-            if (turns.begins(entry)) for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq)) printAbove(renderPendingRow(stale));
-            // {§cli-plan-rendering} — the turn's TASK table stands before the turn's rows.
-            for (const line of turns.admit(entry, rendered, TurnDisposition.isOp(entry.op))) printAbove(line);
+            if (TurnDisposition.isOp(entry.op)) surface.setTask(entry);
+            else if (isResponseMessage(entry)) surface.addResponse(entry);
+            else printAbove(rendered);
         },
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
+            workerModel = modelRouteOrNull(gauge.plurnk.status.model);
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
             placeLoop = authoritativeStatus.loopId;
             placeTurn = authoritativeStatus.packetCount;
@@ -1063,6 +1075,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: async (name) => {
+            surface.archiveActivity();
             const workspace = await transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client });
             conversationWorker = workspace.name;
             conversationWorkerId = null;
@@ -1070,6 +1083,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         },
         getWorker: () => conversationWorker,
         attachWorker: (name) => {
+            surface.archiveActivity();
             transport.useWorker(name, current.name);
             conversationWorker = name;
             conversationWorkerId = null;
@@ -1147,7 +1161,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         requestClose = close;
 
         const submit = async (line: string): Promise<void> => {
-            if (line.trim().length > 0) printAbove(renderSubmittedInput(line, opts.yolo));
+            if (line.trim().length > 0) {
+                if (!inFlight) surface.archiveActivity();
+                printAbove(renderSubmittedInput(line, opts.yolo));
+            }
             const trimmed = line.trim();
             if (trimmed === "/cancel" && pendingQuestion !== null) {
                 const question = pendingQuestion;
@@ -1229,6 +1246,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             inFlight = true;
             lifecycle = "running";
             authoritativeStatus = null;
+            accrued = null;
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.
             reprompt();
@@ -1250,7 +1268,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 activeRun = transport.run(promptText, loopParams);
                 for (;;) {
                     const t = await activeRun.done;
-                    for (const line of turns.flush()) printAbove(line);
                     reviewRequested = false;
                     if (t !== null) {
                         const turnCount = t.turnIds?.length ?? 0;
@@ -1271,6 +1288,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                         const wallMs = Date.now() - start;
                         printAbove(renderSummary(turnCount, wallMs, t.result, t.hitMaxTurns, t.usage));
                         tally = tallyOutcome(tally, { turns: turnCount, wallMs, usage: t.usage });
+                        accrued = null;
                     }
                     // No asynchronous presentation work follows this admission barrier:
                     // another prompt must not sneak into the completion/idle gap.

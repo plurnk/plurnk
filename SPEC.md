@@ -128,8 +128,10 @@ worker is its sibling position, newest first, present only with siblings.
 
 Turns and wall time include the running loop — its packet count from the
 authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
-from the local clock, ticking once a second; token and cost totals are the exact
-sum of concluded loops' accounting. The turns/wall group appears once a loop has
+from the local clock, ticking once a second; token and cost totals combine concluded
+loops with settled `engine:turn` accounting from the current observed run. Every
+completion beat refreshes them. The terminal loop aggregate replaces, rather than
+adds to, that run's accrual. Unknown usage remains unknown. The turns/wall group appears once a loop has
 run, tokens once accounting exists, cost when nonzero, the child model while a spawn override is set (§1.2.2), the
 worker once the conversation worker is known (the terminated outcome names it). The client does
 not infer provider packets from operation rows or turn coordinates.
@@ -659,11 +661,11 @@ must not send semantic content to an unproven executable.
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
 Readable provider reasoning is neither task inventory nor assistant speech. The client
-consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle,
-commits complete terminal-width rows to one growing dim `💭` block and keeps
-only its incomplete tail in a replaceable row above the live prompt. Each row
-enters scrollback once, and the completed block precedes the paired SEND without
-being replayed. It never infers reasoning
+consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle.
+The TUI shows a dim `💭` tail, at most one third of the terminal, below operation
+history and above the current task table. It disappears when reasoning ends;
+reasoning history remains available from the daemon, not duplicated into scrollback.
+It never infers reasoning
 from TASK, renders encrypted reasoning as text, or invents an empty transcript.
 The one-shot client streams this human trace to stderr; stdout remains the bare
 answer and JSON mode remains silent.
@@ -671,11 +673,13 @@ answer and JSON mode remains silent.
 #### §5.1.2 Plan {§cli-plan-rendering}
 
 TASK renders no keyword. A lead line stands where `TASK` was, blank unless the receipt has
-words of its own, then the inventory as a status-column table. The table stands before the
-turn's operation rows: the waterfall holds a turn's model rows until its TASK arrives, then
-renders the table and the rows in authored order, so the model's response ends the turn rather
-than its checklist; a turn without a TASK releases its rows when the next turn begins or the
-loop concludes.
+words of its own, then the inventory as a status-column table. The TUI's vertical
+order is operation history, live reasoning, current task table, and SEND messages.
+The task table updates in place; operation rows do not wait for TASK. Messages
+from a continuing turn move into history when the following turn begins, while
+the inventory stays in place until replaced. The final table and messages remain
+visible, then enter scrollback when the user submits the next interaction or
+switches conversations. Deliberate messages are never discarded.
 
 - Columns are the native statuses present in the inventory, in the stable relative order
   `todo`, `in_progress`, `waiting`, `completed`, `failed`; an empty status has no column,

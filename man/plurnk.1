@@ -1,4 +1,4 @@
-.TH PLURNK 1 "" "plurnk 0.84.0" "User Commands"
+.TH PLURNK 1 "" "plurnk 0.85.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -133,7 +133,8 @@ The no-argument interactive terminal accepts these slash commands:
 /skills [subcommand]           List or manage this worker's Agent Skills.
 /agents [subcommand]           List or manage this worker's outbound A2A agents.
 /members [subcommand]          List or manage this worker's file members.
-/env [subcommand]              List or manage this worker's environment.
+/env [--scope worker|workspace] [subcommand] Manage worker overrides or shared workspace environment defaults.
+/schedule [subcommand]         List or manage this workspace's scheduled messages.
 /import <path>                 Insert a local file into the composer.
 /script <path>                 Submit a local .plk program through op.parse.
 /editor                        Compose the current value in $EDITOR.

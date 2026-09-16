@@ -892,69 +892,81 @@
       ]
     },
     "workspace.schedule.list": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/schedule.test.ts — scheduled messages management"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.schedule.discover": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/schedule.test.ts — scheduled messages management"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.schedule.add": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/schedule.test.ts — scheduled messages management"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.schedule.enable": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/schedule.test.ts — scheduled messages management"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.schedule.disable": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/schedule.test.ts — scheduled messages management"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.schedule.remove": {
-      "posture": "generic",
+      "posture": "native",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/schedule.test.ts — scheduled messages management"
       ],
       "dimensions": [
+        "admission",
         "projection",
         "success",
-        "failure"
+        "failure",
+        "presentation"
       ]
     },
     "workspace.mcp.oauth.complete": {

@@ -17,6 +17,7 @@ test("[§cli-interactive-command-discovery] the registry is unique and every com
     assert.equal(names.includes("agents"), true);
     assert.equal(names.includes("members"), true);
     assert.equal(names.includes("env"), true);
+    assert.equal(names.includes("schedule"), true);
 });
 
 test("root, contextual help, and Functionality syntax share the registry", () => {

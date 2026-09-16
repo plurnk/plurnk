@@ -9,11 +9,11 @@ export const COMMAND_GROUPS = [
 ] as const;
 
 export type CommandGroup = typeof COMMAND_GROUPS[number]["id"];
-export type FunctionalityFamily = "mcp" | "skills" | "agents" | "members" | "env";
+export type FunctionalityFamily = "mcp" | "skills" | "agents" | "members" | "env" | "schedule";
 
 // Default action prefixes. Env also accepts an explicit workspace scope.
 export const FAMILY_ACTIONS: Readonly<Record<FunctionalityFamily, string>> = Object.freeze({
-    mcp: "workspace.mcp", skills: "workspace.skills", agents: "workspace.agents", members: "workspace.members", env: "worker.env",
+    mcp: "workspace.mcp", skills: "workspace.skills", agents: "workspace.agents", members: "workspace.members", env: "worker.env", schedule: "workspace.schedule",
 });
 
 export interface CommandSubcommand {
@@ -73,6 +73,12 @@ const ENV_SUBCOMMANDS = lifecycle(
     { name: "add", usage: "add <NAME> <value>", summary: "Set a variable in the selected scope; the value is used verbatim.", alias: false },
 );
 
+const SCHEDULE_SUBCOMMANDS = lifecycle(
+    "alias",
+    { name: "discover", usage: "discover <rule>", summary: "Read the time and preview a rule's occurrences without adding it.", alias: false },
+    { name: "add", usage: "add [--accept] <alias> <worker> <rule> <prompt...>", summary: "Add and arm a rule that delivers the prompt to a worker at each occurrence.", alias: false },
+);
+
 export const COMMANDS = [
     { name: "help", usage: "/help [verb]", summary: "Show the command index or one command's usage.", group: "inspect" },
     { name: "models", usage: "/models [search]", summary: "Search the bounded model catalog.", group: "inspect" },
@@ -101,6 +107,7 @@ export const COMMANDS = [
     { name: "agents", usage: "/agents [subcommand]", summary: "List or manage this worker's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
     { name: "members", usage: "/members [subcommand]", summary: "List or manage this worker's file members.", group: "functionality", subcommands: MEMBERS_SUBCOMMANDS },
     { name: "env", usage: "/env [--scope worker|workspace] [subcommand]", summary: "Manage worker overrides or shared workspace environment defaults.", group: "functionality", subcommands: ENV_SUBCOMMANDS },
+    { name: "schedule", usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages.", group: "functionality", subcommands: SCHEDULE_SUBCOMMANDS },
 
     { name: "import", usage: "/import <path>", summary: "Insert a local file into the composer.", group: "compose" },
     { name: "script", usage: "/script <path>", summary: "Submit a local .plk program through op.parse.", group: "compose" },
@@ -154,7 +161,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
     const help = /^\/help\s+(\w*)$/u.exec(line);
     if (help !== null) return { kind: "syntax", prefix: help[1], suggestions: matchingCommands(help[1], false) };
 
-    const nested = /^\/(mcp|skills|agents|members|env)\s+(\w*)$/u.exec(line);
+    const nested = /^\/(mcp|skills|agents|members|env|schedule)\s+(\w*)$/u.exec(line);
     if (nested !== null) {
         const spec = commandSpec(nested[1]);
         const suggestions = (spec?.subcommands ?? [])
@@ -163,7 +170,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
         return { kind: "syntax", prefix: nested[2], suggestions };
     }
 
-    const alias = /^\/(mcp|skills|agents|members|env)\s+(\w+)\s+(\S*)$/u.exec(line);
+    const alias = /^\/(mcp|skills|agents|members|env|schedule)\s+(\w+)\s+(\S*)$/u.exec(line);
     if (alias !== null) {
         const subcommand = commandSpec(alias[1])?.subcommands?.find(({ name }) => name === alias[2]);
         if (subcommand?.alias === true) {

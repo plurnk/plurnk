@@ -571,6 +571,29 @@ diagnostic path without rewriting or retry.
 
 ---
 
+### §3.9 Scheduled messages {§cli-schedule}
+
+Scheduled messages are a thin projection of the daemon's `schedule`
+Functionality family — the same common lifecycle as `/mcp` and `/agents`. The
+client composes one exact definition (`rule`, `target`, `prompt`, optional
+`policy`) and renders the daemon's states; the clock, the rule's canonical
+form, the timers and the delivery live in the service, and an occurrence
+reaches its worker as an ordinary message from `schedule://<alias>`.
+
+| TUI input | AG-UI+ action |
+|---|---|
+| `/schedule` | `workspace.schedule.list {}` — each rule with its state, wording, next occurrence or `exhausted`, and target |
+| `/schedule discover <rule>` | `workspace.schedule.discover {source}` — one inert candidate whose summary opens with the current time in the effective zone |
+| `/schedule add [--accept] <alias> <worker> <rule> <prompt...>` | `workspace.schedule.add {alias, definition: {rule, target: worker://<worker>, prompt, policy?}}`; `--accept` sets `policy.proposals` to `accept` |
+| `/schedule enable <alias>` | `workspace.schedule.enable {alias}` |
+| `/schedule disable <alias>` | `workspace.schedule.disable {alias}` |
+| `/schedule remove <alias>` | `workspace.schedule.remove {alias}` |
+
+Incomplete arguments print the exact usage and dispatch nothing; daemon
+Problems — an unreadable or unbounded rule, an unknown zone, a missing target
+worker — cross the existing diagnostic path without rewriting or retry.
+
+
 ## §4 Exit codes {§cli-exit-codes}
 
 | Code | Meaning |

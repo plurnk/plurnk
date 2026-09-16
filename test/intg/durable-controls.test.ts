@@ -18,9 +18,9 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
         extraEnv: {
             PLURNK_A2A_DURABLE: agent.baseUrl,
             PLURNK_A2A_ENABLED: '["durable"]',
-            PLURNK_MODEL_nvimtest: "lmstudio/nvim-family/selected",
-            PLURNK_PROVIDERS_CONTEXT_WINDOW_nvimtest: "32768",
-            PLURNK_PROVIDERS_REASONING_nvimtest: "off",
+            PLURNK_MODEL_controlfixture: "lmstudio/control-family/selected",
+            PLURNK_PROVIDERS_CONTEXT_WINDOW_controlfixture: "32768",
+            PLURNK_PROVIDERS_REASONING_controlfixture: "off",
             LMSTUDIO_API_KEY: "conformance",
         },
     });
@@ -61,21 +61,21 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     );
     assert.ok(workers.workers.some(({ id, name }) => id === child.workerId && name === "durable-child"));
 
-    await from("a", "worker.model.set", { selector: "nvimtest" });
+    await from("a", "worker.model.set", { selector: "controlfixture" });
     const model = await from<{ model: { alias: string; provider: string; model: string; reasoningPolicy?: string; reasoningSource?: string } }>("b", "worker.model.get");
     // The route carries the worker's durable effort with the identity (plurnk#41).
     assert.deepEqual(model.model, {
-        alias: "nvimtest",
+        alias: "controlfixture",
         provider: "lmstudio",
-        model: "nvim-family/selected",
+        model: "control-family/selected",
         reasoningPolicy: "off",
         // {§cli-identity-effort} — the daemon states the provenance beside the policy (service#528).
         reasoningSource: "default",
     });
 
-    await from("a", "worker.child.set", { selector: "nvimtest" });
+    await from("a", "worker.child.set", { selector: "controlfixture" });
     const childModel = await from<{ spawnModel: { alias: string } }>("b", "worker.model.get");
-    assert.equal(childModel.spawnModel.alias, "nvimtest");
+    assert.equal(childModel.spawnModel.alias, "controlfixture");
 
     await from("a", "worker.reasoning.set", { policy: "adaptive" });
     assert.equal((await from<{ policy: string }>("b", "worker.reasoning.get")).policy, "adaptive");

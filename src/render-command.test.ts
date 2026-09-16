@@ -7,7 +7,7 @@ test("[§cli-render-filter] renderDocument projects width-bounded plain Unicode"
     const output = renderDocument([
         "| Surface | Use |",
         "| --- | --- |",
-        "| Neovim | A deliberately long explanation that must wrap. |",
+        "| Client | A deliberately long explanation that must wrap. |",
     ].join("\n"), 42);
 
     assert.match(output, /┌/);

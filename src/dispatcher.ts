@@ -352,9 +352,9 @@ export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json")
 
 // #249 — workspace-stable frontend id, passed on workspace.create and forwarded by
 // the daemon to the plurnk provider as the Plurnk-Client header (dropped by
-// every other provider). The 'plurnk.nvim/1.4.0' shape; nvim sends its own.
+// every other provider).
 // #71 — one id per FRONTEND, name/version form, workspace-stable. CLI and TUI are
-// distinct frontends of this package (nvim self-ids separately as plurnk.nvim);
+// distinct frontends of this package;
 // splitting them lets the service attribute usage per surface.
 export const CLIENT_ID_CLI = `@plurnk/plurnk-cli/${CLIENT_VERSION}`;
 export const CLIENT_ID_TUI = `@plurnk/plurnk-tui/${CLIENT_VERSION}`;

@@ -94,7 +94,7 @@ Provider credentials belong in the daemon's environment. Proposals are accepted
 automatically by default (`PLURNK_CLIENT_YOLO=1`); set it to `0` or start a prompt
 with `?` to review them. Neither overrides capability restrictions.
 
-## TUI, CLI, and Neovim
+## TUI and CLI
 
 ### Interactive terminal
 
@@ -122,11 +122,6 @@ diagnostics, and usage.
 
 Use `plurnk --help` for CLI options. `plurnk models` lists available model
 routes.
-
-### Neovim
-
-For an editor-native interface, use [plurnk.nvim](https://github.com/plurnk/plurnk.nvim)
-against the same daemon.
 
 ## Extend and configure
 

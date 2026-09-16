@@ -1,6 +1,5 @@
 // Unit tests for the TUI verb handlers (handleVerb), extracted from runTui so
-// they're testable with a stubbed rpc — the npm equivalent of plurnk.nvim's
-// spec 23. Verbs never call loop.run; they're run-tab furniture.
+// they're testable with a stubbed rpc. Verbs never call loop.run.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -110,9 +109,9 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
     );
 });
 
-// ─── altShortcut (Alt-<letter> quick-keys, nvim muscle-memory convergence) ──
+// ─── altShortcut (Alt-<letter> quick-keys) ──
 
-test("altShortcut: lowercase mnemonics map (nvim's lowercase: m, s, x)", () => {
+test("altShortcut: lowercase mnemonics map (m, s, x)", () => {
     assert.equal(altShortcut("\x1bm"), "/models");
     assert.equal(altShortcut("\x1bs"), "/workspaces");
     assert.equal(altShortcut("\x1bx"), "/stop");
@@ -124,10 +123,10 @@ test("altShortcut: lowercase mnemonics map (nvim's lowercase: m, s, x)", () => {
     assert.equal(altShortcut("\x1b?"), "/help");
 });
 
-test("altShortcut: CASE matches nvim — capitals are distinct (R/L/Y/N/M)", () => {
-    assert.equal(altShortcut("\x1bR"), "/workers");   // nvim <leader>aR
-    assert.equal(altShortcut("\x1bM"), "/members");   // nvim <leader>aM
-    assert.equal(altShortcut("\x1bY"), "/yolo");      // nvim <leader>aY
+test("altShortcut: capitals are distinct (R/L/Y/N/M)", () => {
+    assert.equal(altShortcut("\x1bR"), "/workers");
+    assert.equal(altShortcut("\x1bM"), "/members");
+    assert.equal(altShortcut("\x1bY"), "/yolo");
     // lowercase of a capital-mnemonic is NOT mapped — case is significant.
     assert.equal(altShortcut("\x1br"), null);
 });
@@ -697,7 +696,7 @@ test("seedPromptHistory: empty / error → history untouched", async () => {
     assert.equal(calls, 0);
 });
 
-test("[§cli-prompt-prefixes-converged-with-plurnknvim-and-the-tui] linePolicy: '?' selects review; ':' preserves ordinary policy", () => {
+test("[§cli-prompt-prefixes] linePolicy: '?' selects review; ':' preserves ordinary policy", () => {
     assert.deepEqual(linePolicy("? what is truth"), {
         policy: { proposals: "review" },
         prompt: "what is truth",

@@ -1,7 +1,7 @@
 // TUI mode — interactive Plurnk client on pi-tui's main-screen renderer.
 // Per TUI.md §3.
 //
-// Line language (converged with plurnk.nvim — one vocabulary, two surfaces):
+// Line language:
 //   /verb [args]   command verbs (see VERBS); never call loop.run
 //   named executable fences through op.parse
 //   LOOK fences via op.look — inspect a uri's content for ME, not the model
@@ -82,8 +82,7 @@ export const renderTuiFailure = (cause: unknown): string => {
 
 interface WorkspaceResult { name: string }
 
-// One verb vocabulary across nvim's :AI/, the TUI, and (where they exist)
-// the argv subcommands. Convergence is policy: divergence needs a reason.
+// One verb vocabulary across the TUI and (where they exist) argv subcommands.
 // Singular = CREATE, plural = LIST: /workspace makes a new workspace, /workspaces
 // lists them; /worker forks a new worker, /workers lists them. The old /new was
 // ambiguous (workspace or worker?) and is gone. /rename retargets the current
@@ -91,9 +90,7 @@ interface WorkspaceResult { name: string }
 export const VERBS: readonly CommandName[] = COMMANDS.map(({ name }) => name);
 export const TUI_HELP = renderCommandHelp();
 
-// Muscle-memory quick-keys, converged with plurnk.nvim's `<leader>a<letter>`
-// mnemonics — SAME CASE as nvim (lowercase m/s/x, capital R/L/Y/N/M), which
-// Alt-<letter> can carry (Alt-m = `ESC m`, Alt-M = `ESC M` — distinct bytes).
+// Case-sensitive quick-keys (Alt-m = `ESC m`, Alt-M = `ESC M` — distinct bytes).
 // Delivered as Alt not Ctrl because Ctrl-<letter> collides with terminal and
 // editor control keys. Alt-b/f/d remain the editor's word operations.
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
@@ -104,7 +101,7 @@ export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 // An Alt-<key> keypress (ESC then a single letter or `?`, no `[`/`O` → not an arrow
-// or function key) mapped to its verb, or null. Case-sensitive (mirrors nvim).
+// or function key) mapped to its verb, or null. Case-sensitive.
 // pi-tui's terminal buffer reassembles split escape sequences.
 export const altShortcut = (forward: string): string | null => {
     const m = forward.match(/^\x1b([a-zA-Z?])$/);

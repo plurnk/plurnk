@@ -264,7 +264,7 @@ export const runCliViaBridge = async (
     // worker owns the model ({§worker-model-selection}), and an explicit --model
     // was already persisted by the dispatcher before this run.
     const fp: Record<string, unknown> = {
-        ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
         policy,
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
@@ -405,7 +405,7 @@ export const runCliViaBridge = async (
 export const runScriptViaBridge = async (
     target: BridgeTarget,
     text: string,
-    opts: { threadId: string; workspace?: string; yolo: boolean; json: boolean; projectRoot?: string | null },
+    opts: { threadId: string; workspace: string; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
     let parse: { results: Array<{ status: number }> } | null = null;
@@ -424,13 +424,14 @@ export const runScriptViaBridge = async (
     const started = Date.now();
     const forwardedProps: Record<string, unknown> = {
         action: { kind: "op.parse", text },
-        ...(opts.projectRoot !== undefined && opts.projectRoot !== null ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     };
     let next: { resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }), io);
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, ...next }), io);
     while (result.pendingResume !== null) {
         next = { resume: [result.pendingResume] };
-        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...next }), io);
+        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, ...next }), io);
     }
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.

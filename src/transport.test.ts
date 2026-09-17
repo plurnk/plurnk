@@ -908,21 +908,28 @@ test("BridgeTransport: a stream that dies without terminal truth is an ERROR, ne
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] EVERY request carries the workspace options — creation is atomic with the projectRoot whichever request wins (#140)", async () => {
+test("[§cli-workspaces-and-workers] every request preserves rooted, headless, or unspecified creation options", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.prompts", ok: true, result: { prompts: [] } } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.model.get", ok: true, result: { model: null } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/home/user/repo", settings: { capabilities: { deny: [{ runtime: "sh" }] } } });
-        await bt.rpc("workspace.prompts", { limit: 50 });   // the TUI's real first touch (seedPromptHistory)
-        await bt.rpc("workspace.prompts", { limit: 50 });   // and the SECOND — no consumed-once race
-        for (const c of mock.captured) {
-            const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
-            assert.equal(fp.projectRoot, "/home/user/repo", "projectRoot rides EVERY request — whichever creates, creates rooted");
-            assert.deepEqual(fp.settings, { capabilities: { deny: [{ runtime: "sh" }] } });
+        for (const projectRoot of ["/home/user/repo", null, undefined]) {
+            mock.captured.length = 0;
+            const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", {
+                projectRoot, settings: { capabilities: { deny: [{ runtime: "sh" }] } },
+            });
+            await bt.rpc("worker.model.get");
+            await bt.rpc("worker.model.get");
+            assert.equal(mock.captured.length, 2);
+            for (const c of mock.captured) {
+                const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+                assert.equal(fp.projectRoot, projectRoot, "creation intent survives whichever request arrives first");
+                assert.equal(Object.hasOwn(fp, "projectRoot"), projectRoot !== undefined);
+                assert.deepEqual(fp.settings, { capabilities: { deny: [{ runtime: "sh" }] } });
+            }
         }
     } finally { await mock.close(); }
 });

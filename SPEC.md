@@ -991,6 +991,15 @@ is absent, it exits 127 and names the exact installation command. `SIGINT` and
   `web` is a client presentation mode and therefore does honor them. Reasoning
   mutation uses the positional policy above.
 
+### §cli-script-binding Script invocation and resume
+
+`plurnk script <file.plk>` submits the file unchanged through `op.parse`.
+Workspace selection follows §1.1, including daemon-generated names for unnamed
+invocations. Every proposal-resume Run retains that workspace and thread without
+resubmitting the program. The first creation request carries the complete
+workspace settings and project root, including explicit `null` for headless use.
+Successful scripts exit 0; an unsuccessful operation exits 4.
+
 ---
 
 ## §8 Problems and Notices {§cli-problems-and-notices}

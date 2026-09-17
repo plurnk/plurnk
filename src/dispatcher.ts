@@ -714,9 +714,10 @@ export const main = async (argv: string[]): Promise<void> => {
     // below is legacy awaiting deletion.
     const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
     const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "1066"}`;
-    let workspaceOptionsPromise: Promise<{ settings: Settings }> | undefined;
-    const workspaceOptions = (): Promise<{ settings: Settings }> => {
+    let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
+    const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
+            projectRoot,
             settings: await buildSettings(values as {
                 "files-items"?: string;
                 "max-commands"?: string;
@@ -738,11 +739,9 @@ export const main = async (argv: string[]): Promise<void> => {
     let resolvedWorld: string | undefined;
     const world = async (): Promise<string> => {
         if (resolvedWorld !== undefined) return resolvedWorld;
-        const { settings } = await workspaceOptions();
-        resolvedWorld = await resolveWorld({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, workspaceName, {
-            ...(projectRoot !== null ? { projectRoot } : {}),
-            ...(Object.keys(settings).length > 0 ? { settings } : {}),
-        });
+        resolvedWorld = await resolveWorld(
+            { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, workspaceName, await workspaceOptions(),
+        );
         return resolvedWorld;
     };
     if (web) {
@@ -750,11 +749,7 @@ export const main = async (argv: string[]): Promise<void> => {
             if (positionals.length > 1) {
                 throw new ProblemError(clientSubcommandUnknownVerb(`web ${positionals.slice(1).join(" ")}`));
             }
-            const { settings } = await workspaceOptions();
-            const workspaceProperties = {
-                ...(projectRoot !== null ? { projectRoot } : {}),
-                ...(Object.keys(settings).length > 0 ? { settings } : {}),
-            };
+            const workspaceProperties = await workspaceOptions();
             const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
             const prepared = new Map<string, Promise<void>>();
             const prepareSession = (
@@ -842,11 +837,8 @@ export const main = async (argv: string[]): Promise<void> => {
             // the world is --workspace, else a fresh daemon-minted workspace. Without --worker,
             // thread == world (the model worker).
             const w = await world();
-            const { settings } = await workspaceOptions();
-            const controlWorkspaceOptions = {
-                ...(projectRoot !== null ? { projectRoot } : {}),
-                ...(Object.keys(settings).length > 0 ? { settings } : {}),
-            };
+            const controlWorkspaceOptions = await workspaceOptions();
+            const { settings } = controlWorkspaceOptions;
             // {§worker-model-selection} — an explicit --model is a durable selection:
             // persist it onto the conversation worker before the run, then run WITHOUT
             // a per-loop model selector (the worker owns the model).
@@ -991,7 +983,14 @@ export const main = async (argv: string[]): Promise<void> => {
                 throw new ProblemError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
-            const exitCode = await runScriptViaBridge(target, text, { threadId: callerThread, yolo, json, projectRoot });
+            const workspace = await world();
+            const exitCode = await runScriptViaBridge(target, text, {
+                threadId: workerName ?? workspace,
+                workspace,
+                yolo,
+                json,
+                ...await workspaceOptions(),
+            });
             process.exitCode = exitCode;
             return;
         }

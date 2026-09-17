@@ -219,7 +219,7 @@ export class BridgeTransport implements Transport {
     // and it stays headless forever (root changes are unimplemented by design).
     #workspaceOpts(): Record<string, unknown> {
         return {
-            ...(this.#workspace.projectRoot !== undefined && this.#workspace.projectRoot !== null ? { projectRoot: this.#workspace.projectRoot } : {}),
+            ...(this.#workspace.projectRoot !== undefined ? { projectRoot: this.#workspace.projectRoot } : {}),
             ...(this.#workspace.settings !== undefined && Object.keys(this.#workspace.settings).length > 0 ? { settings: this.#workspace.settings } : {}),
         };
     }

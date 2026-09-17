@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { stripVTControlCharacters } from "node:util";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import TurnDisplay from "./turn.ts";
 import type { LogEntryWire } from "./render.ts";
 
@@ -26,4 +28,21 @@ test("[§cli-response-order] advancing archives all delivered messages without l
     view.addResponse({ ...row(2, 1, "SEND"), tx: { body: { raw: "Next interaction.", json: null } } });
     assert.doesNotMatch(messages.render(80).join("\n"), /Next interaction/);
     assert.match(view.render(80).join("\n"), /Next interaction/);
+});
+
+test("[§cli-response-order] response lines fit the viewport after render and resize without truncation", () => {
+    const content = "abcdefghijklmnopqrstuvwxyz".repeat(8);
+    for (const body of [
+        { raw: content, json: null },
+        { raw: JSON.stringify({ content }), json: { content } },
+        { raw: `\`\`\`text\n${content}\n\`\`\``, json: null },
+    ]) {
+        const view = new TurnDisplay();
+        view.addResponse({ ...row(1, 1, "SEND"), tx: { body } });
+        for (const width of [135, 40, 80]) {
+            const lines = view.render(width);
+            assert.ok(lines.every((line) => visibleWidth(line) <= width), `every response line must fit ${width} columns`);
+            assert.ok(lines.map(stripVTControlCharacters).join("").includes(content), "the complete response value remains visible");
+        }
+    }
 });

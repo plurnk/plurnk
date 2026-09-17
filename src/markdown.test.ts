@@ -91,6 +91,56 @@ test("[§cli-markdown-projection] list prose wraps within the supplied screen wi
         "Every word in this deliberately long list item remains visible within the terminal viewport.");
 });
 
+test("[§cli-markdown-projection] a nested list starts below its parent and retains every word", () => {
+    const out = renderMarkdownDocument([
+        "2. **Addressable Context**: Everything in the agent environment is an addressable URI resource:",
+        "   * `file:///` / project relative paths: Local project source code.",
+        "   * `worker:///`: Extended worker context and sub-worker communication.",
+    ].join("\n"), 135);
+    assert.deepEqual(out.split("\n"), [
+        "2. Addressable Context: Everything in the agent environment is an addressable URI resource:",
+        "   * file:/// / project relative paths: Local project source code.",
+        "   * worker:///: Extended worker context and sub-worker communication.",
+    ]);
+    assert.ok(out.split("\n").every((line) => displayWidth(line) <= 135));
+});
+
+for (const [name, block, expected] of [
+    ["code", "  ```js\n  console.log(42);\n  ```", "  💻 js\n  │ console.log(42);"],
+    ["quotation", "  > A nested quotation.", "  │ A nested quotation."],
+    ["numbered list", "  1. A nested numbered item.", "  1. A nested numbered item."],
+] as const) {
+    test(`[§cli-markdown-projection] list text does not absorb a nested ${name}`, () => {
+        const out = renderMarkdownDocument(`- Parent paragraph.\n${block}`, 40);
+        assert.equal(out, `* Parent paragraph.\n${expected}`);
+        assert.ok(out.split("\n").every((line) => displayWidth(line) <= 40));
+    });
+}
+
+test("[§cli-markdown-projection] long code and fallback source wrap without losing content", () => {
+    const code = "abcdefghijklmnopqrstuvwxyz".repeat(4);
+    for (const language of ["text", "mermaid"]) {
+        const out = renderMarkdownDocument(`\`\`\`${language}\n${code}\n\`\`\``, 32);
+        const lines = out.split("\n");
+        assert.equal(lines[0], `💻 ${language}`);
+        assert.ok(lines.every((line) => displayWidth(line) <= 32));
+        assert.equal(lines.slice(1).join("").replace(/^│ /, ""), code);
+    }
+});
+
+test("[§cli-markdown-projection] nested tables and rules reserve their container indentation", () => {
+    const out = renderMarkdownDocument([
+        "> | Name | Description |",
+        "> | --- | --- |",
+        "> | Example | Every word in this table remains present. |",
+        ">",
+        "> ---",
+    ].join("\n"), 48).split("\n");
+    assert.ok(out.every((line) => displayWidth(line) <= 48));
+    assert.ok(out.some((line) => /^│ ┌.*┐$/.test(line)), "the table border stays intact inside the quotation");
+    assert.ok(out.includes(`│ ${"─".repeat(46)}`), "the rule fits inside the quotation");
+});
+
 test("[§cli-markdown-projection] GFM task lists project each checkbox exactly once", () => {
     const out = renderMarkdownDocument([
         "- [x] Boot the terminal",
@@ -110,7 +160,7 @@ test("[§cli-markdown-projection] a simple Mermaid chain projects as a bounded d
         "  start[Start] -->|yes| work[Do the work]",
         "  work --> done[Done]",
     ].join("\n"));
-    assert.doesNotMatch(out.join("\n"), /◇ mermaid/);
+    assert.doesNotMatch(out.join("\n"), /💻 mermaid/);
     assert.match(out.join("\n"), /Start/);
     assert.match(out.join("\n"), /yes/);
     assert.match(out.join("\n"), /Do the work/);
@@ -125,7 +175,7 @@ test("[§cli-markdown-projection] a branching Mermaid graph retains its topology
         "  a -->|fail| c[Fix]",
         "  c --> a",
     ].join("\n"));
-    assert.doesNotMatch(out.join("\n"), /◇ mermaid/);
+    assert.doesNotMatch(out.join("\n"), /💻 mermaid/);
     assert.match(out.join("\n"), /Gate/);
     assert.match(out.join("\n"), /pass/);
     assert.match(out.join("\n"), /Ship/);
@@ -142,7 +192,7 @@ test("[§cli-markdown-projection] standard Mermaid edge labels render within the
         "    D --> W[(real workspaces)]",
         "    D --> M[model loop]",
     ].join("\n"));
-    assert.doesNotMatch(out.join("\n"), /◇ mermaid/, "valid standard Mermaid must not fall back to source");
+    assert.doesNotMatch(out.join("\n"), /💻 mermaid/, "valid standard Mermaid must not fall back to source");
     assert.match(out.join("\n"), /You at the terminal/);
     assert.match(out.join("\n"), /AG-UI\+/);
     assert.ok(out.every((line) => displayWidth(line) <= 80), "the projected diagram fits the supplied viewport");
@@ -151,15 +201,15 @@ test("[§cli-markdown-projection] standard Mermaid edge labels render within the
 test("[§cli-markdown-projection] standard sequence diagrams also project for the terminal", () => {
     const source = "sequenceDiagram\n  A->>B: hi";
     const out = renderMermaid(source);
-    assert.doesNotMatch(out.join("\n"), /◇ mermaid/);
+    assert.doesNotMatch(out.join("\n"), /💻 mermaid/);
     assert.match(out.join("\n"), /A/);
     assert.match(out.join("\n"), /B/);
     assert.match(out.join("\n"), /hi/);
 });
 
-test("[§cli-markdown-projection] invalid Mermaid falls back to its verbatim source under a mermaid gutter", () => {
+test("[§cli-markdown-projection] invalid Mermaid quietly projects its source as a code block", () => {
     const source = "notMermaid\n  A->>B: hi";
-    assert.deepEqual(renderMermaid(source), ["◇ mermaid source — unsupported or invalid", "│ notMermaid", "│   A->>B: hi"]);
+    assert.deepEqual(renderMermaid(source), ["💻 mermaid", "│ notMermaid", "│   A->>B: hi"]);
 });
 
 for (const direction of ["TD", "TB", "BT"]) {
@@ -228,13 +278,13 @@ test("[§cli-markdown-projection] Mermaid admission follows the supplied viewpor
         "root --> h[Hotel surface]",
     ].join("\n");
     const tooNarrow = renderMermaid(source, 10);
-    assert.match(tooNarrow[0]!, /rendered width \d+ exceeds 10/);
+    assert.equal(tooNarrow[0], "💻 mermaid");
     assert.deepEqual(tooNarrow.slice(1), source.split("\n").map((line) => `│ ${line}`), "source fallback remains verbatim when neither orientation fits");
     const narrow = renderMermaid(source, 120);
-    assert.doesNotMatch(narrow.join("\n"), /◇ mermaid source/);
+    assert.doesNotMatch(narrow.join("\n"), /💻 mermaid/);
     assert.ok(narrow.every((line) => displayWidth(line) <= 120));
     const roomy = renderMermaid(source, 140);
-    assert.doesNotMatch(roomy.join("\n"), /◇ mermaid source/);
+    assert.doesNotMatch(roomy.join("\n"), /💻 mermaid/);
     assert.ok(roomy.every((line) => displayWidth(line) <= 140));
     assert.deepEqual(roomy, renderMermaid(source, 1000), "do not rotate an authored layout that already fits");
 });

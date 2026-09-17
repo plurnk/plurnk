@@ -92,14 +92,8 @@ export const renderMermaid = (
     const alternate = alternateSource === source ? null : renderMermaidLines(alternateSource);
     if (alternate !== null && widestLine(alternate) <= width) return alternate;
 
-    const attemptedWidths = [authored, alternate]
-        .filter((lines): lines is string[] => lines !== null)
-        .map(widestLine);
-    const reason = attemptedWidths.length === 0
-        ? "unsupported or invalid"
-        : `rendered width ${Math.min(...attemptedWidths)} exceeds ${width}`;
     return [
-        `${DIM}◇ mermaid source — ${reason}${RESET}`,
+        `${DIM}💻 mermaid${RESET}`,
         ...source.split("\n").map((line) => `${DIM}│ ${line}${RESET}`),
     ];
 };
@@ -126,7 +120,7 @@ const terminalRenderer = (viewport: number): Marked => {
         },
         code(token: Tokens.Code) {
             if (token.lang?.trim().toLowerCase() === "mermaid") {
-                return `${renderMermaid(token.text, viewport).join("\n")}\n\n`;
+                return `${renderMermaid(token.text, availableWidth()).join("\n")}\n\n`;
             }
             const language = token.lang?.trim() ?? "";
             const header = language.length === 0 ? "💻" : `💻 ${language}`;
@@ -151,7 +145,7 @@ const terminalRenderer = (viewport: number): Marked => {
             return `${wrap(styled(BOLD)(this.parser.parseInline(token.tokens)))}\n\n`;
         },
         hr() {
-            return `${styled(DIM)("─".repeat(viewport))}\n\n`;
+            return `${styled(DIM)("─".repeat(availableWidth()))}\n\n`;
         },
         list(token: Tokens.List) {
             const start = typeof token.start === "number" ? token.start : 1;
@@ -160,7 +154,8 @@ const terminalRenderer = (viewport: number): Marked => {
                 const prefix = marker;
                 const body = withBlockIndent(displayWidth(prefix), () => item.tokens.map((itemToken) => {
                     const rendered = this.parser.parse([itemToken]);
-                    return itemToken.type === "text" ? wrap(rendered) : rendered;
+                    // List text is a block here; checkbox tokens remain inline.
+                    return itemToken.type === "text" ? `${wrap(rendered)}\n` : rendered;
                 }).join("").trim());
                 const lines = body.split("\n");
                 return [
@@ -179,7 +174,7 @@ const terminalRenderer = (viewport: number): Marked => {
         table(token: Tokens.Table) {
             const header = token.header.map((cell) => this.parser.parseInline(cell.tokens));
             const rows = token.rows.map((row) => row.map((cell) => this.parser.parseInline(cell.tokens)));
-            const colWidths = fitTableWidths([header, ...rows], viewport);
+            const colWidths = fitTableWidths([header, ...rows], availableWidth());
             const wrapCell = (cell: string, index: number): string => wrapAnsi(
                 cell,
                 Math.max(1, (colWidths[index] ?? 3) - 2),
@@ -245,7 +240,7 @@ export const renderMarkdownDocument = (
     const width = Math.max(1, Math.trunc(viewport));
     const rendered = terminalRenderer(width).parse(normalizeProse(raw));
     if (typeof rendered !== "string") throw new TypeError("Terminal Markdown rendering became asynchronous.");
-    return rendered.trimEnd();
+    return wrapAnsi(rendered.trimEnd(), width, { hard: true, trim: false, wordWrap: true });
 };
 
 // Heuristic: ordinary speech remains ordinary speech; structurally marked GFM

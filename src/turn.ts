@@ -1,4 +1,4 @@
-import type { Component } from "@earendil-works/pi-tui";
+import { wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import { renderLogEntry, type LogEntryWire } from "./render.ts";
 
 // {§cli-response-order}: deliberate responses remain below the live reasoning lane.
@@ -11,7 +11,7 @@ export default class TurnDisplay implements Component {
     invalidate(): void {}
 
     render(width: number): string[] {
-        return this.#responses.flatMap((entry) => renderLogEntry(entry, width).split("\n"));
+        return this.#responses.flatMap((entry) => wrapTextWithAnsi(renderLogEntry(entry, width), Math.max(1, width)));
     }
 
     take(): TurnDisplay {

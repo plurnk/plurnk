@@ -655,9 +655,10 @@ Width-tolerant; no fixed column widths. Every row begins at column zero.
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
-A prettified SEND body (TUI only; the one-shot CLI keeps raw verbatim for
+A prettified message body (TUI only; the one-shot CLI keeps raw verbatim for
 pipes) delegates GFM parsing and terminal layout to maintained renderers at
-the current terminal width, less the SEND-body indent. Tables use
+the current terminal width, less its container indentation. Nested blocks start
+on separate lines; prose, code, and source wrap without truncation. Tables use
 aligned box-drawn columns, wrap complete cell content, and separate every
 logical row; headings, inline markup, lists, and links retain conventional
 terminal presentation, while ordinary fenced code begins with a `💻 language`
@@ -666,9 +667,9 @@ a topology- and label-preserving Unicode diagram when it fits the same live
 viewport. Preserve the authored layout when it fits; otherwise try one alternate
 flowchart layout exchanging horizontal and vertical directions, including explicit
 subgraph directions. Invalid, unsupported,
-or still-overwide diagrams fall back to labeled verbatim source with the
-reason, never a half-drawn diagram. The wire always carries semantic source;
-no pre-rendered channel exists at the protocol boundary.
+or still-overwide diagrams render as ordinary `mermaid` source blocks without
+diagnostic or recovery narration, never a half-drawn diagram. The wire always
+carries semantic source; no pre-rendered channel exists at the protocol boundary.
 
 #### §5.1.0a Local rendering filter {§cli-render-filter}
 
@@ -699,6 +700,8 @@ The TUI orders operation history, live reasoning, then delivered responses. Oper
 render when their receipts arrive. Responses from a continuing turn enter scrollback
 when the next turn begins; final responses remain below reasoning until the next user
 interaction or conversation switch. No task inventory or fixed task-table slot exists.
+Every response line fits the current viewport, including plain text and JSON;
+resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|

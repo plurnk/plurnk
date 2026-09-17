@@ -40,7 +40,6 @@ import {
     type LoopPolicy,
     type ModelRoute,
     type OperationResult,
-    TurnDisposition,
 } from "@plurnk/plurnk-contracts";
 import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
 import { handleMcp } from "./mcp.ts";
@@ -983,8 +982,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const verdict = fanout.admit(entry);
             if (verdict.kind === "suppressed") return;
             const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined);
-            if (TurnDisposition.isOp(entry.op)) surface.setTask(entry);
-            else if (isResponseMessage(entry)) surface.addResponse(entry);
+            if (isResponseMessage(entry)) surface.addResponse(entry);
             else printAbove(rendered);
         },
         onNotice: handleNotice,

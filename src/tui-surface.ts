@@ -82,18 +82,13 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
-    setTask(entry: LogEntryWire): void {
-        this.#turn.setTask(entry);
-        this.#tui.requestRender();
-    }
-
     addResponse(entry: LogEntryWire): void {
         this.#turn.addResponse(entry);
         this.#tui.requestRender();
     }
 
     archiveResponses(): void {
-        const previous = this.#turn.takeResponses();
+        const previous = this.#turn.take();
         if (!previous.empty) this.#transcript.addChild(previous);
         this.#tui.requestRender();
     }

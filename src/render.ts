@@ -1,16 +1,14 @@
 // Waterfall row grammar for the TUI ({§cli-log-entry-line-format}). An operation row is the
 // authored heading, `OP (target) <scope> /pattern/ {n} aside — problem title`, rendered as
-// literal text with this module's own styling and never through Markdown; only delivered
-// SEND bodies are Markdown ({§cli-broadcast-send-rendering}). Rows carry no bodies.
+// literal text with this module's own styling and never through Markdown; only message
+// bodies are Markdown ({§cli-broadcast-send-rendering}). Rows carry no bodies.
 
 import { colorEnabled } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
-import { displayWidth, looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
+import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
-import Table from "cli-table3";
 import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { planColumns } from "./plan.ts";
 import { abbreviatedCount, money } from "./figures.ts";
 
 // ANSI escape codes. NO_COLOR support per Unix convention.
@@ -96,8 +94,7 @@ export const progressLabel = (percent: number): string =>
 // This is typographic normalization, not a claim of general LaTeX support.
 const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "→");
 
-// Read a SEND body off a log_entry.tx, dispatching by content type.
-// Per plurnk-grammar/schema/SendBody.json: tx.body is { raw, json } | null.
+// Read a message body: SEND uses { raw, json }; DONE/FAIL use literal text.
 //
 // prettify=true (TUI): json → pretty-print, markdown → ANSI, else raw.
 // prettify=false (CLI): always raw verbatim — pretty-printing is a TUI convenience,
@@ -107,11 +104,11 @@ export const extractSendBody = (
     prettify: boolean,
     viewport: number = process.stdout.columns ?? 80,
 ): string => {
-    const tx = txUnknown as { body?: { raw?: unknown; json?: unknown } | null } | null;
+    const tx = txUnknown as { body?: string | { raw?: unknown; json?: unknown } | null } | null;
     if (tx === null || tx === undefined) return "";
     const sendBody = tx.body;
     if (sendBody === null || sendBody === undefined) return "";
-    const { raw, json } = sendBody;
+    const { raw, json } = typeof sendBody === "string" ? { raw: sendBody, json: null } : sendBody;
     if (!prettify) return typeof raw === "string" ? raw : "";
     if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
     if (typeof raw !== "string") return "";
@@ -122,7 +119,7 @@ export const extractSendBody = (
     return prose;
 };
 
-// Provider reasoning is neither a task inventory nor speech. Give it one quiet visual lane
+// Provider reasoning is neither working memory nor speech. Give it one quiet visual lane
 // without inventing a log coordinate or status it does not own.
 export const renderReasoning = (content: string): string => ModelText.plain(content)
     .split("\n")
@@ -153,11 +150,14 @@ export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     isArrivalEntry(entry) && typeof entry.source === "string"
     && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
 
-export const isResponseMessage = (entry: LogEntryWire): boolean =>
-    entry.op === "SEND" && entry.origin === "model"
-    && entry.status_rx >= 200 && entry.status_rx < 300
-    && entry.source == null && entry.inherited_history !== 1
-    && entry.scheme === null && entry.pathname === null;
+export const isResponseMessage = (entry: LogEntryWire): boolean => {
+    if (entry.origin !== "model" || entry.source != null || entry.inherited_history === 1
+        || entry.scheme !== null || entry.pathname !== null) return false;
+    if (entry.op === "SEND") return entry.status_rx >= 200 && entry.status_rx < 300;
+    return TurnDisposition.isTerminalOp(entry.op)
+        && extractSendBody(entry.tx, false).length > 0
+        && Array.isArray(objectOf(entry.rx)?.recipients);
+};
 
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
 // the bare pathname when scheme is null (the daemon's file:// shortcut). null
@@ -319,50 +319,24 @@ export class FanoutCollapse {
     }
 }
 
-// The lead line of a TASK or SEND block: no keyword. A blank line stands where the keyword
+// The lead line of a delivered response block: no keyword. A blank line stands where the keyword
 // was; a failure puts its Problem title there in pink, a deferred or joined completion its
 // `detail`; the sanitized aside follows either.
 const leadLine = (entry: LogEntryWire, detail: boolean): string => {
     const parts: string[] = [];
     const rx = objectOf(entry.rx);
-    if (entry.status_rx >= 400) parts.push(`${PINK}${ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx))}${RESET}`);
+    if (entry.status_rx >= 400 && !(isResponseMessage(entry) && rx?.problem == null)) parts.push(`${PINK}${ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx))}${RESET}`);
     else if (detail && entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) parts.push(ModelText.plain(rx.detail));
     const aside = entryAside(entry);
     if (aside !== null) parts.push(`${DIM}${ITALIC}${aside}${RESET}`);
     return parts.join(" ");
 };
 
-// A status column's tint: completed entries green, failed entries pink, the rest unstyled.
-const STATUS_TINT: Readonly<Record<string, string>> = { completed: GREEN, failed: PINK };
-const tinted = (status: string, text: string): string => {
-    const color = STATUS_TINT[status] ?? "";
-    return color.length === 0 ? text : `${color}${text}${RESET}`;
-};
-
-// TASK: the lead line, then the inventory as a status-column table with only the columns that
-// have entries, outlined green ({§cli-plan-rendering}).
-const renderTask = (entry: LogEntryWire, columns: number): string => {
-    const lead = leadLine(entry, true);
-    const inventory = planColumns(entry.tx);
-    if (inventory.length === 0) return lead;
-    const usable = Math.max(24, columns - 1);
-    const perColumn = Math.max(8, Math.floor(usable / inventory.length) - 3);
-    const table = new Table({
-        head: inventory.map(({ status }) => tinted(status, `${BOLD}${status}${RESET}`)),
-        colWidths: inventory.map(({ status, entries }) => Math.min(perColumn, Math.max(displayWidth(status), ...entries.map(displayWidth)) + 2)),
-        wordWrap: true,
-        wrapOnWordBoundary: true,
-        style: { border: GREEN.length === 0 ? [] : ["green"], compact: false, head: [], "padding-left": 1, "padding-right": 1 },
-    });
-    const height = Math.max(...inventory.map(({ entries }) => entries.length));
-    for (let row = 0; row < height; row += 1) table.push(inventory.map(({ status, entries }) => tinted(status, ModelText.plain(entries[row] ?? ""))));
-    return `${lead}\n${table.toString()}`;
-};
-
 // Targetless SEND: the message block. The lead line, then the body with its Markdown at
 // column zero ({§cli-broadcast-send-rendering}); a delivered response is bold.
 const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns))): string => {
-    const lines = body.length === 0 ? [leadLine(entry, false)] : [leadLine(entry, false), ...body.split("\n")];
+    const lead = leadLine(entry, TurnDisposition.isOp(entry.op));
+    const lines = body.length === 0 ? [lead] : [lead, ...body.split("\n")];
     return emphasizeLines(lines, isResponseMessage(entry));
 };
 
@@ -376,14 +350,19 @@ const renderArrival = (entry: LogEntryWire, columns: number): string => {
 };
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
-// its table, an arrival its sender and block, a targetless SEND its block, every other
+// its outcome, an arrival its sender and block, a targetless SEND its block, every other
 // operation one literal row.
 export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
     override?: RowOverride,
 ): string => {
-    if (TurnDisposition.isOp(entry.op)) return renderTask(entry, columns);
+    if (isResponseMessage(entry)) return renderBroadcast(entry, columns);
+    if (TurnDisposition.isOp(entry.op)) {
+        const rx = objectOf(entry.rx);
+        const detail = typeof rx?.detail === "string" ? rx.detail : null;
+        return renderOperationRow(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) });
+    }
     if (isArrivalEntry(entry)) return renderArrival(entry, columns);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
     return renderOperationRow(entry, override);

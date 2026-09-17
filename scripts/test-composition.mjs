@@ -118,7 +118,10 @@ try {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
             const response = scriptedResponses.shift()
-                ?? `\`\`\`SEND\ncomposition ok: ${request.model}\n\`\`\`\n\`\`\`TASK\n[{"content":"Verify the packed client and service compose.","status":"completed"}]\n\`\`\``;
+                ?? `\`\`\`SEND\ncomposition ok: ${request.model}
+\`\`\`
+\`\`\`DONE
+\`\`\``;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -244,13 +247,13 @@ try {
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
         "```WORK (worker://guesser1)\nCreate child.txt and conclude.\n```\n"
-            + "```TASK\n[{\"content\":\"Waiting for guesser1.\",\"status\":\"waiting\"}]\n```",
+            + "```WAIT\nWaiting for guesser1.\n```",
         "```EDIT (child.txt)\ncreated by packed child\n```\n"
-            + "```TASK\n[{\"content\":\"Confirming the write.\",\"status\":\"in_progress\"}]\n```",
+            + "```NOTE\nConfirming the write.\n```",
         "```SEND\nChild work complete.\n```\n"
-            + "```TASK\n[{\"content\":\"The delegated file exists.\",\"status\":\"completed\"}]\n```",
+            + "```DONE\n```",
         "```SEND\npacked descendant proposal complete\n```\n"
-            + "```TASK\n[{\"content\":\"The delegated child completed successfully.\",\"status\":\"completed\"}]\n```",
+            + "```DONE\n```",
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [
@@ -259,12 +262,12 @@ try {
         "Exercise descendant proposal composition.",
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);
-    const parentTasks = delegatedResult.turns?.flatMap(({ ops }) => ops)
-        .filter(({ op, origin }) => op === "TASK" && origin === "model");
-    // Settlement may beat parking; either outcome must admit the unscoped inventory.
-    if (parentTasks?.length !== 2 || ![102, 202].includes(parentTasks[0].status)
-        || parentTasks[1].status !== 200 || parentTasks.some(({ scope }) => scope !== null)) {
-        throw new Error(`descendant proposal did not admit and settle its parent's wait: ${JSON.stringify(parentTasks)}`);
+    const parentLifecycle = delegatedResult.turns?.flatMap(({ ops }) => ops)
+        .filter(({ op, origin }) => ["WAIT", "DONE", "FAIL"].includes(op) && origin === "model");
+    // Settlement may beat parking; either outcome must admit the unscoped WAIT.
+    if (parentLifecycle?.length !== 2 || ![102, 202].includes(parentLifecycle[0].status)
+        || parentLifecycle[1].status !== 200 || parentLifecycle.some(({ scope }) => scope !== null)) {
+        throw new Error(`descendant proposal did not admit and settle its parent's wait: ${JSON.stringify(parentLifecycle)}`);
     }
     if (delegatedResult.response !== "packed descendant proposal complete") {
         throw new Error(`descendant proposal run returned ${JSON.stringify(delegatedResult.response)}`);

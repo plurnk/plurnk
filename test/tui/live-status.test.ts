@@ -24,9 +24,9 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
             frame({ role: "assistant", reasoning_content: `LIVE_REASONING_${index + 1}` });
             incoming[index].resolve(response);
             await release[index].promise;
-            const status = index === 0 ? "in_progress" : "completed";
+            const op = index === 0 ? "NOTE" : "DONE";
             const message = index === 0 ? "Continuing the work." : `FINAL_RESPONSE_${index + 1}`;
-            frame({ content: `\`\`\`\`SEND\n${message}\n\`\`\`\`\n\n\`\`\`\`TASK\n[{"content":"CURRENT_INVENTORY_${index + 1}","status":"${status}"}]\n\`\`\`\`` });
+            frame({ content: `\`\`\`\`SEND\n${message}\n\`\`\`\`\n\n\`\`\`\`${op}\n\`\`\`\`` });
             frame({}, "stop");
             const factor = 2 ** index;
             response.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 } })}\n\n`);
@@ -66,7 +66,7 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     await incoming[1].promise;
     await tui.waitFor(/LIVE_REASONING_2/);
     await tui.waitFor(/⌛︎[^\r\n]*↓1k ↑100/, 10_000, first);
-    assert.match(tui.output().slice(first), /CURRENT_INVENTORY_1/, "the first inventory stays visible under the next reasoning stream");
+    assert.match(tui.output().slice(first), /Continuing the work\./, "the first delivered message remains in scrollback as the next reasoning streams");
     const command = tui.output().length;
     tui.write("/model\r");
     await tui.waitFor(/model: statusfixture/, 10_000, command);

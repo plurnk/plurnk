@@ -270,7 +270,7 @@ test("consumeCliRun projects the authoritative AG-UI status gauge", async () => 
 test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {
     const { io, out, err } = sink({ json: true });
     const res = await consumeCliRun(stream([
-        rowRun({ op: "TASK", origin: "model", tx: { body: { entries: [{ content: "Find evidence", status: "in_progress", priority: "medium" }] } } }, 42),
+        rowRun({ op: "NOTE", origin: "model", tx: { body: "Find evidence" } }, 42),
         rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
         terminated({
@@ -353,17 +353,15 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
         rowRun({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
         rowRun({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
         rowRun({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
-        rowRun({ id: 14, op: "TASK", status_rx: 499, tx: { body: { entries: [
-            { content: "Failed: Verification failed.", status: "completed", priority: "medium", _meta: { "plurnk.xyz/status": "failed" } },
-        ] } } }, 11),
+        rowRun({ id: 14, op: "FAIL", status_rx: 499, tx: { body: "Verification failed." }, rx: { status: 499, recipients: [] } }, 11),
         terminated({ workerId: 11, result: { status: 499, problem: {
             type: "https://problems.plurnk.xyz/lifecycle/failed", title: "Task failed", status: 499, detail: "Verification failed.",
         } } }),
     ]), io);
-    assert.equal(result.response, "First.\n\nSecond.");
+    assert.equal(result.response, "First.\n\nSecond.\n\nVerification failed.");
     assert.equal(result.terminated?.result.status, 499);
     assert.equal(result.exitCode, 3);
-    assert.equal(out.join(""), json ? "" : "First.\n\nSecond.\n");
+    assert.equal(out.join(""), json ? "" : "First.\n\nSecond.\n\nVerification failed.\n");
 });
 
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) to the trace", async () => {

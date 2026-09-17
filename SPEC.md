@@ -210,7 +210,7 @@ The prompt's first character has the same meaning in the CLI and TUI. `plurnk "?
 Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_CLIENT_JSON` — not a flag on one output, but two distinct contracts:
 
 **text mode (default):**
-- **stdout** — successfully delivered, targetless model SEND bodies, verbatim in operation order and separated by a blank line (§5.4). A later failure or cancellation does not retract them. TASK inventories and directed or failed messages do not appear on stdout.
+- **stdout** — successfully delivered, targetless model SEND bodies, verbatim in operation order and separated by a blank line (§5.4). A later failure or cancellation does not retract them. NOTE inventories and directed or failed messages do not appear on stdout.
 - **stderr** — one mutable status row on a TTY, durable action trace lines
   (including intermediate broadcasts), diagnostics, and the terminal summary.
   Non-TTY stderr omits routine status/progress instead of accumulating heartbeat
@@ -263,7 +263,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, TASK, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -613,7 +613,7 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
-One row per dispatched op, except the TASK table below and the targetless SEND block (§5.4).
+One row per dispatched op, except delivered message blocks (§5.4).
 A row is the operation as written, literal text with the client's own styling and never a
 Markdown pass:
 
@@ -683,44 +683,31 @@ must not send semantic content to an unproven executable.
 
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
-Readable provider reasoning is neither task inventory nor assistant speech. The client
+Readable provider reasoning is neither working memory nor assistant speech. The client
 consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle.
 The TUI shows a dim `💭` tail, at most one third of the terminal, below operation
-history and above the current task table. It disappears when reasoning ends;
+history and above delivered responses. It disappears when reasoning ends;
 reasoning history remains available from the daemon, not duplicated into scrollback.
 It never infers reasoning
-from TASK, renders encrypted reasoning as text, or invents an empty transcript.
+from NOTE, renders encrypted reasoning as text, or invents an empty transcript.
 The one-shot client streams this human trace to stderr; stdout remains the bare
 answer and JSON mode remains silent.
 
-#### §5.1.2 Plan {§cli-plan-rendering}
+#### §5.1.2 Response ordering {§cli-response-order}
 
-TASK renders no keyword. A lead line stands where `TASK` was, blank unless the receipt has
-words of its own, then the inventory as a status-column table. The TUI's vertical
-order is operation history, live reasoning, current task table, and SEND messages.
-The task table updates in place; operation rows do not wait for TASK. Messages
-from a continuing turn move into history when the following turn begins, while
-the inventory stays in place until replaced. The final table and messages remain
-visible, then enter scrollback when the user submits the next interaction or
-switches conversations. Deliberate messages are never discarded.
+The TUI orders operation history, live reasoning, then delivered responses. Operations
+render when their receipts arrive. Responses from a continuing turn enter scrollback
+when the next turn begins; final responses remain below reasoning until the next user
+interaction or conversation switch. No task inventory or fixed task-table slot exists.
 
-- Columns are the native statuses present in the inventory, in the stable relative order
-  `todo`, `in_progress`, `waiting`, `completed`, `failed`; an empty status has no column,
-  so a typical snapshot shows one or two. ACP's `pending` is shown as `todo`. The client
-  recognizes `waiting` and `failed` only from `_meta["plurnk.xyz/status"]` with the matching
-  ACP base status, never from prose.
-- Each column lists its entries in source order; entry whitespace collapses to one line;
-  `high` and `low` priorities render as `[high]` and `[low]`, `medium` is implicit.
-- Columns wrap to the live width; rows are independent buckets, never dependencies.
-- The lead line carries the receipt's own words when the receipt is not a plain 200: a deferred or
-  joined completion states its `detail` (`Completion deferred: ...`), an unsuccessful receipt its
-  Problem title in pink; the sanitized aside follows either.
-- The table's outlines are green; a `completed` column's head and entries are green, a `failed`
-  column's pink; other columns are unstyled. The model's inventory is shown as its claim; the
-  loop's disposition arrives with the terminal event and is never inferred from the table.
-- An empty inventory is the lead line alone. No lifecycle glyph, entry glyph, or numeric code.
+| Operation | Waterfall projection |
+|---|---|
+| NOTE | Ordinary operation heading and aside; working-memory body available through LOOK. |
+| WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
+| DONE / FAIL with a delivered body | Message block per §5.4, with any deferral detail. |
+| Blank or undelivered DONE / FAIL | Operation heading and actual receipt detail or Problem. |
 
-The one-shot plain trace (§2) keeps its glyph-per-entry projection below its TASK line.
+Loop state comes from the daemon's status events, not an inference from a verb or body.
 
 ### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
 
@@ -734,36 +721,37 @@ Input and output are the conventional aggregate fields from the daemon's account
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
-- Raw bodies for non-broadcast ops: command snippets, JSON arguments, edit replacements, and result previews. SEND bodies and TASK inventories are rendered (§5.4, §5.1.2); other op bodies surface only via `entry.read` or a READ fence targeting `log://...`.
+- Raw bodies for non-broadcast ops: command snippets, JSON arguments, edit replacements, notes, and result previews. Message bodies render per §5.4; other op bodies surface only via `entry.read` or a READ fence targeting `log://...`.
 - Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
 - Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.7.
 
 ### §5.4 Messages and dispositions {§cli-broadcast-send-rendering}
 
-A targetless SEND carries message content; TASK carries the inventory (§5.1.2). Both scheme and pathname must be absent for SEND to be targetless. The interactive client renders their full bodies, not a diagnostic preview.
+A targetless SEND or a delivered DONE/FAIL body carries message content. Both scheme and pathname must be absent. The interactive client renders full message bodies, not diagnostic previews.
 
 TUI mode contract:
 
 - Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in pink; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
-- Empty message content is legal and renders as just the lead line. TASK renders its table per §5.1.2.
+- Empty SEND content is legal and renders as just the lead line. Blank lifecycle operations follow §5.1.2.
 
-Successfully delivered targetless model SENDs are bold so response messages stand out from
+Delivered targetless model responses are bold so messages stand out from
 operation records; failed, directed, inherited, and non-model messages remain plain. Inner ANSI
 resets re-arm bold across Markdown spans. `NO_COLOR` removes the emphasis while
 preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messages use stdout (§2).
 
-The message body source is `entry.tx.body`, a `SendBody` object (`{ raw: string, json: any }` in `plurnk-contracts/schema/PlurnkStatement.json`), not a plain string. TASK uses the canonical ACP Plan projection.
+The message body source is `entry.tx.body`: SEND uses `{ raw, json }`; DONE/FAIL use literal text.
 
-Only successful (`200 ≤ status_rx < 300`), targetless model SEND rows owned by the
-run contribute to its response. Source-mirror and inherited rows cannot deliver
-the same message again. Bodies accumulate in operation order, separated by a blank
-line; workflow outcome remains independent. TASK never supplies synthetic speech.
+Successful (`200 ≤ status_rx < 300`) targetless model SEND rows contribute to the response.
+DONE/FAIL require a nonempty body and a receipt `recipients` array proving delivery,
+independently of lifecycle settlement: deferred completion and declared failure can
+both deliver speech. Source and inherited rows cannot deliver the same message again.
+Bodies accumulate in delivery order, separated by a blank line. NOTE and WAIT are not speech.
 
-**CLI default** emits each qualifying `tx.body.raw` verbatim, without Markdown or
+**CLI default** emits each qualifying body verbatim, without Markdown or
 JSON transformation. **CLI `--json`** includes the aggregated `response` in the
 single complete run record defined in §2.1, not a second body-only output format.
 

@@ -30,10 +30,10 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     ...overrides,
 });
 
-test("successful own targetless SEND messages contribute to the response independently of TASK", () => {
+test("successful own targetless SEND messages contribute to the response independently of lifecycle", () => {
     assert.equal(isResponseMessage(entry({ op: "SEND" })), true);
     for (const overrides of [
-        { op: "TASK" }, { op: "SEND", origin: "_plurnk" }, { op: "SEND", status_rx: 400 },
+        { op: "NOTE" }, { op: "SEND", origin: "_plurnk" }, { op: "SEND", status_rx: 400 },
         { op: "SEND", source: "worker://peer" }, { op: "SEND", inherited_history: 1 },
         { op: "SEND", scheme: "worker", hostname: "child", pathname: "/" },
     ]) assert.equal(isResponseMessage(entry(overrides)), false, JSON.stringify(overrides));
@@ -92,24 +92,13 @@ test("formatPlain: preserves numeric and hash scopes after the target", () => {
     );
 });
 
-test("formatPlain: PLAN preserves the trace header and renders one line per entry", () => {
+test("formatPlain: NOTE preserves the trace heading without dumping working memory", () => {
     assert.equal(formatPlain(entry({
-        op: "TASK", status_rx: 102,
+        op: "NOTE", status_rx: 200,
         tx: {
-            body: {
-                entries: [
-                    { content: "Inspect the parser.", priority: "medium", status: "completed" },
-                    { content: "Memory: One baseline owns the schema.", priority: "medium", status: "completed" },
-                    { content: "Run the tests.", priority: "high", status: "in_progress" },
-                ],
-            },
+            body: "One baseline owns the schema.",
         },
-    })), [
-        "[102] model TASK",
-        "  ✅ Inspect the parser.",
-        "  ✅ Memory: One baseline owns the schema.",
-        "  🚧 [high] Run the tests.",
-    ].join("\n"));
+    })), "[200] model NOTE");
 });
 
 // ─── isResponseMessage ──────────────────────────────────────────────
@@ -123,7 +112,7 @@ test("isResponseMessage: a failed SEND contributes no delivered message", () => 
 });
 
 test("isResponseMessage: SEND, no path, signal 102 → false (intermediate)", () => {
-    assert.equal(isResponseMessage(entry({ op: "TASK", scheme: null, pathname: null, signal: 102 })), false);
+    assert.equal(isResponseMessage(entry({ op: "NOTE", scheme: null, pathname: null, signal: 102 })), false);
 });
 
 test("isResponseMessage: SEND, no path, status 400 → false", () => {

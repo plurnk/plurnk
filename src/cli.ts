@@ -12,8 +12,6 @@ import type { Notice, ProblemDetails } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, reportStream } from "./stream.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
-import { presentPlan } from "./plan.ts";
-import { TurnDisposition } from "@plurnk/plurnk-contracts";
 
 interface WorkspaceResult { id: number; name: string }
 
@@ -112,13 +110,6 @@ export const formatPlain = (entry: LogEntryWire): string => {
     let line = `[${entry.status_rx}] ${entry.origin} ${entry.op} ${address}`.trim();
     const aside = entryAside(entry);
     if (aside !== null) line += ` — ${aside}`;
-    if (TurnDisposition.isOp(entry.op)) {
-        const presented = presentPlan(entry.tx);
-        const rows = presented.length === 0
-            ? ["📭 no entries"]
-            : presented.map(({ glyph, text }) => `${glyph} ${text}`);
-        line += `\n${rows.map((row) => `  ${row}`).join("\n")}`;
-    }
     return line;
 };
 

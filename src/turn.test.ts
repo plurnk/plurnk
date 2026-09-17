@@ -8,33 +8,22 @@ const row = (loop: number, turn: number, op = "READ"): LogEntryWire => ({
     hostname: null, fragment: null, lineMarker: null, tx: {}, rx: { status: 200 }, status_rx: 200, tags: [],
 });
 
-const task = (content: string, status = "in_progress"): LogEntryWire => ({
-    ...row(1, 1, "TASK"), tx: { body: { entries: [{ content, status, priority: "medium" }] } },
-});
-
-test("[§cli-plan-rendering] the live inventory replaces itself above deliberate SEND messages", () => {
+test("[§cli-response-order] deliberate SEND and lifecycle responses retain delivery order", () => {
     const view = new TurnDisplay();
     view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "Here is the response.", json: null } } });
-    view.setTask(task("Old task"));
-    view.setTask(task("Current task", "completed"));
+    view.addResponse({ ...row(1, 1, "DONE"), tx: { body: "Finished." }, rx: { status: 200, recipients: [] } });
     const rendered = view.render(100).join("\n");
-    assert.doesNotMatch(rendered, /Old task/);
-    assert.ok(rendered.indexOf("Current task") < rendered.indexOf("Here is the response."));
+    assert.match(rendered, /Here is the response\.[\s\S]*Finished\./);
 });
 
-test("[§cli-plan-rendering] advancing archives messages without losing the current inventory; a new interaction archives both", () => {
+test("[§cli-response-order] advancing archives all delivered messages without losing or replacing them", () => {
     const view = new TurnDisplay();
-    view.setTask(task("Still working"));
     view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "Progress message.", json: null } } });
     view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "Second message.", json: null } } });
-    const messages = view.takeResponses();
+    const messages = view.take();
     assert.match(messages.render(80).join("\n"), /Progress message\.[\s\S]*Second message\./);
-    assert.doesNotMatch(messages.render(80).join("\n"), /Still working/);
-    assert.match(view.render(80).join("\n"), /Still working/);
-    assert.doesNotMatch(view.render(80).join("\n"), /Progress message/);
-    const previous = view.take();
     assert.equal(view.empty, true);
-    view.setTask(task("Next interaction"));
-    assert.doesNotMatch(previous.render(80).join("\n"), /Next interaction/);
-    assert.match(previous.render(80).join("\n"), /Still working/);
+    view.addResponse({ ...row(2, 1, "SEND"), tx: { body: { raw: "Next interaction.", json: null } } });
+    assert.doesNotMatch(messages.render(80).join("\n"), /Next interaction/);
+    assert.match(view.render(80).join("\n"), /Next interaction/);
 });

@@ -22,7 +22,7 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
     const rows: Array<[string, string]> = [
         ["operation", renderLogEntry(entry({}))],
         ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not found", status: 404 } } }))],
-        ["TASK", renderLogEntry(entry({ op: "TASK", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: { entries: [{ content: "Inspect.", priority: "medium", status: "in_progress" }] } } }))],
+        ["NOTE", renderLogEntry(entry({ op: "NOTE", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: "Inspect." } }))],
         ["reasoning", renderReasoning("Inspect the contract.")],
         ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
@@ -38,7 +38,7 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
 
     assert.equal(stripAnsi(rows[0][1]), "READ (/x)");
     assert.equal(stripAnsi(rows[1][1]), "FIND (/x) — Entry not found", "a failure carries its title, not a numeric code");
-    assert.match(stripAnsi(rows[2][1]), /^\n/, "a routine TASK leads with a blank line, no keyword, no code");
+    assert.equal(stripAnsi(rows[2][1]), "NOTE", "notes use ordinary bodiless operation headings");
     assert.equal(stripAnsi(rows[4][1]), "\ndone", "a delivered message is its body under a blank line");
     assert.equal(stripAnsi(rows[6][1]), "SEND (worker:///gone) — Worker gone");
     assert.equal(stripAnsi(rows[7][1]), "sh list the files", "an execution is its fence, once, at its conclusion");

@@ -29,7 +29,11 @@ test(`[§cli-active-command-admission] an admitted successor stays visible (term
         })}\n\n`);
         frame({ role: "assistant", reasoning_content: first ? "Awaiting the controlled injection." : "Handling the successor requirement." });
         if (first) await release.promise;
-        frame({ content: `\`\`\`\`SEND\n${first ? "FIRST_FINISHED" : "SUCCESSOR_VISIBLE"}\n\`\`\`\`\n\n\`\`\`\`TASK\n[{"content":"Delivered","status":"completed"}]\n\`\`\`\`` });
+        frame({ content: `\`\`\`\`SEND\n${first ? "FIRST_FINISHED" : "SUCCESSOR_VISIBLE"}
+\`\`\`\`
+
+\`\`\`\`DONE
+\`\`\`\`` });
         frame({}, "stop");
         response.end("data: [DONE]\n\n");
     });

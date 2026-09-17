@@ -282,7 +282,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "REASONING_MESSAGE_CONTENT", messageId: "1/1/2/SEND/reasoning", delta: "the evidence" }));
         res.write(frame({ type: "REASONING_MESSAGE_END", messageId: "1/1/2/SEND/reasoning" }));
         res.write(frame({ type: "REASONING_END", messageId: "1/1/2/SEND/reasoning" }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "TASK" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "NOTE" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
@@ -294,7 +294,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", { policy: REVIEW_POLICY }).done;
-        assert.deepEqual(seen.entries, [{ id: 5, op: "TASK" }]);
+        assert.deepEqual(seen.entries, [{ id: 5, op: "NOTE" }]);
         assert.deepEqual(seen.reasoning, [
             { phase: "start", messageId: "1/1/2/SEND/reasoning" },
             { phase: "content", messageId: "1/1/2/SEND/reasoning", delta: "checked ", content: "checked " },
@@ -546,7 +546,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
     const snapshot = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events
         .find((event) => event.type === "STATE_SNAPSHOT")!;
     const early = { id: 8, op: "SEND", origin: "model", tx: { body: "committed before attachment" } };
-    const late = { id: 9, op: "TASK", origin: "model", tx: { body: { entries: [] } } };
+    const late = { id: 9, op: "NOTE", origin: "model", tx: { body: null } };
     const mock = await bootMock((_request, response) => {
         const input = mock.captured.at(-1)!.body as { messages: unknown[]; threadId: string; forwardedProps: { plurnk: { workspace: string; mode?: string; action?: object } } };
         assert.equal(input.threadId, "alice");

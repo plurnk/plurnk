@@ -363,7 +363,7 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
     assert.equal(renderLogEntry(row(2), 80, failed.override), "READ (pets_*.md) /dogs/i {3} every dog — Entry not member", "a failed path names the collapsed row");
 });
 
-// ─── SEND blocks and TASK tables ({§cli-broadcast-send-rendering}, {§cli-plan-rendering}) ─────
+// ─── SEND blocks ({§cli-broadcast-send-rendering}) ─────
 
 test("[§cli-broadcast-send-rendering] a delivered message is its body under a blank lead line; a failed one leads with its outcome", () => {
     assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "\nParis.", "no keyword: a blank line, then the body at column zero");
@@ -377,52 +377,13 @@ test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a
     assert.equal(renderLogEntry(entry({ op: "SEND", scheme: "worker", pathname: "/gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone");
 });
 
-const inventory = (entries: unknown[], over: Partial<LogEntryWire> = {}): LogEntryWire => entry({
-    op: "TASK", scheme: null, pathname: null, signal: 102, status_rx: 102,
-    tx: { op: "TASK", aside: null, body: { entries } } as unknown as { body: { raw: string; json: null } },
-    rx: { status: 102 },
-    ...over,
-});
 
-test("[§cli-plan-rendering] TASK renders a status-column table with only the populated columns, under the native names", () => {
-    const out = renderLogEntry(inventory([
-        { content: "Read core docs (AGENTS, ARCHITECTURE, package.json, README)", priority: "medium", status: "in_progress" },
-        { content: "Compose project description response", priority: "medium", status: "pending" },
-    ]), 100);
-    const lines = out.split("\n");
-    assert.equal(lines[0], "", "no keyword: the lead line is blank");
-    assert.doesNotMatch(out, /TASK/);
-    assert.match(out, /todo/);
-    assert.match(out, /in_progress/);
-    assert.doesNotMatch(out, /pending|completed|waiting|failed/, "empty columns are absent and ACP's pending is shown as todo");
-    assert.match(out, /Read core docs/);
-    assert.match(out, /Compose project description response/);
-    assert.doesNotMatch(out, /✅|🚧|⬜|▶️|102/);
-});
 
-test("[§cli-plan-rendering] a deferred completion carries the receipt's detail on the TASK line, and a failed TASK its Problem title", () => {
-    const deferred = renderLogEntry(inventory([{ content: "Compose the response", priority: "medium", status: "completed" }], {
-        rx: { status: 102, detail: "Completion deferred: 1 operation failed in the same turn. The failure is in this packet; address it or complete with a TASK now." },
-        attrs: { failures: 1 },
-    }), 100);
-    assert.match(deferred.split("\n")[0]!, /^Completion deferred: 1 operation failed in the same turn\./);
-    assert.match(deferred, /completed/);
-    const failed = renderLogEntry(inventory([{ content: "Verify", priority: "medium", status: "completed", _meta: { "plurnk.xyz/status": "failed" } }], {
-        status_rx: 409, rx: { status: 409, problem: { type: "x", title: "Loop already terminal", status: 409 } },
-    }), 100);
-    assert.equal(failed.split("\n")[0], "Loop already terminal");
-    assert.match(failed, /failed/);
-    assert.equal(renderLogEntry(inventory([], { status_rx: 200, rx: { status: 200 } })), "", "an empty inventory is the blank lead line alone");
-});
 
-test("[§cli-plan-rendering] the TASK table wraps to the live width instead of overflowing it", () => {
-    const out = renderLogEntry(inventory([
-        { content: "A rather long description of a task that must wrap without losing any of its words at all", priority: "medium", status: "in_progress" },
-        { content: "Another long description that sits in the second column and must wrap independently", priority: "medium", status: "pending" },
-    ]), 60);
-    assert.ok(out.split("\n").every((line) => line.length <= 60), out);
-    assert.match(out, /losing any/);
-});
+
+
+
+
 
 // ─── renderSummary ────────────────────────────────────────────────────
 

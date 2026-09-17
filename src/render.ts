@@ -353,7 +353,7 @@ const renderArrival = (entry: LogEntryWire, columns: number): string => {
 };
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
-// its outcome, an arrival its sender and block, a targetless SEND its block, every other
+// its outcome, an arrival its sender and block, a conversation reply its block, every other
 // operation one literal row.
 export const renderLogEntry = (
     entry: LogEntryWire,

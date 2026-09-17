@@ -210,7 +210,7 @@ The prompt's first character has the same meaning in the CLI and TUI. `plurnk "?
 Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_CLIENT_JSON` — not a flag on one output, but two distinct contracts:
 
 **text mode (default):**
-- **stdout** — successfully delivered, targetless model SEND bodies, verbatim in operation order and separated by a blank line (§5.4). A later failure or cancellation does not retract them. NOTE inventories and directed or failed messages do not appear on stdout.
+- **stdout** — delivered conversation responses ({§cli-broadcast-send-rendering}), verbatim in operation order and separated by a blank line. A later failure or cancellation does not retract them. NOTE inventories, unrelated recipients and failed messages do not appear on stdout.
 - **stderr** — one mutable status row on a TTY, durable action trace lines
   (including intermediate broadcasts), diagnostics, and the terminal summary.
   Non-TTY stderr omits routine status/progress instead of accumulating heartbeat
@@ -235,7 +235,7 @@ Consequence:
 2. Consume the SSE: `CUSTOM plurnk.row` events advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
-   Successful targetless model SEND bodies go to stdout (§5.4).
+   Delivered conversation responses go to stdout ({§cli-broadcast-send-rendering}).
 3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. `CUSTOM plurnk.terminated` is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
 5. Exit with the appropriate code (§4).

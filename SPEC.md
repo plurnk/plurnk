@@ -282,7 +282,7 @@ and the generated man page are checked against the same inventory. The README
 provides onboarding and examples, linking to this reference and pointing to
 `/help` rather than repeating the full command inventory.
 
-§cli-posix-artifacts The generated man page and Bash, Zsh, and Fish completions
+{§cli-posix-artifacts} The generated man page and Bash, Zsh, and Fish completions
 derive from the command inventory. Bash filename candidates retain spaces,
 backslashes, and glob characters as single candidates; the shell owns quoting.
 Unit tests run the native syntax/format checkers when installed and name any
@@ -811,7 +811,9 @@ AG-UI emits this client surface only for proposals whose durable disposition own
 
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
-When a proposal arrives, a TTY is present, and yolo is off (or the prompt asked for review with `?`), the client renders the proposal to stderr and prompts:
+When a proposal arrives and manual review is required, the one-shot TTY client
+prints its menu to stderr; the TUI presents it above the composer. Both offer
+accept, edit, reject, and cancel:
 
 ```
 ── proposal EDIT file:///path/to/file ──
@@ -819,21 +821,24 @@ When a proposal arrives, a TTY is present, and yolo is off (or the prompt asked 
 [a]ccept · [e]dit · [r]eject · [c]ancel
 ```
 
-Single-keypress menu (raw stdin):
+Resolutions use the originating AG-UI interrupt identity:
 
 | Key | Action |
 |---|---|
-| `a` | `loop.resolve({decision: "accept"})` — apply body as-is. |
-| `e` | Spawn `$VISUAL` / `$EDITOR` / `vi` on a tmpfile holding `body`. On save: `loop.resolve({decision: "accept", body: <edited>})`. Empty buffer ⇒ `cancel` with outcome `"empty_editor_buffer"` (git-commit convention). |
-| `r` | `loop.resolve({decision: "reject"})`. |
-| `c` | `loop.resolve({decision: "cancel"})`. |
-| any other | `cancel` with outcome `"unknown_key"`. Safe default; includes ctrl-c. |
+| `a` | Resolved resume with `{decision: "accept"}` — apply body as-is. |
+| `e` | Edit the body in `$VISUAL` / `$EDITOR` / `vi`; resume with `{decision: "accept", body: <edited>}`. An empty buffer cancels. |
+| `r` | Resolved resume with `{decision: "reject"}`. |
+| `c` | Cancelled resume. |
+
+The one-shot raw-key menu cancels on other input. The TUI retains ordinary
+commands and the `/accept`, `/edit`, `/reject`, `/cancel` spellings under
+{§cli-active-command-admission}.
 
 Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. Execution bodies render plain.
 
 ### §6.3 `--yolo` / `PLURNK_CLIENT_YOLO` {§cli-yolo-plurnkyolo}
 
-Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. When on, the proposal handler skips the menu and immediately sends `loop.resolve({decision: "accept", outcome: "client_yolo"})`. The proposal notification still goes over the wire (the daemon is unaware that the client auto-accepted). A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
+Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. When on, the proposal handler skips the menu and resumes the interrupt with `{decision: "accept"}`. The proposal still crosses the ordinary client-review boundary. A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
 
 This is distinct from **loop auto** (`--auto`, or a policy with `proposals:"accept"`), where proposal authority never crosses into client review.
 
@@ -991,7 +996,7 @@ is absent, it exits 127 and names the exact installation command. `SIGINT` and
   `web` is a client presentation mode and therefore does honor them. Reasoning
   mutation uses the positional policy above.
 
-### §cli-script-binding Script invocation and resume
+### Script invocation and resume {§cli-script-binding}
 
 `plurnk script <file.plk>` submits the file unchanged through `op.parse`.
 Workspace selection follows §1.1, including daemon-generated names for unnamed

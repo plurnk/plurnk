@@ -17,7 +17,7 @@ const walk = async (dir: string, out: string[] = []): Promise<string[]> => {
     for (const f of await readdir(dir)) {
         const p = join(dir, f);
         if ((await stat(p)).isDirectory()) { if (!/node_modules|\.git/.test(p)) await walk(p, out); }
-        else if (/\.ts$/.test(f)) out.push(p);
+        else if (/\.(?:ts|m?js)$/.test(f)) out.push(p);
     }
     return out;
 };
@@ -27,7 +27,7 @@ test("lockstep: every SPEC promise is cited, every citation resolves, comment re
     const anchors = new Set([...spec.matchAll(/\{§(cli-[a-z0-9-]+)\}/g)].map((m) => m[1]!));
     assert.ok(anchors.size > 0, "SPEC carries {§cli-*} anchors");
 
-    const files = [...await walk(join(ROOT, "src")), ...await walk(join(ROOT, "test"))];
+    const files = [...await walk(join(ROOT, "src")), ...await walk(join(ROOT, "test")), ...await walk(join(ROOT, "scripts"))];
     const cited = new Set<string>();
     const commentRefs: Array<{ file: string; ref: string }> = [];
     for (const file of files) {

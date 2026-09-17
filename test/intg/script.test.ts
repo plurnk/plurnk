@@ -28,7 +28,7 @@ const run = (url: string, directory: string, args: string[]) => exec(process.exe
     },
 });
 
-test("{§cli-script-binding}: built scripts retain workspace, worker, and settings across proposal resumes", async (t) => {
+test("[§cli-script-binding] built scripts retain workspace, worker, and settings across proposal resumes", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-script-wire-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
     await writeFile(join(directory, "input.plk"), script);
@@ -119,7 +119,7 @@ test("{§cli-script-binding}: built scripts retain workspace, worker, and settin
     });
 });
 
-test("{§cli-script-binding}: the built client mutates only its selected real workspace", { timeout: 60_000 }, async (t) => {
+test("[§cli-script-binding] the built client mutates only its selected real workspace", { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
     const daemon = await bootDaemon(service);

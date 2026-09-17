@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
-import { extractSendBody, isResponseMessage, renderLogEntry, type LogEntryWire } from "./render.ts";
+import { extractSendBody, isResponseMessage, type LogEntryWire } from "./render.ts";
+import { renderLogEntry } from "./render-message.ts";
 
 const row = (op: string, body: string | null, status: number, delivered = false): LogEntryWire => ({
     id: 1, loop_seq: 1, turn_seq: 2, sequence: 1, op, origin: "model", signal: null,
@@ -17,7 +18,7 @@ test("an addressed answer is rendered from successful delivery, not targetlessne
     entry.rx = { recipients: ["agui://anonymous/threads/conversation/messages/m1"] };
     assert.equal(isResponseMessage(entry, "conversation"), true);
     assert.equal(isResponseMessage(entry, "other"), false);
-    assert.equal(extractSendBody(entry.tx, false), "**Authored response.**");
+    assert.equal(extractSendBody(entry.tx), "**Authored response.**");
     assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
     assert.equal(isResponseMessage({ ...entry, inherited_history: 1 }), false);
     assert.equal(isResponseMessage({ ...entry, status_rx: 409 }), false);

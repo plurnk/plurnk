@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 
 import { renderDocument, resolveRenderWidth } from "./render-command.ts";
 
-test("[§cli-render-filter] renderDocument projects width-bounded plain Unicode", () => {
-    const output = renderDocument([
+test("[§cli-presentation-loading] concurrent and repeated filter calls preserve their own content and width", async () => {
+    const source = "| A | B |\n|---|---|\n| First | A lengthy description that wraps within each selected width. |";
+    const narrow = await renderDocument(source, 32);
+    const wide = await renderDocument(source, 80);
+    assert.deepEqual(await Promise.all([renderDocument(source, 32), renderDocument(source, 80)]), [narrow, wide]);
+    assert.notEqual(narrow, wide);
+});
+
+test("[§cli-render-filter] renderDocument projects width-bounded plain Unicode", async () => {
+    const output = await renderDocument([
         "| Surface | Use |",
         "| --- | --- |",
         "| Client | A deliberately long explanation that must wrap. |",

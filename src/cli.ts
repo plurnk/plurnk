@@ -4,7 +4,7 @@
 // land on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { extractSendBody, contextGauge, entryAside, entryScope, entryTarget } from "./render.ts";
+import { contextGauge, entryAside, entryScope, entryTarget } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";

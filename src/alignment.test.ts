@@ -3,7 +3,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderLogEntry, renderReasoning } from "./render.ts";
+import { renderReasoning } from "./render.ts";
+import { renderLogEntry } from "./render-message.ts";
 import type { LogEntryWire } from "./render.ts";
 import StreamTrace from "./stream.ts";
 

@@ -12,7 +12,6 @@ process.env.NO_COLOR = "1";
 
 const {
     extractSendBody,
-    renderLogEntry,
     renderPendingRow,
     renderReasoning,
     renderSummary,
@@ -28,9 +27,8 @@ const {
     outcomeTitle,
     FanoutCollapse,
 } = await import("./render.ts");
-type LogEntryWire = Awaited<ReturnType<typeof import("./render.ts")["renderLogEntry"]>> extends string
-    ? Parameters<typeof import("./render.ts")["renderLogEntry"]>[0]
-    : never;
+const { renderLogEntry, renderSendBody } = await import("./render-message.ts");
+import type { LogEntryWire } from "./render.ts";
 
 // Minimal entry factory — fills in plausible defaults; callers override what matters.
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -58,44 +56,44 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
 // ─── extractSendBody ──────────────────────────────────────────────────
 
 test("extractSendBody: null tx → empty", () => {
-    assert.equal(extractSendBody(null, true), "");
-    assert.equal(extractSendBody(undefined, false), "");
+    assert.equal(renderSendBody(null), "");
+    assert.equal(extractSendBody(undefined), "");
 });
 
 test("extractSendBody: null body → empty", () => {
-    assert.equal(extractSendBody({ body: null }, true), "");
+    assert.equal(renderSendBody({ body: null }), "");
 });
 
 test("extractSendBody prettify=false: raw verbatim, json ignored", () => {
     const tx = { body: { raw: '{"k":"v"}', json: { k: "v" } } };
-    assert.equal(extractSendBody(tx, false), '{"k":"v"}');
+    assert.equal(extractSendBody(tx), '{"k":"v"}');
 });
 
 test("extractSendBody prettify=false: non-string raw → empty", () => {
     const tx = { body: { raw: 123, json: 123 } };
-    assert.equal(extractSendBody(tx, false), "");
+    assert.equal(extractSendBody(tx), "");
 });
 
 test("extractSendBody prettify=true: json wins, pretty-printed", () => {
     const tx = { body: { raw: '{"k":"v"}', json: { k: "v" } } };
-    assert.equal(extractSendBody(tx, true), '{\n  "k": "v"\n}');
+    assert.equal(renderSendBody(tx), '{\n  "k": "v"\n}');
 });
 
 test("extractSendBody prettify=true: markdown body → ANSI transform applied", () => {
     // With NO_COLOR=1, ANSI codes collapse to empty. The mature renderer owns
     // the terminal list marker and indentation.
     const tx = { body: { raw: "- item one\n- item two", json: null } };
-    const out = extractSendBody(tx, true);
+    const out = renderSendBody(tx);
     assert.match(out, /\* item one/);
 });
 
 test("extractSendBody prettify=true: plain text → raw verbatim", () => {
     const tx = { body: { raw: "Hello, world.", json: null } };
-    assert.equal(extractSendBody(tx, true), "Hello, world.");
+    assert.equal(renderSendBody(tx), "Hello, world.");
 });
 
 test("model-authored text never reaches the terminal with its own control sequences (plurnk#35)", () => {
-    const body = extractSendBody({ body: { raw: "safe \x1b]52;c;aGVsbG8=\x07 text", json: null } }, true);
+    const body = renderSendBody({ body: { raw: "safe \x1b]52;c;aGVsbG8=\x07 text", json: null } });
     assert.doesNotMatch(body, /\x1b\]52/, "an OSC 52 clipboard write inside a SEND body is stripped");
     assert.match(body, /safe/); assert.match(body, /text/);
     const send = renderLogEntry(entry({ op: "SEND", signal: 200, tx: { body: { raw: "done \x1b[31mRED\x1b[0m\rgone", json: null } } }));
@@ -172,8 +170,8 @@ test("[§cli-log-entry-line-format] entryTarget preserves literal resource addre
 // import runs under NO_COLOR; bold needs a color-enabled instance. A
 // query-suffixed dynamic import busts the ESM module cache (computed
 // specifier so tsc doesn't try to resolve the query form).
-const freshRender = async (tag: string): Promise<typeof import("./render.ts")> =>
-    await import(`./render.ts?${tag}`) as typeof import("./render.ts");
+const freshRender = async (tag: string): Promise<typeof import("./render-message.ts")> =>
+    await import(`./render-message.ts?${tag}`) as typeof import("./render-message.ts");
 
 const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
@@ -604,25 +602,25 @@ test("renderLogEntry: only errors carry a code on non-SEND rows (color branches 
 // ─── renderMarkdown: construct branches (via prettify) ───────────────
 
 test("extractSendBody prettify: markdown header → bold, no leading #", () => {
-    const out = extractSendBody({ body: { raw: "# Title", json: null } }, true);
+    const out = renderSendBody({ body: { raw: "# Title", json: null } });
     assert.match(out, /Title/);
     assert.doesNotMatch(out, /# Title/);
 });
 
 test("extractSendBody prettify: bold, inline code, and bullets transform", () => {
-    assert.match(extractSendBody({ body: { raw: "**strong**", json: null } }, true), /strong/);
-    assert.match(extractSendBody({ body: { raw: "`code`", json: null } }, true), /code/);
-    assert.match(extractSendBody({ body: { raw: "- one\n- two", json: null } }, true), /\* one/);
+    assert.match(renderSendBody({ body: { raw: "**strong**", json: null } }), /strong/);
+    assert.match(renderSendBody({ body: { raw: "`code`", json: null } }), /code/);
+    assert.match(renderSendBody({ body: { raw: "- one\n- two", json: null } }), /\* one/);
 });
 
 test("extractSendBody prettify: plain text (no markdown markers) passes through", () => {
-    assert.equal(extractSendBody({ body: { raw: "just words", json: null } }, true), "just words");
+    assert.equal(renderSendBody({ body: { raw: "just words", json: null } }), "just words");
 });
 
 test("extractSendBody prettify: conventional inline right arrow renders as its terminal glyph", () => {
     const raw = "loading $\\rightarrow$ running";
-    assert.equal(extractSendBody({ body: { raw, json: null } }, true), "loading → running");
-    assert.equal(extractSendBody({ body: { raw, json: null } }, false), raw, "CLI output remains verbatim");
+    assert.equal(renderSendBody({ body: { raw, json: null } }), "loading → running");
+    assert.equal(extractSendBody({ body: { raw, json: null } }), raw, "CLI output remains verbatim");
 });
 
 // ─── renderSummary: usage token part ─────────────────────────────────

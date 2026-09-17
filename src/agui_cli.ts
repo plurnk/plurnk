@@ -179,7 +179,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
             const workerId = (entry as { worker_id?: number }).worker_id;
             if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
             const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
-            const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx, false) : "";
+            const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx) : "";
             const separator = response.length > 0 ? "\n\n" : "";
             if (message.length > 0) response += separator + message;
             if (io.json) { entries.push(entry); continue; }

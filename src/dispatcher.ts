@@ -11,7 +11,6 @@ import { loadFloor } from "./envdefaults.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
-import { runTui } from "./tui.ts";
 import { handleMcp } from "./mcp.ts";
 import { formatRouteIdentity } from "./status.ts";
 import {
@@ -617,15 +616,13 @@ export const main = async (argv: string[]): Promise<void> => {
                 throw new ProblemError(clientSubcommandUnknownVerb(`render ${positionals.slice(1).join(" ")}`));
             }
             const source = await readStdin();
-            const rendered = renderDocument(source, resolveRenderWidth(values.width));
+            const rendered = await renderDocument(source, resolveRenderWidth(values.width));
             if (rendered.length > 0) process.stdout.write(`${rendered}\n`);
             process.exitCode = 0;
             return;
         } catch (cause) {
             if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-            process.stderr.write(`plurnk render: ${cause instanceof Error ? cause.message : String(cause)}\n`);
-            process.exitCode = 64;
-            return;
+            dieWith(1, clientRuntimeError(cause));
         }
     }
     const buildInfo = await getBuildInfo();
@@ -945,6 +942,7 @@ export const main = async (argv: string[]): Promise<void> => {
             settings,
         });
         try {
+            const { runTui } = await import("./tui.ts");
             await runTui(transport, { name: w }, {
                 modelSelector,
                 modelExplicit: values.model !== undefined,

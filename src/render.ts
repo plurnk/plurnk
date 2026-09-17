@@ -3,18 +3,12 @@
 // literal text with this module's own styling and never through Markdown; only message
 // bodies are Markdown ({§cli-broadcast-send-rendering}). Rows carry no bodies.
 
-import { colorEnabled } from "./color.ts";
+import { ansi as code } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
-import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
-import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { abbreviatedCount, money } from "./figures.ts";
 
-// ANSI escape codes. NO_COLOR support per Unix convention.
-const useColor = colorEnabled();
-
-const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
 const RESET = code("0");
 const BOLD = code("1");
 const DIM = code("2");
@@ -90,33 +84,12 @@ export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): 
 export const progressLabel = (percent: number): string =>
     `${DIM}${`${Math.max(0, Math.min(99, Math.trunc(percent)))}%`.padStart(3, " ")}${RESET}`;
 
-// A common model-authored inline-math spelling with an exact terminal glyph.
-// This is typographic normalization, not a claim of general LaTeX support.
-const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "→");
-
-// Read a SEND message body from the wire representation.
-//
-// prettify=true (TUI): json → pretty-print, markdown → ANSI, else raw.
-// prettify=false (CLI): always raw verbatim — pretty-printing is a TUI convenience,
-// not something a downstream pipe consumer should have to undo.
-export const extractSendBody = (
-    txUnknown: unknown,
-    prettify: boolean,
-    viewport: number = process.stdout.columns ?? 80,
-): string => {
-    const tx = txUnknown as { body?: string | { raw?: unknown; json?: unknown } | null } | null;
-    if (tx === null || tx === undefined) return "";
-    const sendBody = tx.body;
-    if (sendBody === null || sendBody === undefined) return "";
-    const { raw, json } = typeof sendBody === "string" ? { raw: sendBody, json: null } : sendBody;
-    if (!prettify) return typeof raw === "string" ? raw : "";
-    if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
-    if (typeof raw !== "string") return "";
-    const prose = normalizeProse(ModelText.plain(raw));
-    // GFM and Mermaid project through the terminal renderer at the caller's
-    // current available width (plurnk#15).
-    if (looksLikeMarkdown(prose)) return renderMarkdownDocument(prose, viewport);
-    return prose;
+// Extract the authored SEND text without terminal interpretation ({§cli-presentation-loading}).
+export const extractSendBody = (txUnknown: unknown): string => {
+    const tx = txUnknown as { body?: string | { raw?: unknown } | null } | null;
+    const body = tx?.body;
+    const raw = typeof body === "string" ? body : body?.raw;
+    return typeof raw === "string" ? raw : "";
 };
 
 // Provider reasoning is neither working memory nor speech. Give it one quiet visual lane
@@ -125,19 +98,6 @@ export const renderReasoning = (content: string): string => ModelText.plain(cont
     .split("\n")
     .map((line, index) => `${index === 0 ? "💭 " : "   "}${DIM}${line}${RESET}`)
     .join("\n");
-
-// Bold delivered model response messages; other operation records stay plain.
-// Re-arm BOLD after every inner
-// RESET (markdown spans, status color) so a styled span can't cut the bold
-// mid-line. No background band: background-color-erase (\x1b[K) isn't universal,
-// so a full-width green stripe rendered jagged on terminals without it — bold is
-// width-independent and works on every terminal.
-const emphasizeLines = (lines: string[], on: boolean): string => {
-    if (!on || BOLD.length === 0) return lines.join("\n");
-    return lines
-        .map((l) => `${BOLD}${l.split(RESET).join(RESET + BOLD)}${RESET}`)
-        .join("\n");
-};
 
 // {§message-arrival} — an arrival is an inbound SEND row the daemon published: the sender's
 // statement, with the causal `source` when another actor caused it (plurnk-service #706).
@@ -321,55 +281,6 @@ export class FanoutCollapse {
         return { kind: "collapsed", override: { target: fanout.target, count: fanout.count, failed: failure !== null, failure } };
     }
 }
-
-// The lead line of a delivered response block: no keyword. A blank line stands where the keyword
-// was; a failure puts its Problem title there in pink, a deferred or joined completion its
-// `detail`; the sanitized aside follows either.
-const leadLine = (entry: LogEntryWire, detail: boolean): string => {
-    const parts: string[] = [];
-    const rx = objectOf(entry.rx);
-    if (entry.status_rx >= 400 && !(isResponseMessage(entry) && rx?.problem == null)) parts.push(`${PINK}${ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx))}${RESET}`);
-    else if (detail && entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) parts.push(ModelText.plain(rx.detail));
-    const aside = entryAside(entry);
-    if (aside !== null) parts.push(`${DIM}${ITALIC}${aside}${RESET}`);
-    return parts.join(" ");
-};
-
-// Targetless SEND: the message block. The lead line, then the body with its Markdown at
-// column zero ({§cli-broadcast-send-rendering}); a delivered response is bold.
-const renderBroadcast = (entry: LogEntryWire, columns: number, body = extractSendBody(entry.tx, true, Math.max(1, columns))): string => {
-    const lead = leadLine(entry, TurnDisposition.isOp(entry.op));
-    const lines = body.length === 0 ? [lead] : [lead, ...body.split("\n")];
-    return emphasizeLines(lines, isResponseMessage(entry));
-};
-
-// An arrival from another actor: SEND with the sender where a target would sit, then the
-// body block, never emphasized (emphasis marks this worker's own delivered responses).
-const renderArrival = (entry: LogEntryWire, columns: number): string => {
-    const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
-    const lead = `${BOLD}${GREEN}SEND${RESET}${sender}`;
-    const body = extractSendBody(entry.tx, true, Math.max(1, columns));
-    return body.length === 0 ? lead : `${lead}\n${body}`;
-};
-
-// Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
-// its outcome, an arrival its sender and block, a conversation reply its block, every other
-// operation one literal row.
-export const renderLogEntry = (
-    entry: LogEntryWire,
-    columns: number = process.stdout.columns ?? 80,
-    override?: RowOverride,
-): string => {
-    if (isResponseMessage(entry)) return renderBroadcast(entry, columns);
-    if (TurnDisposition.isOp(entry.op)) {
-        const rx = objectOf(entry.rx);
-        const detail = typeof rx?.detail === "string" ? rx.detail : null;
-        return renderOperationRow(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) });
-    }
-    if (isArrivalEntry(entry)) return renderArrival(entry, columns);
-    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
-    return renderOperationRow(entry, override);
-};
 
 export interface LoopUsage {
     // A deliberately narrow projection of the contracts-owned accounting schema.

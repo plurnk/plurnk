@@ -611,6 +611,19 @@ TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the s
 
 ## §5 Rendering {§cli-rendering}
 
+### §5.0 Presentation loading {§cli-presentation-loading}
+
+Presentation dependencies load at their owning interface,
+not through shared wire formatting. Imports use the native module cache; load
+failures remain causal errors, never a silent replacement rendering mode.
+
+| Path | Presentation initialization |
+|---|---|
+| Help/version, plain/JSON CLI, state commands, web dispatch | No pi-tui, Markdown, Mermaid, or diagram-layout initialization. |
+| TUI | Load the terminal implementation when selected; message rendering stays synchronous. |
+| `render --help` | Help only, without initializing the renderer. |
+| `render` | Load the Markdown/diagram renderer before producing output; no pi-tui or daemon. |
+
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
 One row per dispatched op, except delivered message blocks (§5.4).

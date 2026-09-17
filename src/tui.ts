@@ -20,7 +20,8 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderLogEntry, renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { renderLogEntry } from "./render-message.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";

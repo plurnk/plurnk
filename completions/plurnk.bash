@@ -3,12 +3,19 @@ _plurnk() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     local flags="--help --version --json --workspace --worker --model --reasoning --project-root --yolo --auto --policy --capabilities --env-file --env-file-if-exists --max-turns --timeout --files-items --max-commands --no-git --loop --turn --since --limit --provider --all --offset --width --host --port"
     local subs="models workspace log reasoning capabilities render web mcp script"
-    if [[ $cur == -* ]]; then
-        COMPREPLY=($(compgen -W "$flags" -- "$cur"))
-    elif [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "$subs" -- "$cur") $(compgen -f -- "$cur"))
-    else
-        COMPREPLY=($(compgen -f -- "$cur"))
-    fi
+    local candidate
+    COMPREPLY=()
+    while IFS= read -r candidate; do
+        COMPREPLY+=("$candidate")
+    done < <(
+        if [[ $cur == -* ]]; then
+            compgen -W "$flags" -- "$cur"
+        elif [[ $COMP_CWORD -eq 1 ]]; then
+            compgen -W "$subs" -- "$cur"
+            compgen -f -- "$cur"
+        else
+            compgen -f -- "$cur"
+        fi
+    )
 }
-complete -F _plurnk plurnk
+complete -o filenames -F _plurnk plurnk

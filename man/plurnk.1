@@ -1,4 +1,4 @@
-.TH PLURNK 1 "" "plurnk 0.85.0" "User Commands"
+.TH PLURNK 1 "2026-09-17" "plurnk 0.85.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -20,11 +20,17 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--r
                    | disable|remove <alias> | oauth <alias> <callback-url>]
 .fi
 .SH DESCRIPTION
-Connects to the plurnk-service daemon. Run a single prompt one-shot
-(positional args, piped stdin, or both — positionals come first, stdin
-is appended after a blank line). With no positionals and a TTY stdin,
-enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list /
-log read / read <coord>) inspect daemon state without running a loop.
+Connects to the plurnk-service daemon. Run a single prompt
+one-shot
+(positional args, piped stdin, or both — positionals come first,
+stdin
+is appended after a blank line). With no positionals and a TTY
+stdin,
+enters the scrollback-native interactive terminal. Read-only subcommands
+(models / workspace list
+/
+log read / read <coord>) inspect daemon state without running a
+loop.
 .SH OPTIONS
 .nf
   -h, --help              print this message and exit
@@ -179,7 +185,8 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
 The loop concluded successfully (or the subcommand completed).
 .TP
 .B 3
-The loop failed, timed out (\-\-timeout), or a script's worst op status was an error.
+The loop failed, timed out (\-\-timeout),
+or a script's worst op status was an error.
 .TP
 .B 143
 Terminated by SIGTERM after emitting the partial record.

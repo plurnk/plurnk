@@ -284,6 +284,13 @@ and the generated man page are checked against the same inventory. The README
 provides onboarding and examples, linking to this reference and pointing to
 `/help` rather than repeating the full command inventory.
 
+§cli-posix-artifacts The generated man page and Bash, Zsh, and Fish completions
+derive from the command inventory. Bash filename candidates retain spaces,
+backslashes, and glob characters as single candidates; the shell owns quoting.
+Unit tests run the native syntax/format checkers when installed and name any
+missing tools. `npm run test:posix` requires mandoc, Bash, Zsh, Fish, and
+ShellCheck; a missing checker or an invalid artifact fails that explicit check.
+
 | Group | Verbs |
 |---|---|
 | Inspect | `/help /models /workspaces /workers /log` |

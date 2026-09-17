@@ -98,7 +98,7 @@ test("completeOps: completes native names and retains a longer opening fence", (
     assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], "```pl"]);
     assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"]);
     assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], ["```BARE"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "DONE", "FAIL", "LOOK"].map((op) => `\`\`\`${op}`));
+    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "LOOK"].map((op) => `\`\`\`${op}`));
 });
 
 test("completeOps: LOOK completes alongside daemon operations", () => {

@@ -10,19 +10,22 @@ const row = (op: string, body: string | null, status: number, delivered = false)
     rx: { status, ...(delivered ? { recipients: [] } : {}) }, status_rx: status, tags: [],
 });
 
-for (const [op, status] of [["DONE", 200], ["DONE", 102], ["DONE", 202], ["FAIL", 499], ["FAIL", 102]] as const) {
-    test(`delivered ${op} at ${status} is a response independently of lifecycle settlement`, () => {
-        const entry = row(op, "**Authored response.**", status, true);
-        assert.equal(isResponseMessage(entry), true);
-        assert.equal(extractSendBody(entry.tx, false), "**Authored response.**");
-        assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
-        assert.equal(isResponseMessage({ ...entry, origin: "_plurnk" }), false);
-        assert.equal(isResponseMessage({ ...entry, inherited_history: 1 }), false);
-        assert.equal(isResponseMessage({ ...entry, source: "worker://another" }), false);
-        assert.equal(isResponseMessage(row(op, "Not delivered", status)), false);
-        assert.equal(isResponseMessage(row(op, null, status, true)), false);
-    });
-}
+test("an addressed answer is rendered from successful delivery, not targetlessness or a terminal verb", () => {
+    const entry = row("SEND", "**Authored response.**", 200, true);
+    entry.scheme = "agui";
+    entry.pathname = "/threads/conversation/messages/m1";
+    entry.rx = { recipients: ["agui://anonymous/threads/conversation/messages/m1"] };
+    assert.equal(isResponseMessage(entry, "conversation"), true);
+    assert.equal(isResponseMessage(entry, "other"), false);
+    assert.equal(extractSendBody(entry.tx, false), "**Authored response.**");
+    assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
+    assert.equal(isResponseMessage({ ...entry, inherited_history: 1 }), false);
+    assert.equal(isResponseMessage({ ...entry, status_rx: 409 }), false);
+    assert.equal(isResponseMessage({ ...entry, rx: { recipients: ["worker://child/?message=01234567"] } }), false);
+    assert.equal(isResponseMessage({ ...entry, source: "worker://another" }), false);
+    assert.equal(isResponseMessage({ ...entry, source: "worker://another", origin: "_plurnk", attrs: { kind: "reply" } }), true);
+    assert.equal(isResponseMessage(row("SEND", "Not delivered", 200)), false);
+});
 
 for (const op of ["NOTE", "WAIT"]) test(`${op} is an operation, not speech or a task inventory`, () => {
     const entry = row(op, "Working memory, not a response.", 200);
@@ -31,9 +34,9 @@ for (const op of ["NOTE", "WAIT"]) test(`${op} is an operation, not speech or a 
     assert.equal(rendered, op);
 });
 
-test("a deferred blank DONE displays the actual barrier without manufacturing speech", () => {
-    const entry = row("DONE", null, 102);
-    entry.rx = { status: 102, detail: "Completion deferred: results await observation." };
+test("an empty WAIT displays its actual continuation detail without manufacturing speech", () => {
+    const entry = row("WAIT", null, 102);
+    entry.rx = { status: 102, detail: "Nothing is in flight. Continuing." };
     assert.equal(isResponseMessage(entry), false);
-    assert.match(stripVTControlCharacters(renderLogEntry(entry)), /DONE.*Completion deferred: results await observation\./);
+    assert.match(stripVTControlCharacters(renderLogEntry(entry)), /WAIT.*Nothing is in flight\. Continuing\./);
 });

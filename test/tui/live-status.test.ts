@@ -24,9 +24,9 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
             frame({ role: "assistant", reasoning_content: `LIVE_REASONING_${index + 1}` });
             incoming[index].resolve(response);
             await release[index].promise;
-            const op = index === 0 ? "NOTE" : "DONE";
             const message = index === 0 ? "Continuing the work." : `FINAL_RESPONSE_${index + 1}`;
-            frame({ content: `\`\`\`\`SEND\n${message}\n\`\`\`\`\n\n\`\`\`\`${op}\n\`\`\`\`` });
+            const work = index === 0 ? "\n\n````FIND (worker:///*)\n````" : "";
+            frame({ content: `\`\`\`\`SEND\n${message}\n\`\`\`\`${work}` });
             frame({}, "stop");
             const factor = 2 ** index;
             response.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 } })}\n\n`);

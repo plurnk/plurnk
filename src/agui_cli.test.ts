@@ -15,7 +15,8 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", origin: "model", signal: null,
     loop_seq: 1, turn_seq: 1, sequence: 1,
     scheme: null, pathname: null, hostname: null, fragment: null,
-    lineMarker: null, status_rx: 200, tx: null, rx: null, tags: [], ...o,
+    lineMarker: null, status_rx: 200, tx: null,
+    rx: o.op === "SEND" && o.scheme == null ? { recipients: [] } : null, tags: [], ...o,
 });
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
@@ -353,7 +354,7 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
         rowRun({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
         rowRun({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
         rowRun({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
-        rowRun({ id: 14, op: "FAIL", status_rx: 499, tx: { body: "Verification failed." }, rx: { status: 499, recipients: [] } }, 11),
+        rowRun({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, recipients: [] } }, 11),
         terminated({ workerId: 11, result: { status: 499, problem: {
             type: "https://problems.plurnk.xyz/lifecycle/failed", title: "Task failed", status: 499, detail: "Verification failed.",
         } } }),
@@ -362,6 +363,21 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
     assert.equal(result.terminated?.result.status, 499);
     assert.equal(result.exitCode, 3);
     assert.equal(out.join(""), json ? "" : "First.\n\nSecond.\n\nVerification failed.\n");
+});
+
+test("consumeCliRun: exact and foreign-worker replies reach stdout only for this conversation", async () => {
+    const { io, out } = sink();
+    const receipt = (thread: string) => ({ recipients: [`agui://anonymous/threads/${thread}/messages/m1`] });
+    const result = await consumeCliRun(stream([
+        { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
+        rowRun({ op: "SEND", scheme: "agui", pathname: "/threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
+        rowRun({ op: "SEND", origin: "_plurnk", source: "worker://peer", attrs: { kind: "reply" }, tx: { body: { raw: "Peer answer." } }, rx: receipt("t") }, 11),
+        rowRun({ op: "SEND", tx: { body: { raw: "Other conversation." } }, rx: receipt("other") }, 11),
+        rowRun({ op: "SEND", tx: { body: { raw: "Peer work." } }, rx: { recipients: ["worker://peer/?message=abcdef01"] } }, 11),
+        terminated({ workerId: 11 }),
+    ]), io);
+    assert.equal(result.response, "Direct answer.\n\nPeer answer.");
+    assert.equal(out.join(""), "Direct answer.\n\nPeer answer.\n");
 });
 
 test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) to the trace", async () => {

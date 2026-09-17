@@ -982,7 +982,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const verdict = fanout.admit(entry);
             if (verdict.kind === "suppressed") return;
             const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined);
-            if (isResponseMessage(entry)) surface.addResponse(entry);
+            if (isResponseMessage(entry, transport.threadId())) surface.addResponse(entry);
             else printAbove(rendered);
         },
         onNotice: handleNotice,

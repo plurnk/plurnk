@@ -651,7 +651,7 @@ again when it eventually ends.
 
 Width-tolerant; no fixed column widths. Every row begins at column zero.
 
-**Exceptions:** targetless SEND and native dispositions render as blocks per §5.4 and §5.1.2. The TUI moves each submitted editor value into ordinary terminal scrollback; its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
+**Exceptions:** delivered conversation replies render as blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback; its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
@@ -707,8 +707,8 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 |---|---|
 | NOTE | Ordinary operation heading and aside; working-memory body available through LOOK. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
-| DONE / FAIL with a delivered body | Message block per §5.4, with any deferral detail. |
-| Blank or undelivered DONE / FAIL | Operation heading and actual receipt detail or Problem. |
+| Delivered conversation SEND | Message block per §5.4. |
+| Other SEND | Operation heading and actual receipt detail or Problem. |
 
 Loop state comes from the daemon's status events, not an inference from a verb or body.
 
@@ -728,37 +728,37 @@ Input and output are the conventional aggregate fields from the daemon's account
 - Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
 - Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.7.
 
-### §5.4 Messages and dispositions {§cli-broadcast-send-rendering}
+### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
-A targetless SEND or a delivered DONE/FAIL body carries message content. Both scheme and pathname must be absent. The interactive client renders full message bodies, not diagnostic previews.
+A successful SEND whose receipt addresses the current AG-UI conversation carries response content, including an exact-address reply or another actor's delivered reply observation. An unsolicited targetless model SEND also qualifies. The interactive client renders full message bodies, not diagnostic previews; an unrelated worker or protocol recipient does not become conversation speech.
 
 TUI mode contract:
 
 - Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in pink; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
 - Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
 - No synthetic surrounding blank rows.
-- Empty SEND content is legal and renders as just the lead line. Blank lifecycle operations follow §5.1.2.
+- Empty SEND content is legal and renders as just the lead line.
 
-Delivered targetless model responses are bold so messages stand out from
-operation records; failed, directed, inherited, and non-model messages remain plain. Inner ANSI
+Delivered conversation responses are bold so messages stand out from
+operation records; failed, unrelated, and inherited messages remain plain. Inner ANSI
 resets re-arm bold across Markdown spans. `NO_COLOR` removes the emphasis while
 preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messages use stdout (§2).
 
-The message body source is `entry.tx.body`: SEND uses `{ raw, json }`; DONE/FAIL use literal text.
+The message body source is `entry.tx.body`, carrying `{ raw, json }`.
 
-Successful (`200 ≤ status_rx < 300`) targetless model SEND rows contribute to the response.
-DONE/FAIL require a nonempty body and a receipt `recipients` array proving delivery,
-independently of lifecycle settlement: deferred completion and declared failure can
-both deliver speech. Source and inherited rows cannot deliver the same message again.
+Successful (`200 ≤ status_rx < 300`) SEND rows contribute through their recorded
+`recipients`, independently of loop completion. Inherited rows and ordinary source
+observations cannot deliver the same message again; a source-attributed `reply`
+observation is a genuine delivery to this conversation.
 Bodies accumulate in delivery order, separated by a blank line. NOTE and WAIT are not speech.
 
 **CLI default** emits each qualifying body verbatim, without Markdown or
 JSON transformation. **CLI `--json`** includes the aggregated `response` in the
 single complete run record defined in §2.1, not a second body-only output format.
 
-**TUI mode** (no `--json`; the flag is CLI-only) renders every targetless SEND as a block, dispatching by content type:
+**TUI mode** (no `--json`; the flag is CLI-only) renders qualifying responses as blocks, dispatching by content type:
 
 - **JSON** — `tx.body.json !== null`. Render `JSON.stringify(json, null, 2)`.
 - **Markdown** — `raw` matches structural markdown markers (heading `# `, bold `**…**`, list `- `, fenced code ` ``` `, or `[text](url)` link). Minimal vanilla-ANSI transform: bold, italic, dim inline code, `• ` bullets, header text bolded. Rich-client prose also normalizes the common inline token `$\rightarrow$` to `→`; this is not general LaTeX support. CLI output remains verbatim.

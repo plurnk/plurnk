@@ -94,7 +94,7 @@ export const progressLabel = (percent: number): string =>
 // This is typographic normalization, not a claim of general LaTeX support.
 const normalizeProse = (s: string): string => s.replaceAll("$\\rightarrow$", "→");
 
-// Read a message body: SEND uses { raw, json }; DONE/FAIL use literal text.
+// Read a SEND message body from the wire representation.
 //
 // prettify=true (TUI): json → pretty-print, markdown → ANSI, else raw.
 // prettify=false (CLI): always raw verbatim — pretty-printing is a TUI convenience,
@@ -150,13 +150,16 @@ export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     isArrivalEntry(entry) && typeof entry.source === "string"
     && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
 
-export const isResponseMessage = (entry: LogEntryWire): boolean => {
-    if (entry.origin !== "model" || entry.source != null || entry.inherited_history === 1
-        || entry.scheme !== null || entry.pathname !== null) return false;
-    if (entry.op === "SEND") return entry.status_rx >= 200 && entry.status_rx < 300;
-    return TurnDisposition.isTerminalOp(entry.op)
-        && extractSendBody(entry.tx, false).length > 0
-        && Array.isArray(objectOf(entry.rx)?.recipients);
+export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
+    if (entry.op !== "SEND" || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
+    const reply = objectOf(entry.attrs)?.kind === "reply";
+    if (!reply && entry.source != null) return false;
+    const recipients = objectOf(entry.rx)?.recipients;
+    if (!Array.isArray(recipients)) return false;
+    const prefix = threadId === undefined ? "agui://anonymous/threads/"
+        : `agui://anonymous/threads/${encodeURIComponent(threadId)}/messages/`;
+    return !reply && entry.origin === "model" && recipients.length === 0
+        || recipients.some((address) => typeof address === "string" && address.startsWith(prefix));
 };
 
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or

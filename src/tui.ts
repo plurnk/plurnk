@@ -808,8 +808,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (liveReasoning === null || liveReasoning.messageId !== update.messageId) {
             throw new TypeError(`Reasoning ${update.phase} did not match the active message.`);
         }
-        // Reasoning lives in the scroll while it streams and leaves with the turn: the log keeps
-        // it at reasoning:///L/T, the transcript never does (a fat reasoning habit stays a third
+        // Reasoning lives in the scroll while it streams and leaves with the turn: immutable history keeps
+        // it at reasoning://<worker>/L/T, the transcript never does (a fat reasoning habit stays a third
         // of the screen, not the whole session).
         const rendered = renderReasoning(update.content);
         liveReasoning.rendered = rendered;

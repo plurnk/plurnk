@@ -357,8 +357,9 @@ newest first (§1.2.1).
 
 `/look <address> [<scope>] [pattern]` reads a resource for the human, never for the model.
 The client composes the LOOK fence and submits it through the `op.look` observation
-action, which resolves it as the bound conversation (`log:///`, `reasoning:///`, and
-`ops:///` as the model sees them) and writes no log entry. A typed ```````LOOK (…)```````
+action, which resolves `log:///` as the bound conversation and writes no log entry.
+Explicit source addresses (`ops://<worker>/…`, `reasoning://<worker>/…`, and
+`note://<worker>/…`) retain the named workspace worker's identity. A typed ```````LOOK (…)```````
 fence takes the same path. The readout is a local human record printed above the
 composer: the heading as submitted, then the content verbatim; an empty result says so in
 the daemon's words; an unsuccessful one names the Problem title, with its detail and

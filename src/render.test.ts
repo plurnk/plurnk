@@ -142,9 +142,9 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
 // ─── message arrivals ────────────────────────────────────────────────
 
 test("[§cli-what-is-not-rendered] an arrival is the daemon's inbound SEND row; only the viewer's own is withheld", () => {
-    const own = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/my%20thread/runs/r-1/messages/m-1", tx: { body: { raw: "hi" } } });
+    const own = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/my%20thread/messages/m-1", tx: { body: { raw: "hi" } } });
     const peer = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://reviewer", tx: { body: { raw: "done" } } });
-    const other = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/elsewhere/runs/r-2/messages/m-2", tx: { body: { raw: "hey" } } });
+    const other = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/elsewhere/messages/m-2", tx: { body: { raw: "hey" } } });
     assert.equal(isArrivalEntry(own), true);
     assert.equal(isArrivalEntry(peer), true);
     assert.equal(isArrivalEntry(entry({ op: "SEND", origin: "model", tx: { body: { raw: "reply" } } })), false, "the model's own SEND is not an arrival");

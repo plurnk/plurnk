@@ -69,14 +69,13 @@ loop.
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
-      --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
+      --max-turns <n>     per-loop turn cap (otherwise the daemon's configured limit).
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true. Web retains the Worker.
-      --files-items <n>   workspace-open preview of the TRACKED-FILE list
-                          (### FIND_ (file:///**)): -1 full / 0 off / N first-N. Memory
-                          (known/unknown/worker/plurnk) always foists full. Create-time.
+      --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
+                          Create-time workspace setting.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
-                          daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
+                          daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --loop <id>         (log read) filter to a single loop id
@@ -99,6 +98,7 @@ loop.
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
+  read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
   reasoning [policy]      inspect or set a worker's durable reasoning policy
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
@@ -125,7 +125,7 @@ The no-argument interactive terminal accepts these slash commands:
 /model [selector]              Inspect or select this worker's durable model.
 /child [selector|inherit]      Inspect or select the inherited child model.
 /reasoning [policy]            Inspect or select durable reasoning policy.
-/capabilities [json]           Inspect or restrict this worker's capabilities.
+/capabilities [json]           Inspect the capability cascade or set the workspace policy.
 /yolo                          Toggle local proposal auto-accept.
 /workspace [name]              Create and enter a fresh workspace.
 /rename <name>                 Rename this workspace's mutable handle.
@@ -135,10 +135,10 @@ The no-argument interactive terminal accepts these slash commands:
 /enter                         Hop into the bound worker's newest child (Alt-l).
 /older                         Hop to the next older sibling worker, wrapping (Alt-j).
 /newer                         Hop to the next newer sibling worker, wrapping (Alt-k).
-/mcp [subcommand]              List or manage this worker's MCP servers.
-/skills [subcommand]           List or manage this worker's Agent Skills.
-/agents [subcommand]           List or manage this worker's outbound A2A agents.
-/members [subcommand]          List or manage this worker's file members.
+/mcp [subcommand]              List or manage this workspace's MCP servers.
+/skills [subcommand]           List or manage this workspace's Agent Skills.
+/agents [subcommand]           List or manage this workspace's outbound A2A agents.
+/members [subcommand]          List or manage this workspace's file members.
 /env [--scope worker|workspace] [subcommand] Manage worker overrides or shared workspace environment defaults.
 /schedule [subcommand]         List or manage this workspace's scheduled messages.
 /import <path>                 Insert a local file into the composer.
@@ -184,9 +184,20 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
 .B 0
 The loop concluded successfully (or the subcommand completed).
 .TP
+.B 1
+Runtime, connection, or action failure.
+.TP
+.B 2
+The loop reached its turn limit.
+.TP
 .B 3
-The loop failed, timed out (\-\-timeout),
-or a script's worst op status was an error.
+The loop was cancelled or timed out (\-\-timeout).
+.TP
+.B 4
+The loop failed, or a script returned an unsuccessful operation.
+.TP
+.B 64
+Invalid invocation or arguments.
 .TP
 .B 143
 Terminated by SIGTERM after emitting the partial record.

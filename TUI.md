@@ -27,9 +27,9 @@ client.
 
 ## Rendering
 
-The waterfall is intentionally compact: every row's primary glyph shares the
-prompt's left edge, with only the fields that identify its operation or state.
-Model broadcasts render as full response blocks rather than diagnostic rows.
+The waterfall is intentionally compact: styled operation headings begin at the
+left edge, with only the fields that identify their action and outcome.
+Delivered messages render as full response blocks rather than diagnostic rows.
 The status row projects standard AG-UI state in lifecycle → model → packet →
 activity order. An active loop replaces idle 🔥 with `⌛︎`; indexing and search
 progress update the activity field instead of appending an event for every

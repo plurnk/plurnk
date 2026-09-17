@@ -90,7 +90,7 @@ export const COMMANDS = [
     { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
     { name: "reasoning", usage: "/reasoning [policy]", summary: "Inspect or select durable reasoning policy.", group: "policy" },
-    { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect or restrict this worker's capabilities.", group: "policy" },
+    { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect the capability cascade or set the workspace policy.", group: "policy" },
     { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept.", group: "policy" },
 
     { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace", rebinds: true },
@@ -102,10 +102,10 @@ export const COMMANDS = [
     { name: "older", usage: "/older", summary: "Hop to the next older sibling worker, wrapping (Alt-j).", group: "workspace", rebinds: true },
     { name: "newer", usage: "/newer", summary: "Hop to the next newer sibling worker, wrapping (Alt-k).", group: "workspace", rebinds: true },
 
-    { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this worker's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
-    { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this worker's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },
-    { name: "agents", usage: "/agents [subcommand]", summary: "List or manage this worker's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
-    { name: "members", usage: "/members [subcommand]", summary: "List or manage this worker's file members.", group: "functionality", subcommands: MEMBERS_SUBCOMMANDS },
+    { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this workspace's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
+    { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this workspace's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },
+    { name: "agents", usage: "/agents [subcommand]", summary: "List or manage this workspace's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
+    { name: "members", usage: "/members [subcommand]", summary: "List or manage this workspace's file members.", group: "functionality", subcommands: MEMBERS_SUBCOMMANDS },
     { name: "env", usage: "/env [--scope worker|workspace] [subcommand]", summary: "Manage worker overrides or shared workspace environment defaults.", group: "functionality", subcommands: ENV_SUBCOMMANDS },
     { name: "schedule", usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages.", group: "functionality", subcommands: SCHEDULE_SUBCOMMANDS },
 

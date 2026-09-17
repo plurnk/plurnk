@@ -55,9 +55,20 @@ ${nf(envBlock)}
 .B 0
 The loop concluded successfully (or the subcommand completed).
 .TP
+.B 1
+Runtime, connection, or action failure.
+.TP
+.B 2
+The loop reached its turn limit.
+.TP
 .B 3
-The loop failed, timed out (\\-\\-timeout),
-or a script's worst op status was an error.
+The loop was cancelled or timed out (\\-\\-timeout).
+.TP
+.B 4
+The loop failed, or a script returned an unsuccessful operation.
+.TP
+.B 64
+Invalid invocation or arguments.
 .TP
 .B 143
 Terminated by SIGTERM after emitting the partial record.

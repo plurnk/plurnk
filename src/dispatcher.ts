@@ -183,14 +183,13 @@ options:
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
-      --max-turns <n>     per-loop turn cap (daemon default PLURNK_MAX_TURNS).
+      --max-turns <n>     per-loop turn cap (otherwise the daemon's configured limit).
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true. Web retains the Worker.
-      --files-items <n>   workspace-open preview of the TRACKED-FILE list
-                          (### FIND_ (file:///**)): -1 full / 0 off / N first-N. Memory
-                          (known/unknown/worker/plurnk) always foists full. Create-time.
+      --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
+                          Create-time workspace setting.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
-                          daemon's PLURNK_MAX_COMMANDS — can only tighten). Create-time.
+                          daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --loop <id>         (log read) filter to a single loop id
@@ -212,6 +211,7 @@ subcommands:
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
+  read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
   reasoning [policy]      inspect or set a worker's durable reasoning policy
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;

@@ -2,6 +2,7 @@
 complete -c plurnk -n __fish_use_subcommand -a models
 complete -c plurnk -n __fish_use_subcommand -a workspace
 complete -c plurnk -n __fish_use_subcommand -a log
+complete -c plurnk -n __fish_use_subcommand -a read
 complete -c plurnk -n __fish_use_subcommand -a reasoning
 complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render

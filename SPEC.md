@@ -14,10 +14,11 @@ what it guarantees, what its exit codes mean, and what it renders.
 | Term | Meaning |
 |---|---|
 | **daemon** | A running `plurnk-service` process whose in-process AG-UI+ module (`@plurnk/plurnk-agui`) serves HTTP/SSE. The client connects to it; it owns all state. |
-| **workspace** | The WORLD (service SPEC, machine-processes): one curated workspace, daemon-owned. Selected by NAME, verbatim — the client sends `forwardedProps.plurnk.workspace` on every run (attach-or-create module-side; a worker without a workspace is rejected 500). |
-| **run** | A conversation over the workspace's world. The client's thread binds the workspace's model run; client ops journal in the client run. Addressed by name via `--worker` (see §1.1). |
-| **loop** | A single prompt-driven model loop. May span many model turns; terminates on a broadcast SEND carrying signal 200 or 499, or on hitting `maxTurns`; the outcome arrives as `CUSTOM plurnk.terminated` on the worker's SSE. |
-| **log/entry notification** | Daemon-to-client push: one notification per dispatched op, carrying the action-entry shape (`{op, target, status_rx, rx, ...}`). |
+| **workspace** | Daemon-owned shared environment, selected by name through `forwardedProps.plurnk.workspace`; see {§agui-thread-binding}. |
+| **worker** | An actor within a workspace, with its own log. `--worker` selects the conversation worker; client operations have their own actor. |
+| **AG-UI Run** | One protocol exchange on a conversation thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
+| **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; `CUSTOM plurnk.terminated` carries the authoritative terminal result. |
+| **log/entry notification** | A durable operation row or its update, projected through `CUSTOM plurnk.row`. Rendering follows §5. |
 | **one-shot mode** | `plurnk "prompt"` — single loop.run, render, exit. Unix-tool posture. |
 | **TUI mode** | `plurnk` (no args) — interactive REPL; multiple loop.run invocations per workspace. |
 
@@ -38,9 +39,9 @@ Options:
 | Flag | Type | Meaning |
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
-| `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). json OUTPUT MODE: one complete record document on stdout, stderr silent, structured errors. See §2.1 / §5.5. |
+| `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, stderr silent, structured errors. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
-| `--worker <name>` | string | Resume (or create) the named run within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
+| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
 | `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
@@ -48,7 +49,7 @@ Options:
 | `--auto` | flag | Set the loop proposal disposition to `accept`; no client review/resume round-trip. |
 | `--policy <json>` | string | Complete LoopPolicy applied to every loop: `review`, `accept`, or `reject` proposal disposition. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
-| `--max-turns <n>` | string | Per-loop turn cap (daemon default `PLURNK_MAX_TURNS`). |
+| `--max-turns <n>` | string | Per-loop turn cap; omission leaves the daemon's configured limit in effect. |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. |
 | `--host <host>` | string | Web mode only: local browser portal host. Defaults to `PLURNK_WEB_HOST`, then `127.0.0.1`. |
 | `--port <n>` | string | Web mode only: local browser portal port. Defaults to `PLURNK_WEB_PORT`, then `10660`. |
@@ -62,7 +63,7 @@ Env:
 |---|---|---|
 | `PLURNK_HOST` / `PLURNK_PORT` | `127.0.0.1` / `1066` | The daemon's in-process AG-UI+ module — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. `PLURNK_AGUI_URL` overrides the assembled URL; `PLURNK_AGUI_TOKEN` rides as the bearer when set. |
 | `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
-| `PLURNK_CLIENT_WORKER` | _unset_ | Run name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE` outside web mode. |
+| `PLURNK_CLIENT_WORKER` | _unset_ | Worker name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE` outside web mode. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_CLIENT_YOLO` | `1` | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally; `0` reviews each one. See §6. Equivalent to `--yolo`. |
 | `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
@@ -77,11 +78,11 @@ Env:
 
 Workspaces and workers are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the conversation by name, including after a fork.
 
-**The name IS the identity.** With `--workspace`/`PLURNK_CLIENT_WORKSPACE`, the client sends that name VERBATIM as `forwardedProps.plurnk.workspace` on every run (also the AG-UI `threadId`); the module attaches it if it exists, creates it with exactly that name otherwise — no prefixes, no forging. **With NO workspace, the DAEMON mints a fresh, uniquely-named workspace** (a no-name `workspace.create`, created WITH the invocation's options so creation is atomic with the project root) and the client binds to the returned name. A literal client label (`tui`/`cli`) is NEVER a workspace name — that would collide every unnamed launch into one shared world. The workspace is required wire-side: a worker without one is rejected 500, and the client never relies on a module fallback.
+**The name IS the identity.** With `--workspace`/`PLURNK_CLIENT_WORKSPACE`, the client sends that name verbatim as `forwardedProps.plurnk.workspace`. AG-UI owns attach-or-create admission under {§agui-thread-binding}. Without a workspace, the daemon mints one through a no-name `workspace.create` carrying the invocation's create-time options. The client binds to the returned name, never a fixed `tui` or `cli` label. The required workspace and the conversation's `threadId` are separate wire fields.
 
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
-- **`--worker <name>` names the CONVERSATION**: with a prompt, the worker name becomes the `threadId` — an existing run (a fork, a prior conversation) is bound by name; a new name mints a fresh conversation run over the same world. Without `--worker`, thread == world and conversations bind the workspace's model run (the default conversation). For read subcommands, `--worker` resolves via `workspace.workers` and an unknown name fails hard — no silent fallback to the model run.
+- **`--worker <name>` names the conversation**: the worker name becomes `threadId`, binding an existing model worker or creating one. Without it, `threadId` is the workspace name, selecting the daemon's durable default conversation worker. For read subcommands, an explicit `--worker` resolves via `workspace.workers`; an unknown name fails rather than falling back.
 - **`--worker` set without `--workspace`** → usage error (exit 64) for the one-shot, TUI, and state-command surfaces. Web mode may retain the Worker constraint while each browser route selects or creates its workspace first; the Worker never exists outside that resolved world.
 
 CLI flag takes precedence over env when both are set.
@@ -114,9 +115,6 @@ Human status is the summary line's shape aggregated over the session:
 The glyph is two columns wide, so two spaces separate it from the first dot. Token counts are
 abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is stated to the
 hundredth of a cent with grouped thousands (`$3,333.3333`).
-
-```
-```
 
 {§cli-status-children} The ant is the daemon's count of the bound worker's alive
 direct children (`snapshot.plurnk.status.children`: queued, running, or parked —
@@ -188,7 +186,7 @@ These flags shape what the workspace sees; they map to workspace-open settings a
 
 **Workspace-open settings** — sent as `settings` on `workspace.create`:
 
-- `--files-items <n>` → `filesItems`. Controls the turn-0 tracked-file preview: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_FILES_ITEMS` for the workspace.
+- `--files-items <n>` → `filesItems`. Controls the turn-0 tracked-file preview: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_SERVICE_FILES_ITEMS` for the workspace.
 - `--capabilities <json>` / `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` → `capabilities`. The canonical CapabilityPolicy is a purely subtractive workspace ceiling. Executor plugin configuration remains service-owned and never becomes workspace settings.
 - `--max-commands <n>` → `maxCommands`. Tightens the daemon ceiling and must be a positive integer.
 - `--no-git` → `git: false`. It never re-enables git past a service-owned lockout.
@@ -217,7 +215,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
   history. It still receives durable trace, diagnostics, and the summary.
 
 **json mode (`--json` / `PLURNK_CLIENT_JSON`):**
-- **stdout** - ONE complete document and nothing else (§5.5): the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -231,19 +229,19 @@ Consequence:
 
 ### §2.2 Flow {§cli-one-shot-flow}
 
-1. Read the conversation worker's durable model, then `POST /` (RunAgentInput) to the module — `threadId` = the workspace name, the prompt as the user message, workspace + per-run knobs on `forwardedProps.plurnk`.
+1. Read the conversation worker's durable model, then `POST /` (RunAgentInput) with the workspace and thread selected under §1.1, the prompt as a user message, and per-loop options on `forwardedProps.plurnk`.
 2. Consume the SSE: `CUSTOM plurnk.row` events advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
    Delivered conversation responses go to stdout ({§cli-broadcast-send-rendering}).
 3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. `CUSTOM plurnk.terminated` is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
-4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the one complete record document on stdout (§5.5); stderr stayed silent throughout. (The old greppable `result:` stderr envelope is retired — json mode is the machine path now.)
+4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the complete record document on stdout (§2.1); stderr stays silent.
 5. Exit with the appropriate code (§4).
 
 ### §2.3 What one-shot mode does NOT do {§cli-what-one-shot-mode-does-not-do}
 
 - No interactive prompts during the loop (proposal review prompts are separate; see §6).
-- No `op.parse` (raw DSL) — that's TUI-only.
+- No interpretation of a positional prompt as raw DSL. Use `plurnk script <file.plk>` or the TUI's executable-fence input for `op.parse`.
 - No reconnect on dropped connection. Connection drop = exit with error.
 
 ---
@@ -263,7 +261,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), and `/members` (§3.7). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -293,10 +291,10 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 
 | Group | Verbs |
 |---|---|
-| Inspect | `/help /models /workspaces /workers /log` |
-| Policy | `/model /child /reasoning /yolo` |
+| Inspect | `/help /models /workspaces /workers /log /look` |
+| Policy | `/model /child /reasoning /capabilities /yolo` |
 | Workspace | `/workspace /rename /worker /attach /parent /enter /older /newer` |
-| Functionality | `/mcp /skills /agents /members` |
+| Functionality | `/mcp /skills /agents /members /env /schedule` |
 | Compose | `/import /script /editor` |
 | Review | `/accept /reject /cancel /edit` |
 | Session | `/stop /quit` |
@@ -346,7 +344,7 @@ is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
 
 **Position.** The line above the composer names the place, `[<workspace>/<lineage>(<loop>/<turn>)]`:
 the lineage from the tree root to the bound worker with `~` marking the worker the session
-is in — the same `~` that means "this worker" in `worker://~/` — and the loop and turn beside
+is in, a presentation marker rather than a URI alias, and the loop and turn beside
 the worker they belong to. `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
 hops down, `[/~]` before the worker is named; an unknown loop or turn is elided. A child
 always shows that it is a child, so a session opened on a child reads its full lineage. The
@@ -633,7 +631,8 @@ failures remain causal errors, never a silent replacement rendering mode.
 
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
-One row per dispatched op, except delivered message blocks (§5.4).
+Received operation rows render as below, except delivered message blocks (§5.4)
+and the aggregation and suppression rules in this section.
 A row is the operation as written, literal text with the client's own styling and never a
 Markdown pass:
 
@@ -642,7 +641,7 @@ Markdown pass:
 ```
 
 - `OP` is the operation's name, bold: green when the outcome succeeded, pink otherwise. An
-  execution row is named by its runtime (`sh`, `python`): the row's `op` is the fence name as written, never a generic keyword.
+  execution row is named by its runtime (`sh`, `python3`): the row's `op` is the fence name as written, never a generic keyword.
 - `(target)` is the authored target text, in its parentheses; `<scope>` is the canonical
   `<mark,...>` form; `<pattern>` is the matcher as authored (`/regex/i`, `~query`, `&symbol`).
   COPY and MOVE render `(source) <scope> (destination) <scope>`, each scope beside its own path.
@@ -739,14 +738,14 @@ Loop state comes from the daemon's status events, not an inference from a verb o
 ```
 
 `tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; exhausted invalid emission is `invalid emission`, and another 500 is `failed`.
-Input and output are the conventional aggregate fields from the daemon's accounting envelope. Missing token quantities render as `?`; exact zero cost is omitted; a nonzero exact decimal is rendered without floating-point conversion; and a physical request with incomplete monetary evidence renders `$unknown`.
+Input and output are the conventional aggregate fields from the daemon's accounting envelope. Missing token quantities render as `?`; zero or unavailable aggregate cost is omitted; a nonzero exact decimal is rendered without floating-point conversion. JSON output retains the complete accounting evidence.
 
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
-- Raw bodies for non-broadcast ops: command snippets, JSON arguments, edit replacements, notes, and result previews. Message bodies render per §5.4; other op bodies surface only via `entry.read` or a READ fence targeting `log://...`.
-- Raw SSE frames. Set `DEBUG=plurnk:agui` (future) to enable.
-- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.7.
+- Raw bodies for non-message ops: command snippets, JSON arguments, edit replacements, notes, and result previews. Message bodies render per §5.4; human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log row.
+- Raw SSE frames.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
@@ -755,7 +754,7 @@ A successful SEND whose receipt addresses the current AG-UI conversation carries
 TUI mode contract:
 
 - Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in pink; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
-- Body: a short single-line body inlines after one space when it fits the live viewport; otherwise the body starts on the next line, each line prefixed with three spaces, no ellipsis and no dim.
+- Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal and renders as just the lead line.
 
@@ -781,7 +780,7 @@ single complete run record defined in §2.1, not a second body-only output forma
 **TUI mode** (no `--json`; the flag is CLI-only) renders qualifying responses as blocks, dispatching by content type:
 
 - **JSON** — `tx.body.json !== null`. Render `JSON.stringify(json, null, 2)`.
-- **Markdown** — `raw` matches structural markdown markers (heading `# `, bold `**…**`, list `- `, fenced code ` ``` `, or `[text](url)` link). Minimal vanilla-ANSI transform: bold, italic, dim inline code, `• ` bullets, header text bolded. Rich-client prose also normalizes the common inline token `$\rightarrow$` to `→`; this is not general LaTeX support. CLI output remains verbatim.
+- **Markdown** — structural Markdown markers select the maintained renderer described in §5.1.0. Rich-client prose also normalizes the common inline token `$\rightarrow$` to `→`; this is not general LaTeX support. CLI output remains verbatim.
 - **Plain (or anything else)** — emit the rich-client prose after the exact normalization above.
 
 If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is treated as empty (stdout receives nothing for that broadcast).
@@ -790,7 +789,9 @@ If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is trea
 
 ## §6 Proposal review {§cli-proposal-review}
 
-Side-effecting operations (file writes, exec) emit a `plurnk.proposal` event when the daemon pauses dispatch awaiting human resolution. The client presents the proposal and resumes the run with the selected decision.
+Client-owned proposals arrive through standard AG-UI tool-call interrupts under
+{§agui-proposal-disposition}. The client presents the proposal and resumes the
+Run with the selected decision; the following sections describe its local review projection.
 
 ### §6.1 Notification shape {§cli-notification-shape}
 
@@ -881,7 +882,9 @@ stderr). `reasoning [policy]` reads or changes the durable reasoning policy.
 intersection, or replaces the workspace policy. Prompt runs only carry proposal
 policy. Local `render` and launcher `web` subcommands do not contact the daemon.
 
-When `argv[0]` (after flag parsing) matches a known subcommand verb, the dispatcher routes there instead of assembling a prompt. Unknown subcommands exit `64`.
+When the first positional argument matches a known subcommand verb, the dispatcher
+routes there instead of assembling a prompt. Invalid forms of that command exit
+`64`; other positionals remain prompt text.
 
 ### §7.1 `plurnk models` {§cli-plurnk-models}
 
@@ -907,7 +910,9 @@ Typical use: discover a worker name to pass as `--worker` on `plurnk log read`.
 
 ### §7.4 `plurnk log read` {§cli-plurnk-log-read}
 
-Reads log entries from an attached workspace's run via `log.read`. **Requires `--workspace <name>`** (exit `64` if unset) — the log is a per-run artifact and the client must know which to read. `--worker <name>` selects a specific run within the workspace (defaults to a fresh auto-named run on attach, which is usually not what you want — pass `--worker` when reading historic logs).
+Reads a worker's log through `log.read`. **Requires `--workspace <name>`** (exit
+`64` if unset). `--worker <name>` selects an existing conversation worker;
+omission selects the workspace's durable default conversation under §1.1.
 
 Filter flags (all numeric, all optional):
 
@@ -965,7 +970,7 @@ process; it does not turn them into per-loop policy. `--yolo` remains
 client-side proposal behavior: the browser auto-resolves proposal interrupts
 while interaction requests still require user input.
 
-The MCP manager is lazy: opening it lists the Worker's durable MCP state and
+The MCP manager is lazy: opening it lists the workspace's durable MCP state and
 discovers client-configured candidates through AG-UI. Discovery remains inert;
 adding, enabling, disabling, and removing use the daemon-owned Functionality
 lifecycle. The portal inserts the client-held configuration only into an
@@ -979,8 +984,8 @@ is absent, it exits 127 and names the exact installation command. `SIGINT` and
 ### §7.7 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
-- Hide state changes: workspace rename and an explicit reasoning policy are the
-  only mutations; every other subcommand is read-only.
+- Hide state changes: workspace rename, reasoning and capability setters, MCP
+  management, and scripts explicitly request mutations; inspection commands do not.
 - Honor flags that only matter to a conversation (`--model`, `--reasoning`,
   `--yolo`, `--auto`) in state-command mode. Those parse without effect there;
   `web` is a client presentation mode and therefore does honor them. Reasoning
@@ -1051,7 +1056,7 @@ interface Notice {
 ```
 
 Diagnostic Notices arrive as `CUSTOM plurnk.notice`, interleave with trace
-lines in text mode and accumulate under `notices` in the version-2 JSON record.
+lines in text mode and accumulate under `notices` in the JSON record (§2.1).
 
 Indexing activity arrives only through the ordinary AG-UI status snapshot/delta
 stream; clients do not poll or interpret a second progress Notice. The one-shot
@@ -1093,11 +1098,11 @@ stream/event     { entryId, workerId, target, channel, state, contentLength }
 stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction }
 ```
 
-`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the started execution row as `attrs.stream` (`python:///0c0ffee1`), opaque to the client and never composed. The TUI keeps the started row until that address concludes, then renders it once, per §5.1:
+`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the started execution row as `attrs.stream` (`python3:///0c0ffee1`), opaque to the client and never composed. The TUI keeps the started row until that address concludes, then renders it once, per §5.1:
 
 ```
-python Run the focused tests
-python Run the focused tests — failed (exit 2); stdout=0 bytes, stderr=41 bytes
+python3 Run the focused tests
+python3 Run the focused tests — failed (exit 2); stdout=0 bytes, stderr=41 bytes
 ```
 
 `wakeAction` is engine bookkeeping and never a row: a concluded stream does not
@@ -1132,7 +1137,7 @@ A conforming `plurnk` client:
 
 1. Speaks AG-UI+ (RunAgentInput over HTTP, AG-UI events + `CUSTOM plurnk.*` over SSE) per the plurnk-agui SPEC.
 2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT` (or `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
-3. Resolves the workspace per §1.1 (`workspace.create` by default, or `workspace.attach` when `--workspace`/`PLURNK_SESSION` is set); uses the returned workspace for all subsequent RPCs until disconnect.
+3. Resolves the workspace and conversation separately under §1.1, retaining their binding for subsequent requests until an explicit navigation command changes it.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Consumes client-owned proposal interrupts and resolves each through standard AG-UI resume per §6; loop-owned dispositions are absent from that surface.
 6. Consumes `CUSTOM plurnk.notice` and renders each Notice per §8.

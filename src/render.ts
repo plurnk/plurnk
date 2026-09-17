@@ -114,12 +114,12 @@ export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boole
     if (entry.op !== "SEND" || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
     const reply = objectOf(entry.attrs)?.kind === "reply";
     if (!reply && entry.source != null) return false;
-    const recipients = objectOf(entry.rx)?.recipients;
-    if (!Array.isArray(recipients)) return false;
+    const answers = objectOf(entry.rx)?.answers;
+    if (!Array.isArray(answers)) return false;
     const prefix = threadId === undefined ? "agui://anonymous/threads/"
         : `agui://anonymous/threads/${encodeURIComponent(threadId)}/messages/`;
-    return !reply && entry.origin === "model" && recipients.length === 0
-        || recipients.some((address) => typeof address === "string" && address.startsWith(prefix));
+    return !reply && entry.origin === "model" && answers.length === 0
+        || answers.some((address) => typeof address === "string" && address.startsWith(prefix));
 };
 
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or

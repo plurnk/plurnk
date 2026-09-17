@@ -43,7 +43,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     lineMarker: null,
     status_rx: 200,
     tx: null,
-    rx: overrides.op === "SEND" && overrides.scheme == null ? { recipients: [] } : null,
+    rx: overrides.op === "SEND" && overrides.scheme == null ? { answers: [] } : null,
     tags: [],
     loop_seq: 1,
     turn_seq: 1,

@@ -768,7 +768,7 @@ CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messag
 The message body source is `entry.tx.body`, carrying `{ raw, json }`.
 
 Successful (`200 ≤ status_rx < 300`) SEND rows contribute through their recorded
-`recipients`, independently of loop completion. Inherited rows and ordinary source
+`answers` message addresses, independently of loop completion. Inherited rows and ordinary source
 observations cannot deliver the same message again; a source-attributed `reply`
 observation is a genuine delivery to this conversation.
 Bodies accumulate in delivery order, separated by a blank line. NOTE and WAIT are not speech.

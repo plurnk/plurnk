@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -10,8 +11,10 @@ const json = async (request: IncomingMessage): Promise<Record<string, any>> => {
     return JSON.parse(text);
 };
 
-for (const terminalFirst of [true, false]) {
-test(`[§cli-active-command-admission] an admitted successor stays visible (terminal first=${terminalFirst})`, { timeout: 90_000 }, async (t) => {
+for (const admission of ["active", "terminal-first", "admission-first"] as const) {
+test(`[§cli-active-command-admission] injected input stays visible without an arrival echo (${admission})`, { timeout: 90_000 }, async (t) => {
+    const active = admission === "active";
+    const terminalFirst = admission === "terminal-first";
     const service = await locateDaemon();
     assert.ok(service, "the composed client test requires the sibling service");
     const release = Promise.withResolvers<void>();
@@ -60,13 +63,20 @@ test(`[§cli-active-command-admission] an admitted successor stays visible (term
         const injecting = properties?.action?.kind === "loop.inject";
         const originating = !properties?.action && !properties?.mode && body.messages?.length > 0;
         if (properties?.mode === "sync") observers += 1;
-        if (injecting) {
+        if (injecting && !active) {
             release.resolve();
             await originalClosed.promise;
         }
         const result = await fetch(daemon.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         if (injecting) {
             const receipt = await result.text();
+            if (active) {
+                assert.match(receipt, /injected_next_turn/);
+                release.resolve();
+                admitted.resolve();
+                response.writeHead(result.status, { "content-type": "text/event-stream" }).end(receipt);
+                return;
+            }
             assert.match(receipt, /enqueued_new_loop/);
             // Finish the successor before the client receives admission. This independent
             // observer calls the real public sync path without adding a model request.
@@ -81,7 +91,7 @@ test(`[§cli-active-command-admission] an admitted successor stays visible (term
         }
         response.writeHead(result.status, { "content-type": result.headers.get("content-type") ?? "application/json" });
         assert.ok(result.body);
-        if (originating && !terminalFirst) {
+        if (originating && !active && !terminalFirst) {
             const decoder = new TextDecoder();
             let buffered = "";
             const held: string[] = [];
@@ -124,14 +134,17 @@ test(`[§cli-active-command-admission] an admitted successor stays visible (term
     await tui.waitFor(/Awaiting the controlled injection/);
     tui.write("... Continue with the new requirement.\r");
     await admitted.promise;
-    if (!terminalFirst) {
+    if (!active && !terminalFirst) {
         await tui.waitFor(/added to the run/);
         releaseTerminal.resolve();
     }
     await tui.waitFor(/SUCCESSOR_VISIBLE/);
-    assert.equal(observers, 1, "the accepted successor has one client observer");
+    assert.equal(observers, active ? 0 : 1, "active injection keeps its observer; a successor gets one observer");
     assert.equal(inferenceCount, 2, "each admitted prompt generated exactly one model request");
     assert.doesNotMatch(tui.output(), /Terminal missing|State invalid/);
+    assert.match(stripVTControlCharacters(tui.output()), /Continue with the new requirement/);
+    assert.doesNotMatch(stripVTControlCharacters(tui.output()), /^SEND(?: \([^\r\n]*\))? *\r?$/mu,
+        "own input remains at the prompt, not duplicated as an inbound SEND block");
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
 });

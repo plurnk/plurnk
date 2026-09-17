@@ -32,13 +32,23 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
 // {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the
 // child model rides beside it, and the worker segment carries the sibling position.
 test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {
-    assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 0");
+    assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 3.2s · 🎲 deepdumb");
+    assert.equal(renderStatusLine({ ...running, children: 0 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 3.2s · 🎲 deepdumb", "a configured child model is not active child work");
     assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 2 dumbox");
     assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 dumbox", "no gauge, no count: the bare child model");
     assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 1", "the place is the prompt prefix's, not the status line's");
     assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: 3 }).children, 3);
     assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null }).children, null, "an older daemon states no count");
     assert.throws(() => projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: -1 }), /Invalid runtime children count/u);
+});
+
+test("[§cli-status-children] the live child indicator disappears when the last child concludes", () => {
+    const writes: string[] = [];
+    const line = new TerminalStatusLine((value) => writes.push(value), true, running, { ...CONTEXT, child: "dumbox" });
+    line.update({ children: 2 });
+    assert.match(writes.at(-1)!, /🐜 2 dumbox/);
+    line.update({ children: 0 });
+    assert.doesNotMatch(writes.at(-1)!, /🐜|dumbox/);
 });
 
 test("the authoritative status gauge projects indexing phases without a Notice reducer", () => {

@@ -119,8 +119,9 @@ hundredth of a cent with grouped thousands (`$3,333.3333`).
 {§cli-status-children} The ant is the daemon's count of the bound worker's alive
 direct children (`snapshot.plurnk.status.children`: queued, running, or parked —
 a parked child still owes a result), followed by the child model while a spawn
-override is set: `🐜0`, `🐜2 dumbox`. A transport without the gauge shows only
-the bare `🐜 <child>` as before. The count is never derived from the directory;
+override is set: `🐜 2 dumbox`. Zero hides the whole child segment, even with a
+configured child model. A transport without the gauge shows only the bare
+`🐜 <child>`. The count is never derived from the directory;
 the user hops to a child (§3.1.2) rather than watching it. `(<i>/<n>)` after the
 worker is its sibling position, newest first, present only with siblings.
 
@@ -130,7 +131,7 @@ from the local clock, ticking once a second; token and cost totals combine concl
 loops with settled `engine:turn` accounting from the current observed run. Every
 completion beat refreshes them. The terminal loop aggregate replaces, rather than
 adds to, that run's accrual. Unknown usage remains unknown. The turns/wall group appears once a loop has
-run, tokens once accounting exists, cost when nonzero, the child model while a spawn override is set (§1.2.2), the
+run, tokens once accounting exists, cost when nonzero, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
 worker once the conversation worker is known (the terminated outcome names it). The client does
 not infer provider packets from operation rows or turn coordinates.
 Before the first state snapshot, durable worker policy and local derivation

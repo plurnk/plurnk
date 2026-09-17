@@ -275,10 +275,9 @@ export const renderStatusLine = (
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${abbreviatedCount(inputTokens)} ↑${abbreviatedCount(outputTokens)}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${money(costUsd)}`);
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
-    // {§cli-status-children} — the ant counts alive children when the daemon states it, and names the
-    // model those children run when one is selected: `🐜2 dumbox`, `🐜0`, or the bare `🐜 dumbox`.
+    // {§cli-status-children} — a known zero hides the child segment, including its model override.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
-    if (ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
+    if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
     // The glyph is two columns wide: a second space keeps the first dot off its shoulder.
     return parts.length === 0 ? head : `${head}${glyph.length > 0 ? " " : ""} · ${parts.join(" · ")}`;

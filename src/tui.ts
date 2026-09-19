@@ -15,6 +15,7 @@ import { isAbsolute, resolve } from "node:path";
 import { matchesKey, type AutocompleteItem, type AutocompleteProvider } from "@earendil-works/pi-tui";
 import TuiSurface from "./tui-surface.ts";
 import TerminalGuards from "./tui-guards.ts";
+import CancelGesture from "./tui-cancel.ts";
 import ModelText from "./model-text.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
@@ -577,7 +578,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let inFlight = false;
     let pendingCommands = 0;
     let rebinding = false;
-    let cancelRequested = false;
     let activeRun: ObservationHandle | null = null;
     const pendingInjections = new Set<Promise<void>>();
     let followAdmission = false;
@@ -591,16 +591,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // One cancel path for every interrupt gesture (Ctrl-C, Esc, /stop): the
     // run's active drain cancels via loop.cancel; the pending loop resolves
     // 499 and the REPL continues. A failed cancel SURFACES — a stop button
-    // that silently does nothing is the worst kind of broken.
-    const requestCancel = (reason: string): void => {
-        if (cancelRequested) return;
-        cancelRequested = true;
-        printAbove("  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m");
-        void cancelLoop(reason).catch((err: unknown) => {
-            cancelRequested = false;
-            printAbove(`  \x1b[31mcancel failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m`);
-        });
-    };
+    // that silently does nothing is the worst kind of broken. The latch and the
+    // failure's disposition live in CancelGesture ({§cli-cancellation}).
+    const gesture = new CancelGesture({
+        cancel: cancelLoop,
+        print: (line) => { printAbove(line); },
+        close: () => { requestClose(); },
+    });
     // Ephemeral progress projected into the prompt while background work is active.
     let lifecycle: StatusLifecycle = "idle";
     let authoritativeStatus: ClientStatus | null = null;
@@ -865,14 +862,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const removeInputListener = surface.addInputListener((text) => {
         if (matchesKey(text, "escape")) {
             if (inFlight) {
-                requestCancel("user_escape");
+                gesture.request("user_escape");
                 return { consume: true };
             }
             if (surface.editor.getText().length > 0) surface.setInput("");
             return { consume: true };
         }
         if (matchesKey(text, "ctrl+c")) {
-            if (inFlight && !cancelRequested) requestCancel("user_sigint");
+            if (inFlight && !gesture.requested) gesture.request("user_sigint");
             else requestClose();
             return { consume: true };
         }
@@ -1308,7 +1305,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 runningSince = null;
                 inFlight = false;
                 activeRun = null;
-                cancelRequested = false;
+                gesture.release();
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
                 reviewRequested = false;
                 followAdmission = false;

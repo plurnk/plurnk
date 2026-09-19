@@ -89,17 +89,26 @@ test("buildSettings does not reinterpret service executor configuration as works
 });
 
 test("resolveLoopPolicy: undefined selects the canonical default", () => {
-    assert.deepEqual(resolveLoopPolicy(undefined), { proposals: "review" });
+    assert.deepEqual(resolveLoopPolicy(undefined), { proposals: "review", attended: true });
 });
 
-test("[§cli-invocation] resolveLoopPolicy validates canonical policy and --auto selects acceptance", () => {
+// {§loop-attendance} — `--auto` asserts that nobody is watching, so it settles proposals AND
+// declares the run unattended. Without the second half the daemon still offers a question tool
+// nothing can answer, and a provider-recovery park waits with nobody coming (service#765).
+test("[§cli-invocation] resolveLoopPolicy validates canonical policy and --auto declares an unattended run", () => {
     const raw = '{"proposals":"reject"}';
     assert.deepEqual(resolveLoopPolicy(raw), {
         proposals: "reject",
+        attended: true,
     });
     assert.deepEqual(resolveLoopPolicy(raw, true), {
         proposals: "accept",
+        attended: false,
     });
+    assert.deepEqual(resolveLoopPolicy('{"attended":false}'), {
+        proposals: "review",
+        attended: false,
+    }, "an unattended run that still wants its proposals reviewed by a caller is expressible");
 });
 
 test("resolveLoopPolicy: malformed or noncanonical JSON is a flag Problem", () => {

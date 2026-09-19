@@ -22,24 +22,32 @@ export const parseLoopPolicy = (label: string, raw: string): LoopPolicy => {
         throw new TypeError(`${label} must be a JSON object.`);
     }
     const partial = parsed as Partial<LoopPolicy>;
-    if (Object.keys(partial).some((key) => key !== "proposals")) {
+    if (Object.keys(partial).some((key) => key !== "proposals" && key !== "attended")) {
         throw new TypeError(`${label} contains an unsupported field.`);
     }
     return Validator.assertLoopPolicy({
         proposals: partial.proposals ?? DEFAULT_LOOP_POLICY.proposals,
+        attended: partial.attended ?? DEFAULT_LOOP_POLICY.attended ?? true,
     });
 };
 
+// An absent `attended` is the contract's own "yes" ({§loop-attendance}), so it is omitted rather
+// than written as undefined — the schema admits no undefined-valued key.
 export const composeLoopPolicy = (
     base: LoopPolicy = DEFAULT_LOOP_POLICY,
     proposals: LoopPolicy["proposals"] = base.proposals,
+    attended: LoopPolicy["attended"] = base.attended,
 ): LoopPolicy => Validator.assertLoopPolicy({
     proposals,
+    ...(attended === undefined ? {} : { attended }),
 });
 
+// {§loop-attendance} — `--auto` is an assertion that nobody is watching, not merely a proposal
+// disposition: it accepts proposals AND declares the run unattended, so the daemon refuses every
+// human-in-the-loop surface rather than offering one nobody can answer (plurnk/plurnk-service#765).
 export const resolveLoopPolicy = (raw: string | undefined, auto = false): LoopPolicy => {
     const base = raw === undefined ? DEFAULT_LOOP_POLICY : parseLoopPolicy("--policy", raw);
-    return composeLoopPolicy(base, auto ? "accept" : base.proposals);
+    return composeLoopPolicy(base, auto ? "accept" : base.proposals, auto ? false : base.attended);
 };
 
 export const formatCapabilityProjection = (projection: Readonly<Record<string, CapabilityPolicy>>): string => [

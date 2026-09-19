@@ -175,10 +175,12 @@ options:
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_CLIENT_YOLO.
-      --auto              keep proposal authority inside the loop; proposals
-                          resolve automatically without a client review round-trip.
+      --auto              nobody is attending: proposal authority stays inside the
+                          loop, and the daemon offers no human-in-the-loop surface
+                          rather than one nothing could answer.
       --policy <json>     LoopPolicy JSON applied to every loop. --auto selects
-                          proposal acceptance; '?' selects review for that prompt.
+                          proposal acceptance and an unattended run; '?' selects
+                          review for that prompt.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.

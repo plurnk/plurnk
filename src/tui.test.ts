@@ -701,29 +701,38 @@ test("seedPromptHistory: empty / error → history untouched", async () => {
 
 test("[§cli-prompt-prefixes] linePolicy: '?' selects review; ':' preserves ordinary policy", () => {
     assert.deepEqual(linePolicy("? what is truth"), {
-        policy: { proposals: "review" },
+        policy: { proposals: "review", attended: true },
         prompt: "what is truth",
     });
     assert.deepEqual(linePolicy(": do the thing"), {
-        policy: { proposals: "review" },
+        policy: { proposals: "review", attended: true },
         prompt: "do the thing",
     });
 });
 
 test("linePolicy: '?' replaces proposal acceptance with review", () => {
-    const base = { proposals: "accept" as const };
+    const base = { proposals: "accept" as const, attended: true };
     assert.deepEqual(linePolicy("hello", base), { policy: base, prompt: "hello" });
     assert.deepEqual(linePolicy("? hello", base), {
         policy: {
             proposals: "review",
+            attended: true,
         },
         prompt: "hello",
     });
 });
 
+// {§loop-attendance} — a prefix asks for a different disposition, never a different room: who is
+// present is a property of the run, and typing `?` cannot conjure a reviewer into a headless one.
+test("linePolicy: a prefix never changes who is attending", () => {
+    const unattended = { proposals: "accept" as const, attended: false };
+    assert.deepEqual(linePolicy("? hello", unattended).policy, { proposals: "review", attended: false });
+    assert.deepEqual(linePolicy(": hello", unattended).policy, unattended);
+});
+
 test("linePolicy: '...' strips without altering the base policy", () => {
     assert.deepEqual(linePolicy("... btw also"), {
-        policy: { proposals: "review" },
+        policy: { proposals: "review", attended: true },
         prompt: "btw also",
     });
 });

@@ -312,7 +312,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "w",
             workspace: "w",
-            policy: { proposals: "accept" },
+            policy: { proposals: "accept", attended: false },
             maxTurns: 7,
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
@@ -329,7 +329,9 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         assert.equal(fp.childAlias, undefined);
         assert.equal(fp.childModel, undefined);
         assert.equal(fp.childSelector, undefined);
-        assert.deepEqual(fp.policy, { proposals: "accept" }, "proposal policy reaches the wire without hidden capability restrictions");
+        // {§loop-attendance} — the whole policy crosses, attendance included: the daemon cannot
+        // refuse a human-in-the-loop surface it was never told about (service#765).
+        assert.deepEqual(fp.policy, { proposals: "accept", attended: false }, "the loop policy reaches the wire without hidden capability restrictions");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
         assert.deepEqual(fp.openPaths, ["README.md", "src/index.ts"], "prompt file references reach the wire");
     } finally { await mock.close(); }

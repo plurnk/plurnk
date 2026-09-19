@@ -202,3 +202,58 @@ test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels in
     assert.match(packets[1]!, /\\"action\\": ?\\"cancel\\"/, "the next model packet contains the actual tool cancellation");
     assert.doesNotMatch(packets[1]!, /capability-denied|interaction-denied/, "input topology is not a workspace permission change");
 });
+
+// {§loop-attendance} — the seam nothing else covers: the client tests prove the policy reaches
+// forwardedProps, the service tests prove behaviour given a policy, and only this proves they meet.
+// `--auto` asserts nobody is watching, so the daemon must refuse the question outright rather than
+// write it down and wait (plurnk/plurnk-service#765).
+test("[§cli-invocation] {§loop-attendance} --auto is refused an interactive partner, and says so in one turn", { timeout: 60_000 }, async (t) => {
+    const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
+    const packets: string[] = [];
+    const endpoint = createServer(async (request, response) => {
+        if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+            response.writeHead(404).end();
+            return;
+        }
+        const body = await jsonBody(request);
+        packets.push(JSON.stringify(body.messages));
+        answer(response, "interaction-fixture", packets.length === 1
+            ? "````question\n{\"message\":\"Choose a branch\",\"requestedSchema\":{\"type\":\"object\",\"properties\":{\"branch\":{\"type\":\"string\"}},\"required\":[\"branch\"]}}\n````\n\n````WAIT\nawait the answer\n````"
+            : "````SEND\nNobody could answer; concluding on what I have.\n````");
+    });
+    const endpointPort = await listen(endpoint);
+    t.after(() => close(endpoint));
+    const daemon = await bootDaemon(service, {
+        readyTimeoutMs: 30_000,
+        extraEnv: {
+            PLURNK_MODEL: "inputfixture",
+            PLURNK_MODEL_inputfixture: "openai/interaction-fixture",
+            PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
+            OPENAI_API_KEY: "input-fixture",
+            PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
+            PLURNK_PROVIDERS_REASONING: "off",
+            PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
+            // The question runtime stays REGISTERED: this proves attendance refuses it, not the
+            // operator's executor switch, which is the only thing that protected a headless run before.
+            PLURNK_EXECS_QUESTION: "1",
+        },
+    });
+    t.after(daemon.cleanup);
+
+    const started = Date.now();
+    const result = await runClient(daemon.url, [
+        "--json", "--auto", "--workspace", "cli-auto-unattended", "--worker", "auto-worker",
+        "--project-root", "", "--max-turns", "3", "--timeout", "30", "Choose a branch.",
+    ]);
+    const elapsed = Date.now() - started;
+
+    assert.equal(result.code, 0, result.stderr);
+    const record = JSON.parse(result.stdout);
+    assert.equal(record.timedOut, false, "the run ends on its own, never on the client's clock");
+    assert.ok(elapsed < 25_000, `the refusal is immediate, not a wait: took ${elapsed}ms of a 30s budget`);
+    assert.equal(record.response, "Nobody could answer; concluding on what I have.");
+    assert.equal(packets.length, 2, "the model asked once, was refused, and concluded — no third turn");
+    // The model is told why, in terms it can act on, rather than being left holding a pending question.
+    assert.match(packets[1]!, /unattended/, "the next packet carries the refusal");
+    assert.doesNotMatch(packets[1]!, /capability-denied/, "attendance is not a capability denial");
+});

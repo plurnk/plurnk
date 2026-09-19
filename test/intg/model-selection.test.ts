@@ -253,7 +253,9 @@ test("[§cli-invocation] {§loop-attendance} --auto is refused an interactive pa
     assert.ok(elapsed < 25_000, `the refusal is immediate, not a wait: took ${elapsed}ms of a 30s budget`);
     assert.equal(record.response, "Nobody could answer; concluding on what I have.");
     assert.equal(packets.length, 2, "the model asked once, was refused, and concluded — no third turn");
-    // The model is told why, in terms it can act on, rather than being left holding a pending question.
-    assert.match(packets[1]!, /unattended/, "the next packet carries the refusal");
-    assert.doesNotMatch(packets[1]!, /capability-denied/, "attendance is not a capability denial");
+    // The refusal comes from the cascade's loop ring, and names both the ring and what to do
+    // instead: a tool that vanished must say why, or the model has learned nothing.
+    assert.match(packets[1]!, /loop policy/, "the refusal names the ring that subtracted the tool");
+    assert.match(packets[1]!, /unattended/, "and the reason, in terms the model can act on");
+    assert.match(packets[1]!, /conclude stating what you could not resolve/, "and the recovery");
 });

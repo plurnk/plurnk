@@ -39,6 +39,20 @@ export const locateDaemon = async (): Promise<string | null> => {
     return null;
 };
 
+// A source entrypoint still loads its workspace siblings through their `dist`, so an unbuilt
+// sibling boots a daemon made of two different services — and it dies in the wrong vocabulary:
+// a stale content-store build answered `cannot create AFTER trigger on view: entry_channels`,
+// a shape the service source had not had for a day, and cost an afternoon. Name the likely
+// cause on the failure rather than refusing beforehand: source mtimes are rewritten by any
+// checkout, so "newer than dist" is not evidence of a stale build (plurnk/plurnk#92).
+export const STALE_BUILD_SIGNATURES = /cannot create AFTER trigger on view|ERR_MODULE_NOT_FOUND|is not exported from|does not provide an export named/;
+
+export const bootDiagnosis = (stdout: string, stderr: string): string =>
+    STALE_BUILD_SIGNATURES.test(stdout + stderr)
+        ? "\n\nThis looks like a stale sibling build: a source entrypoint loads @plurnk/* through their `dist`."
+            + " Run `npm run build` in plurnk-service and try again."
+        : "";
+
 // Where the daemon's .env (with model alias config) lives. Optional; passed
 // to node --env-file=... when present.
 export const locateDaemonEnv = async (binPath: string): Promise<string | null> => {
@@ -120,7 +134,7 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
 
     const url = await new Promise<string>((resolveBoot, rejectBoot) => {
         const timeout = setTimeout(() => {
-            rejectBoot(new Error(`daemon boot timeout after ${readyTimeoutMs}ms\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+            rejectBoot(new Error(`daemon boot timeout after ${readyTimeoutMs}ms\nstdout:\n${stdout}\nstderr:\n${stderr}${bootDiagnosis(stdout, stderr)}`));
         }, readyTimeoutMs);
 
         child.stdout?.on("data", (chunk: Buffer) => {
@@ -135,7 +149,7 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
         child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
         child.once("exit", (code) => {
             clearTimeout(timeout);
-            rejectBoot(new Error(`daemon exited with code ${code} before ready\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+            rejectBoot(new Error(`daemon exited with code ${code} before ready\nstdout:\n${stdout}\nstderr:\n${stderr}${bootDiagnosis(stdout, stderr)}`));
         });
         child.once("error", (err) => {
             clearTimeout(timeout);

@@ -17,7 +17,7 @@ test("[§cli-active-command-admission] stopping a model proposal preserves a con
         }
         for await (const _chunk of request) { /* drain the fixture request */ }
         requests += 1;
-        const content = "```sh\nprintf model-result > model.txt\n```\n```WAIT\nAwait the command.\n```";
+        const content = "````sh\nprintf model-result > model.txt\n````\n````WAIT\nAwait the command.\n````";
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(`data: ${JSON.stringify({ id: "proposal-fixture", object: "chat.completion.chunk", choices: [
             { index: 0, delta: { role: "assistant", content }, finish_reason: null },

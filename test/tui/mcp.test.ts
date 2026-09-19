@@ -46,9 +46,9 @@ before(async () => {
             args: [legacyFixture],
         })),
         writeFile(currentCall, [
-            "```current (echo)",
+            "````current (echo)",
             '{"message":"installed daemon current peer"}',
-            "```",
+            "````",
         ].join("\n")),
     ]);
     daemon = await bootDaemon(bin);

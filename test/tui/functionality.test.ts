@@ -32,9 +32,9 @@ before(async () => {
     source = join(scratch, "source");
     await mkdir(join(source, "extra"), { recursive: true });
     await writeFile(join(scratch, "delegate.plk"), [
-        "```SEND (a2a://researcher)",
+        "````SEND (a2a://researcher)",
         "Compare mangoes and pineapples in one concise sentence.",
-        "```",
+        "````",
     ].join("\n"));
     await writeFile(join(source, "extra", "SKILL.md"), "---\nname: extra\ndescription: Extra dogfood skill\n---\nUse extra.\n");
     daemon = await bootDaemon(bin, {

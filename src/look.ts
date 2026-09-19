@@ -3,7 +3,7 @@
 // local human record printed above the composer — never a loop, a log entry, a summary, or a
 // lifecycle transition, and never a wait on the model.
 
-import type { OperationResult } from "@plurnk/plurnk-contracts";
+import { PLURNK_FENCE, type OperationResult } from "@plurnk/plurnk-contracts";
 import { colorEnabled } from "./color.ts";
 import ModelText from "./model-text.ts";
 
@@ -17,12 +17,13 @@ export type LookResult = OperationResult & { content?: unknown; detail?: unknown
 
 // `/look worker:///plan.md <1,20> /needle/` → the LOOK fence with the address in its
 // parentheses; an address the user already parenthesized passes through. Nothing to look at
-// is null.
+// is null. {§four-backtick-operations}: the daemon parses this statement, so it takes the
+// operation fence, not a markup fence.
 export const lookFence = (rest: string): string | null => {
     const text = rest.trim();
     if (text.length === 0) return null;
     const heading = text.startsWith("(") ? text : text.replace(/^(\S+)/u, "($1)");
-    return `\`\`\`LOOK ${heading}\`\`\``;
+    return `${PLURNK_FENCE}LOOK ${heading}${PLURNK_FENCE}`;
 };
 
 // The heading as submitted, without its fence: `LOOK (worker:///plan.md) <1,20>`.

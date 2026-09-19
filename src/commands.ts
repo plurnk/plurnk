@@ -196,7 +196,7 @@ export const renderCommandHelp = (name: string = ""): string => {
     });
     return [
         ...groups,
-        "  language     ```OP · ```NOTE · ```WAIT · ```SEND · ```LOOK · ! command · ? ask · ... steer",
+        "  language     ````OP · ````NOTE · ````WAIT · ````SEND · ````LOOK · ! command · ? ask · ... steer",
         "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc cancel/clear · Alt-? help",
         "  tree         Alt-h parent · Alt-l newest child · Alt-j/Alt-k next/prev sibling — the prompt then speaks to that worker",
         "  /help <verb> for exact usage",

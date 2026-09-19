@@ -60,14 +60,14 @@ for (const specimen of cases) {
             for await (const chunk of request) body += chunk;
             requests.push(body);
             const content = requests.length === 1
-                ? `\`\`\`fixture (${specimen.tool})
+                ? `\`\`\`\`fixture (${specimen.tool})
 {}
-\`\`\`
+\`\`\`\`
 
-\`\`\`WAIT
+\`\`\`\`WAIT
 Await the MCP result.
-\`\`\``
-                : "```SEND\nMCP interaction finished.\n```";
+\`\`\`\``
+                : "````SEND\nMCP interaction finished.\n````";
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(`data: ${JSON.stringify({
                 id: "elicitation-fixture", object: "chat.completion.chunk", created: 1, model: "elicitation-fixture",

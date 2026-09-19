@@ -7,10 +7,12 @@ import { lookFence, lookHeading, renderLook } from "./look.ts";
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
+// {§four-backtick-operations}: the daemon parses this statement, so a narrower fence would be
+// quoted markup and `/look` would answer 400 (plurnk/plurnk#92).
 test("lookFence puts the address in its parentheses and keeps scope and pattern as typed", () => {
-    assert.equal(lookFence("worker:///plan.md"), "```LOOK (worker:///plan.md)```");
-    assert.equal(lookFence("  worker:///plan.md <1,20> /needle/i "), "```LOOK (worker:///plan.md) <1,20> /needle/i```");
-    assert.equal(lookFence("(worker:///plan.md) ~query"), "```LOOK (worker:///plan.md) ~query```", "an address the user parenthesized passes through");
+    assert.equal(lookFence("worker:///plan.md"), "````LOOK (worker:///plan.md)````");
+    assert.equal(lookFence("  worker:///plan.md <1,20> /needle/i "), "````LOOK (worker:///plan.md) <1,20> /needle/i````");
+    assert.equal(lookFence("(worker:///plan.md) ~query"), "````LOOK (worker:///plan.md) ~query````", "an address the user parenthesized passes through");
     assert.equal(lookFence("   "), null, "nothing to look at");
 });
 

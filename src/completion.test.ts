@@ -93,16 +93,19 @@ test("dslOpPartial: retains the opening fence width without delimiter suffixes",
     assert.equal(dslOpPartial("## PL"), null);
 });
 
-test("completeOps: completes native names and retains a longer opening fence", () => {
-    assert.deepEqual(completeOps({ fence: "```", typed: "no" }), [["```NOTE"], "```no"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], "```pl"]);
+// {§four-backtick-operations}: a three-backtick opener runs nothing, so completion widens it to
+// the operation fence rather than handing the user back a statement the daemon will quote (#92).
+test("completeOps: completes native names and widens a narrow opening fence", () => {
+    assert.deepEqual(completeOps({ fence: "```", typed: "no" }), [["````NOTE"], "````no"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], "````pl"]);
     assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], ["```BARE"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "LOOK"].map((op) => `\`\`\`${op}`));
+    assert.deepEqual(completeOps({ fence: "`````", typed: "re" }), [["`````READ"], "`````re"], "a deliberately wider fence is kept");
+    assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], ["````BARE"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "LOOK"].map((op) => `\`\`\`\`${op}`));
 });
 
 test("completeOps: LOOK completes alongside daemon operations", () => {
-    assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], ["```LOOK"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], ["````LOOK"]);
 });
 
 test("pathPartial: native and executor fence targets, scheme stripped", () => {

@@ -246,13 +246,13 @@ try {
     const delegatedRoot = join(temp, "delegated-root");
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
-        "```WORK (worker://guesser1)\nCreate child.txt and conclude.\n```\n"
-            + "```WAIT\nWaiting for guesser1.\n```",
-        "```EDIT (child.txt)\ncreated by packed child\n```\n"
-            + "```NOTE\nConfirming the write.\n```",
-        "```SEND\nChild work complete.\n```\n"
+        "````WORK (worker://guesser1)\nCreate child.txt and conclude.\n````\n"
+            + "````WAIT\nWaiting for guesser1.\n````",
+        "````EDIT (child.txt)\ncreated by packed child\n````\n"
+            + "````NOTE\nConfirming the write.\n````",
+        "````SEND\nChild work complete.\n````\n"
             + "```DONE\n```",
-        "```SEND\npacked descendant proposal complete\n```\n"
+        "````SEND\npacked descendant proposal complete\n````\n"
             + "```DONE\n```",
     );
     const requestsBeforeDelegation = selectedModels.length;

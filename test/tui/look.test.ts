@@ -29,7 +29,7 @@ describe("TUI inspection (/look)", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
             // Seed an op whose target the cycler can surface (--yolo accepts the EDIT proposal).
-            tui.write("\x1b[200~```EDIT (worker:///plan.md)\nlook-probe-42\n```\x1b[201~\r");
+            tui.write("\x1b[200~````EDIT (worker:///plan.md)\nlook-probe-42\n````\x1b[201~\r");
             await tui.waitFor(/final 2\d\d/, 45_000);  // cold-boot embedding derivation (svc: first op warms ~70 entries)
             // Alt-p (ESC p) → the newest prior op's REAL uri, as an editable /look line.
             tui.write("\x1bp");
@@ -60,7 +60,7 @@ describe("TUI inspection (/look)", () => {
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
             await tui.waitFor(/plurnk.*\/help/);
-            tui.write("\x1b[200~```EDIT (worker:///note.md)\nlook-harvest-99\n```\x1b[201~\r");
+            tui.write("\x1b[200~````EDIT (worker:///note.md)\nlook-harvest-99\n````\x1b[201~\r");
             await tui.waitFor(/final 2\d\d/, 45_000);  // cold-boot embedding derivation (svc: first op warms ~70 entries)
             const before = tui.output().length;
             tui.write("/look worker:///note.md\r");
@@ -69,7 +69,7 @@ describe("TUI inspection (/look)", () => {
             const since = tui.output().slice(before);
             assert.ok(!/\d+ turns? · /.test(since), `inspection printed no run summary:\n${since}`);
             // A typed LOOK fence takes the same path.
-            tui.write("```LOOK (worker:///note.md)```\r");
+            tui.write("````LOOK (worker:///note.md)````\r");
             // The /look readout, the fence's echo, and the fence's readout each carry the heading; the
             // content follows the third.
             await tui.waitFor(/(?:LOOK \(worker:\/\/\/note\.md\)[\s\S]*){3}look-harvest-99/);

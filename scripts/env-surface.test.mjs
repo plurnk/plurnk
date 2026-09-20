@@ -11,13 +11,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OWNED = /^PLURNK_CLIENT_[A-Z0-9_]+$/u;
 
-// Keys the client reads and does not own. The daemon's address is shared with it, so the package
+// Keys the client names and does not own. The daemon's address is shared with it, so the package
 // both depend on declares it and the client folds that panel beneath its own: a shared key has a
 // shared owner, and nobody holds anybody else's default.
 const SHARED = ["PLURNK_HOST", "PLURNK_PORT", "PLURNK_AGUI_URL"];
 const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     ["PLURNK_AGUI_TOKEN", "@plurnk/plurnk-agui — the portal's bearer"],
+    ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
+    ["PLURNK_WEB_HOST", "@plurnk/plurnk-web — the portal's own knob, which usage names beside `--host`"],
+    ["PLURNK_WEB_PORT", "@plurnk/plurnk-web — the portal's own knob, which usage names beside `--port`"],
 ]);
 
 // `PLURNK_*` strings that are not knobs.
@@ -55,10 +58,11 @@ const live = new Map([...panel.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gmu)].map((mat
 const optional = new Set([...panel.matchAll(/^# ([A-Z][A-Z0-9_]*)=/gmu)].map((match) => match[1]));
 const declared = new Set([...live.keys(), ...optional]);
 
-// A knob is named where it is read: a property, or the exact string a reader is handed.
+// A key is named wherever shipped source spells it: a read, a usage line, a hint to the operator.
+// A hint that advertises a key nobody owns is as much a lie as a read of one.
 const read = new Set();
 for (const { code } of sources) {
-    for (const match of code.matchAll(/\.(PLURNK_[A-Z0-9_]*[A-Z0-9])\b|["'`](PLURNK_[A-Z0-9_]*[A-Z0-9])["'`]/gu)) read.add(match[1] ?? match[2]);
+    for (const match of code.matchAll(/\bPLURNK_[A-Z0-9_]*[A-Z0-9]\b/gu)) read.add(match[0]);
 }
 // A retired key is named only by the code that refuses it.
 const retired = new Set([...readFileSync(join(ROOT, "src/envdefaults.ts"), "utf8").matchAll(/^\s+(PLURNK_[A-Z0-9_]+): "/gmu)].map((match) => match[1]));
@@ -69,14 +73,14 @@ test("[§cli-env-defaults] the client's panel declares only its own prefix: one 
     assert.deepEqual([...retired].filter((key) => declared.has(key)), [], "a retired key is declared nowhere");
 });
 
-test("[§cli-env-defaults] every knob the client reads is declared, and every declaration is read", () => {
+test("[§cli-env-defaults] every key the client names is declared or has a stated owner, and every declaration is read", () => {
     const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key) && !retired.has(key)
         && !key.startsWith("PLURNK_MCP_")).toSorted();
-    assert.deepEqual(undeclared, [], `read by src but declared on no panel the client knows: ${undeclared.join(", ")}`);
+    assert.deepEqual(undeclared, [], `named by src but declared on no panel the client knows: ${undeclared.join(", ")}`);
     const dead = [...declared].filter((key) => !read.has(key)).toSorted();
     assert.deepEqual(dead, [], `declared but never read: ${dead.join(", ")}`);
     const unread = [...FOREIGN.keys()].filter((key) => !read.has(key));
-    assert.deepEqual(unread, [], `listed as a foreign read but no longer read: ${unread.join(", ")}`);
+    assert.deepEqual(unread, [], `listed as a foreign key but no longer named: ${unread.join(", ")}`);
 });
 
 test("[§cli-env-defaults] a knob read never carries a value of its own", () => {

@@ -1,6 +1,6 @@
 // Thin TUI projection of the daemon-owned outbound A2A agents Functionality
 // family: the common lifecycle (list | discover | add | enable | disable |
-// remove) over the workspace's `agents` actions. The client composes exact
+// remove) over the workspace's `a2a` actions. The client composes exact
 // A2aAgentDefinitions and renders the daemon's states; card discovery,
 // connection, and enablement policy live in the service.
 
@@ -122,17 +122,17 @@ const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "dis
 };
 
 const usage = (write: (text: string) => void, subcommand?: string): void => {
-    write(`  usage: ${commandUsage("agents", subcommand)}\n`);
+    write(`  usage: ${commandUsage("a2a", subcommand)}\n`);
 };
 
-export const handleAgents = async (
+export const handleA2a = async (
     input: string | readonly string[],
     rpc: ActionCaller,
     write: (text: string) => void,
 ): Promise<unknown | null> => {
     if (input.length === 0) {
-        const result = await rpc.call("workspace.agents.list", {}) as { definitions?: unknown };
-        if (!Array.isArray(result.definitions)) throw new Error("workspace.agents.list returned an invalid result.");
+        const result = await rpc.call("workspace.a2a.list", {}) as { definitions?: unknown };
+        if (!Array.isArray(result.definitions)) throw new Error("workspace.a2a.list returned an invalid result.");
         if (result.definitions.length === 0) write("  A2A agents: none\n");
         else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
         return result;
@@ -147,8 +147,8 @@ export const handleAgents = async (
             usage(write, "discover");
             return null;
         }
-        const result = await rpc.call("workspace.agents.discover", { source: alias }) as { candidates?: unknown };
-        if (!Array.isArray(result.candidates)) throw new Error("workspace.agents.discover returned an invalid result.");
+        const result = await rpc.call("workspace.a2a.discover", { source: alias }) as { candidates?: unknown };
+        if (!Array.isArray(result.candidates)) throw new Error("workspace.a2a.discover returned an invalid result.");
         if (result.candidates.length === 0) write("  candidates: none\n");
         else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
         return result;
@@ -161,7 +161,7 @@ export const handleAgents = async (
         }
         const [, , url, path] = args;
         const options = path === undefined ? {} : await readOptions(path);
-        const result = await rpc.call("workspace.agents.add", { alias, definition: composeDefinition(alias, url, options) }) as MutationResult;
+        const result = await rpc.call("workspace.a2a.add", { alias, definition: composeDefinition(alias, url, options) }) as MutationResult;
         renderMutation(result, "added", alias, write);
         return result;
     }
@@ -171,7 +171,7 @@ export const handleAgents = async (
             usage(write, command);
             return null;
         }
-        const result = await rpc.call(`workspace.agents.${command}`, { alias }) as MutationResult;
+        const result = await rpc.call(`workspace.a2a.${command}`, { alias }) as MutationResult;
         renderMutation(result, command === "enable" ? "enabled" : "disabled", alias, write);
         return result;
     }
@@ -181,7 +181,7 @@ export const handleAgents = async (
             usage(write, "remove");
             return null;
         }
-        const result = await rpc.call("workspace.agents.remove", { alias });
+        const result = await rpc.call("workspace.a2a.remove", { alias });
         write(`  removed: ${alias}\n`);
         return result;
     }

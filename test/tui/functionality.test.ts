@@ -1,6 +1,6 @@
 // Built-client dogfood for the Worker Functionality families the TUI projects
 // beside /mcp: /skills against the standard-CLI contract (fixture installer)
-// and /agents against an independent official-SDK A2A agent. One grammar, the
+// and /a2a against an independent official-SDK A2A agent. One grammar, the
 // daemon's states, and one exact unavailable Problem per family.
 
 import { test, before, after, describe } from "node:test";
@@ -55,7 +55,7 @@ after(async () => {
 });
 
 describe("TUI Functionality dogfood", () => {
-    test("[§cli-universal-agent-skills] [§cli-outbound-agents] /skills and /agents share the lifecycle grammar against the built daemon", { timeout: 90_000 }, async (t) => {
+    test("[§cli-universal-agent-skills] [§cli-outbound-agents] /skills and /a2a share the lifecycle grammar against the built daemon", { timeout: 90_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with Functionality fixtures is not reachable"); return; }
         const project = await mkdtemp(join(scratch, "project-"));
         const tui = spawnTui(daemon.url, [], {}, project);
@@ -78,23 +78,23 @@ describe("TUI Functionality dogfood", () => {
             await tui.waitFor(/removed: extra/, 20_000);
 
             // Agents: the configured researcher is live; a dead peer is an exact Problem.
-            tui.write("/agents\r");
+            tui.write("/a2a\r");
             await tui.waitFor(/researcher[\s\S]*active[\s\S]*http:\/\/127\.0\.0\.1:\d+[\s\S]*Plurnk A2A protocol witness v1\.0\.0[\s\S]*1 skills[\s\S]*\(service\)/, 20_000);
-            tui.write(`/agents discover ${agent!.baseUrl}\r`);
+            tui.write(`/a2a discover ${agent!.baseUrl}\r`);
             await tui.waitFor(/plurnk-a2a-protocol-witness\s+candidate/, 20_000);
             // Remote-agent delegation through the ordinary client surface: the
             // scripted SEND routes to the enabled alias and answers its Task
             // receipt (a 4xx/5xx would print a worst-status diagnosis instead).
             tui.write(`/script ${join(scratch, "delegate.plk")}\r`);
             await tui.waitFor(/script: 1 op ok/, 20_000);
-            tui.write(`/agents add peer ${agent!.baseUrl}\r`);
+            tui.write(`/a2a add peer ${agent!.baseUrl}\r`);
             await tui.waitFor(/added: peer \(active\)/, 20_000);
-            tui.write("/agents disable researcher\r");
+            tui.write("/a2a disable researcher\r");
             await tui.waitFor(/disabled: researcher \(disabled\)/, 20_000);
-            tui.write("/agents add ghost http://127.0.0.1:9\r");
+            tui.write("/a2a add ghost http://127.0.0.1:9\r");
             const agentProblem = await tui.waitFor(/ghost[\s\S]*(Agent Card|unreachable|card)/i, 20_000);
             assert.doesNotMatch(agentProblem, /added: ghost/);
-            tui.write("/agents remove peer\r");
+            tui.write("/a2a remove peer\r");
             await tui.waitFor(/removed: peer/, 20_000);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);

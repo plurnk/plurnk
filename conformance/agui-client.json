@@ -445,10 +445,10 @@
         "durability"
       ]
     },
-    "workspace.agents.list": {
+    "workspace.a2a.list": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management",
+        "src/a2a.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
       ],
       "dimensions": [
@@ -460,10 +460,10 @@
         "composition"
       ]
     },
-    "workspace.agents.discover": {
+    "workspace.a2a.discover": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management",
+        "src/a2a.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
       ],
       "dimensions": [
@@ -475,10 +475,10 @@
         "composition"
       ]
     },
-    "workspace.agents.add": {
+    "workspace.a2a.add": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management",
+        "src/a2a.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
@@ -491,10 +491,10 @@
         "durability"
       ]
     },
-    "workspace.agents.enable": {
+    "workspace.a2a.enable": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management",
+        "src/a2a.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
@@ -507,10 +507,10 @@
         "durability"
       ]
     },
-    "workspace.agents.disable": {
+    "workspace.a2a.disable": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management",
+        "src/a2a.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
@@ -523,10 +523,10 @@
         "durability"
       ]
     },
-    "workspace.agents.remove": {
+    "workspace.a2a.remove": {
       "posture": "native",
       "evidence": [
-        "src/agents.test.ts — outbound agents management",
+        "src/a2a.test.ts — outbound agents management",
         "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],

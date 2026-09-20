@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { composeDefinition, handleAgents } from "./agents.ts";
+import { composeDefinition, handleA2a } from "./a2a.ts";
 
 const harness = (results: Record<string, unknown> = {}) => {
     const calls: Array<{ method: string; params?: object }> = [];
@@ -17,9 +17,9 @@ const harness = (results: Record<string, unknown> = {}) => {
     return { rpc, write: (text: string) => out.push(text), calls, out };
 };
 
-test("[§cli-outbound-agents] list renders every definition state from the workspace's agents family", async () => {
+test("[§cli-outbound-agents] list renders every definition state from the workspace's a2a family", async () => {
     const h = harness({
-        "workspace.agents.list": {
+        "workspace.a2a.list": {
             definitions: [
                 { alias: "researcher", origin: "service", state: "active", definition: { name: "researcher", url: "https://agent.example" }, detail: { name: "Research Assistant", version: "2.1", description: "Finds sources", skills: ["search", "summarize"] } },
                 { alias: "scribe", origin: "workspace", state: "disabled", definition: { name: "scribe", url: "https://scribe.example" } },
@@ -27,23 +27,23 @@ test("[§cli-outbound-agents] list renders every definition state from the works
             ],
         },
     });
-    await handleAgents([], h.rpc, h.write);
-    assert.deepEqual(h.calls, [{ method: "workspace.agents.list", params: {} }]);
+    await handleA2a([], h.rpc, h.write);
+    assert.deepEqual(h.calls, [{ method: "workspace.a2a.list", params: {} }]);
     const text = h.out.join("");
     assert.match(text, /researcher\s+active\s+https:\/\/agent\.example\s+Research Assistant v2\.1\s+2 skills\s+\(service\)/);
     assert.match(text, /scribe\s+disabled\s+https:\/\/scribe\.example/);
     assert.match(text, /ghost\s+unavailable\s+http:\/\/127\.0\.0\.1:9\s+\(service\)\s+— no discoverable standard Agent Card/);
-    const empty = harness({ "workspace.agents.list": { definitions: [] } });
-    await handleAgents("", empty.rpc, empty.write);
+    const empty = harness({ "workspace.a2a.list": { definitions: [] } });
+    await handleA2a("", empty.rpc, empty.write);
     assert.match(empty.out.join(""), /A2A agents: none/);
 });
 
 test("[§cli-outbound-agents] discover sends one URL and renders inert card-derived candidates", async () => {
     const h = harness({
-        "workspace.agents.discover": { candidates: [{ alias: "research-assistant", summary: "Finds sources", definition: { name: "research-assistant", url: "https://agent.example" }, provenance: { kind: "agent-card", source: "https://agent.example" } }] },
+        "workspace.a2a.discover": { candidates: [{ alias: "research-assistant", summary: "Finds sources", definition: { name: "research-assistant", url: "https://agent.example" }, provenance: { kind: "agent-card", source: "https://agent.example" } }] },
     });
-    await handleAgents("discover https://agent.example", h.rpc, h.write);
-    assert.deepEqual(h.calls, [{ method: "workspace.agents.discover", params: { source: "https://agent.example" } }]);
+    await handleA2a("discover https://agent.example", h.rpc, h.write);
+    assert.deepEqual(h.calls, [{ method: "workspace.a2a.discover", params: { source: "https://agent.example" } }]);
     assert.match(h.out.join(""), /research-assistant\s+candidate\s+https:\/\/agent\.example\s+Finds sources/);
 });
 
@@ -54,22 +54,22 @@ test("[§cli-outbound-agents] add composes one exact A2aAgentDefinition; enable,
     const options = { cardPath: "/cards/research.json", authorization: { type: "bearer", token: "${RESEARCH_TOKEN}" } };
     await writeFile(file, JSON.stringify(options));
     const h = harness({
-        "workspace.agents.add": { status: 201, alias: "researcher", definition: { alias: "researcher", state: "active" } },
-        "workspace.agents.enable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "active" } },
-        "workspace.agents.disable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "disabled" } },
-        "workspace.agents.remove": { status: 200, alias: "researcher", removed: true },
+        "workspace.a2a.add": { status: 201, alias: "researcher", definition: { alias: "researcher", state: "active" } },
+        "workspace.a2a.enable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "active" } },
+        "workspace.a2a.disable": { status: 200, alias: "researcher", definition: { alias: "researcher", state: "disabled" } },
+        "workspace.a2a.remove": { status: 200, alias: "researcher", removed: true },
     });
-    await handleAgents(["add", "researcher", "https://agent.example", file], h.rpc, h.write);
-    await handleAgents("add scribe https://scribe.example", h.rpc, h.write);
-    await handleAgents("enable researcher", h.rpc, h.write);
-    await handleAgents("disable researcher", h.rpc, h.write);
-    await handleAgents("remove researcher", h.rpc, h.write);
+    await handleA2a(["add", "researcher", "https://agent.example", file], h.rpc, h.write);
+    await handleA2a("add scribe https://scribe.example", h.rpc, h.write);
+    await handleA2a("enable researcher", h.rpc, h.write);
+    await handleA2a("disable researcher", h.rpc, h.write);
+    await handleA2a("remove researcher", h.rpc, h.write);
     assert.deepEqual(h.calls, [
-        { method: "workspace.agents.add", params: { alias: "researcher", definition: { name: "researcher", url: "https://agent.example", ...options } } },
-        { method: "workspace.agents.add", params: { alias: "scribe", definition: { name: "scribe", url: "https://scribe.example" } } },
-        { method: "workspace.agents.enable", params: { alias: "researcher" } },
-        { method: "workspace.agents.disable", params: { alias: "researcher" } },
-        { method: "workspace.agents.remove", params: { alias: "researcher" } },
+        { method: "workspace.a2a.add", params: { alias: "researcher", definition: { name: "researcher", url: "https://agent.example", ...options } } },
+        { method: "workspace.a2a.add", params: { alias: "scribe", definition: { name: "scribe", url: "https://scribe.example" } } },
+        { method: "workspace.a2a.enable", params: { alias: "researcher" } },
+        { method: "workspace.a2a.disable", params: { alias: "researcher" } },
+        { method: "workspace.a2a.remove", params: { alias: "researcher" } },
     ]);
     assert.deepEqual(composeDefinition("peer", "https://peer.example"), { name: "peer", url: "https://peer.example" });
     const text = h.out.join("");
@@ -86,10 +86,10 @@ test("[§cli-outbound-agents] only tokenization and local JSON syntax are client
     await writeFile(malformed, "{nope");
     for (const command of ["add", "add one", "discover", "discover a b", "enable", "disable a b", "remove", "add echo 'unterminated", "unknown"]) {
         const h = harness();
-        await handleAgents(command, h.rpc, h.write);
+        await handleA2a(command, h.rpc, h.write);
         assert.equal(h.calls.length, 0, command);
         assert.match(h.out.join(""), /usage:/, command);
     }
-    await assert.rejects(handleAgents(`add peer https://peer.example "${malformed}"`, harness().rpc, () => {}), /not valid JSON/);
-    await assert.rejects(handleAgents("add peer https://peer.example /no/such/options.json", harness().rpc, () => {}), /not readable/);
+    await assert.rejects(handleA2a(`add peer https://peer.example "${malformed}"`, harness().rpc, () => {}), /not valid JSON/);
+    await assert.rejects(handleA2a("add peer https://peer.example /no/such/options.json", harness().rpc, () => {}), /not readable/);
 });

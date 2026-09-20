@@ -106,11 +106,11 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "active");
 
     const agents = async (): Promise<Array<{ alias: string; state: string }>> =>
-        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.agents.list")).definitions;
+        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.a2a.list")).definitions;
     assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "active");
-    await from("a", "workspace.agents.disable", { alias: "durable" });
+    await from("a", "workspace.a2a.disable", { alias: "durable" });
     assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "disabled");
-    await from("a", "workspace.agents.enable", { alias: "durable" });
+    await from("a", "workspace.a2a.enable", { alias: "durable" });
     assert.equal((await agents()).find(({ alias }) => alias === "durable")?.state, "active");
     await from("a", "workspace.skills.disable", { alias: "durable-skill" });
     assert.equal((await skills()).find(({ alias }) => alias === "durable-skill")?.state, "disabled");

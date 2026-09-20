@@ -263,7 +263,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/agents` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Tab-completion of an operation name emits the operation fence ({§four-backtick-operations}); a narrower one the user typed is widened, never echoed back as a statement the daemon would quote. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -296,7 +296,7 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 | Inspect | `/help /models /workspaces /workers /log /look` |
 | Policy | `/model /child /reasoning /capabilities /yolo` |
 | Workspace | `/workspace /rename /worker /attach /parent /enter /older /newer` |
-| Functionality | `/mcp /skills /agents /members /env /schedule` |
+| Functionality | `/mcp /skills /a2a /members /env /schedule` |
 | Compose | `/import /script /editor` |
 | Review | `/accept /reject /cancel /edit` |
 | Session | `/stop /quit` |
@@ -503,7 +503,7 @@ path without rewriting or retry.
 
 ### §3.6 Outbound A2A agents {§cli-outbound-agents}
 
-Outbound A2A agents are a thin projection of the daemon's `agents`
+Outbound A2A agents are a thin projection of the daemon's `a2a`
 Functionality family — the same common lifecycle as `/mcp` and `/skills`. The
 client composes one exact `A2aAgentDefinition` and renders the daemon's
 states; the remote Agent Card, connection, and enablement policy live in the
@@ -511,12 +511,12 @@ service, and the model addresses an enabled agent as `a2a://<alias>`.
 
 | TUI input | AG-UI+ action |
 |---|---|
-| `/agents` | `workspace.agents.list {}` |
-| `/agents discover <url>` | `workspace.agents.discover {source}` — one inert card-derived candidate |
-| `/agents add <alias> <url> [options.json]` | `workspace.agents.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
-| `/agents enable <alias>` | `workspace.agents.enable {alias}` |
-| `/agents disable <alias>` | `workspace.agents.disable {alias}` |
-| `/agents remove <alias>` | `workspace.agents.remove {alias}` |
+| `/a2a` | `workspace.a2a.list {}` |
+| `/a2a discover <url>` | `workspace.a2a.discover {source}` — one inert card-derived candidate |
+| `/a2a add <alias> <url> [options.json]` | `workspace.a2a.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
+| `/a2a enable <alias>` | `workspace.a2a.enable {alias}` |
+| `/a2a disable <alias>` | `workspace.a2a.disable {alias}` |
+| `/a2a remove <alias>` | `workspace.a2a.remove {alias}` |
 
 Invalid or unreadable local JSON fails before dispatch; daemon Problems — an
 unreachable card, an unsupported interface, an unresolved symbolic credential —
@@ -525,7 +525,7 @@ cross the existing diagnostic path without rewriting or retry.
 ### §3.7 File members {§cli-file-members}
 
 File membership is a thin projection of the daemon's `members` Functionality
-family — the same common lifecycle as `/mcp`, `/skills`, and `/agents`. The
+family — the same common lifecycle as `/mcp`, `/skills`, and `/a2a`. The
 client composes one exact definition, `{glob}`, and renders the daemon's
 states; resolution, the model's ceiling, and enablement policy live in the
 service. Git-tracked files are members on their own. A definition is one
@@ -551,7 +551,7 @@ rewriting or retry.
 ### §3.8 Environment {§cli-environment}
 
 The environment is a thin projection of the daemon's `env` Functionality
-family — the same common lifecycle as `/mcp`, `/skills`, `/agents`, and
+family — the same common lifecycle as `/mcp`, `/skills`, `/a2a`, and
 `/members`. Unqualified commands use `worker.env.*`; `--scope workspace` before
 the verb selects `workspace.env.*` for shared defaults. `--scope worker` is
 explicitly local; both space-separated and `--scope=workspace` forms are accepted.
@@ -584,7 +584,7 @@ diagnostic path without rewriting or retry.
 ### §3.9 Scheduled messages {§cli-schedule}
 
 Scheduled messages are a thin projection of the daemon's `schedule`
-Functionality family — the same common lifecycle as `/mcp` and `/agents`. The
+Functionality family — the same common lifecycle as `/mcp` and `/a2a`. The
 client composes one exact definition (`rule`, `target`, `prompt`, optional
 `policy`) and renders the daemon's states; the clock, the rule's canonical
 form, the timers and the delivery live in the service, and an occurrence

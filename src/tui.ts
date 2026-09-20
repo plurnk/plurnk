@@ -46,7 +46,7 @@ import {
 import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
 import { handleMcp } from "./mcp.ts";
 import { handleSkills } from "./skills.ts";
-import { handleAgents } from "./agents.ts";
+import { handleA2a } from "./a2a.ts";
 import { handleSchedule } from "./schedule.ts";
 import { handleMembers } from "./members.ts";
 import { handleEnv } from "./env.ts";
@@ -527,8 +527,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             await handleSkills(rest, rpc, write);
             return;
         }
-        case "agents": {
-            await handleAgents(rest, rpc, write);
+        case "a2a": {
+            await handleA2a(rest, rpc, write);
             return;
         }
         case "schedule": {

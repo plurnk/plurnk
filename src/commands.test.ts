@@ -14,7 +14,7 @@ test("[§cli-interactive-command-discovery] the registry is unique and every com
     assert.equal(new Set(names).size, names.length);
     assert.equal(names.every(isCommandName), true);
     assert.equal(names.includes("skills"), true);
-    assert.equal(names.includes("agents"), true);
+    assert.equal(names.includes("a2a"), true);
     assert.equal(names.includes("members"), true);
     assert.equal(names.includes("env"), true);
     assert.equal(names.includes("schedule"), true);
@@ -34,17 +34,17 @@ test("root, contextual help, and Functionality syntax share the registry", () =>
 });
 
 test("Functionality completion identifies only alias-taking positions", () => {
-    assert.deepEqual(completeCommandSyntax("/agents en"), {
+    assert.deepEqual(completeCommandSyntax("/a2a en"), {
         kind: "syntax",
         prefix: "en",
         suggestions: [{ value: "enable", description: "Enable a current alias." }],
     });
-    assert.deepEqual(completeCommandSyntax("/agents enable res"), {
+    assert.deepEqual(completeCommandSyntax("/a2a enable res"), {
         kind: "aliases",
-        family: "agents",
+        family: "a2a",
         prefix: "res",
     });
-    assert.equal(completeCommandSyntax("/agents add res"), null);
+    assert.equal(completeCommandSyntax("/a2a add res"), null);
 });
 
 test("[§cli-interactive-command-discovery] help and reference inventories contain every interactive verb", async () => {

@@ -9,11 +9,11 @@ export const COMMAND_GROUPS = [
 ] as const;
 
 export type CommandGroup = typeof COMMAND_GROUPS[number]["id"];
-export type FunctionalityFamily = "mcp" | "skills" | "agents" | "members" | "env" | "schedule";
+export type FunctionalityFamily = "mcp" | "skills" | "a2a" | "members" | "env" | "schedule";
 
 // Default action prefixes. Env also accepts an explicit workspace scope.
 export const FAMILY_ACTIONS: Readonly<Record<FunctionalityFamily, string>> = Object.freeze({
-    mcp: "workspace.mcp", skills: "workspace.skills", agents: "workspace.agents", members: "workspace.members", env: "worker.env", schedule: "workspace.schedule",
+    mcp: "workspace.mcp", skills: "workspace.skills", a2a: "workspace.a2a", members: "workspace.members", env: "worker.env", schedule: "workspace.schedule",
 });
 
 export interface CommandSubcommand {
@@ -104,7 +104,7 @@ export const COMMANDS = [
 
     { name: "mcp", usage: "/mcp [subcommand]", summary: "List or manage this workspace's MCP servers.", group: "functionality", subcommands: MCP_SUBCOMMANDS },
     { name: "skills", usage: "/skills [subcommand]", summary: "List or manage this workspace's Agent Skills.", group: "functionality", subcommands: SKILL_SUBCOMMANDS },
-    { name: "agents", usage: "/agents [subcommand]", summary: "List or manage this workspace's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
+    { name: "a2a", usage: "/a2a [subcommand]", summary: "List or manage this workspace's outbound A2A agents.", group: "functionality", subcommands: AGENT_SUBCOMMANDS },
     { name: "members", usage: "/members [subcommand]", summary: "List or manage this workspace's file members.", group: "functionality", subcommands: MEMBERS_SUBCOMMANDS },
     { name: "env", usage: "/env [--scope worker|workspace] [subcommand]", summary: "Manage worker overrides or shared workspace environment defaults.", group: "functionality", subcommands: ENV_SUBCOMMANDS },
     { name: "schedule", usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages.", group: "functionality", subcommands: SCHEDULE_SUBCOMMANDS },
@@ -161,7 +161,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
     const help = /^\/help\s+(\w*)$/u.exec(line);
     if (help !== null) return { kind: "syntax", prefix: help[1], suggestions: matchingCommands(help[1], false) };
 
-    const nested = /^\/(mcp|skills|agents|members|env|schedule)\s+(\w*)$/u.exec(line);
+    const nested = /^\/(mcp|skills|a2a|members|env|schedule)\s+(\w*)$/u.exec(line);
     if (nested !== null) {
         const spec = commandSpec(nested[1]);
         const suggestions = (spec?.subcommands ?? [])
@@ -170,7 +170,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
         return { kind: "syntax", prefix: nested[2], suggestions };
     }
 
-    const alias = /^\/(mcp|skills|agents|members|env|schedule)\s+(\w+)\s+(\S*)$/u.exec(line);
+    const alias = /^\/(mcp|skills|a2a|members|env|schedule)\s+(\w+)\s+(\S*)$/u.exec(line);
     if (alias !== null) {
         const subcommand = commandSpec(alias[1])?.subcommands?.find(({ name }) => name === alias[2]);
         if (subcommand?.alias === true) {

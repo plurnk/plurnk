@@ -446,11 +446,11 @@ local options file, but the daemon owns normalization, schema validation,
 connection behavior, persistence, and exact Problem Details. Symbolic
 credential references remain unchanged. After resolving the ordinary client
 environment cascade, the client projects string-valued `PLURNK_MCP_*`
-declarations as one raw `McpConfigurationOverlay`; it excludes
-`PLURNK_MCP_ENABLED`, `PLURNK_MCP_CONNECT_TIMEOUT`, and
-`PLURNK_MCP_REQUEST_TIMEOUT`, and interprets no server, transport, companion,
-or credential semantics. Merely listing configuration never activates or
-persists a server.
+variables as one raw `McpConfigurationOverlay`, whole. Which of those names
+are the daemon's own controls is the daemon's fact: its parser skips them, so
+the client holds no copy of that vocabulary and interprets no server,
+transport, companion, or credential semantics. Merely listing configuration
+never activates or persists a server.
 
 The interactive and positional forms share one tokenizer-independent command
 handler. `plurnk mcp …` requires `--workspace` or

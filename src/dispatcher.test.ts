@@ -48,20 +48,16 @@ test("[§cli-invocation] env cascade uses XDG user configuration and last repeat
     assert.equal(process.env[key], "shell");
 });
 
-test("collectMcpConfiguration carries raw declarations and excludes service controls", () => {
-    assert.deepEqual(collectMcpConfiguration({
+test("[§cli-workspace-mcp-controls] collectMcpConfiguration carries every PLURNK_MCP_* variable whole and nothing else", () => {
+    const carried = {
         PLURNK_MCP_GITEA: "gitea-mcp",
         PLURNK_MCP_GITEA_ARGS: '["plurnk_pk"]',
         PLURNK_MCP_gitea_tools: '["issue_read"]',
         PLURNK_MCP_ENABLED: '["gitea"]',
-        PLURNK_MCP_connect_timeout: "1",
         PLURNK_MCP_REQUEST_TIMEOUT: "2",
-        GITEA_TOKEN: "secret",
-    }), {
-        PLURNK_MCP_GITEA: "gitea-mcp",
-        PLURNK_MCP_GITEA_ARGS: '["plurnk_pk"]',
-        PLURNK_MCP_gitea_tools: '["issue_read"]',
-    });
+        PLURNK_MCP_A_CONTROL_NOT_YET_INVENTED: "1",
+    };
+    assert.deepEqual(collectMcpConfiguration({ ...carried, GITEA_TOKEN: "secret" }), carried, "the client holds no list of the daemon's control keys");
     assert.deepEqual(collectMcpConfiguration({ PATH: "/usr/bin" }), {});
 });
 

@@ -88,19 +88,15 @@ export const resolveLoopPolicy = (proposals: string | undefined, auto = false): 
 };
 
 const MCP_CONFIGURATION_PREFIX = "PLURNK_MCP_";
-const MCP_SERVICE_CONTROLS = new Set([
-    "PLURNK_MCP_CONNECT_TIMEOUT",
-    "PLURNK_MCP_REQUEST_TIMEOUT",
-    "PLURNK_MCP_ENABLED",
-]);
 
+// {§cli-workspace-mcp-controls} — carried whole: which of these names are the daemon's own controls
+// is the daemon's fact, and its parser skips them.
 export const collectMcpConfiguration = (
     env: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> => {
     const configuration: Record<string, string> = {};
     for (const [key, value] of Object.entries(env)) {
         if (value === undefined || !key.startsWith(MCP_CONFIGURATION_PREFIX)) continue;
-        if (MCP_SERVICE_CONTROLS.has(key.toUpperCase())) continue;
         configuration[key] = value;
     }
     return configuration;

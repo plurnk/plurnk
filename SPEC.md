@@ -686,7 +686,9 @@ on separate lines; prose, code, and source wrap without truncation. Tables use
 aligned box-drawn columns, wrap complete cell content, and separate every
 logical row; headings, inline markup, lists, and links retain conventional
 terminal presentation, while ordinary fenced code begins with a `💻 language`
-header. A ```mermaid fence projects as
+header. A block's gutter belongs to every row it produces, wrapped rows included,
+and the gutter's columns come out of that block's width rather than out of the
+viewport. A ```mermaid fence projects as
 a topology- and label-preserving Unicode diagram when it fits the same live
 viewport. Preserve the authored layout when it fits; otherwise try one alternate
 flowchart layout exchanging horizontal and vertical directions, including explicit

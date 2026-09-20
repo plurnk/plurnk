@@ -42,7 +42,9 @@ test("[§cli-response-order] response lines fit the viewport after render and re
         for (const width of [135, 40, 80]) {
             const lines = view.render(width);
             assert.ok(lines.every((line) => visibleWidth(line) <= width), `every response line must fit ${width} columns`);
-            assert.ok(lines.map(stripVTControlCharacters).join("").includes(content), "the complete response value remains visible");
+            // A fenced body carries its gutter on every wrapped row, so the value is read past it.
+            const visible = lines.map(stripVTControlCharacters).map((line) => line.replace(/^│ /u, "")).join("");
+            assert.ok(visible.includes(content), "the complete response value remains visible");
         }
     }
 });

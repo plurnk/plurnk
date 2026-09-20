@@ -77,6 +77,17 @@ const transposeFlowchart = (source: string): string => {
 const widestLine = (lines: string[]): number =>
     Math.max(0, ...lines.map(displayWidth));
 
+// A gutter is two columns the content does not get. Wrap to what is left and mark every row that
+// results, so the document-wide wrap has nothing over-wide left to break out of a gutter (#96).
+const GUTTER_COLUMNS = 2;
+const guttered = (text: string, width: number): string[] =>
+    text.split("\n").flatMap((line) =>
+        // trim:false keeps the line's own indentation, which is content; the leading space a
+        // continuation row inherits from the wrap point is not, so only those rows lose it.
+        wrapAnsi(line, Math.max(1, width - GUTTER_COLUMNS), { hard: true, trim: false, wordWrap: true })
+            .split("\n")
+            .map((row, index) => `${styled(DIM)("│")} ${(index === 0 ? row : row.replace(/^ +/u, "")).trimEnd()}`));
+
 // Preserve the authored layout whenever it fits the current viewport. A
 // transposed projection is the one bounded alternative; invalid, unsupported,
 // or still-overwide diagrams remain inspectable as labeled source.
@@ -120,20 +131,19 @@ const terminalRenderer = (viewport: number): Marked => {
         },
         code(token: Tokens.Code) {
             if (token.lang?.trim().toLowerCase() === "mermaid") {
-                return `${renderMermaid(token.text, availableWidth()).join("\n")}\n\n`;
+                const drawn = renderMermaid(token.text, availableWidth());
+                // A drawn diagram is already sized; only the labeled-source fallback can overflow,
+                // and it wraps like any other block so its gutter survives the document wrap (#96).
+                if (widestLine(drawn) <= availableWidth()) return `${drawn.join("\n")}\n\n`;
+                return `${[drawn[0], ...guttered(token.text, availableWidth())].join("\n")}\n\n`;
             }
             const language = token.lang?.trim() ?? "";
             const header = language.length === 0 ? "💻" : `💻 ${language}`;
-            return [
-                styled(DIM)(header),
-                ...token.text.split("\n").map((line) => `${styled(DIM)("│")} ${line}`),
-                "",
-                "",
-            ].join("\n");
+            return [styled(DIM)(header), ...guttered(token.text, availableWidth()), "", ""].join("\n");
         },
         blockquote(token: Tokens.Blockquote) {
-            const body = withBlockIndent(2, () => this.parser.parse(token.tokens).trimEnd());
-            return `${body.split("\n").map((line) => `${styled(DIM)("│")} ${line}`).join("\n")}\n\n`;
+            const body = withBlockIndent(GUTTER_COLUMNS, () => this.parser.parse(token.tokens).trimEnd());
+            return `${guttered(body, availableWidth() + GUTTER_COLUMNS).join("\n")}\n\n`;
         },
         html(token: Tokens.HTML | Tokens.Tag) {
             return styled(DIM)(token.text);

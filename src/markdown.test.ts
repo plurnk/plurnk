@@ -124,8 +124,27 @@ test("[§cli-markdown-projection] long code and fallback source wrap without los
         const lines = out.split("\n");
         assert.equal(lines[0], `💻 ${language}`);
         assert.ok(lines.every((line) => displayWidth(line) <= 32));
-        assert.equal(lines.slice(1).join("").replace(/^│ /, ""), code);
+        // Every row of a block carries the gutter, wrapped rows included ({§cli-markdown-projection}).
+        assert.ok(lines.slice(1).filter((line) => line.length > 0).every((line) => line.startsWith("│ ")));
+        assert.equal(lines.slice(1).map((line) => line.replace(/^│ /u, "")).join(""), code);
     }
+});
+
+// The operator's report (#96): a reply whose code block holds a line wider than the terminal
+// rendered with the gutter on its first row only, so every continuation sat at column zero.
+test("[§cli-markdown-projection] a wrapped code line keeps its gutter, and prose around it stays prose", () => {
+    const sentence = "Whether searching a codebase, inspecting targeted lines, or applying precise diffs, the model interacts through one grammar.";
+    const out = renderMarkdownDocument([
+        "Syntax:", "", "```text", sentence, "```", "", "### A heading after", "* a list item",
+    ].join("\n"), 48).split("\n");
+
+    const opens = out.indexOf("💻 text") + 1;
+    const block = out.slice(opens, out.findIndex((line, index) => index >= opens && !line.startsWith("│ ")));
+    assert.ok(block.length > 1, "the sentence must have wrapped for this witness to mean anything");
+    assert.ok(block.every((line) => line.startsWith("│ ")), "every wrapped row carries the gutter");
+    assert.ok(out.every((line) => displayWidth(line) <= 48), "the gutter is inside the viewport, not past it");
+    assert.equal(block.map((line) => line.replace(/^│ /u, "")).join(" "), sentence);
+    assert.ok(out.includes("* a list item"), "prose after the block is still prose");
 });
 
 test("[§cli-markdown-projection] nested tables and rules reserve their container indentation", () => {

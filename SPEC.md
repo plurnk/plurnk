@@ -46,8 +46,8 @@ Options:
 | `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
-| `--auto` | flag | Set the loop proposal disposition to `accept`; no client review/resume round-trip. |
-| `--policy <json>` | string | Complete LoopPolicy applied to every loop: `review`, `accept`, or `reject` proposal disposition. |
+| `--auto` | flag | State that nobody is attending: every loop is unattended. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
+| `--proposals <p>` | string | State what every loop does with a proposal: `review`, `accept`, or `reject`. Overrides `PLURNK_CLIENT_PROPOSALS`. See §6.0. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
 | `--max-turns <n>` | string | Per-loop turn cap; omission leaves the daemon's configured limit in effect. |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. |
@@ -66,8 +66,8 @@ Env:
 | `PLURNK_CLIENT_WORKER` | _unset_ | Worker name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE` outside web mode. |
 | `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
 | `PLURNK_CLIENT_YOLO` | `1` | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally; `0` reviews each one. See §6. Equivalent to `--yolo`. |
-| `PLURNK_AUTO` | _unset_ | When truthy, keep proposal authority inside every loop. Equivalent to `--auto`. |
-| `PLURNK_CLIENT_LOOP_POLICY` | _unset_ | Default LoopPolicy JSON. `--policy` overrides it. |
+| `PLURNK_CLIENT_AUTO` | `0` | When truthy, every loop is unattended. Equivalent to `--auto`. See §6.0. |
+| `PLURNK_CLIENT_PROPOSALS` | _unset_ | What every loop does with a proposal. Equivalent to `--proposals`; unset leaves it to the daemon. See §6.0. |
 | `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` | _unset_ | Create-time workspace CapabilityPolicy JSON. `--capabilities` overrides it. |
 
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → project `./.env` → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
@@ -202,7 +202,7 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes {§cli-prompt-prefixes}
 
-The prompt's first character has the same meaning in the CLI and TUI. `plurnk "? question"` selects proposal `review` without changing workspace capabilities; `": text"` uses the base policy unchanged. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
+The prompt's first character has the same meaning in the CLI and TUI. `plurnk "? question"` states proposal `review` for that loop without changing workspace capabilities; `": text"` states nothing new. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
 
 ### §2.1 Output channels {§cli-output-channels}
 
@@ -797,6 +797,10 @@ Client-owned proposals arrive through standard AG-UI tool-call interrupts under
 {§agui-proposal-disposition}. The client presents the proposal and resumes the
 Run with the selected decision; the following sections describe its local review projection.
 
+### §6.0 What the client states {§cli-loop-policy}
+
+The client states only what its user chose, one knob per choice, and sends it as the daemon's `LoopPolicyRequest`. `--proposals` (`PLURNK_CLIENT_PROPOSALS`) states a disposition. `--auto` (`PLURNK_CLIENT_AUTO`) states exactly one thing, that nobody is attending; what an unattended loop then does with a proposal is the daemon's panel's to say unless `--proposals` says it. A `?` prompt states `review` for that loop. Everything left unsaid is supplied by the daemon's panel, so the client holds no default of its own. The daemon refuses a statement that asks for review with nobody attending. The retired `--policy`, `PLURNK_CLIENT_LOOP_POLICY` and `PLURNK_AUTO` fail hard, naming their successors.
+
 ### §6.1 Notification shape {§cli-notification-shape}
 
 ```ts
@@ -844,11 +848,11 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 
 Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. When on, the proposal handler skips the menu and resumes the interrupt with `{decision: "accept"}`. The proposal still crosses the ordinary client-review boundary. A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
 
-This is distinct from **loop auto** (`--auto`, or a policy with `proposals:"accept"`), where proposal authority never crosses into client review.
+This is distinct from a loop that settles its own proposals (`--proposals accept` or `reject`, or an unattended loop), where proposal authority never crosses into client review.
 
 ### §6.4 Fail-closed (non-TTY, no yolo) {§cli-fail-closed-no-review-channel}
 
-When stdin is not a TTY and yolo is off, the client cannot interactively review. If the selected policy requests `review`, the client projects `proposals:"reject"`; Core settles admitted side effects without a client round-trip. An explicitly selected `accept` or `reject` disposition remains authoritative.
+When stdin is not a TTY and yolo is off, the user chose review and the client has no channel to review through. Unless the user stated `accept` or `reject`, the client states `proposals:"reject"`; Core settles admitted side effects without a client round-trip.
 
 The one-shot client cancels input-request interrupts through the standard AG-UI resume contract because it has no interactive form. It does not alter workspace capabilities or invent an answer; the worker receives the cancellation and can continue.
 

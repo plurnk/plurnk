@@ -19,6 +19,7 @@ const close = (server: ReturnType<typeof createServer>): Promise<void> =>
 const runClient = async (
     url: string,
     args: string[],
+    extraEnv: Record<string, string> = {},
 ): Promise<{ code: number | null; stdout: string; stderr: string }> => {
     const address = new URL(url);
     return new Promise((resolveRun, reject) => {
@@ -31,6 +32,7 @@ const runClient = async (
                 PLURNK_HOST: address.hostname,
                 PLURNK_PORT: address.port,
                 NO_COLOR: "1",
+                ...extraEnv,
             },
             stdio: ["ignore", "pipe", "pipe"],
         });
@@ -258,4 +260,44 @@ test("[§cli-invocation] {§loop-attendance} --auto is refused an interactive pa
     assert.match(packets[1]!, /loop policy/, "the refusal names the ring that subtracted the tool");
     assert.match(packets[1]!, /unattended/, "and the reason, in terms the model can act on");
     assert.match(packets[1]!, /conclude stating what you could not resolve/, "and the recovery");
+});
+
+// The client states and the daemon composes: only this proves the refusals a user can meet arrive
+// as sentences that name the way out.
+test("[§cli-loop-policy] a refused statement and a retired spelling each name the way out", { timeout: 60_000 }, async (t) => {
+    const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
+    const daemon = await bootDaemon(service, {
+        readyTimeoutMs: 30_000,
+        extraEnv: {
+            PLURNK_MODEL: "unreached",
+            PLURNK_MODEL_unreached: "openai/never-called",
+            PLURNK_BASEURL_unreached: "http://127.0.0.1:9/v1",
+            OPENAI_API_KEY: "unreached",
+            PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
+        },
+    });
+    t.after(daemon.cleanup);
+    const base = ["--json", "--workspace", "cli-loop-policy", "--worker", "policy-worker", "--project-root", "", "--timeout", "20"];
+
+    // Review with nobody attending is a wait nothing could end, so the daemon refuses the statement.
+    const contradiction = await runClient(daemon.url, [...base, "--auto", "--proposals", "review", "Do the thing."]);
+    assert.notEqual(contradiction.code, 0);
+    const refused = JSON.parse(contradiction.stdout).problem;
+    assert.match(refused.type, /loop-policy-invalid$/u);
+    assert.match(refused.detail, /unattended loop cannot hold a proposal for review: nobody is present to answer/u);
+    assert.equal(refused.recovery, "State proposals accept or reject, or attend the loop.");
+
+    const vocabulary = await runClient(daemon.url, [...base, "--proposals", "sometimes", "Do the thing."]);
+    assert.equal(vocabulary.code, 64);
+    assert.match(vocabulary.stderr + vocabulary.stdout, /proposals must be one of review, accept, reject/u);
+
+    const flag = await runClient(daemon.url, [...base, "--policy", "{\"proposals\":\"accept\"}", "Do the thing."]);
+    assert.equal(flag.code, 64);
+    assert.match(flag.stderr + flag.stdout, /--policy was retired; state --proposals <review\|accept\|reject> and --auto/u);
+
+    for (const [name, successor] of [["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"], ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_PROPOSALS and PLURNK_CLIENT_AUTO"]] as const) {
+        const retired = await runClient(daemon.url, [...base, "Do the thing."], { [name]: "1" });
+        assert.equal(retired.code, 64, name);
+        assert.match(retired.stderr + retired.stdout, new RegExp(`${name} was retired; use ${successor}`, "u"));
+    }
 });

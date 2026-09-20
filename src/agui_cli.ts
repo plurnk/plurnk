@@ -28,11 +28,10 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
-import type { LoopPolicy, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
+import type { LoopPolicyRequest, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
-import { composeLoopPolicy } from "./policy.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
@@ -253,13 +252,14 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicy; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
+    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
+    // The user chose to review (yolo off) and this run has no channel to review through, so it
+    // states reject rather than leave a proposal held for an answer nobody can give. A stated
+    // accept or reject is the user's own and stands.
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
-    const policy = composeLoopPolicy(
-        opts.policy,
-        noReviewChannel && opts.policy.proposals === "review" ? "reject" : opts.policy.proposals,
-    );
+    const heldForReview = opts.policy.proposals === undefined || opts.policy.proposals === "review";
+    const policy: LoopPolicyRequest = noReviewChannel && heldForReview ? { ...opts.policy, proposals: "reject" } : opts.policy;
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
     // worker owns the model ({§worker-model-selection}), and an explicit --model
     // was already persisted by the dispatcher before this run.

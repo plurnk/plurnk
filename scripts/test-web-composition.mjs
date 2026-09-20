@@ -158,7 +158,7 @@ try {
         "--max-commands=12",
         "--no-git",
         "--capabilities={\"deny\":[{\"operation\":\"EXEC\"}]}",
-        "--policy={\"capabilities\":{},\"proposals\":\"accept\"}",
+        "--proposals=accept",
         "--max-turns=7",
     ], {
         cwd: consumer,
@@ -265,7 +265,7 @@ try {
         workspace: "web-composition",
         projectRoot,
         settings: clientSettings,
-        policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "review" },
+        policy: { proposals: "accept" },
         maxTurns: 7,
         openPaths: ["README.md"],
     });

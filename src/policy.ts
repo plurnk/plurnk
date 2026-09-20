@@ -1,8 +1,8 @@
 import {
-    DEFAULT_LOOP_POLICY,
+    PROPOSAL_POLICIES,
     Validator,
     type CapabilityPolicy,
-    type LoopPolicy,
+    type LoopPolicyRequest,
 } from "@plurnk/plurnk-contracts";
 
 const parseJson = (label: string, raw: string): unknown => {
@@ -16,38 +16,17 @@ const parseJson = (label: string, raw: string): unknown => {
 export const parseCapabilityPolicy = (label: string, raw: string): CapabilityPolicy =>
     Validator.assertCapabilityPolicy(parseJson(label, raw) as CapabilityPolicy);
 
-export const parseLoopPolicy = (label: string, raw: string): LoopPolicy => {
-    const parsed = parseJson(label, raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        throw new TypeError(`${label} must be a JSON object.`);
+// {§cli-loop-policy} — the client states only what its user chose, one knob per choice:
+// `--proposals` is a disposition and `--auto` is exactly "nobody is attending". Whatever is left
+// unsaid is the daemon's panel's to supply, so nothing here stands in for it.
+export const statedLoopPolicy = (proposals: string | undefined, auto: boolean): LoopPolicyRequest => {
+    if (proposals !== undefined && !(PROPOSAL_POLICIES as readonly string[]).includes(proposals)) {
+        throw new TypeError(`proposals must be one of ${PROPOSAL_POLICIES.join(", ")}.`);
     }
-    const partial = parsed as Partial<LoopPolicy>;
-    if (Object.keys(partial).some((key) => key !== "proposals" && key !== "attended")) {
-        throw new TypeError(`${label} contains an unsupported field.`);
-    }
-    return Validator.assertLoopPolicy({
-        proposals: partial.proposals ?? DEFAULT_LOOP_POLICY.proposals,
-        attended: partial.attended ?? DEFAULT_LOOP_POLICY.attended ?? true,
+    return Validator.assertLoopPolicyRequest({
+        ...(proposals === undefined ? {} : { proposals: proposals as NonNullable<LoopPolicyRequest["proposals"]> }),
+        ...(auto ? { attended: false } : {}),
     });
-};
-
-// An absent `attended` is the contract's own "yes" ({§loop-attendance}), so it is omitted rather
-// than written as undefined — the schema admits no undefined-valued key.
-export const composeLoopPolicy = (
-    base: LoopPolicy = DEFAULT_LOOP_POLICY,
-    proposals: LoopPolicy["proposals"] = base.proposals,
-    attended: LoopPolicy["attended"] = base.attended,
-): LoopPolicy => Validator.assertLoopPolicy({
-    proposals,
-    ...(attended === undefined ? {} : { attended }),
-});
-
-// {§loop-attendance} — `--auto` is an assertion that nobody is watching, not merely a proposal
-// disposition: it accepts proposals AND declares the run unattended, so the daemon refuses every
-// human-in-the-loop surface rather than offering one nobody can answer (plurnk/plurnk-service#765).
-export const resolveLoopPolicy = (raw: string | undefined, auto = false): LoopPolicy => {
-    const base = raw === undefined ? DEFAULT_LOOP_POLICY : parseLoopPolicy("--policy", raw);
-    return composeLoopPolicy(base, auto ? "accept" : base.proposals, auto ? false : base.attended);
 };
 
 export const formatCapabilityProjection = (projection: Readonly<Record<string, CapabilityPolicy>>): string => [
@@ -58,15 +37,11 @@ export const formatCapabilityProjection = (projection: Readonly<Record<string, C
     "",
 ].join("\n");
 
+// A `?` prompt states review for that loop; every other prefix states nothing new.
 export const promptPolicy = (
     prompt: string,
-    base: LoopPolicy = DEFAULT_LOOP_POLICY,
-): { policy: LoopPolicy; prompt: string } => {
-    const prefix = prompt[0];
-    return {
-        policy: prefix === "?"
-            ? composeLoopPolicy(base, "review")
-            : base,
-        prompt: prompt.replace(/^(\.\.\.|[?:]+)\s*/, ""),
-    };
-};
+    base: LoopPolicyRequest = {},
+): { policy: LoopPolicyRequest; prompt: string } => ({
+    policy: prompt[0] === "?" ? { ...base, proposals: "review" } : base,
+    prompt: prompt.replace(/^(\.\.\.|[?:]+)\s*/, ""),
+});

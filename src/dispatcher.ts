@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { buildJsonError } from "./cli.ts";
-import { loadFloor } from "./envdefaults.ts";
+import { loadFloor, retiredKey } from "./envdefaults.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
@@ -44,14 +44,14 @@ import { extractOpenPaths } from "./openpaths.ts";
 import {
     Validator,
     type CapabilityPolicy,
-    type LoopPolicy,
+    type LoopPolicyRequest,
     type ModelRoute,
 } from "@plurnk/plurnk-contracts";
 import {
     formatCapabilityProjection,
     parseCapabilityPolicy,
     promptPolicy,
-    resolveLoopPolicy as resolvePolicy,
+    statedLoopPolicy,
 } from "./policy.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
@@ -62,11 +62,11 @@ const readStdin = async (): Promise<string> => {
     return buf;
 };
 
-export const resolveLoopPolicy = (rawJson: string | undefined, auto = false): LoopPolicy => {
+export const resolveLoopPolicy = (proposals: string | undefined, auto = false): LoopPolicyRequest => {
     try {
-        return resolvePolicy(rawJson, auto);
-    } catch {
-        throw new ProblemError(clientFlagInvalid("--policy", rawJson ?? "", "must be a valid LoopPolicy JSON object"));
+        return statedLoopPolicy(proposals, auto);
+    } catch (cause) {
+        throw new ProblemError(clientFlagInvalid("--proposals", proposals ?? "", cause instanceof Error ? cause.message : String(cause)));
     }
 };
 
@@ -131,9 +131,9 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
-  PLURNK_AUTO                  when truthy, keep proposal authority inside the loop.
                         Client-side only — proposals still go through the wire.
-  PLURNK_CLIENT_LOOP_POLICY  default LoopPolicy JSON for each loop.
+  PLURNK_CLIENT_AUTO           when truthy, same as --auto: every loop is unattended.
+  PLURNK_CLIENT_PROPOSALS      same as --proposals. Unset = the daemon's panel decides.
   PLURNK_CLIENT_WORKSPACE_CAPABILITIES
                         CapabilityPolicy JSON applied when creating a workspace.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
@@ -175,12 +175,13 @@ options:
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_CLIENT_YOLO.
-      --auto              nobody is attending: proposal authority stays inside the
-                          loop, and the daemon offers no human-in-the-loop surface
-                          rather than one nothing could answer.
-      --policy <json>     LoopPolicy JSON applied to every loop. --auto selects
-                          proposal acceptance and an unattended run; '?' selects
-                          review for that prompt.
+      --auto              nobody is attending: the daemon offers no human-in-the-loop
+                          surface rather than one nothing could answer, and settles
+                          proposals inside the loop as its panel says.
+                          Overrides PLURNK_CLIENT_AUTO.
+      --proposals <p>     what every loop does with a proposal: review, accept or
+                          reject. Unstated, the daemon's panel decides; '?' states
+                          review for that prompt. Overrides PLURNK_CLIENT_PROPOSALS.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -287,6 +288,10 @@ export const loadEnvCascade = (
     ifExists(".env");
     ifExists(userConfig);
     loadFloor();
+    const retired = retiredKey();
+    if (retired !== null) {
+        dieWith(64, clientFlagInvalid(retired.name, process.env[retired.name] ?? "", `${retired.name} was retired; use ${retired.successor}`));
+    }
 };
 
 interface WorkspaceResult { id: number; name: string }
@@ -582,6 +587,8 @@ export const main = async (argv: string[]): Promise<void> => {
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
+            proposals: { type: "string" },
+            // Retired; parsed only to be refused with its successors named.
             policy: { type: "string" },
             capabilities: { type: "string" },
             "max-turns": { type: "string" },
@@ -680,14 +687,16 @@ export const main = async (argv: string[]): Promise<void> => {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
     }
 
-    // Loop policy is one contracts-owned surface. --auto is proposal-disposition
-    // sugar; prompt-prefix proposal disposition is composed immediately before each run.
-    let loopPolicy!: LoopPolicy;
+    // {§cli-loop-policy} — one flag per choice; a prompt prefix states review immediately before its run.
+    let loopPolicy!: LoopPolicyRequest;
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
-        const auto = values.auto === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_AUTO ?? "").toLowerCase());
-        loopPolicy = resolveLoopPolicy(values.policy ?? process.env.PLURNK_CLIENT_LOOP_POLICY, auto);
+        if (values.policy !== undefined) {
+            throw new ProblemError(clientFlagInvalid("--policy", values.policy, "--policy was retired; state --proposals <review|accept|reject> and --auto"));
+        }
+        const auto = values.auto === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_AUTO ?? "").toLowerCase());
+        loopPolicy = resolveLoopPolicy(values.proposals ?? process.env.PLURNK_CLIENT_PROPOSALS, auto);
         maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
         timeoutSec = parseIntFlag(values.timeout, "--timeout");
     } catch (cause) {

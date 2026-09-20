@@ -61,10 +61,13 @@ loop.
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
                           Overrides PLURNK_CLIENT_YOLO.
-      --auto              keep proposal authority inside the loop; proposals
-                          resolve automatically without a client review round-trip.
-      --policy <json>     LoopPolicy JSON applied to every loop. --auto selects
-                          proposal acceptance; '?' selects review for that prompt.
+      --auto              nobody is attending: the daemon offers no human-in-the-loop
+                          surface rather than one nothing could answer, and settles
+                          proposals inside the loop as its panel says.
+                          Overrides PLURNK_CLIENT_AUTO.
+      --proposals <p>     what every loop does with a proposal: review, accept or
+                          reject. Unstated, the daemon's panel decides; '?' states
+                          review for that prompt. Overrides PLURNK_CLIENT_PROPOSALS.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -164,9 +167,9 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         project_root (workspace for file ops). Default: cwd.
                         Empty string = headless (no project_root, file ops 400).
   PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
-  PLURNK_AUTO                  when truthy, keep proposal authority inside the loop.
                         Client-side only — proposals still go through the wire.
-  PLURNK_CLIENT_LOOP_POLICY  default LoopPolicy JSON for each loop.
+  PLURNK_CLIENT_AUTO           when truthy, same as --auto: every loop is unattended.
+  PLURNK_CLIENT_PROPOSALS      same as --proposals. Unset = the daemon's panel decides.
   PLURNK_CLIENT_WORKSPACE_CAPABILITIES
                         CapabilityPolicy JSON applied when creating a workspace.
   PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.

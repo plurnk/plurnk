@@ -18,7 +18,7 @@ const proposal = () => ({
     target: { scheme: "file", pathname: "/tmp/x" },
     body: "",
     attrs: {},
-    policy: { proposals: "review" as const },
+    policy: { proposals: "review" as const, attended: true },
 });
 
 // ─── request-user-input questions ({§question-tool}) ─────────────────

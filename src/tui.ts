@@ -39,7 +39,7 @@ import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNa
 import {
     Validator,
     type CapabilityPolicy,
-    type LoopPolicy,
+    type LoopPolicyRequest,
     type ModelRoute,
     type OperationResult,
 } from "@plurnk/plurnk-contracts";
@@ -567,7 +567,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // an explicit flag persistently selects the worker at startup.
     modelSelector?: string; modelExplicit?: boolean; reasoningPolicy?: string; reasoningExplicit?: boolean;
     yolo: boolean;
-    loopPolicy: LoopPolicy; maxTurns?: number;
+    loopPolicy: LoopPolicyRequest; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
@@ -1257,7 +1257,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reviewRequested = trimmed.startsWith("?");
                 // {§worker-model-selection} — no model selector rides the loop: the
                 // worker owns the model; /model and /child persisted it server-side.
-                const loopParams: { policy: LoopPolicy; maxTurns?: number; openPaths?: string[] } = { policy };
+                const loopParams: { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] } = { policy };
                 if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
                 const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
                 if (openPaths.length > 0) loopParams.openPaths = openPaths;

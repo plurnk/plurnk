@@ -7,7 +7,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
@@ -741,9 +741,21 @@ test("linePolicy: '...' strips without altering the base policy", () => {
     });
 });
 
-test("submitted multiline input becomes durable scrollback without the retired identity glyph", () => {
-    assert.equal(renderSubmittedInput("first\nsecond", true), "🔥 first\n  second");
-    assert.equal(renderSubmittedInput("first", false), "› first");
+test("{§cli-log-entry-line-format} the human's line becomes durable scrollback: bold, in its own colour, a blank row above and below", () => {
+    const printed: string[] = [];
+    const noColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    try {
+        assert.equal(renderSubmittedInput("first\nsecond", true), "🔥 first\n  second");
+        assert.equal(renderSubmittedInput("first", false), "› first");
+        printSubmittedInput((text) => printed.push(text), "first", false);
+        assert.deepEqual(printed, ["", "› first", ""], "NO_COLOR keeps the layout: the blank rows stay");
+        delete process.env.NO_COLOR;
+        assert.equal(renderSubmittedInput("first\nsecond", false), "\x1b[1m\x1b[94m› first\x1b[0m\n\x1b[1m\x1b[94m  second\x1b[0m");
+    } finally {
+        if (noColor === undefined) delete process.env.NO_COLOR;
+        else process.env.NO_COLOR = noColor;
+    }
 });
 
 // ─── completion (/model provider-scoped catalog completion, plurnk#22) ───

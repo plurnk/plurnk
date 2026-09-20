@@ -17,6 +17,7 @@ import TuiSurface from "./tui-surface.ts";
 import TerminalGuards from "./tui-guards.ts";
 import CancelGesture from "./tui-cancel.ts";
 import ModelText from "./model-text.ts";
+import { ansi as code } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
@@ -124,8 +125,21 @@ export const lookStatement = (line: string): string | null =>
 
 export const linePolicy = promptPolicy;
 
-export const renderSubmittedInput = (text: string, yolo: boolean): string =>
-    text.split("\n").map((line, index) => `${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}`).join("\n");
+// {§cli-log-entry-line-format} — the human's line in scrollback: bold, in a colour the palette gives
+// no other meaning, so the two voices read apart while the model's reply stays plain.
+export const renderSubmittedInput = (text: string, yolo: boolean): string => {
+    const [bold, blue, reset] = [code("1"), code("94"), code("0")];
+    return text.split("\n")
+        .map((line, index) => `${bold}${blue}${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}${reset}`)
+        .join("\n");
+};
+
+// A blank row above and below the line; an empty print is the surface's spacer.
+export const printSubmittedInput = (print: (text: string) => void, text: string, yolo: boolean): void => {
+    print("");
+    print(renderSubmittedInput(text, yolo));
+    print("");
+};
 
 export const resumeCommand = (workspace: string, worker: string): string => {
     const quote = (value: string): string => /^[A-Za-z0-9_.:/-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -1170,7 +1184,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const submit = async (line: string): Promise<void> => {
             if (line.trim().length > 0) {
                 if (!inFlight) surface.archiveActivity();
-                printAbove(renderSubmittedInput(line, opts.yolo));
+                printSubmittedInput(printAbove, line, opts.yolo);
             }
             const trimmed = line.trim();
             if (trimmed === "/cancel" && pendingQuestion !== null) {

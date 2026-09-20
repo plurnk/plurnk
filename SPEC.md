@@ -675,7 +675,7 @@ again when it eventually ends.
 
 Width-tolerant; no fixed column widths. Every row begins at column zero.
 
-**Exceptions:** delivered conversation replies render as blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback; its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
+**Exceptions:** delivered conversation replies render as blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback — bold, in its own colour, with a blank row above and below, so the human's turns read apart from the model's plain replies — and its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
@@ -763,10 +763,11 @@ TUI mode contract:
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal and renders as just the lead line.
 
-Delivered conversation responses are bold so messages stand out from
-operation records; failed, unrelated, and inherited messages remain plain. Inner ANSI
-resets re-arm bold across Markdown spans. `NO_COLOR` removes the emphasis while
-preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
+A delivered conversation response is plain: its Markdown carries the only emphasis
+(headings, `**strong**`, table heads), and the human's own line — bold, in its own
+colour, spaced (§5.1) — is what sets the two voices apart; failed, unrelated, and
+inherited messages are the same plain block. `NO_COLOR` removes colour and emphasis
+while preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messages use stdout (§2).
 

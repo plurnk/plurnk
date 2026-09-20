@@ -164,10 +164,10 @@ test("[§cli-log-entry-line-format] entryTarget preserves literal resource addre
     assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
 });
 
-// ─── Conversation bold (color-enabled import) ────────────────────────
-// The model's ANSWER (terminal SEND) renders BOLD; no background band
-// (background-color-erase isn't universal → jagged stripes). The main
-// import runs under NO_COLOR; bold needs a color-enabled instance. A
+// ─── Conversation reply emphasis (color-enabled import) ─────────────
+// A delivered reply is plain: its Markdown carries the only emphasis, and the
+// human's line is what sets the two voices apart ({§cli-broadcast-send-rendering}).
+// The main import runs under NO_COLOR; colour needs a color-enabled instance. A
 // query-suffixed dynamic import busts the ESM module cache (computed
 // specifier so tsc doesn't try to resolve the query form).
 const freshRender = async (tag: string): Promise<typeof import("./render-message.ts")> =>
@@ -175,46 +175,40 @@ const freshRender = async (tag: string): Promise<typeof import("./render-message
 
 const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
-test("bold: the model's terminal SEND (200) renders bold, with NO background band", async () => {
+test("{§cli-broadcast-send-rendering} the model's delivered reply is plain: no bold of its own, no background band", async () => {
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("bold=1");
+    const colored = await freshRender("plain=1");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry(sendEntry));
-    assert.match(out, /\x1b\[1m/);          // bold
+    assert.doesNotMatch(out, /\x1b\[1m/, "prose carries no bold; only Markdown emphasis may");
     assert.doesNotMatch(out, /48;[25]/);    // no background band of any kind
     assert.doesNotMatch(out, /\x1b\[K/);    // no edge-paint
+    // A styled lead line (the aside's dim span) does not spill into the body.
+    const aside = colored.renderLogEntry(entry({ ...sendEntry, tx: { aside: "ready", body: { raw: "then more", json: null } } }));
+    assert.match(aside, /\x1b\[0m\nthen more$/u);
 });
 
-test("bold: a failed SEND is not presented as a delivered answer", async () => {
+test("{§cli-broadcast-send-rendering} a failed SEND is not presented as a delivered answer", async () => {
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("bold=499");
+    const colored = await freshRender("plain=499");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({ ...sendEntry, op: "SEND", signal: null, status_rx: 499 }));
-    assert.doesNotMatch(out, /\x1b\[1m[^\x1b]*Paris/, "the header word is styled; the undelivered body is not the bold answer");
+    assert.match(out, /\x1b\[95m/u, "the Problem title stands in pink where the keyword was");
+    assert.doesNotMatch(out, /\x1b\[1m/u, "the undelivered body is as plain as a delivered one");
 });
 
-test("bold: inner RESET re-arms bold so header styling cannot cut the answer", async () => {
+test("{§cli-broadcast-send-rendering} a client-origin broadcast is the same plain block", async () => {
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("bold=rearm");
-    process.env.NO_COLOR = "1";
-    // The aside's dim span emits its own RESET; answer bold must resume
-    // immediately afterward instead of dying before the body.
-    const out = colored.renderLogEntry(entry({ ...sendEntry, tx: { aside: "ready", body: { raw: "strong then more", json: null } } }));
-    assert.match(out, /\x1b\[0m\x1b\[1m/);
-});
-
-test("bold: a client-origin broadcast is NOT bold (only the MODEL's answer)", async () => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("bold=client");
+    const colored = await freshRender("plain=client");
     process.env.NO_COLOR = "1";
     const out = colored.renderLogEntry(entry({
         op: "SEND", origin: "client", scheme: null, pathname: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     }));
-    assert.doesNotMatch(out, /\x1b\[1m[^\x1b]*hi/, "a client's message body is not presented as the model's answer");
+    assert.doesNotMatch(out, /\x1b\[1m/u);
 });
 
-test("bold: NO_COLOR build emits no bold (or background) codes", () => {
+test("{§cli-broadcast-send-rendering} NO_COLOR build emits no bold (or background) codes", () => {
     const out = renderLogEntry(entry({
         op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },

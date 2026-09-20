@@ -24,19 +24,6 @@ export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.col
     return looksLikeMarkdown(prose) ? renderMarkdownDocument(prose, viewport) : prose;
 };
 
-// Bold delivered model response messages; other operation records stay plain.
-// Re-arm BOLD after every inner
-// RESET (markdown spans, status color) so a styled span can't cut the bold
-// mid-line. No background band: background-color-erase (\x1b[K) isn't universal,
-// so a full-width green stripe rendered jagged on terminals without it — bold is
-// width-independent and works on every terminal.
-const emphasizeLines = (lines: string[], on: boolean): string => {
-    if (!on || BOLD.length === 0) return lines.join("\n");
-    return lines
-        .map((l) => `${BOLD}${l.split(RESET).join(RESET + BOLD)}${RESET}`)
-        .join("\n");
-};
-
 // The lead line of a delivered response block: no keyword. A blank line stands where the keyword
 // was; a failure puts its Problem title there in pink, a deferred or joined completion its
 // `detail`; the sanitized aside follows either.
@@ -51,15 +38,15 @@ const leadLine = (entry: LogEntryWire, detail: boolean): string => {
 };
 
 // Targetless SEND: the message block. The lead line, then the body with its Markdown at
-// column zero ({§cli-broadcast-send-rendering}); a delivered response is bold.
+// column zero ({§cli-broadcast-send-rendering}). The block is plain: its Markdown carries the
+// only emphasis, and the human's own line is what sets the two voices apart.
 const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string => {
     const lead = leadLine(entry, TurnDisposition.isOp(entry.op));
-    const lines = body.length === 0 ? [lead] : [lead, ...body.split("\n")];
-    return emphasizeLines(lines, isResponseMessage(entry));
+    return body.length === 0 ? lead : `${lead}\n${body}`;
 };
 
 // An arrival from another actor: SEND with the sender where a target would sit, then the
-// body block, never emphasized (emphasis marks this worker's own delivered responses).
+// same plain body block.
 const renderArrival = (entry: LogEntryWire, columns: number): string => {
     const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
     const lead = `${BOLD}${GREEN}SEND${RESET}${sender}`;

@@ -68,10 +68,24 @@ test("collectMcpConfiguration carries raw declarations and excludes service cont
 test("buildSettings carries the canonical workspace capability policy", async () => {
     assert.deepEqual(
         await buildSettings({}, {
-            PLURNK_CLIENT_WORKSPACE_CAPABILITIES: '{"deny":[{"runtime":"sh"}]}',
+            PLURNK_CLIENT_CAPABILITIES: '{"deny":[{"runtime":"sh"}]}',
         }),
         { capabilities: { deny: [{ runtime: "sh" }] } },
     );
+});
+
+test("[§cli-env-defaults] a workspace-open flag is its knob's spelling: the knob states it, and the flag wins", async () => {
+    const env = { PLURNK_CLIENT_FILES_ITEMS: "0", PLURNK_CLIENT_MAX_COMMANDS: "5", PLURNK_CLIENT_NO_GIT: "1" };
+    assert.deepEqual(await buildSettings({}, env), { filesItems: 0, maxCommands: 5, git: false });
+    assert.deepEqual(await buildSettings({ "files-items": "3", "max-commands": "2" }, env), { filesItems: 3, maxCommands: 2, git: false });
+    assert.deepEqual(await buildSettings({}, { PLURNK_CLIENT_NO_GIT: "0" }), {}, "an explicit off is off");
+    assert.deepEqual(await buildSettings({}, { PLURNK_CLIENT_FILES_ITEMS: "" }), {}, "an empty optional knob means nobody said");
+    await assert.rejects(buildSettings({}, { PLURNK_CLIENT_NO_GIT: "maybe" }), (error: unknown) => {
+        const problem = (error as { problem: { flag: string; detail: string } }).problem;
+        assert.equal(problem.flag, "PLURNK_CLIENT_NO_GIT");
+        assert.match(problem.detail, /must be one of 1, true, yes, on, 0, false, no, off/u);
+        return true;
+    });
 });
 
 test("buildSettings carries the selected frontend identity into workspace creation", async () => {

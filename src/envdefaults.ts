@@ -29,6 +29,8 @@ export const applyFloor = (defaults: Record<string, string>, env: Record<string,
 const RETIRED: Readonly<Record<string, string>> = Object.freeze({
     PLURNK_AUTO: "PLURNK_CLIENT_AUTO",
     PLURNK_CLIENT_LOOP_POLICY: "PLURNK_CLIENT_PROPOSALS and PLURNK_CLIENT_AUTO",
+    PLURNK_CLIENT_WORKSPACE_CAPABILITIES: "PLURNK_CLIENT_CAPABILITIES",
+    PLURNK_STATUS_STREAM: "PLURNK_CLIENT_STATUS_STREAM",
 });
 
 export const retiredKey = (env: Record<string, string | undefined> = process.env): { name: string; successor: string } | null => {

@@ -252,7 +252,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
+    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     // The user chose to review (yolo off) and this run has no channel to review through, so it
     // states reject rather than leave a proposal held for an answer nobody can give. A stated
@@ -288,11 +288,11 @@ export const runCliViaBridge = async (
         ),
         err: (s: string) => statusLine.durable(s),
         notice: (notice: Parameters<typeof report>[0]) => statusLine.durable(`${renderDiagnostic(notice)}\n`),
-        // (#465) accrue running loop cost; PLURNK_STATUS_STREAM=1 also prints a
+        // (#465) accrue running loop cost; --status-stream also prints a
         // greppable plain row per turn (stderr), the benchlet's live price feed.
         onTurnAccounting: (turn: TurnAccounting) => {
             statusLine.accrue(turn);
-            if (process.env.PLURNK_STATUS_STREAM === "1") {
+            if (opts.statusStream) {
                 accruedStream = accrueTurnAccounting(accruedStream, turn);
                 process.stderr.write(`status-stream: turn \u2193${turn.inputTokens ?? "?"} \u2191${turn.outputTokens ?? "?"} $${turn.costUsd ?? "?"} \u00b7 loop \u2193${accruedStream.inputTokens ?? "?"} \u2191${accruedStream.outputTokens ?? "?"} $${accruedStream.costUsd ?? "?"}\n`);
             }

@@ -42,33 +42,33 @@ Options:
 | `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, stderr silent, structured errors. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
 | `--worker <name>` | string | Resume (or create) the named worker within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
-| `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. |
-| `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. |
+| `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
+| `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_REASONING`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
 | `--auto` | flag | State that nobody is attending: every loop is unattended. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
 | `--proposals <p>` | string | State what every loop does with a proposal: `review`, `accept`, or `reject`. Overrides `PLURNK_CLIENT_PROPOSALS`. See §6.0. |
-| `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. |
-| `--max-turns <n>` | string | Per-loop turn cap; omission leaves the daemon's configured limit in effect. |
-| `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. |
-| `--host <host>` | string | Web mode only: local browser portal host. Defaults to `PLURNK_WEB_HOST`, then `127.0.0.1`. |
-| `--port <n>` | string | Web mode only: local browser portal port. Defaults to `PLURNK_WEB_PORT`, then `10660`. |
-| `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. |
-| `--max-commands <n>` | string | Tighten the workspace operation ceiling. Create-time only. See §1.4. |
-| `--no-git` | flag | Deny git membership and working-tree status for the workspace. Create-time only. See §1.4. |
+| `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
+| `--max-turns <n>` | string | Per-loop turn cap; omission leaves the daemon's configured limit in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
+| `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. Overrides `PLURNK_CLIENT_TIMEOUT`. |
+| `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
+| `--host <host>` | string | Web mode only: local browser portal host. An argument of `web`; its knob, `PLURNK_WEB_HOST`, is `@plurnk/plurnk-web`'s. |
+| `--port <n>` | string | Web mode only: local browser portal port. An argument of `web`; its knob, `PLURNK_WEB_PORT`, is `@plurnk/plurnk-web`'s. |
+| `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_FILES_ITEMS`. |
+| `--max-commands <n>` | string | Tighten the workspace operation ceiling. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_MAX_COMMANDS`. |
+| `--no-git` | flag | Deny git membership and working-tree status for the workspace. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_NO_GIT`. |
 
 Env:
 
-| Var | Default | Meaning |
+**A flag is a knob's spelling for one invocation.** Every option above that states a standing choice mirrors one `PLURNK_CLIENT_*` knob by name — `--max-turns` is `PLURNK_CLIENT_MAX_TURNS`, `--no-git` is `PLURNK_CLIENT_NO_GIT` — and the option wins when both are given. The packaged `.env.defaults` declares every knob with its meaning and its shipped value, and is their only home: this document names knobs and never restates them. An option that is not a standing choice (a subcommand's argument, `--env-file`, `--help`) has no knob, and `scripts/env-surface.test.mjs` holds the reason for each. A switch knob reads `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`; anything else is a usage error naming the knob.
+
+The client also reads keys it does not own:
+
+| Var | Owner | Meaning |
 |---|---|---|
-| `PLURNK_HOST` / `PLURNK_PORT` | `127.0.0.1` / `1066` | The daemon's in-process AG-UI+ module — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. `PLURNK_AGUI_URL` overrides the assembled URL; `PLURNK_AGUI_TOKEN` rides as the bearer when set. |
-| `PLURNK_CLIENT_WORKSPACE` | _unset_ | Workspace name to resume (or create). Equivalent to `--workspace`. |
-| `PLURNK_CLIENT_WORKER` | _unset_ | Worker name to resume/create. Equivalent to `--worker`. Requires `PLURNK_CLIENT_WORKSPACE` outside web mode. |
-| `PLURNK_CLIENT_PROJECT_ROOT` | _unset → cwd_ | Absolute path used as workspace `projectRoot` on creation. Equivalent to `--project-root`. See §1.3. |
-| `PLURNK_CLIENT_YOLO` | `1` | When truthy (`1`/`true`/`yes`/`on`), auto-accept every client-owned proposal locally; `0` reviews each one. See §6. Equivalent to `--yolo`. |
-| `PLURNK_CLIENT_AUTO` | `0` | When truthy, every loop is unattended. Equivalent to `--auto`. See §6.0. |
-| `PLURNK_CLIENT_PROPOSALS` | _unset_ | What every loop does with a proposal. Equivalent to `--proposals`; unset leaves it to the daemon. See §6.0. |
-| `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` | _unset_ | Create-time workspace CapabilityPolicy JSON. `--capabilities` overrides it. |
+| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-service` | The daemon's address — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. Unset, the client dials the service's shipped address, which its code holds: one owner per key forbids the client's panel to declare the daemon's keys, and a client may be installed without the service's panel. The gate counts that exception and checks it has not drifted (plurnk/plurnk-service#771). |
+| `PLURNK_AGUI_URL` / `PLURNK_AGUI_TOKEN` | `@plurnk/plurnk-agui` | The whole URL instead, when the daemon is reached through a remote portal, and its bearer. |
+| `PLURNK_MCP_*` | `@plurnk/plurnk-mcp` | Raw server declarations forwarded with MCP list and enable. |
 
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → project `./.env` → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
@@ -188,7 +188,7 @@ These flags shape what the workspace sees; they map to workspace-open settings a
 **Workspace-open settings** — sent as `settings` on `workspace.create`:
 
 - `--files-items <n>` → `filesItems`. Controls the turn-0 tracked-file preview: `-1` full / `0` off / `N` first-N items. Must be `-1`, `0`, or a positive integer (else exit 64). Replaces the operator's `PLURNK_SERVICE_FILES_ITEMS` for the workspace.
-- `--capabilities <json>` / `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` → `capabilities`. The canonical CapabilityPolicy is a purely subtractive workspace ceiling. Executor plugin configuration remains service-owned and never becomes workspace settings.
+- `--capabilities <json>` / `PLURNK_CLIENT_CAPABILITIES` → `capabilities`. The canonical CapabilityPolicy is a purely subtractive workspace ceiling. Executor plugin configuration remains service-owned and never becomes workspace settings.
 - `--max-commands <n>` → `maxCommands`. Tightens the daemon ceiling and must be a positive integer.
 - `--no-git` → `git: false`. It never re-enables git past a service-owned lockout.
 

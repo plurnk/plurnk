@@ -295,7 +295,12 @@ test("[§cli-loop-policy] a refused statement and a retired spelling each name t
     assert.equal(flag.code, 64);
     assert.match(flag.stderr + flag.stdout, /--policy was retired; state --proposals <review\|accept\|reject> and --auto/u);
 
-    for (const [name, successor] of [["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"], ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_PROPOSALS and PLURNK_CLIENT_AUTO"]] as const) {
+    for (const [name, successor] of [
+        ["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"],
+        ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_PROPOSALS and PLURNK_CLIENT_AUTO"],
+        ["PLURNK_CLIENT_WORKSPACE_CAPABILITIES", "PLURNK_CLIENT_CAPABILITIES"],
+        ["PLURNK_STATUS_STREAM", "PLURNK_CLIENT_STATUS_STREAM"],
+    ] as const) {
         const retired = await runClient(daemon.url, [...base, "Do the thing."], { [name]: "1" });
         assert.equal(retired.code, 64, name);
         assert.match(retired.stderr + retired.stdout, new RegExp(`${name} was retired; use ${successor}`, "u"));

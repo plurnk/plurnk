@@ -317,6 +317,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
             json: true,
+            statusStream: false,
             projectRoot: "/repo",
             settings: { filesItems: 0 },
         });
@@ -364,6 +365,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
             policy: { proposals: "review" },
             yolo: true,
             json: true,
+            statusStream: false,
             projectRoot: null,
         });
         const doc = JSON.parse(outs.map(String).find((value) => value.startsWith('{"schemaVersion"')) ?? "{}") as {
@@ -405,7 +407,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -429,7 +431,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, statusStream: false, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

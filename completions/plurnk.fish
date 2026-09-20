@@ -27,6 +27,7 @@ complete -c plurnk -l max-turns
 complete -c plurnk -l timeout
 complete -c plurnk -l files-items
 complete -c plurnk -l max-commands
+complete -c plurnk -l status-stream
 complete -c plurnk -l no-git
 complete -c plurnk -l loop
 complete -c plurnk -l turn

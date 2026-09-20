@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { buildJsonError } from "./cli.ts";
 import { loadFloor, retiredKey } from "./envdefaults.ts";
+import Knobs, { KnobError } from "./knobs.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
@@ -60,6 +61,22 @@ const readStdin = async (): Promise<string> => {
     let buf = "";
     for await (const chunk of process.stdin) buf += chunk;
     return buf;
+};
+
+// An optional knob its user set: unset or empty means nobody said.
+const stated = (name: string, env: NodeJS.ProcessEnv = process.env): string | undefined => {
+    const raw = env[name];
+    return raw === undefined || raw.length === 0 ? undefined : raw;
+};
+
+// A switch resolved from its knob; a value that is neither on nor off is a flag Problem by name.
+const switchOf = (name: string, declared: "live" | "optional", env: NodeJS.ProcessEnv = process.env): boolean => {
+    try {
+        return Knobs.flag(name, declared, env);
+    } catch (cause) {
+        if (cause instanceof KnobError) throw new ProblemError(clientFlagInvalid(cause.knob, cause.value, cause.message));
+        throw cause;
+    }
 };
 
 export const resolveLoopPolicy = (proposals: string | undefined, auto = false): LoopPolicyRequest => {
@@ -123,28 +140,17 @@ log read / read <coord>) inspect daemon state without running a loop.
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
      < ./.env < repeated --env-file flags (last wins) < shell):
                         Works with no config at all.
-  PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
-                        mints a fresh, uniquely-named workspace per invocation.
-  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace;
-                        web mode resolves an unconstrained workspace first
-  PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
-                        project_root (workspace for file ops). Default: cwd.
-                        Empty string = headless (no project_root, file ops 400).
-  PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
-                        Client-side only — proposals still go through the wire.
-  PLURNK_CLIENT_AUTO           when truthy, same as --auto: every loop is unattended.
-  PLURNK_CLIENT_PROPOSALS      same as --proposals. Unset = the daemon's panel decides.
-  PLURNK_CLIENT_WORKSPACE_CAPABILITIES
-                        CapabilityPolicy JSON applied when creating a workspace.
-  PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
-  PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
-                        set, a one-shot (text AND --json) runs THROUGH the bridge
-                        instead of raw daemon WS (the exclusive-portal path).
-                        PLURNK_AGUI_TOKEN is the bearer if the bridge requires one.
-                        Scripts + subcommands stay on the daemon.
+  PLURNK_CLIENT_*       every option below is one knob's spelling for one invocation:
+                        --max-turns is PLURNK_CLIENT_MAX_TURNS, --no-git is
+                        PLURNK_CLIENT_NO_GIT. The packaged .env.defaults declares and
+                        documents them all; the option wins when both are given.
+  PLURNK_HOST, PLURNK_PORT
+                        the daemon's address, under the daemon's own key names.
+  PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
+                        remote AG-UI portal. PLURNK_AGUI_TOKEN is its bearer.
   PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
-                        Service controls do not. The daemon owns parsing,
-                        activation, persistence, and credential expansion.
+                        The daemon owns parsing, activation, persistence, and
+                        credential expansion.
 
 options:
   -h, --help              print this message and exit
@@ -193,6 +199,7 @@ options:
                           Create-time workspace setting.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
+      --status-stream     also print one greppable accounting row per turn on stderr.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --loop <id>         (log read) filter to a single loop id
@@ -204,8 +211,8 @@ options:
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
-      --host <host>       (web) local browser portal host (default: 127.0.0.1)
-      --port <n>          (web) local browser portal port (default: 10660)
+      --host <host>       (web) local browser portal host (otherwise PLURNK_WEB_HOST)
+      --port <n>          (web) local browser portal port (otherwise PLURNK_WEB_PORT)
 
 subcommands:
   models [search...]      list the bounded daemon model catalog (models.list)
@@ -318,7 +325,7 @@ export const buildSettings = async (
     client?: string,
 ): Promise<Settings> => {
     const settings: Settings = { ...(client === undefined ? {} : { client }) };
-    const rawCapabilities = values.capabilities ?? env.PLURNK_CLIENT_WORKSPACE_CAPABILITIES;
+    const rawCapabilities = values.capabilities ?? env.PLURNK_CLIENT_CAPABILITIES;
     if (rawCapabilities !== undefined) {
         try {
             settings.capabilities = parseCapabilityPolicy("--capabilities", rawCapabilities);
@@ -330,7 +337,7 @@ export const buildSettings = async (
             ));
         }
     }
-    const mc = values["max-commands"];
+    const mc = values["max-commands"] ?? stated("PLURNK_CLIENT_MAX_COMMANDS", env);
     if (mc !== undefined) {
         const n = Number(mc);
         if (!Number.isInteger(n) || n < 1) {
@@ -338,8 +345,8 @@ export const buildSettings = async (
         }
         settings.maxCommands = n;
     }
-    if (values["no-git"] === true) settings.git = false;
-    const fi = values["files-items"];
+    if (values["no-git"] === true || switchOf("PLURNK_CLIENT_NO_GIT", "optional", env)) settings.git = false;
+    const fi = values["files-items"] ?? stated("PLURNK_CLIENT_FILES_ITEMS", env);
     if (fi !== undefined) {
         const n = Number(fi);
         if (!Number.isInteger(n) || n < -1) {
@@ -598,6 +605,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
+            "status-stream": { type: "boolean" },
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -646,7 +654,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
-    const json = values.json === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_JSON ?? "").toLowerCase());
+    const json = values.json === true || switchOf("PLURNK_CLIENT_JSON", "optional");
     if (!web && (values.host !== undefined || values.port !== undefined)) {
         const flag = values.host !== undefined ? "--host" : "--port";
         const problem = clientFlagMissingDependency(flag, "the web subcommand");
@@ -680,9 +688,9 @@ export const main = async (argv: string[]): Promise<void> => {
     // Client flags select client behavior. Provider defaults remain daemon-owned.
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
-    const modelSelector = values.model;
-    const reasoningPolicy = values.reasoning;
-    const yolo = values.yolo === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_YOLO ?? "").toLowerCase());
+    const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
+    const reasoningPolicy = values.reasoning ?? stated("PLURNK_CLIENT_REASONING");
+    const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
     if (!web && workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
     }
@@ -695,10 +703,10 @@ export const main = async (argv: string[]): Promise<void> => {
         if (values.policy !== undefined) {
             throw new ProblemError(clientFlagInvalid("--policy", values.policy, "--policy was retired; state --proposals <review|accept|reject> and --auto"));
         }
-        const auto = values.auto === true || ["1", "true", "yes", "on"].includes((process.env.PLURNK_CLIENT_AUTO ?? "").toLowerCase());
+        const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
         loopPolicy = resolveLoopPolicy(values.proposals ?? process.env.PLURNK_CLIENT_PROPOSALS, auto);
-        maxTurns = parseIntFlag(values["max-turns"], "--max-turns");
-        timeoutSec = parseIntFlag(values.timeout, "--timeout");
+        maxTurns = parseIntFlag(values["max-turns"] ?? stated("PLURNK_CLIENT_MAX_TURNS"), "--max-turns");
+        timeoutSec = parseIntFlag(values.timeout ?? stated("PLURNK_CLIENT_TIMEOUT"), "--timeout");
     } catch (cause) {
         if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
         dieWith(64, clientRuntimeError(cause));
@@ -723,8 +731,9 @@ export const main = async (argv: string[]): Promise<void> => {
     // the daemon's in-process module. PLURNK_AGUI_URL remains an explicit override
     // (a remote portal); otherwise the canonical legend is the default — ordinary AG-UI+
     // below is legacy awaiting deletion.
-    const aguiOverride = process.env.PLURNK_AGUI_URL ?? "";
-    const bridgeUrl = aguiOverride.length > 0 ? aguiOverride : `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "1066"}`;
+    // The daemon's address is the service's to default and the client may be installed without it:
+    // the one place two laws collide, held open and counted by scripts/env-surface.test.mjs.
+    const bridgeUrl = stated("PLURNK_AGUI_URL") ?? `http://${process.env.PLURNK_HOST ?? "127.0.0.1"}:${process.env.PLURNK_PORT ?? "1066"}`;
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
@@ -900,6 +909,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
                 yolo: yolo && !reviewRequested,
                 json,
+                statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
                 projectRoot,
                 settings,
             });

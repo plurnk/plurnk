@@ -79,6 +79,7 @@ loop.
                           Create-time workspace setting.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
+      --status-stream     also print one greppable accounting row per turn on stderr.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --loop <id>         (log read) filter to a single loop id
@@ -90,8 +91,8 @@ loop.
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
-      --host <host>       (web) local browser portal host (default: 127.0.0.1)
-      --port <n>          (web) local browser portal port (default: 10660)
+      --host <host>       (web) local browser portal host (otherwise PLURNK_WEB_HOST)
+      --port <n>          (web) local browser portal port (otherwise PLURNK_WEB_PORT)
 .fi
 .SH SUBCOMMANDS
 .nf
@@ -159,28 +160,17 @@ The no-argument interactive terminal accepts these slash commands:
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
      < ./.env < repeated --env-file flags (last wins) < shell):
                         Works with no config at all.
-  PLURNK_CLIENT_WORKSPACE        resume/create a workspace by name. UNSET = the daemon
-                        mints a fresh, uniquely-named workspace per invocation.
-  PLURNK_CLIENT_WORKER            resume (or create) a named worker within that workspace;
-                        web mode resolves an unconstrained workspace first
-  PLURNK_CLIENT_PROJECT_ROOT   absolute path passed to workspace.create as the workspace's
-                        project_root (workspace for file ops). Default: cwd.
-                        Empty string = headless (no project_root, file ops 400).
-  PLURNK_CLIENT_YOLO           when truthy, auto-accept every proposal without prompting.
-                        Client-side only — proposals still go through the wire.
-  PLURNK_CLIENT_AUTO           when truthy, same as --auto: every loop is unattended.
-  PLURNK_CLIENT_PROPOSALS      same as --proposals. Unset = the daemon's panel decides.
-  PLURNK_CLIENT_WORKSPACE_CAPABILITIES
-                        CapabilityPolicy JSON applied when creating a workspace.
-  PLURNK_CLIENT_JSON           when truthy, same as --json for one-shot runs.
-  PLURNK_AGUI_URL       plurnk-agui bridge URL (e.g. http://127.0.0.1:8787). When
-                        set, a one-shot (text AND --json) runs THROUGH the bridge
-                        instead of raw daemon WS (the exclusive-portal path).
-                        PLURNK_AGUI_TOKEN is the bearer if the bridge requires one.
-                        Scripts + subcommands stay on the daemon.
+  PLURNK_CLIENT_*       every option below is one knob's spelling for one invocation:
+                        --max-turns is PLURNK_CLIENT_MAX_TURNS, --no-git is
+                        PLURNK_CLIENT_NO_GIT. The packaged .env.defaults declares and
+                        documents them all; the option wins when both are given.
+  PLURNK_HOST, PLURNK_PORT
+                        the daemon's address, under the daemon's own key names.
+  PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
+                        remote AG-UI portal. PLURNK_AGUI_TOKEN is its bearer.
   PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
-                        Service controls do not. The daemon owns parsing,
-                        activation, persistence, and credential expansion.
+                        The daemon owns parsing, activation, persistence, and
+                        credential expansion.
 .fi
 .SH EXIT STATUS
 .TP

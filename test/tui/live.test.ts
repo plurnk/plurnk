@@ -39,12 +39,18 @@ describe("TUI live (model-gated)", () => {
         const tui = spawnTui(daemon.url);
         try {
             await tui.waitFor(/plurnk.*\/help/);
+            // {§exec-host-proposes} — an execution proposes, and this witness is the only reviewer in
+            // the room: yolo is its consent, so the model's steps run and the loop stays live.
+            tui.write("/yolo\r");
+            await tui.waitFor(/yolo: ON/);
             // Anything multi-step keeps the loop alive beyond its first model row.
             // This viewer's own arrival echoes are suppressed because the submitted editor value
             // is already in the transcript; the status row carries lifecycle.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
             await tui.waitFor(/⌛︎/);
-            await tui.waitFor(/^(?:READ|FIND|EDIT) /m, 540_000);   // TASK and SEND blocks carry no keyword (§5.1.2, §5.4)
+            // The model's first execution row, named by its runtime (§5.1): the renderer paints a row
+            // after an erase-line, never after a bare newline, and turn 0 has no execution rows.
+            await tui.waitFor(/\x1b\[2K(?:python3?|sh)(?:\s|\x1b|$)/, 540_000);
             tui.write("btw keep the summary short\r");
             await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop.run)
         } finally { tui.kill(); }

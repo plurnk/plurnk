@@ -110,6 +110,13 @@ export const altShortcut = (forward: string): string | null => {
     return m ? (ALT_SHORTCUTS[m[1]] ?? null) : null;
 };
 
+// Shift-Tab (`ESC [ Z`, the xterm back-tab) toggles yolo. It is a modifier on a key nothing else
+// in the prompt uses, so it reads as a mode switch rather than a command, and it needs no empty
+// line: an operator mid-sentence can change their mind about the next proposal. `altShortcut`
+// cannot carry it — that grammar is deliberately `ESC <letter>` and excludes `[` sequences.
+export const backTabShortcut = (forward: string): string | null =>
+    forward === "\x1b[Z" ? "/yolo" : null;
+
 // Recognize the client-only LOOK surface so it can be routed to `op.look`.
 // The AG-UI observation action owns validation and the single LOOK→READ rewrite.
 export const lookStatement = (line: string): string | null =>
@@ -285,8 +292,9 @@ export const buildHeader = (opts: {
     const reasoning = opts.reasoningPolicy === undefined || opts.reasoningPolicy === null
         ? ""
         : ` · reasoning: ${opts.reasoningPolicy}`;
-    // The header names the non-default: yolo is on unless the operator turned it off.
-    const yolo = opts.yolo === false ? " · yolo: off" : "";
+    // The header names the non-default. Review is what ships, so the header is silent about it and
+    // calls out the session that turned it off — the mode where nobody sees the question.
+    const yolo = opts.yolo === true ? " · yolo: on" : "";
     return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${reasoning}${yolo} · /help`;
 };
 
@@ -886,7 +894,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }
         const dir = cycleKey(text);
         if (dir !== null) { cycleLook(dir); return { consume: true }; }
-        const verb = altShortcut(text);
+        const verb = altShortcut(text) ?? backTabShortcut(text);
         if (verb !== null) { dispatchShortcut(verb); return { consume: true }; }
         return undefined;
     });

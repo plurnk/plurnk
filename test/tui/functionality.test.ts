@@ -58,7 +58,9 @@ describe("TUI Functionality dogfood", () => {
     test("[§cli-universal-agent-skills] [§cli-outbound-agents] /skills and /a2a share the lifecycle grammar against the built daemon", { timeout: 90_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with Functionality fixtures is not reachable"); return; }
         const project = await mkdtemp(join(scratch, "project-"));
-        const tui = spawnTui(daemon.url, [], {}, project);
+        // This drives a model that EXECUTES; the subject is the lifecycle grammar, not consent.
+        // Review ships, so a session that means to run without it says so.
+        const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "1" }, project);
         try {
             await tui.waitFor(/plurnk.*\/help/);
 

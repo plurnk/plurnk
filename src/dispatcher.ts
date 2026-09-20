@@ -176,6 +176,7 @@ options:
                           Default: cwd. Empty string = headless. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
+                          Review ships; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
       --auto              nobody is attending: the daemon offers no human-in-the-loop
                           surface rather than one nothing could answer, and settles

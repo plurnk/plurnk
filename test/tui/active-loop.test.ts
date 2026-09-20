@@ -49,9 +49,9 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     await tui.waitFor(/controlled inference stream is open/);
 
     tui.write("/yolo\r");
-    await tui.waitFor(/yolo: OFF/);
-    tui.write("/yolo\r");
     await tui.waitFor(/yolo: ON/);
+    tui.write("/yolo\r");
+    await tui.waitFor(/yolo: OFF/);
     tui.write("/env add CARGO_TARGET_DIR /tmp/active-controls\r");
     await tui.waitFor(/added: CARGO_TARGET_DIR/);
     tui.write("/env\r");
@@ -69,6 +69,10 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     await tui.waitFor(/(?:conversation.*attached[\s\S]*){2}/);
 
     tui.write("! printf '\\141\\143\\164\\151\\157\\156\\055\\157\\153'\r");
+    // Review ships, so even the operator's own `!` command is shown before it runs. Answering it is
+    // part of "the command remains available": the surface has to work, not just be bypassed.
+    await tui.waitFor(/── proposal/);
+    tui.write("a");
     await tui.waitFor(/action-ok/);
     tui.write("/look worker:///missing.md\r");
     await tui.waitFor(/LOOK \(worker:\/\/\/missing\.md\) —/);

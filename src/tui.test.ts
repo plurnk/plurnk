@@ -7,7 +7,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import type { Transport } from "./transport.ts";
@@ -138,6 +138,13 @@ test("altShortcut: an unmapped Alt-letter → null (falls through to the editor)
     assert.equal(altShortcut("\x1bz"), null);
 });
 
+test("backTabShortcut: Shift-Tab toggles yolo; Tab and the arrow keys do not", () => {
+    assert.equal(backTabShortcut("\x1b[Z"), "/yolo");
+    assert.equal(backTabShortcut("\t"), null, "plain Tab stays the editor's");
+    assert.equal(backTabShortcut("\x1b[A"), null, "up-arrow is not a back-tab");
+    assert.equal(altShortcut("\x1b[Z"), null, "the Alt grammar never claims a CSI sequence");
+});
+
 test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", () => {
     assert.equal(altShortcut("m"), null);       // plain typing
     assert.equal(altShortcut("\x1b[A"), null);  // up-arrow (ESC [ A)
@@ -226,9 +233,9 @@ test("buildHeader: no client model and no resolvable active → honest fallback"
     assert.match(h, /model: \(daemon default\)/);
 });
 
-test("buildHeader: yolo off → shows 'yolo: off'; on/unset → no yolo segment (on is the default)", () => {
-    assert.match(buildHeader({ workspaceName: "sess", yolo: false }), /· yolo: off ·/);
-    assert.doesNotMatch(buildHeader({ workspaceName: "sess", yolo: true }), /yolo/);
+test("buildHeader: yolo on → shows 'yolo: on'; off/unset → no yolo segment (review is the default)", () => {
+    assert.match(buildHeader({ workspaceName: "sess", yolo: true }), /· yolo: on ·/);
+    assert.doesNotMatch(buildHeader({ workspaceName: "sess", yolo: false }), /yolo/);
     assert.doesNotMatch(buildHeader({ workspaceName: "sess" }), /yolo/);
 });
 

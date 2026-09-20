@@ -62,7 +62,9 @@ after(async () => {
 describe("TUI workspace MCP dogfood", () => {
     test("[§cli-workspace-mcp-controls] current and negotiated standard peers share the client lifecycle", { timeout: 60_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with MCP fixtures is not reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        // This drives a model that EXECUTES; the subject is the lifecycle grammar, not consent.
+        // Review ships, so a session that means to run without it says so.
+        const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "1" });
         try {
             await tui.waitFor(/plurnk.*\/help/);
 

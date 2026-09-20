@@ -76,9 +76,11 @@ export interface CliRunSinks {
 // on the tool-call; the decision returns as the next run's resume payload. A
 // A projected proposal tool-call is client-owned; loop-owned dispositions settle
 // before the AG-UI boundary.
-const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string }> => {
-    if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept" };
-    if (io.noReviewChannel) return { logEntryId: p.logEntryId, decision: "reject" };
+const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }> => {
+    if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" };
+    // Name the reason. Review ships, so this is the ordinary shape of a piped run, and a bare
+    // "rejected" would read as a judgement on the proposal instead of the absence of a reviewer.
+    if (io.noReviewChannel) return { logEntryId: p.logEntryId, decision: "reject", outcome: "client_no_review_channel" };
     const resolution = await io.review(p);
     return { logEntryId: p.logEntryId, decision: resolution.decision, ...(resolution.body !== undefined ? { body: resolution.body } : {}) };
 };
@@ -255,10 +257,12 @@ export const runCliViaBridge = async (
     opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     // The user chose to review (yolo off) and this run has no channel to review through, so it
-    // states reject rather than leave a proposal held for an answer nobody can give. A stated
-    // accept or reject is the user's own and stands.
+    // states reject rather than leave a proposal held for an answer nobody can give. Every stated
+    // disposition is the user's own and stands — INCLUDING review: someone who typed
+    // `--proposals review` into a pipe has asked for something this run cannot do, and the daemon
+    // says so ({§cli-loop-policy}). Only the disposition nobody stated is ours to settle.
     const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
-    const heldForReview = opts.policy.proposals === undefined || opts.policy.proposals === "review";
+    const heldForReview = opts.policy.proposals === undefined;
     const policy: LoopPolicyRequest = noReviewChannel && heldForReview ? { ...opts.policy, proposals: "reject" } : opts.policy;
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
     // worker owns the model ({§worker-model-selection}), and an explicit --model

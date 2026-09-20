@@ -3,7 +3,7 @@
 // and a flag is a knob's spelling for one invocation. This gate reads what Git tracks.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -11,19 +11,13 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OWNED = /^PLURNK_CLIENT_[A-Z0-9_]+$/u;
 
-// Keys the client reads and does not own.
+// Keys the client reads and does not own. The daemon's address is shared with it, so the package
+// both depend on declares it and the client folds that panel beneath its own: a shared key has a
+// shared owner, and nobody holds anybody else's default.
+const SHARED = ["PLURNK_HOST", "PLURNK_PORT", "PLURNK_AGUI_URL"];
 const FOREIGN = new Map([
-    ["PLURNK_HOST", "@plurnk/plurnk-service — the daemon's address"],
-    ["PLURNK_PORT", "@plurnk/plurnk-service — the daemon's address"],
-    ["PLURNK_AGUI_URL", "@plurnk/plurnk-agui — the whole portal URL, when the daemon is reached through one"],
+    ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     ["PLURNK_AGUI_TOKEN", "@plurnk/plurnk-agui — the portal's bearer"],
-]);
-// Where two laws collide. One owner per key says the client may not declare the daemon's address;
-// no value beside a read says its code may not hold one; and a client can be installed without
-// the service, so it has no panel to take them from. Held open, named and counted, until the
-// ruling on where a client's dial address lives (plurnk/plurnk-service#771). It may only shrink.
-const UNRESOLVED_FALLBACKS = new Map([
-    ["src/dispatcher.ts", { count: 2, shipped: { PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "1066" } }],
 ]);
 
 // `PLURNK_*` strings that are not knobs.
@@ -91,8 +85,7 @@ test("[§cli-env-defaults] a knob read never carries a value of its own", () => 
         const count = [...code.matchAll(/(?:\.PLURNK_[A-Z0-9_]+|\[\s*["'`]PLURNK_[A-Z0-9_]+["'`]\s*\])\s*(?:\?\?|\|\|)\s*(?:["'`][^"'`]|-?\d|true\b|false\b)/gu)].length;
         if (count > 0) found.set(name, count);
     }
-    const allowed = new Map([...UNRESOLVED_FALLBACKS].map(([name, { count }]) => [name, count]));
-    assert.deepEqual([...found].toSorted(), [...allowed].toSorted(), "a default beside a read is a second home for a choice; the held-open exception neither grows nor lingers");
+    assert.deepEqual([...found], [], "a default beside a read is a second home for a choice");
 });
 
 test("[§cli-env-defaults] a flag is a knob's spelling: every option mirrors one, or says why it is an argument", () => {
@@ -113,11 +106,11 @@ test("[§cli-env-defaults] a flag is a knob's spelling: every option mirrors one
     assert.deepEqual(both, [], `an option cannot be both a knob's flag and an argument: ${both.join(", ")}`);
 });
 
-test("[§cli-env-defaults] while the daemon's address is held in code, it has not drifted from the daemon's panel", { skip: !existsSync(join(ROOT, "../plurnk-service/plurnk-core/.env.defaults")) }, () => {
-    const service = readFileSync(join(ROOT, "../plurnk-service/plurnk-core/.env.defaults"), "utf8");
-    for (const { shipped } of UNRESOLVED_FALLBACKS.values()) {
-        for (const [key, value] of Object.entries(shipped)) {
-            assert.equal(new RegExp(`^${key}=(.*)$`, "mu").exec(service)?.[1], value, `${key} drifted from the service's own panel`);
-        }
-    }
+test("[§cli-env-defaults] a key shared with the daemon is declared by the package both depend on, and the floor folds it", async () => {
+    const { SHARED_DEFAULTS_PATH, parseDefaults } = await import("../src/envdefaults.ts");
+    const shared = readFileSync(SHARED_DEFAULTS_PATH, "utf8");
+    const declaredThere = new Set([...shared.matchAll(/^(?:# )?([A-Z][A-Z0-9_]*)=/gmu)].map((match) => match[1]));
+    assert.deepEqual(SHARED.filter((key) => !declaredThere.has(key)), [], `not declared by @plurnk/plurnk-contracts: ${SHARED_DEFAULTS_PATH}`);
+    const floor = parseDefaults(shared);
+    for (const key of ["PLURNK_HOST", "PLURNK_PORT"]) assert.ok(floor[key]?.length > 0, `${key} is live on the shared panel, so a client with nothing set still knows where to dial`);
 });

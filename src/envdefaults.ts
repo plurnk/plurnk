@@ -8,6 +8,10 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULTS_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../.env.defaults");
+// The keys the daemon and every client share — the daemon's address — belong to the package both
+// sides depend on, which declares them once. The client folds that panel beneath its own, so it
+// holds no default of the daemon's and its own panel stays its own prefix.
+export const SHARED_DEFAULTS_PATH = resolve(dirname(fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/package.json"))), ".env.defaults");
 
 export const parseDefaults = (text: string): Record<string, string> => {
     const out: Record<string, string> = {};
@@ -42,4 +46,5 @@ export const retiredKey = (env: Record<string, string | undefined> = process.env
 // floor file is a broken install) and floor the process env.
 export const loadFloor = (): void => {
     applyFloor(parseDefaults(readFileSync(DEFAULTS_PATH, "utf8")));
+    applyFloor(parseDefaults(readFileSync(SHARED_DEFAULTS_PATH, "utf8")));
 };

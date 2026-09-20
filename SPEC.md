@@ -66,8 +66,9 @@ The client also reads keys it does not own:
 
 | Var | Owner | Meaning |
 |---|---|---|
-| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-service` | The daemon's address — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. Unset, the client dials the service's shipped address, which its code holds: one owner per key forbids the client's panel to declare the daemon's keys, and a client may be installed without the service's panel. The gate counts that exception and checks it has not drifted (plurnk/plurnk-service#771). |
-| `PLURNK_AGUI_URL` / `PLURNK_AGUI_TOKEN` | `@plurnk/plurnk-agui` | The whole URL instead, when the daemon is reached through a remote portal, and its bearer. |
+| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's address — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
+| `PLURNK_AGUI_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
+| `PLURNK_AGUI_TOKEN` | `@plurnk/plurnk-agui` | The portal's bearer, presented when set. |
 | `PLURNK_MCP_*` | `@plurnk/plurnk-mcp` | Raw server declarations forwarded with MCP list and enable. |
 
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → project `./.env` → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.

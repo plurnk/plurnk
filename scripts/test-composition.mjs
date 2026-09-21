@@ -118,10 +118,10 @@ try {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
             const response = scriptedResponses.shift()
-                ?? `\`\`\`SEND\ncomposition ok: ${request.model}
-\`\`\`
-\`\`\`DONE
-\`\`\``;
+                // An operation opens with four backticks ({§four-backtick-operations}, #761), and
+                // a SEND concludes the loop on its own — DONE was retired.
+                ?? `\`\`\`\`SEND\ncomposition ok: ${request.model}
+\`\`\`\``;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
                 "cache-control": "no-cache",
@@ -250,10 +250,8 @@ try {
             + "````WAIT\nWaiting for guesser1.\n````",
         "````EDIT (child.txt)\ncreated by packed child\n````\n"
             + "````NOTE\nConfirming the write.\n````",
-        "````SEND\nChild work complete.\n````\n"
-            + "```DONE\n```",
-        "````SEND\npacked descendant proposal complete\n````\n"
-            + "```DONE\n```",
+        "````SEND\nChild work complete.\n````",
+        "````SEND\npacked descendant proposal complete\n````",
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [
@@ -263,9 +261,11 @@ try {
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);
     const parentLifecycle = delegatedResult.turns?.flatMap(({ ops }) => ops)
-        .filter(({ op, origin }) => ["WAIT", "DONE", "FAIL"].includes(op) && origin === "model");
-    // Settlement may beat parking; either outcome must admit the unscoped WAIT.
+        .filter(({ op, origin }) => ["WAIT", "SEND", "FAIL"].includes(op) && origin === "model");
+    // Settlement may beat parking; either outcome must admit the unscoped WAIT. The SEND that
+    // follows is what settles and concludes it — DONE was retired ({§prose-conclusion}).
     if (parentLifecycle?.length !== 2 || ![102, 202].includes(parentLifecycle[0].status)
+        || parentLifecycle[0].op !== "WAIT" || parentLifecycle[1].op !== "SEND"
         || parentLifecycle[1].status !== 200 || parentLifecycle.some(({ scope }) => scope !== null)) {
         throw new Error(`descendant proposal did not admit and settle its parent's wait: ${JSON.stringify(parentLifecycle)}`);
     }

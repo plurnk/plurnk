@@ -3,12 +3,14 @@
 // standard AG-UI HTTP/SSE transport: POST / for runs, including interrupt
 // resolution through RunAgentInput.resume.
 //
-// The official HttpAgent owns HTTP/SSE parsing and AG-UI event verification.
-// This adapter only preserves the client's async-iterator surface; rendering
-// (waterfall, proposals, gauge) stays local. Plurnk fidelity rides CUSTOM
-// plurnk.* events (especially plurnk.row, the full wire row).
+// The official HttpAgent owns HTTP/SSE parsing. AG-UI 1.0 made event validation
+// opt-in, so the run is piped through the SDK's own enforceEvents operator — a
+// malformed event fails the stream here instead of rendering as if it were real.
+// This adapter otherwise only preserves the client's async-iterator surface;
+// rendering (waterfall, proposals, gauge) stays local. Plurnk fidelity rides
+// CUSTOM plurnk.* events (especially plurnk.row, the full wire row).
 
-import { HttpAgent } from "@ag-ui/client";
+import { enforceEvents, HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
 import {
     Validator,
@@ -149,9 +151,9 @@ export async function* runViaBridge(
     };
     const onAbort = () => agent.abortRun();
     signal?.addEventListener("abort", onAbort, { once: true });
-    const subscription = agent.run(input).subscribe({
-        // HttpAgent verifies each BaseEvent at the SDK boundary; AGUIEvent is
-        // @ag-ui/core's narrower discriminated view of that validated value.
+    const subscription = agent.run(input).pipe(enforceEvents()).subscribe({
+        // enforceEvents parses each BaseEvent against the standard schema; AGUIEvent
+        // is @ag-ui/core's narrower discriminated view of that validated value.
         next: (event) => push({ kind: "event", event: event as AguiEvent }),
         error: (error) => push({ kind: "error", error }),
         complete: () => push({ kind: "done" }),

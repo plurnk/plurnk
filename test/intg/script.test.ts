@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { RunAgentInputSchema, type RunAgentInput } from "@ag-ui/core";
+import type { RunAgentInput } from "@ag-ui/core";
+// AG-UI 1.0 ships its runtime validators on the schemas subpath; the root export is types only.
+import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import { actionViaBridge } from "../../src/agui.ts";
 import { CLIENT_ID_CLI } from "../../src/dispatcher.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";

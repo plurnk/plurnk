@@ -17,11 +17,11 @@ export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.col
     return looksLikeMarkdown(prose) ? renderMarkdownDocument(prose, viewport) : prose;
 };
 
-// The lead line of a delivered response block: no keyword. A blank line stands where the keyword
-// was; a failure puts its Problem title there in red, a deferred or joined completion its
-// `detail`; the sanitized aside follows either.
-const leadLine = (entry: LogEntryWire, detail: boolean): string => {
-    const parts: string[] = [];
+// The lead line of a block: no keyword. A final answer opens with 🎯 and a model NOTE with 📝; a
+// SEND's stands blank where the keyword was. A failure puts its Problem title there in red, a
+// deferred or joined completion its `detail`; the sanitized aside follows either.
+const leadLine = (entry: LogEntryWire, detail: boolean, glyph?: string): string => {
+    const parts: string[] = glyph === undefined ? [] : [glyph];
     const rx = objectOf(entry.rx);
     if (entry.status_rx >= 400 && !(isResponseMessage(entry) && rx?.problem == null)) parts.push(paint(ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx)), "failure"));
     else if (detail && entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) parts.push(ModelText.plain(rx.detail));
@@ -34,7 +34,15 @@ const leadLine = (entry: LogEntryWire, detail: boolean): string => {
 // column zero ({§cli-broadcast-send-rendering}). The block is plain: its Markdown carries the
 // only emphasis, and the human's own line is what sets the two voices apart.
 const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string => {
-    const lead = leadLine(entry, TurnDisposition.isOp(entry.op));
+    const lead = leadLine(entry, TurnDisposition.isOp(entry.op), entry.op === "KILL" && body.length > 0 ? "🎯" : undefined);
+    return body.length === 0 ? lead : `${lead}\n${body}`;
+};
+
+// A model NOTE is displayed as a final answer is: the model's self-documentation is the clearest
+// signal of what it is doing ({§cli-note-rendering}). Displayed alike, it is never a delivered message.
+const renderNote = (entry: LogEntryWire, columns: number): string => {
+    const body = renderSendBody(entry.tx, Math.max(1, columns));
+    const lead = leadLine(entry, false, "📝");
     return body.length === 0 ? lead : `${lead}\n${body}`;
 };
 
@@ -63,5 +71,6 @@ export const renderLogEntry = (
     }
     if (isArrivalEntry(entry)) return renderArrival(entry, columns);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
+    if (entry.op === "NOTE" && entry.origin === "model") return renderNote(entry, columns);
     return renderOperationRow(entry, override);
 };

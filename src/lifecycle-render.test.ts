@@ -28,7 +28,16 @@ test("an addressed answer is rendered from successful delivery, not targetlessne
     assert.equal(isResponseMessage(row("SEND", "Not delivered", 200)), false);
 });
 
-for (const op of ["NOTE", "WAIT", "KILL"]) test(`${op} without delivery is an operation, not speech or a task inventory`, () => {
+test("[§cli-note-rendering] a model NOTE is displayed as a final answer is, under 📝, and is never a delivered message", () => {
+    const note = row("NOTE", "Working memory, not a response.", 200);
+    assert.equal(isResponseMessage(note), false, "displayed alike, it is not speech");
+    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "📝\nWorking memory, not a response.");
+    const answer = row("KILL", "Working memory, not a response.", 200, true);
+    assert.equal(stripVTControlCharacters(renderLogEntry(answer, 80)), "🎯\nWorking memory, not a response.", "only the glyph differs");
+    assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE", "a harness NOTE keeps its heading");
+});
+
+for (const op of ["WAIT", "KILL"]) test(`${op} without delivery is an operation, not speech or a task inventory`, () => {
     const entry = row(op, "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(entry), false);
     const rendered = stripVTControlCharacters(renderLogEntry(entry, 80));
@@ -38,7 +47,7 @@ for (const op of ["NOTE", "WAIT", "KILL"]) test(`${op} without delivery is an op
 test("{§cli-broadcast-send-rendering} a final KILL is speech only when its answer was delivered", () => {
     const delivered = row("KILL", "Verified answer.", 200, true);
     assert.equal(isResponseMessage(delivered), true);
-    assert.equal(stripVTControlCharacters(renderLogEntry(delivered)), "\nVerified answer.");
+    assert.equal(stripVTControlCharacters(renderLogEntry(delivered)), "🎯\nVerified answer.");
     for (const status of [102, 202]) {
         const deferred = row("KILL", "Not delivered.", status);
         deferred.rx = { status, detail: "Results await review before completion." };

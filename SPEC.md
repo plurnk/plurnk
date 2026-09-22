@@ -731,7 +731,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | Ordinary operation heading and aside; working-memory body available through LOOK. |
+| NOTE | A model NOTE is displayed as a final answer is (§5.4) under 📝, its full body at column zero {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |
@@ -760,7 +760,7 @@ A successful SEND or accepted parameterless KILL whose receipt addresses the cur
 
 TUI mode contract:
 
-- Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in red; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
+- Lead line: no keyword. A final KILL answer's lead line opens with 🎯; a SEND's stands blank where `SEND` was; a failed message puts its Problem title there in red; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal and renders as just the lead line.

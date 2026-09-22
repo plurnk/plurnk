@@ -1,5 +1,6 @@
 // The waterfall's stable alignment contract is its left edge: every row begins at column
-// zero with the operation as written, no glyph column, no protocol code.
+// zero with the operation as written, no glyph column, no protocol code. Three blocks open with a
+// glyph instead: 💭 reasoning, 📝 a model NOTE and 🎯 a final answer.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -34,12 +35,12 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
     for (const [label, value] of rows) {
         const first = stripAnsi(value).split("\n")[0];
         assert.doesNotMatch(first, /^\s/, `${label} did not begin at column zero: ${JSON.stringify(first)}`);
-        if (label !== "reasoning") assert.doesNotMatch(first, /^[^\p{L}]/u, `${label} begins with the operation's name, not a glyph: ${JSON.stringify(first)}`);
+        if (label !== "reasoning" && label !== "NOTE") assert.doesNotMatch(first, /^[^\p{L}]/u, `${label} begins with the operation's name, not a glyph: ${JSON.stringify(first)}`);
     }
 
     assert.equal(stripAnsi(rows[0][1]), "READ (/x)");
     assert.equal(stripAnsi(rows[1][1]), "FIND (/x) — Entry not found", "a failure carries its title, not a numeric code");
-    assert.equal(stripAnsi(rows[2][1]), "NOTE", "notes use ordinary bodiless operation headings");
+    assert.equal(stripAnsi(rows[2][1]), "📝\nInspect.", "a model NOTE opens with its glyph and shows its body");
     assert.equal(stripAnsi(rows[4][1]), "\ndone", "a delivered message is its body under a blank line");
     assert.equal(stripAnsi(rows[6][1]), "SEND (worker:///gone) — Worker gone");
     assert.equal(stripAnsi(rows[7][1]), "sh list the files", "an execution is its fence, once, at its conclusion");

@@ -49,12 +49,13 @@ relationships without writing a script for each question.
 For example, these model-side operations find TypeScript files matching
 `retry` or `timeout`, then trim older READ receipts to their first 16 lines:
 
-```text
-### FIND_ (src/**/*.{ts,tsx})
-~retry OR timeout
+`````text
+````FIND (src/**/*.{ts,tsx}) ~retry OR timeout
+````
 
-### KILL_ (log:///1/[1-7]/*/READ) <17,-1>
-```
+````KILL (log:///1/[1-7]/*/READ) <17,-1>
+````
+`````
 
 The second operation targets READ results from turns 1–7 of loop 1. It curates
 the log, not the source files. One expression can manage many entries: the

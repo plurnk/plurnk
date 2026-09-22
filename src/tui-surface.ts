@@ -37,7 +37,8 @@ export default class TuiSurface {
     // The reasoning scroll: at most a third of the terminal, newest lines only, never durable.
     readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
     readonly #turn = new TurnDisplay();
-    // {§cli-workers-topology} — one line above the composer: the place, then the status line.
+    // {§cli-workers-topology} — one line below the composer: the place, then the status line. The
+    // composer separates content from state, so neither needs a padding line of its own (#100).
     readonly #prompt = new Text("", 0, 0);
     #promptText = "";
     #statusText = "";
@@ -48,8 +49,8 @@ export default class TuiSurface {
         this.#tui.addChild(this.#transcript);
         this.#tui.addChild(this.#live);
         this.#tui.addChild(this.#turn);
-        this.#tui.addChild(this.#prompt);
         this.#tui.addChild(this.editor);
+        this.#tui.addChild(this.#prompt);
         this.#tui.setFocus(this.editor);
     }
 

@@ -256,7 +256,7 @@ Triggered when `argv` has no positional prompt.
 
 1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
-   and §1.2.1's aggregate line on the place line above the composer. Before AG-UI
+   and §1.2.1's aggregate line on the place line below the composer. Before AG-UI
    state arrives, derivation, search, and
    branch activity share the fallback activity position. The
    lifecycle glyph is ⏳ while queued, `⌛︎` while running, 💤 while parked, `⏹️` when complete,
@@ -344,7 +344,7 @@ maintenance worker and a connection's scratch worker are never hop targets, so a
 lone conversation has `(no siblings)`. Every hop re-reads the directory; nothing
 is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
 
-**Position.** The line above the composer names the place, `[<workspace>/<lineage>(<loop>/<turn>)]`:
+**Position.** The line below the composer names the place, `[<workspace>/<lineage>(<loop>/<turn>)]`:
 the lineage from the tree root to the bound worker with `~` marking the worker the session
 is in, a presentation marker rather than a URI alias, and the loop and turn beside
 the worker they belong to. `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two

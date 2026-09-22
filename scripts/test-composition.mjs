@@ -118,9 +118,8 @@ try {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
             const response = scriptedResponses.shift()
-                // An operation opens with four backticks ({§four-backtick-operations}, #761), and
-                // a SEND concludes the loop on its own — DONE was retired.
-                ?? `\`\`\`\`SEND\ncomposition ok: ${request.model}
+                // {§kill-conclusion}: final-answer fixtures conclude with parameterless KILL.
+                ?? `\`\`\`\`KILL\ncomposition ok: ${request.model}
 \`\`\`\``;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
@@ -250,8 +249,8 @@ try {
             + "````WAIT\nWaiting for guesser1.\n````",
         "````EDIT (child.txt)\ncreated by packed child\n````\n"
             + "````NOTE\nConfirming the write.\n````",
-        "````SEND\nChild work complete.\n````",
-        "````SEND\npacked descendant proposal complete\n````",
+        "````KILL\nChild work complete.\n````",
+        "````KILL\npacked descendant proposal complete\n````",
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [

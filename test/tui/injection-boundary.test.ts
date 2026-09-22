@@ -32,7 +32,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         })}\n\n`);
         frame({ role: "assistant", reasoning_content: first ? "Awaiting the controlled injection." : "Handling the successor requirement." });
         if (first) await release.promise;
-        frame({ content: `\`\`\`\`SEND\n${first ? "FIRST_FINISHED" : "SUCCESSOR_VISIBLE"}
+        frame({ content: `\`\`\`\`KILL\n${first ? "FIRST_FINISHED" : "SUCCESSOR_VISIBLE"}
 \`\`\`\`` });
         frame({}, "stop");
         response.end("data: [DONE]\n\n");

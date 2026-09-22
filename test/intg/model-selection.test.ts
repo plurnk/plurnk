@@ -58,7 +58,7 @@ const jsonBody = async (request: IncomingMessage): Promise<{ model?: unknown; me
     return JSON.parse(body) as { model?: unknown; messages?: unknown };
 };
 
-const answer = (response: ServerResponse, model: string, content = "````SEND\nselected " + model + "\n````"): void => {
+const answer = (response: ServerResponse, model: string, content = "````KILL\nselected " + model + "\n````"): void => {
     response.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -177,7 +177,7 @@ test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels in
         packets.push(JSON.stringify(body.messages));
         answer(response, "interaction-fixture", packets.length === 1
             ? "````question\n{\"message\":\"Choose a branch\",\"requestedSchema\":{\"type\":\"object\",\"properties\":{\"branch\":{\"type\":\"string\"}},\"required\":[\"branch\"]}}\n````\n````WAIT\nAwait the branch choice.\n````"
-            : "````SEND\nNo input channel; continuing without a fabricated answer.\n````");
+            : "````KILL\nNo input channel; continuing without a fabricated answer.\n````");
     });
     const endpointPort = await listen(endpoint);
     t.after(() => close(endpoint));
@@ -221,7 +221,7 @@ test("[§cli-invocation] {§loop-attendance} --auto is refused an interactive pa
         packets.push(JSON.stringify(body.messages));
         answer(response, "interaction-fixture", packets.length === 1
             ? "````question\n{\"message\":\"Choose a branch\",\"requestedSchema\":{\"type\":\"object\",\"properties\":{\"branch\":{\"type\":\"string\"}},\"required\":[\"branch\"]}}\n````\n\n````WAIT\nawait the answer\n````"
-            : "````SEND\nNobody could answer; concluding on what I have.\n````");
+            : "````KILL\nNobody could answer; concluding on what I have.\n````");
     });
     const endpointPort = await listen(endpoint);
     t.after(() => close(endpoint));

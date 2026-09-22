@@ -67,7 +67,7 @@ for (const specimen of cases) {
 \`\`\`\`WAIT
 Await the MCP result.
 \`\`\`\``
-                : "````SEND\nMCP interaction finished.\n````";
+                : "````KILL\nMCP interaction finished.\n````";
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(`data: ${JSON.stringify({
                 id: "elicitation-fixture", object: "chat.completion.chunk", created: 1, model: "elicitation-fixture",

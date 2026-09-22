@@ -32,7 +32,7 @@ test("[§cli-markdown-projection] built TUI survives nested lists, long code, an
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(`data: ${JSON.stringify({
             id: "markdown-fixture", object: "chat.completion.chunk",
-            choices: [{ index: 0, delta: { role: "assistant", content: `\`\`\`\`SEND\n${responseBody}\n\`\`\`\`` }, finish_reason: null }],
+            choices: [{ index: 0, delta: { role: "assistant", content: `\`\`\`\`KILL\n${responseBody}\n\`\`\`\`` }, finish_reason: null }],
         })}\n\n`);
         response.write(`data: ${JSON.stringify({
             id: "markdown-fixture", object: "chat.completion.chunk",

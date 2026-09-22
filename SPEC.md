@@ -756,7 +756,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
-A successful SEND whose receipt addresses the current AG-UI conversation carries response content, including an exact-address reply or another actor's delivered reply observation. An unsolicited targetless model SEND also qualifies. The interactive client renders full message bodies, not diagnostic previews; an unrelated worker or protocol recipient does not become conversation speech.
+A successful SEND or accepted parameterless KILL whose receipt addresses the current AG-UI conversation carries response content, including an exact-address reply or another actor's delivered reply observation. An unsolicited targetless model reply also qualifies. The interactive client renders full message bodies, not diagnostic previews; an unrelated worker or protocol recipient does not become conversation speech. A deferred KILL renders its continuation or parking detail as an operation, never its undelivered answer body. An empty KILL does not repeat a previous reply.
 
 TUI mode contract:
 

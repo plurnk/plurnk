@@ -28,11 +28,23 @@ test("an addressed answer is rendered from successful delivery, not targetlessne
     assert.equal(isResponseMessage(row("SEND", "Not delivered", 200)), false);
 });
 
-for (const op of ["NOTE", "WAIT"]) test(`${op} is an operation, not speech or a task inventory`, () => {
+for (const op of ["NOTE", "WAIT", "KILL"]) test(`${op} without delivery is an operation, not speech or a task inventory`, () => {
     const entry = row(op, "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(entry), false);
     const rendered = stripVTControlCharacters(renderLogEntry(entry, 80));
     assert.equal(rendered, op);
+});
+
+test("{§cli-broadcast-send-rendering} a final KILL is speech only when its answer was delivered", () => {
+    const delivered = row("KILL", "Verified answer.", 200, true);
+    assert.equal(isResponseMessage(delivered), true);
+    assert.equal(stripVTControlCharacters(renderLogEntry(delivered)), "\nVerified answer.");
+    for (const status of [102, 202]) {
+        const deferred = row("KILL", "Not delivered.", status);
+        deferred.rx = { status, detail: "Results await review before completion." };
+        assert.equal(isResponseMessage(deferred), false);
+        assert.equal(stripVTControlCharacters(renderLogEntry(deferred)), "KILL — Results await review before completion.");
+    }
 });
 
 test("an empty WAIT displays its actual continuation detail without manufacturing speech", () => {

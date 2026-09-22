@@ -63,7 +63,7 @@ export const renderLogEntry = (
     override?: RowOverride,
 ): string => {
     if (isResponseMessage(entry)) return renderBroadcast(entry, columns);
-    if (TurnDisposition.isOp(entry.op)) {
+    if (TurnDisposition.isOp(entry.op) || entry.op === "KILL" && objectOf(entry.tx)?.target === null) {
         const rx = objectOf(entry.rx);
         const detail = typeof rx?.detail === "string" ? rx.detail : null;
         return renderOperationRow(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) });

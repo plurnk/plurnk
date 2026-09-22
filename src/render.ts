@@ -111,7 +111,7 @@ export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
 
 export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
-    if (entry.op !== "SEND" || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
+    if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
     const reply = objectOf(entry.attrs)?.kind === "reply";
     if (!reply && entry.source != null) return false;
     const answers = objectOf(entry.rx)?.answers;

@@ -17,8 +17,7 @@ export type LookResult = OperationResult & { content?: unknown; detail?: unknown
 
 // `/look worker:///plan.md <1,20> /needle/` → the LOOK fence with the address in its
 // parentheses; an address the user already parenthesized passes through. Nothing to look at
-// is null. {§four-backtick-operations}: the daemon parses this statement, so it takes the
-// operation fence, not a markup fence.
+// is null. {§operation-fences}: generated statements use the canonical fence.
 export const lookFence = (rest: string): string | null => {
     const text = rest.trim();
     if (text.length === 0) return null;

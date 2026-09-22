@@ -93,8 +93,7 @@ test("dslOpPartial: retains the opening fence width without delimiter suffixes",
     assert.equal(dslOpPartial("## PL"), null);
 });
 
-// {§four-backtick-operations}: a three-backtick opener runs nothing, so completion widens it to
-// the operation fence rather than handing the user back a statement the daemon will quote (#92).
+// {§operation-fences}: completion uses the canonical width even when the typed width is accepted.
 test("completeOps: completes native names and widens a narrow opening fence", () => {
     assert.deepEqual(completeOps({ fence: "```", typed: "no" }), [["````NOTE"], "````no"]);
     assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], "````pl"]);

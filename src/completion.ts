@@ -50,8 +50,7 @@ export const dslOpPartial = (line: string): DslOpPartial | null => {
     return match ? { fence: match[1], typed: match[2] } : null;
 };
 
-// {§four-backtick-operations}: a narrower fence opens no operation, so completing one back to
-// the user would hand them a statement the daemon quotes. Completion widens it instead.
+// {§operation-fences}: completion uses at least the canonical width; ingestion also accepts three.
 export const completeOps = ({ fence, typed }: DslOpPartial): [string[], string] => {
     const up = typed.toUpperCase();
     const opener = fence.length >= PLURNK_FENCE.length ? fence : PLURNK_FENCE;

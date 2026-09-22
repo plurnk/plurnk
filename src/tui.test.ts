@@ -35,7 +35,7 @@ test("[§cli-environment] scoped env completion uses that scope's variable names
 test("help is a compact grouped index over commands and interaction grammar", () => {
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);
     assert.match(TUI_HELP, /functionality\s+\/mcp \/skills \/a2a \/members/);
-    // {§four-backtick-operations}: help teaches the fence that actually runs (plurnk/plurnk#92).
+    // {§operation-fences}: help teaches the canonical fence.
     assert.match(TUI_HELP, /language\s+````OP/);
     assert.match(TUI_HELP, /\/help <verb>/);
 });

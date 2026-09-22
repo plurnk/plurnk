@@ -645,7 +645,7 @@ Markdown pass:
 <OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <problem title>]
 ```
 
-- `OP` is the operation's name, bold: green when the outcome succeeded, pink otherwise. An
+- `OP` is the operation's name, bold: green when the outcome succeeded, red otherwise. An
   execution row is named by its runtime (`sh`, `python3`): the row's `op` is the fence name as written, never a generic keyword.
 - `(target)` is the authored target text, in its parentheses; `<scope>` is the canonical
   `<mark,...>` form; `<pattern>` is the matcher as authored (`/regex/i`, `~query`, `&symbol`).
@@ -675,7 +675,7 @@ again when it eventually ends.
 
 Width-tolerant; no fixed column widths. Every row begins at column zero.
 
-**Exceptions:** delivered conversation replies render as blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback — bold, in its own colour, with a blank row above and below, so the human's turns read apart from the model's plain replies — and its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
+**Exceptions:** delivered conversation replies render as blocks per §5.4. The TUI moves each submitted editor value into ordinary terminal scrollback — bold, in the human's colour (§5.5), with a blank row above and below, so the human's turns read apart from the model's plain replies — and its inbound SEND echo is not rendered again (`isOwnArrival`). Arrivals from other actors remain visible with their causal source.
 
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
@@ -752,7 +752,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
 - Raw bodies for non-message ops: command snippets, JSON arguments, edit replacements, notes, and result previews. Message bodies render per §5.4; human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log row.
 - Raw SSE frames.
-- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and pink otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and red otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
@@ -760,13 +760,13 @@ A successful SEND or accepted parameterless KILL whose receipt addresses the cur
 
 TUI mode contract:
 
-- Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in pink; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
+- Lead line: no keyword. A blank line stands where `SEND` was; a failed message puts its Problem title there in red; the sanitized aside follows. The body's lines stay at column zero. No glyph, no numeric code, no path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal and renders as just the lead line.
 
 A delivered conversation response is plain: its Markdown carries the only emphasis
-(headings, `**strong**`, table heads), and the human's own line — bold, in its own
+(headings, `**strong**`, table heads), and the human's own line — bold, in the human's
 colour, spaced (§5.1) — is what sets the two voices apart; failed, unrelated, and
 inherited messages are the same plain block. `NO_COLOR` removes colour and emphasis
 while preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
@@ -792,6 +792,15 @@ single complete run record defined in §2.1, not a second body-only output forma
 - **Plain (or anything else)** — emit the rich-client prose after the exact normalization above.
 
 If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is treated as empty (stdout receives nothing for that broadcast).
+
+### §5.5 Palette {§cli-palette}
+
+`src/color.ts` names every colour and emphasis by role; no other module writes an escape code.
+The five alert accents are the scheme — note blue, tip green, important purple, warning orange,
+caution red — and every other role borrows from them: success and added diff lines are green,
+failure and removed lines red, the human's line blue. Links, diff hunk headers and the
+completion cursor are cyan. Any non-empty `NO_COLOR` removes colour and emphasis while
+preserving layout.
 
 ---
 
@@ -1097,17 +1106,19 @@ they advise without terminating an operation. Client failures are Problems.
 
 ### §8.3 Rendering and channel posture {§cli-notice-rendering} {§cli-channel-posture}
 
-`renderDiagnostic(diagnostic)` renders either contract without converting one
-into the other:
+`renderDiagnostic(diagnostic)` renders either contract as an alert block without
+converting one into the other:
 
 ```
-📡 <source>:<kind> [<position>] ["<detail-or-message>"]
-   <snippet lines, if any>
-   <hint lines, if any>
+│ <icon> <Alert> <source>:<kind> [<position>]
+│ <detail-or-message lines>
+│   <snippet lines, if any>
+│ <recovery and hint lines, if any>
 ```
 
-Problems render red. Notices use their required producer-owned `level`; the
-client never infers severity from `kind`. `ContentOffset` renders as
+A Problem or an `error` Notice is a 🛑 Caution, a `warn` Notice a ⚠️ Warning, and an
+`info` Notice an ℹ️ Note, each in its accent (§5.5); the client never infers severity
+from `kind`. `ContentOffset` renders as
 `L<line> col<column>` and `LogCoordinate` as its coordinate plus optional op.
 CLI mode writes diagnostics to stderr. TUI mode inserts them into the waterfall
 without colliding with the active prompt.

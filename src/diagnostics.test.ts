@@ -25,20 +25,18 @@ const {
     clientTransportTerminalMissing,
 } = await import("./diagnostics.ts");
 
-test("[§cli-notice-rendering] renderDiagnostic renders a minimal Notice discriminator", () => {
-    const out = renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" });
-    assert.match(out, /📡 engine:rail:strike/);
-    assert.match(out, /^📡/);
+test("[§cli-notice-rendering] renderDiagnostic renders a Notice as an alert titled by its discriminator", () => {
+    assert.equal(renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" }), "│ ℹ️ Note engine:rail:strike");
 });
 
-test("renderDiagnostic renders a Notice message in quotes", () => {
+test("renderDiagnostic puts a Notice message in the alert body", () => {
     const out = renderDiagnostic({
         source: "engine:rail",
         kind: "recovery",
         level: "info",
         message: "trying again",
     });
-    assert.match(out, /"trying again"/);
+    assert.equal(out, "│ ℹ️ Note engine:rail:recovery\n│ trying again");
 });
 
 test("renderDiagnostic renders ContentOffset and LogCoordinate positions", () => {
@@ -62,7 +60,7 @@ test("renderDiagnostic renders ContentOffset and LogCoordinate positions", () =>
     );
 });
 
-test("renderDiagnostic renders producer snippets and hints below the headline", () => {
+test("renderDiagnostic renders producer snippets and hints below the message", () => {
     const out = renderDiagnostic({
         source: "grammar",
         kind: "parse_advisory",
@@ -70,23 +68,31 @@ test("renderDiagnostic renders producer snippets and hints below the headline", 
         snippet: "2:\t### EDIT_ (worker://foo\n3:\t               ^",
         hints: ["close the EDIT target"],
     });
-    const lines = out.split("\n");
-    assert.equal(lines.length, 4);
-    assert.match(lines[1], /^   2:/);
-    assert.match(lines[2], /^   3:/);
-    assert.match(lines[3], /^   close the EDIT target/);
+    assert.deepEqual(out.split("\n"), [
+        "│ ⚠️ Warning grammar:parse_advisory",
+        "│   2:\t### EDIT_ (worker://foo",
+        "│   3:\t               ^",
+        "│ close the EDIT target",
+    ]);
 });
 
-const freshDiagnostics = async (tag: string): Promise<typeof import("./diagnostics.ts")> =>
-    await import(`./diagnostics.ts?${tag}`) as typeof import("./diagnostics.ts");
-
-test("renderDiagnostic colors Problems red", async () => {
+const colored = <T>(render: () => T): T => {
     delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const module = await freshDiagnostics("problem-color");
-    process.env.NO_COLOR = "1";
-    const out = module.renderDiagnostic(clientRuntimeError("failed"));
-    assert.match(out, /\x1b\[31m/);
-    assert.doesNotMatch(out, /\x1b\[2m"failed"/);
+    try { return render(); } finally { process.env.NO_COLOR = "1"; }
+};
+
+test("[§cli-notice-rendering] severity picks the alert: a Problem or error is a caution, a warning a warning, the rest a note", () => {
+    const [problem, error, warn, info] = colored(() => [
+        renderDiagnostic(clientRuntimeError("failed")),
+        renderDiagnostic({ source: "engine", kind: "fatal", level: "error", message: "stopped" }),
+        renderDiagnostic({ source: "client:connection", kind: "daemon_stale", level: "warn", message: "update available" }),
+        renderDiagnostic({ source: "engine", kind: "graceful", level: "info", message: "done" }),
+    ]);
+    assert.match(problem, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑 Caution\x1b\[0m/u);
+    assert.match(error, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑 Caution\x1b\[0m/u);
+    assert.match(warn, /^\x1b\[38;5;172m│\x1b\[0m \x1b\[38;5;172;1m⚠️ Warning\x1b\[0m/u);
+    assert.match(info, /^\x1b\[94m│\x1b\[0m \x1b\[94;1mℹ️ Note\x1b\[0m/u);
+    assert.match(info, /\n\x1b\[94m│\x1b\[0m done$/u, "the message itself stays plain");
 });
 
 test("renderDiagnostic renders a Problem's producer-owned recovery once", () => {
@@ -94,30 +100,11 @@ test("renderDiagnostic renders a Problem's producer-owned recovery once", () => 
         ...clientRuntimeError("The request failed."),
         recovery: "Retry after restoring the connection.",
     });
-    assert.match(out, /"The request failed\."/);
-    assert.match(out, /^   Retry after restoring the connection\.$/m);
-});
-
-test("renderDiagnostic uses producer-owned Notice severity", async () => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const module = await freshDiagnostics("notice-colors");
-    process.env.NO_COLOR = "1";
-    const warn = module.renderDiagnostic({
-        source: "client:connection",
-        kind: "daemon_stale",
-        level: "warn",
-        message: "update available",
-    });
-    const info = module.renderDiagnostic({
-        source: "engine",
-        kind: "graceful",
-        level: "info",
-        message: "done",
-    });
-    assert.match(warn, /\x1b\[33m/);
-    assert.doesNotMatch(warn, /\x1b\[31m/);
-    assert.doesNotMatch(info, /\x1b\[31m|\x1b\[33m/);
-    assert.match(info, /\x1b\[2m"done"/);
+    assert.deepEqual(out.split("\n"), [
+        "│ 🛑 Caution client:runtime:error",
+        "│ The request failed.",
+        "│ Retry after restoring the connection.",
+    ]);
 });
 
 test("[§cli-problem-control-flow] ProblemError carries exact Problem Details and exit code", () => {

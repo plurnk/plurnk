@@ -751,7 +751,7 @@ test("{§cli-log-entry-line-format} the human's line becomes durable scrollback:
         printSubmittedInput((text) => printed.push(text), "first", false);
         assert.deepEqual(printed, ["", "› first", ""], "NO_COLOR keeps the layout: the blank rows stay");
         delete process.env.NO_COLOR;
-        assert.equal(renderSubmittedInput("first\nsecond", false), "\x1b[1m\x1b[94m› first\x1b[0m\n\x1b[1m\x1b[94m  second\x1b[0m");
+        assert.equal(renderSubmittedInput("first\nsecond", false), "\x1b[1;94m› first\x1b[0m\n\x1b[1;94m  second\x1b[0m");
     } finally {
         if (noColor === undefined) delete process.env.NO_COLOR;
         else process.env.NO_COLOR = noColor;

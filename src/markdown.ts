@@ -10,21 +10,14 @@ import { Marked, type RendererObject, type Tokens } from "marked";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 
-import { colorEnabled } from "./color.ts";
+import { paint, type Role } from "./color.ts";
 
-const supportsColor = colorEnabled() && process.stdout.isTTY === true;
-const code = (n: string): string => supportsColor ? `\x1b[${n}m` : "";
-const RESET = code("0");
-const DIM = code("2");
-const BOLD = code("1");
-const ITALIC = code("3");
-const STRIKE = code("9");
-const CYAN = code("36");
+// Only a terminal is styled; piped output stays raw.
+const tty = process.stdout.isTTY === true;
 
 export const displayWidth = (text: string): number => stringWidth(text);
 
-const styled = (style: string) => (text: string): string =>
-    style.length === 0 ? text : `${style}${text}${RESET}`;
+const styled = (role: Role) => (text: string): string => tty ? paint(text, role) : text;
 const fitTableWidths = (
     rows: string[][],
     viewport: number,
@@ -86,7 +79,7 @@ const guttered = (text: string, width: number): string[] =>
         // continuation row inherits from the wrap point is not, so only those rows lose it.
         wrapAnsi(line, Math.max(1, width - GUTTER_COLUMNS), { hard: true, trim: false, wordWrap: true })
             .split("\n")
-            .map((row, index) => `${styled(DIM)("│")} ${(index === 0 ? row : row.replace(/^ +/u, "")).trimEnd()}`));
+            .map((row, index) => `${styled("dim")("│")} ${(index === 0 ? row : row.replace(/^ +/u, "")).trimEnd()}`));
 
 // Preserve the authored layout whenever it fits the current viewport. A
 // transposed projection is the one bounded alternative; invalid, unsupported,
@@ -104,8 +97,8 @@ export const renderMermaid = (
     if (alternate !== null && widestLine(alternate) <= width) return alternate;
 
     return [
-        `${DIM}💻 mermaid${RESET}`,
-        ...source.split("\n").map((line) => `${DIM}│ ${line}${RESET}`),
+        styled("dim")("💻 mermaid"),
+        ...source.split("\n").map((line) => styled("dim")(`│ ${line}`)),
     ];
 };
 
@@ -139,23 +132,23 @@ const terminalRenderer = (viewport: number): Marked => {
             }
             const language = token.lang?.trim() ?? "";
             const header = language.length === 0 ? "💻" : `💻 ${language}`;
-            return [styled(DIM)(header), ...guttered(token.text, availableWidth()), "", ""].join("\n");
+            return [styled("dim")(header), ...guttered(token.text, availableWidth()), "", ""].join("\n");
         },
         blockquote(token: Tokens.Blockquote) {
             const body = withBlockIndent(GUTTER_COLUMNS, () => this.parser.parse(token.tokens).trimEnd());
             return `${guttered(body, availableWidth() + GUTTER_COLUMNS).join("\n")}\n\n`;
         },
         html(token: Tokens.HTML | Tokens.Tag) {
-            return styled(DIM)(token.text);
+            return styled("dim")(token.text);
         },
         def() {
             return "";
         },
         heading(token: Tokens.Heading) {
-            return `${wrap(styled(BOLD)(this.parser.parseInline(token.tokens)))}\n\n`;
+            return `${wrap(styled("bold")(this.parser.parseInline(token.tokens)))}\n\n`;
         },
         hr() {
-            return `${styled(DIM)("─".repeat(availableWidth()))}\n\n`;
+            return `${styled("dim")("─".repeat(availableWidth()))}\n\n`;
         },
         list(token: Tokens.List) {
             const start = typeof token.start === "number" ? token.start : 1;
@@ -193,7 +186,7 @@ const terminalRenderer = (viewport: number): Marked => {
             const table = new Table({
                 colAligns: token.align.map((align) => align ?? "left"),
                 colWidths,
-                head: header.map((cell, index) => wrapCell(styled(BOLD)(cell), index)),
+                head: header.map((cell, index) => wrapCell(styled("bold")(cell), index)),
                 wordWrap: true,
                 wrapOnWordBoundary: true,
                 style: {
@@ -208,28 +201,28 @@ const terminalRenderer = (viewport: number): Marked => {
             return `${table.toString()}\n\n`;
         },
         strong(token: Tokens.Strong) {
-            return styled(BOLD)(this.parser.parseInline(token.tokens));
+            return styled("bold")(this.parser.parseInline(token.tokens));
         },
         em(token: Tokens.Em) {
-            return styled(ITALIC)(this.parser.parseInline(token.tokens));
+            return styled("italic")(this.parser.parseInline(token.tokens));
         },
         codespan(token: Tokens.Codespan) {
-            return styled(DIM)(token.text);
+            return styled("dim")(token.text);
         },
         br() {
             return "\n";
         },
         del(token: Tokens.Del) {
-            return styled(STRIKE)(this.parser.parseInline(token.tokens));
+            return styled("strike")(this.parser.parseInline(token.tokens));
         },
         link(token: Tokens.Link) {
             const label = this.parser.parseInline(token.tokens);
             return token.href === token.text
-                ? styled(CYAN)(label)
-                : `${styled(CYAN)(label)} ${styled(DIM)(`(${token.href})`)}`;
+                ? styled("reference")(label)
+                : `${styled("reference")(label)} ${styled("dim")(`(${token.href})`)}`;
         },
         image(token: Tokens.Image) {
-            return `${token.text} ${styled(DIM)(`(${token.href})`)}`;
+            return `${token.text} ${styled("dim")(`(${token.href})`)}`;
         },
         text(token: Tokens.Text | Tokens.Escape) {
             return "tokens" in token && token.tokens !== undefined

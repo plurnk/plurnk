@@ -3,20 +3,11 @@
 // literal text with this module's own styling and never through Markdown; only message
 // bodies are Markdown ({§cli-broadcast-send-rendering}). Rows carry no bodies.
 
-import { ansi as code } from "./color.ts";
+import { paint } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import ModelText from "./model-text.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { abbreviatedCount, money } from "./figures.ts";
-
-const RESET = code("0");
-const BOLD = code("1");
-const DIM = code("2");
-const ITALIC = code("3");
-const GREEN = code("32");
-// The outcome color for anything unsuccessful: pink, so it is neither the error red of a
-// diagnostic nor the green of a settled success.
-const PINK = code("95");
 
 export interface LogEntryWire {
     id: number;
@@ -77,12 +68,12 @@ export const isEntryMaterialization = (entry: LogEntryWire): boolean =>
 // surfaces that still want one.
 export const coordLabel = (loopSeq: number, turnSeq: number, sequence: number): string => {
     const p = (n: number): string => String(n).padStart(2, "0");
-    return `${DIM}${p(loopSeq)}/${p(turnSeq)}/${p(sequence)}${RESET} `;
+    return `${paint(`${p(loopSeq)}/${p(turnSeq)}/${p(sequence)}`, "dim")} `;
 };
 
 // The active prompt only represents progress below completion in three cells.
 export const progressLabel = (percent: number): string =>
-    `${DIM}${`${Math.max(0, Math.min(99, Math.trunc(percent)))}%`.padStart(3, " ")}${RESET}`;
+    paint(`${Math.max(0, Math.min(99, Math.trunc(percent)))}%`.padStart(3, " "), "dim");
 
 // Extract the authored SEND text without terminal interpretation ({§cli-presentation-loading}).
 export const extractSendBody = (txUnknown: unknown): string => {
@@ -96,7 +87,7 @@ export const extractSendBody = (txUnknown: unknown): string => {
 // without inventing a log coordinate or status it does not own.
 export const renderReasoning = (content: string): string => ModelText.plain(content)
     .split("\n")
-    .map((line, index) => `${index === 0 ? "💭 " : "   "}${DIM}${line}${RESET}`)
+    .map((line, index) => `${index === 0 ? "💭 " : "   "}${paint(line, "dim")}`)
     .join("\n");
 
 // {§message-arrival} — an arrival is an inbound SEND row the daemon published: the sender's
@@ -213,17 +204,17 @@ export interface RowOverride {
 }
 
 const styledOutcome = (text: string, failed: boolean): string =>
-    `— ${failed ? PINK : DIM}${ModelText.plain(text)}${RESET}`;
+    `— ${paint(ModelText.plain(text), failed ? "failure" : "dim")}`;
 
 // An execution still open when the following turn begins: its row once, in grey, with no
 // outcome yet; the conclusion renders it again ({§cli-what-is-not-rendered}).
 export const renderPendingRow = (entry: LogEntryWire): string =>
-    `${DIM}${stripVTControlCharacters(renderOperationRow(entry, { failed: false, failure: null }))}${RESET}`;
+    paint(stripVTControlCharacters(renderOperationRow(entry, { failed: false, failure: null })), "dim");
 
 // `OP (target) <scope> /pattern/ {n} aside — problem title`, one line, literal text.
 export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
     const failed = override.failed ?? (override.failure !== undefined && override.failure !== null || entry.status_rx >= 400);
-    const parts = [`${BOLD}${failed ? PINK : GREEN}${ModelText.plain(operationIdentity(entry))}${RESET}`];
+    const parts = [paint(ModelText.plain(operationIdentity(entry)), "bold", failed ? "failure" : "success")];
     const tx = objectOf(entry.tx);
     if (entry.op === "COPY" || entry.op === "MOVE") {
         for (const operand of [selectionText(tx?.source), selectionText(tx?.destination)]) {
@@ -240,7 +231,7 @@ export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = 
     const count = override.count === undefined ? receiptCount(entry) : override.count;
     if (count !== null) parts.push(`{${count}}`);
     const aside = entryAside(entry);
-    if (aside !== null) parts.push(`${DIM}${ITALIC}${aside}${RESET}`);
+    if (aside !== null) parts.push(paint(aside, "dim", "italic"));
     const outcome = override.failure === undefined ? outcomeTitle(entry) : override.failure;
     if (outcome !== null) parts.push(styledOutcome(outcome, failed));
     return parts.join(" ");
@@ -360,5 +351,5 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
             tokenPart += ` · loop $${money(costUsd)}`;
         }
     }
-    return `${DIM}  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}${RESET}`;
+    return paint(`  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}`, "dim");
 };

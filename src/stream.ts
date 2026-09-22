@@ -4,19 +4,10 @@
 // status line's business, not the transcript's.
 
 import ModelText from "./model-text.ts";
-import { colorEnabled } from "./color.ts";
+import { paint } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { renderOperationRow, objectOf, type LogEntryWire } from "./render.ts";
-
-const useColor = colorEnabled();
-const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
-const RESET = code("0");
-const BOLD = code("1");
-const DIM = code("2");
-const GREEN = code("32");
-const PINK = code("95");
-const RED = code("31");
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -109,8 +100,8 @@ export default class StreamTrace {
         const title = ev.result.problem?.title;
         const failure = !failed ? null : typeof title === "string" && title.length > 0 ? title : summaryTail(ev) || String(status);
         if (launch !== undefined) return renderOperationRow(launch, { failed, failure });
-        const parts = [`${BOLD}${failed ? PINK : GREEN}${ModelText.plain(ev.scheme)}${RESET}`, `(${ModelText.plain(ev.target)})`];
-        if (failure !== null) parts.push(`— ${PINK}${ModelText.plain(failure)}${RESET}`);
+        const parts = [paint(ModelText.plain(ev.scheme), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
+        if (failure !== null) parts.push(`— ${paint(ModelText.plain(failure), "failure")}`);
         return parts.join(" ");
     }
 }
@@ -127,7 +118,7 @@ export const inlineable = (content: string): boolean => {
 // conclusion; stderr is marked and tinted.
 export const renderInline = (channel: string, content: string): string =>
     ModelText.plain(content).trimEnd().split("\n")
-        .map((l) => channel === "stderr" ? `   ${RED}!${RESET} ${l}` : `   ${DIM}${l}${RESET}`)
+        .map((l) => channel === "stderr" ? `   ${paint("!", "failure")} ${l}` : `   ${paint(l, "dim")}`)
         .join("\n");
 
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in

@@ -8,21 +8,21 @@ import {
     type AutocompleteProvider,
     type TuiInputListener,
 } from "@earendil-works/pi-tui";
+import { paint, type Role } from "./color.ts";
 import TailText from "./tail-text.ts";
 import TurnDisplay from "./turn.ts";
 import type { LogEntryWire } from "./render.ts";
 
-const ansi = (code: number): ((text: string) => string) => (text) =>
-    process.env.NO_COLOR !== undefined ? text : `\x1b[${code}m${text}\x1b[0m`;
+const styled = (role: Role) => (text: string): string => paint(text, role);
 
 const editorTheme = {
-    borderColor: ansi(2),
+    borderColor: styled("dim"),
     selectList: {
-        selectedPrefix: ansi(36),
-        selectedText: ansi(1),
-        description: ansi(2),
-        scrollInfo: ansi(2),
-        noMatch: ansi(2),
+        selectedPrefix: styled("reference"),
+        selectedText: styled("bold"),
+        description: styled("dim"),
+        scrollInfo: styled("dim"),
+        noMatch: styled("dim"),
     },
 };
 

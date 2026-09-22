@@ -5,7 +5,7 @@
 //
 // They share a renderer, not a semantic envelope. Per SPEC.md §8.
 
-import { colorEnabled } from "./color.ts";
+import { paint } from "./color.ts";
 import process from "node:process";
 import {
     Problems,
@@ -55,13 +55,14 @@ export class ProblemError extends Error {
     }
 }
 
-const useColor = colorEnabled();
-const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
-const RESET = code("0");
-const DIM = code("2");
-const RED = code("31");
-const YELLOW = code("33");
-const DIAGNOSTIC_GLYPH = "📡";
+// {§cli-notice-rendering} — every diagnostic is an alert block (plurnk#97): a Problem or an error
+// Notice is a caution, a warning Notice a warning, an informational Notice a note.
+const ALERTS = Object.freeze({
+    caution: "🛑 Caution",
+    warning: "⚠️ Warning",
+    note: "ℹ️ Note",
+});
+const GUTTER = "│";
 
 const isProblem = (diagnostic: Diagnostic): diagnostic is ProblemDetails =>
     "type" in diagnostic
@@ -97,56 +98,39 @@ const positionOf = (diagnostic: Diagnostic): Position | null | undefined => {
     return undefined;
 };
 
-const colorOf = (diagnostic: Diagnostic): string => {
-    if (isProblem(diagnostic)) return RED;
-    if (diagnostic.level === "error") return RED;
-    if (diagnostic.level === "warn") return YELLOW;
-    return "";
-};
+const alertOf = (diagnostic: Diagnostic): keyof typeof ALERTS =>
+    isProblem(diagnostic) || diagnostic.level === "error" ? "caution"
+        : diagnostic.level === "warn" ? "warning"
+        : "note";
 
-const renderHeadline = (diagnostic: Diagnostic): string => {
-    const discriminator = `${sourceOf(diagnostic)}:${kindOf(diagnostic)}`;
+const renderTitle = (diagnostic: Diagnostic, alert: keyof typeof ALERTS): string => {
     const position = formatPosition(positionOf(diagnostic));
-    const message = messageOf(diagnostic);
-    const parts = [DIAGNOSTIC_GLYPH, discriminator];
-    if (position.length > 0) parts.push(position);
-    const color = colorOf(diagnostic);
-    if (color.length > 0) {
-        if (message.length > 0) parts.push(`"${message}"`);
-        return `${color}${parts.join(" ")}${RESET}`;
-    }
-    if (message.length > 0) parts.push(`${DIM}"${message}"${RESET}`);
-    return parts.join(" ");
+    const discriminator = `${sourceOf(diagnostic)}:${kindOf(diagnostic)}${position.length > 0 ? ` ${position}` : ""}`;
+    return `${paint(ALERTS[alert], alert, "bold")} ${paint(discriminator, "dim")}`;
 };
 
-const renderSnippet = (diagnostic: Diagnostic): string => {
-    const snippet = typeof diagnostic.snippet === "string" ? diagnostic.snippet : "";
-    if (snippet.length === 0) return "";
-    return snippet.split("\n").map((line) => `   ${line}`).join("\n");
-};
+const lines = (text: string): string[] => text.length === 0 ? [] : text.split("\n");
 
-const renderHints = (diagnostic: Diagnostic): string => {
-    if (!Array.isArray(diagnostic.hints) || diagnostic.hints.length === 0) return "";
-    return diagnostic.hints
+const renderSnippet = (diagnostic: Diagnostic): string[] =>
+    lines(typeof diagnostic.snippet === "string" ? diagnostic.snippet : "").map((line) => `  ${line}`);
+
+const renderHints = (diagnostic: Diagnostic): string[] =>
+    (Array.isArray(diagnostic.hints) ? diagnostic.hints : [])
         .filter((hint): hint is string => typeof hint === "string")
-        .map((hint) => `   ${DIM}${hint}${RESET}`)
-        .join("\n");
-};
+        .map((hint) => paint(hint, "dim"));
 
-const renderRecovery = (diagnostic: Diagnostic): string => {
-    if (!isProblem(diagnostic) || typeof diagnostic.recovery !== "string") return "";
-    return `   ${DIM}${diagnostic.recovery}${RESET}`;
-};
+const renderRecovery = (diagnostic: Diagnostic): string[] =>
+    isProblem(diagnostic) && typeof diagnostic.recovery === "string" ? [paint(diagnostic.recovery, "dim")] : [];
 
 export const renderDiagnostic = (diagnostic: Diagnostic): string => {
-    const parts = [renderHeadline(diagnostic)];
-    const snippet = renderSnippet(diagnostic);
-    if (snippet.length > 0) parts.push(snippet);
-    const recovery = renderRecovery(diagnostic);
-    if (recovery.length > 0) parts.push(recovery);
-    const hints = renderHints(diagnostic);
-    if (hints.length > 0) parts.push(hints);
-    return parts.join("\n");
+    const alert = alertOf(diagnostic);
+    return [
+        renderTitle(diagnostic, alert),
+        ...lines(messageOf(diagnostic)),
+        ...renderSnippet(diagnostic),
+        ...renderRecovery(diagnostic),
+        ...renderHints(diagnostic),
+    ].map((line) => `${paint(GUTTER, alert)} ${line}`).join("\n");
 };
 
 export const report = (diagnostic: Diagnostic): void => {
@@ -373,5 +357,3 @@ export const clientRpcError = (method: string, cause: unknown): ProblemDetails =
         cause instanceof Error ? cause.message : String(cause),
         { method },
     );
-
-export const colors = { RESET, DIM, RED, YELLOW };

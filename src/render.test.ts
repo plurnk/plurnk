@@ -6,8 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
 
-// Set NO_COLOR before importing render.ts so its module-load-time check
-// returns false and all color helpers emit empty strings.
+// NO_COLOR keeps every render plain; colour is read per call.
 process.env.NO_COLOR = "1";
 
 const {
@@ -164,47 +163,37 @@ test("[§cli-log-entry-line-format] entryTarget preserves literal resource addre
     assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
 });
 
-// ─── Conversation reply emphasis (color-enabled import) ─────────────
+// ─── Conversation reply emphasis (colour enabled) ─────────────────────
 // A delivered reply is plain: its Markdown carries the only emphasis, and the
 // human's line is what sets the two voices apart ({§cli-broadcast-send-rendering}).
-// The main import runs under NO_COLOR; colour needs a color-enabled instance. A
-// query-suffixed dynamic import busts the ESM module cache (computed
-// specifier so tsc doesn't try to resolve the query form).
-const freshRender = async (tag: string): Promise<typeof import("./render-message.ts")> =>
-    await import(`./render-message.ts?${tag}`) as typeof import("./render-message.ts");
+const colored = <T>(render: () => T): T => {
+    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
+    try { return render(); } finally { process.env.NO_COLOR = "1"; }
+};
 
 const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
-test("{§cli-broadcast-send-rendering} the model's delivered reply is plain: no bold of its own, no background band", async () => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("plain=1");
-    process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry(sendEntry));
+test("{§cli-broadcast-send-rendering} the model's delivered reply is plain: no bold of its own, no background band", () => {
+    const out = colored(() => renderLogEntry(entry(sendEntry)));
     assert.doesNotMatch(out, /\x1b\[1m/, "prose carries no bold; only Markdown emphasis may");
     assert.doesNotMatch(out, /48;[25]/);    // no background band of any kind
     assert.doesNotMatch(out, /\x1b\[K/);    // no edge-paint
     // A styled lead line (the aside's dim span) does not spill into the body.
-    const aside = colored.renderLogEntry(entry({ ...sendEntry, tx: { aside: "ready", body: { raw: "then more", json: null } } }));
+    const aside = colored(() => renderLogEntry(entry({ ...sendEntry, tx: { aside: "ready", body: { raw: "then more", json: null } } })));
     assert.match(aside, /\x1b\[0m\nthen more$/u);
 });
 
-test("{§cli-broadcast-send-rendering} a failed SEND is not presented as a delivered answer", async () => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("plain=499");
-    process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({ ...sendEntry, op: "SEND", signal: null, status_rx: 499 }));
-    assert.match(out, /\x1b\[95m/u, "the Problem title stands in pink where the keyword was");
+test("{§cli-broadcast-send-rendering} a failed SEND is not presented as a delivered answer", () => {
+    const out = colored(() => renderLogEntry(entry({ ...sendEntry, op: "SEND", signal: null, status_rx: 499 })));
+    assert.match(out, /\x1b\[31m/u, "the Problem title stands in red where the keyword was");
     assert.doesNotMatch(out, /\x1b\[1m/u, "the undelivered body is as plain as a delivered one");
 });
 
-test("{§cli-broadcast-send-rendering} a client-origin broadcast is the same plain block", async () => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    const colored = await freshRender("plain=client");
-    process.env.NO_COLOR = "1";
-    const out = colored.renderLogEntry(entry({
+test("{§cli-broadcast-send-rendering} a client-origin broadcast is the same plain block", () => {
+    const out = colored(() => renderLogEntry(entry({
         op: "SEND", origin: "client", scheme: null, pathname: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
-    }));
+    })));
     assert.doesNotMatch(out, /\x1b\[1m/u);
 });
 

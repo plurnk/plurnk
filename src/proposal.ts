@@ -9,7 +9,7 @@
 // decision, body?, outcome?}.
 
 import ModelText from "./model-text.ts";
-import { colorEnabled } from "./color.ts";
+import { paint } from "./color.ts";
 import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,23 +36,14 @@ export interface Resolution {
     outcome?: string;
 }
 
-const useColor = colorEnabled();
-const ansi = (code: string): string => useColor ? `\x1b[${code}m` : "";
-const RESET = ansi("0");
-const BOLD = ansi("1");
-const DIM = ansi("2");
-const GREEN = ansi("32");
-const RED = ansi("31");
-const CYAN = ansi("36");
-
 // Color udiff lines for EDIT proposals. Anything else renders plain.
 export const renderBody = (op: string, body: string): string => {
     if (op !== "EDIT") return body;
     return body.split("\n").map((line) => {
-        if (line.startsWith("+++") || line.startsWith("---")) return `${BOLD}${line}${RESET}`;
-        if (line.startsWith("+")) return `${GREEN}${line}${RESET}`;
-        if (line.startsWith("-")) return `${RED}${line}${RESET}`;
-        if (line.startsWith("@@")) return `${CYAN}${line}${RESET}`;
+        if (line.startsWith("+++") || line.startsWith("---")) return paint(line, "bold");
+        if (line.startsWith("+")) return paint(line, "added");
+        if (line.startsWith("-")) return paint(line, "removed");
+        if (line.startsWith("@@")) return paint(line, "reference");
         return line;
     }).join("\n");
 };
@@ -107,9 +98,9 @@ export const editInEditor = async (body: string, suffix: string): Promise<string
 export const renderProposalMenu = (params: ProposalParams): string => {
     const body = ModelText.plain(params.body);   // plurnk#35 — the body is the model's
     const nl = body.endsWith("\n") ? "" : "\n";
-    return `\n${BOLD}── proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)} ──${RESET}\n`
+    return `\n${paint(`── proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)} ──`, "bold")}\n`
         + renderBody(params.op, body) + nl
-        + `${DIM}[a]ccept · [e]dit · [r]eject · [c]ancel${RESET} `;
+        + `${paint("[a]ccept · [e]dit · [r]eject · [c]ancel", "dim")} `;
 };
 
 // ─── request-user-input questions ({§question-tool}) ──────────────────
@@ -133,12 +124,12 @@ export const questionChoices = (schema: Record<string, unknown>): string[] => {
 // The question menu: the question, numbered choices, and the always-present
 // literal-value alternative. An open question (no choices) is just "type your answer".
 export const renderQuestionMenu = (question: string, choices: string[]): string => {
-    const lines = [`\n${BOLD}── question ──${RESET}`, `  ${ModelText.plain(question)}`];
-    choices.forEach((c, i) => lines.push(`  ${DIM}${i + 1}.${RESET} ${ModelText.plain(c)}`));
+    const lines = [`\n${paint("── question ──", "bold")}`, `  ${ModelText.plain(question)}`];
+    choices.forEach((c, i) => lines.push(`  ${paint(`${i + 1}.`, "dim")} ${ModelText.plain(c)}`));
     lines.push(choices.length > 0
-        ? `${DIM}  type 1–${choices.length} to pick, or enter a listed value${RESET} `
-        : `${DIM}  type your answer${RESET} `);
-    lines.push(`${DIM}  /cancel cancels the question${RESET}`);
+        ? `${paint(`  type 1–${choices.length} to pick, or enter a listed value`, "dim")} `
+        : `${paint("  type your answer", "dim")} `);
+    lines.push(paint("  /cancel cancels the question", "dim"));
     return lines.join("\n");
 };
 

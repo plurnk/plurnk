@@ -4,14 +4,8 @@
 // lifecycle transition, and never a wait on the model.
 
 import { PLURNK_FENCE, type OperationResult } from "@plurnk/plurnk-contracts";
-import { colorEnabled } from "./color.ts";
+import { paint } from "./color.ts";
 import ModelText from "./model-text.ts";
-
-const useColor = colorEnabled();
-const code = (n: string): string => useColor ? `\x1b[${n}m` : "";
-const RESET = code("0");
-const DIM = code("2");
-const PINK = code("95");
 
 export type LookResult = OperationResult & { content?: unknown; detail?: unknown };
 
@@ -35,19 +29,19 @@ export const lookHeading = (fence: string): string => {
 // The readout: the heading, then the content verbatim; an empty result says so in the
 // daemon's words; an unsuccessful one names the Problem title, its detail and recovery beneath.
 export const renderLook = (fence: string, result: LookResult): string => {
-    const heading = `${DIM}${ModelText.plain(lookHeading(fence))}${RESET}`;
+    const heading = paint(ModelText.plain(lookHeading(fence)), "dim");
     const status = result.status ?? 0;
     const detail = typeof result.detail === "string" && result.detail.length > 0 ? result.detail : null;
     if (status >= 400) {
         const problem = result.problem;
         const title = typeof problem?.title === "string" && problem.title.length > 0 ? problem.title : detail ?? String(status);
-        const lines = [`${heading} — ${PINK}${ModelText.plain(title)}${RESET}`];
-        if (typeof problem?.detail === "string" && problem.detail.length > 0) lines.push(`  ${DIM}${ModelText.plain(problem.detail)}${RESET}`);
+        const lines = [`${heading} — ${paint(ModelText.plain(title), "failure")}`];
+        if (typeof problem?.detail === "string" && problem.detail.length > 0) lines.push(`  ${paint(ModelText.plain(problem.detail), "dim")}`);
         const recovery = (problem as { recovery?: unknown } | undefined)?.recovery;
-        if (typeof recovery === "string" && recovery.length > 0) lines.push(`  ${DIM}${ModelText.plain(recovery)}${RESET}`);
+        if (typeof recovery === "string" && recovery.length > 0) lines.push(`  ${paint(ModelText.plain(recovery), "dim")}`);
         return lines.join("\n");
     }
     const content = typeof result.content === "string" ? result.content : "";
-    if (content.length === 0) return `${heading} — ${DIM}${ModelText.plain(detail ?? "(empty)")}${RESET}`;
+    if (content.length === 0) return `${heading} — ${paint(ModelText.plain(detail ?? "(empty)"), "dim")}`;
     return `${heading}\n${ModelText.plain(content).replace(/\n$/u, "")}`;
 };

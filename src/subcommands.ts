@@ -3,7 +3,7 @@
 // goes to stdout (the product), trace/errors to stderr — same posture as CLI
 // mode per SPEC.md §2.1.
 
-import { colorEnabled } from "./color.ts";
+import { paint } from "./color.ts";
 import {
     Validator,
     type ModelCatalogEntry,
@@ -26,17 +26,13 @@ export interface Caller { call(method: string, params?: object): Promise<unknown
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
 
-const useColor = colorEnabled();
-const BOLD = useColor ? "\x1b[1m" : "";
-const RESET = useColor ? "\x1b[0m" : "";
-
 // Simple column-aligned table. Header row is bold; rows plain. No borders.
 const renderTable = (headers: string[], rows: string[][]): string => {
     const widths = headers.map((h, i) =>
         Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
     const fmt = (cells: string[]) =>
         cells.map((c, i) => c.padEnd(widths[i] ?? 0)).join("  ").trimEnd();
-    return [`${BOLD}${fmt(headers)}${RESET}`, ...rows.map(fmt)].join("\n");
+    return [paint(fmt(headers), "bold"), ...rows.map(fmt)].join("\n");
 };
 
 // ─── plurnk models ────────────────────────────────────────────────────

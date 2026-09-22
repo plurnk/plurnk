@@ -9,6 +9,7 @@
 // the other end to receive it. The client names what it could not deliver and closes itself — the
 // same local teardown Ctrl-D performs. A cancel the daemon refused is the daemon's own answer: it
 // surfaces, the session continues, and the armed exit is one keystroke away.
+import { paint } from "./color.ts";
 import { isUnreachable } from "./diagnostics.ts";
 
 interface CancelPort {
@@ -38,14 +39,14 @@ export default class CancelGesture {
     request(reason: string): void {
         if (this.#requested) return;
         this.#requested = true;
-        this.#port.print("  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m");
+        this.#port.print(`  ${paint("cancelling… (ctrl-c again to quit)", "dim")}`);
         void this.#port.cancel(reason).catch((cause: unknown) => {
             const detail = cause instanceof Error ? cause.message : String(cause);
             if (!isUnreachable(cause)) {
-                this.#port.print(`  \x1b[31mcancel failed: ${detail}\x1b[0m`);
+                this.#port.print(`  ${paint(`cancel failed: ${detail}`, "failure")}`);
                 return;
             }
-            this.#port.print(`  \x1b[31mcancel not delivered: the daemon is unreachable (${detail}) — closing this client\x1b[0m`);
+            this.#port.print(`  ${paint(`cancel not delivered: the daemon is unreachable (${detail}) — closing this client`, "failure")}`);
             this.#port.close();
         });
     }

@@ -1,5 +1,5 @@
 import { TurnDisposition } from "@plurnk/plurnk-contracts";
-import { ansi as code } from "./color.ts";
+import { paint } from "./color.ts";
 import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
 import {
@@ -7,13 +7,6 @@ import {
     objectOf, outcomeTitle, renderOperationRow,
     type LogEntryWire, type RowOverride,
 } from "./render.ts";
-
-const RESET = code("0");
-const BOLD = code("1");
-const DIM = code("2");
-const ITALIC = code("3");
-const GREEN = code("32");
-const PINK = code("95");
 
 // Rich interpretation belongs to the TUI, never shared CLI extraction.
 export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.columns ?? 80): string => {
@@ -25,15 +18,15 @@ export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.col
 };
 
 // The lead line of a delivered response block: no keyword. A blank line stands where the keyword
-// was; a failure puts its Problem title there in pink, a deferred or joined completion its
+// was; a failure puts its Problem title there in red, a deferred or joined completion its
 // `detail`; the sanitized aside follows either.
 const leadLine = (entry: LogEntryWire, detail: boolean): string => {
     const parts: string[] = [];
     const rx = objectOf(entry.rx);
-    if (entry.status_rx >= 400 && !(isResponseMessage(entry) && rx?.problem == null)) parts.push(`${PINK}${ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx))}${RESET}`);
+    if (entry.status_rx >= 400 && !(isResponseMessage(entry) && rx?.problem == null)) parts.push(paint(ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx)), "failure"));
     else if (detail && entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) parts.push(ModelText.plain(rx.detail));
     const aside = entryAside(entry);
-    if (aside !== null) parts.push(`${DIM}${ITALIC}${aside}${RESET}`);
+    if (aside !== null) parts.push(paint(aside, "dim", "italic"));
     return parts.join(" ");
 };
 
@@ -49,7 +42,7 @@ const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSend
 // same plain body block.
 const renderArrival = (entry: LogEntryWire, columns: number): string => {
     const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
-    const lead = `${BOLD}${GREEN}SEND${RESET}${sender}`;
+    const lead = `${paint("SEND", "bold", "success")}${sender}`;
     const body = renderSendBody(entry.tx, Math.max(1, columns));
     return body.length === 0 ? lead : `${lead}\n${body}`;
 };

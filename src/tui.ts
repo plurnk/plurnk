@@ -17,7 +17,7 @@ import TuiSurface from "./tui-surface.ts";
 import TerminalGuards from "./tui-guards.ts";
 import CancelGesture from "./tui-cancel.ts";
 import ModelText from "./model-text.ts";
-import { ansi as code } from "./color.ts";
+import { paint } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
@@ -76,7 +76,7 @@ export const renderTuiFailure = (cause: unknown): string => {
         return renderDiagnostic(ModelText.plainFields(cause.problem))
             + (cause.problem.status === 501 ? NO_MODEL_HINT : "");
     }
-    return `  \x1b[31merror: ${ModelText.plain(cause instanceof Error ? cause.message : String(cause))}\x1b[0m`;
+    return `  ${paint(`error: ${ModelText.plain(cause instanceof Error ? cause.message : String(cause))}`, "failure")}`;
 };
 
 // The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
@@ -125,14 +125,11 @@ export const lookStatement = (line: string): string | null =>
 
 export const linePolicy = promptPolicy;
 
-// {§cli-log-entry-line-format} — the human's line in scrollback: bold, in a colour the palette gives
-// no other meaning, so the two voices read apart while the model's reply stays plain.
-export const renderSubmittedInput = (text: string, yolo: boolean): string => {
-    const [bold, blue, reset] = [code("1"), code("94"), code("0")];
-    return text.split("\n")
-        .map((line, index) => `${bold}${blue}${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}${reset}`)
-        .join("\n");
-};
+// {§cli-log-entry-line-format} — the human's line in scrollback: bold, in the human's own colour, so
+// the two voices read apart while the model's reply stays plain.
+export const renderSubmittedInput = (text: string, yolo: boolean): string => text.split("\n")
+    .map((line, index) => paint(`${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}`, "bold", "human"))
+    .join("\n");
 
 // A blank row above and below the line; an empty print is the surface's spacer.
 export const printSubmittedInput = (print: (text: string) => void, text: string, yolo: boolean): void => {
@@ -736,7 +733,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const surface = new TuiSurface();
     const releaseGuards = TerminalGuards.install(surface);
     printAbove = (text) => surface.append(text);
-    surface.append(`\x1b[2m${header}\x1b[0m`);
+    surface.append(paint(header, "dim"));
     surface.append("");
     if (reasoningFailure !== undefined) printAbove(renderTuiFailure(reasoningFailure));
 
@@ -924,7 +921,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (pendingProposal !== null || proposalQueue.length === 0) return;
         pendingProposal = proposalQueue.shift() as ProposalParams;
         printAbove(`${renderProposalMenu(pendingProposal)}\n`
-            + "\x1b[2m  resolve: a/e/r/c  or  /accept /reject /cancel /edit\x1b[0m");
+            + paint("  resolve: a/e/r/c  or  /accept /reject /cancel /edit", "dim"));
     };
     const resolvePending = async (resolution: Resolution): Promise<void> => {
         const p = pendingProposal;
@@ -1056,7 +1053,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onProposal: (p, source = "model") => {
             if (opts.yolo && !(source === "model" && reviewRequested)) {
                 void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
-                    .catch((cause) => printAbove(`  \x1b[31mauto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}\x1b[0m`));
+                    .catch((cause) => printAbove(`  ${paint(`auto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}`, "failure")}`));
                 return;
             }
             proposalQueue.push(p);
@@ -1190,7 +1187,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  \x1b[2mresume this workspace:  ${resumeCommand(current.name, conversationWorker ?? workspace.name)}\x1b[0m\n`);
+            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, conversationWorker ?? workspace.name)}`, "dim")}\n`);
             resolve();
         };
         requestClose = close;
@@ -1270,7 +1267,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 pendingInjections.add(admitted);
                 try {
                     await admitted;
-                    printAbove("  \x1b[2m↳ added to the run\x1b[0m");
+                    printAbove(`  ${paint("↳ added to the run", "dim")}`);
                 } finally {
                     pendingInjections.delete(admitted);
                     reprompt();

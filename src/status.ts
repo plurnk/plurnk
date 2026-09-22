@@ -53,7 +53,27 @@ export interface StatusContext {
     accrued?: TurnAccounting | null;
     runningSince: number | null;
     now?: number;
+    doing?: WorkerDoing | null;
 }
+
+// {plurnk#91} — what the worker is doing this moment, from notices and log rows the daemon already
+// sends: waiting on the model, or the operation that just resolved. A busy turn must not look like
+// a hang, and neither needs new telemetry to tell apart.
+export interface WorkerDoing {
+    readonly phase: "awaiting" | "working";
+    readonly since: number;
+    readonly op: string | null;
+    readonly target: string | null;
+}
+
+// The end of an address is the part that tells files apart.
+const tail = (text: string, width: number): string => text.length <= width ? text : `…${text.slice(-(width - 1))}`;
+
+const doingText = ({ phase, since, op, target }: WorkerDoing, now: number): string => {
+    if (phase === "awaiting") return `awaiting model ${formatDuration(Math.max(0, now - since))}`;
+    if (op === null) return "working";
+    return target === null ? op : `${op} ${tail(target, 40)}`;
+};
 
 export type StatusLifecycle = "idle" | "queued" | "running" | "parked" | "completed" | "cancelled" | "failed";
 
@@ -265,6 +285,7 @@ export const renderStatusLine = (
     const running = value.lifecycle === "running";
     const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
     if (context.tally.turns > 0 || running) parts.push(formatDuration(context.tally.wallMs + elapsed));
+    if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
     const accrued = running || value.lifecycle === "parked" || value.lifecycle === "queued" ? context.accrued ?? null : null;
     const combined = accrued === null ? context.tally : accrueTurnAccounting({
         costUsd: context.tally.costUsd,

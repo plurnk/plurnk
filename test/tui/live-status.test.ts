@@ -61,10 +61,14 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     tui.write("Work through two turns.\r");
     await incoming[0].promise;
     await tui.waitFor(/LIVE_REASONING_1/);
+    // {plurnk#91} — the quiet part is named: the worker is waiting on the model, not hung.
+    await tui.waitFor(/⌛︎[^\r\n]*awaiting model/, 10_000);
     const first = tui.output().length;
     release[0].resolve();
     await incoming[1].promise;
     await tui.waitFor(/LIVE_REASONING_2/);
+    // {plurnk#91} — and when it works, the status names the operation that just ran.
+    await tui.waitFor(/⌛︎[^\r\n]*FIND worker:\/\/\/\*/, 10_000, first);
     await tui.waitFor(/⌛︎[^\r\n]*↓1k ↑100/, 10_000, first);
     assert.match(tui.output().slice(first), /Continuing the work\./, "the first delivered message remains in scrollback as the next reasoning streams");
     const command = tui.output().length;

@@ -143,3 +143,17 @@ test("#465: turn accounting parses, accrues decimal-exact, and rides the running
         { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
     ), /↓150 ↑25.*\$0\.0150/, "parking does not hide already-settled spend");
 });
+
+// {plurnk#91} — a busy turn must not look like a hang.
+test("the status line names what the worker is doing, and nothing when it is idle", () => {
+    const awaiting = { phase: "awaiting" as const, since: 1_200, op: null, target: null };
+    assert.equal(renderStatusLine(running, { ...CONTEXT, doing: awaiting }), "⌛︎  · 3.2s · awaiting model 3.0s · 🎲 deepdumb",
+        "the quiet part is named, with how long it has been quiet");
+    const reading = { phase: "working" as const, since: 3_000, op: "READ", target: "plurnk-contracts/SPEC.md" };
+    assert.equal(renderStatusLine(running, { ...CONTEXT, doing: reading }), "⌛︎  · 3.2s · READ plurnk-contracts/SPEC.md · 🎲 deepdumb");
+    const deep = { ...reading, target: "worker:///_plurnk/plurnk/very/deeply/nested/path/to/some/file.md" };
+    assert.match(renderStatusLine(running, { ...CONTEXT, doing: deep }), /READ …[^ ]*some\/file\.md ·/u,
+        "a long address keeps its end, which is the part that tells files apart");
+    assert.equal(renderStatusLine({ ...running, lifecycle: "idle" }, { ...CONTEXT, doing: reading }).includes("READ"), false,
+        "an idle worker is doing nothing, whatever the last operation was");
+});

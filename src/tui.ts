@@ -57,7 +57,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -598,6 +598,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let current = workspace;
     // Loop state, hoisted so the line handler and SIGINT can share it.
     let inFlight = false;
+    // {plurnk#91} — the worker's current activity, painted while a loop runs.
+    let doing: WorkerDoing | null = null;
     let pendingCommands = 0;
     let rebinding = false;
     let activeRun: ObservationHandle | null = null;
@@ -749,6 +751,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         accrued,
         runningSince,
         now: Date.now(),
+        doing,
     });
     const paintPrompt = (): void => surface.setPrompt(promptPrefix(
         workerPath(placeWorkers, conversationWorker),
@@ -960,6 +963,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // or a worker/second client did (multi-client observability).
     const handleNotice = (notice: Notice): void => {
         if (notice.source === "engine:turn") {
+            if (inFlight && notice.kind === "turn_awaiting_model") {
+                doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
+                repromptPreserving();
+            } else if (inFlight && notice.kind === "turn_generated" && doing?.phase === "awaiting") {
+                doing = { phase: "working", since: Date.now(), op: null, target: null };
+                repromptPreserving();
+            }
             const accounting = turnAccountingFromNotice(notice);
             if (inFlight && accounting !== null) {
                 accrued = accrueTurnAccounting(accrued, accounting);
@@ -996,6 +1006,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
             if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
+            if (inFlight && entry.origin === "model" && typeof entry.op === "string") {
+                doing = { phase: "working", since: Date.now(), op: entry.op, target };
+                repromptPreserving();
+            }
             // {§cli-what-is-not-rendered} — a started execution appears when its outcome is known.
             if (streams.launch(entry)) return;
             // A glob READ's rows collapse to the authored statement once the last row is in.
@@ -1268,6 +1282,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             lifecycle = "running";
             authoritativeStatus = null;
             accrued = null;
+            doing = null;
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.
             reprompt();
@@ -1326,6 +1341,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             } finally {
                 runningSince = null;
                 inFlight = false;
+                doing = null;
                 activeRun = null;
                 gesture.release();
                 pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question

@@ -91,7 +91,7 @@ export default class StreamTrace {
 
     // One row per execution, at its conclusion, in the operation grammar: the launching
     // fence when it is known, the stream's own scheme and address otherwise.
-    concluded(ev: StreamConcludedPayload, rows: number = process.stdout.rows ?? 24): string {
+    concluded(ev: StreamConcludedPayload): string {
         const launch = this.#launched.get(ev.target);
         this.#launched.delete(ev.target);
         this.#greyed.delete(ev.target);
@@ -99,7 +99,7 @@ export default class StreamTrace {
         const failed = status !== 200;
         const title = ev.result.problem?.title;
         const failure = !failed ? null : typeof title === "string" && title.length > 0 ? title : summaryTail(ev) || String(status);
-        if (launch !== undefined) return renderOperationBlock(launch, { failed, failure }, rows);
+        if (launch !== undefined) return renderOperationBlock(launch, { failed, failure });
         const parts = [paint(ModelText.plain(ev.scheme), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
         if (failure !== null) parts.push(`— ${paint(ModelText.plain(failure), "failure")}`);
         return parts.join(" ");
@@ -115,9 +115,9 @@ export const inlineable = (content: string): boolean => {
 };
 
 // Render a concluded channel's content as indented lines under the conclusion, previewed
-// ({plurnk#104}): a third of the terminal at most. stderr is marked and tinted.
-export const renderInline = (channel: string, content: string, rows: number = process.stdout.rows ?? 24): string =>
-    previewLines(ModelText.plain(content).trimEnd().split("\n"), rows, (remaining) => `… +${remaining} lines`)
+// ({plurnk#107}): the knob's line count. stderr is marked and tinted.
+export const renderInline = (channel: string, content: string): string =>
+    previewLines(ModelText.plain(content).trimEnd().split("\n"), (remaining) => `… +${remaining} lines`)
         .map((l) => channel === "stderr" ? `${PREVIEW_OFFSET}${paint("!", "failure")} ${paint(l, "dim")}` : previewLine(l))
         .join("\n");
 

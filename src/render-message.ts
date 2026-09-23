@@ -38,17 +38,17 @@ const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSend
     return body.length === 0 ? lead : `${lead}\n${body}`;
 };
 
-// A block's body previewed ({plurnk#104}): the plain text, four columns in and dim, a third of
-// the terminal at most. No Markdown pass: a preview is quiet by construction.
-const previewBlock = (entry: LogEntryWire, rows: number): string =>
-    previewLines(ModelText.plain(extractSendBody(entry.tx)).trimEnd().split("\n"), rows, (remaining) => previewMore(entry, remaining)).map(previewLine).join("\n");
+// A block's body previewed ({plurnk#107}): the plain text, four columns in and dim, the knob's
+// line count. No Markdown pass: a preview is quiet by construction.
+const previewBlock = (entry: LogEntryWire): string =>
+    previewLines(ModelText.plain(extractSendBody(entry.tx)).trimEnd().split("\n"), (remaining) => previewMore(entry, remaining)).map(previewLine).join("\n");
 
 // An arrival from another actor: SEND with the sender where a target would sit, then the
 // same plain body block, previewed.
-const renderArrival = (entry: LogEntryWire, rows: number): string => {
+const renderArrival = (entry: LogEntryWire): string => {
     const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
     const lead = `${paint("SEND", "bold", "success")}${sender}`;
-    return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry, rows)}\n`;
+    return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry)}\n`;
 };
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
@@ -60,15 +60,14 @@ export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
     override?: RowOverride,
-    rows: number = process.stdout.rows ?? 24,
 ): string => {
     if (isResponseMessage(entry)) return renderBroadcast(entry, columns);
     if (TurnDisposition.isOp(entry.op) || entry.op === "KILL" && objectOf(entry.tx)?.target === null) {
         const rx = objectOf(entry.rx);
         const detail = typeof rx?.detail === "string" ? rx.detail : null;
-        return renderOperationBlock(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) }, rows, true);
+        return renderOperationBlock(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) }, true);
     }
-    if (isArrivalEntry(entry)) return renderArrival(entry, rows);
+    if (isArrivalEntry(entry)) return renderArrival(entry);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
-    return renderOperationBlock(entry, override, rows, true);
+    return renderOperationBlock(entry, override, true);
 };

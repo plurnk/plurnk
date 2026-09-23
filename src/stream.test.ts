@@ -97,10 +97,10 @@ test("inlineable: short one-or-two-line content only", () => {
 test("renderInline: indents under the conclusion; stderr is marked", () => {
     assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "    Ulaanbaatar");
     assert.match(renderInline("stderr", "oh no\n"), /^    ! oh no$/);
-    // {plurnk#104} — an execution's output previews like any body: a third of the terminal at most.
-    const long = renderInline("stdout", Array.from({ length: 40 }, (_, index) => `l${index + 1}`).join("\n"), 24).split("\n");
-    assert.equal(long.length, 9);
-    assert.equal(long[8], "    … +32 lines");
+    // {plurnk#107} — an execution's output previews like any body: the knob's line count.
+    const long = renderInline("stdout", Array.from({ length: 40 }, (_, index) => `l${index + 1}`).join("\n")).split("\n");
+    assert.equal(long.length, 4);
+    assert.equal(long[3], "    … +37 lines");
 });
 
 test("[§cli-what-is-not-rendered] an execution still open when the following turn begins is reported once as stale, then concludes normally", () => {

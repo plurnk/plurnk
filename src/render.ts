@@ -211,13 +211,22 @@ const styledOutcome = (text: string, failed: boolean): string =>
 export const renderPendingRow = (entry: LogEntryWire): string =>
     paint(stripVTControlCharacters(renderOperationRow(entry, { failed: false, failure: null })), "dim");
 
-// {plurnk#104} — every body in the waterfall is a preview: at most a third of the terminal's rows,
-// never fewer than three, and the rest is named with the address LOOK reads it at. This is
-// scrollback; the reasoning lane ({§cli-provider-reasoning}) is a separate, live window.
-export const previewRows = (rows: number): number => Math.max(3, Math.floor(rows / 3));
+// {plurnk#107} — every body in the waterfall is a preview of a fixed number of lines, the knob's
+// (PLURNK_CLIENT_PREVIEW_LINES; --preview-lines spells it for one invocation), never the
+// terminal's height; the rest is named with the address LOOK reads it at. This is scrollback; the
+// reasoning lane ({§cli-provider-reasoning}) is a separate, live window. A renderer reached before
+// the panel is loaded is a programming error, not a default.
+export const previewLimit = (): number => {
+    const raw = process.env.PLURNK_CLIENT_PREVIEW_LINES;
+    const limit = Number(raw);
+    if (raw === undefined || raw.length === 0 || !Number.isInteger(limit) || limit < 0) {
+        throw new Error(`PLURNK_CLIENT_PREVIEW_LINES must be a non-negative integer, not ${JSON.stringify(raw)}`);
+    }
+    return limit;
+};
 
-export const previewLines = (lines: readonly string[], rows: number, more: (remaining: number) => string): string[] => {
-    const max = previewRows(rows);
+export const previewLines = (lines: readonly string[], more: (remaining: number) => string): string[] => {
+    const max = previewLimit();
     return lines.length <= max ? [...lines] : [...lines.slice(0, max), more(lines.length - max)];
 };
 
@@ -232,18 +241,21 @@ export const previewMore = (entry: LogEntryWire, remaining: number): string =>
 export const PREVIEW_OFFSET = "    ";
 export const previewLine = (line: string): string => `${PREVIEW_OFFSET}${paint(line, "dim")}`;
 
-// The authored body beneath its row, previewed.
-export const renderBodyPreview = (entry: LogEntryWire, rows: number): string | null => {
+// The authored body beneath its row: previewed, or whole for a NOTE, the working memory a human
+// reads in place ({§cli-note-rendering}).
+export const renderBodyPreview = (entry: LogEntryWire): string | null => {
     const body = ModelText.plain(extractSendBody(entry.tx)).trimEnd();
     if (body.length === 0) return null;
-    return previewLines(body.split("\n"), rows, (remaining) => previewMore(entry, remaining)).map(previewLine).join("\n");
+    const lines = body.split("\n");
+    const shown = entry.op === "NOTE" ? lines : previewLines(lines, (remaining) => previewMore(entry, remaining));
+    return shown.map(previewLine).join("\n");
 };
 
 // A row and, beneath it, the preview of its authored body. A spaced block closes with a blank
 // row; an execution's block is left open because its output preview follows it.
-export const renderOperationBlock = (entry: LogEntryWire, override: RowOverride = {}, rows: number = process.stdout.rows ?? 24, spaced = false): string => {
+export const renderOperationBlock = (entry: LogEntryWire, override: RowOverride = {}, spaced = false): string => {
     const row = renderOperationRow(entry, override);
-    const preview = renderBodyPreview(entry, rows);
+    const preview = renderBodyPreview(entry);
     return preview === null ? row : `${row}\n${preview}${spaced ? "\n" : ""}`;
 };
 

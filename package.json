@@ -25,7 +25,7 @@
     "scripts": {
         "test:lint": "tsc --noEmit",
         "test:posix": "node scripts/check-posix.mjs",
-        "test:unit": "node --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'",
+        "test:unit": "node --env-file-if-exists=.env.defaults --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'",
         "pretest:intg": "npm run build",
         "test:intg": "node --test --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
         "test": "npm run test:lint && npm run test:unit && npm run test:intg && npm run test:tui",

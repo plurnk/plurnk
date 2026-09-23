@@ -50,6 +50,7 @@ Options:
 | `--proposals <p>` | string | State what every loop does with a proposal: `review`, `accept`, or `reject`. Overrides `PLURNK_CLIENT_PROPOSALS`. See §6.0. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
 | `--max-turns <n>` | string | Model-call budget for the prompt's worker tree ({§turn-cap-counts-the-tree}): the loop's turns, its descendants' turns and every BARE call, one per call; omission leaves the daemon's ceiling in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
+| `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · /look <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. Overrides `PLURNK_CLIENT_TIMEOUT`. |
 | `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
 | `--host <host>` | string | Web mode only: local browser portal host. An argument of `web`; its knob, `PLURNK_WEB_HOST`, is `@plurnk/plurnk-web`'s. |
@@ -662,10 +663,11 @@ Markdown pass:
 - The aside is the durable operation aside as sanitized literal text, italic and dim, never
   interpreted as Markdown or HTML.
 - Every authored body renders beneath its row as a preview: the plain text, no Markdown pass,
-  at most a third of the terminal's rows and never fewer than three, four columns in and dim
-  (the reasoning lane's fade, never italic), ending in `… +N lines · /look <address>` when cut,
-  and a blank row closes the block. A concluded execution's output previews the same way
-  under its row, and its blank row follows the output. The delivered answer (§5.4) is whole;
+  `PLURNK_CLIENT_PREVIEW_LINES` lines (`--preview-lines` for one invocation), independent of
+  the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),
+  ending in `… +N lines · /look <address>` when cut, and a blank row closes the block. A
+  concluded execution's output previews the same way under its row, and its blank row follows
+  the output. A NOTE's body is whole ({§cli-note-rendering}), as is the delivered answer (§5.4);
   the reasoning lane (§5.1.1) is a separate, live window.
 - An unsuccessful outcome (`status_rx >= 400`) names the structured result's own `problem.title`
   (else its `detail`, else the bare status) at the right of the row. A 204 is not a failure: a
@@ -741,7 +743,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | A model NOTE renders as any operation does: its `NOTE` heading with the aside, its body as a preview beneath (§5.1), and the blank row that closes the block {§cli-note-rendering}; it is never a delivered message. A harness NOTE renders the same way. |
+| NOTE | A model NOTE renders as any operation does: its `NOTE` heading with the aside, its body whole beneath, four columns in and dim, the working memory a human reads in place (§5.1), and the blank row that closes the block {§cli-note-rendering}; it is never a delivered message. A harness NOTE renders the same way. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |
@@ -760,7 +762,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
-- Whole bodies. Every body is a preview (§5.1); human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log entry.
+- Whole bodies. Every body but a NOTE's is a preview (§5.1); human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log entry.
 - Raw SSE frames.
 - Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI previews a concluded execution's output under its row (§5.1). An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and red otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
 

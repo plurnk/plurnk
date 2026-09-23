@@ -663,27 +663,47 @@ test("[§cli-what-is-not-rendered] a pending execution's grey row is the plain r
     assert.doesNotMatch(row, /npm test|started/);
 });
 
-test("{plurnk#104} a body previews at a third of the terminal and names the address the rest lives at; a NOTE keeps its blank rows", () => {
+test("{plurnk#107} a body previews at the knob's line count and names the address the rest lives at; a NOTE renders whole", () => {
     const lines = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
     const sh = entry({
         op: "sh", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 3,
         tx: { runtime: "sh", target: null, aside: null, body: lines.join("\n") },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
-    const rows = renderLogEntry(sh, 80, undefined, 24).split("\n");
+    const rows = renderLogEntry(sh, 80).split("\n");
     assert.equal(rows[0], "sh");
-    assert.deepEqual(rows.slice(1, 9), lines.slice(0, 8).map((line) => `    ${line}`), "eight of forty lines at 24 rows, four columns in");
-    assert.equal(rows[9], "    … +32 lines · /look log:///1/2/3/sh", "the rest is named with the address LOOK reads");
-    assert.deepEqual(rows.slice(10), [""], "a blank row closes the block");
+    assert.deepEqual(rows.slice(1, 4), lines.slice(0, 3).map((line) => `    ${line}`), "three of forty lines, the shipped PLURNK_CLIENT_PREVIEW_LINES, four columns in");
+    assert.equal(rows[4], "    … +37 lines · /look log:///1/2/3/sh", "the rest is named with the address LOOK reads");
+    assert.deepEqual(rows.slice(5), [""], "a blank row closes the block");
     const short = entry({ ...sh, tx: { runtime: "sh", target: null, aside: null, body: "one\ntwo" } });
-    assert.equal(renderLogEntry(short, 80, undefined, 24), "sh\n    one\n    two\n", "a short body is shown whole");
+    assert.equal(renderLogEntry(short, 80), "sh\n    one\n    two\n", "a short body is shown whole");
     const note = entry({
         op: "NOTE", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 4,
         tx: { op: "NOTE", target: null, aside: null, body: { raw: lines.join("\n"), json: null } },
     });
-    const noteRows = renderLogEntry(note, 80, undefined, 24).split("\n");
+    const noteRows = renderLogEntry(note, 80).split("\n");
     assert.deepEqual([noteRows[0], noteRows.at(-1)], ["NOTE", ""], "a NOTE is its heading, and the blank row closes it");
-    assert.equal(noteRows.length, 11, "the heading, eight lines, the marker, a blank row");
-    assert.deepEqual(noteRows.slice(1, 3), ["    line 1", "    line 2"], "a NOTE previews like every other body: four columns in");
-    assert.equal(noteRows[9], "    … +32 lines · /look log:///1/2/4/NOTE");
+    assert.equal(noteRows.length, 42, "the heading, all forty lines, a blank row: working memory is read in place");
+    assert.deepEqual(noteRows.slice(1, 3), ["    line 1", "    line 2"], "a NOTE's body sits four columns in like every body");
+    assert.ok(!noteRows.some((row) => row.includes("/look")), "a NOTE is never cut");
+});
+
+test("{plurnk#107} the preview count is the knob's, never the terminal's height, and an unreadable knob is an error", () => {
+    const sh = entry({
+        op: "sh", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 3,
+        tx: { runtime: "sh", target: null, aside: null, body: Array.from({ length: 12 }, (_, index) => `l${index + 1}`).join("\n") },
+        rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
+    });
+    const shipped = process.env.PLURNK_CLIENT_PREVIEW_LINES;
+    try {
+        process.env.PLURNK_CLIENT_PREVIEW_LINES = "8";
+        assert.equal(renderLogEntry(sh, 80).split("\n").length, 11, "eight lines, the marker, a blank row");
+        process.env.PLURNK_CLIENT_PREVIEW_LINES = "0";
+        assert.equal(renderLogEntry(sh, 80), "sh\n    … +12 lines · /look log:///1/2/3/sh\n", "zero shows only where the body lives");
+        process.env.PLURNK_CLIENT_PREVIEW_LINES = "a third";
+        assert.throws(() => renderLogEntry(sh, 80), /PLURNK_CLIENT_PREVIEW_LINES must be a non-negative integer/u);
+    } finally {
+        if (shipped === undefined) delete process.env.PLURNK_CLIENT_PREVIEW_LINES;
+        else process.env.PLURNK_CLIENT_PREVIEW_LINES = shipped;
+    }
 });

@@ -195,6 +195,9 @@ options:
                           CLI exits 3 with "timedOut":true. Web retains the Worker.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
+      --preview-lines <n> lines of each operation body and execution output shown
+                          beneath its row; the rest is named for /look. Overrides
+                          PLURNK_CLIENT_PREVIEW_LINES.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --status-stream     also print one greppable accounting row per turn on stderr.
@@ -600,6 +603,7 @@ export const main = async (argv: string[]): Promise<void> => {
             timeout: { type: "string" },
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
+            "preview-lines": { type: "string" },
 
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
@@ -648,6 +652,14 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // Shared XDG user env cascade (after parse so --env-file flags participate).
     loadEnvCascade(orderedEnvFiles(argv.slice(2)));
+    // {§cli-env-defaults} — a flag is a knob's spelling for one invocation: the resolved preview
+    // count is written back to its knob, the one place every renderer reads it ({plurnk#107}).
+    const previewLinesRaw = values["preview-lines"] ?? stated("PLURNK_CLIENT_PREVIEW_LINES") ?? "";
+    const previewLines = Number(previewLinesRaw);
+    if (previewLinesRaw.length === 0 || !Number.isInteger(previewLines) || previewLines < 0) {
+        dieWith(64, clientFlagInvalid("--preview-lines", previewLinesRaw, "must be a non-negative integer"));
+    }
+    process.env.PLURNK_CLIENT_PREVIEW_LINES = String(previewLines);
     const mcpConfiguration = collectMcpConfiguration(process.env);
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would

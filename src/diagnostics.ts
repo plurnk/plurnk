@@ -57,10 +57,11 @@ export class ProblemError extends Error {
 
 // {§cli-notice-rendering} — every diagnostic is an alert block (plurnk#97): a Problem or an error
 // Notice is a caution, a warning Notice a warning, an informational Notice a note.
+// Each glyph is two columns wide: a second space keeps the word off its shoulder (plurnk#104).
 const ALERTS = Object.freeze({
-    caution: "🛑 Caution",
-    warning: "⚠️ Warning",
-    note: "ℹ️ Note",
+    caution: "🛑  Caution",
+    warning: "⚠️  Warning",
+    note: "ℹ️  Note",
 });
 const GUTTER = "│";
 
@@ -122,11 +123,14 @@ const renderHints = (diagnostic: Diagnostic): string[] =>
 const renderRecovery = (diagnostic: Diagnostic): string[] =>
     isProblem(diagnostic) && typeof diagnostic.recovery === "string" ? [paint(diagnostic.recovery, "dim")] : [];
 
+// {plurnk#104} — the message rides the title line; only its further lines, a snippet, a
+// recovery or hints take rows of their own.
 export const renderDiagnostic = (diagnostic: Diagnostic): string => {
     const alert = alertOf(diagnostic);
+    const [first, ...rest] = lines(messageOf(diagnostic));
     return [
-        renderTitle(diagnostic, alert),
-        ...lines(messageOf(diagnostic)),
+        `${renderTitle(diagnostic, alert)}${first === undefined ? "" : ` — ${first}`}`,
+        ...rest,
         ...renderSnippet(diagnostic),
         ...renderRecovery(diagnostic),
         ...renderHints(diagnostic),

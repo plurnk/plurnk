@@ -14,8 +14,8 @@ const running: ClientStatus = {
 };
 
 test("[§cli-worker-status] status presentation uses only client-owned facts", () => {
-    assert.equal(renderStatusLine(running, CONTEXT), "⌛︎  · 3.2s · 🎲 deepdumb");
-    assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 rtx5070", "a spawn override rides beside the model");
+    assert.equal(renderStatusLine(running, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
+    assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 rtx5070", "a spawn override rides beside the model");
     const concluded = tallyOutcome(tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5_000 }), {
         turns: 2, wallMs: 60_000,
         usage: { accounting: { usage: { inputTokens: 1200, outputTokens: 345 }, costUsd: "0.024" } } as never,
@@ -24,19 +24,20 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
     assert.equal(tallyOutcome(concluded, { turns: 1, wallMs: 1, usage: { accounting: { usage: { inputTokens: 10, outputTokens: 5 }, costUsd: "0.0125" } } as never }).costUsd, "0.0365");
     assert.equal(
         renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }, { ...CONTEXT, tally: concluded, runningSince: null }),
-        "⏹️  · 1m05s · ↓1k ↑345 · $0.0240 · 🎲 deepdumb · 🧮 55%",
+        "⏹️  · 🎲 deepdumb · 1m05s · ↓1k ↑345 · $0.0240 · 🧮 55%",
     );
-    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, loopId: null, packetCount: null, activity: null, children: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { idleGlyph: "🔥" }), "🔥");
+    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, loopId: null, packetCount: null, activity: null, children: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { yolo: true }), "🔥");
+    assert.equal(renderStatusLine(running, CONTEXT, { yolo: true }), "🔥 ⌛︎  · 🎲 deepdumb · 3.2s", "{plurnk#104} YOLO is a fireball at the left edge, and the model sits ahead of what ticks");
 });
 
 // {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the
 // child model rides beside it, and the worker segment carries the sibling position.
 test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {
-    assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 3.2s · 🎲 deepdumb");
-    assert.equal(renderStatusLine({ ...running, children: 0 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 3.2s · 🎲 deepdumb", "a configured child model is not active child work");
-    assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 2 dumbox");
-    assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 dumbox", "no gauge, no count: the bare child model");
-    assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 3.2s · 🎲 deepdumb · 🐜 1", "the place is the prompt prefix's, not the status line's");
+    assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
+    assert.equal(renderStatusLine({ ...running, children: 0 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s", "a configured child model is not active child work");
+    assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2 dumbox");
+    assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 dumbox", "no gauge, no count: the bare child model");
+    assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 1", "the place is the prompt prefix's, not the status line's");
     assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: 3 }).children, 3);
     assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null }).children, null, "an older daemon states no count");
     assert.throws(() => projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: -1 }), /Invalid runtime children count/u);
@@ -147,12 +148,12 @@ test("#465: turn accounting parses, accrues decimal-exact, and rides the running
 // {plurnk#91} — a busy turn must not look like a hang.
 test("the status line names what the worker is doing, and nothing when it is idle", () => {
     const awaiting = { phase: "awaiting" as const, since: 1_200, op: null, target: null };
-    assert.equal(renderStatusLine(running, { ...CONTEXT, doing: awaiting }), "⌛︎  · 3.2s · awaiting model 3.0s · 🎲 deepdumb",
+    assert.equal(renderStatusLine(running, { ...CONTEXT, doing: awaiting }), "⌛︎  · 🎲 deepdumb · 3.2s · awaiting model 3.0s",
         "the quiet part is named, with how long it has been quiet");
     const reading = { phase: "working" as const, since: 3_000, op: "READ", target: "plurnk-contracts/SPEC.md" };
-    assert.equal(renderStatusLine(running, { ...CONTEXT, doing: reading }), "⌛︎  · 3.2s · READ plurnk-contracts/SPEC.md · 🎲 deepdumb");
+    assert.equal(renderStatusLine(running, { ...CONTEXT, doing: reading }), "⌛︎  · 🎲 deepdumb · 3.2s · READ plurnk-contracts/SPEC.md");
     const deep = { ...reading, target: "worker:///_plurnk/plurnk/very/deeply/nested/path/to/some/file.md" };
-    assert.match(renderStatusLine(running, { ...CONTEXT, doing: deep }), /READ …[^ ]*some\/file\.md ·/u,
+    assert.match(renderStatusLine(running, { ...CONTEXT, doing: deep }), /READ …[^ ]*some\/file\.md$/u,
         "a long address keeps its end, which is the part that tells files apart");
     assert.equal(renderStatusLine({ ...running, lifecycle: "idle" }, { ...CONTEXT, doing: reading }).includes("READ"), false,
         "an idle worker is doing nothing, whatever the last operation was");

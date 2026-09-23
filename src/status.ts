@@ -275,17 +275,20 @@ const activityText = ({ label, percent }: StatusActivity): string => {
 export const renderStatusLine = (
     value: ClientStatus,
     context: StatusContext,
-    options: { idleGlyph?: string } = {},
+    options: { yolo?: boolean } = {},
 ): string => {
     // {plurnk#58} — the glyph IS the lifecycle; the word beside it said the same thing twice, and
     // the turn count moved into the prompt prefix where the place is named.
-    const glyph = lifecycleGlyph(value.lifecycle, options.idleGlyph ?? "");
-    const head = glyph.length > 0 ? glyph : value.lifecycle;
+    // {plurnk#104} — YOLO is a fireball at the left edge beside the lifecycle glyph, and the model
+    // sits next, ahead of everything that ticks, so the ticking never moves it.
+    const glyph = lifecycleGlyph(value.lifecycle, "");
+    const glyphs = [...(options.yolo === true ? ["🔥"] : []), ...(glyph.length > 0 ? [glyph] : [])];
+    const head = glyphs.length > 0 ? glyphs.join(" ") : value.lifecycle;
     const parts: string[] = [];
+    if (value.model !== null) parts.push(`🎲 ${value.model}`);
     const running = value.lifecycle === "running";
     const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
     if (context.tally.turns > 0 || running) parts.push(formatDuration(context.tally.wallMs + elapsed));
-    if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
     const accrued = running || value.lifecycle === "parked" || value.lifecycle === "queued" ? context.accrued ?? null : null;
     const combined = accrued === null ? context.tally : accrueTurnAccounting({
         costUsd: context.tally.costUsd,
@@ -295,13 +298,13 @@ export const renderStatusLine = (
     const { inputTokens, outputTokens, costUsd } = combined;
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${abbreviatedCount(inputTokens)} ↑${abbreviatedCount(outputTokens)}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${money(costUsd)}`);
-    if (value.model !== null) parts.push(`🎲 ${value.model}`);
+    if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
     // {§cli-status-children} — a known zero hides the child segment, including its model override.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
     if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
-    // The glyph is two columns wide: a second space keeps the first dot off its shoulder.
-    return parts.length === 0 ? head : `${head}${glyph.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
+    // A glyph is two columns wide: a second space keeps the first dot off its shoulder.
+    return parts.length === 0 ? head : `${head}${glyphs.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
 };
 
 // One mutable human status row. Routine progress repaints at most once per

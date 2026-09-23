@@ -746,12 +746,12 @@ test("{§cli-log-entry-line-format} the human's line becomes durable scrollback:
     const noColor = process.env.NO_COLOR;
     process.env.NO_COLOR = "1";
     try {
-        assert.equal(renderSubmittedInput("first\nsecond", true), "🔥 first\n  second");
-        assert.equal(renderSubmittedInput("first", false), "› first");
-        printSubmittedInput((text) => printed.push(text), "first", false);
+        assert.equal(renderSubmittedInput("first\nsecond"), "› first\n  second", "{plurnk#104} the human's line carries no mode glyph; YOLO lives on the status bar");
+        assert.equal(renderSubmittedInput("first"), "› first");
+        printSubmittedInput((text) => printed.push(text), "first");
         assert.deepEqual(printed, ["", "› first", ""], "NO_COLOR keeps the layout: the blank rows stay");
         delete process.env.NO_COLOR;
-        assert.equal(renderSubmittedInput("first\nsecond", false), "\x1b[1;94m› first\x1b[0m\n\x1b[1;94m  second\x1b[0m");
+        assert.equal(renderSubmittedInput("first\nsecond"), "\x1b[1;94m› first\x1b[0m\n\x1b[1;94m  second\x1b[0m");
     } finally {
         if (noColor === undefined) delete process.env.NO_COLOR;
         else process.env.NO_COLOR = noColor;

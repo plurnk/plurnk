@@ -127,14 +127,14 @@ export const linePolicy = promptPolicy;
 
 // {§cli-log-entry-line-format} — the human's line in scrollback: bold, in the human's own colour, so
 // the two voices read apart while the model's reply stays plain.
-export const renderSubmittedInput = (text: string, yolo: boolean): string => text.split("\n")
-    .map((line, index) => paint(`${index === 0 ? (yolo ? "🔥 " : "› ") : "  "}${line}`, "bold", "human"))
+export const renderSubmittedInput = (text: string): string => text.split("\n")
+    .map((line, index) => paint(`${index === 0 ? "› " : "  "}${line}`, "bold", "human"))
     .join("\n");
 
 // A blank row above and below the line; an empty print is the surface's spacer.
-export const printSubmittedInput = (print: (text: string) => void, text: string, yolo: boolean): void => {
+export const printSubmittedInput = (print: (text: string) => void, text: string): void => {
     print("");
-    print(renderSubmittedInput(text, yolo));
+    print(renderSubmittedInput(text));
     print("");
 };
 
@@ -603,6 +603,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const pendingInjections = new Set<Promise<void>>();
     let followAdmission = false;
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
+    // {plurnk#104} — an alert block stands apart: a blank row above and below it.
+    const printAlert = (block: string): void => { printAbove(""); printAbove(block); printAbove(""); };
     const cancelLoop = async (reason: string): Promise<unknown> => {
         const run = activeRun;
         const result = await transport.rpc("loop.cancel", { reason });
@@ -735,7 +737,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
     surface.append("");
-    if (reasoningFailure !== undefined) printAbove(renderTuiFailure(reasoningFailure));
+    if (reasoningFailure !== undefined) printAlert(renderTuiFailure(reasoningFailure));
 
     // Client-owned lifecycle and model lead the input affordance; ephemeral
     // derivation, search, and branch work share its final activity position.
@@ -763,7 +765,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
-            return renderStatusLine(authoritativeStatus, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
+            return renderStatusLine(authoritativeStatus, statusContext(), { yolo: opts.yolo });
         }
         const activity = searchFetching ? { label: "search", percent: searchPercent } : null;
         const model = workerModel === null
@@ -776,11 +778,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             packetCount: null,
             activity,
             children: null,
-        }, statusContext(), { idleGlyph: opts.yolo ? "🔥" : "" });
+        }, statusContext(), { yolo: opts.yolo });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
     paintPrompt();
-    void refreshTopology().catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
+    void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
     surface.setAutocompleteProvider(makeAutocompleteProvider({
             getAliases: () => aliasCache,
@@ -871,7 +873,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const inspect = (lookText: string): void => {
         pendingCommands += 1;
         void runLook(lookText)
-            .catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); })
+            .catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); })
             .finally(() => { pendingCommands -= 1; });
     };
 
@@ -930,7 +932,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             await transport.resolve({ logEntryId: p.logEntryId, ...resolution });
         } catch (cause) {
-            printAbove(renderTuiFailure(cause));
+            printAlert(renderTuiFailure(cause));
         }
         showNextProposal();
     };
@@ -943,7 +945,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             resolution = (await surface.handOff(() => keyToResolution("e", p)))
                 ?? { decision: "cancel", outcome: "edit_failed" };
         } catch (cause) {
-            printAbove(renderTuiFailure(cause));
+            printAlert(renderTuiFailure(cause));
             resolution = { decision: "cancel", outcome: "edit_error" };
         }
         await resolvePending(resolution);
@@ -983,7 +985,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             repromptPreserving();
             return;
         }
-        printAbove(renderDiagnostic(notice));
+        printAlert(renderDiagnostic(notice));
     };
 
     transport.subscribe({
@@ -1017,7 +1019,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             else printAbove(rendered);
         },
         onNotice: handleNotice,
-        onProblem: (problem) => printAbove(renderDiagnostic(problem)),
+        onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
             workerModel = modelRouteOrNull(gauge.plurnk.status.model);
@@ -1119,7 +1121,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.useWorker(name, current.name);
             conversationWorker = name;
             conversationWorkerId = null;
-            void refreshTopology().catch((cause: unknown) => { printAbove(renderTuiFailure(cause)); });
+            void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
         },
         write: (text) => { printAbove(text); },
         importFile: async (rest) => {
@@ -1146,7 +1148,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             try {
                 edited = await surface.handOff(() => editInEditor(surface.editor.getExpandedText(), ".md"));
             } catch (cause) {
-                printAbove(renderTuiFailure(cause));
+                printAlert(renderTuiFailure(cause));
             }
             if (edited === null) return;
             surface.setInput(edited.replace(/\n$/, ""));
@@ -1169,7 +1171,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             if (await handleVerb(line, verbCtx) === "quit") requestClose();
         } catch (cause) {
-            printAbove(renderTuiFailure(cause));
+            printAlert(renderTuiFailure(cause));
         } finally {
             pendingCommands -= 1;
             if (rebinds) rebinding = false;
@@ -1195,7 +1197,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const submit = async (line: string): Promise<void> => {
             if (line.trim().length > 0) {
                 if (!inFlight) surface.archiveActivity();
-                printSubmittedInput(printAbove, line, opts.yolo);
+                printSubmittedInput(printAbove, line);
             }
             const trimmed = line.trim();
             if (trimmed === "/cancel" && pendingQuestion !== null) {
@@ -1319,6 +1321,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                                 : t.result.status >= 400 ? "failed"
                                     : "completed";
                         const wallMs = Date.now() - start;
+                        // {plurnk#104} — the delivered answer lands in scrollback first; its summary follows it.
+                        surface.archiveResponses();
                         printAbove(renderSummary(turnCount, wallMs, t.result, t.hitMaxTurns, t.usage));
                         tally = tallyOutcome(tally, { turns: turnCount, wallMs, usage: t.usage });
                         accrued = null;
@@ -1334,7 +1338,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 }
             } catch (cause) {
                 lifecycle = "failed";
-                printAbove(renderTuiFailure(cause));
+                printAlert(renderTuiFailure(cause));
             } finally {
                 runningSince = null;
                 inFlight = false;
@@ -1351,7 +1355,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         surface.editor.onSubmit = (line) => {
             if (line.trim().length > 0) surface.editor.addToHistory(line);
             void submit(line).catch((cause) => {
-                printAbove(renderTuiFailure(cause));
+                printAlert(renderTuiFailure(cause));
                 reprompt();
             });
         };

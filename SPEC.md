@@ -110,10 +110,12 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 Human status is the summary line's shape aggregated over the session:
 
 ```
-<glyph>  · <N> turns · <wall> · ↓<input> ↑<output> · $<usd> · 🎲 <model> [· 🐜<children> [<child>]] · <workspace> · worker://<name>/ [(<i>/<n>)] [· 🧮 <percent>%]
+[🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🧮 <percent>%]
 ```
 
-The glyph is two columns wide, so two spaces separate it from the first dot. Token counts are
+YOLO is a fireball at the left edge, beside the lifecycle glyph. The model sits next, ahead of
+everything that ticks, so the ticking never moves it; the traffic counts precede the phrase that
+says what the worker is doing. A glyph is two columns wide, so two spaces separate the last one from the first dot. Token counts are
 abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is stated to the
 hundredth of a cent with grouped thousands (`$3,333.3333`).
 
@@ -260,7 +262,7 @@ Triggered when `argv` has no positional prompt.
    state arrives, derivation, search, and
    branch activity share the fallback activity position. The
    lifecycle glyph is ⏳ while queued, `⌛︎` while running, 💤 while parked, `⏹️` when complete,
-   and ❌ on failure; idle YOLO may use 🔥. The main-screen renderer preserves
+   and ❌ on failure; YOLO puts 🔥 at the left edge of the line. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
     - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /reasoning [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
@@ -731,7 +733,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | A model NOTE is displayed as a final answer is (§5.4) under 📝, its full body at column zero {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
+| NOTE | A model NOTE is displayed as a final answer is (§5.4): a blank lead row, its full body at column zero, and a blank row after it {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |
@@ -760,7 +762,7 @@ A successful SEND or accepted parameterless KILL whose receipt addresses the cur
 
 TUI mode contract:
 
-- Lead line: no keyword. A final KILL answer's lead line opens with 🎯; a SEND's stands blank where `SEND` was; a failed message puts its Problem title there in red; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
+- Lead line: no keyword and no glyph. A final KILL answer's lead line stands blank, as a SEND's does where `SEND` was; a failed message puts its Problem title there in red; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal and renders as just the lead line.
@@ -809,6 +811,8 @@ preserving layout.
 Client-owned proposals arrive through standard AG-UI tool-call interrupts under
 {§agui-proposal-disposition}. The client presents the proposal and resumes the
 Run with the selected decision; the following sections describe its local review projection.
+The TUI shows the proposal's body in a window about the reasoning lane's height, a third of the
+terminal at most, with a blank row above and below it; `e` opens the whole body in the editor.
 
 ### §6.0 What the client states {§cli-loop-policy}
 
@@ -1110,18 +1114,21 @@ they advise without terminating an operation. Client failures are Problems.
 converting one into the other:
 
 ```
-│ <icon> <Alert> <source>:<kind> [<position>]
-│ <detail-or-message lines>
+│ <icon>  <Alert> <source>:<kind> [<position>] — <detail-or-message>
+│ <further message lines, if any>
 │   <snippet lines, if any>
 │ <recovery and hint lines, if any>
 ```
+
+The icon is two columns wide, so two spaces separate it from the word; the message rides the
+title line.
 
 A Problem or an `error` Notice is a 🛑 Caution, a `warn` Notice a ⚠️ Warning, and an
 `info` Notice an ℹ️ Note, each in its accent (§5.5); the client never infers severity
 from `kind`. `ContentOffset` renders as
 `L<line> col<column>` and `LogCoordinate` as its coordinate plus optional op.
 CLI mode writes diagnostics to stderr. TUI mode inserts them into the waterfall
-without colliding with the active prompt.
+without colliding with the active prompt, with a blank row above and below the block.
 
 ### §8.4 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
 

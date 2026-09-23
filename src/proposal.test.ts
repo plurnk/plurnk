@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices } = await import("./proposal.ts");
+const { renderBody, formatTarget, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices, bodyWindow } = await import("./proposal.ts");
 
 const proposal = () => ({
     logEntryId: 1,
@@ -59,6 +59,20 @@ test("[§cli-notification-shape] renderProposalMenu: shows the op, target, and t
     assert.match(menu, /proposal EDIT/);
     assert.match(menu, /\[a\]ccept/);
     assert.match(menu, /\[r\]eject/);
+});
+
+test("{plurnk#104} renderProposalMenu: the body is a window a third of the terminal at most, with a blank row above and below", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
+    const menu = renderProposalMenu({ ...proposal(), op: "sh", body: lines.join("\n"), target: { scheme: "sh", pathname: "/" } }, 24);
+    const rows = menu.split("\n");
+    assert.equal(rows[0], "", "a blank row above the heading");
+    assert.match(rows[1], /proposal sh/);
+    assert.equal(rows[2], "", "a blank row above the body");
+    assert.deepEqual(rows.slice(3, 11), lines.slice(0, 8), "eight of forty lines at 24 rows");
+    assert.match(rows[11], /… 32 more lines · e opens the whole body in the editor/);
+    assert.equal(rows[12], "", "a blank row below the body");
+    assert.match(rows[13], /\[a\]ccept/);
+    assert.equal(bodyWindow("one\ntwo", 24), "one\ntwo", "a short body is shown whole");
 });
 
 // ─── renderBody ──────────────────────────────────────────────────────

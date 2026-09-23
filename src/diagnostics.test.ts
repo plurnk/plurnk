@@ -26,7 +26,7 @@ const {
 } = await import("./diagnostics.ts");
 
 test("[§cli-notice-rendering] renderDiagnostic renders a Notice as an alert titled by its discriminator", () => {
-    assert.equal(renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" }), "│ ℹ️ Note engine:rail:strike");
+    assert.equal(renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" }), "│ ℹ️  Note engine:rail:strike");
 });
 
 test("renderDiagnostic puts a Notice message in the alert body", () => {
@@ -36,7 +36,7 @@ test("renderDiagnostic puts a Notice message in the alert body", () => {
         level: "info",
         message: "trying again",
     });
-    assert.equal(out, "│ ℹ️ Note engine:rail:recovery\n│ trying again");
+    assert.equal(out, "│ ℹ️  Note engine:rail:recovery — trying again");
 });
 
 test("renderDiagnostic renders ContentOffset and LogCoordinate positions", () => {
@@ -69,7 +69,7 @@ test("renderDiagnostic renders producer snippets and hints below the message", (
         hints: ["close the EDIT target"],
     });
     assert.deepEqual(out.split("\n"), [
-        "│ ⚠️ Warning grammar:parse_advisory",
+        "│ ⚠️  Warning grammar:parse_advisory",
         "│   2:\t### EDIT_ (worker://foo",
         "│   3:\t               ^",
         "│ close the EDIT target",
@@ -88,11 +88,11 @@ test("[§cli-notice-rendering] severity picks the alert: a Problem or error is a
         renderDiagnostic({ source: "client:connection", kind: "daemon_stale", level: "warn", message: "update available" }),
         renderDiagnostic({ source: "engine", kind: "graceful", level: "info", message: "done" }),
     ]);
-    assert.match(problem, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑 Caution\x1b\[0m/u);
-    assert.match(error, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑 Caution\x1b\[0m/u);
-    assert.match(warn, /^\x1b\[38;5;172m│\x1b\[0m \x1b\[38;5;172;1m⚠️ Warning\x1b\[0m/u);
-    assert.match(info, /^\x1b\[94m│\x1b\[0m \x1b\[94;1mℹ️ Note\x1b\[0m/u);
-    assert.match(info, /\n\x1b\[94m│\x1b\[0m done$/u, "the message itself stays plain");
+    assert.match(problem, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑  Caution\x1b\[0m/u);
+    assert.match(error, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑  Caution\x1b\[0m/u);
+    assert.match(warn, /^\x1b\[38;5;172m│\x1b\[0m \x1b\[38;5;172;1m⚠️  Warning\x1b\[0m/u);
+    assert.match(info, /^\x1b\[94m│\x1b\[0m \x1b\[94;1mℹ️  Note\x1b\[0m/u);
+    assert.match(info, / — done$/u, "the message itself stays plain, on the title line");
 });
 
 test("renderDiagnostic renders a Problem's producer-owned recovery once", () => {
@@ -101,8 +101,7 @@ test("renderDiagnostic renders a Problem's producer-owned recovery once", () => 
         recovery: "Retry after restoring the connection.",
     });
     assert.deepEqual(out.split("\n"), [
-        "│ 🛑 Caution client:runtime:error",
-        "│ The request failed.",
+        "│ 🛑  Caution client:runtime:error — The request failed.",
         "│ Retry after restoring the connection.",
     ]);
 });

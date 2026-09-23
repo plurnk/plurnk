@@ -28,7 +28,7 @@ describe("TUI pty harness", () => {
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
             const output = await tui.waitFor(/🔥/);
-            assert.match(output, /🔥(?: · 🎲 [^\r\n]+)?/u, "{plurnk#58} the glyph is the lifecycle; the model rides beside it when resolved");
+            assert.match(output, /🔥(?:  · 🎲 [^\r\n]+)?/u, "{plurnk#58} {plurnk#104} the fireball leads the line; the model rides beside it when resolved");
             assert.doesNotMatch(output, /🐹|🧮/, "the prompt has no identity or embedder glyph");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);

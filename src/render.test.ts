@@ -688,6 +688,27 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
     assert.ok(!noteRows.some((row) => row.includes("/look")), "a NOTE is never cut");
 });
 
+test("{plurnk#108} a lineage row renders two columns in with the child's name, its body previewed, and a child's conclusion names its outcome", () => {
+    const launch = entry({
+        op: "brave", origin: "_plurnk", source: "worker://identity", scheme: null, pathname: "brave_web_search",
+        tx: { runtime: "brave", target: { kind: "local", raw: "brave_web_search" }, aside: null, body: "{\"query\":\"space bunny\"}" },
+        rx: { status: 200, outcome: "started" }, attrs: { runtime: "brave", stream: "brave:///5623708a" },
+    });
+    const rows = renderLogEntry(launch, 80).split("\n");
+    assert.equal(rows[0], "  🐜 identity brave (brave_web_search)", "the child's name leads, two columns in");
+    assert.equal(rows[1], "      {\"query\":\"space bunny\"}", "the body previews beneath, one step deeper");
+    assert.deepEqual(rows.slice(2), [""], "the blank row closes the block");
+    const struck = entry({
+        op: "READ", origin: "_plurnk", scheme: "ops", hostname: "identity", pathname: "/14", status_rx: 500,
+        tx: { op: "READ", target: { kind: "url", raw: "ops://identity/14" }, matcher: null, aside: null },
+        rx: { status: 500, problem: { type: "x", title: "Struck out", status: 500 } },
+    });
+    assert.match(renderLogEntry(struck, 80), /^  🐜 identity READ \(ops:\/\/identity\/14\).*— Struck out/u, "a child's conclusion carries its terminal outcome");
+    assert.ok(!renderLogEntry(entry({ op: "sh", origin: "model", tx: { runtime: "sh", body: "ls" } }), 80).includes("🐜"), "the bound worker's own rows carry no mark");
+    const arrival = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://identity", tx: { body: { raw: "done" } } });
+    assert.ok(!renderLogEntry(arrival, 80).includes("🐜"), "a child's message keeps its arrival form, sender and all");
+});
+
 test("{plurnk#107} the preview count is the knob's, never the terminal's height, and an unreadable knob is an error", () => {
     const sh = entry({
         op: "sh", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 3,

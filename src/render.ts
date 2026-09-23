@@ -101,6 +101,19 @@ export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     isArrivalEntry(entry) && typeof entry.source === "string"
     && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
 
+// {§cli-workers-topology} {plurnk#108} — a lineage row is a direct child's durable activity as the
+// daemon correlated it into this conversation's log: an operation sourced to `worker://<name>`, or
+// the child's conclusion arriving as the harness READ of `ops://<name>/<loop>`. Its outcome is the
+// row's own; the child's streams conclude in the child's Run, never here.
+export const lineageWorker = (entry: LogEntryWire): string | null => {
+    if (entry.origin !== "_plurnk" || isArrivalEntry(entry)) return null;
+    const sourced = typeof entry.source === "string" ? /^worker:\/\/([^/?#]+)/u.exec(entry.source) : null;
+    if (sourced !== null) return sourced[1]!;
+    if (entry.op === "READ" && entry.scheme === "ops" && typeof entry.hostname === "string" && entry.hostname.length > 0) return entry.hostname;
+    return null;
+};
+export const LINEAGE_OFFSET = "  ";
+
 export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
     if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
     const reply = objectOf(entry.attrs)?.kind === "reply";

@@ -46,6 +46,7 @@ test("streamAddress: a started execution's row carries the address the daemon st
     assert.equal(streamAddress(unstarted()), null, "an execution the daemon refused has no stream");
     assert.equal(streamAddress(launch({ attrs: { runtime: "sh", stream: "sh:///0c0ffee1", detached: true } })), "sh:///0c0ffee1", "a detached execution launches like any other; the following turn shows it grey");
     assert.equal(streamAddress(launch({ attrs: { runtime: "python" } })), null, "no stamped stream, no launch");
+    assert.equal(new StreamTrace().launch(launch({ origin: "_plurnk", source: "worker://identity" })), false, "{plurnk#108} a child's execution concludes in the child's Run: its lineage row renders now, never held");
 });
 
 test("StreamTrace: launch records a started execution only; a client `!` with no authored executor concludes under the resolved runtime", () => {

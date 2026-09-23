@@ -51,6 +51,11 @@ test("formatPlain: file:// (scheme=null, pathname set) → bare pathname", () =>
     assert.equal(s, "[202] model EDIT /tmp/foo.txt");
 });
 
+test("formatPlain: {plurnk#108} a lineage row names the child after the origin", () => {
+    const s = formatPlain(entry({ op: "brave", origin: "_plurnk", source: "worker://identity", scheme: null, pathname: "brave_web_search", status_rx: 200 }));
+    assert.equal(s, "[200] _plurnk 🐜 identity brave brave_web_search");
+});
+
 test("formatPlain: no target at all → no trailing path", () => {
     const s = formatPlain(entry({ op: "SHOW", scheme: null, pathname: null, status_rx: 200 }));
     assert.equal(s, "[200] model SHOW");

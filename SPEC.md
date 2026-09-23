@@ -316,7 +316,10 @@ produces no completion and never changes the editor value.
 One AG-UI stream binds one conversation worker. Descendants of that worker reach
 a client only through the daemon's correlated projection (plurnk-service#440, the
 lane presentation of #38), never by inference; unrelated workspace workers never
-render inside a session. Navigation between workers is explicit.
+render inside a session. What the daemon correlates (a direct child's mutations, messages,
+executions, launches and conclusion) renders in the conversation as lineage rows (§5.1); a
+child's reads and finds stay with the child and are seen by attaching to it. Navigation between
+workers is explicit.
 `/attach <name>` rebinds the session's thread to that name with the world
 unchanged: an existing worker is bound, a new name mints a fresh conversation on
 the next run, exactly as `--worker <name>` at invocation. The verb reports
@@ -662,6 +665,13 @@ Markdown pass:
   into what is returned and are never operative for the count. No other operation carries a count.
 - The aside is the durable operation aside as sanitized literal text, italic and dim, never
   interpreted as Markdown or HTML.
+- A lineage row, a direct child's durable activity the daemon correlated into this
+  conversation's log (`origin: _plurnk` with `source: worker://<name>`, or the child's
+  conclusion as the harness READ of `ops://<name>/<loop>`), renders two columns in, led by
+  `🐜 <name>` in dim, its body previewed beneath one step deeper. Its outcome is the row's
+  own: a child's execution concludes in the child's Run, so its lineage row is never held for a
+  stream conclusion, and a child's conclusion row carries the child's terminal status and
+  Problem title ({§cli-workers-topology}).
 - Every authored body renders beneath its row as a preview: the plain text, no Markdown pass,
   `PLURNK_CLIENT_PREVIEW_LINES` lines (`--preview-lines` for one invocation), independent of
   the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),

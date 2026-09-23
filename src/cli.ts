@@ -4,7 +4,7 @@
 // land on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { contextGauge, entryAside, entryScope, entryTarget } from "./render.ts";
+import { contextGauge, entryAside, entryScope, entryTarget, lineageWorker } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -107,7 +107,8 @@ export const formatPlain = (entry: LogEntryWire): string => {
     const path = entryTarget(entry) ?? "";
     const scope = entryScope(entry);
     const address = [path, scope].filter((part) => part !== null && part.length > 0).join(" ");
-    let line = `[${entry.status_rx}] ${entry.origin} ${entry.op} ${address}`.trim();
+    const lineage = lineageWorker(entry);
+    let line = `[${entry.status_rx}] ${entry.origin}${lineage === null ? "" : ` 🐜 ${lineage}`} ${entry.op} ${address}`.trim();
     const aside = entryAside(entry);
     if (aside !== null) line += ` — ${aside}`;
     return line;

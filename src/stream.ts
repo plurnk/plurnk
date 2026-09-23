@@ -7,7 +7,7 @@ import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { PREVIEW_OFFSET, objectOf, previewLine, previewLines, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
+import { PREVIEW_OFFSET, lineageWorker, objectOf, previewLine, previewLines, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -62,6 +62,8 @@ export default class StreamTrace {
     launch(entry: LogEntryWire): boolean {
         const address = streamAddress(entry);
         if (address === null) return false;
+        // {plurnk#108} — a child's execution concludes in the child's Run; its lineage row renders now.
+        if (lineageWorker(entry) !== null) return false;
         this.#launched.set(address, entry);
         return true;
     }

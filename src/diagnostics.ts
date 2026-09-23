@@ -168,6 +168,18 @@ export const clientDaemonStale = (missing: string[]): Notice => ({
     hints: ["Restart plurnk-service from a current checkout."],
 });
 
+// {§cli-conversation-lost} — the daemon answered a bound name with no history at all: the worker
+// behind it is new (a fresh database, a deleted worker), and the transcript above is this terminal's.
+export const clientConversationLost = (workspace: string, worker: string): Notice => ({
+    source: "client:conversation",
+    kind: "conversation_lost",
+    level: "warn",
+    message: `the daemon holds no history for conversation ${worker} in workspace ${workspace}; this message starts a new one, and the turns above are this terminal's memory, not the model's`,
+    workspace,
+    worker,
+    hints: ["The daemon restarted on a fresh database, or the worker was deleted."],
+});
+
 export const clientConnectionRefused = (url: string, cause: unknown): ProblemDetails =>
     clientProblem(
         "connection",

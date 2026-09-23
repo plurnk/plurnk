@@ -148,6 +148,11 @@ export interface ClientStatus {
     children: number | null;
 }
 
+// {§cli-conversation-lost} — the gauge reports no loop where the previous gauge on the same binding
+// reported one: the daemon minted the conversation anew under its old name.
+export const conversationLost = (previousLoopId: number | null, loopId: number | null): boolean =>
+    previousLoopId !== null && loopId === null;
+
 export interface RuntimeStatusGauge {
     lifecycle: string;
     model: ModelRoute | null;

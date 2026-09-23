@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import TerminalStatusLine, { turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { conversationLost, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
@@ -157,4 +157,11 @@ test("the status line names what the worker is doing, and nothing when it is idl
         "a long address keeps its end, which is the part that tells files apart");
     assert.equal(renderStatusLine({ ...running, lifecycle: "idle" }, { ...CONTEXT, doing: reading }).includes("READ"), false,
         "an idle worker is doing nothing, whatever the last operation was");
+});
+
+test("[§cli-conversation-lost] a gauge without a loop after one with a loop marks the conversation new", () => {
+    assert.equal(conversationLost(37, null), true, "history seen, then none: the daemon minted the conversation anew");
+    assert.equal(conversationLost(null, null), false, "a first gauge without a loop is the new conversation the client expects");
+    assert.equal(conversationLost(37, 38), false, "a later loop is the same conversation continuing");
+    assert.equal(conversationLost(null, 1), false, "the first loop arriving is not a loss");
 });

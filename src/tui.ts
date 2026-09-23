@@ -31,7 +31,7 @@ import { renderProposalMenu, keyToResolution, renderQuestionMenu, editInEditor }
 import QuestionForm from "./QuestionForm.ts";
 import { BridgeTransport, type ObservationHandle, type Transport } from "./transport.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
-import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
+import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientConversationLost, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -57,7 +57,7 @@ import {
     setWorkerReasoning,
     type WorkerReasoning,
 } from "./reasoning.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, conversationLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -635,6 +635,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // for both numbers, and an unknown one is elided rather than guessed.
     let placeLoop: number | null = null;
     let placeTurn: number | null = null;
+    let seenLoopId: number | null = null;
     let placeWorkers: readonly WorkerRow[] = [];
     let conversationWorker: string | null = opts.workerName ?? null;
     let searchFetching = false;
@@ -1022,6 +1023,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
+            // {§cli-conversation-lost} — a bound name answered with no history is a new conversation.
+            if (conversationLost(seenLoopId, authoritativeStatus.loopId)) {
+                printAlert(renderDiagnostic(clientConversationLost(current.name, conversationWorker ?? current.name)));
+            }
+            seenLoopId = authoritativeStatus.loopId;
             workerModel = modelRouteOrNull(gauge.plurnk.status.model);
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
             placeLoop = authoritativeStatus.loopId;
@@ -1110,6 +1116,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const workspace = await transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client });
             conversationWorker = workspace.name;
             conversationWorkerId = null;
+            seenLoopId = null;
             return workspace;
         },
         getWorker: () => conversationWorker,
@@ -1118,6 +1125,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.useWorker(name, current.name);
             conversationWorker = name;
             conversationWorkerId = null;
+            seenLoopId = null;
             void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
         },
         write: (text) => { printAbove(text); },

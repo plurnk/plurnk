@@ -88,6 +88,8 @@ Workspaces and workers are daemon-owned. The client only knows their **names** �
 
 CLI flag takes precedence over env when both are set.
 
+{§cli-conversation-lost} **A bound name answered with no history is a new conversation, and the client says so.** The daemon mints a conversation anew under its old name when it no longer holds it ({§agui-thread-binding}: a fresh database, a deleted worker), and the name cannot tell the client. The run-start gauge can: `snapshot.plurnk.status.loopId` is `null` only for a worker with no loop at all, so a `STATE_SNAPSHOT` reporting `null` after a gauge on the same binding that carried a loop raises the `conversation_lost` warning Notice, naming the workspace and worker, ahead of the run's rows. The transcript above the alert is the terminal's memory, not the model's. Switching workspace or worker starts a fresh watch.
+
 ### §1.2 Model selection {§cli-model-selection}
 
 The worker owns its model route ({§worker-model-selection}); the client persists deliberate selections server-side and never reasserts model policy on an individual loop. One selector accepts either a daemon-declared alias or an exact `provider/model` route. Alias selection preserves its alias-scoped configuration and provenance; exact selection uses provider-wide configuration without inventing an alias.
@@ -1109,7 +1111,7 @@ diagnostic Notices. `exec:*/search_progress` replaces search acquisition's
 activity position and its terminal phase clears it. Neither client appends
 progress ticks or live-renders durable `entry_materialized` narration.
 
-Client `daemon_stale` and `edits_blocked` observations are also Notices because
+Client `daemon_stale`, `edits_blocked`, and `conversation_lost` observations are also Notices because
 they advise without terminating an operation. Client failures are Problems.
 
 ### §8.3 Rendering and channel posture {§cli-notice-rendering} {§cli-channel-posture}

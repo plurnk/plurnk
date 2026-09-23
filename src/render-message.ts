@@ -43,14 +43,6 @@ const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSend
 const previewBlock = (entry: LogEntryWire, rows: number): string =>
     previewLines(ModelText.plain(extractSendBody(entry.tx)).trimEnd().split("\n"), rows, (remaining) => previewMore(entry, remaining)).map(previewLine).join("\n");
 
-// A model NOTE is displayed as a final answer is, with a row after it as well: the model's
-// self-documentation is the clearest signal of what it is doing ({§cli-note-rendering}).
-// Displayed alike, it is never a delivered message, and unlike the answer it is previewed.
-const renderNote = (entry: LogEntryWire, rows: number): string => {
-    const lead = leadLine(entry, false);
-    return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry, rows)}\n`;
-};
-
 // An arrival from another actor: SEND with the sender where a target would sit, then the
 // same plain body block, previewed.
 const renderArrival = (entry: LogEntryWire, rows: number): string => {
@@ -61,7 +53,9 @@ const renderArrival = (entry: LogEntryWire, rows: number): string => {
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
 // its outcome, an arrival its sender and block, a conversation reply its whole block, every
-// other operation its literal row with its body previewed beneath ({plurnk#104}).
+// other operation its literal row with its body previewed beneath ({plurnk#104}). A model
+// NOTE is one of those operations: its heading, its preview, never a delivered message
+// ({§cli-note-rendering}).
 export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
@@ -76,6 +70,5 @@ export const renderLogEntry = (
     }
     if (isArrivalEntry(entry)) return renderArrival(entry, rows);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
-    if (entry.op === "NOTE" && entry.origin === "model") return renderNote(entry, rows);
     return renderOperationBlock(entry, override, rows, true);
 };

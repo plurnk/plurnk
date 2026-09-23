@@ -1,6 +1,6 @@
 // The waterfall's stable alignment contract is its left edge: every row begins at column
 // zero with the operation as written, no glyph column, no protocol code. Reasoning opens with 💭;
-// a model NOTE and a final answer open with a blank row (plurnk#104).
+// a final answer opens with a blank row (plurnk#104).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -35,12 +35,12 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
     for (const [label, value] of rows) {
         const first = stripAnsi(value).split("\n")[0];
         assert.doesNotMatch(first, /^\s/, `${label} did not begin at column zero: ${JSON.stringify(first)}`);
-        if (label !== "reasoning" && label !== "NOTE") assert.doesNotMatch(first, /^[^\p{L}]/u, `${label} begins with the operation's name, not a glyph: ${JSON.stringify(first)}`);
+        if (label !== "reasoning") assert.doesNotMatch(first, /^[^\p{L}]/u, `${label} begins with the operation's name, not a glyph: ${JSON.stringify(first)}`);
     }
 
     assert.equal(stripAnsi(rows[0][1]), "READ (/x)");
     assert.equal(stripAnsi(rows[1][1]), "FIND (/x) — Entry not found", "a failure carries its title, not a numeric code");
-    assert.equal(stripAnsi(rows[2][1]), "\n    Inspect.\n", "a model NOTE is a blank row, its body four columns in, and a blank row");
+    assert.equal(stripAnsi(rows[2][1]), "NOTE\n    Inspect.\n", "a model NOTE is its heading, its body four columns in, and a blank row");
     assert.equal(stripAnsi(rows[4][1]), "\ndone", "a delivered message is its body under a blank line");
     assert.equal(stripAnsi(rows[6][1]), "SEND (worker:///gone) — Worker gone");
     assert.equal(stripAnsi(rows[7][1]), "sh list the files", "an execution is its fence, once, at its conclusion");

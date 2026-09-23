@@ -28,12 +28,12 @@ test("an addressed answer is rendered from successful delivery, not targetlessne
     assert.equal(isResponseMessage(row("SEND", "Not delivered", 200)), false);
 });
 
-test("[§cli-note-rendering] a model NOTE is displayed as a final answer is, under a blank row and with one after it, and is never a delivered message", () => {
+test("[§cli-note-rendering] a model NOTE renders as any operation does, heading and preview, and is never a delivered message", () => {
     const note = row("NOTE", "Working memory, not a response.", 200);
-    assert.equal(isResponseMessage(note), false, "displayed alike, it is not speech");
-    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "\n    Working memory, not a response.\n");
+    assert.equal(isResponseMessage(note), false, "it is not speech");
+    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "NOTE\n    Working memory, not a response.\n", "{plurnk#104} the heading, the preview beneath, the blank row that closes it");
     const answer = row("KILL", "Working memory, not a response.", 200, true);
-    assert.equal(stripVTControlCharacters(renderLogEntry(answer, 80)), "\nWorking memory, not a response.", "{plurnk#104} no glyph on either; only the note's trailing row differs");
+    assert.equal(stripVTControlCharacters(renderLogEntry(answer, 80)), "\nWorking memory, not a response.", "the delivered answer keeps its blank lead and is whole");
     assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE\n    Working memory, not a response.\n", "a harness NOTE keeps its heading, its body previewed beneath, a blank row under it");
 });
 

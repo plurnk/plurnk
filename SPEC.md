@@ -739,7 +739,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | A model NOTE is displayed as a final answer is (§5.4): a blank lead row, its body as a preview (§5.1), and a blank row after it {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
+| NOTE | A model NOTE renders as any operation does: its `NOTE` heading with the aside, its body as a preview beneath (§5.1), and the blank row that closes the block {§cli-note-rendering}; it is never a delivered message. A harness NOTE renders the same way. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |

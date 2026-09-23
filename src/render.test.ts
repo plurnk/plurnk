@@ -682,8 +682,8 @@ test("{plurnk#104} a body previews at a third of the terminal and names the addr
         tx: { op: "NOTE", target: null, aside: null, body: { raw: lines.join("\n"), json: null } },
     });
     const noteRows = renderLogEntry(note, 80, undefined, 24).split("\n");
-    assert.deepEqual([noteRows[0], noteRows.at(-1)], ["", ""], "a NOTE keeps its blank rows");
-    assert.equal(noteRows.length, 11, "a blank row, eight lines, the marker, a blank row");
+    assert.deepEqual([noteRows[0], noteRows.at(-1)], ["NOTE", ""], "a NOTE is its heading, and the blank row closes it");
+    assert.equal(noteRows.length, 11, "the heading, eight lines, the marker, a blank row");
     assert.deepEqual(noteRows.slice(1, 3), ["    line 1", "    line 2"], "a NOTE previews like every other body: four columns in");
     assert.equal(noteRows[9], "    … +32 lines · /look log:///1/2/4/NOTE");
 });

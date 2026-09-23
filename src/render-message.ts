@@ -4,7 +4,7 @@ import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
 import {
     entryAside, extractSendBody, isArrivalEntry, isResponseMessage,
-    objectOf, outcomeTitle, previewLines, previewMore, renderOperationBlock,
+    objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
     type LogEntryWire, type RowOverride,
 } from "./render.ts";
 
@@ -38,26 +38,25 @@ const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSend
     return body.length === 0 ? lead : `${lead}\n${body}`;
 };
 
-// A block's body at column zero, previewed ({plurnk#104}): a third of the terminal at most.
-const previewBlock = (entry: LogEntryWire, body: string, rows: number): string =>
-    previewLines(body.split("\n"), rows, (remaining) => paint(previewMore(entry, remaining), "dim")).join("\n");
+// A block's body previewed ({plurnk#104}): the plain text, four columns in and dim, a third of
+// the terminal at most. No Markdown pass: a preview is quiet by construction.
+const previewBlock = (entry: LogEntryWire, rows: number): string =>
+    previewLines(ModelText.plain(extractSendBody(entry.tx)).trimEnd().split("\n"), rows, (remaining) => previewMore(entry, remaining)).map(previewLine).join("\n");
 
 // A model NOTE is displayed as a final answer is, with a row after it as well: the model's
 // self-documentation is the clearest signal of what it is doing ({§cli-note-rendering}).
 // Displayed alike, it is never a delivered message, and unlike the answer it is previewed.
-const renderNote = (entry: LogEntryWire, columns: number, rows: number): string => {
-    const body = renderSendBody(entry.tx, Math.max(1, columns));
+const renderNote = (entry: LogEntryWire, rows: number): string => {
     const lead = leadLine(entry, false);
-    return body.length === 0 ? lead : `${lead}\n${previewBlock(entry, body, rows)}\n`;
+    return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry, rows)}\n`;
 };
 
 // An arrival from another actor: SEND with the sender where a target would sit, then the
 // same plain body block, previewed.
-const renderArrival = (entry: LogEntryWire, columns: number, rows: number): string => {
+const renderArrival = (entry: LogEntryWire, rows: number): string => {
     const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
     const lead = `${paint("SEND", "bold", "success")}${sender}`;
-    const body = renderSendBody(entry.tx, Math.max(1, columns));
-    return body.length === 0 ? lead : `${lead}\n${previewBlock(entry, body, rows)}\n`;
+    return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry, rows)}\n`;
 };
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
@@ -75,8 +74,8 @@ export const renderLogEntry = (
         const detail = typeof rx?.detail === "string" ? rx.detail : null;
         return renderOperationBlock(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) }, rows, true);
     }
-    if (isArrivalEntry(entry)) return renderArrival(entry, columns, rows);
+    if (isArrivalEntry(entry)) return renderArrival(entry, rows);
     if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
-    if (entry.op === "NOTE" && entry.origin === "model") return renderNote(entry, columns, rows);
+    if (entry.op === "NOTE" && entry.origin === "model") return renderNote(entry, rows);
     return renderOperationBlock(entry, override, rows, true);
 };

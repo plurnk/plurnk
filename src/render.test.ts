@@ -276,7 +276,7 @@ test("[§cli-log-entry-line-format] an execution row is named by its runtime and
         tx: { runtime: "sh", target: null, aside: "Run the focused tests", body: "npm test -- --grep focused" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     }));
-    assert.equal(line, "sh Run the focused tests\n   npm test -- --grep focused\n", "{plurnk#104} the invocation body previews beneath the row, a blank row under it");
+    assert.equal(line, "sh Run the focused tests\n    npm test -- --grep focused\n", "{plurnk#104} the invocation body previews beneath the row, a blank row under it");
 });
 
 test("[§cli-log-entry-line-format] a client `!` row is named by its op, the daemon's default runtime", () => {
@@ -285,13 +285,13 @@ test("[§cli-log-entry-line-format] a client `!` row is named by its op, the dae
         tx: { runtime: "sh", target: null, aside: null, body: "printf x" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
-    assert.equal(renderLogEntry(started), "sh\n   printf x\n", "the human's `!` command runs in the default shell; its row says so, its command beneath");
+    assert.equal(renderLogEntry(started), "sh\n    printf x\n", "the human's `!` command runs in the default shell; its row says so, its command beneath");
     const refused = entry({
         op: "cobol", scheme: null, pathname: null, status_rx: 404,
         tx: { runtime: "cobol", target: null, aside: null, body: "x" },
         rx: { status: 404, problem: { type: "x", title: "Unknown executor", status: 404 } },
     });
-    assert.equal(renderLogEntry(refused), "cobol — Unknown executor\n   x\n", "a refused execution is an ordinary failed row under its runtime");
+    assert.equal(renderLogEntry(refused), "cobol — Unknown executor\n    x\n", "a refused execution is an ordinary failed row under its runtime");
 });
 
 test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own path", () => {
@@ -354,7 +354,7 @@ test("[§cli-broadcast-send-rendering] a delivered message is its body under a b
 });
 
 test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a message block", () => {
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: "worker", pathname: "/gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone\n   hi\n");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: "worker", pathname: "/gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone\n    hi\n");
 });
 
 
@@ -672,11 +672,11 @@ test("{plurnk#104} a body previews at a third of the terminal and names the addr
     });
     const rows = renderLogEntry(sh, 80, undefined, 24).split("\n");
     assert.equal(rows[0], "sh");
-    assert.deepEqual(rows.slice(1, 9), lines.slice(0, 8).map((line) => `   ${line}`), "eight of forty lines at 24 rows");
-    assert.equal(rows[9], "   … +32 lines · /look log:///1/2/3/sh", "the rest is named with the address LOOK reads");
+    assert.deepEqual(rows.slice(1, 9), lines.slice(0, 8).map((line) => `    ${line}`), "eight of forty lines at 24 rows, four columns in");
+    assert.equal(rows[9], "    … +32 lines · /look log:///1/2/3/sh", "the rest is named with the address LOOK reads");
     assert.deepEqual(rows.slice(10), [""], "a blank row closes the block");
     const short = entry({ ...sh, tx: { runtime: "sh", target: null, aside: null, body: "one\ntwo" } });
-    assert.equal(renderLogEntry(short, 80, undefined, 24), "sh\n   one\n   two\n", "a short body is shown whole");
+    assert.equal(renderLogEntry(short, 80, undefined, 24), "sh\n    one\n    two\n", "a short body is shown whole");
     const note = entry({
         op: "NOTE", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 4,
         tx: { op: "NOTE", target: null, aside: null, body: { raw: lines.join("\n"), json: null } },
@@ -684,5 +684,6 @@ test("{plurnk#104} a body previews at a third of the terminal and names the addr
     const noteRows = renderLogEntry(note, 80, undefined, 24).split("\n");
     assert.deepEqual([noteRows[0], noteRows.at(-1)], ["", ""], "a NOTE keeps its blank rows");
     assert.equal(noteRows.length, 11, "a blank row, eight lines, the marker, a blank row");
-    assert.equal(noteRows[9], "… +32 lines · /look log:///1/2/4/NOTE");
+    assert.deepEqual(noteRows.slice(1, 3), ["    line 1", "    line 2"], "a NOTE previews like every other body: four columns in");
+    assert.equal(noteRows[9], "    … +32 lines · /look log:///1/2/4/NOTE");
 });

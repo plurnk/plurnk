@@ -227,13 +227,16 @@ export const entryAddress = (entry: LogEntryWire): string =>
 export const previewMore = (entry: LogEntryWire, remaining: number): string =>
     `… +${remaining} lines · /look ${entryAddress(entry)}`;
 
-// The authored body beneath its row: indented and dim, previewed.
+// A preview line: four columns in and dim, the reasoning lane's fade without its italic, so
+// it competes with neither the operations nor the delivered answer.
+export const PREVIEW_OFFSET = "    ";
+export const previewLine = (line: string): string => `${PREVIEW_OFFSET}${paint(line, "dim")}`;
+
+// The authored body beneath its row, previewed.
 export const renderBodyPreview = (entry: LogEntryWire, rows: number): string | null => {
     const body = ModelText.plain(extractSendBody(entry.tx)).trimEnd();
     if (body.length === 0) return null;
-    return previewLines(body.split("\n"), rows, (remaining) => previewMore(entry, remaining))
-        .map((line) => `   ${paint(line, "dim")}`)
-        .join("\n");
+    return previewLines(body.split("\n"), rows, (remaining) => previewMore(entry, remaining)).map(previewLine).join("\n");
 };
 
 // A row and, beneath it, the preview of its authored body. A spaced block closes with a blank

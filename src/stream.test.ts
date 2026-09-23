@@ -52,24 +52,24 @@ test("StreamTrace: launch records a started execution only; a client `!` with no
     const t = new StreamTrace();
     assert.equal(t.launch(unstarted()), false, "a refused execution is an ordinary row");
     assert.equal(t.launch(launch({ origin: "client", tx: { runtime: "python", aside: null, target: null, body: "printf x" } })), true);
-    assert.equal(t.concluded(concluded()), "python\n   printf x", "no executor authored, no aside: the runtime the daemon resolved, the command beneath");
+    assert.equal(t.concluded(concluded()), "python\n    printf x", "no executor authored, no aside: the runtime the daemon resolved, the command beneath");
 });
 
 test("[§cli-stream-event-and-stream-concluded] [§cli-log-entry-line-format] an execution appears once, at its conclusion, as the fence that launched it", () => {
     const t = new StreamTrace();
     t.launch(launch());
     const line = t.concluded(concluded());
-    assert.equal(line, "python Run the focused tests\n   print(1)", "the executor is the identity, the aside rides along, the body previews beneath; no bytes, no code");
+    assert.equal(line, "python Run the focused tests\n    print(1)", "the executor is the identity, the aside rides along, the body previews beneath; no bytes, no code");
     assert.doesNotMatch(line, /completed|stdout=|200/);
 });
 
 test("[§cli-log-entry-line-format] a failed execution names its outcome on the row", () => {
     const t = new StreamTrace();
     t.launch(launch());
-    assert.equal(t.concluded(concluded({ status: 500 })), "python Run the focused tests — failed (exit 2); stdout=12 bytes, stderr=0 bytes\n   print(1)");
+    assert.equal(t.concluded(concluded({ status: 500 })), "python Run the focused tests — failed (exit 2); stdout=12 bytes, stderr=0 bytes\n    print(1)");
     t.launch(launch());
     assert.equal(t.concluded(concluded({ status: 500, problem: { type: "https://problems.plurnk.xyz/executor/nonzero-exit", title: "Command exited 2" } })),
-        "python Run the focused tests — Command exited 2\n   print(1)", "a Problem title outranks the summary");
+        "python Run the focused tests — Command exited 2\n    print(1)", "a Problem title outranks the summary");
 });
 
 test("StreamTrace: a conclusion consumes its launch; the next conclusion with that address stands alone", () => {
@@ -95,12 +95,12 @@ test("inlineable: short one-or-two-line content only", () => {
 });
 
 test("renderInline: indents under the conclusion; stderr is marked", () => {
-    assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "   Ulaanbaatar");
-    assert.match(renderInline("stderr", "oh no\n"), /^   ! oh no$/);
+    assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "    Ulaanbaatar");
+    assert.match(renderInline("stderr", "oh no\n"), /^    ! oh no$/);
     // {plurnk#104} — an execution's output previews like any body: a third of the terminal at most.
     const long = renderInline("stdout", Array.from({ length: 40 }, (_, index) => `l${index + 1}`).join("\n"), 24).split("\n");
     assert.equal(long.length, 9);
-    assert.equal(long[8], "   … +32 lines");
+    assert.equal(long[8], "    … +32 lines");
 });
 
 test("[§cli-what-is-not-rendered] an execution still open when the following turn begins is reported once as stale, then concludes normally", () => {
@@ -109,6 +109,6 @@ test("[§cli-what-is-not-rendered] an execution still open when the following tu
     assert.deepEqual(t.staleBefore(1, 2), [], "its own turn: nothing is stale");
     assert.equal(t.staleBefore(1, 3).length, 1, "the following turn: once");
     assert.deepEqual(t.staleBefore(1, 4), [], "never twice");
-    assert.equal(t.concluded(concluded()), "python Run the focused tests\n   print(1)", "the conclusion is its second and final appearance");
+    assert.equal(t.concluded(concluded()), "python Run the focused tests\n    print(1)", "the conclusion is its second and final appearance");
     assert.deepEqual(t.staleBefore(2, 1), [], "concluded: nothing left");
 });

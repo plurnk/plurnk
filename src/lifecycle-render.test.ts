@@ -31,17 +31,17 @@ test("an addressed answer is rendered from successful delivery, not targetlessne
 test("[§cli-note-rendering] a model NOTE is displayed as a final answer is, under a blank row and with one after it, and is never a delivered message", () => {
     const note = row("NOTE", "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(note), false, "displayed alike, it is not speech");
-    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "\nWorking memory, not a response.\n");
+    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "\n    Working memory, not a response.\n");
     const answer = row("KILL", "Working memory, not a response.", 200, true);
     assert.equal(stripVTControlCharacters(renderLogEntry(answer, 80)), "\nWorking memory, not a response.", "{plurnk#104} no glyph on either; only the note's trailing row differs");
-    assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE\n   Working memory, not a response.\n", "a harness NOTE keeps its heading, its body previewed beneath, a blank row under it");
+    assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE\n    Working memory, not a response.\n", "a harness NOTE keeps its heading, its body previewed beneath, a blank row under it");
 });
 
 for (const op of ["WAIT", "KILL"]) test(`${op} without delivery is an operation, not speech or a task inventory`, () => {
     const entry = row(op, "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(entry), false);
     const rendered = stripVTControlCharacters(renderLogEntry(entry, 80));
-    assert.equal(rendered, `${op}\n   Working memory, not a response.\n`, "{plurnk#104} the row, its body previewed beneath, a blank row under it");
+    assert.equal(rendered, `${op}\n    Working memory, not a response.\n`, "{plurnk#104} the row, its body previewed beneath, a blank row under it");
 });
 
 test("{§cli-broadcast-send-rendering} a final KILL is speech only when its answer was delivered", () => {
@@ -52,7 +52,7 @@ test("{§cli-broadcast-send-rendering} a final KILL is speech only when its answ
         const deferred = row("KILL", "Not delivered.", status);
         deferred.rx = { status, detail: "Results await review before completion." };
         assert.equal(isResponseMessage(deferred), false);
-        assert.equal(stripVTControlCharacters(renderLogEntry(deferred)), "KILL — Results await review before completion.\n   Not delivered.\n");
+        assert.equal(stripVTControlCharacters(renderLogEntry(deferred)), "KILL — Results await review before completion.\n    Not delivered.\n");
     }
     // {plurnk#104} — the delivered answer is the one block that is never previewed.
     const long = row("KILL", Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"), 200, true);

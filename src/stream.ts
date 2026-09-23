@@ -7,7 +7,7 @@ import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { objectOf, previewLines, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
+import { PREVIEW_OFFSET, objectOf, previewLine, previewLines, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -118,7 +118,7 @@ export const inlineable = (content: string): boolean => {
 // ({plurnk#104}): a third of the terminal at most. stderr is marked and tinted.
 export const renderInline = (channel: string, content: string, rows: number = process.stdout.rows ?? 24): string =>
     previewLines(ModelText.plain(content).trimEnd().split("\n"), rows, (remaining) => `… +${remaining} lines`)
-        .map((l) => channel === "stderr" ? `   ${paint("!", "failure")} ${l}` : `   ${paint(l, "dim")}`)
+        .map((l) => channel === "stderr" ? `${PREVIEW_OFFSET}${paint("!", "failure")} ${paint(l, "dim")}` : previewLine(l))
         .join("\n");
 
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in

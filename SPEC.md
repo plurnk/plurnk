@@ -659,9 +659,10 @@ Markdown pass:
   into what is returned and are never operative for the count. No other operation carries a count.
 - The aside is the durable operation aside as sanitized literal text, italic and dim, never
   interpreted as Markdown or HTML.
-- Every authored body renders beneath its row as a preview: at most a third of the terminal's
-  rows, never fewer than three, indented and dim, ending in `… +N lines · /look <address>` when
-  cut, and a blank row closes the block. A concluded execution's output previews the same way
+- Every authored body renders beneath its row as a preview: the plain text, no Markdown pass,
+  at most a third of the terminal's rows and never fewer than three, four columns in and dim
+  (the reasoning lane's fade, never italic), ending in `… +N lines · /look <address>` when cut,
+  and a blank row closes the block. A concluded execution's output previews the same way
   under its row, and its blank row follows the output. The delivered answer (§5.4) is whole;
   the reasoning lane (§5.1.1) is a separate, live window.
 - An unsuccessful outcome (`status_rx >= 400`) names the structured result's own `problem.title`
@@ -738,7 +739,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | A model NOTE is displayed as a final answer is (§5.4): a blank lead row, its body at column zero as a preview (§5.1), and a blank row after it {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
+| NOTE | A model NOTE is displayed as a final answer is (§5.4): a blank lead row, its body as a preview (§5.1), and a blank row after it {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |

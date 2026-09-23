@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -26,4 +27,9 @@ test("release publication preserves canonical source, dependency order, and exac
     assert.doesNotMatch(release, /status", "--porcelain"\]\)\)\.stdout\.trim/);
     assert.match(release, /PLURNK_COMPOSITION_SERVICE: `\$\{SERVICE_PACKAGE\}@\$\{platformVersion\}`/);
     assert.doesNotMatch(release, /@latest/);
+});
+
+test("{plurnk#106} the publish script waits for registry visibility as long as the platform train does", () => {
+    const script = readFileSync(new URL("../scripts/release-publish.mjs", import.meta.url), "utf8");
+    assert.match(script, /const attempts = 90;/, "ninety polls at ten seconds");
 });

@@ -181,9 +181,12 @@ if (!targetServed) {
     };
     delete publishEnv.PLURNK_COMPOSITION_CLIENT;
     await runVisible("npm", ["publish", "--access", "public"], { env: publishEnv });
-    for (let attempt = 0; attempt < 12; attempt++) {
+    // Registry visibility lags minutes, not seconds (plurnk-service #650, plurnk#106): the same
+    // budget the platform train waits.
+    const attempts = 90;
+    for (let attempt = 0; attempt < attempts; attempt++) {
         if ((await registryVersions(CLIENT_PACKAGE)).includes(clientVersion)) break;
-        if (attempt === 11) throw new Error(`${CLIENT_PACKAGE}@${clientVersion} was published but never served`);
+        if (attempt === attempts - 1) throw new Error(`${CLIENT_PACKAGE}@${clientVersion} was published but never served after ${attempts} polls at 10 s`);
         await sleep(10_000);
     }
 }

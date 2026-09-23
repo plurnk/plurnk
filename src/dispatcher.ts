@@ -189,7 +189,8 @@ options:
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
-      --max-turns <n>     per-loop turn cap (otherwise the daemon's configured limit).
+      --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
+                          descendants' turns and every BARE call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true. Web retains the Worker.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.

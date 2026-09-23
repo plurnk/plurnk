@@ -49,7 +49,7 @@ Options:
 | `--auto` | flag | State that nobody is attending: every loop is unattended. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
 | `--proposals <p>` | string | State what every loop does with a proposal: `review`, `accept`, or `reject`. Overrides `PLURNK_CLIENT_PROPOSALS`. See §6.0. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
-| `--max-turns <n>` | string | Per-loop turn cap; omission leaves the daemon's configured limit in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
+| `--max-turns <n>` | string | Model-call budget for the prompt's worker tree ({§turn-cap-counts-the-tree}): the loop's turns, its descendants' turns and every BARE call, one per call; omission leaves the daemon's ceiling in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. Overrides `PLURNK_CLIENT_TIMEOUT`. |
 | `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
 | `--host <host>` | string | Web mode only: local browser portal host. An argument of `web`; its knob, `PLURNK_WEB_HOST`, is `@plurnk/plurnk-web`'s. |
@@ -614,7 +614,7 @@ worker — cross the existing diagnostic path without rewriting or retry.
 |---|---|
 | `0` | Loop terminated successfully (`finalStatus === 200`) |
 | `1` | Runtime error (module unreachable, action error, daemon crash, etc.) |
-| `2` | Loop hit `maxTurns` safety cap (`hitMaxTurns === true`) |
+| `2` | The worker tree spent its model-call budget ({§turn-cap-counts-the-tree}; `hitMaxTurns === true`) |
 | `3` | Loop terminated with cancellation (`finalStatus === 499`, including `--timeout`) |
 | `4` | Loop FAILED (4xx/5xx terminal status other than 499) — failure ≠ cancel, so benchmark stats stay honest |
 | `64` | Usage error (missing required env var, unrecognized flag) |
@@ -984,7 +984,7 @@ There is one configuration owner and one interpretation of every shared knob:
 | LoopPolicy and `--auto` | Base policy on every prompt Run |
 | `?` prompt prefix | Per-prompt proposal review, using the same projector as CLI/TUI |
 | prompt `@path` references | Per-prompt `openPaths` turn-0 projection |
-| `--max-turns` | Per-prompt daemon turn ceiling |
+| `--max-turns` | Per-prompt model-call budget for the worker tree ({§turn-cap-counts-the-tree}) |
 | `--timeout` | Portal-owned deadline followed by `loop.cancel {reason:"client_timeout"}` for the exact workspace/Worker |
 | `--yolo` | Automatic acceptance of client-owned proposals; interactions remain user-owned |
 | client `PLURNK_MCP_*` declarations | Host-side discovery overlay for the browser's ordinary `workspace.mcp.*` management actions; never bootstrap data |

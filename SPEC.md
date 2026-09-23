@@ -659,6 +659,11 @@ Markdown pass:
   into what is returned and are never operative for the count. No other operation carries a count.
 - The aside is the durable operation aside as sanitized literal text, italic and dim, never
   interpreted as Markdown or HTML.
+- Every authored body renders beneath its row as a preview: at most a third of the terminal's
+  rows, never fewer than three, indented and dim, ending in `… +N lines · /look <address>` when
+  cut, and a blank row closes the block. A concluded execution's output previews the same way
+  under its row, and its blank row follows the output. The delivered answer (§5.4) is whole;
+  the reasoning lane (§5.1.1) is a separate, live window.
 - An unsuccessful outcome (`status_rx >= 400`) names the structured result's own `problem.title`
   (else its `detail`, else the bare status) at the right of the row. A 204 is not a failure: a
   FIND counts `{0}`; a glob READ that matched no path carries the daemon's detail instead of a count.
@@ -733,7 +738,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | A model NOTE is displayed as a final answer is (§5.4): a blank lead row, its full body at column zero, and a blank row after it {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
+| NOTE | A model NOTE is displayed as a final answer is (§5.4): a blank lead row, its body at column zero as a preview (§5.1), and a blank row after it {§cli-note-rendering}; it is never a delivered message. A harness NOTE keeps the ordinary heading. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |
@@ -752,9 +757,9 @@ Input and output are the conventional aggregate fields from the daemon's account
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
 
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
-- Raw bodies for non-message ops: command snippets, JSON arguments, edit replacements, notes, and result previews. Message bodies render per §5.4; human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log row.
+- Whole bodies. Every body is a preview (§5.1); human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log entry.
 - Raw SSE frames.
-- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI fetches no channel content for a model's execution. An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and red otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI previews a concluded execution's output under its row (§5.1). An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and red otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
@@ -811,8 +816,6 @@ preserving layout.
 Client-owned proposals arrive through standard AG-UI tool-call interrupts under
 {§agui-proposal-disposition}. The client presents the proposal and resumes the
 Run with the selected decision; the following sections describe its local review projection.
-The TUI shows the proposal's body in a window about the reasoning lane's height, a third of the
-terminal at most, with a blank row above and below it; `e` opens the whole body in the editor.
 
 ### §6.0 What the client states {§cli-loop-policy}
 

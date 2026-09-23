@@ -93,22 +93,13 @@ export const editInEditor = async (body: string, suffix: string): Promise<string
     }
 };
 
-// {plurnk#104} — the body is a window about the reasoning lane's height, a third of the terminal
-// at most, never the whole diff; the editor shows the rest.
-export const bodyWindow = (text: string, rows: number): string => {
-    const max = Math.max(3, Math.floor(rows / 3));
-    const all = text.split("\n");
-    if (all.length <= max) return text;
-    return [...all.slice(0, max), paint(`… ${all.length - max} more lines · e opens the whole body in the editor`, "dim")].join("\n");
-};
-
 // The rendered diff + key menu as a string. Shared by the CLI (writes it to
 // stderr) and the non-blocking TUI review (writes it to stdout). No I/O here.
-// The body window stands apart: a blank row above and below it (plurnk#104).
-export const renderProposalMenu = (params: ProposalParams, rows: number = process.stdout.rows ?? 24): string => {
-    const body = ModelText.plain(params.body).replace(/\n$/u, "");   // plurnk#35 — the body is the model's
-    return `\n${paint(`── proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)} ──`, "bold")}\n\n`
-        + renderBody(params.op, bodyWindow(body, rows)) + "\n\n"
+export const renderProposalMenu = (params: ProposalParams): string => {
+    const body = ModelText.plain(params.body);   // plurnk#35 — the body is the model's
+    const nl = body.endsWith("\n") ? "" : "\n";
+    return `\n${paint(`── proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)} ──`, "bold")}\n`
+        + renderBody(params.op, body) + nl
         + `${paint("[a]ccept · [e]dit · [r]eject · [c]ancel", "dim")} `;
 };
 

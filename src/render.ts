@@ -211,6 +211,39 @@ const styledOutcome = (text: string, failed: boolean): string =>
 export const renderPendingRow = (entry: LogEntryWire): string =>
     paint(stripVTControlCharacters(renderOperationRow(entry, { failed: false, failure: null })), "dim");
 
+// {plurnk#104} — every body in the waterfall is a preview: at most a third of the terminal's rows,
+// never fewer than three, and the rest is named with the address LOOK reads it at. This is
+// scrollback; the reasoning lane ({§cli-provider-reasoning}) is a separate, live window.
+export const previewRows = (rows: number): number => Math.max(3, Math.floor(rows / 3));
+
+export const previewLines = (lines: readonly string[], rows: number, more: (remaining: number) => string): string[] => {
+    const max = previewRows(rows);
+    return lines.length <= max ? [...lines] : [...lines.slice(0, max), more(lines.length - max)];
+};
+
+export const entryAddress = (entry: LogEntryWire): string =>
+    `log:///${entry.loop_seq}/${entry.turn_seq}/${entry.sequence}/${entry.op ?? "error"}`;
+
+export const previewMore = (entry: LogEntryWire, remaining: number): string =>
+    `… +${remaining} lines · /look ${entryAddress(entry)}`;
+
+// The authored body beneath its row: indented and dim, previewed.
+export const renderBodyPreview = (entry: LogEntryWire, rows: number): string | null => {
+    const body = ModelText.plain(extractSendBody(entry.tx)).trimEnd();
+    if (body.length === 0) return null;
+    return previewLines(body.split("\n"), rows, (remaining) => previewMore(entry, remaining))
+        .map((line) => `   ${paint(line, "dim")}`)
+        .join("\n");
+};
+
+// A row and, beneath it, the preview of its authored body. A spaced block closes with a blank
+// row; an execution's block is left open because its output preview follows it.
+export const renderOperationBlock = (entry: LogEntryWire, override: RowOverride = {}, rows: number = process.stdout.rows ?? 24, spaced = false): string => {
+    const row = renderOperationRow(entry, override);
+    const preview = renderBodyPreview(entry, rows);
+    return preview === null ? row : `${row}\n${preview}${spaced ? "\n" : ""}`;
+};
+
 // `OP (target) <scope> /pattern/ {n} aside — problem title`, one line, literal text.
 export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
     const failed = override.failed ?? (override.failure !== undefined && override.failure !== null || entry.status_rx >= 400);

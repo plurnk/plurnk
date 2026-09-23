@@ -58,6 +58,10 @@ export default class TuiSurface {
         return this.#terminal.columns;
     }
 
+    get rows(): number {
+        return this.#terminal.rows;
+    }
+
     start(): void {
         if (this.#started) return;
         this.#started = true;

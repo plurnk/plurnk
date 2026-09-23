@@ -7,7 +7,7 @@ import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { renderOperationRow, objectOf, type LogEntryWire } from "./render.ts";
+import { objectOf, previewLines, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -91,7 +91,7 @@ export default class StreamTrace {
 
     // One row per execution, at its conclusion, in the operation grammar: the launching
     // fence when it is known, the stream's own scheme and address otherwise.
-    concluded(ev: StreamConcludedPayload): string {
+    concluded(ev: StreamConcludedPayload, rows: number = process.stdout.rows ?? 24): string {
         const launch = this.#launched.get(ev.target);
         this.#launched.delete(ev.target);
         this.#greyed.delete(ev.target);
@@ -99,7 +99,7 @@ export default class StreamTrace {
         const failed = status !== 200;
         const title = ev.result.problem?.title;
         const failure = !failed ? null : typeof title === "string" && title.length > 0 ? title : summaryTail(ev) || String(status);
-        if (launch !== undefined) return renderOperationRow(launch, { failed, failure });
+        if (launch !== undefined) return renderOperationBlock(launch, { failed, failure }, rows);
         const parts = [paint(ModelText.plain(ev.scheme), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
         if (failure !== null) parts.push(`— ${paint(ModelText.plain(failure), "failure")}`);
         return parts.join(" ");
@@ -114,10 +114,10 @@ export const inlineable = (content: string): boolean => {
     return content.trimEnd().split("\n").length <= 2;
 };
 
-// Render a concluded channel's content as indented lines under the
-// conclusion; stderr is marked and tinted.
-export const renderInline = (channel: string, content: string): string =>
-    ModelText.plain(content).trimEnd().split("\n")
+// Render a concluded channel's content as indented lines under the conclusion, previewed
+// ({plurnk#104}): a third of the terminal at most. stderr is marked and tinted.
+export const renderInline = (channel: string, content: string, rows: number = process.stdout.rows ?? 24): string =>
+    previewLines(ModelText.plain(content).trimEnd().split("\n"), rows, (remaining) => `… +${remaining} lines`)
         .map((l) => channel === "stderr" ? `   ${paint("!", "failure")} ${l}` : `   ${paint(l, "dim")}`)
         .join("\n");
 

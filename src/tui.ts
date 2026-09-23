@@ -33,7 +33,7 @@ import { BridgeTransport, type ObservationHandle, type Transport } from "./trans
 import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
-import StreamTrace, { inlineable, renderInline } from "./stream.ts";
+import StreamTrace, { renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
 import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
@@ -1014,7 +1014,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // A glob READ's rows collapse to the authored statement once the last row is in.
             const verdict = fanout.admit(entry);
             if (verdict.kind === "suppressed") return;
-            const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined);
+            const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined, surface.rows || 24);
             if (isResponseMessage(entry, transport.threadId())) surface.addResponse(entry);
             else printAbove(rendered);
         },
@@ -1034,19 +1034,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // execution's one row; start and growth events say nothing in the transcript.
             if (typeof (payload as { result?: { status?: unknown } }).result?.status === "number") {
                 const p = payload as StreamConcludedPayload;
-                const launch = streams.launchedBy(p.target);
-                printAbove(streams.concluded(p));
-                // A command the human typed (`!`) is asked for its output: a tiny result inlines
-                // under its row. The model's executions stay bodiless ({§cli-what-is-not-rendered}).
-                if (launch?.origin === "client") {
-                    peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
-                        const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
-                        for (const name of ["stdout", "stderr"]) {
-                            const content = channels[name]?.content;
-                            if (typeof content === "string" && inlineable(content)) printAbove(renderInline(name, content));
-                        }
-                    }).catch(() => { /* peek is best-effort */ }));
-                }
+                printAbove(streams.concluded(p, surface.rows || 24));
+                // Every execution is asked for its output, the human's and the model's alike: a
+                // preview of each channel inlines under its row ({plurnk#104}).
+                peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
+                    const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+                    for (const name of ["stdout", "stderr"]) {
+                        const content = channels[name]?.content;
+                        if (typeof content === "string" && content.trim().length > 0) printAbove(renderInline(name, content, surface.rows || 24));
+                    }
+                }).catch(() => { /* peek is best-effort */ }).finally(() => { printAbove(""); }));
             } else {
                 const line = streams.event(payload as StreamEventPayload);
                 if (line !== null) printAbove(line);

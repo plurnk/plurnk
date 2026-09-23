@@ -260,11 +260,12 @@ try {
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);
     const parentLifecycle = delegatedResult.turns?.flatMap(({ ops }) => ops)
-        .filter(({ op, origin }) => ["WAIT", "SEND", "FAIL"].includes(op) && origin === "model");
-    // Settlement may beat parking; either outcome must admit the unscoped WAIT. The SEND that
-    // follows is what settles and concludes it — DONE was retired ({§prose-conclusion}).
+        .filter(({ op, origin }) => ["WAIT", "KILL", "SEND", "FAIL"].includes(op) && origin === "model");
+    // Settlement may beat parking; either outcome must admit the unscoped WAIT. The parameterless
+    // KILL that follows is the conclusion and carries the answer ({§kill-conclusion}); the daemon
+    // mints no SEND row for it (platform 1.20.0).
     if (parentLifecycle?.length !== 2 || ![102, 202].includes(parentLifecycle[0].status)
-        || parentLifecycle[0].op !== "WAIT" || parentLifecycle[1].op !== "SEND"
+        || parentLifecycle[0].op !== "WAIT" || parentLifecycle[1].op !== "KILL"
         || parentLifecycle[1].status !== 200 || parentLifecycle.some(({ scope }) => scope !== null)) {
         throw new Error(`descendant proposal did not admit and settle its parent's wait: ${JSON.stringify(parentLifecycle)}`);
     }

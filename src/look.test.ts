@@ -3,15 +3,17 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 import { lookFence, lookHeading, renderLook } from "./look.ts";
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 // {§operation-fences}: `/look` generates the canonical fence.
 test("lookFence puts the address in its parentheses and keeps scope and pattern as typed", () => {
-    assert.equal(lookFence("worker:///plan.md"), "````LOOK (worker:///plan.md)````");
-    assert.equal(lookFence("  worker:///plan.md <1,20> /needle/i "), "````LOOK (worker:///plan.md) <1,20> /needle/i````");
-    assert.equal(lookFence("(worker:///plan.md) ~query"), "````LOOK (worker:///plan.md) ~query````", "an address the user parenthesized passes through");
+    const F = PLURNK_FENCE;
+    assert.equal(lookFence("worker:///plan.md"), `${F}LOOK (worker:///plan.md)${F}`);
+    assert.equal(lookFence("  worker:///plan.md <1,20> /needle/i "), `${F}LOOK (worker:///plan.md) <1,20> /needle/i${F}`);
+    assert.equal(lookFence("(worker:///plan.md) ~query"), `${F}LOOK (worker:///plan.md) ~query${F}`, "an address the user parenthesized passes through");
     assert.equal(lookFence("   "), null, "nothing to look at");
 });
 

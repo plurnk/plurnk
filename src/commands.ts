@@ -1,3 +1,4 @@
+import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 export const COMMAND_GROUPS = [
     { id: "inspect", label: "inspect" },
     { id: "policy", label: "policy" },
@@ -196,7 +197,7 @@ export const renderCommandHelp = (name: string = ""): string => {
     });
     return [
         ...groups,
-        "  language     ````OP · ````NOTE · ````WAIT · ````SEND · ````LOOK · ! command · ? ask · ... steer",
+        `  language     ${PLURNK_FENCE}OP · ${PLURNK_FENCE}NOTE · ${PLURNK_FENCE}WAIT · ${PLURNK_FENCE}SEND · ${PLURNK_FENCE}LOOK · ! command · ? ask · ... steer`,
         "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc cancel/clear · Alt-? help",
         "  tree         Alt-h parent · Alt-l newest child · Alt-j/Alt-k next/prev sibling — the prompt then speaks to that worker",
         "  /help <verb> for exact usage",

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
+import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 
 test("pathPartial: members and compose verbs expose their path arg", () => {
     assert.equal(pathPartial("/members discover src/comp"), "src/comp");
@@ -95,16 +96,17 @@ test("dslOpPartial: retains the opening fence width without delimiter suffixes",
 
 // {§operation-fences}: completion uses the canonical width even when the typed width is accepted.
 test("completeOps: completes native names and widens a narrow opening fence", () => {
-    assert.deepEqual(completeOps({ fence: "```", typed: "no" }), [["````NOTE"], "````no"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], "````pl"]);
-    assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"]);
+    const F = PLURNK_FENCE;
+    assert.deepEqual(completeOps({ fence: "```", typed: "no" }), [[`${F}NOTE`], `${F}no`]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "pl" }), [[], `${F}pl`]);
+    assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"], "a fence at least the taught width is kept as typed");
     assert.deepEqual(completeOps({ fence: "`````", typed: "re" }), [["`````READ"], "`````re"], "a deliberately wider fence is kept");
-    assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], ["````BARE"]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "LOOK"].map((op) => `\`\`\`\`${op}`));
+    assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], [`${F}BARE`]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "LOOK"].map((op) => `${F}${op}`));
 });
 
 test("completeOps: LOOK completes alongside daemon operations", () => {
-    assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], ["````LOOK"]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], [`${PLURNK_FENCE}LOOK`]);
 });
 
 test("pathPartial: native and executor fence targets, scheme stripped", () => {

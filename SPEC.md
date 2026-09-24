@@ -317,9 +317,11 @@ One AG-UI stream binds one conversation worker. Descendants of that worker reach
 a client only through the daemon's correlated projection (plurnk-service#440, the
 lane presentation of #38), never by inference; unrelated workspace workers never
 render inside a session. What the daemon correlates (a direct child's mutations, messages,
-executions, launches and conclusion) renders in the conversation as lineage rows (§5.1); a
-child's reads and finds stay with the child and are seen by attaching to it. Navigation between
-workers is explicit.
+executions, launches and conclusion) renders in the conversation as lineage rows (§5.1). The
+TUI also asks the daemon to observe its delegation (`forwardedProps.plurnk.descendants`,
+plurnk-service `{§agui-delegation-observation}`): every descendant's own rows and executions
+arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
+steps and terminal never do. Navigation between workers is explicit.
 `/attach <name>` rebinds the session's thread to that name with the world
 unchanged: an existing worker is bound, a new name mints a fresh conversation on
 the next run, exactly as `--worker <name>` at invocation. The verb reports
@@ -670,9 +672,16 @@ Markdown pass:
   in, led by `🐜 <name>` in dim, its body previewed beneath one step deeper. Its outcome is the
   row's own: a child's execution concludes in the child's Run, so its lineage row is never held
   for a stream conclusion. A child's conclusion is the parent's own READ of `ops://<name>/<loop>`,
-  an ordinary row carrying the child's terminal status and Problem title; it takes no mark,
-  because the ant outside a lineage row is the status line's child count
+  an ordinary row carrying the child's terminal status and Problem title; it takes no mark
   ({§cli-workers-topology}).
+- An observed descendant's own row (the TUI asks the daemon to observe its delegation,
+  `forwardedProps.plurnk.descendants`; each descendant arrives introduced once by
+  `plurnk.descendant` with its name and generation) renders one step in per generation, two
+  columns each, led by `🐜 <name>` in dim, its body previewed beneath, and its execution's
+  conclusion and output peeks stepped in the same way. It never drives the turn presentation,
+  the status line's activity, the LOOK cycler, or the response area, and an observed
+  descendant's lineage rows are not rendered a second time. Outside a descendant's row the ant
+  is the status line's child count.
 - Every authored body renders beneath its row as a preview: the plain text, no Markdown pass,
   `PLURNK_CLIENT_PREVIEW_LINES` lines (`--preview-lines` for one invocation), independent of
   the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),

@@ -113,6 +113,22 @@ export const lineageWorker = (entry: LogEntryWire): string | null => {
 };
 export const LINEAGE_OFFSET = "  ";
 
+// {plurnk#108} — a descendant as the daemon introduces it (plurnk-service `{§agui-delegation-observation}`).
+export interface Descendant {
+    readonly workerId: number;
+    readonly name: string;
+    readonly parentWorkerId: number;
+    readonly depth: number;
+}
+
+// A descendant's block steps in one LINEAGE_OFFSET per generation; the first line carries its name.
+export const indentDescendant = (text: string, depth: number): string => {
+    const offset = LINEAGE_OFFSET.repeat(depth);
+    return text.split("\n").map((line) => line.length === 0 ? line : `${offset}${line}`).join("\n");
+};
+export const markDescendant = (block: string, name: string, depth: number): string =>
+    indentDescendant(`${paint(`🐜 ${ModelText.plain(name)}`, "dim")} ${block}`, depth);
+
 export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
     if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
     const reply = objectOf(entry.attrs)?.kind === "reply";

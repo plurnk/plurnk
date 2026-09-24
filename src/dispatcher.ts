@@ -962,6 +962,7 @@ export const main = async (argv: string[]): Promise<void> => {
             workspace: w,
             projectRoot,
             settings,
+            descendants: true,   // {plurnk#108} — the TUI observes its delegation
         });
         try {
             const { runTui } = await import("./tui.ts");

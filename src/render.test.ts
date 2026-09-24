@@ -2,6 +2,8 @@
 // free of ANSI escape codes — the color rendering paths are simple
 // enough that visual inspection during smoke covers them.
 
+import { renderDescendantBlock } from "./render-message.ts";
+import { indentDescendant, markDescendant } from "./render.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
@@ -709,6 +711,15 @@ test("{plurnk#108} a lineage row renders two columns in with the child's name, i
     assert.ok(!renderLogEntry(entry({ op: "sh", origin: "model", tx: { runtime: "sh", body: "ls" } }), 80).includes("🐜"), "the bound worker's own rows carry no mark");
     const arrival = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://identity", tx: { body: { raw: "done" } } });
     assert.ok(!renderLogEntry(arrival, 80).includes("🐜"), "a child's message keeps its arrival form, sender and all");
+});
+
+test("{plurnk#108} an observed descendant's row steps in one step per generation, and its output follows", () => {
+    const grandchild = entry({ op: "sh", origin: "model", tx: { runtime: "sh", body: "ls" } });
+    const rows = renderDescendantBlock(grandchild, "grand", 2).split("\n");
+    assert.equal(rows[0], "    🐜 grand sh", "two generations, four columns in");
+    assert.equal(rows[1], "        ls", "the preview follows one step deeper");
+    assert.equal(indentDescendant("    one\n\n    two", 1), "      one\n\n      two", "blank lines stay blank");
+    assert.equal(markDescendant("sh\n    ls", "child", 1), "  🐜 child sh\n      ls");
 });
 
 test("{plurnk#107} the preview count is the knob's, never the terminal's height, and an unreadable knob is an error", () => {

@@ -4,7 +4,7 @@ import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
 import {
     entryAside, extractSendBody, isArrivalEntry, isResponseMessage,
-    LINEAGE_OFFSET, lineageWorker, objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
+    lineageWorker, markDescendant, objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
     type LogEntryWire, type RowOverride,
 } from "./render.ts";
 
@@ -51,15 +51,11 @@ const renderArrival = (entry: LogEntryWire): string => {
     return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry)}\n`;
 };
 
-// A lineage row ({plurnk#108}): the child's name marks it, the block sits two columns in, and the
-// body previews beneath like any operation. One step only: lineage carries a direct child's
-// activity ({§cli-workers-topology}).
-const renderLineageBlock = (entry: LogEntryWire, name: string, override?: RowOverride): string => {
-    const mark = `${paint(`🐜 ${ModelText.plain(name)}`, "dim")} `;
-    return renderOperationBlock(entry, override, true).split("\n")
-        .map((line, index) => line.length === 0 ? line : `${LINEAGE_OFFSET}${index === 0 ? mark : ""}${line}`)
-        .join("\n");
-};
+// A descendant's row ({plurnk#108}): the child's name marks it, the block sits one step in per
+// generation, and the body previews beneath like any operation. A lineage row is the direct
+// child's, at depth one ({§cli-workers-topology}).
+export const renderDescendantBlock = (entry: LogEntryWire, name: string, depth: number, override?: RowOverride): string =>
+    markDescendant(renderOperationBlock(entry, override, true), name, depth);
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
 // its outcome, an arrival its sender and block, a conversation reply its whole block, every
@@ -73,7 +69,7 @@ export const renderLogEntry = (
 ): string => {
     if (isResponseMessage(entry)) return renderBroadcast(entry, columns);
     const lineage = lineageWorker(entry);
-    if (lineage !== null) return renderLineageBlock(entry, lineage, override);
+    if (lineage !== null) return renderDescendantBlock(entry, lineage, 1, override);
     if (TurnDisposition.isOp(entry.op) || entry.op === "KILL" && objectOf(entry.tx)?.target === null) {
         const rx = objectOf(entry.rx);
         const detail = typeof rx?.detail === "string" ? rx.detail : null;

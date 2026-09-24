@@ -75,10 +75,12 @@ export default class StreamTrace {
 
     // Executions launched before the given turn and still open: each is returned once, for the
     // grey row that says the model moved on while it runs ({§cli-what-is-not-rendered}).
-    staleBefore(loopSeq: number, turnSeq: number): LogEntryWire[] {
+    staleBefore(loopSeq: number, turnSeq: number, workerId?: number): LogEntryWire[] {
         const stale: LogEntryWire[] = [];
         for (const [address, launch] of this.#launched) {
             if (this.#greyed.has(address)) continue;
+            // {plurnk#108} — a turn advance is one worker's; an observed descendant's execution keeps its own clock.
+            if (workerId !== undefined && launch.worker_id !== workerId) continue;
             if (launch.loop_seq > loopSeq || (launch.loop_seq === loopSeq && launch.turn_seq >= turnSeq)) continue;
             this.#greyed.add(address);
             stale.push(launch);

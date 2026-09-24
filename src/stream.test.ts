@@ -104,6 +104,13 @@ test("renderInline: indents under the conclusion; stderr is marked", () => {
     assert.equal(long[3], "    … +37 lines");
 });
 
+test("{plurnk#108} a turn advance greys only the same worker's open executions", () => {
+    const t = new StreamTrace();
+    t.launch(launch({ worker_id: 20 }));
+    assert.deepEqual(t.staleBefore(1, 3, 10), [], "another worker's turn never greys a descendant's execution");
+    assert.equal(t.staleBefore(1, 3, 20).length, 1, "its own worker's turn does, once");
+});
+
 test("[§cli-what-is-not-rendered] an execution still open when the following turn begins is reported once as stale, then concludes normally", () => {
     const t = new StreamTrace();
     t.launch(launch());

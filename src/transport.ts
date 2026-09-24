@@ -1,6 +1,7 @@
 // The TUI's AG-UI transport. Model and action runs share presentation handlers,
 // not stream state or interrupt ownership ({§cli-active-command-admission}).
 
+import type { Descendant } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -52,6 +53,7 @@ export interface RunHandlers {
         responseSchema: Record<string, unknown>;
     }) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
+    onDescendant?: (descendant: Descendant) => void;   // {plurnk#108} — a delegation observation's introduction
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
     onQuiesced?: (payload: unknown) => void;
@@ -99,7 +101,7 @@ export interface Transport {
 // can finish without a loop terminal; it cannot manufacture accounting evidence.
 // Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
 // (§agui-forwarded-props) — the bridge applies them at workspace.create.
-export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object }
+export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object; descendants?: boolean }
 
 export class BridgeTransport implements Transport {
     #target: BridgeTarget;
@@ -245,6 +247,8 @@ export class BridgeTransport implements Transport {
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
             ...this.#workspaceOpts(),
+            // {plurnk#108} — a session that observes its delegation asks on every conversation run.
+            ...(this.#workspace.descendants === true ? { descendants: true } : {}),
             ...(opts === undefined ? { mode: "sync" } : {
                 policy: opts.policy,
                 ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
@@ -513,6 +517,7 @@ export class BridgeTransport implements Transport {
         if (name === "plurnk.row") this.#row(value as LogEntryWire, projection === this.#modelProjection);
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
+        else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);
         else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
         else if (name === "plurnk.terminated") {

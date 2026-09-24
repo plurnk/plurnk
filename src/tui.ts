@@ -23,7 +23,8 @@ import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } fr
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
-import { renderLogEntry } from "./render-message.ts";
+import { renderDescendantBlock, renderLogEntry } from "./render-message.ts";
+import { indentDescendant, lineageWorker, markDescendant, type Descendant } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -628,6 +629,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let accrued: TurnAccounting | null = null;
     let runningSince: number | null = null;
     let conversationWorkerId: number | null = null;
+    // {plurnk#108} — the descendants the daemon introduced for this session's delegation observation.
+    const descendants = new Map<number, Descendant>();
+    const observedNames = new Set<string>();
     // {§cli-workers-topology} — where the session is in the tree: the prompt's path prefix and the
     // status line's sibling position, re-read from the directory on every hop or rebind.
     let workerPosition: { index: number; count: number } | null = null;
@@ -991,16 +995,27 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     transport.subscribe({
         onReasoning: presentReasoning,
+        onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
         onEntry: (entry) => {
             // The typed line at the prompt is the user's record — rendering the arrival
             // the bridge sourced to this thread would duplicate it (see isOwnArrival);
             // another actor's arrival renders with its sender (#79).
             if (isOwnArrival(entry, transport.threadId())) return;
             if (isEntryMaterialization(entry)) return;
+            // {plurnk#108} — an observed descendant's own row: marked and stepped in per generation, and
+            // never the turn presentation's, the status line's or the response area's business.
+            const descendant = descendants.get(entry.worker_id ?? -1);
+            if (descendant !== undefined) {
+                if (streams.launch(entry)) return;
+                printAbove(renderDescendantBlock(entry, descendant.name, descendant.depth));
+                return;
+            }
+            const lineage = lineageWorker(entry);
+            if (lineage !== null && observedNames.has(lineage)) return;   // its own rows are observed; the parent's echo would repeat them
             const turn = `${entry.worker_id}/${entry.loop_seq}/${entry.turn_seq}`;
             if (entry.origin === "model" && turn !== presentedTurn) {
                 surface.archiveResponses();
-                for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq)) printAbove(renderPendingRow(stale));
+                for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq, entry.worker_id)) printAbove(renderPendingRow(stale));
                 presentedTurn = turn;
             }
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
@@ -1040,14 +1055,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // execution's one row; start and growth events say nothing in the transcript.
             if (typeof (payload as { result?: { status?: unknown } }).result?.status === "number") {
                 const p = payload as StreamConcludedPayload;
-                printAbove(streams.concluded(p));
+                const observed = descendants.get(p.workerId);
+                const block = streams.concluded(p);
+                printAbove(observed === undefined ? block : markDescendant(block, observed.name, observed.depth));
                 // Every execution is asked for its output, the human's and the model's alike: a
                 // preview of each channel inlines under its row ({plurnk#104}).
                 peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
                     const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
                     for (const name of ["stdout", "stderr"]) {
                         const content = channels[name]?.content;
-                        if (typeof content === "string" && content.trim().length > 0) printAbove(renderInline(name, content));
+                        if (typeof content === "string" && content.trim().length > 0) printAbove(observed === undefined ? renderInline(name, content) : indentDescendant(renderInline(name, content), observed.depth));
                     }
                 }).catch(() => { /* peek is best-effort */ }).finally(() => { printAbove(""); }));
             } else {

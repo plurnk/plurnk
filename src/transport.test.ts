@@ -315,6 +315,28 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
     } finally { await mock.close(); }
 });
 
+test("{plurnk#108} BridgeTransport: a session that observes its delegation asks for descendants on every run and un-projects plurnk.descendant", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "RUN_STARTED" }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.descendant", value: { workerId: 20, name: "child", parentWorkerId: 10, depth: 1 } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 7, op: "READ", worker_id: 20 } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    try {
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { descendants: true });
+        const { h, seen } = collectingHandlers();
+        const introduced: unknown[] = [];
+        bt.subscribe({ ...h, onDescendant: (descendant) => introduced.push(descendant) });
+        await bt.run("delegate", { policy: REVIEW_POLICY }).done;
+        assert.deepEqual(introduced, [{ workerId: 20, name: "child", parentWorkerId: 10, depth: 1 }], "the introduction reaches its handler");
+        assert.deepEqual(seen.entries, [{ id: 7, op: "READ", worker_id: 20 }], "the descendant's row still reaches onEntry");
+        assert.equal((mock.captured[0].body as { forwardedProps: { plurnk: { descendants?: boolean } } }).forwardedProps.plurnk.descendants, true, "the run asks for its delegation");
+    } finally { await mock.close(); }
+});
+
 test("BridgeTransport: plurnk.problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/engine/rails/max-turns",

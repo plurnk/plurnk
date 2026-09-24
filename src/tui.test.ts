@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
+import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 import type { Transport } from "./transport.ts";
 
 const REVIEW_POLICY = { proposals: "review" as const };
@@ -36,7 +37,7 @@ test("help is a compact grouped index over commands and interaction grammar", ()
     assert.match(TUI_HELP, /inspect\s+\/help \/models/);
     assert.match(TUI_HELP, /functionality\s+\/mcp \/skills \/a2a \/members/);
     // {§operation-fences}: help teaches the canonical fence.
-    assert.match(TUI_HELP, /language\s+````OP/);
+    assert.match(TUI_HELP, new RegExp(`language\\s+${PLURNK_FENCE}OP`));
     assert.match(TUI_HELP, /\/help <verb>/);
 });
 

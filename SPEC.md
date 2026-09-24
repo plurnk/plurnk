@@ -666,12 +666,13 @@ Markdown pass:
 - The aside is the durable operation aside as sanitized literal text, italic and dim, never
   interpreted as Markdown or HTML.
 - A lineage row, a direct child's durable activity the daemon correlated into this
-  conversation's log (`origin: _plurnk` with `source: worker://<name>`, or the child's
-  conclusion as the harness READ of `ops://<name>/<loop>`), renders two columns in, led by
-  `🐜 <name>` in dim, its body previewed beneath one step deeper. Its outcome is the row's
-  own: a child's execution concludes in the child's Run, so its lineage row is never held for a
-  stream conclusion, and a child's conclusion row carries the child's terminal status and
-  Problem title ({§cli-workers-topology}).
+  conversation's log (`origin: _plurnk` with `source: worker://<name>`), renders two columns
+  in, led by `🐜 <name>` in dim, its body previewed beneath one step deeper. Its outcome is the
+  row's own: a child's execution concludes in the child's Run, so its lineage row is never held
+  for a stream conclusion. A child's conclusion is the parent's own READ of `ops://<name>/<loop>`,
+  an ordinary row carrying the child's terminal status and Problem title; it takes no mark,
+  because the ant outside a lineage row is the status line's child count
+  ({§cli-workers-topology}).
 - Every authored body renders beneath its row as a preview: the plain text, no Markdown pass,
   `PLURNK_CLIENT_PREVIEW_LINES` lines (`--preview-lines` for one invocation), independent of
   the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),

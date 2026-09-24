@@ -102,15 +102,14 @@ export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
 
 // {§cli-workers-topology} {plurnk#108} — a lineage row is a direct child's durable activity as the
-// daemon correlated it into this conversation's log: an operation sourced to `worker://<name>`, or
-// the child's conclusion arriving as the harness READ of `ops://<name>/<loop>`. Its outcome is the
-// row's own; the child's streams conclude in the child's Run, never here.
+// daemon correlated it into this conversation's log: an operation sourced to `worker://<name>`. Its
+// outcome is the row's own; the child's streams conclude in the child's Run, never here. The child's
+// conclusion, the parent's own READ of `ops://<name>/<loop>`, is an ordinary row: it carries the
+// child's terminal status and needs no mark, and the harness reads `ops://` for itself too.
 export const lineageWorker = (entry: LogEntryWire): string | null => {
     if (entry.origin !== "_plurnk" || isArrivalEntry(entry)) return null;
     const sourced = typeof entry.source === "string" ? /^worker:\/\/([^/?#]+)/u.exec(entry.source) : null;
-    if (sourced !== null) return sourced[1]!;
-    if (entry.op === "READ" && entry.scheme === "ops" && typeof entry.hostname === "string" && entry.hostname.length > 0) return entry.hostname;
-    return null;
+    return sourced === null ? null : sourced[1]!;
 };
 export const LINEAGE_OFFSET = "  ";
 

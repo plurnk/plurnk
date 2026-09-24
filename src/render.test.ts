@@ -703,7 +703,9 @@ test("{plurnk#108} a lineage row renders two columns in with the child's name, i
         tx: { op: "READ", target: { kind: "url", raw: "ops://identity/14" }, matcher: null, aside: null },
         rx: { status: 500, problem: { type: "x", title: "Struck out", status: 500 } },
     });
-    assert.match(renderLogEntry(struck, 80), /^  🐜 identity READ \(ops:\/\/identity\/14\).*— Struck out/u, "a child's conclusion carries its terminal outcome");
+    const conclusion = renderLogEntry(struck, 80);
+    assert.match(conclusion, /^READ \(ops:\/\/identity\/14\).*— Struck out/u, "a child's conclusion is the parent's own row, carrying the child's terminal outcome");
+    assert.ok(!conclusion.includes("🐜"), "no mark: the harness reads ops:// for the worker itself too, and the ant is the status line's child count");
     assert.ok(!renderLogEntry(entry({ op: "sh", origin: "model", tx: { runtime: "sh", body: "ls" } }), 80).includes("🐜"), "the bound worker's own rows carry no mark");
     const arrival = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://identity", tx: { body: { raw: "done" } } });
     assert.ok(!renderLogEntry(arrival, 80).includes("🐜"), "a child's message keeps its arrival form, sender and all");

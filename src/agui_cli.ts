@@ -82,6 +82,12 @@ const mergeRunSegments = (prior: CliRunResult, segment: CliRunResult): CliRunRes
     problem: segment.problem ?? prior.problem,
 });
 
+const runOutcome = (result: CliRunResult): OperationResult => {
+    if (result.terminated !== null) return result.terminated.result;
+    const problem = result.problem ?? clientTransportTerminalMissing();
+    return { status: problem.status, problem };
+};
+
 // Decide a stopped-world proposal: the AG-UI run ended
 // on the tool-call; the decision returns as the next run's resume payload. A
 // A projected proposal tool-call is client-owned; loop-owned dispositions settle
@@ -357,6 +363,7 @@ export const runCliViaBridge = async (
         if (!opts.json) return Promise.resolve();
         if (emission !== undefined) return emission;
         const t = r.terminated;
+        const outcome = runOutcome(r);
         const doc = buildJsonRecord({
             workspace: { id: t?.workspaceId ?? 0, name: opts.workspace ?? opts.threadId },
             prompt,
@@ -367,11 +374,10 @@ export const runCliViaBridge = async (
                 loopId: t?.loopId ?? 0,
                 modelWorkerId: t?.workerId ?? r.modelWorkerId ?? undefined,
                 turnIds: t?.turnIds ?? [],
-                // NEVER a fabricated 200: a stream that died without terminal truth is 502.
-                finalStatus: t?.result.status ?? 502,
+                finalStatus: outcome.status,
                 hitMaxTurns: t?.hitMaxTurns ?? false,
                 usage: t?.usage,
-                problem: t?.result?.problem ?? r.problem ?? undefined,
+                problem: outcome.problem,
             },
             wallMs: Date.now() - started,
             timedOut,
@@ -411,7 +417,8 @@ export const runCliViaBridge = async (
         if (graceTimer !== undefined) clearTimeout(graceTimer);
     }
     if (!opts.json) {
-        const finalStatus = result.terminated?.result.status ?? result.problem?.status ?? 502;
+        const outcome = runOutcome(result);
+        const finalStatus = outcome.status;
         statusLine.update({
             lifecycle: finalStatus === 202 ? "parked"
                 : finalStatus === 499 ? "cancelled"
@@ -424,7 +431,7 @@ export const runCliViaBridge = async (
         process.stderr.write(`${renderSummary(
             terminated?.turnIds.length ?? 0,
             Date.now() - started,
-            terminated?.result ?? { status: result.problem?.status ?? 502, ...(result.problem === null ? {} : { problem: result.problem }) },
+            outcome,
             terminated?.hitMaxTurns ?? false,
             terminated?.usage,
         )}\n`);

@@ -228,8 +228,10 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 
 {§cli-interrupted-record} During the initial request or any proposal-resume segment,
 `SIGTERM` flushes one JSON document containing all rows, notices, and response text
-observed so far, then exits 143. Without a daemon terminal result it reports 502
-and unknown terminal usage, never success or estimated accounting. The client
+observed so far, then exits 143. A daemon terminal result wins; otherwise an
+observed Problem retains its status, or a `client/transport/terminal-missing`
+Problem supplies 502. Without a daemon terminal result usage remains unknown,
+never inferred from partial accounting. The client
 waits for stdout to flush; interrupting its process does not assert that the
 daemon loop has concluded.
 

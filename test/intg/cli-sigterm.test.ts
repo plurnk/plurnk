@@ -7,9 +7,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { RunAgentInputSchema } from "@ag-ui/core/schemas";
+import { Validator } from "@plurnk/plurnk-contracts";
+import { clientTransportTerminalMissing } from "../../src/diagnostics.ts";
 
-for (const resumed of [false, true]) {
-    test(`[§cli-interrupted-record] built CLI flushes its ${resumed ? "resumed" : "initial"} in-flight record on SIGTERM`, { timeout: 15_000 }, async (t) => {
+for (const [resumed, reportedFailure] of [[false, false], [false, true], [true, false], [true, true]]) {
+    test(`[§cli-interrupted-record] built CLI flushes its ${resumed ? "resumed" : "initial"} in-flight record on SIGTERM (${reportedFailure ? "reported failure" : "missing outcome"})`, { timeout: 15_000 }, async (t) => {
+        const problem = reportedFailure ? {
+            type: "https://problems.example.test/forbidden",
+            title: "Forbidden",
+            status: 403,
+            detail: "The requested operation was denied.",
+        } : clientTransportTerminalMissing();
         const directory = await mkdtemp(join(tmpdir(), "plurnk-sigterm-"));
         t.after(() => rm(directory, { recursive: true, force: true }));
         const body = "partial ✓ ".repeat(40_000);
@@ -46,6 +54,7 @@ for (const resumed of [false, true]) {
                 response.end();
             } else {
                 if (resumed) assert.equal(input.resume?.[0]?.interruptId, "prop:9");
+                if (reportedFailure) frame({ type: "CUSTOM", name: "plurnk.problem", value: problem });
                 frame({ type: "CUSTOM", name: "plurnk.notice", value: {
                     source: "engine:turn", kind: "turn_generated", message: "turn observed",
                     accounting: { inputTokens: 10, outputTokens: 5, costUsd: "0.01" },
@@ -88,7 +97,9 @@ for (const resumed of [false, true]) {
         assert.equal(code, 143, stderr);
         assert.equal(signal, null);
         const record = JSON.parse(stdout);
-        assert.equal(record.finalStatus, 502, "no daemon terminal truth means no invented success");
+        Validator.assertOperationResult({ status: record.finalStatus, ...(record.problem === undefined ? {} : { problem: record.problem }) });
+        assert.equal(record.finalStatus, problem.status, "preserve a reported failure; never invent success without terminal truth");
+        assert.deepEqual(record.problem, problem, "the partial record must retain a complete, matching failure");
         assert.equal(record.response, body, "the latest observed response survives, including pipe-sized output");
         assert.equal(record.workerId, 11);
         assert.equal(record.loopId, 0, "unknown terminal coordinates are not invented");

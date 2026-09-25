@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive AG-UI client.",
     "type": "module",
     "license": "MIT",
@@ -60,7 +60,7 @@
         "@ag-ui/client": "^1.0.0",
         "@ag-ui/core": "^1.0.0",
         "@earendil-works/pi-tui": "^0.87.0",
-        "@plurnk/plurnk-contracts": "^1.21.0",
+        "@plurnk/plurnk-contracts": "^1.21.1",
         "beautiful-mermaid": "^1.1.3",
         "cli-table3": "^0.6.5",
         "marked": "^18.0.11",
@@ -68,7 +68,7 @@
         "wrap-ansi": "^10.0.1"
     },
     "plurnk": {
-        "builtAgainst": "1.21.0"
+        "builtAgainst": "1.21.1"
     },
     "man": "./man/plurnk.1"
 }

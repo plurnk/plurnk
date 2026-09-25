@@ -2,6 +2,16 @@
 
 **The [Bitter Lesson](https://bitterlesson.ai/) applies to the harness, too.**
 
+- **Perpetual Context.** Like a "perpetual stew" for your tokens, Plurnk
+  discards compaction entirely in favor of ongoing, model-driven context
+  curation.
+- **Reasoning Distillation.** Model-driven reasoning trace introspection,
+  note-taking, and recall let open models keep their thinking instead of
+  buying it again every turn.
+- **Universal Patterns.** Your entire repo gets indexed on entry, letting the
+  model explore and edit the project by regex, XPath, JSONPath, full text, and
+  tree-sitter symbols.
+
 The model should decide what to remember, where to look, when to delegate, and
 how to proceed. Plurnk is an agentic operating system and programming language
 that puts those decisions in the model's hands.
@@ -17,23 +27,6 @@ with ordinary shell pipelines.
 
 This repository provides the CLI and interactive terminal client for
 [plurnk-service](https://github.com/plurnk/plurnk-service), the shared daemon.
-
-## Why Plurnk
-
-- **Curation, not compaction.** The agent retrieves the passages it needs and
-  removes stale items or individual lines from its active context. Its working
-  set changes; source material and original execution evidence survive.
-- **Precision without ceremony.** Line ranges, character regions, and
-  hash-anchored edits make surgical changes possible. Stale anchors reject
-  conflicting edits before they overwrite the wrong text.
-- **The model chooses the topology.** Fork with existing context, start a
-  worker with a fresh log, or delegate pure inference without an agent loop.
-  Parent and child models can use different endpoints: a cloud model can
-  orchestrate local workers through the same primitives.
-- **Execution with evidence.** ANTLR parses model output into executable
-  operations. The runtime records their results and returns structured errors
-  the model can act on. Full packet digests make the work inspectable. A
-  compatible local server can run under a grammar you wrote, carried verbatim.
 
 Workspaces and worker conversations live in the daemon, independently of the
 client session. Choose your model, context limits, tools, and capability

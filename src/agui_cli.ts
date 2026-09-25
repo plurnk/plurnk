@@ -70,7 +70,17 @@ export interface CliRunSinks {
     onActionResult?: (v: ActionOutcome) => void;
     onTurnAccounting?: (turn: TurnAccounting) => void;
     onStatus?: (status: ClientStatus) => void;
+    onProgress?: (result: CliRunResult) => void;
 }
+
+const mergeRunSegments = (prior: CliRunResult, segment: CliRunResult): CliRunResult => ({
+    ...segment,
+    entries: [...prior.entries, ...segment.entries],
+    notices: [...prior.notices, ...segment.notices],
+    response: segment.response.length > 0 ? segment.response : prior.response,
+    modelWorkerId: prior.modelWorkerId ?? segment.modelWorkerId,
+    problem: segment.problem ?? prior.problem,
+});
 
 // Decide a stopped-world proposal: the AG-UI run ended
 // on the tool-call; the decision returns as the next run's resume payload. A
@@ -112,121 +122,130 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     const reasoning = new ReasoningEvents();
     const visibleReasoning = new Map<string, { atLineStart: boolean }>();
     let statusGauge: StatusGaugeEnvelope | null = null;
+    const snapshot = (): CliRunResult => ({
+        exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, notices, response,
+        terminated, modelWorkerId, pendingResume, problem,
+    });
+    io.onProgress?.(snapshot());
     for await (const e of events) {
-        if (e.type === "RUN_STARTED") {
-            threadId = e.threadId;
-            continue;
-        }
-        if (e.type === "RUN_ERROR") {
-            sawRunError = true;
-            continue;
-        }
-        if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
-            for (const interrupt of e.outcome.interrupts) {
-                interrupts.add(interrupt.id);
-                if (interrupt.toolCallId !== undefined) interrupts.add(interrupt.toolCallId);
-            }
-            continue;
-        }
-        if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
-        if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) { toolArgs += String((e as { delta?: unknown }).delta ?? ""); continue; }
-        if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
-            const logEntryId = Number(toolId.slice(5));
-            let a: Record<string, unknown>;
-            try {
-                a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
-            } catch (cause) {
-                problem = clientTransportProposalInvalid(logEntryId, cause);
-                finalStatus = problem.status;
+        try {
+            if (e.type === "RUN_STARTED") {
+                threadId = e.threadId;
                 continue;
             }
-            const r = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
-            pendingResume = r.decision === "cancel"
-                ? { interruptId: toolId, status: "cancelled" }
-                : { interruptId: toolId, status: "resolved", payload: { decision: r.decision, ...(r.body === undefined ? {} : { body: r.body }) } };
-            continue;
-        }
-        if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
-            pendingResume = { interruptId: toolId, status: "cancelled" };
-            continue;
-        }
-        const state = reduceStatusGauge(statusGauge, e);
-        if (state.handled) {
-            statusGauge = state.gauge;
-            if (!io.json) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status));
-            continue;
-        }
-        const reasoningEvent = reasoning.consume(e);
-        if (reasoningEvent.handled) {
-            const update = reasoningEvent.update;
-            if (!io.json && update?.phase === "content" && update.delta.length > 0) {
-                const prior = visibleReasoning.get(update.messageId);
-                const prefix = prior === undefined ? "💭 " : prior.atLineStart ? "   " : "";
-                const body = update.delta.replace(/\n(?=.)/g, "\n   ");
-                visibleReasoning.set(update.messageId, { atLineStart: update.delta.endsWith("\n") });
-                io.err(`${prefix}${body}`);
-            } else if (!io.json && update?.phase === "end") {
-                const prior = visibleReasoning.get(update.messageId);
-                visibleReasoning.delete(update.messageId);
-                if (prior !== undefined && !prior.atLineStart) io.err("\n");
+            if (e.type === "RUN_ERROR") {
+                sawRunError = true;
+                continue;
             }
-            continue;
-        }
-        if (e.type !== "CUSTOM") continue;   // generic vocab is for third-party frontends
-        const name = (e as { name?: string }).name;
-        const value = (e as { value?: unknown }).value;
-        if (name === "plurnk.row") {
-            const entry = value as LogEntryWire;
-            const workerId = (entry as { worker_id?: number }).worker_id;
-            if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
-            const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
-            const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx) : "";
-            const separator = response.length > 0 ? "\n\n" : "";
-            if (message.length > 0) response += separator + message;
-            if (io.json) { entries.push(entry); continue; }
-            io.err(`${formatPlain(entry)}\n`);
-            if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
-        } else if (name === "plurnk.terminated") {
-            const raw = value as TerminatedValue;
-            terminated = { ...raw, result: operationResult(raw.result) };
-            finalStatus = terminated.result.status;
-            hitMaxTurns = terminated.hitMaxTurns;
-            problem = terminated.result.problem ?? problem;
-            if (!io.json && terminated.result.problem !== undefined && !problemReported) {
-                io.err(`${renderDiagnostic(terminated.result.problem)}\n`);
-                problemReported = true;
+            if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
+                for (const interrupt of e.outcome.interrupts) {
+                    interrupts.add(interrupt.id);
+                    if (interrupt.toolCallId !== undefined) interrupts.add(interrupt.toolCallId);
+                }
+                continue;
             }
-        } else if (name === "plurnk.action.result") {
-            sawActionResult = true;
-            io.onActionResult?.(actionOutcome(value));
-        } else if (name === "plurnk.problem") {
-            problem = problemDetails(value);
-            finalStatus = problem.status;
-            if (!io.json) {
-                io.err(`${renderDiagnostic(problem)}\n`);
-                problemReported = true;
+            if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
+            if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) { toolArgs += String((e as { delta?: unknown }).delta ?? ""); continue; }
+            if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
+                const logEntryId = Number(toolId.slice(5));
+                let a: Record<string, unknown>;
+                try {
+                    a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
+                } catch (cause) {
+                    problem = clientTransportProposalInvalid(logEntryId, cause);
+                    finalStatus = problem.status;
+                    continue;
+                }
+                const r = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
+                pendingResume = r.decision === "cancel"
+                    ? { interruptId: toolId, status: "cancelled" }
+                    : { interruptId: toolId, status: "resolved", payload: { decision: r.decision, ...(r.body === undefined ? {} : { body: r.body }) } };
+                continue;
             }
-        } else if (name === "plurnk.notice") {
-            const notice = value as Notice;
-            // (#465) turn_generated carries the turn's settled wire accounting in
-            // every mode — the accrual hook runs before display routing so json
-            // (the benchlet surface) still streams running cost.
-            const turn = turnAccountingFromNotice(notice);
-            if (turn !== null) io.onTurnAccounting?.(turn);
-            if (io.json) notices.push(notice);
-            else io.notice(notice);
-        } else if (name === "plurnk.stream") {
-            // plurnk.stream carries the whole lifecycle: a concluded payload has
-            // its exact result; a start/event payload has state. (json: streams aren't in
-            // the record — content is fetched on demand via `read L/T/S`.)
-            if (!io.json) {
-                if (typeof (value as { result?: { status?: unknown } }).result?.status === "number") {
-                    io.err(`${streams.concluded(value as StreamConcludedPayload)}\n`);
-                } else {
-                    const line = streams.event(value as StreamEventPayload);
-                    if (line !== null) io.err(`${line}\n`);
+            if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
+                pendingResume = { interruptId: toolId, status: "cancelled" };
+                continue;
+            }
+            const state = reduceStatusGauge(statusGauge, e);
+            if (state.handled) {
+                statusGauge = state.gauge;
+                if (!io.json) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status));
+                continue;
+            }
+            const reasoningEvent = reasoning.consume(e);
+            if (reasoningEvent.handled) {
+                const update = reasoningEvent.update;
+                if (!io.json && update?.phase === "content" && update.delta.length > 0) {
+                    const prior = visibleReasoning.get(update.messageId);
+                    const prefix = prior === undefined ? "💭 " : prior.atLineStart ? "   " : "";
+                    const body = update.delta.replace(/\n(?=.)/g, "\n   ");
+                    visibleReasoning.set(update.messageId, { atLineStart: update.delta.endsWith("\n") });
+                    io.err(`${prefix}${body}`);
+                } else if (!io.json && update?.phase === "end") {
+                    const prior = visibleReasoning.get(update.messageId);
+                    visibleReasoning.delete(update.messageId);
+                    if (prior !== undefined && !prior.atLineStart) io.err("\n");
+                }
+                continue;
+            }
+            if (e.type !== "CUSTOM") continue;   // generic vocab is for third-party frontends
+            const name = (e as { name?: string }).name;
+            const value = (e as { value?: unknown }).value;
+            if (name === "plurnk.row") {
+                const entry = value as LogEntryWire;
+                const workerId = (entry as { worker_id?: number }).worker_id;
+                if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
+                const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
+                const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx) : "";
+                const separator = response.length > 0 ? "\n\n" : "";
+                if (message.length > 0) response += separator + message;
+                if (io.json) { entries.push(entry); continue; }
+                io.err(`${formatPlain(entry)}\n`);
+                if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
+            } else if (name === "plurnk.terminated") {
+                const raw = value as TerminatedValue;
+                terminated = { ...raw, result: operationResult(raw.result) };
+                finalStatus = terminated.result.status;
+                hitMaxTurns = terminated.hitMaxTurns;
+                problem = terminated.result.problem ?? problem;
+                if (!io.json && terminated.result.problem !== undefined && !problemReported) {
+                    io.err(`${renderDiagnostic(terminated.result.problem)}\n`);
+                    problemReported = true;
+                }
+            } else if (name === "plurnk.action.result") {
+                sawActionResult = true;
+                io.onActionResult?.(actionOutcome(value));
+            } else if (name === "plurnk.problem") {
+                problem = problemDetails(value);
+                finalStatus = problem.status;
+                if (!io.json) {
+                    io.err(`${renderDiagnostic(problem)}\n`);
+                    problemReported = true;
+                }
+            } else if (name === "plurnk.notice") {
+                const notice = value as Notice;
+                // (#465) turn_generated carries the turn's settled wire accounting in
+                // every mode — the accrual hook runs before display routing so json
+                // (the benchlet surface) still streams running cost.
+                const turn = turnAccountingFromNotice(notice);
+                if (turn !== null) io.onTurnAccounting?.(turn);
+                if (io.json) notices.push(notice);
+                else io.notice(notice);
+            } else if (name === "plurnk.stream") {
+                // plurnk.stream carries the whole lifecycle: a concluded payload has
+                // its exact result; a start/event payload has state. (json: streams aren't in
+                // the record — content is fetched on demand via `read L/T/S`.)
+                if (!io.json) {
+                    if (typeof (value as { result?: { status?: unknown } }).result?.status === "number") {
+                        io.err(`${streams.concluded(value as StreamConcludedPayload)}\n`);
+                    } else {
+                        const line = streams.event(value as StreamEventPayload);
+                        if (line !== null) io.err(`${line}\n`);
+                    }
                 }
             }
+        } finally {
+            io.onProgress?.(snapshot());
         }
     }
     if (pendingResume !== null && !interrupts.has(pendingResume.interruptId)) {
@@ -244,7 +263,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
     if (!io.json && problem !== null && !problemReported) {
         io.err(`${renderDiagnostic(problem)}\n`);
     }
-    return { exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, notices, response, terminated, modelWorkerId, pendingResume, problem };
+    return snapshot();
 };
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
@@ -276,6 +295,11 @@ export const runCliViaBridge = async (
     };
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
+    let result: CliRunResult = {
+        exitCode: 4, pendingResume: null, entries: [], notices: [], response: "",
+        terminated: null, modelWorkerId: null, problem: null,
+    };
+    let activeSegment: CliRunResult | null = null;
     let accruedStream: TurnAccounting | null = null;
     const statusLine = new TerminalStatusLine(
         (value) => process.stderr.write(value),
@@ -302,6 +326,7 @@ export const runCliViaBridge = async (
             }
         },
         onStatus: (status: ClientStatus) => statusLine.update(status),
+        onProgress: (progress: CliRunResult) => { activeSegment = progress; },
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,
@@ -327,10 +352,10 @@ export const runCliViaBridge = async (
 
     // One record, emitted exactly once — the normal path, the timeout path, and a
     // SIGTERM flush (a killed client must not lose its --json record) all funnel here.
-    let emitted = false;
-    const emitRecord = (r: CliRunResult): void => {
-        if (!opts.json || emitted) return;
-        emitted = true;
+    let emission: Promise<void> | undefined;
+    const emitRecord = (r: CliRunResult): Promise<void> => {
+        if (!opts.json) return Promise.resolve();
+        if (emission !== undefined) return emission;
         const t = r.terminated;
         const doc = buildJsonRecord({
             workspace: { id: t?.workspaceId ?? 0, name: opts.workspace ?? opts.threadId },
@@ -351,37 +376,40 @@ export const runCliViaBridge = async (
             wallMs: Date.now() - started,
             timedOut,
         });
-        process.stdout.write(`${JSON.stringify(doc)}\n`);
+        emission = new Promise((resolve, reject) => {
+            process.stdout.write(`${JSON.stringify(doc)}\n`, (error) => error ? reject(error) : resolve());
+        });
+        return emission;
     };
 
     // Terminate-resume segments: a client-owned proposal ends the segment as a
     // tool-call; the decision POSTs as the next segment's resume. Accumulate
     // across segments — one logical run, one record.
     let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
     // A hard kill mid-run must still leave the record behind (svc#478: Harbor's axe
     // erased the whole document). Best-effort flush of what accumulated so far.
-    const onTerm = (): void => { emitRecord(result); process.exit(143); };
+    const onTerm = (): void => {
+        void emitRecord(activeSegment === null ? result : mergeRunSegments(result, activeSegment)).then(
+            () => process.exit(143),
+            (cause) => { process.stderr.write(`Could not flush interrupted CLI record: ${String(cause)}\n`); process.exit(143); },
+        );
+    };
     process.once("SIGTERM", onTerm);
     try {
+        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
+        activeSegment = null;
         while (result.pendingResume !== null) {
             next = { resume: [result.pendingResume] };
             const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
-            result = {
-                ...seg,
-                entries: [...result.entries, ...seg.entries],
-                notices: [...result.notices, ...seg.notices],
-                response: seg.response.length > 0 ? seg.response : result.response,
-                modelWorkerId: result.modelWorkerId ?? seg.modelWorkerId,
-                problem: seg.problem ?? result.problem,
-            };
+            result = mergeRunSegments(result, seg);
+            activeSegment = null;
         }
+        await emitRecord(result);
     } finally {
         process.removeListener("SIGTERM", onTerm);
         if (deadline !== undefined) clearTimeout(deadline);
         if (graceTimer !== undefined) clearTimeout(graceTimer);
     }
-    emitRecord(result);
     if (!opts.json) {
         const finalStatus = result.terminated?.result.status ?? result.problem?.status ?? 502;
         statusLine.update({

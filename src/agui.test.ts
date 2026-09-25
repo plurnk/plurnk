@@ -357,7 +357,11 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
     ]));
     const outs: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
-    (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
+    (process.stdout as unknown as { write: (s: string, callback?: () => void) => boolean }).write = (s, callback) => {
+        outs.push(s);
+        if (callback !== undefined) queueMicrotask(callback);
+        return true;
+    };
     try {
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
             threadId: "conversation",
@@ -405,7 +409,11 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
     });
     const outs: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
-    (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
+    (process.stdout as unknown as { write: (s: string, callback?: () => void) => boolean }).write = (s, callback) => {
+        outs.push(s);
+        if (callback !== undefined) queueMicrotask(callback);
+        return true;
+    };
     try {
         const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
@@ -429,7 +437,11 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     });
     const outs: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
-    (process.stdout as unknown as { write: (s: string) => boolean }).write = (s: string) => { outs.push(s); return true; };
+    (process.stdout as unknown as { write: (s: string, callback?: () => void) => boolean }).write = (s, callback) => {
+        outs.push(s);
+        if (callback !== undefined) queueMicrotask(callback);
+        return true;
+    };
     try {
         const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, statusStream: false, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };

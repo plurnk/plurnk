@@ -226,6 +226,13 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
+{§cli-interrupted-record} During the initial request or any proposal-resume segment,
+`SIGTERM` flushes one JSON document containing all rows, notices, and response text
+observed so far, then exits 143. Without a daemon terminal result it reports 502
+and unknown terminal usage, never success or estimated accounting. The client
+waits for stdout to flush; interrupting its process does not assert that the
+daemon loop has concluded.
+
 Consequence:
 
 - `plurnk "X" > answer.txt` captures just the delivered response messages.

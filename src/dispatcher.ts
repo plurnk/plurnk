@@ -120,7 +120,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
-       plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
+       plurnk effort [policy] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        plurnk web [options]
        <markdown stdin> | plurnk render [--width <columns>]
@@ -223,7 +223,7 @@ subcommands:
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
-  reasoning [policy]      inspect or set a worker's durable reasoning policy
+  effort [policy]         inspect or set a worker's reasoning effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -495,15 +495,15 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         return 0;
     }
 
-    if (verb === "reasoning") {
+    if (verb === "effort") {
         if (opts.workspaceName === undefined) {
             throw new ProblemError(clientFlagMissingDependency(
-                "plurnk reasoning",
+                "plurnk effort",
                 "--workspace (or PLURNK_CLIENT_WORKSPACE)",
             ));
         }
         if (positionals.length > 2) {
-            throw new ProblemError(clientSubcommandUnknownVerb(`reasoning ${positionals.slice(1).join(" ")}`));
+            throw new ProblemError(clientSubcommandUnknownVerb(`effort ${positionals.slice(1).join(" ")}`));
         }
         const reasoning = sub === undefined
             ? await readWorkerReasoning(rpc)
@@ -675,7 +675,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // State-command routing happens BEFORE prompt assembly, so inspection and
     // deliberate configuration never consume stdin or become model prompts.
-    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "reasoning", "capabilities", "web"] as const;
+    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "effort", "capabilities", "web"] as const;
     const subcommand = positionals[0];
     const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
 

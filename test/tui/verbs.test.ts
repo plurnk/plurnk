@@ -61,9 +61,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             tui.write("/model clientfirst\r"); await tui.waitFor(/model: clientfirst/);
             tui.write("/model clienttest\r"); await tui.waitFor(/model: clienttest/);
             tui.write("/model\r");            await tui.waitFor(/model: clienttest/); // sticky — the switch persisted
-            tui.write("/reasoning adaptive\r");
+            tui.write("/effort adaptive\r");
             await tui.waitFor(/reasoning: adaptive[\s\S]*supported:/);
-            tui.write("/reasoning\r");
+            tui.write("/effort\r");
             await tui.waitFor(/supported:[\s\S]*supported:/);
         } finally { tui.kill(); }
     });

@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-09-17" "plurnk 0.85.0" "User Commands"
+.TH PLURNK 1 "2026-09-17" "plurnk 0.88.1" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -12,7 +12,7 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--r
        plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
-       plurnk reasoning [policy] --workspace <name> [--worker <name>] [--json]
+       plurnk effort [policy] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        plurnk web [options]
        <markdown stdin> | plurnk render [--width <columns>]
@@ -60,6 +60,7 @@ loop.
                           Default: cwd. Empty string = headless. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
+                          Review ships; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
       --auto              nobody is attending: the daemon offers no human-in-the-loop
                           surface rather than one nothing could answer, and settles
@@ -72,11 +73,15 @@ loop.
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
-      --max-turns <n>     per-loop turn cap (otherwise the daemon's configured limit).
+      --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
+                          descendants' turns and every BARE call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true. Web retains the Worker.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
+      --preview-lines <n> lines of each operation body and execution output shown
+                          beneath its row; the rest is named for /look. Overrides
+                          PLURNK_CLIENT_PREVIEW_LINES.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --status-stream     also print one greppable accounting row per turn on stderr.
@@ -103,7 +108,7 @@ loop.
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
-  reasoning [policy]      inspect or set a worker's durable reasoning policy
+  effort [policy]         inspect or set a worker's reasoning effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -128,9 +133,9 @@ The no-argument interactive terminal accepts these slash commands:
 /look <address> [scope] [pattern] Inspect a resource for yourself: no loop, no log entry, no wait on the model.
 /model [selector]              Inspect or select this worker's durable model.
 /child [selector|inherit]      Inspect or select the inherited child model.
-/reasoning [policy]            Inspect or select durable reasoning policy.
+/effort [policy]               Inspect or select reasoning effort.
 /capabilities [json]           Inspect the capability cascade or set the workspace policy.
-/yolo                          Toggle local proposal auto-accept.
+/yolo                          Toggle local proposal auto-accept (Shift-Tab). Off ships.
 /workspace [name]              Create and enter a fresh workspace.
 /rename <name>                 Rename this workspace's mutable handle.
 /worker [name]                 Fork and enter a new worker.

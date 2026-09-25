@@ -21,7 +21,7 @@ export const setWorkerReasoning = async (
 export const formatWorkerReasoning = (reasoning: WorkerReasoning): string => {
     const provenance = reasoning.policy === null || reasoning.source === undefined
         ? ""
-        : reasoning.source === "explicit" ? " (chosen with /reasoning)" : " (provider default)";
+        : reasoning.source === "explicit" ? " (chosen with /effort)" : " (provider default)";
     const policy = reasoning.policy === null ? "(unavailable)" : `${reasoning.policy}${provenance}`;
     const supported = reasoning.supportedPolicies.length === 0
         ? "none"

@@ -90,7 +90,7 @@ export const COMMANDS = [
 
     { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
-    { name: "reasoning", usage: "/reasoning [policy]", summary: "Inspect or select durable reasoning policy.", group: "policy" },
+    { name: "effort", usage: "/effort [policy]", summary: "Inspect or select reasoning effort.", group: "policy" },
     { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect the capability cascade or set the workspace policy.", group: "policy" },
     { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept (Shift-Tab). Off ships.", group: "policy" },
 

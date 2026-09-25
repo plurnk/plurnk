@@ -231,12 +231,12 @@ export const completeInput = async (line: string, options: CompletionOptions): P
                 prefix: fragment,
             };
         }
-        const reasoningFrag = line.match(/^\/reasoning\s+(\S*)$/);
+        const reasoningFrag = line.match(/^\/effort\s+(\S*)$/);
         if (reasoningFrag) {
             return {
                 suggestions: (options.getReasoningPolicies?.() ?? [])
                     .filter((policy) => policy.startsWith(reasoningFrag[1]))
-                    .map((value) => ({ value, description: "reasoning policy" })),
+                    .map((value) => ({ value, description: "reasoning effort" })),
                 prefix: reasoningFrag[1],
             };
         }
@@ -425,7 +425,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
                 write(`  reasoning refresh failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
             }
             return;
-        case "reasoning":
+        case "effort":
             try {
                 const reasoning = rest.length === 0
                     ? await readWorkerReasoning(rpc)

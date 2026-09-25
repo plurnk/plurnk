@@ -389,8 +389,8 @@ test("completer: /model completes aliases", async () => {
     assert.equal(frag, "g");
 });
 
-test("completer: /reasoning derives choices from the daemon response", async () => {
-    const result = await completeInput("/reasoning a", {
+test("completer: /effort derives choices from the daemon response", async () => {
+    const result = await completeInput("/effort a", {
         getAliases: () => [],
         cwd: process.cwd(),
         getReasoningPolicies: () => ["off", "adaptive", "high"],

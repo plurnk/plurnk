@@ -45,6 +45,6 @@ test("reasoning text distinguishes the effective policy from daemon-supported ch
     );
     assert.equal(
         formatWorkerReasoning({ policy: "high", source: "explicit", supportedPolicies: ["low", "high"] }),
-        "reasoning: high (chosen with /reasoning)\nsupported: low, high\n",
+        "reasoning: high (chosen with /effort)\nsupported: low, high\n",
     );
 });

@@ -163,6 +163,15 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
         "client-family/selected",
         "client-family/selected",
     ]);
+
+    const requestsBeforeEffort = selectedModels.length;
+    const selectedEffort = await runClient(daemon.url, ["effort", "adaptive", ...common]);
+    assert.equal(selectedEffort.code, 0, selectedEffort.stderr);
+    assert.equal(JSON.parse(selectedEffort.stdout).policy, "adaptive");
+    const inspectedEffort = await runClient(daemon.url, ["effort", ...common]);
+    assert.equal(inspectedEffort.code, 0, inspectedEffort.stderr);
+    assert.deepEqual(JSON.parse(inspectedEffort.stdout), JSON.parse(selectedEffort.stdout));
+    assert.equal(selectedModels.length, requestsBeforeEffort, "effort is a durable worker action, never an inference prompt");
 });
 
 test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels input requests and the worker resumes with that result", { timeout: 120_000 }, async (t) => {

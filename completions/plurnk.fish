@@ -3,7 +3,7 @@ complete -c plurnk -n __fish_use_subcommand -a models
 complete -c plurnk -n __fish_use_subcommand -a workspace
 complete -c plurnk -n __fish_use_subcommand -a log
 complete -c plurnk -n __fish_use_subcommand -a read
-complete -c plurnk -n __fish_use_subcommand -a reasoning
+complete -c plurnk -n __fish_use_subcommand -a effort
 complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render
 complete -c plurnk -n __fish_use_subcommand -a web
@@ -26,6 +26,7 @@ complete -c plurnk -l env-file-if-exists
 complete -c plurnk -l max-turns
 complete -c plurnk -l timeout
 complete -c plurnk -l files-items
+complete -c plurnk -l preview-lines
 complete -c plurnk -l max-commands
 complete -c plurnk -l status-stream
 complete -c plurnk -l no-git

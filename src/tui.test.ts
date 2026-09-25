@@ -322,7 +322,7 @@ test("[§cli-inspection] handleVerb /look hands the address to the session's ins
 test("{§cli-active-command-admission} only commands that change the conversation binding require it to settle", () => {
     assert.deepEqual(COMMANDS.filter(({ name }) => commandSpec(name)?.rebinds).map(({ name }) => name),
         ["workspace", "rename", "worker", "attach", "parent", "enter", "older", "newer"]);
-    for (const name of ["look", "model", "reasoning", "mcp", "script", "stop", "quit"]) {
+    for (const name of ["look", "model", "effort", "mcp", "script", "stop", "quit"]) {
         assert.notEqual(commandSpec(name)?.rebinds, true, `${name} does not rebind the conversation`);
     }
 });
@@ -522,13 +522,13 @@ test("{§worker-model-selection}: an exact route remains alias-free in control a
     assert.match(ctx.out.join(""), /model: google\/gemini-3-flash/);
 });
 
-test("handleVerb /reasoning inspects and sets durable daemon policy", async () => {
+test("handleVerb /effort inspects and sets durable daemon policy", async () => {
     const ctx = makeCtx({
         "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
         "worker.reasoning.set": { policy: "high", supportedPolicies: ["off", "adaptive", "high"] },
     });
-    await handleVerb("/reasoning", ctx);
-    await handleVerb("/reasoning high", ctx);
+    await handleVerb("/effort", ctx);
+    await handleVerb("/effort high", ctx);
     assert.deepEqual(ctx.calls, [
         { method: "worker.reasoning.get", params: undefined },
         { method: "worker.reasoning.set", params: { policy: "high" } },
@@ -539,11 +539,11 @@ test("handleVerb /reasoning inspects and sets durable daemon policy", async () =
     assert.match(ctx.out.join(""), /supported: off, adaptive, high/);
 });
 
-test("handleVerb /reasoning preserves a daemon rejection", async () => {
+test("handleVerb /effort preserves a daemon rejection", async () => {
     const ctx = makeCtx({
         "worker.reasoning.set": () => { throw new Error("Reasoning policy 'medium' is not supported by xai/grok-4.6."); },
     });
-    await handleVerb("/reasoning medium", ctx);
+    await handleVerb("/effort medium", ctx);
     assert.equal(ctx.reasoning.policy, null);
     assert.match(ctx.out.join(""), /Reasoning policy 'medium' is not supported/);
 });

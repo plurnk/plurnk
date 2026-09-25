@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 import {
     COMMANDS,
     commandSpec,
@@ -8,6 +9,14 @@ import {
     isCommandName,
     renderCommandHelp,
 } from "./commands.ts";
+
+test("{§operation-fences} language help uses the published contract's delimiter", () => {
+    const language = renderCommandHelp().split("\n").find((line) => line.startsWith("  language"));
+    assert.ok(language);
+    const fences = [...language.matchAll(/(`+)[A-Z]+/gu)].map((match) => match[1]);
+    assert.ok(fences.length > 0, "language help presents executable fence examples");
+    assert.deepEqual([...new Set(fences)], [PLURNK_FENCE]);
+});
 
 test("[§cli-interactive-command-discovery] the registry is unique and every command is recognized", () => {
     const names = COMMANDS.map(({ name }) => name);

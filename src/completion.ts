@@ -30,8 +30,7 @@ export const pathPartial = (line: string): string | null => {
     return null;
 };
 
-// The language has no EXEC (plurnk-service #659); the installed contracts predate its retirement.
-const OPS: readonly string[] = [...(PLURNK_OPS as readonly string[]).filter((op) => op !== "EXEC"), "LOOK"];
+const OPS: readonly string[] = [...PLURNK_OPS, "LOOK"];
 const DSL_TARGET_PARTIAL = /^`{3,}[A-Za-z0-9_.+-]+[ \t]*\(([^)\n]*)$/;
 
 // Coarse dispatch classification only. The daemon remains the grammar owner
@@ -50,7 +49,7 @@ export const dslOpPartial = (line: string): DslOpPartial | null => {
     return match ? { fence: match[1], typed: match[2] } : null;
 };
 
-// {§operation-fences}: completion uses at least the canonical width; ingestion also accepts three.
+// {§operation-fences}: completion uses at least the canonical width, preserving longer authored fences.
 export const completeOps = ({ fence, typed }: DslOpPartial): [string[], string] => {
     const up = typed.toUpperCase();
     const opener = fence.length >= PLURNK_FENCE.length ? fence : PLURNK_FENCE;

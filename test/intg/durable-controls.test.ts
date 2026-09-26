@@ -21,6 +21,7 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
             PLURNK_MODEL_controlfixture: "lmstudio/control-family/selected",
             PLURNK_PROVIDERS_CONTEXT_WINDOW_controlfixture: "32768",
             PLURNK_PROVIDERS_REASONING_controlfixture: "off",
+            PLURNK_PROVIDERS_REASONING_OFF_BODY_controlfixture: '{"reasoning_effort":"none"}',
             LMSTUDIO_API_KEY: "conformance",
         },
     });

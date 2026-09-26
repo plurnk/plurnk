@@ -7,3 +7,7 @@ This repository owns the open-source PLURNK terminal client. Preserve the
 client boundary: it consumes `plurnk-service` through the public AG-UI+
 contract and does not absorb daemon or provider responsibilities.
 
+**A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in
+one landing: types, schema, methods, Problems, knobs, wire actions, spec tags, tests, fixtures and docs.
+Retired names fail hard and name their successor. A surface-only rename, a new flag over old internals,
+is a defect, not a first step.

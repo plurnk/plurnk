@@ -67,8 +67,8 @@ export const runModels = async (
         model.selector,
         model.modelName,
         contextLabel(model.limits.contextTokens),
-        // {§cli-models-efforts} — the daemon's admitted reasoning policies for the exact route; never inferred.
-        model.capabilities.reasoning ? model.capabilities.reasoningPolicies.join(",") : "-",
+        // {§cli-models-efforts} — the daemon's admitted efforts for the exact route; never inferred.
+        model.capabilities.reasoning ? model.capabilities.efforts.join(",") : "-",
         readinessLabel(model),
     ]);
     process.stdout.write(`${renderTable(["selector", "name", "context", "efforts", "readiness"], rows)}\n`);

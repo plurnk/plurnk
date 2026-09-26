@@ -3,7 +3,7 @@
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
 .nf
-plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--reasoning <policy>] [prompt...]
+plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
@@ -12,7 +12,7 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--r
        plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
-       plurnk effort [policy] --workspace <name> [--worker <name>] [--json]
+       plurnk effort [level] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        plurnk web [options]
        <markdown stdin> | plurnk render [--width <columns>]
@@ -52,9 +52,9 @@ loop.
                           a declared alias or exact provider/model route. Without
                           this, the worker's durable model or the daemon's
                           boot-time default runs.
-      --reasoning <policy> persistently select the conversation worker's reasoning
-                          policy before the first loop. The daemon validates the
-                          policy against the selected parent and child models.
+      --effort <level>    persistently select the conversation worker's effort before
+                          the first loop; with --model, the two are chosen together.
+                          The daemon validates it against the parent and child models.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
@@ -112,7 +112,7 @@ loop.
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
-  effort [policy]         inspect or set a worker's reasoning effort
+  effort [level]          inspect or set a worker's effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -135,7 +135,7 @@ The no-argument interactive terminal accepts these slash commands:
 /workers                       List this workspace's workers as a topology rooted at the bound worker.
 /log [limit]                   Read recent log entries.
 /look <address> [scope] [pattern] Inspect a resource for yourself: no loop, no log entry, no wait on the model.
-/model [selector]              Inspect or select this worker's durable model.
+/model [selector] [effort]     Inspect or select this worker's durable model, and its effort with it.
 /child [selector|inherit]      Inspect or select the inherited child model.
 /effort [policy]               Inspect or select reasoning effort.
 /capabilities [json]           Inspect the capability cascade or set the workspace policy.

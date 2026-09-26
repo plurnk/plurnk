@@ -20,7 +20,7 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
             PLURNK_A2A_ENABLED: '["durable"]',
             PLURNK_MODEL_controlfixture: "lmstudio/control-family/selected",
             PLURNK_PROVIDERS_CONTEXT_WINDOW_controlfixture: "32768",
-            PLURNK_PROVIDERS_REASONING_controlfixture: "off",
+            PLURNK_PROVIDERS_EFFORT_controlfixture: "off",
             PLURNK_PROVIDERS_REASONING_OFF_BODY_controlfixture: '{"reasoning_effort":"none"}',
             LMSTUDIO_API_KEY: "conformance",
         },
@@ -63,23 +63,23 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.ok(workers.workers.some(({ id, name }) => id === child.workerId && name === "durable-child"));
 
     await from("a", "worker.model.set", { selector: "controlfixture" });
-    const model = await from<{ model: { alias: string; provider: string; model: string; reasoningPolicy?: string; reasoningSource?: string } }>("b", "worker.model.get");
+    const model = await from<{ model: { alias: string; provider: string; model: string; effort?: string; effortSource?: string } }>("b", "worker.model.get");
     // The route carries the worker's durable effort with the identity (plurnk#41).
     assert.deepEqual(model.model, {
         alias: "controlfixture",
         provider: "lmstudio",
         model: "control-family/selected",
-        reasoningPolicy: "off",
+        effort: "off",
         // {§cli-identity-effort} — the daemon states the provenance beside the policy (service#528).
-        reasoningSource: "default",
+        effortSource: "default",
     });
 
     await from("a", "worker.child.set", { selector: "controlfixture" });
     const childModel = await from<{ spawnModel: { alias: string } }>("b", "worker.model.get");
     assert.equal(childModel.spawnModel.alias, "controlfixture");
 
-    await from("a", "worker.reasoning.set", { policy: "adaptive" });
-    assert.equal((await from<{ policy: string }>("b", "worker.reasoning.get")).policy, "adaptive");
+    await from("a", "worker.effort.set", { effort: "adaptive" });
+    assert.equal((await from<{ effort: string }>("b", "worker.effort.get")).effort, "adaptive");
     await from("a", "workspace.capabilities.set", {
         policy: { deny: [{ runtime: "sh" }] },
     });

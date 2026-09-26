@@ -26,8 +26,8 @@ before(async () => {
                 PLURNK_MODEL_clienttest: "openai/client-test",
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clientfirst: "32768",
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clienttest: "32768",
-                PLURNK_PROVIDERS_REASONING_clientfirst: "adaptive",
-                PLURNK_PROVIDERS_REASONING_clienttest: "adaptive",
+                PLURNK_PROVIDERS_EFFORT_clientfirst: "adaptive",
+                PLURNK_PROVIDERS_EFFORT_clienttest: "adaptive",
                 OPENAI_API_KEY: "client-control-plane-test",
             },
         });
@@ -53,7 +53,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         } finally { tui.kill(); }
     });
 
-    test("[§cli-model-selection][§cli-reasoning-policy] generation policy persists through the live TUI", async (t) => {
+    test("[§cli-model-selection][§cli-effort] the model and its effort persist through the live TUI", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
@@ -62,7 +62,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             tui.write("/model clienttest\r"); await tui.waitFor(/model: clienttest/);
             tui.write("/model\r");            await tui.waitFor(/model: clienttest/); // sticky — the switch persisted
             tui.write("/effort adaptive\r");
-            await tui.waitFor(/reasoning: adaptive[\s\S]*supported:/);
+            await tui.waitFor(/effort: adaptive[\s\S]*supported:/);
             tui.write("/effort\r");
             await tui.waitFor(/supported:[\s\S]*supported:/);
         } finally { tui.kill(); }

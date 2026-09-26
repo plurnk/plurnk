@@ -36,6 +36,7 @@ const ARGUMENTS = new Map([
     ["env-file", "chooses the environment itself, so it cannot be a knob of it"],
     ["env-file-if-exists", "chooses the environment itself, so it cannot be a knob of it"],
     ["policy", "retired; parsed only to be refused with its successors named"],
+    ["reasoning", "retired; parsed only to be refused with its successor named"],
     ["loop", "an argument of `log read`"],
     ["turn", "an argument of `log read`"],
     ["since", "an argument of `log read`"],

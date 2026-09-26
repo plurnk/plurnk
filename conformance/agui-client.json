@@ -310,10 +310,10 @@
         "durability"
       ]
     },
-    "worker.reasoning.get": {
+    "worker.effort.get": {
       "posture": "native",
       "evidence": [
-        "src/reasoning.test.ts — reasoning policy"
+        "src/effort.test.ts — effort"
       ],
       "dimensions": [
         "admission",
@@ -323,10 +323,10 @@
         "presentation"
       ]
     },
-    "worker.reasoning.set": {
+    "worker.effort.set": {
       "posture": "native",
       "evidence": [
-        "src/reasoning.test.ts — reasoning policy",
+        "src/effort.test.ts — effort",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [

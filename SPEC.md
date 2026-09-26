@@ -43,7 +43,7 @@ Options:
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
 | `--worker <name>` | string | Resume (or create) the named worker within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
-| `--reasoning <policy>` | string | Persist the daemon-validated reasoning policy on the conversation worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_REASONING`. |
+| `--effort <policy>` | string | Persist the daemon-validated effort on the conversation worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_EFFORT`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
 | `--auto` | flag | State that nobody is attending: every loop is unattended. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
@@ -154,23 +154,26 @@ persisted override, `/child <selector>` persists it via `worker.child.set`, and
 `/child inherit` sends `selector: null` (clearing the override). The client sends
 no child selector on loops.
 
-### §1.2.3 Reasoning policy {§cli-reasoning-policy}
+### §1.2.3 Effort {§cli-effort}
 
-Reasoning is a separate durable worker policy owned and validated by the daemon.
-`/effort` and `plurnk effort --workspace <name>` inspect the effective
-policy and daemon-supported choices; supplying a policy to either form persists
-it. `--reasoning <policy>` performs that same action after an explicit model
-selection and before the invocation's first loop. The client forwards the value
-without maintaining a provider capability catalog, uses `supportedPolicies` for
-completion, and never encodes policy in an alias or loop request. Reattachment
-reads the durable value; descendants follow the daemon's snapshot inheritance.
+Effort is a durable worker setting owned and validated by the daemon.
+`/effort` and `plurnk effort --workspace <name>` inspect the effective effort
+and the daemon-supported choices; supplying an effort to either form persists
+it. `--effort <level>` sets it before the invocation's first loop. A model and
+its effort are chosen together: with `--model`, or `/model <selector> <effort>`,
+the effort rides in `worker.model.set` and the daemon validates the pair once, so
+switching to a model that lacks the worker's current effort never strands it.
+The client forwards the value without maintaining a provider capability catalog,
+uses `supportedEfforts` for completion, and never encodes effort in an alias or
+loop request. Reattachment reads the durable value; descendants follow the
+daemon's snapshot inheritance.
 
 #### Effort in the identity {§cli-identity-effort}
 
 Effort is identity-grade. Wherever the client names a route (status line, model
-and child labels, loop headers) one formatter renders the daemon's durable policy
+and child labels, loop headers) one formatter renders the daemon's durable effort
 with the identity, and the daemon's stated provenance decides the marker:
-`deepdumb[low]` is a chosen level (`worker.reasoning.set`), `deepdumb(low)` a
+`deepdumb[low]` is a chosen level (`worker.effort.set`), `deepdumb(low)` a
 provider default the daemon seeded from the alias; brackets read as chosen,
 parentheses as given. A route without an effort dimension renders bare, and a
 daemon that states no source renders brackets as before. `/effort` says the
@@ -278,7 +281,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; YOLO puts 🔥 at the left edge of the line. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported reasoning policies, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -947,7 +950,7 @@ Daemon subcommands inspect or deliberately configure state without running a
 loop. They share the same connection and workspace-resolution machinery as the
 prompt-driven flow, but skip `loop.run` entirely. They support `--json` for
 machine-readable output (stdout product per §2.1; trace and errors stay on
-stderr). `effort [policy]` reads or changes the durable reasoning policy.
+stderr). `effort [policy]` reads or changes the durable effort.
 `capabilities [json]` projects every durable capability layer and its effective
 intersection, or replaces the workspace policy. Prompt runs only carry proposal
 policy. Local `render` and launcher `web` subcommands do not contact the daemon.
@@ -960,7 +963,7 @@ routes there instead of assembling a prompt. Invalid forms of that command exit
 
 Queries one bounded page from the daemon's release-pinned catalog through `models.list`. No workspace is attached and no provider request is made. Positional words form a case-insensitive search; `--provider <name>` narrows the provider, `--all` includes models missing local configuration, and `--offset`/`--limit` page without loading the full catalog.
 
-Default output is a column-aligned table of `selector / name / context / efforts / readiness`, where `efforts` {§cli-models-efforts} lists the daemon's admitted reasoning policies for the exact route (`capabilities.reasoningPolicies`, plurnk-service#529) or `-` for a model without an effort dimension, plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
+Default output is a column-aligned table of `selector / name / context / efforts / readiness`, where `efforts` {§cli-models-efforts} lists the daemon's admitted efforts for the exact route (`capabilities.efforts`, plurnk-service#529) or `-` for a model without an effort dimension, plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
 
 ### §7.2 `plurnk workspace list` {§cli-plurnk-workspace-list}
 
@@ -995,11 +998,11 @@ Filter flags (all numeric, all optional):
 
 Default output: one trace line per entry, same format as CLI-mode trace (`[<status>] <origin> <op>[<sub>] <path> <scope>`). The scope is omitted when the operation has no line marker. With `--json`: emits `entries` array verbatim.
 
-### §7.5 `plurnk effort [policy]` {§cli-plurnk-reasoning}
+### §7.5 `plurnk effort [level]` {§cli-plurnk-effort}
 
 Requires `--workspace`; `--worker` selects a named conversation. With no
-policy, calls `worker.reasoning.get`. With one policy, calls
-`worker.reasoning.set`. Text mode prints the effective policy and supported
+level, calls `worker.effort.get`. With one level, calls
+`worker.effort.set`. Text mode prints the effective effort and supported
 choices; JSON mode emits the daemon result unchanged.
 
 ### §7.6 `plurnk web [options...]` {§cli-web-launcher}
@@ -1056,7 +1059,7 @@ is absent, it exits 127 and names the exact installation command. `SIGINT` and
 - Send prompts. They never call `loop.run`.
 - Hide state changes: workspace rename, reasoning and capability setters, MCP
   management, and scripts explicitly request mutations; inspection commands do not.
-- Honor flags that only matter to a conversation (`--model`, `--reasoning`,
+- Honor flags that only matter to a conversation (`--model`, `--effort`,
   `--yolo`, `--auto`) in state-command mode. Those parse without effect there;
   `web` is a client presentation mode and therefore does honor them. Reasoning
   mutation uses the positional policy above.

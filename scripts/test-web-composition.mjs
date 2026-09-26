@@ -152,7 +152,7 @@ try {
     client = spawn(bin, [
         "web",
         "--model=fireox",
-        "--reasoning=low",
+        "--effort=low",
         `--project-root=${projectRoot}`,
         "--files-items=3",
         "--max-commands=12",
@@ -256,7 +256,7 @@ try {
         workspace: "web-composition",
         projectRoot,
         settings: clientSettings,
-        action: { kind: "worker.reasoning.set", policy: "low" },
+        action: { kind: "worker.effort.set", effort: "low" },
     });
     assert.deepEqual(inputs[4].forwardedProps.plurnk, {
         action: { kind: "workspace.list" },

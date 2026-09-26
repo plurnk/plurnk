@@ -15,10 +15,10 @@ import { actionViaBridge, resolveWorld } from "./agui.ts";
 import { handleMcp } from "./mcp.ts";
 import { formatRouteIdentity } from "./status.ts";
 import {
-    formatWorkerReasoning,
-    readWorkerReasoning,
-    setWorkerReasoning,
-} from "./reasoning.ts";
+    formatWorkerEffort,
+    readWorkerEffort,
+    setWorkerEffort,
+} from "./effort.ts";
 import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead } from "./subcommands.ts";
 import type { LogReadFilters, Caller } from "./subcommands.ts";
 import {
@@ -112,7 +112,7 @@ export const resolveProjectRoot = (raw: string | undefined): string | null => {
     return raw;
 };
 
-export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--reasoning <policy>] [prompt...]
+export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
@@ -121,7 +121,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk log read --workspace <name> [--worker <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
-       plurnk effort [policy] --workspace <name> [--worker <name>] [--json]
+       plurnk effort [level] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        plurnk web [options]
        <markdown stdin> | plurnk render [--width <columns>]
@@ -169,9 +169,9 @@ options:
                           a declared alias or exact provider/model route. Without
                           this, the worker's durable model or the daemon's
                           boot-time default runs.
-      --reasoning <policy> persistently select the conversation worker's reasoning
-                          policy before the first loop. The daemon validates the
-                          policy against the selected parent and child models.
+      --effort <level>    persistently select the conversation worker's effort before
+                          the first loop; with --model, the two are chosen together.
+                          The daemon validates it against the parent and child models.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
@@ -228,7 +228,7 @@ subcommands:
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
   read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
-  effort [policy]         inspect or set a worker's reasoning effort
+  effort [level]          inspect or set a worker's effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -510,12 +510,12 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         if (positionals.length > 2) {
             throw new ProblemError(clientSubcommandUnknownVerb(`effort ${positionals.slice(1).join(" ")}`));
         }
-        const reasoning = sub === undefined
-            ? await readWorkerReasoning(rpc)
-            : await setWorkerReasoning(rpc, sub);
+        const effort = sub === undefined
+            ? await readWorkerEffort(rpc)
+            : await setWorkerEffort(rpc, sub);
         process.stdout.write(opts.json
-            ? `${JSON.stringify(reasoning)}\n`
-            : formatWorkerReasoning(reasoning));
+            ? `${JSON.stringify(effort)}\n`
+            : formatWorkerEffort(effort));
         return 0;
     }
 
@@ -596,13 +596,14 @@ export const main = async (argv: string[]): Promise<void> => {
             workspace: { type: "string" },
             worker: { type: "string" },
             model: { type: "string" },
-            reasoning: { type: "string" },
+            effort: { type: "string" },
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
             proposals: { type: "string" },
             // Retired; parsed only to be refused with its successors named.
             policy: { type: "string" },
+            reasoning: { type: "string" },
             capabilities: { type: "string" },
             "max-turns": { type: "string" },
             timeout: { type: "string" },
@@ -705,7 +706,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
-    const reasoningPolicy = values.reasoning ?? stated("PLURNK_CLIENT_REASONING");
+    const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
     const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
     const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
@@ -720,6 +721,9 @@ export const main = async (argv: string[]): Promise<void> => {
     try {
         if (values.policy !== undefined) {
             throw new ProblemError(clientFlagInvalid("--policy", values.policy, "--policy was retired; state --proposals <review|accept|reject> and --auto"));
+        }
+        if (values.reasoning !== undefined) {
+            throw new ProblemError(clientFlagInvalid("--reasoning", values.reasoning, "--reasoning was renamed to --effort"));
         }
         const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
         loopPolicy = resolveLoopPolicy(values.proposals ?? process.env.PLURNK_CLIENT_PROPOSALS, auto);
@@ -797,22 +801,22 @@ export const main = async (argv: string[]): Promise<void> => {
                 const existing = prepared.get(key);
                 if (existing !== undefined) return existing;
                 const pending = (async () => {
+                    // {§cli-effort} — a model and its effort are chosen together, so the daemon validates the pair once.
                     if (modelSelector !== undefined) {
                         await actionViaBridge(target, {
                             threadId: session.threadId,
                             workspace: session.workspace,
                             workspaceOptions: preparedWorkspaceProperties,
                             kind: "worker.model.set",
-                            params: { selector: modelSelector },
+                            params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
                         });
-                    }
-                    if (reasoningPolicy !== undefined) {
+                    } else if (effort !== undefined) {
                         await actionViaBridge(target, {
                             threadId: session.threadId,
                             workspace: session.workspace,
                             workspaceOptions: preparedWorkspaceProperties,
-                            kind: "worker.reasoning.set",
-                            params: { policy: reasoningPolicy },
+                            kind: "worker.effort.set",
+                            params: { effort },
                         });
                     }
                 })().catch((cause) => {
@@ -888,7 +892,7 @@ export const main = async (argv: string[]): Promise<void> => {
                         workspace: w,
                         workspaceOptions: controlWorkspaceOptions,
                         kind: "worker.model.set",
-                        params: { selector: modelSelector },
+                        params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
                     },
                 ));
             } else {
@@ -903,13 +907,13 @@ export const main = async (argv: string[]): Promise<void> => {
                 );
                 activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
             }
-            if (reasoningPolicy !== undefined) {
+            if (effort !== undefined && values.model === undefined) {
                 await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
                     threadId: workerName ?? w,
                     workspace: w,
                     workspaceOptions: controlWorkspaceOptions,
-                    kind: "worker.reasoning.set",
-                    params: { policy: reasoningPolicy },
+                    kind: "worker.effort.set",
+                    params: { effort },
                 });
             }
             const projected = promptPolicy(prompt, loopPolicy);
@@ -986,8 +990,8 @@ export const main = async (argv: string[]): Promise<void> => {
             await runTui(transport, { name: w }, {
                 modelSelector,
                 modelExplicit: values.model !== undefined,
-                reasoningPolicy,
-                reasoningExplicit: reasoningPolicy !== undefined,
+                effort,
+                effortExplicit: effort !== undefined,
                 yolo,
                 loopPolicy,
                 maxTurns,

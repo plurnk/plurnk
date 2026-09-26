@@ -248,12 +248,12 @@ test("buildHeader: workerName present → shown between workspace and model; abs
     assert.doesNotMatch(buildHeader({ workspaceName: "plurnk" }), /worker/);
 });
 
-test("buildHeader: reasoning is a distinct durable policy label", () => {
+test("buildHeader: effort is a distinct durable label", () => {
     assert.match(
-        buildHeader({ workspaceName: "plurnk", activeAlias: "grok", reasoningPolicy: "adaptive" }),
-        /· model: grok · reasoning: adaptive ·/,
+        buildHeader({ workspaceName: "plurnk", activeAlias: "grok", effort: "adaptive" }),
+        /· model: grok · effort: adaptive ·/,
     );
-    assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /reasoning:/);
+    assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /effort:/);
 });
 
 interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[]; looks: string[]; attached: string[] }
@@ -271,11 +271,11 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const modelState = {
         model: null as ResolvedModelSpec | null,
         spawnModel: null as ResolvedModelSpec | null,
-        reasoning: { policy: null, supportedPolicies: [] } as VerbContext["reasoning"],
+        effort: { effort: null, source: "default", supportedEfforts: [] } as VerbContext["effort"],
     };
     const defaults: Record<string, unknown> = {
         "worker.model.get": { model: null, spawnModel: null },
-        "worker.reasoning.get": { policy: null, supportedPolicies: [] },
+        "worker.effort.get": { effort: null, source: "default", supportedEfforts: [] },
     };
     return {
         rpc: {
@@ -288,10 +288,10 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         opts: { yolo: false, ...opts },
         get model() { return modelState.model; },
         get spawnModel() { return modelState.spawnModel; },
-        get reasoning() { return modelState.reasoning; },
+        get effort() { return modelState.effort; },
         setModel: (spec) => { modelState.model = spec; },
         setSpawnModel: (spec) => { modelState.spawnModel = spec; },
-        setReasoning: (reasoning) => { modelState.reasoning = reasoning; },
+        setEffort: (effort) => { modelState.effort = effort; },
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
         getWorker: () => worker,
@@ -508,13 +508,13 @@ test("handleVerb /yolo → toggles opts.yolo and reports", async () => {
 test("{§worker-model-selection}: handleVerb /model sets server-side and mirrors the resolved spec; bare /model shows it", async () => {
     const ctx = makeCtx({
         "worker.model.set": { alias: "gpt", provider: "openai", model: "gpt-4" },
-        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+        "worker.effort.get": { policy: "adaptive", supportedEfforts: ["off", "adaptive", "high"] },
     });
     await handleVerb("/model gpt", ctx);
     assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { selector: "gpt" } });
-    assert.deepEqual(ctx.calls[1], { method: "worker.reasoning.get", params: undefined });
+    assert.deepEqual(ctx.calls[1], { method: "worker.effort.get", params: undefined });
     assert.deepEqual(ctx.model, { alias: "gpt", provider: "openai", model: "gpt-4" }, "the server-resolved spec is the display truth");
-    assert.deepEqual(ctx.reasoning.supportedPolicies, ["off", "adaptive", "high"], "model changes refresh daemon-supported reasoning completion");
+    assert.deepEqual(ctx.effort.supportedEfforts, ["off", "adaptive", "high"], "model changes refresh daemon-supported reasoning completion");
     await handleVerb("/model", ctx);
     assert.match(ctx.out.join(""), /model: gpt/);
 });
@@ -523,7 +523,7 @@ test("{§worker-model-selection}: an exact route remains alias-free in control a
     const route = { provider: "google", model: "gemini-3-flash" };
     const ctx = makeCtx({
         "worker.model.set": route,
-        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+        "worker.effort.get": { policy: "adaptive", supportedEfforts: ["off", "adaptive", "high"] },
     });
     await handleVerb("/model google/gemini-3-flash", ctx);
     assert.deepEqual(ctx.calls[0], {
@@ -536,30 +536,30 @@ test("{§worker-model-selection}: an exact route remains alias-free in control a
     assert.match(ctx.out.join(""), /model: google\/gemini-3-flash/);
 });
 
-test("handleVerb /effort inspects and sets durable daemon policy", async () => {
+test("handleVerb /effort inspects and sets the durable daemon effort", async () => {
     const ctx = makeCtx({
-        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
-        "worker.reasoning.set": { policy: "high", supportedPolicies: ["off", "adaptive", "high"] },
+        "worker.effort.get": { effort: "adaptive", source: "default", supportedEfforts: ["off", "adaptive", "high"] },
+        "worker.effort.set": { effort: "high", source: "explicit", supportedEfforts: ["off", "adaptive", "high"] },
     });
     await handleVerb("/effort", ctx);
     await handleVerb("/effort high", ctx);
     assert.deepEqual(ctx.calls, [
-        { method: "worker.reasoning.get", params: undefined },
-        { method: "worker.reasoning.set", params: { policy: "high" } },
+        { method: "worker.effort.get", params: undefined },
+        { method: "worker.effort.set", params: { effort: "high" } },
     ]);
-    assert.equal(ctx.reasoning.policy, "high");
-    assert.match(ctx.out.join(""), /reasoning: adaptive/);
-    assert.match(ctx.out.join(""), /reasoning: high/);
+    assert.equal(ctx.effort.effort, "high");
+    assert.match(ctx.out.join(""), /effort: adaptive/);
+    assert.match(ctx.out.join(""), /effort: high/);
     assert.match(ctx.out.join(""), /supported: off, adaptive, high/);
 });
 
 test("handleVerb /effort preserves a daemon rejection", async () => {
     const ctx = makeCtx({
-        "worker.reasoning.set": () => { throw new Error("Reasoning policy 'medium' is not supported by xai/grok-4.6."); },
+        "worker.effort.set": () => { throw new Error("Effort 'medium' is not supported by xai/grok-4.6."); },
     });
     await handleVerb("/effort medium", ctx);
-    assert.equal(ctx.reasoning.policy, null);
-    assert.match(ctx.out.join(""), /Reasoning policy 'medium' is not supported/);
+    assert.equal(ctx.effort.effort, null);
+    assert.match(ctx.out.join(""), /Effort 'medium' is not supported/);
 });
 
 test("[§cli-child-provider-selection]{§worker-model-selection}: handleVerb /child persists the override and inherit clears it", async () => {
@@ -597,13 +597,13 @@ test("handleVerb /workspace → workspace.create (new) + setWorkspace", async ()
     const ctx = makeCtx({
         "workspace.create": { id: 9, name: "fresh" },
         "worker.model.get": { model: { alias: "new-model", provider: "openai", model: "new" }, spawnModel: null },
-        "worker.reasoning.get": { policy: "adaptive", supportedPolicies: ["off", "adaptive", "high"] },
+        "worker.effort.get": { effort: "adaptive", source: "default", supportedEfforts: ["off", "adaptive", "high"] },
     });
     await handleVerb("/workspace fresh", ctx);
     assert.deepEqual(ctx.calls[0], { method: "workspace.create", params: { name: "fresh" } });
     assert.equal(ctx.getWorkspace().name, "fresh");
     assert.equal(ctx.model?.alias, "new-model");
-    assert.equal(ctx.reasoning.policy, "adaptive");
+    assert.equal(ctx.effort.effort, "adaptive");
     assert.match(ctx.out.join(""), /workspace: fresh \(new\)/);
 });
 
@@ -781,7 +781,7 @@ test("[§cli-plurnk-models] /model completion: aliases synchronously, provider p
         const result = await completeInput(line, {
             getAliases: () => ["fast", "smart"],
             cwd: process.cwd(),
-            getReasoningPolicies: () => [],
+            getEfforts: () => [],
             getProviderModels: async (provider) => {
                 fetched.push(provider);
                 if (provider === "down") throw new Error("catalog unavailable");
@@ -796,4 +796,12 @@ test("[§cli-plurnk-models] /model completion: aliases synchronously, provider p
     assert.deepEqual(fetched, ["openai"], "the catalog is consulted lazily, per provider");
     assert.deepEqual(await complete("/model down/x"), [[], "down/x"], "a failed catalog fetch completes nothing rather than erroring the prompt");
     assert.deepEqual(await complete("/child inh"), [["inherit"], "inh"], "child completion keeps its inherit sentinel");
+});
+
+test("[§cli-effort] handleVerb /model <selector> <effort> chooses both in one worker.model.set", async () => {
+    const ctx = makeCtx({ "worker.model.set": { alias: "qmax", provider: "alibaba", model: "qwen3.8-max", effort: "medium", effortSource: "explicit" } });
+    await handleVerb("/model qmax medium", ctx);
+    assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { selector: "qmax", effort: "medium" } });
+    await handleVerb("/model qmax", ctx);
+    assert.deepEqual(ctx.calls.filter(({ method }) => method === "worker.model.set").at(-1), { method: "worker.model.set", params: { selector: "qmax" } });
 });

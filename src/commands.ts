@@ -88,7 +88,7 @@ export const COMMANDS = [
     { name: "log", usage: "/log [limit]", summary: "Read recent log entries.", group: "inspect" },
     { name: "look", usage: "/look <address> [scope] [pattern]", summary: "Inspect a resource for yourself: no loop, no log entry, no wait on the model.", group: "inspect" },
 
-    { name: "model", usage: "/model [selector]", summary: "Inspect or select this worker's durable model.", group: "policy" },
+    { name: "model", usage: "/model [selector] [effort]", summary: "Inspect or select this worker's durable model, and its effort with it.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
     { name: "effort", usage: "/effort [policy]", summary: "Inspect or select reasoning effort.", group: "policy" },
     { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect the capability cascade or set the workspace policy.", group: "policy" },

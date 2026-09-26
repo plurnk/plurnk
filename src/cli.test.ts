@@ -393,7 +393,7 @@ test("completer: /effort derives choices from the daemon response", async () => 
     const result = await completeInput("/effort a", {
         getAliases: () => [],
         cwd: process.cwd(),
-        getReasoningPolicies: () => ["off", "adaptive", "high"],
+        getEfforts: () => ["off", "adaptive", "high"],
     });
     assert.deepEqual([result.suggestions.map(({ value }) => value), result.prefix], [["adaptive"], "a"]);
 });

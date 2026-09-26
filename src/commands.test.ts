@@ -42,7 +42,7 @@ test("root, contextual help, and Functionality syntax share the registry", () =>
     }
 });
 
-test("{§cli-reasoning-policy} /effort is the reasoning-selection command in help and completion", () => {
+test("{§cli-effort} /effort is the reasoning-selection command in help and completion", () => {
     assert.equal(isCommandName("effort"), true);
     assert.equal(isCommandName("reasoning"), false);
     assert.match(renderCommandHelp("effort"), /\/effort \[policy\]/u);

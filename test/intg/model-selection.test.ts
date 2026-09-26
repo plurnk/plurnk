@@ -116,7 +116,7 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
             OPENAI_BASE_URL: `http://127.0.0.1:${endpointPort}/v1`,
             OPENAI_API_KEY: "model-selection-test",
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-            PLURNK_PROVIDERS_REASONING: "off",
+            PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
         },
     });
@@ -167,7 +167,7 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
     const requestsBeforeEffort = selectedModels.length;
     const selectedEffort = await runClient(daemon.url, ["effort", "adaptive", ...common]);
     assert.equal(selectedEffort.code, 0, selectedEffort.stderr);
-    assert.equal(JSON.parse(selectedEffort.stdout).policy, "adaptive");
+    assert.equal(JSON.parse(selectedEffort.stdout).effort, "adaptive");
     const inspectedEffort = await runClient(daemon.url, ["effort", ...common]);
     assert.equal(inspectedEffort.code, 0, inspectedEffort.stderr);
     assert.deepEqual(JSON.parse(inspectedEffort.stdout), JSON.parse(selectedEffort.stdout));
@@ -198,7 +198,7 @@ test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels in
             PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
             OPENAI_API_KEY: "input-fixture",
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-            PLURNK_PROVIDERS_REASONING: "off",
+            PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
         },
     });
@@ -242,7 +242,7 @@ test("[§cli-invocation] {§loop-attendance} --auto is refused an interactive pa
             PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
             OPENAI_API_KEY: "input-fixture",
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-            PLURNK_PROVIDERS_REASONING: "off",
+            PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
             // The question runtime stays REGISTERED: this proves attendance refuses it, not the
             // operator's executor switch, which is the only thing that protected a headless run before.
@@ -304,9 +304,14 @@ test("[§cli-loop-policy] a refused statement and a retired spelling each name t
     assert.equal(flag.code, 64);
     assert.match(flag.stderr + flag.stdout, /--policy was retired; state --proposals <review\|accept\|reject> and --auto/u);
 
+    const renamedFlag = await runClient(daemon.url, [...base, "--reasoning", "high", "Do the thing."]);
+    assert.equal(renamedFlag.code, 64);
+    assert.match(renamedFlag.stderr + renamedFlag.stdout, /--reasoning was renamed to --effort/u);
+
     for (const [name, successor] of [
         ["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"],
         ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_PROPOSALS and PLURNK_CLIENT_AUTO"],
+        ["PLURNK_CLIENT_REASONING", "PLURNK_CLIENT_EFFORT"],
         ["PLURNK_CLIENT_WORKSPACE_CAPABILITIES", "PLURNK_CLIENT_CAPABILITIES"],
         ["PLURNK_STATUS_STREAM", "PLURNK_CLIENT_STATUS_STREAM"],
     ] as const) {

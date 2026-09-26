@@ -38,7 +38,7 @@ test("[§cli-active-command-admission] stopping a model proposal preserves a con
         OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
         OPENAI_API_KEY: "proposal-fixture",
         PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-        PLURNK_PROVIDERS_REASONING: "off",
+        PLURNK_PROVIDERS_EFFORT: "off",
         PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
     } });
     t.after(() => daemon.cleanup());

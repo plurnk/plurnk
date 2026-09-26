@@ -83,7 +83,7 @@ const modelPage = {
             capabilities: {
                 attachment: true,
                 reasoning: true,
-                reasoningPolicies: ["off", "low", "high"],
+                efforts: ["off", "low", "high"],
                 toolCall: true,
                 inputModalities: ["text", "image"],
                 outputModalities: ["text"],
@@ -100,7 +100,7 @@ const modelPage = {
             capabilities: {
                 attachment: true,
                 reasoning: true,
-                reasoningPolicies: ["adaptive", "max"],
+                efforts: ["adaptive", "max"],
                 toolCall: true,
                 inputModalities: ["text"],
                 outputModalities: ["text"],

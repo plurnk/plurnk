@@ -54,7 +54,7 @@ for (const action of ["accept", "cancel", "stop"]) {
             OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
             OPENAI_API_KEY: "question-fixture",
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-            PLURNK_PROVIDERS_REASONING: "off",
+            PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
             PLURNK_EXECS_QUESTION: "1",
             PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0",

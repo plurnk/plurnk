@@ -15,7 +15,7 @@ complete -c plurnk -l json
 complete -c plurnk -l workspace
 complete -c plurnk -l worker
 complete -c plurnk -l model
-complete -c plurnk -l reasoning
+complete -c plurnk -l effort
 complete -c plurnk -l project-root
 complete -c plurnk -l yolo
 complete -c plurnk -l auto

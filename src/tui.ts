@@ -54,11 +54,11 @@ import { handleMembers } from "./members.ts";
 import { handleEnv } from "./env.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
-    formatWorkerReasoning,
-    readWorkerReasoning,
-    setWorkerReasoning,
-    type WorkerReasoning,
-} from "./reasoning.ts";
+    formatWorkerEffort,
+    readWorkerEffort,
+    setWorkerEffort,
+    type WorkerEffort,
+} from "./effort.ts";
 import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, conversationLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
 import {
     COMMANDS,
@@ -168,7 +168,7 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
 export interface CompletionOptions {
     getAliases: () => string[];
     cwd: string;
-    getReasoningPolicies?: () => string[];
+    getEfforts?: () => string[];
     getProviderModels?: (provider: string) => Promise<string[]>;
     getFunctionalityAliases?: (family: FunctionalityFamily, scope?: "worker" | "workspace") => Promise<string[]>;
     getWorkerNames?: () => Promise<string[]>;
@@ -235,7 +235,7 @@ export const completeInput = async (line: string, options: CompletionOptions): P
         const reasoningFrag = line.match(/^\/effort\s+(\S*)$/);
         if (reasoningFrag) {
             return {
-                suggestions: (options.getReasoningPolicies?.() ?? [])
+                suggestions: (options.getEfforts?.() ?? [])
                     .filter((policy) => policy.startsWith(reasoningFrag[1]))
                     .map((value) => ({ value, description: "reasoning effort" })),
                 prefix: reasoningFrag[1],
@@ -297,18 +297,18 @@ export const seedPromptHistory = async (
 // (providers.list `active`), else an honest fallback.
 export const buildHeader = (opts: {
     versionNotice?: string; workspaceName: string; workerName?: string; modelSelector?: string;
-    activeAlias?: string; reasoningPolicy?: string | null; yolo?: boolean;
+    activeAlias?: string; effort?: string | null; yolo?: boolean;
 }): string => {
     const head = opts.versionNotice ?? "plurnk";
     const worker = opts.workerName !== undefined ? ` · worker: ${opts.workerName}` : "";
     const modelLabel = opts.modelSelector ?? opts.activeAlias ?? "(daemon default)";
-    const reasoning = opts.reasoningPolicy === undefined || opts.reasoningPolicy === null
+    const effort = opts.effort === undefined || opts.effort === null
         ? ""
-        : ` · reasoning: ${opts.reasoningPolicy}`;
+        : ` · effort: ${opts.effort}`;
     // The header names the non-default. Review is what ships, so the header is silent about it and
     // calls out the session that turned it off — the mode where nobody sees the question.
     const yolo = opts.yolo === true ? " · yolo: on" : "";
-    return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${reasoning}${yolo} · /help`;
+    return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${effort}${yolo} · /help`;
 };
 
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
@@ -322,10 +322,10 @@ export interface VerbContext {
     // both come from the server; the client never reasserts a model per loop.
     model: ResolvedModelSpec | null;
     spawnModel: ResolvedModelSpec | null;
-    reasoning: WorkerReasoning;
+    effort: WorkerEffort;
     setModel: (spec: ResolvedModelSpec | null) => void;
     setSpawnModel: (spec: ResolvedModelSpec | null) => void;
-    setReasoning: (reasoning: WorkerReasoning) => void;
+    setEffort: (effort: WorkerEffort) => void;
     getWorkspace: () => WorkspaceResult;
     setWorkspace: (s: WorkspaceResult) => void;
     // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
@@ -376,7 +376,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         const model = workerModelProjection(await rpc.call("worker.model.get"));
         ctx.setModel(model.model);
         ctx.setSpawnModel(model.spawnModel);
-        ctx.setReasoning(await readWorkerReasoning(rpc));
+        ctx.setEffort(await readWorkerEffort(rpc));
     };
     if (verb.length === 0) {
         write(renderCommandHelp());
@@ -414,25 +414,27 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // the daemon resolves and persists onto the conversation worker; nothing
             // client-local rides the next loop.
             try {
-                ctx.setModel(Validator.assertModelRoute(await rpc.call("worker.model.set", { selector: rest })));
-                write(`  model: ${rest}\n`);
+                // {§cli-effort} — `/model <selector> <effort>` chooses both, and the daemon validates the pair once.
+                const [selector, effort] = rest.split(/\s+/u);
+                ctx.setModel(Validator.assertModelRoute(await rpc.call("worker.model.set", { selector, ...(effort === undefined ? {} : { effort }) })));
+                write(`  model: ${selector}\n`);
             } catch (cause) {
                 write(`${renderTuiFailure(cause)}\n`);
                 return;
             }
             try {
-                ctx.setReasoning(await readWorkerReasoning(rpc));
+                ctx.setEffort(await readWorkerEffort(rpc));
             } catch (cause) {
-                write(`  reasoning refresh failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+                write(`  effort refresh failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
             }
             return;
         case "effort":
             try {
-                const reasoning = rest.length === 0
-                    ? await readWorkerReasoning(rpc)
-                    : await setWorkerReasoning(rpc, rest);
-                ctx.setReasoning(reasoning);
-                write(`${formatWorkerReasoning(reasoning).trimEnd().replace(/^/gm, "  ")}\n`);
+                const effort = rest.length === 0
+                    ? await readWorkerEffort(rpc)
+                    : await setWorkerEffort(rpc, rest);
+                ctx.setEffort(effort);
+                write(`${formatWorkerEffort(effort).trimEnd().replace(/^/gm, "  ")}\n`);
             } catch (cause) {
                 write(`${renderTuiFailure(cause)}\n`);
             }
@@ -595,7 +597,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
     // The explicit --model selector for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup.
-    modelSelector?: string; modelExplicit?: boolean; reasoningPolicy?: string; reasoningExplicit?: boolean;
+    modelSelector?: string; modelExplicit?: boolean; effort?: string; effortExplicit?: boolean;
     yolo: boolean;
     loopPolicy: LoopPolicyRequest; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
@@ -710,8 +712,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // reassertion).
     let workerModel: ResolvedModelSpec | null = null;
     let workerSpawnModel: ResolvedModelSpec | null = null;
-    let workerReasoning: WorkerReasoning = { policy: null, supportedPolicies: [] };
-    let reasoningFailure: unknown;
+    let workerEffort: WorkerEffort = { effort: null, source: "default", supportedEfforts: [] };
+    let effortFailure: unknown;
     // Model identity is control-plane truth, not decorative header data. A
     // transport failure or malformed projection leaves this client unable to
     // know which durable worker policy it is presenting, so admission fails
@@ -723,28 +725,32 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // A deliberate selection is part of invocation admission, not display
         // hydration. Refuse the TUI before it accepts input if the daemon cannot
         // persist it; continuing would silently run the worker's previous model.
+        // {§cli-effort} — an explicit effort rides with the model, so the daemon validates the pair once.
         workerModel = Validator.assertModelRoute(
-            await transport.rpc("worker.model.set", { selector: opts.modelSelector }),
+            await transport.rpc("worker.model.set", {
+                selector: opts.modelSelector,
+                ...(opts.effortExplicit === true && opts.effort !== undefined ? { effort: opts.effort } : {}),
+            }),
         );
     }
-    if (opts.reasoningExplicit === true && opts.reasoningPolicy !== undefined) {
-        // Same admission rule as --model: an explicit policy must take effect or
-        // the invocation fails before any model work can run under stale policy.
-        workerReasoning = await setWorkerReasoning(
+    if (opts.effortExplicit === true && opts.effort !== undefined && opts.modelExplicit !== true) {
+        // Same admission rule as --model: an explicit effort must take effect or
+        // the invocation fails before any model work can run under a stale one.
+        workerEffort = await setWorkerEffort(
             { call: (method, params) => transport.rpc(method, params) },
-            opts.reasoningPolicy,
+            opts.effort,
         );
     } else {
         try {
-            workerReasoning = await readWorkerReasoning({ call: (method, params) => transport.rpc(method, params) });
-        } catch (cause) { reasoningFailure = cause; }
+            workerEffort = await readWorkerEffort({ call: (method, params) => transport.rpc(method, params) });
+        } catch (cause) { effortFailure = cause; }
     }
 
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
         versionNotice: opts.versionNotice, workspaceName: current.name, workerName: opts.workerName,
         modelSelector: workerModel === null ? opts.modelSelector : resolvedModelLabel(workerModel), activeAlias,
-        reasoningPolicy: workerReasoning.policy,
+        effort: workerEffort.effort,
         yolo: opts.yolo,
     });
     const surface = new TuiSurface();
@@ -752,7 +758,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
     surface.append("");
-    if (reasoningFailure !== undefined) printAlert(renderTuiFailure(reasoningFailure));
+    if (effortFailure !== undefined) printAlert(renderTuiFailure(effortFailure));
 
     // Client-owned lifecycle and model lead the input affordance; ephemeral
     // derivation, search, and branch work share its final activity position.
@@ -809,7 +815,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 const seen = priorTargets.map(({ target }) => workerNameFromTarget(target)).filter((name): name is string => name !== null);
                 return [...new Set([...workers.map((worker) => worker.name), ...seen])];
             },
-            getReasoningPolicies: () => workerReasoning.supportedPolicies,
+            getEfforts: () => workerEffort.supportedEfforts,
             getProviderModels: async (provider) => {
                 // One bounded page per provider, cached for the session: lazy,
                 // provider-scoped, never the whole catalog.
@@ -1132,10 +1138,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         rpc: verbRpc, opts,
         get model(): ResolvedModelSpec | null { return workerModel; },
         get spawnModel(): ResolvedModelSpec | null { return workerSpawnModel; },
-        get reasoning(): WorkerReasoning { return workerReasoning; },
+        get effort(): WorkerEffort { return workerEffort; },
         setModel: (spec) => { workerModel = spec; },
         setSpawnModel: (spec) => { workerSpawnModel = spec; },
-        setReasoning: (reasoning) => { workerReasoning = reasoning; },
+        setEffort: (effort) => { workerEffort = effort; },
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: async (name) => {

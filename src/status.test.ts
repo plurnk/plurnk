@@ -103,18 +103,18 @@ test("TerminalStatusLine clears and restores its row around stdout on a shared t
 });
 
 test("formatRouteIdentity renders effort with the identity and stays bare without it (plurnk#41)", () => {
-    assert.equal(formatRouteIdentity({ alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", reasoningPolicy: "low" }), "deepdumb[low]");
-    assert.equal(formatRouteIdentity({ provider: "cloudflare", model: "@cf/zai-org/glm-5.3-flash", reasoningPolicy: "low" }), "cloudflare/@cf/zai-org/glm-5.3-flash[low]");
-    assert.equal(formatRouteIdentity({ alias: "fireox", provider: "fireworks", model: "accounts/fireworks/models/glm-5p3-flash", reasoningPolicy: "off" }), "fireox[off]");
+    assert.equal(formatRouteIdentity({ alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", effort: "low" }), "deepdumb[low]");
+    assert.equal(formatRouteIdentity({ provider: "cloudflare", model: "@cf/zai-org/glm-5.3-flash", effort: "low" }), "cloudflare/@cf/zai-org/glm-5.3-flash[low]");
+    assert.equal(formatRouteIdentity({ alias: "fireox", provider: "fireworks", model: "accounts/fireworks/models/glm-5p3-flash", effort: "off" }), "fireox[off]");
     assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m" }), "plain", "no reasoning dimension - no brackets");
 });
 
 test("[§cli-identity-effort] brackets read as chosen, parentheses as given (plurnk#41 ask 2, service#528)", () => {
-    const route = { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", reasoningPolicy: "low" };
-    assert.equal(formatRouteIdentity({ ...route, reasoningSource: "explicit" }), "deepdumb[low]", "an /effort selection");
-    assert.equal(formatRouteIdentity({ ...route, reasoningSource: "default" }), "deepdumb(low)", "the daemon seeded it from the alias");
+    const route = { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", effort: "low" };
+    assert.equal(formatRouteIdentity({ ...route, effortSource: "explicit" }), "deepdumb[low]", "an /effort selection");
+    assert.equal(formatRouteIdentity({ ...route, effortSource: "default" }), "deepdumb(low)", "the daemon seeded it from the alias");
     assert.equal(formatRouteIdentity(route), "deepdumb[low]", "an older daemon that states no source renders as before");
-    assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m", reasoningSource: "default" }), "plain", "no policy, no marker");
+    assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m", effortSource: "default" }), "plain", "no policy, no marker");
 });
 
 test("#465: turn accounting parses, accrues decimal-exact, and rides the running status line", () => {

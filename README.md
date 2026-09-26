@@ -63,7 +63,7 @@ npm install -g @plurnk/plurnk @plurnk/plurnk-service
 ```
 
 In one terminal, configure a model and start the daemon. This example uses
-DeepSeek; see [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/docs/models.md)
+DeepSeek; see [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
 for other providers and local servers.
 
 ```sh

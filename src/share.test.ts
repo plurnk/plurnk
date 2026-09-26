@@ -8,10 +8,9 @@ test("share folder: a leading ~/ expands to home; a relative folder resolves aga
     assert.equal(shareFolder("/abs/report", "/work", "/home/tester"), "/abs/report");
 });
 
-test("share output names the folder, the zip, and that the share is unredacted", () => {
-    assert.equal(formatShare({ folder: "/abs/report", zip: "/abs/report.zip" }), [
+test("share output names the folder and that the share is unredacted", () => {
+    assert.equal(formatShare({ folder: "/abs/report" }), [
         "share: /abs/report",
-        "share: /abs/report.zip",
         "share: this holds what the models saw and wrote in this workspace, unredacted; review it before sending.",
     ].join("\n"));
 });

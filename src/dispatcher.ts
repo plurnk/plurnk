@@ -203,8 +203,8 @@ options:
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --status-stream     also print one greppable accounting row per turn on stderr.
       --share <folder>    when the prompt or session ends, write the workspace's share for
-                          a bug report: <folder> and <folder>.zip, unredacted. A leading
-                          ~/ expands; a relative folder is this directory's. Overrides
+                          a bug report into <folder>, unredacted. A leading ~/
+                          expands; a relative folder is this directory's. Overrides
                           PLURNK_CLIENT_SHARE.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.

@@ -146,7 +146,7 @@ plurnk-service config defaults
 Questions, bug reports, and feedback are welcome in
 [GitHub issues](https://github.com/plurnk/plurnk/issues). To show us what
 happened, `/share <folder>` (or `--share <folder>` on a run) writes the
-workspace's record and `<folder>.zip` beside it. It is unredacted: it holds what
+workspace's record into that folder. It is unredacted: it holds what
 the models saw and wrote, so review it before you attach it. See the shared
 [contributing guide](https://github.com/plurnk/plurnk-service/blob/main/CONTRIBUTING.md)
 for development guidance.

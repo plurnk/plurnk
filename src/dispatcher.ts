@@ -42,6 +42,7 @@ import { userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
 import { launchWeb } from "./web.ts";
 import { extractOpenPaths } from "./openpaths.ts";
+import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
     Validator,
     type CapabilityPolicy,
@@ -201,6 +202,10 @@ options:
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --status-stream     also print one greppable accounting row per turn on stderr.
+      --share <folder>    when the prompt or session ends, write the workspace's share for
+                          a bug report: <folder> and <folder>.zip, unredacted. A leading
+                          ~/ expands; a relative folder is this directory's. Overrides
+                          PLURNK_CLIENT_SHARE.
       --no-git            deny git membership + working-tree status for the workspace (never
                           re-enables past the operator lockout). Create-time.
       --loop <id>         (log read) filter to a single loop id
@@ -608,6 +613,7 @@ export const main = async (argv: string[]): Promise<void> => {
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
             "status-stream": { type: "boolean" },
+            share: { type: "string" },
             // log read filters
             loop: { type: "string" },
             turn: { type: "string" },
@@ -701,6 +707,8 @@ export const main = async (argv: string[]): Promise<void> => {
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const reasoningPolicy = values.reasoning ?? stated("PLURNK_CLIENT_REASONING");
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
+    const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
+    const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
     if (!web && workerName !== undefined && workspaceName === undefined) {
         dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
     }
@@ -922,6 +930,15 @@ export const main = async (argv: string[]): Promise<void> => {
                 projectRoot,
                 settings,
             });
+            if (shareTarget !== undefined) {
+                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
+                    threadId: workerName ?? w,
+                    workspace: w,
+                    kind: "workspace.share",
+                    params: { folder: shareTarget },
+                });
+                if (!json) process.stderr.write(`${formatShare(shared)}\n`);
+            }
             // Let Node drain stdout before termination. A forced exit truncated large
             // --json records mid-string when notices made the pipe exceed its buffer.
             process.exitCode = code;
@@ -979,6 +996,15 @@ export const main = async (argv: string[]): Promise<void> => {
                 client: CLIENT_ID_TUI,
                 mcpConfiguration,
             });
+            if (shareTarget !== undefined) {
+                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
+                    threadId,
+                    workspace: w,
+                    kind: "workspace.share",
+                    params: { folder: shareTarget },
+                });
+                process.stderr.write(`${formatShare(shared)}\n`);
+            }
             process.exitCode = 0;
             return;
         } catch (cause) {

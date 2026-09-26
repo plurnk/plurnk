@@ -445,6 +445,20 @@ test("handleVerb /rename → workspace.rename, adopts the returned name", async 
     assert.match(ctx.out.join(""), /workspace: renamed/);
 });
 
+test("handleVerb /share → workspace.share with an absolute folder; prints both paths and the disclosure", async () => {
+    const ctx = makeCtx({ "workspace.share": { folder: "/abs/report", zip: "/abs/report.zip" } });
+    await handleVerb("/share /abs/report", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.share", params: { folder: "/abs/report" } }]);
+    assert.match(ctx.out.join(""), /share: \/abs\/report\n {2}share: \/abs\/report\.zip\n {2}share: .*unredacted/u);
+});
+
+test("handleVerb /share with no folder → usage, no rpc", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/share", ctx);
+    assert.deepEqual(ctx.calls, []);
+    assert.match(ctx.out.join(""), /usage: \/share <folder>/u);
+});
+
 test("handleVerb /rename with no name → usage, no rpc", async () => {
     const ctx = makeCtx();
     await handleVerb("/rename", ctx);

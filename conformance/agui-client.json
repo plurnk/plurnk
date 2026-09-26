@@ -164,6 +164,21 @@
         "presentation"
       ]
     },
+    "workspace.share": {
+      "posture": "native",
+      "evidence": [
+        "src/tui.test.ts — workspace share",
+        "src/share.test.ts — share folder and output",
+        "test/intg/share.test.ts — the bound workspace's share over the wire"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "workspace.rename": {
       "posture": "native",
       "evidence": [

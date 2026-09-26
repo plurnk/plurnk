@@ -52,6 +52,7 @@ import { handleA2a } from "./a2a.ts";
 import { handleSchedule } from "./schedule.ts";
 import { handleMembers } from "./members.ts";
 import { handleEnv } from "./env.ts";
+import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
     formatWorkerReasoning,
     readWorkerReasoning,
@@ -486,6 +487,15 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  workspace: ${renamed.name}\n`);
             return;
         }
+        case "share":
+            if (rest.length === 0) { write("  usage: /share <folder>\n"); return; }
+            try {
+                const shared = await rpc.call("workspace.share", { folder: shareFolder(rest) }) as ShareResult;
+                write(`${formatShare(shared).replace(/^/gm, "  ")}\n`);
+            } catch (cause) {
+                write(`${renderTuiFailure(cause)}\n`);
+            }
+            return;
         case "worker": {
             // New worker — run.fork branches this conversation, optionally
             // named at instantiation (immutable after). Bind to the fork so the

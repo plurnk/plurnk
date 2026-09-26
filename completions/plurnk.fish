@@ -29,6 +29,7 @@ complete -c plurnk -l files-items
 complete -c plurnk -l preview-lines
 complete -c plurnk -l max-commands
 complete -c plurnk -l status-stream
+complete -c plurnk -l share
 complete -c plurnk -l no-git
 complete -c plurnk -l loop
 complete -c plurnk -l turn

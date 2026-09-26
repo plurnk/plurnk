@@ -96,6 +96,7 @@ export const COMMANDS = [
 
     { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace", rebinds: true },
     { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace", rebinds: true },
+    { name: "share", usage: "/share <folder>", summary: "Write this workspace's share for a bug report: <folder> and <folder>.zip.", group: "workspace" },
     { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace", rebinds: true },
     { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace", rebinds: true },
     { name: "parent", usage: "/parent", summary: "Hop to the bound worker's parent (Alt-h).", group: "workspace", rebinds: true },

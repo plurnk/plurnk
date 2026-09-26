@@ -1007,7 +1007,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const descendant = descendants.get(entry.worker_id ?? -1);
             if (descendant !== undefined) {
                 if (streams.launch(entry)) return;
-                printAbove(renderDescendantBlock(entry, descendant.name, descendant.depth));
+                printAbove(renderDescendantBlock(entry, descendant.name, descendant.depth, undefined, surface.columns || 80));
                 return;
             }
             const lineage = lineageWorker(entry);

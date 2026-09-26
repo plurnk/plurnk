@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-test("[§cli-markdown-projection] built TUI survives nested lists, long code, and Mermaid source fallback", { timeout: 60_000 }, async (t) => {
+for (const op of ["KILL", "NOTE", "prose"]) test(`[§cli-markdown-projection] [§cli-note-rendering] built TUI renders ${op} Markdown with nested lists, long code, and Mermaid source fallback`, { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed rendering test requires the sibling service");
     const responseBody = [
@@ -24,6 +24,9 @@ test("[§cli-markdown-projection] built TUI survives nested lists, long code, an
         "",
         "RENDER_FINISHED",
     ].join("\n");
+    const answer = "````KILL\nANSWER_DELIVERED\n````";
+    const emission = op === "prose" ? responseBody
+        : `\`\`\`\`${op}\n${responseBody}\n\`\`\`\`` + (op === "NOTE" ? `\n\n${answer}` : "");
     let calls = 0;
     const provider = createServer((request, response) => {
         if (request.method !== "POST") { response.writeHead(200).end("{}"); return; }
@@ -32,7 +35,7 @@ test("[§cli-markdown-projection] built TUI survives nested lists, long code, an
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(`data: ${JSON.stringify({
             id: "markdown-fixture", object: "chat.completion.chunk",
-            choices: [{ index: 0, delta: { role: "assistant", content: `\`\`\`\`KILL\n${responseBody}\n\`\`\`\`` }, finish_reason: null }],
+            choices: [{ index: 0, delta: { role: "assistant", content: calls === 1 ? emission : answer }, finish_reason: null }],
         })}\n\n`);
         response.write(`data: ${JSON.stringify({
             id: "markdown-fixture", object: "chat.completion.chunk",
@@ -65,14 +68,16 @@ test("[§cli-markdown-projection] built TUI survives nested lists, long code, an
     await tui.waitFor(/plurnk.*\/help/);
     tui.write("Describe the project.\r");
     await tui.waitFor(/RENDER_FINISHED/);
+    if (op !== "KILL") await tui.waitFor(/ANSWER_DELIVERED/);
     const output = stripVTControlCharacters(tui.output());
     assert.match(output, /Addressable Context/);
+    assert.doesNotMatch(output, /\*\*Addressable Context\*\*/);
     assert.match(output, /💻 mermaid/);
     assert.doesNotMatch(output, /exceeds terminal width|rendered width|mermaid source|runtime:error/);
     const afterResponse = tui.output().length;
     tui.write("/model\r");
     await tui.waitFor(/model:.*markdownfixture/, 10_000, afterResponse);
-    assert.equal(calls, 1);
+    assert.equal(calls, op === "prose" ? 2 : 1, "retained prose is visible, but still requires operation recovery before completion");
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
 });

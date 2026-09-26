@@ -696,7 +696,9 @@ Markdown pass:
   the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),
   ending in `… +N lines · /look <address>` when cut, and a blank row closes the block. A
   concluded execution's output previews the same way under its row, and its blank row follows
-  the output. A NOTE's body is whole ({§cli-note-rendering}), as is the delivered answer (§5.4);
+  the output. Model NOTEs instead use full Markdown ({§cli-note-rendering}), including within
+  an observed descendant's indentation; runtime NOTEs stay whole and plain. Delivered answers
+  also render whole (§5.4);
   the reasoning lane (§5.1.1) is a separate, live window.
 - An unsuccessful outcome (`status_rx >= 400`) names the structured result's own `problem.title`
   (else its `detail`, else the bare status) at the right of the row. A 204 is not a failure: a
@@ -772,7 +774,7 @@ resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | A model NOTE renders as any operation does: its `NOTE` heading with the aside, its body whole beneath, four columns in and dim, the working memory a human reads in place (§5.1), and the blank row that closes the block {§cli-note-rendering}; it is never a delivered message. A harness NOTE renders the same way. |
+| NOTE | {§cli-note-rendering} A model NOTE, authored or retained from outside text, renders its full body as Markdown at the current width, with the same blank lead/aside and column-zero layout as a reply. Its log identity and failure visibility remain; it is not a delivered message and does not enter CLI response stdout. A harness NOTE retains its operation heading and whole plain, dim, four-column-indented body. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |

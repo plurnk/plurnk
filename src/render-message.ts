@@ -4,7 +4,7 @@ import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
 import {
     entryAside, extractSendBody, isArrivalEntry, isResponseMessage,
-    lineageWorker, markDescendant, objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
+    LINEAGE_OFFSET, lineageWorker, markDescendant, objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
     type LogEntryWire, type RowOverride,
 } from "./render.ts";
 
@@ -30,10 +30,9 @@ const leadLine = (entry: LogEntryWire, detail: boolean): string => {
     return parts.join(" ");
 };
 
-// Targetless SEND: the message block. The lead line, then the body with its Markdown at
-// column zero ({§cli-broadcast-send-rendering}). The block is plain: its Markdown carries the
-// only emphasis, and the human's own line is what sets the two voices apart.
-const renderBroadcast = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string => {
+// Full model text, whether a delivered reply or a NOTE ({§cli-note-rendering}). Presentation
+// does not imply delivery: reply accounting remains isResponseMessage's responsibility.
+const renderModelText = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string => {
     const lead = leadLine(entry, TurnDisposition.isOp(entry.op));
     return body.length === 0 ? lead : `${lead}\n${body}`;
 };
@@ -52,30 +51,32 @@ const renderArrival = (entry: LogEntryWire): string => {
 };
 
 // A descendant's row ({plurnk#108}): the child's name marks it, the block sits one step in per
-// generation, and the body previews beneath like any operation. A lineage row is the direct
-// child's, at depth one ({§cli-workers-topology}).
-export const renderDescendantBlock = (entry: LogEntryWire, name: string, depth: number, override?: RowOverride): string =>
-    markDescendant(renderOperationBlock(entry, override, true), name, depth);
+// generation. Model NOTEs retain their Markdown within that indentation. A lineage row is the
+// direct child's, at depth one ({§cli-workers-topology}).
+export const renderDescendantBlock = (entry: LogEntryWire, name: string, depth: number, override?: RowOverride, columns = process.stdout.columns ?? 80): string =>
+    markDescendant(entry.op === "NOTE" && entry.origin === "model"
+        ? renderModelText(entry, Math.max(1, columns - LINEAGE_OFFSET.length * depth))
+        : renderOperationBlock(entry, override, true), name, depth);
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
 // its outcome, an arrival its sender and block, a conversation reply its whole block, every
-// other operation its literal row with its body previewed beneath ({plurnk#104}). A model
-// NOTE is one of those operations: its heading, its preview, never a delivered message
-// ({§cli-note-rendering}).
+// other operation its literal row with its body previewed beneath ({plurnk#104}). Model
+// NOTEs use the same Markdown projection as replies without becoming delivered messages.
 export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
     override?: RowOverride,
 ): string => {
-    if (isResponseMessage(entry)) return renderBroadcast(entry, columns);
+    if (isResponseMessage(entry)) return renderModelText(entry, columns);
     const lineage = lineageWorker(entry);
-    if (lineage !== null) return renderDescendantBlock(entry, lineage, 1, override);
+    if (lineage !== null) return renderDescendantBlock(entry, lineage, 1, override, columns);
+    if (entry.op === "NOTE" && entry.origin === "model") return renderModelText(entry, columns);
     if (TurnDisposition.isOp(entry.op) || entry.op === "KILL" && objectOf(entry.tx)?.target === null) {
         const rx = objectOf(entry.rx);
         const detail = typeof rx?.detail === "string" ? rx.detail : null;
         return renderOperationBlock(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) }, true);
     }
     if (isArrivalEntry(entry)) return renderArrival(entry);
-    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderBroadcast(entry, columns);
+    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderModelText(entry, columns);
     return renderOperationBlock(entry, override, true);
 };

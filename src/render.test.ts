@@ -684,9 +684,9 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
         tx: { op: "NOTE", target: null, aside: null, body: { raw: lines.join("\n"), json: null } },
     });
     const noteRows = renderLogEntry(note, 80).split("\n");
-    assert.deepEqual([noteRows[0], noteRows.at(-1)], ["NOTE", ""], "a NOTE is its heading, and the blank row closes it");
-    assert.equal(noteRows.length, 42, "the heading, all forty lines, a blank row: working memory is read in place");
-    assert.deepEqual(noteRows.slice(1, 3), ["    line 1", "    line 2"], "a NOTE's body sits four columns in like every body");
+    assert.deepEqual([noteRows[0], noteRows.at(-1)], ["", "line 40"], "a model NOTE uses the message layout");
+    assert.equal(noteRows.length, 41, "the blank lead and all forty lines");
+    assert.deepEqual(noteRows.slice(1, 3), ["line 1", "line 2"], "a model NOTE uses the full column width");
     assert.ok(!noteRows.some((row) => row.includes("/look")), "a NOTE is never cut");
 });
 

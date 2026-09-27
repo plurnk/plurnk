@@ -848,7 +848,7 @@ export const main = async (argv: string[]): Promise<void> => {
                         prompt: projected.prompt,
                         runProperties: {
                             policy: projected.policy,
-                            openPaths: extractOpenPaths(projected.prompt),
+                            openPaths: extractOpenPaths(projected.prompt, projectRoot),
                         },
                     };
                 },
@@ -917,7 +917,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 });
             }
             const projected = promptPolicy(prompt, loopPolicy);
-            const openPaths = extractOpenPaths(projected.prompt);
+            const openPaths = extractOpenPaths(projected.prompt, projectRoot);
             // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
             const reviewRequested = /^\s*\?/u.test(prompt);
             const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, projected.prompt, {

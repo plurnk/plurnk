@@ -214,6 +214,18 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 The prompt's first character has the same meaning in the CLI and TUI. `plurnk "? question"` states proposal `review` for that loop without changing workspace capabilities; `": text"` states nothing new. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
 
+### §2.0.1 Prompt file references {§cli-prompt-open-paths}
+
+A prompt token `@<path>` that starts the prompt or follows whitespace is a file reference when, at the moment the prompt is sent, `<path>` (trailing `.,;:!?)` trimmed) names an existing regular file under the project root (§1.3). The CLI, TUI, and web launcher project the distinct references, in prompt order, onto `openPaths`; the prompt text is sent unchanged and the daemon reads each path on the message's turn ({§methods-loop-run-open-paths}).
+
+| Token | Opens |
+|---|---|
+| `@src/x.ts`, the file exists | `src/x.ts` |
+| `@someone`, no such file | nothing; the token is prose |
+| `@src`, a directory | nothing |
+| `a@b.com` (the `@` does not start a token) | nothing |
+| any token, headless workspace (`null` root) | nothing |
+
 ### §2.1 Output channels {§cli-output-channels}
 
 Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_CLIENT_JSON` — not a flag on one output, but two distinct contracts:
@@ -1021,7 +1033,7 @@ There is one configuration owner and one interpretation of every shared knob:
 | explicit model and reasoning | Durable Worker actions before that session's first prompt |
 | LoopPolicy and `--auto` | Base policy on every prompt Run |
 | `?` prompt prefix | Per-prompt proposal review, using the same projector as CLI/TUI |
-| prompt `@path` references | Per-prompt `openPaths` turn-0 projection |
+| prompt `@path` references | Per-prompt `openPaths` projection ({§cli-prompt-open-paths}) |
 | `--max-turns` | Per-prompt model-call budget for the worker tree ({§turn-cap-counts-the-tree}) |
 | `--timeout` | Portal-owned deadline followed by `loop.cancel {reason:"client_timeout"}` for the exact workspace/Worker |
 | `--yolo` | Automatic acceptance of client-owned proposals; interactions remain user-owned |

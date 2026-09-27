@@ -1,15 +1,33 @@
-// @file refs (#260) → loop.run.openPaths. The daemon foists turn-0 READs of
-// these workspace paths so their content sits in front of the model — daemon-
-// foist, NO client-side byte inlining (co-location: the daemon shares the fs).
-// The @ref stays in the prompt (the user's natural phrasing "explain @src/a.ts");
-// openPaths carries just the path. The `@` must start a token (preceded by
-// whitespace or the line start) so an email's `user@host` isn't mistaken for a
-// ref. Trailing sentence punctuation is trimmed ("see @a.ts." → "a.ts"); deduped.
-export const extractOpenPaths = (prompt: string): string[] => {
+import { statSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+
+// {§cli-prompt-open-paths} — @file refs (#260) → loop.run.openPaths. The daemon
+// foists turn-0 READs of these paths; the client sends paths, never bytes. The
+// `@` must start a token so an email's `user@host` isn't mistaken for a ref.
+// Trailing sentence punctuation is trimmed ("see @a.ts." → "a.ts"); deduped.
+// A token opens only when it names an existing file under the project root at
+// send time; `@someone` stays prose (#853).
+// Synchronous stat: plurnk-web's projectPrompt hook is a synchronous contract.
+// ENOTDIR (`@file.ts/x`) means absent, exactly like ENOENT.
+const isFile = (path: string): boolean => {
+    try { return statSync(path, { throwIfNoEntry: false })?.isFile() === true; }
+    catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOTDIR") return false;
+        throw cause;
+    }
+};
+
+export const extractOpenPaths = (prompt: string, projectRoot: string | null): string[] => {
+    if (projectRoot === null) return [];
     const seen = new Set<string>();
     for (const m of prompt.matchAll(/(?:^|\s)@(\S+)/g)) {
         const path = m[1].replace(/[.,;:!?)]+$/, "");
-        if (path.length > 0) seen.add(path);
+        if (path.length === 0) continue;
+        const absolute = resolve(projectRoot, path);
+        const inside = relative(projectRoot, absolute);
+        if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) continue;
+        if (!isFile(absolute)) continue;
+        seen.add(path);
     }
     return [...seen];
 };

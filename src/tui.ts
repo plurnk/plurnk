@@ -1333,7 +1333,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // worker owns the model; /model and /child persisted it server-side.
                 const loopParams: { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] } = { policy };
                 if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
-                const openPaths = extractOpenPaths(promptText);   // @file refs → daemon turn-0 READs (#260)
+                const openPaths = extractOpenPaths(promptText, opts.projectRoot ?? null);   // {§cli-prompt-open-paths}
                 if (openPaths.length > 0) loopParams.openPaths = openPaths;
                 // The transport owns the ack→terminated bridge; done resolves
                 // with the loop's outcome. A pre-stream HTTP failure surfaces as

@@ -123,7 +123,9 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk effort [level] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
+       plurnk script <file.plk> [options]
        plurnk web [options]
+       plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
@@ -177,7 +179,7 @@ options:
                           Default: cwd. Empty string = headless. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
-                          Review ships; Shift-Tab toggles it for the session.
+                          On by default; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
       --auto              nobody is attending: the daemon offers no human-in-the-loop
                           surface rather than one nothing could answer, and settles
@@ -211,7 +213,7 @@ options:
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
-      --limit <n>         (log read) max entries to return (default 100)
+      --limit <n>         (models / log read) page limit (log read default 100)
       --provider <name>   (models) restrict the catalog to one provider
       --all               (models) include unconfigured models with readiness causes
       --offset <n>        (models) catalog page offset (default 0)
@@ -232,6 +234,8 @@ subcommands:
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
+  completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
+                          local only: writes stdout, never installs files
   web [options]           serve the optional browser client using this invocation's
                           resolved configuration and optional workspace/Worker
                           constraints; each tab is URL-addressed as /workspace/threadId;
@@ -242,6 +246,18 @@ subcommands:
                           /--project-root + workspace-open settings. The daemon owns the
                           grammar; the client just feeds the file.
 `;
+
+const subcommandNames = new Set([...USAGE.slice(USAGE.indexOf("\nsubcommands:")).matchAll(/^  ([a-z]+)\b/gm)].map((match) => match[1]));
+
+const commandHelp = (name: string | undefined): string => {
+    if (name === "render") return RENDER_USAGE;
+    if (name === undefined || !subcommandNames.has(name)) return USAGE;
+    const synopsis = USAGE.slice(0, USAGE.indexOf("\n\n"));
+    const forms = synopsis.match(new RegExp(`^ {7}plurnk ${name}\\b[^\\n]*(?:\\n {8,}[^\\n]*)*`, "gm"));
+    const descriptions = USAGE.slice(USAGE.indexOf("\nsubcommands:")).match(new RegExp(`^  ${name}\\b[^\\n]*(?:\\n {3,}[^\\n]*)*`, "gm"));
+    if (forms === null || descriptions === null) throw new Error(`Missing CLI help for ${name}`);
+    return `usage: ${forms[0].trimStart()}${forms.slice(1).map((form) => `\n${form}`).join("")}\n\n${descriptions.join("\n")}\n\nSee plurnk --help for shared options and environment configuration.\n`;
+};
 
 // Render a Problem to stderr and exit.
 const dieWith = (code: number, problem: ProblemDetails): never => {
@@ -633,8 +649,22 @@ export const main = async (argv: string[]): Promise<void> => {
 
     const web = positionals[0] === "web";
     if (values.help) {
-        process.stdout.write(positionals[0] === "render" ? RENDER_USAGE : USAGE);
+        process.stdout.write(commandHelp(positionals[0]));
         process.exit(0);
+    }
+    if (positionals[0] === "completion") {
+        try {
+            const files = new Map([["bash", "plurnk.bash"], ["zsh", "_plurnk"], ["fish", "plurnk.fish"]]);
+            const file = files.get(positionals[1] ?? "");
+            if (positionals.length !== 2 || file === undefined) {
+                throw new ProblemError(clientSubcommandUnknownVerb(positionals.join(" "), ["completion bash", "completion zsh", "completion fish"]));
+            }
+            process.stdout.write(await readFile(new URL(`../completions/${file}`, import.meta.url), "utf8"));
+            return;
+        } catch (cause) {
+            if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
+            dieWith(1, clientRuntimeError(cause));
+        }
     }
     if (positionals[0] === "render") {
         try {
@@ -682,9 +712,8 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // State-command routing happens BEFORE prompt assembly, so inspection and
     // deliberate configuration never consume stdin or become model prompts.
-    const SUBCOMMANDS = ["models", "workspace", "log", "read", "script", "mcp", "effort", "capabilities", "web"] as const;
     const subcommand = positionals[0];
-    const isSubcommand = subcommand !== undefined && (SUBCOMMANDS as readonly string[]).includes(subcommand);
+    const isSubcommand = subcommand !== undefined && subcommandNames.has(subcommand);
 
     // Assemble the prompt only if we're NOT running a subcommand.
     let prompt = "";
@@ -699,6 +728,11 @@ export const main = async (argv: string[]): Promise<void> => {
                 dieJson(64, clientProblem("usage", "prompt-required", 400, "--json needs a prompt (CLI mode only)", { flag: "--json" }));
             }
             // PLURNK_CLIENT_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
+        }
+        if (prompt.length === 0 && process.stdin.isTTY !== true) {
+            const problem = clientProblem("usage", "prompt-required", 400, "Provide a prompt or use an interactive terminal.");
+            if (json) dieJson(64, problem);
+            dieWith(64, problem);
         }
     }
 

@@ -32,7 +32,10 @@ plurnk [options] [prompt...]                # one-shot from positionals
 plurnk [options]                             # TUI mode (no positionals, TTY stdin)
 ```
 
-The prompt is assembled from positional args + piped stdin. If both are present, positionals come first followed by a blank line, then stdin. If only positionals → those. If only piped stdin → that. If neither and stdin is a TTY → TUI mode. The `--json` flag requires a non-empty prompt (errors with exit 64 if neither source provides one).
+The prompt is assembled from positional args + piped stdin. If both are present, positionals come first followed by a blank line, then stdin. If only positionals → those. If only piped stdin → that. If neither and stdin is a TTY → TUI mode. Empty non-TTY input is a usage error (exit 64), before contacting the daemon. `CI` does not change this terminal-based choice. The `--json` flag requires a non-empty prompt (errors with exit 64 if neither source provides one).
+
+`plurnk <subcommand> --help` prints that command's invocation forms and summary
+from the same inventory as global help, without contacting the daemon.
 
 Options:
 
@@ -335,7 +338,11 @@ provides onboarding and examples, linking to this reference and pointing to
 `/help` rather than repeating the full command inventory.
 
 {§cli-posix-artifacts} The generated man page and Bash, Zsh, and Fish completions
-derive from the command inventory. Bash filename candidates retain spaces,
+derive from the command inventory. `plurnk completion <bash|zsh|fish>` writes the
+corresponding packaged script verbatim to stdout, without configuration loading,
+daemon contact or filesystem installation. The man page names the package version
+and omits the optional date, so rebuilding it does not introduce a timestamp.
+Bash filename candidates retain spaces,
 backslashes, and glob characters as single candidates; the shell owns quoting.
 Unit tests run the native syntax/format checkers when installed and name any
 missing tools. `npm run test:posix` requires mandoc, Bash, Zsh, Fish, and
@@ -669,6 +676,7 @@ worker — cross the existing diagnostic path without rewriting or retry.
 | `3` | Loop terminated with cancellation (`finalStatus === 499`, including `--timeout`) |
 | `4` | Loop FAILED (4xx/5xx terminal status other than 499) — failure ≠ cancel, so benchmark stats stay honest |
 | `64` | Usage error (missing required env var, unrecognized flag) |
+| `130` / `143` | SIGINT / SIGTERM interruption; see {§cli-interrupted-record} |
 
 TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the summary line, not the exit code.
 

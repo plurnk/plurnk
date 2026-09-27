@@ -51,7 +51,7 @@ for (const entry of ["dispatcher", "cli", "agui_cli", "subcommands", "render"]) 
     });
 }
 
-for (const args of [["--help"], ["--version"], ["render", "--help"]]) {
+for (const args of [["--help"], ["--version"], ["render", "--help"], ["models", "--help"], ["completion", "bash"]]) {
     test(`[§cli-presentation-loading] ${args.join(" ")} does not initialize rendering`, async () => {
         const result = await trace("dispatcher", "main", args);
         assert.equal(result.code, 0, result.stderr);

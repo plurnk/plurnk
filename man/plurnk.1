@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-09-17" "plurnk 0.89.0" "User Commands"
+.TH PLURNK 1 "" "plurnk 0.89.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -14,7 +14,9 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
        plurnk effort [level] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
+       plurnk script <file.plk> [options]
        plurnk web [options]
+       plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
@@ -60,7 +62,7 @@ loop.
                           Default: cwd. Empty string = headless. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
-                          Review ships; Shift-Tab toggles it for the session.
+                          On by default; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
       --auto              nobody is attending: the daemon offers no human-in-the-loop
                           surface rather than one nothing could answer, and settles
@@ -94,7 +96,7 @@ loop.
       --loop <id>         (log read) filter to a single loop id
       --turn <id>         (log read) filter to a single turn id
       --since <id>        (log read) return entries with id > <id>
-      --limit <n>         (log read) max entries to return (default 100)
+      --limit <n>         (models / log read) page limit (log read default 100)
       --provider <name>   (models) restrict the catalog to one provider
       --all               (models) include unconfigured models with readiness causes
       --offset <n>        (models) catalog page offset (default 0)
@@ -116,6 +118,8 @@ loop.
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
+  completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
+                          local only: writes stdout, never installs files
   web [options]           serve the optional browser client using this invocation's
                           resolved configuration and optional workspace/Worker
                           constraints; each tab is URL-addressed as /workspace/threadId;
@@ -210,6 +214,6 @@ Terminated by SIGTERM after requesting cancellation and emitting the partial rec
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/plurnk/.env
-Operator configuration (model aliases, provider credentials, client defaults).
+Operator configuration (model aliases and client defaults).
 .SH SEE ALSO
 plurnk\-service(1), and the repository SPEC.md for the client contract.

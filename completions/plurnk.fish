@@ -6,6 +6,7 @@ complete -c plurnk -n __fish_use_subcommand -a read
 complete -c plurnk -n __fish_use_subcommand -a effort
 complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render
+complete -c plurnk -n __fish_use_subcommand -a completion
 complete -c plurnk -n __fish_use_subcommand -a web
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a script

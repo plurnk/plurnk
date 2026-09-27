@@ -34,7 +34,7 @@ const roffEscape = (text) => text
     .join("\n");
 const nf = (text) => `.nf\n${roffEscape(text)}\n.fi`;
 const prose = (text) => roffEscape(text.replace(/(.{1,72})[ \t]+/gu, "$1\n"));
-const man = `.TH PLURNK 1 "2026-09-17" "plurnk ${pkg.version}" "User Commands"
+const man = `.TH PLURNK 1 "" "plurnk ${pkg.version}" "User Commands"
 .SH NAME
 plurnk \\- terminal client for the plurnk\\-service agentic daemon
 .SH SYNOPSIS
@@ -78,7 +78,7 @@ Terminated by SIGTERM after requesting cancellation and emitting the partial rec
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/plurnk/.env
-Operator configuration (model aliases, provider credentials, client defaults).
+Operator configuration (model aliases and client defaults).
 .SH SEE ALSO
 plurnk\\-service(1), and the repository SPEC.md for the client contract.
 `;

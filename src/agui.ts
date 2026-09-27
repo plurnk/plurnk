@@ -209,6 +209,7 @@ export const actionViaBridge = async <T = unknown>(
         kind: string;
         params?: object;
     },
+    signal?: AbortSignal,
 ): Promise<T> => {
     for await (const e of runViaBridge(target, {
         threadId: req.threadId,
@@ -218,7 +219,7 @@ export const actionViaBridge = async <T = unknown>(
             ...(req.workspaceOptions ?? {}),
             action: { kind: req.kind, ...(req.params ?? {}) },
         },
-    })) {
+    }, signal)) {
         if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
             const v = actionOutcome<T>((e as { value?: unknown }).value);
             if (!v.ok) throw new ProblemError(v.problem);

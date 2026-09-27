@@ -26,7 +26,7 @@ import {
 } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
-import { runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { actionViaBridge, runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { LoopPolicyRequest, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
@@ -347,20 +347,25 @@ export const runCliViaBridge = async (
     // Exit 3 with timedOut:true in the record, per SPEC §1.
     let timedOut = false;
     const ac = new AbortController();
-    const cancelLoop = async (): Promise<void> => {
-        for await (const e of runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), messages: [], forwardedProps: { action: { kind: "loop.cancel", reason: "client_timeout" } } })) void e;
-    };
+    const cancellationGraceMs = 15_000;
+    const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaBridge(target, {
+        threadId: opts.threadId,
+        ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}),
+        kind: "loop.cancel", params: { reason },
+    }, signal);
     let graceTimer: NodeJS.Timeout | undefined;
     const deadline = opts.timeoutSec !== undefined && opts.timeoutSec > 0
         ? setTimeout(() => {
             timedOut = true;
-            void cancelLoop().catch(() => { /* the abort below is the backstop */ });
-            graceTimer = setTimeout(() => ac.abort(), 15_000);
+            void cancelLoop("client_timeout", ac.signal).catch((cause) => {
+                if (!ac.signal.aborted) process.stderr.write(`Cancellation could not be confirmed: ${String(cause)}\n`);
+            });
+            graceTimer = setTimeout(() => ac.abort(), cancellationGraceMs);
         }, opts.timeoutSec * 1000)
         : undefined;
 
     // One record, emitted exactly once — the normal path, the timeout path, and a
-    // SIGTERM flush (a killed client must not lose its --json record) all funnel here.
+    // signal flush (a killed client must not lose its --json record) all funnel here.
     let emission: Promise<void> | undefined;
     const emitRecord = (r: CliRunResult): Promise<void> => {
         if (!opts.json) return Promise.resolve();
@@ -395,15 +400,28 @@ export const runCliViaBridge = async (
     // tool-call; the decision POSTs as the next segment's resume. Accumulate
     // across segments — one logical run, one record.
     let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { prompt, forwardedProps };
-    // A hard kill mid-run must still leave the record behind (svc#478: Harbor's axe
-    // erased the whole document). Best-effort flush of what accumulated so far.
-    const onTerm = (): void => {
-        void emitRecord(activeSegment === null ? result : mergeRunSegments(result, activeSegment)).then(
-            () => process.exit(143),
-            (cause) => { process.stderr.write(`Could not flush interrupted CLI record: ${String(cause)}\n`); process.exit(143); },
-        );
+    const cancellation = new AbortController();
+    let interruption: Promise<void> | undefined;
+    const interrupt = (reason: string, exitCode: number): void => {
+        if (interruption !== undefined) {
+            cancellation.abort(new Error("Interrupted again while cancelling."));
+            return;
+        }
+        if (!opts.json) statusLine.durable("Cancelling… (interrupt again to stop waiting)\n");
+        const partial = activeSegment === null ? result : mergeRunSegments(result, activeSegment);
+        interruption = Promise.allSettled([
+            emitRecord(partial),
+            cancelLoop(reason, AbortSignal.any([cancellation.signal, AbortSignal.timeout(cancellationGraceMs)])),
+        ]).then(([flushed, cancelled]) => {
+            if (flushed.status === "rejected") process.stderr.write(`Could not flush interrupted CLI record: ${String(flushed.reason)}\n`);
+            if (cancelled.status === "rejected") process.stderr.write(`Cancellation could not be confirmed: ${String(cancelled.reason)}\n`);
+            process.exit(exitCode);
+        });
     };
-    process.once("SIGTERM", onTerm);
+    const onInt = (): void => interrupt("user_sigint", 130);
+    const onTerm = (): void => interrupt("user_sigterm", 143);
+    process.on("SIGINT", onInt);
+    process.on("SIGTERM", onTerm);
     try {
         result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
         activeSegment = null;
@@ -415,6 +433,8 @@ export const runCliViaBridge = async (
         }
         await emitRecord(result);
     } finally {
+        if (interruption !== undefined) await interruption;
+        process.removeListener("SIGINT", onInt);
         process.removeListener("SIGTERM", onTerm);
         if (deadline !== undefined) clearTimeout(deadline);
         if (graceTimer !== undefined) clearTimeout(graceTimer);

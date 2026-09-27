@@ -70,8 +70,11 @@ The loop failed, or a script returned an unsuccessful operation.
 .B 64
 Invalid invocation or arguments.
 .TP
+.B 130
+Interrupted by SIGINT after requesting cancellation and emitting the partial record.
+.TP
 .B 143
-Terminated by SIGTERM after emitting the partial record.
+Terminated by SIGTERM after requesting cancellation and emitting the partial record.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/plurnk/.env

@@ -259,8 +259,12 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
 {§cli-interrupted-record} During the initial request or any proposal-resume segment,
-`SIGTERM` flushes one JSON document containing all rows, notices, and response text
-observed so far, then exits 143. A daemon terminal result wins; otherwise an
+`SIGINT` and `SIGTERM` explicitly request `loop.cancel` for the bound worker and
+flush one JSON document containing all rows, notices, and response text observed
+at interruption, then exit 130 and 143 respectively. Cancellation uses the same
+15-second grace as the run timeout; another signal stops waiting for its reply.
+Cancellation or flush failures are reported on stderr, including in JSON mode.
+A daemon terminal result wins; otherwise an
 observed Problem retains its status, or a `client/transport/terminal-missing`
 Problem supplies 502. Without a daemon terminal result usage remains unknown,
 never inferred from partial accounting. The client

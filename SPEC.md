@@ -1166,6 +1166,9 @@ Problem's title, detail, and optional recovery to stderr. A bridge that answered
 only connection-level failures receive the “no daemon” onboarding hints.
 {§cli-connection-onboarding}
 
+This boundary includes workspace creation before the interactive transport is
+bound; omitting `--workspace` must not turn the same failure into an uncaught exception.
+
 ### §8.2 Notice shape and transport
 
 ```ts

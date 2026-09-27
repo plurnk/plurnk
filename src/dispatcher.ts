@@ -1005,21 +1005,19 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // The transport owns the workspace binding; the TUI receives its name, not a fabricated database ID.
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
-        const w = await world();
-        const threadId = workerName ?? w;
-        const { settings } = await workspaceOptions();
-        // Workspace options ride the thread's first run (forwardedProps.plurnk): the
-        // same settings every AG-UI+ run sends on
-        // workspace.create, so a bridge TUI is configured identically. (When the world
-        // was daemon-minted above, it was created WITH these already; a re-send on the
-        // first run is idempotent — the workspace exists, options apply at creation only.)
-        const transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
-            workspace: w,
-            projectRoot,
-            settings,
-            descendants: true,   // {plurnk#108} — the TUI observes its delegation
-        });
+        let transport: BridgeTransport | undefined;
         try {
+            const w = await world();
+            const threadId = workerName ?? w;
+            const { settings } = await workspaceOptions();
+            // Creation options are idempotent on an existing workspace; the
+            // same public envelope is used whether the daemon named it or we did.
+            transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
+                workspace: w,
+                projectRoot,
+                settings,
+                descendants: true,   // {plurnk#108} — the TUI observes its delegation
+            });
             const { runTui } = await import("./tui.ts");
             await runTui(transport, { name: w }, {
                 modelSelector,
@@ -1046,7 +1044,7 @@ export const main = async (argv: string[]): Promise<void> => {
             process.exitCode = 0;
             return;
         } catch (cause) {
-            transport.shutdown();
+            transport?.shutdown();
             if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
             if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
             dieWith(1, clientRuntimeError(cause));

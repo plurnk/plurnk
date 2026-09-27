@@ -26,7 +26,7 @@ export interface Tui {
 interface Waiter { re: RegExp; since: number; resolve: (s: string) => void; timer: ReturnType<typeof setTimeout> }
 
 // Spawn `node bin/plurnk.js <args>` in a 100×30 pty against the given daemon URL.
-export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<string, string> = {}, cwd: string = process.cwd()): Tui => {
+export const spawnTui = (url: string, args: string[] = [], extraEnv: NodeJS.ProcessEnv = {}, cwd: string = process.cwd()): Tui => {
     const term = pty.spawn("node", [BIN, ...args], {
         name: "xterm-256color",
         cols: 100,
@@ -37,7 +37,11 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: Record<stri
         // pi-tui stretches its lone-ESC window to 100 ms when it sees SSH_CONNECTION/SSH_TTY — a
         // developer's own session, not the pty under test — which swallows an Esc typed 80 ms before
         // the next key (plurnk#25). Pin the window so the harness is deterministic anywhere.
-        env: { ...(process.env as Record<string, string>), PI_TUI_ESC_TIMEOUT: "10", PLURNK_HOST: new URL(url).hostname, PLURNK_PORT: new URL(url).port, PLURNK_AGUI_URL: "", NO_COLOR: "1", ...extraEnv },
+        // node-pty stringifies undefined, so omit explicit unsets from its environment.
+        env: Object.fromEntries(Object.entries({
+            ...process.env, PI_TUI_ESC_TIMEOUT: "10", PLURNK_HOST: new URL(url).hostname,
+            PLURNK_PORT: new URL(url).port, PLURNK_AGUI_URL: "", NO_COLOR: "1", ...extraEnv,
+        }).filter(([, value]) => value !== undefined)),
     });
 
     let buf = "";

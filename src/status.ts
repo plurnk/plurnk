@@ -292,9 +292,11 @@ export const renderStatusLine = (
     const parts: string[] = [];
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
     const running = value.lifecycle === "running";
-    const elapsed = running && context.runningSince !== null ? Math.max(0, (context.now ?? Date.now()) - context.runningSince) : 0;
-    if (context.tally.turns > 0 || running) parts.push(formatDuration(context.tally.wallMs + elapsed));
-    const accrued = running || value.lifecycle === "parked" || value.lifecycle === "queued" ? context.accrued ?? null : null;
+    const unfinished = running || value.lifecycle === "parked" || value.lifecycle === "queued";
+    const clockActive = unfinished && context.runningSince !== null;
+    const elapsed = clockActive ? Math.max(0, (context.now ?? Date.now()) - context.runningSince!) : 0;
+    if (context.tally.turns > 0 || running || clockActive) parts.push(formatDuration(context.tally.wallMs + elapsed));
+    const accrued = unfinished ? context.accrued ?? null : null;
     const combined = accrued === null ? context.tally : accrueTurnAccounting({
         costUsd: context.tally.costUsd,
         inputTokens: context.tally.inputTokens,

@@ -93,3 +93,118 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
 });
+
+test("[§cli-worker-status] the built TUI clock advances through parked and resumed AG-UI gauges", { timeout: 90_000 }, async (t) => {
+    const service = await locateDaemon();
+    assert.ok(service, "the composed test requires the sibling service");
+    const childRelease = Promise.withResolvers<void>();
+    const resumed = Promise.withResolvers<void>();
+    const parentRelease = Promise.withResolvers<void>();
+    const fixtureErrors: unknown[] = [];
+    t.after(() => assert.deepEqual(fixtureErrors, [], "the fixture must not hide provider or relay failures"));
+    let calls = 0;
+    const provider = createServer((request, response) => {
+        const serve = async (): Promise<void> => {
+            if (request.method !== "POST") { response.writeHead(200).end("{}"); return; }
+            for await (const _chunk of request) { /* consume the provider request */ }
+            const index = calls++;
+            assert.ok(index < 3, "one parent turn, one child turn and one resumed parent turn");
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            const frame = (delta: object, finish_reason: string | null = null) => response.write(`data: ${JSON.stringify({
+                id: `delegation-clock-${index}`, object: "chat.completion.chunk",
+                choices: [{ index: 0, delta, finish_reason }],
+            })}\n\n`);
+            frame({ role: "assistant", reasoning_content: `CLOCK_REASONING_${index}` });
+            if (index === 1) await childRelease.promise;
+            if (index === 2) { resumed.resolve(); await parentRelease.promise; }
+            const content = index === 0
+                ? "````WORK (worker://timer_child)\nReturn CHILD_CLOCK_RESULT.\n````\n\n````WAIT\n````"
+                : `\`\`\`\`KILL\n${index === 1 ? "CHILD_CLOCK_RESULT" : "PARENT_CLOCK_RESULT"}\n\`\`\`\``;
+            frame({ content });
+            frame({}, "stop");
+            response.end("data: [DONE]\n\n");
+        };
+        void serve().catch((error: Error) => { fixtureErrors.push(error); resumed.resolve(); response.destroy(error); });
+    });
+    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
+    t.after(() => {
+        childRelease.resolve(); parentRelease.resolve();
+        provider.closeAllConnections();
+        return new Promise<void>((resolve) => provider.close(() => resolve()));
+    });
+    const address = provider.address();
+    assert.ok(address !== null && typeof address === "object");
+    const daemon = await bootDaemon(service, { readyTimeoutMs: 30_000, extraEnv: {
+        PLURNK_MODEL: "clockfixture",
+        PLURNK_MODEL_clockfixture: "openai/clock-fixture",
+        OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+        OPENAI_API_KEY: "clock-fixture",
+        PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
+        PLURNK_PROVIDERS_EFFORT: "off",
+        PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
+    } });
+    t.after(() => daemon.cleanup());
+    t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
+    // The client clock consumes gauges, not inferred operation state. Control those
+    // frames independently of the service's lifecycle-publication work in #122.
+    let runResponse: ServerResponse | undefined;
+    const relay = createServer((request, response) => {
+        void (async () => {
+            let raw = "";
+            for await (const chunk of request) raw += chunk;
+            if (raw.length > 0 && JSON.parse(raw).messages?.length > 0) runResponse = response;
+            const upstream = await fetch(`${daemon.url}${request.url ?? "/"}`, {
+                method: request.method, headers: { "content-type": "application/json" },
+                ...(raw.length > 0 ? { body: raw } : {}),
+            });
+            response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" });
+            assert.ok(upstream.body);
+            const decoder = new TextDecoder();
+            let pending = "";
+            for await (const chunk of upstream.body) {
+                pending += decoder.decode(chunk, { stream: true });
+                const frames = pending.split("\n\n");
+                pending = frames.pop()!;
+                for (const frame of frames) response.write(`${frame}\n\n`);
+            }
+            response.end(pending + decoder.decode());
+        })().catch((error: Error) => { fixtureErrors.push(error); resumed.resolve(); response.destroy(error); });
+    });
+    await new Promise<void>((resolve) => relay.listen(0, "127.0.0.1", resolve));
+    t.after(() => { relay.closeAllConnections(); return new Promise<void>((resolve) => relay.close(() => resolve())); });
+    const relayAddress = relay.address();
+    assert.ok(relayAddress !== null && typeof relayAddress === "object");
+    const lifecycle = (value: "parked" | "running"): void => {
+        assert.ok(runResponse, "the prompt has an active AG-UI stream");
+        runResponse.write(`data: ${JSON.stringify({ type: "STATE_DELTA", delta: [
+            { op: "replace", path: "/plurnk/status/lifecycle", value },
+        ] })}\n\n`);
+    };
+    const tui = spawnTui(`http://127.0.0.1:${relayAddress.port}`, ["--workspace", "delegation-clock", "--worker", "main", "--project-root", ""], {
+        HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
+    }, daemon.workspace);
+    t.after(() => tui.kill());
+    await tui.waitFor(/plurnk.*\/help/);
+    tui.write("Delegate and wait for the result.\r");
+    await tui.waitFor(/WAIT[^\r\n]*🐜 1/);
+    lifecycle("parked");
+    const parked = /💤[^\r\n]* · (\d+(?:\.\d+)?s)\b/u;
+    const first = await tui.waitFor(parked);
+    const firstElapsed = parked.exec(first)?.[1];
+    assert.ok(firstElapsed, "a parked parent displays elapsed wall time");
+    const afterFirst = tui.output().length;
+    await tui.waitFor(new RegExp(`💤[^\\r\\n]* · (?!${firstElapsed.replaceAll(".", "\\.")}\\b)\\d+(?:\\.\\d+)?s\\b`, "u"), 5_000, afterFirst);
+    const afterWait = tui.output().length;
+    childRelease.resolve();
+    await resumed.promise;
+    lifecycle("running");
+    await tui.waitFor(/CLOCK_REASONING_2/, 10_000, afterWait);
+    assert.doesNotMatch(tui.output().slice(afterWait), /PARENT_CLOCK_RESULT/u, "resumption is visible before any new parent operation");
+    parentRelease.resolve();
+    await tui.waitFor(/PARENT_CLOCK_RESULT/);
+    await tui.waitFor(/⏹️[^\r\n]*clockfixture/);
+    assert.equal(calls, 3);
+    assert.doesNotMatch(tui.output(), /problem:|runtime:error/);
+    tui.write("/quit\r");
+    assert.equal(await tui.exited, 0);
+});

@@ -60,10 +60,26 @@ test("the authoritative status gauge projects indexing phases without a Notice r
     assert.equal(projectStatusGauge(gauge).activity, null);
 });
 
-test("queued tasks retain their lifecycle without accruing execution time", () => {
+test("[§cli-worker-status] queued work retains its lifecycle while elapsed wall time accrues", () => {
     const projected = projectStatusGauge({ lifecycle: "queued", model: null, loopId: 7, packetCount: 0, activity: null });
     assert.equal(projected.lifecycle, "queued");
-    assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳", "{plurnk#58} the glyph is the lifecycle");
+    assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳  · 3.2s");
+});
+
+test("[§cli-worker-status] waiting and resumption preserve one continuous wall clock", () => {
+    const tally = { ...EMPTY_TALLY, turns: 2, wallMs: 362_000 };
+    for (const lifecycle of ["queued", "running", "parked"] as const) {
+        const status = { ...running, lifecycle };
+        const context = { ...CONTEXT, tally, now: 62_000 };
+        assert.match(renderStatusLine(status, context), / · 7m03s(?: ·|$)/u, lifecycle);
+        assert.match(renderStatusLine(status, { ...context, now: 63_000 }), / · 7m04s(?: ·|$)/u, `${lifecycle} advances without an event`);
+    }
+    for (const lifecycle of ["idle", "completed", "cancelled", "failed"] as const) {
+        assert.match(renderStatusLine({ ...running, lifecycle }, { ...CONTEXT, tally }), / · 6m02s(?: ·|$)/u,
+            `${lifecycle} excludes any stale running clock`);
+    }
+    assert.doesNotMatch(renderStatusLine({ ...running, lifecycle: "parked" }, { ...CONTEXT, runningSince: null }), /\d(?:ms|s|m)/u,
+        "an observation without a known start must not invent elapsed time");
 });
 
 test("TerminalStatusLine coalesces routine progress and leaves non-TTY output silent", () => {

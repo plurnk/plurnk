@@ -135,7 +135,10 @@ worker is its sibling position, newest first, present only with siblings.
 
 Turns and wall time include the running loop — its packet count from the
 authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
-from the local clock, ticking once a second; token and cost totals combine concluded
+from the local clock, ticking once a second throughout an unfinished run, including
+queued and parked intervals. Waiting and resumption neither pause nor reset that clock;
+completion, cancellation or failure freezes it. A missing start time is not invented.
+Token and cost totals combine concluded
 loops with settled `engine:turn` accounting from the current observed run. Every
 completion beat refreshes them. The terminal loop aggregate replaces, rather than
 adds to, that run's accrual. Unknown usage remains unknown. The turns/wall group appears once a loop has

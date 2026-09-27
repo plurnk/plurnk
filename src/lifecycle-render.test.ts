@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
 import { extractSendBody, isResponseMessage, type LogEntryWire } from "./render.ts";
-import { renderDescendantBlock, renderLogEntry, renderSendBody } from "./render-message.ts";
+import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSendBody } from "./render-message.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 const row = (op: string, body: string | null, status: number, delivered = false): LogEntryWire => ({
@@ -59,6 +59,18 @@ test("[§cli-note-rendering] model notes retain asides and failure visibility; r
     assert.match(stripVTControlCharacters(renderLogEntry(failure, 80)), /Operation denied/u);
     assert.equal(isResponseMessage(failure), false);
     assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE Investigation\n    **Result**\n");
+});
+
+for (const columns of [24, 80]) test(`[§cli-outside-text] outside text renders as a model NOTE's block at ${columns} columns and is never speech`, () => {
+    const text = "# Findings\n\n**Important** result.\n\n- first item\n- second item\n\nA sentence long enough to wrap inside a narrow viewport without truncation.";
+    const outside = { coordinate: "alice-1-2", text, tokens: 31 };
+    const rendered = renderOutsideText(outside, columns);
+    assert.equal(rendered, renderLogEntry(row("NOTE", text, 200), columns), "one block, the model NOTE's own");
+    const plain = stripVTControlCharacters(rendered);
+    assert.match(plain, /^\nFindings/u, "blank lead line, body at column zero");
+    assert.doesNotMatch(plain, /\*\*Important\*\*|\/look|alice-1-2/u, "Markdown projected, no preview, no coordinate");
+    assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= columns), "the renderer respects the viewport");
+    assert.equal(isResponseMessage(row("NOTE", text, 200)), false, "the block it shares is not speech");
 });
 
 test("[§cli-note-rendering] observed child notes retain Markdown within their lineage indentation", () => {

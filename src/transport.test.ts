@@ -45,9 +45,10 @@ const loadConformanceKit = async (): Promise<ConformanceKit> => {
 };
 
 const collectingHandlers = () => {
-    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; terminated: unknown[]; status: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], terminated: [], status: [] };
+    const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; terminated: unknown[]; status: unknown[]; outside: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], terminated: [], status: [], outside: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
+        onOutside: (outside) => seen.outside.push(outside),
         onReasoning: (reasoning) => seen.reasoning.push(reasoning),
         onProposal: (p) => seen.proposals.push(p),
         onInteraction: (interaction) => seen.interactions.push(interaction),
@@ -175,6 +176,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                 if (seen.proposals.length > 0) families.add("loop/proposal");
                 if (seen.interactions.length > 0) families.add("loop/interaction");
                 if (seen.reasoning.length > 0) families.add("reasoning/event");
+                if (seen.outside.length > 0) families.add("outside/event");
                 if (seen.notices.length > 0) families.add("notice/event");
                 if (seen.problems.length > 0) families.add("problem/event");
                 if (seen.streams.some((value) => "result" in (value as object))) families.add("stream/concluded");
@@ -283,6 +285,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.write(frame({ type: "REASONING_MESSAGE_END", messageId: "1/1/2/SEND/reasoning" }));
         res.write(frame({ type: "REASONING_END", messageId: "1/1/2/SEND/reasoning" }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 5, op: "NOTE" } }));
+        res.write(frame({ type: "CUSTOM", name: "plurnk.outside", value: { coordinate: "alice-1-2", text: "Prose outside the fences.", tokens: 5 } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
@@ -295,6 +298,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         bt.subscribe(h);
         const t = await bt.run("largest planet?", { policy: REVIEW_POLICY }).done;
         assert.deepEqual(seen.entries, [{ id: 5, op: "NOTE" }]);
+        assert.deepEqual(seen.outside, [{ coordinate: "alice-1-2", text: "Prose outside the fences.", tokens: 5 }], "{§cli-outside-text} outside text un-projects to its own handler, never a row");
         assert.deepEqual(seen.reasoning, [
             { phase: "start", messageId: "1/1/2/SEND/reasoning" },
             { phase: "content", messageId: "1/1/2/SEND/reasoning", delta: "checked ", content: "checked " },

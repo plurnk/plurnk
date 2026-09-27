@@ -12,7 +12,7 @@ import process from "node:process";
 import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody, isResponseMessage } from "./render.ts";
-import type { LogEntryWire, LoopUsage } from "./render.ts";
+import type { LogEntryWire, LoopUsage, OutsideText } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import {
     ProblemError,
@@ -237,6 +237,9 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
                 if (turn !== null) io.onTurnAccounting?.(turn);
                 if (io.json) notices.push(notice);
                 else io.notice(notice);
+            } else if (name === "plurnk.outside") {
+                // {§cli-outside-text} — the turn's prose outside its fences is trace, never the answer.
+                if (!io.json) io.err(`${(value as OutsideText).text}\n`);
             } else if (name === "plurnk.stream") {
                 // plurnk.stream carries the whole lifecycle: a concluded payload has
                 // its exact result; a start/event payload has state. (json: streams aren't in

@@ -1101,6 +1101,21 @@
         "presentation"
       ]
     },
+    "outside/event": {
+      "posture": "native",
+      "evidence": [
+        "src/lifecycle-render.test.ts — rendered as a model NOTE's block, never speech",
+        "src/agui_cli.test.ts — stderr trace, absent from the run record's response",
+        "src/transport.test.ts — un-projected as plurnk.outside, never an entry"
+      ],
+      "dimensions": [
+        "admission",
+        "framing",
+        "projection",
+        "lifecycle",
+        "presentation"
+      ]
+    },
     "stream/event": {
       "posture": "native",
       "evidence": [

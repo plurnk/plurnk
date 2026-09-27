@@ -206,6 +206,35 @@ test("consumeCliRun: one-shot input requests return ordinary cancelled resumes, 
     assert.equal(r.problem, null, "a supported interruption is not a missing terminal outcome");
 });
 
+const outside = (text: string): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.outside", value: { coordinate: "alice-1-2", text, tokens: 7 } });
+
+test("[§cli-outside-text] consumeCliRun: plurnk.outside is trace on stderr, never the answer on stdout", async () => {
+    const { io, out, err } = sink();
+    const result = await consumeCliRun(stream([
+        outside("Thinking aloud **outside** the fences."),
+        terminalSend("Jupiter is the largest planet."),
+        terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io);
+    assert.equal(out.join(""), "Jupiter is the largest planet.\n", "stdout carries only the delivered answer");
+    assert.equal(err.join(""), "Thinking aloud **outside** the fences.\n[200] model SEND\n", "stderr traces the outside text verbatim, then the rows");
+    assert.equal(result.response, "Jupiter is the largest planet.", "response accounting is the delivered SEND's alone");
+});
+
+test("[§cli-outside-text] consumeCliRun --json: plurnk.outside is silent and absent from the run record's response", async () => {
+    const { io, out, err } = sink({ json: true });
+    const result = await consumeCliRun(stream([
+        outside("Thinking aloud outside the fences."),
+        terminalSend("Jupiter is the largest planet."),
+        terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io);
+    assert.equal(out.join(""), "", "json mode writes nothing during the run");
+    assert.equal(err.join(""), "", "json mode traces nothing");
+    assert.equal(result.response, "Jupiter is the largest planet.", "the record's response excludes the outside text");
+    assert.deepEqual(result.entries.map((entry) => entry.op), ["SEND"], "outside text is not an entry");
+});
+
 test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice sink; generic AG-UI events are ignored", async () => {
     const notices: unknown[] = [];
     const { io, out, err } = sink({ notice: (notice) => notices.push(notice) });

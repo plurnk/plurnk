@@ -1,7 +1,7 @@
 // The TUI's AG-UI transport. Model and action runs share presentation handlers,
 // not stream state or interrupt ownership ({§cli-active-command-admission}).
 
-import type { Descendant } from "./render.ts";
+import type { Descendant, OutsideText } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import type { ProposalParams } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -54,6 +54,7 @@ export interface RunHandlers {
     }) => void;
     onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
     onDescendant?: (descendant: Descendant) => void;   // {plurnk#108} — a delegation observation's introduction
+    onOutside: (outside: OutsideText) => void;   // {§cli-outside-text} — the turn's prose outside its fences
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
     onQuiesced?: (payload: unknown) => void;
@@ -518,6 +519,7 @@ export class BridgeTransport implements Transport {
         else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);
+        else if (name === "plurnk.outside") this.#h?.onOutside(value as OutsideText);
         else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));
         else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
         else if (name === "plurnk.terminated") {

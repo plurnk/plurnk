@@ -121,6 +121,15 @@ export interface Descendant {
     readonly depth: number;
 }
 
+// {§cli-outside-text} — a turn's text outside its fences as the daemon projects it once per turn
+// (plurnk-service `{§agui-outside-text}`): the log coordinate `<worker>-<loop>-<turn>`, the prose
+// verbatim, and its packet weight.
+export interface OutsideText {
+    readonly coordinate: string;
+    readonly text: string;
+    readonly tokens: number;
+}
+
 // A descendant's block steps in one LINEAGE_OFFSET per generation; the first line carries its name.
 export const indentDescendant = (text: string, depth: number): string => {
     const offset = LINEAGE_OFFSET.repeat(depth);

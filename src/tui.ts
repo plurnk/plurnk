@@ -23,7 +23,7 @@ import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } fr
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
-import { renderDescendantBlock, renderLogEntry } from "./render-message.ts";
+import { renderDescendantBlock, renderLogEntry, renderOutsideText } from "./render-message.ts";
 import { indentDescendant, lineageWorker, markDescendant, type Descendant } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
@@ -1050,6 +1050,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (isResponseMessage(entry, transport.threadId())) surface.addResponse(entry);
             else printAbove(rendered);
         },
+        // {§cli-outside-text} — the turn's prose outside its fences, a NOTE's block in the waterfall.
+        onOutside: (outside) => printAbove(renderOutsideText(outside, surface.columns || 80)),
         onNotice: handleNotice,
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {

@@ -50,6 +50,8 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
         PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
         PLURNK_PROVIDERS_EFFORT: "off",
         PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
+        // The fixture bills round token counts for the gauge assertions, not real usage.
+        PLURNK_PROVIDERS_DROPPED_OUTPUT_TOKENS: "0",
     } });
     t.after(() => daemon.cleanup());
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });

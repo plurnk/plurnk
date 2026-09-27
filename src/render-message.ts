@@ -5,7 +5,7 @@ import ModelText from "./model-text.ts";
 import {
     entryAside, extractSendBody, isArrivalEntry, isResponseMessage,
     LINEAGE_OFFSET, lineageWorker, markDescendant, objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
-    type LogEntryWire, type RowOverride,
+    type LogEntryWire, type OutsideText, type RowOverride,
 } from "./render.ts";
 
 // Rich interpretation belongs to the TUI, never shared CLI extraction.
@@ -32,10 +32,14 @@ const leadLine = (entry: LogEntryWire, detail: boolean): string => {
 
 // Full model text, whether a delivered reply or a NOTE ({§cli-note-rendering}). Presentation
 // does not imply delivery: reply accounting remains isResponseMessage's responsibility.
-const renderModelText = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string => {
-    const lead = leadLine(entry, TurnDisposition.isOp(entry.op));
-    return body.length === 0 ? lead : `${lead}\n${body}`;
-};
+const modelBlock = (lead: string, body: string): string => body.length === 0 ? lead : `${lead}\n${body}`;
+const renderModelText = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string =>
+    modelBlock(leadLine(entry, TurnDisposition.isOp(entry.op)), body);
+
+// Outside text ({§cli-outside-text}): the turn's prose outside its fences, one block exactly as a
+// model NOTE's — blank lead, full Markdown at the width — and never speech.
+export const renderOutsideText = ({ text }: OutsideText, columns: number): string =>
+    modelBlock("", renderSendBody({ body: { raw: text } }, Math.max(1, columns)));
 
 // A block's body previewed ({plurnk#107}): the plain text, four columns in and dim, the knob's
 // line count. No Markdown pass: a preview is quiet by construction.

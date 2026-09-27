@@ -1,8 +1,54 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
+
+const statusRelay = async (t: TestContext, url: string, hooks: {
+    onPrompt?: (response: ServerResponse) => void;
+    afterFrame?: (frame: string) => Promise<void>;
+} = {}): Promise<string> => {
+    const failures: unknown[] = [];
+    const shutdown = new AbortController();
+    const relay = createServer((request, response) => {
+        void (async () => {
+            let raw = "";
+            for await (const chunk of request) raw += chunk;
+            if (raw.length > 0 && JSON.parse(raw).messages?.length > 0) hooks.onPrompt?.(response);
+            const upstream = await fetch(`${url}${request.url ?? "/"}`, {
+                method: request.method, headers: { "content-type": "application/json" },
+                ...(raw.length > 0 ? { body: raw } : {}), signal: shutdown.signal,
+            });
+            response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" });
+            assert.ok(upstream.body);
+            const decoder = new TextDecoder();
+            let pending = "";
+            for await (const chunk of upstream.body) {
+                pending += decoder.decode(chunk, { stream: true });
+                const frames = pending.split("\n\n");
+                pending = frames.pop()!;
+                for (const frame of frames) {
+                    response.write(`${frame}\n\n`);
+                    await hooks.afterFrame?.(frame);
+                }
+            }
+            response.end(pending + decoder.decode());
+        })().catch((error: Error) => {
+            if (!shutdown.signal.aborted) failures.push(error);
+            response.destroy(error);
+        });
+    });
+    await new Promise<void>((resolve) => relay.listen(0, "127.0.0.1", resolve));
+    t.after(async () => {
+        shutdown.abort();
+        relay.closeAllConnections();
+        await new Promise<void>((resolve) => relay.close(() => resolve()));
+        assert.deepEqual(failures, [], "the status relay must preserve unexpected failures");
+    });
+    const address = relay.address();
+    assert.ok(address !== null && typeof address === "object");
+    return `http://127.0.0.1:${address.port}`;
+};
 
 test("[§cli-worker-status] the built TUI accrues each turn while reasoning is live, then settles each loop once", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
@@ -55,7 +101,18 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     } });
     t.after(() => daemon.cleanup());
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
-    const tui = spawnTui(daemon.url, ["--workspace", "live-status", "--worker", "main", "--project-root", ""], {
+    const findRendered = Promise.withResolvers<void>();
+    t.after(() => findRendered.resolve());
+    // Hold subsequent wire events until this transient activity has been observed;
+    // the next turn can otherwise replace it before pi-tui's coalesced redraw.
+    const url = await statusRelay(t, daemon.url, { afterFrame: async (frame) => {
+        if (!frame.startsWith("data: ")) return;
+        const event = JSON.parse(frame.slice(6));
+        if (event.name === "plurnk.row" && event.value?.origin === "model" && event.value.op === "FIND") {
+            await findRendered.promise;
+        }
+    } });
+    const tui = spawnTui(url, ["--workspace", "live-status", "--worker", "main", "--project-root", ""], {
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
@@ -68,9 +125,10 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     const first = tui.output().length;
     release[0].resolve();
     await incoming[1].promise;
-    await tui.waitFor(/LIVE_REASONING_2/);
     // {plurnk#91} — and when it works, the status names the operation that just ran.
     await tui.waitFor(/⌛︎[^\r\n]*FIND worker:\/\/\/\*/, 10_000, first);
+    findRendered.resolve();
+    await tui.waitFor(/LIVE_REASONING_2/);
     await tui.waitFor(/⌛︎[^\r\n]*↓1k ↑100/, 10_000, first);
     assert.match(tui.output().slice(first), /Continuing the work\./, "the first delivered message remains in scrollback as the next reasoning streams");
     const command = tui.output().length;
@@ -148,39 +206,14 @@ test("[§cli-worker-status] the built TUI clock advances through parked and resu
     // The client clock consumes gauges, not inferred operation state. Control those
     // frames independently of the service's lifecycle-publication work in #122.
     let runResponse: ServerResponse | undefined;
-    const relay = createServer((request, response) => {
-        void (async () => {
-            let raw = "";
-            for await (const chunk of request) raw += chunk;
-            if (raw.length > 0 && JSON.parse(raw).messages?.length > 0) runResponse = response;
-            const upstream = await fetch(`${daemon.url}${request.url ?? "/"}`, {
-                method: request.method, headers: { "content-type": "application/json" },
-                ...(raw.length > 0 ? { body: raw } : {}),
-            });
-            response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" });
-            assert.ok(upstream.body);
-            const decoder = new TextDecoder();
-            let pending = "";
-            for await (const chunk of upstream.body) {
-                pending += decoder.decode(chunk, { stream: true });
-                const frames = pending.split("\n\n");
-                pending = frames.pop()!;
-                for (const frame of frames) response.write(`${frame}\n\n`);
-            }
-            response.end(pending + decoder.decode());
-        })().catch((error: Error) => { fixtureErrors.push(error); resumed.resolve(); response.destroy(error); });
-    });
-    await new Promise<void>((resolve) => relay.listen(0, "127.0.0.1", resolve));
-    t.after(() => { relay.closeAllConnections(); return new Promise<void>((resolve) => relay.close(() => resolve())); });
-    const relayAddress = relay.address();
-    assert.ok(relayAddress !== null && typeof relayAddress === "object");
+    const url = await statusRelay(t, daemon.url, { onPrompt: (response) => { runResponse = response; } });
     const lifecycle = (value: "parked" | "running"): void => {
         assert.ok(runResponse, "the prompt has an active AG-UI stream");
         runResponse.write(`data: ${JSON.stringify({ type: "STATE_DELTA", delta: [
             { op: "replace", path: "/plurnk/status/lifecycle", value },
         ] })}\n\n`);
     };
-    const tui = spawnTui(`http://127.0.0.1:${relayAddress.port}`, ["--workspace", "delegation-clock", "--worker", "main", "--project-root", ""], {
+    const tui = spawnTui(url, ["--workspace", "delegation-clock", "--worker", "main", "--project-root", ""], {
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());

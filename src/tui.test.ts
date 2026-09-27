@@ -236,9 +236,9 @@ test("buildHeader: no client model and no resolvable active → honest fallback"
     assert.match(h, /model: \(daemon default\)/);
 });
 
-test("buildHeader: yolo on → shows 'yolo: on'; off/unset → no yolo segment (review is the default)", () => {
-    assert.match(buildHeader({ workspaceName: "sess", yolo: true }), /· yolo: on ·/);
-    assert.doesNotMatch(buildHeader({ workspaceName: "sess", yolo: false }), /yolo/);
+test("buildHeader: explicit review is named; the default YOLO mode adds no header segment", () => {
+    assert.doesNotMatch(buildHeader({ workspaceName: "sess", yolo: true }), /yolo/);
+    assert.match(buildHeader({ workspaceName: "sess", yolo: false }), /· yolo: off ·/);
     assert.doesNotMatch(buildHeader({ workspaceName: "sess" }), /yolo/);
 });
 

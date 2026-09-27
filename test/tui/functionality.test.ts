@@ -59,7 +59,7 @@ describe("TUI Functionality dogfood", () => {
         if (daemon === null) { t.skip("service checkout with Functionality fixtures is not reachable"); return; }
         const project = await mkdtemp(join(scratch, "project-"));
         // This drives a model that EXECUTES; the subject is the lifecycle grammar, not consent.
-        // Review ships, so a session that means to run without it says so.
+        // Pin consent independently of the operator's environment.
         const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "1" }, project);
         try {
             await tui.waitFor(/plurnk.*\/help/);

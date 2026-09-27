@@ -936,7 +936,7 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 
 ### §6.3 `--yolo` / `PLURNK_CLIENT_YOLO` {§cli-yolo-plurnkyolo}
 
-Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. When on, the proposal handler skips the menu and resumes the interrupt with `{decision: "accept"}`. The proposal still crosses the ordinary client-review boundary. A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
+Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. The startup header names explicit review as `yolo: off`; the default adds no header segment. When on, the proposal handler skips the menu and resumes the interrupt with `{decision: "accept"}`. The proposal still crosses the ordinary client-review boundary. A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
 
 This is distinct from a loop that settles its own proposals (`--proposals accept` or `reject`, or an unattended loop), where proposal authority never crosses into client review.
 
@@ -946,7 +946,7 @@ When stdin is not a TTY and yolo is off, the user chose review and the client ha
 
 The one-shot client cancels input-request interrupts through the standard AG-UI resume contract because it has no interactive form. It does not alter workspace capabilities or invent an answer; the worker receives the cancellation and can continue.
 
-Use cases this protects: `plurnk "X" > answer.txt`, `plurnk "X" | tool`, scripted invocations with `PLURNK_CLIENT_YOLO=0`.
+Redirection alone does not request review. This applies when review is explicitly selected, such as `PLURNK_CLIENT_YOLO=0 plurnk "X" > answer.txt` or a prompt starting with `?`.
 
 ### §6.5 Questions {§cli-question-forms}
 

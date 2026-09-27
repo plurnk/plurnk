@@ -40,10 +40,10 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     t.after(() => daemon.cleanup());
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
     const tui = spawnTui(daemon.url, ["--workspace", "active-controls", "--worker", "main", "--project-root", "", "--max-turns", "3"], {
-        HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
+        HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "", PLURNK_CLIENT_YOLO: "0",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    await tui.waitFor(/plurnk.*\/help/);
+    await tui.waitFor(/plurnk[\s\S]*\/help/);
     tui.write("Keep the inference open.\r");
     await incoming.promise;
     await tui.waitFor(/controlled inference stream is open/);
@@ -69,7 +69,7 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     await tui.waitFor(/(?:conversation.*attached[\s\S]*){2}/);
 
     tui.write("! printf '\\141\\143\\164\\151\\157\\156\\055\\157\\153'\r");
-    // Review ships, so even the operator's own `!` command is shown before it runs. Answering it is
+    // In review mode, even the operator's own `!` command is shown before it runs. Answering it is
     // part of "the command remains available": the surface has to work, not just be bypassed.
     await tui.waitFor(/── proposal/);
     tui.write("a");

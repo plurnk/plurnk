@@ -305,9 +305,7 @@ export const buildHeader = (opts: {
     const effort = opts.effort === undefined || opts.effort === null
         ? ""
         : ` · effort: ${opts.effort}`;
-    // The header names the non-default. Review is what ships, so the header is silent about it and
-    // calls out the session that turned it off — the mode where nobody sees the question.
-    const yolo = opts.yolo === true ? " · yolo: on" : "";
+    const yolo = opts.yolo === false ? " · yolo: off" : "";
     return `${head} · workspace: ${opts.workspaceName}${worker} · model: ${modelLabel}${effort}${yolo} · /help`;
 };
 

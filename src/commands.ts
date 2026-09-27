@@ -92,7 +92,7 @@ export const COMMANDS = [
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
     { name: "effort", usage: "/effort [policy]", summary: "Inspect or select reasoning effort.", group: "policy" },
     { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect the capability cascade or set the workspace policy.", group: "policy" },
-    { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept (Shift-Tab). Off ships.", group: "policy" },
+    { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept (Shift-Tab). On by default.", group: "policy" },
 
     { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace", rebinds: true },
     { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace", rebinds: true },

@@ -46,9 +46,9 @@ before(async () => {
 after(async () => { await daemon?.cleanup(); await endpoint?.close(); });
 
 describe("TUI verbs + input (model-independent; was HITL-only)", () => {
-    test("/yolo and Shift-Tab both toggle local auto-accept on then off (review ships)", async (t) => {
+    test("/yolo and Shift-Tab both toggle local auto-accept on then off from explicit review", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "0" });
         try {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("/yolo\r"); await tui.waitFor(/yolo: ON/);

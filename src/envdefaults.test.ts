@@ -26,3 +26,17 @@ test("the shipped file exists, declares ONLY the PLURNK_CLIENT_* prefix, and eve
         assert.match(key, /^PLURNK_CLIENT_/, `one owner per key — '${key}' is not ours to default`);
     }
 });
+
+test("[§cli-yolo-plurnkyolo] the packaged default enables YOLO without overriding explicit review", async () => {
+    const defaults = parseDefaults(await readFile(DEFAULTS_PATH, "utf8"));
+    const fresh: Record<string, string> = {};
+    applyFloor(defaults, fresh);
+    assert.equal(fresh.PLURNK_CLIENT_YOLO, "1");
+    const review = { PLURNK_CLIENT_YOLO: "0" };
+    applyFloor(defaults, review);
+    assert.equal(review.PLURNK_CLIENT_YOLO, "0");
+    for (const file of ["README.md", "SPEC.md"]) {
+        const doc = await readFile(new URL(`../${file}`, import.meta.url), "utf8");
+        assert.match(doc, new RegExp(`default[^\\n]*PLURNK_CLIENT_YOLO=${defaults.PLURNK_CLIENT_YOLO}`), file);
+    }
+});

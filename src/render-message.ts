@@ -59,8 +59,8 @@ export const renderDescendantBlock = (entry: LogEntryWire, name: string, depth: 
         : renderOperationBlock(entry, override, true), name, depth);
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
-// its outcome, an arrival its sender and block, a conversation reply its whole block, every
-// other operation its literal row with its body previewed beneath ({plurnk#104}). Model
+// its outcome, an arrival its sender and block, a delivered conversation reply its whole block
+// ({§cli-broadcast-send-rendering}), every other operation, an undelivered SEND included, its literal row with its body previewed beneath ({plurnk#104}). Model
 // NOTEs use the same Markdown projection as replies without becoming delivered messages.
 export const renderLogEntry = (
     entry: LogEntryWire,
@@ -77,6 +77,5 @@ export const renderLogEntry = (
         return renderOperationBlock(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) }, true);
     }
     if (isArrivalEntry(entry)) return renderArrival(entry);
-    if (entry.op === "SEND" && entry.scheme === null && entry.pathname === null) return renderModelText(entry, columns);
     return renderOperationBlock(entry, override, true);
 };

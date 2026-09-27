@@ -97,3 +97,17 @@ test("an empty WAIT displays its actual continuation detail without manufacturin
     assert.equal(isResponseMessage(entry), false);
     assert.match(stripVTControlCharacters(renderLogEntry(entry)), /WAIT.*Nothing is in flight\. Continuing\./);
 });
+
+test("{§cli-broadcast-send-rendering} an undelivered SEND renders as an operation, targetless or not", () => {
+    const heading = (entry: LogEntryWire): string => stripVTControlCharacters(renderLogEntry(entry, 80)).split("\n")[0]!;
+    const delivered = row("SEND", "Delivered.", 200, true);
+    assert.equal(stripVTControlCharacters(renderLogEntry(delivered, 80)), "\nDelivered.", "a delivered targetless reply is a message block");
+    const undelivered = row("SEND", "Not delivered.", 200);
+    const failed = { ...row("SEND", "Refused.", 409), rx: { status: 409, problem: { title: "Refused" } } };
+    const inherited = { ...delivered, inherited_history: 1 };
+    const unrelated = { ...delivered, scheme: "worker", pathname: "/child", rx: { answers: ["worker://child/?message=01234567"] } };
+    for (const [name, entry] of Object.entries({ undelivered, failed, inherited, unrelated })) {
+        assert.equal(isResponseMessage(entry), false, `${name} is not speech`);
+        assert.match(heading(entry), /^SEND\b/, `${name} keeps its operation heading`);
+    }
+});

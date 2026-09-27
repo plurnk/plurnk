@@ -347,11 +347,11 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
 
 // ─── SEND blocks ({§cli-broadcast-send-rendering}) ─────
 
-test("[§cli-broadcast-send-rendering] a delivered message is its body under a blank lead line; a failed one leads with its outcome", () => {
+test("[§cli-broadcast-send-rendering] a delivered message is its body under a blank lead line; a failed one is an operation", () => {
     assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "\nParis.", "no keyword: a blank line, then the body at column zero");
     const block = renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
     assert.deepEqual(block.split("\n"), ["the answer", "line one", "line two"], "the aside takes the lead line; body lines stay at column zero");
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "Recipient unknown\nUndelivered.", "a failed message leads with its Problem title");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown\n    Undelivered.\n", "a failed message is an operation carrying its Problem title");
     assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "", "an empty message is the blank lead line alone");
 });
 

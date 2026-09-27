@@ -807,15 +807,16 @@ A successful SEND or accepted parameterless KILL whose receipt addresses the cur
 
 TUI mode contract:
 
-- Lead line: no keyword and no glyph. A final KILL answer's lead line stands blank, as a SEND's does where `SEND` was; a failed message puts its Problem title there in red; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
+- Lead line: no keyword and no glyph. A final KILL answer's lead line stands blank, as a SEND's does where `SEND` was; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal and renders as just the lead line.
 
 A delivered conversation response is plain: its Markdown carries the only emphasis
 (headings, `**strong**`, table heads), and the human's own line — bold, in the human's
-colour, spaced (§5.1) — is what sets the two voices apart; failed, unrelated, and
-inherited messages are the same plain block. `NO_COLOR` removes colour and emphasis
+colour, spaced (§5.1) — is what sets the two voices apart. Delivery alone makes a message
+block: a failed, unrelated, inherited or undelivered SEND, targetless or not, is an Other
+SEND (§5.1.2). `NO_COLOR` removes colour and emphasis
 while preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
 
 CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messages use stdout (§2).

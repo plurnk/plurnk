@@ -66,6 +66,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         rpc: async <T>(method: string): Promise<T> => {
             calls.push(method);
             if (method === "providers.list") return { aliases: [] } as T;
+            if (method === "worker.effort.get") return { effort: null, source: "default", supportedEfforts: [] } as T;
             if (method === "worker.model.get") throw new Error("model control plane unavailable");
             throw new Error(`unexpected RPC ${method}`);
         },
@@ -86,7 +87,8 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         runTui(transport, { name: "world" }, { yolo: false, loopPolicy: REVIEW_POLICY }),
         /model control plane unavailable/,
     );
-    assert.deepEqual(calls, ["providers.list", "worker.model.get"]);
+    // {§cli-identity-effort} — one readback path: effort before the final route projection.
+    assert.deepEqual(calls, ["providers.list", "worker.effort.get", "worker.model.get"]);
 });
 
 test("{§worker-model-selection}: TUI admission rejects a malformed durable model projection", async () => {
@@ -505,25 +507,79 @@ test("handleVerb /yolo → toggles opts.yolo and reports", async () => {
     assert.equal(ctx.opts.yolo, false);
 });
 
-test("{§worker-model-selection}: handleVerb /model sets server-side and mirrors the resolved spec; bare /model shows it", async () => {
+test("{§worker-model-selection}{§cli-identity-effort}: handleVerb /model persists server-side, then re-reads the routes; bare /model shows the readback", async () => {
+    const readback = { alias: "gpt", provider: "openai", model: "gpt-4", effort: "adaptive", effortSource: "default" };
     const ctx = makeCtx({
         "worker.model.set": { alias: "gpt", provider: "openai", model: "gpt-4" },
-        "worker.effort.get": { policy: "adaptive", supportedEfforts: ["off", "adaptive", "high"] },
+        "worker.effort.get": { effort: "adaptive", source: "default", supportedEfforts: ["off", "adaptive", "high"] },
+        "worker.model.get": { model: readback, spawnModel: null },
     });
     await handleVerb("/model gpt", ctx);
+    assert.deepEqual(ctx.calls.map((c) => c.method), ["worker.model.set", "worker.effort.get", "worker.model.get"], "effort is read before the final route projection");
     assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { selector: "gpt" } });
-    assert.deepEqual(ctx.calls[1], { method: "worker.effort.get", params: undefined });
-    assert.deepEqual(ctx.model, { alias: "gpt", provider: "openai", model: "gpt-4" }, "the server-resolved spec is the display truth");
-    assert.deepEqual(ctx.effort.supportedEfforts, ["off", "adaptive", "high"], "model changes refresh daemon-supported reasoning completion");
+    assert.deepEqual(ctx.model, readback, "the daemon's re-read route is the identity, never the setter's echo");
+    assert.equal(resolvedModelLabel(ctx.model as ResolvedModelSpec), "gpt(adaptive)");
+    assert.deepEqual(ctx.effort.supportedEfforts, ["off", "adaptive", "high"], "model changes refresh daemon-supported effort completion");
     await handleVerb("/model", ctx);
     assert.match(ctx.out.join(""), /model: gpt/);
+});
+
+const POLICY_FIXTURE: { model: ResolvedModelSpec; spawnModel: ResolvedModelSpec; effort: VerbContext["effort"] } = {
+    model: { alias: "clienttest", provider: "openai", model: "client-test", effort: "adaptive", effortSource: "default" },
+    spawnModel: { alias: "clientfirst", provider: "openai", model: "client-first", effort: "adaptive", effortSource: "default" },
+    effort: { effort: "adaptive", source: "default", supportedEfforts: ["off", "adaptive", "high"] },
+};
+const seedPolicy = (ctx: VerbContext): void => {
+    ctx.setModel(POLICY_FIXTURE.model);
+    ctx.setSpawnModel(POLICY_FIXTURE.spawnModel);
+    ctx.setEffort(POLICY_FIXTURE.effort);
+};
+
+test("[§cli-identity-effort] handleVerb /effort <supported> re-reads both routes: parent, child, choices and the rendered identity agree with the daemon", async () => {
+    const chosen = { effort: "high", source: "explicit" as const, supportedEfforts: ["off", "adaptive", "high"] };
+    const parent: ResolvedModelSpec = { ...POLICY_FIXTURE.model, effort: "high", effortSource: "explicit" };
+    const child: ResolvedModelSpec = { ...POLICY_FIXTURE.spawnModel, effort: "high", effortSource: "explicit" };
+    const ctx = makeCtx({
+        "worker.effort.set": chosen,
+        "worker.effort.get": chosen,
+        "worker.model.get": { model: parent, spawnModel: child },
+    });
+    seedPolicy(ctx);
+    assert.equal(resolvedModelLabel(ctx.model as ResolvedModelSpec), "clienttest(adaptive)");
+    await handleVerb("/effort high", ctx);
+    assert.deepEqual(ctx.calls.map((c) => c.method), ["worker.effort.set", "worker.effort.get", "worker.model.get"], "one readback after the persisted change, effort before the route projection");
+    assert.deepEqual(ctx.model, parent, "the parent route is the daemon's readback");
+    assert.deepEqual(ctx.spawnModel, child, "the child route is the daemon's readback");
+    assert.deepEqual(ctx.effort, chosen);
+    assert.equal(resolvedModelLabel(ctx.model as ResolvedModelSpec), "clienttest[high]", "the identity renders the chosen effort");
+    assert.equal(resolvedModelLabel(ctx.spawnModel as ResolvedModelSpec), "clientfirst[high]");
+    assert.match(ctx.out.join(""), /effort: high \(chosen with \/effort\)/);
+});
+
+test("[§cli-identity-effort] a persisted /effort whose readback fails is reported as such, never as a refusal or a rollback", async () => {
+    const chosen = { effort: "high", source: "explicit" as const, supportedEfforts: ["off", "adaptive", "high"] };
+    const ctx = makeCtx({
+        "worker.effort.set": chosen,
+        "worker.effort.get": chosen,
+        "worker.model.get": () => { throw new Error("model control plane unavailable"); },
+    });
+    seedPolicy(ctx);
+    await handleVerb("/effort high", ctx);
+    assert.deepEqual(ctx.calls.map((c) => c.method), ["worker.effort.set", "worker.effort.get", "worker.model.get"]);
+    assert.deepEqual(ctx.model, POLICY_FIXTURE.model, "an unread route is not fabricated from the setter's echo");
+    assert.deepEqual(ctx.effort, POLICY_FIXTURE.effort, "the readback is applied whole or not at all");
+    assert.equal(resolvedModelLabel(ctx.model as ResolvedModelSpec), "clienttest(adaptive)");
+    const out = ctx.out.join("");
+    assert.match(out, /effort: high \(chosen with \/effort\)/, "the daemon's acceptance is stated");
+    assert.match(out, /policy readback failed[\s\S]*model control plane unavailable/, "the failed readback is named as a readback");
 });
 
 test("{§worker-model-selection}: an exact route remains alias-free in control and display", async () => {
     const route = { provider: "google", model: "gemini-3-flash" };
     const ctx = makeCtx({
         "worker.model.set": route,
-        "worker.effort.get": { policy: "adaptive", supportedEfforts: ["off", "adaptive", "high"] },
+        "worker.effort.get": { effort: "adaptive", source: "default", supportedEfforts: ["off", "adaptive", "high"] },
+        "worker.model.get": { model: route, spawnModel: null },
     });
     await handleVerb("/model google/gemini-3-flash", ctx);
     assert.deepEqual(ctx.calls[0], {
@@ -537,44 +593,62 @@ test("{§worker-model-selection}: an exact route remains alias-free in control a
 });
 
 test("handleVerb /effort inspects and sets the durable daemon effort", async () => {
+    let durable = { effort: "adaptive", source: "default" as const, supportedEfforts: ["off", "adaptive", "high"] };
     const ctx = makeCtx({
-        "worker.effort.get": { effort: "adaptive", source: "default", supportedEfforts: ["off", "adaptive", "high"] },
-        "worker.effort.set": { effort: "high", source: "explicit", supportedEfforts: ["off", "adaptive", "high"] },
+        "worker.effort.get": () => durable,
+        "worker.effort.set": () => { durable = { ...durable, effort: "high", source: "explicit" as "default" }; return durable; },
     });
     await handleVerb("/effort", ctx);
     await handleVerb("/effort high", ctx);
     assert.deepEqual(ctx.calls, [
         { method: "worker.effort.get", params: undefined },
         { method: "worker.effort.set", params: { effort: "high" } },
-    ]);
+        { method: "worker.effort.get", params: undefined },
+        { method: "worker.model.get", params: undefined },
+    ], "an inspection applies its read; a change is read back");
     assert.equal(ctx.effort.effort, "high");
     assert.match(ctx.out.join(""), /effort: adaptive/);
     assert.match(ctx.out.join(""), /effort: high/);
     assert.match(ctx.out.join(""), /supported: off, adaptive, high/);
 });
 
-test("handleVerb /effort preserves a daemon rejection", async () => {
+test("[§cli-identity-effort] handleVerb /effort preserves a daemon rejection: no readback, no requested value shown as accepted", async () => {
     const ctx = makeCtx({
         "worker.effort.set": () => { throw new Error("Effort 'medium' is not supported by xai/grok-4.6."); },
     });
+    seedPolicy(ctx);
     await handleVerb("/effort medium", ctx);
-    assert.equal(ctx.effort.effort, null);
-    assert.match(ctx.out.join(""), /Effort 'medium' is not supported/);
+    assert.deepEqual(ctx.calls.map((c) => c.method), ["worker.effort.set"], "a refused mutation is not read back");
+    assert.deepEqual(ctx.effort, POLICY_FIXTURE.effort);
+    assert.equal(resolvedModelLabel(ctx.model as ResolvedModelSpec), "clienttest(adaptive)");
+    const out = ctx.out.join("");
+    assert.match(out, /Effort 'medium' is not supported/);
+    assert.doesNotMatch(out, /effort: medium/);
 });
 
-test("[§cli-child-provider-selection]{§worker-model-selection}: handleVerb /child persists the override and inherit clears it", async () => {
+test("[§cli-child-provider-selection]{§worker-model-selection}: handleVerb /child persists the override, re-reads both routes, and inherit clears it", async () => {
+    let spawn: ResolvedModelSpec | null = null;
     const ctx = makeCtx({
-        "worker.child.set": (p: unknown) => (p as { selector: string | null }).selector === null
-            ? null
-            : { alias: "fireslow", provider: "fireworks", model: "deepseek" },
+        "worker.child.set": (p: unknown) => {
+            spawn = (p as { selector: string | null }).selector === null
+                ? null
+                : { alias: "fireslow", provider: "fireworks", model: "deepseek", effort: "adaptive", effortSource: "default" };
+            return spawn;
+        },
+        "worker.model.get": () => ({ model: POLICY_FIXTURE.model, spawnModel: spawn }),
+        "worker.effort.get": POLICY_FIXTURE.effort,
     });
     await handleVerb("/child fireslow", ctx);
+    assert.deepEqual(ctx.calls.map((c) => c.method), ["worker.child.set", "worker.effort.get", "worker.model.get"]);
     assert.deepEqual(ctx.calls[0], { method: "worker.child.set", params: { selector: "fireslow" } });
     assert.equal(ctx.spawnModel?.alias, "fireslow");
+    assert.equal(resolvedModelLabel(ctx.spawnModel as ResolvedModelSpec), "fireslow(adaptive)");
+    assert.deepEqual(ctx.model, POLICY_FIXTURE.model, "the parent route rides the same readback");
     await handleVerb("/child", ctx);
     assert.match(ctx.out.join(""), /child: fireslow/);
     await handleVerb("/child inherit", ctx);
-    assert.deepEqual(ctx.calls[1], { method: "worker.child.set", params: { selector: null } });
+    assert.deepEqual(ctx.calls[3], { method: "worker.child.set", params: { selector: null } });
+    assert.deepEqual(ctx.calls.slice(3).map((c) => c.method), ["worker.child.set", "worker.effort.get", "worker.model.get"], "inherit is a durable change and is read back too");
     assert.equal(ctx.spawnModel, null);
     assert.match(ctx.out.join(""), /child: inherit/);
 });

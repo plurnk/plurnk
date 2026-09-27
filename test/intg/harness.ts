@@ -8,6 +8,7 @@
 // whole suite cleanly. This keeps `npm test` from hard-failing downstream.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdtemp, mkdir, rm, access, writeFile, constants as fsConstants } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
@@ -173,4 +174,48 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
     };
 
     return { url, workspace, home, pid: child.pid ?? -1, output: () => `${stdout}\n${stderr}`, cleanup };
+};
+
+// A scripted OpenAI-compatible completions endpoint for a booted daemon: route an alias to it with
+// `PLURNK_BASEURL_<alias>` and every turn answers with `reply(request)` as one streamed chunk. A
+// KILL fence ends the loop, so a PTY test can drive a real loop with no model.
+export interface CompletionsEndpoint { url: string; close: () => Promise<void> }
+
+const completionsBody = async (request: IncomingMessage): Promise<{ model?: unknown; messages?: unknown }> => {
+    let body = "";
+    request.setEncoding("utf8");
+    for await (const chunk of request) body += chunk;
+    return JSON.parse(body) as { model?: unknown; messages?: unknown };
+};
+
+const streamCompletion = (response: ServerResponse, model: string, content: string): void => {
+    response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    const frame = (value: unknown): void => { response.write(`data: ${JSON.stringify(value)}\n\n`); };
+    frame({ id: "completions-endpoint", object: "chat.completion.chunk", created: 1, model, choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }] });
+    frame({ id: "completions-endpoint", object: "chat.completion.chunk", created: 1, model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
+    response.end("data: [DONE]\n\n");
+};
+
+export const completionsEndpoint = async (
+    reply: (request: { model: string; messages: unknown }) => string,
+): Promise<CompletionsEndpoint> => {
+    const server = createServer(async (request, response) => {
+        if (request.method === "GET" && request.url === "/v1/models") {
+            response.setHeader("content-type", "application/json");
+            response.end(JSON.stringify({ object: "list", data: [] }));
+            return;
+        }
+        if (request.method !== "POST" || request.url !== "/v1/chat/completions") { response.writeHead(404).end(); return; }
+        const body = await completionsBody(request);
+        if (typeof body.model !== "string") { response.writeHead(400).end("model is required"); return; }
+        streamCompletion(response, body.model, reply({ model: body.model, messages: body.messages }));
+    });
+    const port = await new Promise<number>((resolvePort, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => resolvePort((server.address() as { port: number }).port));
+    });
+    return {
+        url: `http://127.0.0.1:${port}/v1`,
+        close: () => new Promise<void>((resolveClose, reject) => server.close((error) => error === undefined ? resolveClose() : reject(error))),
+    };
 };

@@ -118,7 +118,8 @@ Human status is the summary line's shape aggregated over the session:
 ```
 
 YOLO is a fireball at the left edge, beside the lifecycle glyph. The model sits next, ahead of
-everything that ticks, so the ticking never moves it; the traffic counts precede the phrase that
+everything that ticks, so the ticking never moves it; it is the client's last server-read route
+({§cli-identity-effort}), never the gauge's. The traffic counts precede the phrase that
 says what the worker is doing. A glyph is two columns wide, so two spaces separate the last one from the first dot. Token counts are
 abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is stated to the
 hundredth of a cent with grouped thousands (`$3,333.3333`).
@@ -179,6 +180,18 @@ parentheses as given. A route without an effort dimension renders bare, and a
 daemon that states no source renders brackets as before. `/effort` says the
 same in words. The client never infers provenance (plurnk#41 ask 2,
 plurnk-service#528).
+
+The identity is the client's last server-read route. Every durable-policy change
+(`/model`, `/child` including `inherit`, `/effort`, a rebind or hop, and an explicit
+`--model` or `--effort` at admission) ends in one readback, `worker.effort.get` then
+`worker.model.get` for both routes, collected whole, applied together and repainted
+before the change is confirmed; a setter's echo is never spliced into a label. A
+persisted change whose readback fails is reported as a readback failure, distinct
+from a refused change: it neither shows the requested value as read back nor rolls
+anything back. A status gauge is a cache of lifecycle, place, activity and children
+and never supplies the identity, so a gauge carrying an older route (the setter's own
+action run snapshots the worker before it mutates) cannot override a newer
+client-set policy.
 
 ### §1.3 Project root {§cli-project-root}
 

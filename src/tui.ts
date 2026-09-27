@@ -369,14 +369,41 @@ const workerModelProjection = (value: unknown): {
 
 export const resolvedModelLabel = (spec: ResolvedModelSpec): string => formatRouteIdentity(spec);
 
+export interface WorkerPolicy {
+    model: ResolvedModelSpec | null;
+    spawnModel: ResolvedModelSpec | null;
+    effort: WorkerEffort;
+}
+
+// {§cli-identity-effort} — the one readback of the worker's durable policy: the effort first (a
+// modelless worker takes its default there), then the final route projection, collected whole
+// before any of it is applied. The daemon's routes are the identity, never a setter's echo.
+export const readWorkerPolicy = async (rpc: VerbCaller): Promise<WorkerPolicy> => {
+    const effort = await readWorkerEffort(rpc);
+    const { model, spawnModel } = workerModelProjection(await rpc.call("worker.model.get"));
+    return { model, spawnModel, effort };
+};
+
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
     const { verb, rest } = parseSlash(line);
     const { rpc, opts, write } = ctx;
     const refreshWorkerPolicy = async (): Promise<void> => {
-        const model = workerModelProjection(await rpc.call("worker.model.get"));
-        ctx.setModel(model.model);
-        ctx.setSpawnModel(model.spawnModel);
-        ctx.setEffort(await readWorkerEffort(rpc));
+        const { model, spawnModel, effort } = await readWorkerPolicy(rpc);
+        ctx.setModel(model);
+        ctx.setSpawnModel(spawnModel);
+        ctx.setEffort(effort);
+    };
+    // A persisted change is confirmed once its readback has been applied, so the confirmation is the
+    // verb's completion. A readback that fails is neither a refusal nor rolled back: the daemon holds
+    // the new policy and the client says it could not re-read it ({§cli-identity-effort}).
+    const persisted = async (confirmation: string): Promise<void> => {
+        try {
+            await refreshWorkerPolicy();
+        } catch (cause) {
+            write(`${confirmation}  policy readback failed (the change persisted):\n${renderTuiFailure(cause)}\n`);
+            return;
+        }
+        write(confirmation);
     };
     if (verb.length === 0) {
         write(renderCommandHelp());
@@ -408,37 +435,37 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             await runLogRead(rpc, { json: false, filters });
             return;
         }
-        case "model":
+        case "model": {
             if (rest.length === 0) { write(`  model: ${ctx.model === null ? "(daemon default)" : resolvedModelLabel(ctx.model)}\n`); return; }
             // {§worker-model-selection} — /model is a server-backed durable selection:
             // the daemon resolves and persists onto the conversation worker; nothing
             // client-local rides the next loop.
+            // {§cli-effort} — `/model <selector> <effort>` chooses both, and the daemon validates the pair once.
+            const [selector, effort] = rest.split(/\s+/u);
             try {
-                // {§cli-effort} — `/model <selector> <effort>` chooses both, and the daemon validates the pair once.
-                const [selector, effort] = rest.split(/\s+/u);
-                ctx.setModel(Validator.assertModelRoute(await rpc.call("worker.model.set", { selector, ...(effort === undefined ? {} : { effort }) })));
-                write(`  model: ${selector}\n`);
+                Validator.assertModelRoute(await rpc.call("worker.model.set", { selector, ...(effort === undefined ? {} : { effort }) }));
             } catch (cause) {
                 write(`${renderTuiFailure(cause)}\n`);
                 return;
             }
-            try {
-                ctx.setEffort(await readWorkerEffort(rpc));
-            } catch (cause) {
-                write(`  effort refresh failed: ${cause instanceof Error ? cause.message : String(cause)}\n`);
-            }
+            await persisted(`  model: ${selector}\n`);
             return;
-        case "effort":
+        }
+        case "effort": {
+            let effort: WorkerEffort;
             try {
-                const effort = rest.length === 0
+                effort = rest.length === 0
                     ? await readWorkerEffort(rpc)
                     : await setWorkerEffort(rpc, rest);
-                ctx.setEffort(effort);
-                write(`${formatWorkerEffort(effort).trimEnd().replace(/^/gm, "  ")}\n`);
             } catch (cause) {
                 write(`${renderTuiFailure(cause)}\n`);
+                return;
             }
+            const stated = `${formatWorkerEffort(effort).trimEnd().replace(/^/gm, "  ")}\n`;
+            if (rest.length === 0) { ctx.setEffort(effort); write(stated); return; }
+            await persisted(stated);
             return;
+        }
         case "capabilities":
             try {
                 const projection = rest.length === 0
@@ -456,14 +483,15 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             try {
                 // {§worker-model-selection} — inherit IS the server action (selector null
                 // clears the override); the daemon returns null for it.
-                ctx.setSpawnModel(modelRouteOrNull(await rpc.call(
+                modelRouteOrNull(await rpc.call(
                     "worker.child.set",
                     { selector: rest === "inherit" ? null : rest },
-                )));
-                write(`  child: ${rest}\n`);
+                ));
             } catch (cause) {
                 write(`${renderTuiFailure(cause)}\n`);
+                return;
             }
+            await persisted(`  child: ${rest}\n`);
             return;
         case "yolo":
             opts.yolo = !opts.yolo;
@@ -710,41 +738,29 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // for the header and the /model /child display; an EXPLICIT --model persists
     // onto the worker at startup (a one-time durable selection, not a per-loop
     // reassertion).
-    let workerModel: ResolvedModelSpec | null = null;
-    let workerSpawnModel: ResolvedModelSpec | null = null;
-    let workerEffort: WorkerEffort = { effort: null, source: "default", supportedEfforts: [] };
-    let effortFailure: unknown;
-    // Model identity is control-plane truth, not decorative header data. A
-    // transport failure or malformed projection leaves this client unable to
-    // know which durable worker policy it is presenting, so admission fails
-    // instead of silently relabeling the worker as the daemon default.
-    const initialModel = workerModelProjection(await transport.rpc("worker.model.get"));
-    workerModel = initialModel.model;
-    workerSpawnModel = initialModel.spawnModel;
+    const admission: VerbCaller = { call: (method, params) => transport.rpc(method, params) };
     if (opts.modelExplicit === true && opts.modelSelector !== undefined) {
         // A deliberate selection is part of invocation admission, not display
         // hydration. Refuse the TUI before it accepts input if the daemon cannot
         // persist it; continuing would silently run the worker's previous model.
         // {§cli-effort} — an explicit effort rides with the model, so the daemon validates the pair once.
-        workerModel = Validator.assertModelRoute(
+        Validator.assertModelRoute(
             await transport.rpc("worker.model.set", {
                 selector: opts.modelSelector,
                 ...(opts.effortExplicit === true && opts.effort !== undefined ? { effort: opts.effort } : {}),
             }),
         );
-    }
-    if (opts.effortExplicit === true && opts.effort !== undefined && opts.modelExplicit !== true) {
+    } else if (opts.effortExplicit === true && opts.effort !== undefined) {
         // Same admission rule as --model: an explicit effort must take effect or
         // the invocation fails before any model work can run under a stale one.
-        workerEffort = await setWorkerEffort(
-            { call: (method, params) => transport.rpc(method, params) },
-            opts.effort,
-        );
-    } else {
-        try {
-            workerEffort = await readWorkerEffort({ call: (method, params) => transport.rpc(method, params) });
-        } catch (cause) { effortFailure = cause; }
+        await setWorkerEffort(admission, opts.effort);
     }
+    // Model identity is control-plane truth, not decorative header data. A
+    // transport failure or malformed projection leaves this client unable to
+    // know which durable worker policy it is presenting, so admission fails
+    // instead of silently relabeling the worker as the daemon default.
+    // {§cli-identity-effort} — the identity the TUI presents is read back after the explicit selection.
+    let { model: workerModel, spawnModel: workerSpawnModel, effort: workerEffort } = await readWorkerPolicy(admission);
 
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
@@ -758,7 +774,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
     surface.append("");
-    if (effortFailure !== undefined) printAlert(renderTuiFailure(effortFailure));
 
     // Client-owned lifecycle and model lead the input affordance; ephemeral
     // derivation, search, and branch work share its final activity position.
@@ -784,17 +799,20 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         paintPrompt();
         reprompt();
     };
+    // {§cli-identity-effort} — the identity is the client's last server-read route. A gauge is a
+    // cache of lifecycle, place, activity and children; it never supplies the identity, so a gauge
+    // carrying an older route cannot outrank a newer client-set policy.
+    const identity = (): string | null => workerModel === null
+        ? opts.modelSelector ?? activeAlias ?? null
+        : resolvedModelLabel(workerModel);
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
-            return renderStatusLine(authoritativeStatus, statusContext(), { yolo: opts.yolo });
+            return renderStatusLine({ ...authoritativeStatus, model: identity() }, statusContext(), { yolo: opts.yolo });
         }
         const activity = searchFetching ? { label: "search", percent: searchPercent } : null;
-        const model = workerModel === null
-            ? opts.modelSelector ?? activeAlias ?? null
-            : resolvedModelLabel(workerModel);
         return renderStatusLine({
             lifecycle: inFlight ? "running" : lifecycle,
-            model,
+            model: identity(),
             loopId: placeLoop,
             packetCount: null,
             activity,
@@ -1061,7 +1079,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 printAlert(renderDiagnostic(clientConversationLost(current.name, conversationWorker ?? current.name)));
             }
             seenLoopId = authoritativeStatus.loopId;
-            workerModel = modelRouteOrNull(gauge.plurnk.status.model);
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
             placeLoop = authoritativeStatus.loopId;
             placeTurn = authoritativeStatus.packetCount;

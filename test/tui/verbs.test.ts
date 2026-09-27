@@ -9,25 +9,32 @@ import assert from "node:assert/strict";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
+import { bootDaemon, completionsEndpoint, locateDaemon, type CompletionsEndpoint, type Daemon } from "../intg/harness.ts";
 import { actionViaBridge } from "../../src/agui.ts";
 import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
+let endpoint: CompletionsEndpoint | null = null;   // a scripted model behind the `clientloop` alias: one KILL turn ends every loop
 let members = false;   // the daemon serves the members Functionality family
 let env = false;       // the daemon serves the env Functionality family
 
 before(async () => {
     const bin = await locateDaemon();
     if (bin !== null) {
+        endpoint = await completionsEndpoint(() => "````KILL\nloop gauge\n````");
         daemon = await bootDaemon(bin, {
             extraEnv: {
                 PLURNK_MODEL_clientfirst: "openai/client-first",
                 PLURNK_MODEL_clienttest: "openai/client-test",
+                PLURNK_MODEL_clientloop: "openai/client-loop",
+                PLURNK_BASEURL_clientloop: endpoint.url,
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clientfirst: "32768",
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clienttest: "32768",
+                PLURNK_PROVIDERS_CONTEXT_WINDOW_clientloop: "32768",
                 PLURNK_PROVIDERS_EFFORT_clientfirst: "adaptive",
                 PLURNK_PROVIDERS_EFFORT_clienttest: "adaptive",
+                PLURNK_PROVIDERS_EFFORT_clientloop: "adaptive",
+                PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
                 OPENAI_API_KEY: "client-control-plane-test",
             },
         });
@@ -36,7 +43,7 @@ before(async () => {
         env = "worker.env.list" in discovery.actions;
     }
 });
-after(async () => { await daemon?.cleanup(); });
+after(async () => { await daemon?.cleanup(); await endpoint?.close(); });
 
 describe("TUI verbs + input (model-independent; was HITL-only)", () => {
     test("/yolo and Shift-Tab both toggle local auto-accept on then off (review ships)", async (t) => {
@@ -66,6 +73,99 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             tui.write("/effort\r");
             await tui.waitFor(/supported:[\s\S]*supported:/);
         } finally { tui.kill(); }
+    });
+
+    // {§cli-identity-effort} — the status row's identity is the daemon's re-read route after every
+    // durable-policy change; the setter's own action run carries a pre-mutation gauge, which must
+    // not be what the operator sees. Each witness is matched only in output after the command.
+    const status = async (tui: ReturnType<typeof spawnTui>, command: string, witness: RegExp, timeoutMs = 10_000): Promise<string> => {
+        const since = tui.output().length;
+        tui.write(`${command}\r`);
+        const output = await tui.waitFor(witness, timeoutMs, since);
+        return output.slice(since);
+    };
+
+    test("[§cli-identity-effort] /effort repaints the identity from the readback while idle, before any loop", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--model", "clienttest"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/🎲 clienttest\(adaptive\)/);
+            await status(tui, "/effort high", /🎲 clienttest\[high\]/);
+        } finally { tui.kill(); }
+    });
+
+    test("[§cli-identity-effort] /effort repaints the identity after a gauge has already been received", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            await status(tui, "/model clienttest", /🎲 clienttest\(adaptive\)/);
+            await status(tui, "/effort high", /🎲 clienttest\[high\]/);
+        } finally { tui.kill(); }
+    });
+
+    test("[§cli-identity-effort] /effort repaints the identity after a loop's gauge, keeping the loop's lifecycle", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--model", "clientloop"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            tui.write("run one turn\r");
+            await tui.waitFor(/⏹️ {2}· 🎲 clientloop\(adaptive\)/, 30_000);
+            // A base-URL-routed alias is an OpenAI-compatible provider admitting only off and adaptive.
+            const row = await status(tui, "/effort off", /🎲 clientloop\[off\]/);
+            assert.match(row, /⏹️ {2}· 🎲 clientloop\[off\] · /, "the completed loop's glyph and tallies stay; only the identity changed");
+        } finally { tui.kill(); }
+    });
+
+    test("[§cli-identity-effort] a chosen effort follows the worker across /model, and the readback paints it", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--model", "clienttest", "--effort", "high"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/🎲 clienttest\[high\]/);
+            await status(tui, "/model clientfirst", /🎲 clientfirst\[high\]/);
+        } finally { tui.kill(); }
+    });
+
+    // {§cli-status-children} — the gauge's known zero hides the ant, so the child route's readback is
+    // witnessed through the bare inspection, which prints the client's last server-read route.
+    test("[§cli-identity-effort] /child override and inherit are read back with the parent, and /effort re-reads the child too", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--model", "clienttest"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            await status(tui, "/child clientfirst", /child: clientfirst/);
+            await status(tui, "/child", /child: clientfirst\(adaptive\)/);
+            await status(tui, "/effort high", /🎲 clienttest\[high\]/);
+            await status(tui, "/child", /child: clientfirst\[high\]/);
+            await status(tui, "/child inherit", /child: inherit/);
+            await status(tui, "/child", /child: inherit/);
+        } finally { tui.kill(); }
+    });
+
+    test("[§cli-identity-effort] a rejected /effort keeps the daemon Problem visible and the identity unchanged", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--model", "clienttest"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/🎲 clienttest\(adaptive\)/);
+            const since = tui.output().length;
+            tui.write("/effort bogus\r");
+            await tui.waitFor(/does not match any of/, 10_000, since);
+            await tui.waitFor(/🎲 clienttest\(adaptive\)/, 10_000, since);
+            assert.doesNotMatch(tui.output().slice(since), /clienttest\[bogus\]|effort: bogus/);
+        } finally { tui.kill(); }
+    });
+
+    test("[§cli-identity-effort] brackets mark a chosen effort, parentheses a provider default, from admission on", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const given = spawnTui(daemon.url, ["--model", "clientfirst"]);
+        try {
+            await given.waitFor(/plurnk.*\/help/);
+            await given.waitFor(/🎲 clientfirst\(adaptive\)/);
+            await status(given, "/effort adaptive", /🎲 clientfirst\[adaptive\]/);
+        } finally { given.kill(); }
     });
 
     test("/workspace [name] opens a new named workspace", async (t) => {

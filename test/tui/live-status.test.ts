@@ -30,6 +30,7 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
     const switched = tui.output().length;
     tui.write("/workspace project-second\r");
     await tui.waitFor(new RegExp(`${RegExp.escape(second)} \\[project-second/`), 10_000, switched);
+    await tui.waitFor(/workspace: project-second \(new\)/, 10_000, switched);
     const headless = tui.output().length;
     tui.write("/workspace project-headless\r");
     const headlessStatus = /\[project-headless\/~project-headless\(0\)\] [^\r\n]*/;
@@ -264,24 +265,12 @@ test("[§cli-worker-status] the built TUI clock advances through parked and resu
     } });
     t.after(() => daemon.cleanup());
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
-    // The client clock consumes gauges, not inferred operation state. Control those
-    // frames independently of the service's lifecycle-publication work in #122.
-    let runResponse: ServerResponse | undefined;
-    const url = await statusRelay(t, daemon.url, { onPrompt: (response) => { runResponse = response; } });
-    const lifecycle = (value: "parked" | "running"): void => {
-        assert.ok(runResponse, "the prompt has an active AG-UI stream");
-        runResponse.write(`data: ${JSON.stringify({ type: "STATE_DELTA", delta: [
-            { op: "replace", path: "/plurnk/status/lifecycle", value },
-        ] })}\n\n`);
-    };
-    const tui = spawnTui(url, ["--workspace", "delegation-clock", "--worker", "main", "--project-root", ""], {
+    const tui = spawnTui(daemon.url, ["--workspace", "delegation-clock", "--worker", "main", "--project-root", ""], {
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
     await tui.waitFor(/plurnk.*\/help/);
     tui.write("Delegate and wait for the result.\r");
-    await tui.waitFor(/WAIT[^\r\n]*🐜 1/);
-    lifecycle("parked");
     const parked = /💤[^\r\n]* · (\d+(?:\.\d+)?s)\b/u;
     const first = await tui.waitFor(parked);
     const firstElapsed = parked.exec(first)?.[1];
@@ -291,8 +280,8 @@ test("[§cli-worker-status] the built TUI clock advances through parked and resu
     const afterWait = tui.output().length;
     childRelease.resolve();
     await resumed.promise;
-    lifecycle("running");
     await tui.waitFor(/CLOCK_REASONING_2/, 10_000, afterWait);
+    await tui.waitFor(/⌛︎[^\r\n]*clockfixture/, 10_000, afterWait);
     assert.doesNotMatch(tui.output().slice(afterWait), /PARENT_CLOCK_RESULT/u, "resumption is visible before any new parent operation");
     parentRelease.resolve();
     await tui.waitFor(/PARENT_CLOCK_RESULT/);

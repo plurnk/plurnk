@@ -2,6 +2,7 @@ import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
 import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
 import type { LoopUsage } from "./render.ts";
 import { abbreviatedCount, money } from "./figures.ts";
+import ModelText from "./model-text.ts";
 
 // The session's running total in the summary line's shape — every concluded
 // loop adds its turns, wall time, and exact accounting.
@@ -139,6 +140,8 @@ export const formatRouteIdentity = (route: {
 export interface ClientStatus {
     lifecycle: StatusLifecycle;
     model: string | null;
+    // {§cli-status-project-root} — the daemon's bound folder, never create-time client options.
+    projectRoot?: string | null;
     // {plurnk#58} — the prompt prefix names the place as workspace/loop/turn; the gauge owns both numbers.
     loopId: number | null;
     packetCount: number | null;
@@ -163,7 +166,7 @@ export interface RuntimeStatusGauge {
 }
 
 export interface StatusGaugeEnvelope {
-    plurnk: { status: RuntimeStatusGauge };
+    plurnk: { status: RuntimeStatusGauge; workspace?: { projectRoot?: string | null } };
     budget: Record<string, unknown>;
 }
 
@@ -171,7 +174,10 @@ const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
     "idle", "queued", "running", "parked", "completed", "cancelled", "failed",
 ]);
 
-export const projectStatusGauge = (value: RuntimeStatusGauge): ClientStatus => {
+export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: string | null): ClientStatus => {
+    if (projectRoot !== undefined && projectRoot !== null && typeof projectRoot !== "string") {
+        throw new TypeError("Invalid workspace project root.");
+    }
     if (!LIFECYCLES.has(value.lifecycle)) throw new TypeError(`Unknown runtime lifecycle '${value.lifecycle}'.`);
     if (!Number.isSafeInteger(value.packetCount) || value.packetCount < 0) {
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
@@ -204,6 +210,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge): ClientStatus => {
         packetCount: value.packetCount,
         activity,
         children,
+        ...(projectRoot === undefined ? {} : { projectRoot }),
     };
 };
 
@@ -245,7 +252,7 @@ export const reduceStatusGauge = (
     if (next.plurnk?.status === undefined || next.budget === null || typeof next.budget !== "object") {
         throw new ProblemError(clientTransportStateInvalid("STATE is missing plurnk.status or budget"));
     }
-    projectStatusGauge(next.plurnk.status);
+    projectStatusGauge(next.plurnk.status, next.plurnk.workspace?.projectRoot);
     return { handled: true, gauge: next };
 };
 
@@ -291,6 +298,7 @@ export const renderStatusLine = (
     const head = glyphs.length > 0 ? glyphs.join(" ") : value.lifecycle;
     const parts: string[] = [];
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
+    if (value.projectRoot != null) parts.push(ModelText.plain(value.projectRoot).replaceAll("\n", "\\n").replaceAll("\t", "\\t"));
     const running = value.lifecycle === "running";
     const unfinished = running || value.lifecycle === "parked" || value.lifecycle === "queued";
     const clockActive = unfinished && context.runningSince !== null;

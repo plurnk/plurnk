@@ -276,14 +276,17 @@ test("consumeCliRun: indexing state is quiet and indexing failures remain diagno
     }], "only the explicit failure enters the transcript");
 });
 
-test("consumeCliRun projects the authoritative AG-UI status gauge", async () => {
+test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge and bound folder", async () => {
     const statuses: unknown[] = [];
     const { io } = sink({ onStatus: (status) => statuses.push(status) });
     await consumeCliRun(stream([
         {
             type: EventType.STATE_SNAPSHOT,
             snapshot: {
-                plurnk: { status: { lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null } },
+                plurnk: {
+                    workspace: { id: 1, name: "work", projectRoot: "/projects/client" },
+                    status: { lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null },
+                },
                 budget: {},
             },
         },
@@ -292,8 +295,8 @@ test("consumeCliRun projects the authoritative AG-UI status gauge", async () => 
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: null },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: null },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: null, projectRoot: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: null, projectRoot: "/projects/client" },
     ]);
 });
 

@@ -176,7 +176,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             const state = reduceStatusGauge(statusGauge, e);
             if (state.handled) {
                 statusGauge = state.gauge;
-                if (!io.json) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status));
+                if (!io.json) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status, state.gauge.plurnk.workspace?.projectRoot));
                 continue;
             }
             const reasoningEvent = reasoning.consume(e);

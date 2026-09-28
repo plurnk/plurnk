@@ -1,8 +1,63 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
-import { bootDaemon, locateDaemon } from "../intg/harness.ts";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
+import { actionViaBridge } from "../../src/agui.ts";
+
+test("[§cli-status-project-root] startup and workspace changes show the daemon's folder, not the launch directory", { timeout: 60_000 }, async (t) => {
+    const service = await locateDaemon();
+    assert.ok(service, "the composed test requires the sibling service");
+    const daemon = await bootDaemon(service);
+    t.after(() => daemon.cleanup());
+    t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
+    const first = join(daemon.workspace, "first project");
+    const second = join(daemon.workspace, "second project");
+    await Promise.all([mkdir(first), mkdir(second)]);
+    for (const [name, projectRoot] of [["project-first", first], ["project-second", second], ["project-headless", null]] as const) {
+        await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: name, kind: "workspace.create", params: { name, projectRoot } });
+    }
+    const tui = spawnTui(daemon.url, ["--workspace", "project-first"], {
+        HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
+    }, daemon.home);
+    t.after(() => tui.kill());
+    await tui.waitFor(new RegExp(` · ${RegExp.escape(first)}`));
+    const switched = tui.output().length;
+    tui.write("/workspace project-second\r");
+    await tui.waitFor(new RegExp(` · ${RegExp.escape(second)}`), 10_000, switched);
+    const headless = tui.output().length;
+    tui.write("/workspace project-headless\r");
+    const headlessStatus = /\[project-headless\/~project-headless\(0\)\] [^\r\n]*/;
+    await tui.waitFor(headlessStatus, 10_000, headless);
+    assert.doesNotMatch(tui.output().slice(headless).match(headlessStatus)![0], new RegExp(` · (${RegExp.escape(first)}|${RegExp.escape(second)}|${RegExp.escape(daemon.home)})`),
+        "switching to a headless workspace cannot retain either old root or the creation-option cwd");
+    tui.write("/quit\r");
+    assert.equal(await tui.exited, 0);
+});
+
+test("[§cli-status-project-root] the built one-shot CLI status uses the resumed workspace folder", { timeout: 60_000 }, async (t) => {
+    const service = await locateDaemon();
+    assert.ok(service, "the composed test requires the sibling service");
+    const endpoint = await completionsEndpoint(() => "````KILL\nFolder confirmed.\n````");
+    t.after(() => endpoint.close());
+    const daemon = await bootDaemon(service, { extraEnv: {
+        PLURNK_MODEL: "rootfixture", PLURNK_MODEL_rootfixture: "openai/root-fixture",
+        OPENAI_BASE_URL: endpoint.url, OPENAI_API_KEY: "root-fixture", PLURNK_PROVIDERS_EFFORT: "off",
+        PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768", PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
+    } });
+    t.after(() => daemon.cleanup());
+    await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: "project-cli", kind: "workspace.create", params: { name: "project-cli", projectRoot: daemon.workspace } });
+    const cli = spawnTui(daemon.url, ["--workspace", "project-cli", "--max-turns", "2", "--timeout", "15", "Answer briefly."], {
+        HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
+    }, daemon.home);
+    t.after(() => cli.kill());
+    assert.equal(await cli.exited, 0, cli.output());
+    assert.match(cli.output(), /Folder confirmed\./);
+    assert.match(cli.output(), new RegExp(` · ${RegExp.escape(daemon.workspace)}(?: ·|[\\r\\n])`));
+    assert.doesNotMatch(cli.output(), new RegExp(` · ${RegExp.escape(daemon.home)}(?: ·|[\\r\\n])`));
+});
 
 const statusRelay = async (t: TestContext, url: string, hooks: {
     onPrompt?: (response: ServerResponse) => void;

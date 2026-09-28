@@ -118,7 +118,7 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 Human status is the summary line's shape aggregated over the session:
 
 ```
-[🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🧮 <percent>%]
+[🔥 ]<glyph>  · 🎲 <model> [· <project folder>] · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🧮 <percent>%]
 ```
 
 YOLO is a fireball at the left edge, beside the lifecycle glyph. The model sits next, ahead of
@@ -127,6 +127,11 @@ everything that ticks, so the ticking never moves it; it is the client's last se
 says what the worker is doing. A glyph is two columns wide, so two spaces separate the last one from the first dot. Token counts are
 abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is stated to the
 hundredth of a cent with grouped thousands (`$3,333.3333`).
+
+{§cli-status-project-root} CLI and TUI status show the bound workspace's project folder
+after the model, from `snapshot.plurnk.workspace.projectRoot`. The launch directory and
+create-time options cannot override it on reattachment. Switching workspaces replaces
+the folder; a headless or unknown root omits it. Path text is terminal-safe.
 
 {§cli-status-children} The ant is the daemon's count of the bound worker's alive
 direct children (`snapshot.plurnk.status.children`: queued, running, or parked —

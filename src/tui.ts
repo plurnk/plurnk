@@ -1071,7 +1071,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onNotice: handleNotice,
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
-            authoritativeStatus = projectStatusGauge(gauge.plurnk.status);
+            authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace?.projectRoot);
             // {§cli-conversation-lost} — a bound name answered with no history is a new conversation.
             if (conversationLost(seenLoopId, authoritativeStatus.loopId)) {
                 printAlert(renderDiagnostic(clientConversationLost(current.name, conversationWorker ?? current.name)));
@@ -1163,6 +1163,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         setWorkspace: (s) => { current = s; },
         switchWorkspace: async (name) => {
             surface.archiveActivity();
+            authoritativeStatus = null;
             const workspace = await transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client });
             conversationWorker = workspace.name;
             conversationWorkerId = null;

@@ -169,8 +169,12 @@ test("[§cli-log-entry-line-format] entryTarget preserves literal resource addre
 // A delivered reply is plain: its Markdown carries the only emphasis, and the
 // human's line is what sets the two voices apart ({§cli-broadcast-send-rendering}).
 const colored = <T>(render: () => T): T => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    try { return render(); } finally { process.env.NO_COLOR = "1"; }
+    const saved = process.env.PLURNK_CLIENT_COLOR;
+    process.env.PLURNK_CLIENT_COLOR = "always";
+    try { return render(); } finally {
+        if (saved === undefined) delete process.env.PLURNK_CLIENT_COLOR;
+        else process.env.PLURNK_CLIENT_COLOR = saved;
+    }
 };
 
 const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };

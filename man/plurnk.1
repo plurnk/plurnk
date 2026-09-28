@@ -84,6 +84,8 @@ loop.
       --preview-lines <n> lines of each operation body and execution output shown
                           beneath its row; the rest is named for /look. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
+      --color <when>      style terminal output: always, auto, or never. Overrides
+                          PLURNK_CLIENT_COLOR; always/never override color env preferences.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --status-stream     also print one greppable accounting row per turn on stderr.

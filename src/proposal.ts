@@ -9,7 +9,7 @@
 // decision, body?, outcome?}.
 
 import ModelText from "./model-text.ts";
-import { paint } from "./color.ts";
+import { paint, withColorOutput } from "./color.ts";
 import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -159,7 +159,7 @@ export const keyToResolution = async (key: string, params: ProposalParams): Prom
 // diff + menu to stderr, reads one keypress, returns the resolution. The TUI
 // uses the non-blocking renderProposalMenu + keyToResolution instead.
 export const reviewProposal = async (params: ProposalParams): Promise<Resolution> => {
-    process.stderr.write(renderProposalMenu(params));
+    process.stderr.write(withColorOutput(process.stderr, () => renderProposalMenu(params)));
     const key = (await readSingleKey()).toLowerCase();
     process.stderr.write(`${key}\n`);
     // Unknown key (incl. ctrl-c = \x03) → cancel for safety.

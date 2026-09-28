@@ -37,8 +37,10 @@ milestone. Serialized branch batches use the same compact treatment: 🌿 plus
 aggregate progress while active, followed by one completion, failure, or
 recovery line.
 
-The renderer respects `NO_COLOR`. Rendering details and exit behavior are
-specified and tested in `SPEC.md`; design history belongs in Git.
+The renderer follows the shared
+[colour selection policy](SPEC.md#551-colour-selection-cli-color-policy), including
+`NO_COLOR` and `--color`. Rendering details and exit behavior are specified and
+tested in `SPEC.md`; design history belongs in Git.
 
 ## Interaction
 

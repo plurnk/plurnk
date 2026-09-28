@@ -32,6 +32,7 @@ import type { LoopPolicyRequest, OperationResult, ProblemDetails } from "@plurnk
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
+import { withColorOutput } from "./color.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
@@ -107,7 +108,7 @@ const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<{ log
 // to emit as ONE document. plurnk.terminated is the authoritative outcome (its
 // result.status/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live bridge.
-export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRunSinks): Promise<CliRunResult> => {
+export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
     let finalStatus = 200;
     let hitMaxTurns = false;
     let response = "";
@@ -273,7 +274,7 @@ export const consumeCliRun = async (events: AsyncIterable<AguiEvent>, io: CliRun
         io.err(`${renderDiagnostic(problem)}\n`);
     }
     return snapshot();
-};
+});
 
 // Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
 // stderr=trace. json: silent, then ONE buildJsonRecord document on stdout —
@@ -451,13 +452,13 @@ export const runCliViaBridge = async (
         });
         statusLine.settle();
         const terminated = result.terminated;
-        process.stderr.write(`${renderSummary(
+        process.stderr.write(withColorOutput(process.stderr, () => `${renderSummary(
             terminated?.turnIds.length ?? 0,
             Date.now() - started,
             outcome,
             terminated?.hitMaxTurns ?? false,
             terminated?.usage,
-        )}\n`);
+        )}\n`));
     }
     return timedOut ? 3 : result.exitCode;
 };

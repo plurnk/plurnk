@@ -833,17 +833,21 @@ test("linePolicy: '...' strips without altering the base policy", () => {
 test("{§cli-log-entry-line-format} the human's line becomes durable scrollback: bold, in its own colour, a blank row above and below", () => {
     const printed: string[] = [];
     const noColor = process.env.NO_COLOR;
+    const color = process.env.PLURNK_CLIENT_COLOR;
+    process.env.PLURNK_CLIENT_COLOR = "auto";
     process.env.NO_COLOR = "1";
     try {
         assert.equal(renderSubmittedInput("first\nsecond"), "› first\n  second", "{plurnk#104} the human's line carries no mode glyph; YOLO lives on the status bar");
         assert.equal(renderSubmittedInput("first"), "› first");
         printSubmittedInput((text) => printed.push(text), "first");
         assert.deepEqual(printed, ["", "› first", ""], "NO_COLOR keeps the layout: the blank rows stay");
-        delete process.env.NO_COLOR;
+        process.env.PLURNK_CLIENT_COLOR = "always";
         assert.equal(renderSubmittedInput("first\nsecond"), "\x1b[1;94m› first\x1b[0m\n\x1b[1;94m  second\x1b[0m");
     } finally {
         if (noColor === undefined) delete process.env.NO_COLOR;
         else process.env.NO_COLOR = noColor;
+        if (color === undefined) delete process.env.PLURNK_CLIENT_COLOR;
+        else process.env.PLURNK_CLIENT_COLOR = color;
     }
 });
 

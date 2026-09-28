@@ -54,6 +54,7 @@ Options:
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
 | `--max-turns <n>` | string | Model-call budget for the prompt's worker tree ({§turn-cap-counts-the-tree}): the loop's turns, its descendants' turns and every BARE call, one per call; omission leaves the daemon's ceiling in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
 | `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · /look <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
+| `--color <when>` | string | `always`, `auto`, or `never`; overrides `PLURNK_CLIENT_COLOR`. See {§cli-color-policy}. |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. Overrides `PLURNK_CLIENT_TIMEOUT`. |
 | `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
 | `--share <folder>` | string | When the one-shot prompt or the interactive session ends, ask the daemon for the workspace's share (`workspace.share`): written into `<folder>`, unredacted, refused rather than overwritten. A leading `~/` expands and a relative folder resolves against the working directory. Text mode prints the folder and the disclosure on stderr. `/share <folder>` writes one mid-session. Overrides `PLURNK_CLIENT_SHARE`. |
@@ -857,8 +858,8 @@ A delivered conversation response is plain: its Markdown carries the only emphas
 (headings, `**strong**`, table heads), and the human's own line — bold, in the human's
 colour, spaced (§5.1) — is what sets the two voices apart. Delivery alone makes a message
 block: a failed, unrelated, inherited or undelivered SEND, targetless or not, is an Other
-SEND (§5.1.2). `NO_COLOR` removes colour and emphasis
-while preserving layout. CLI mode is unaffected — stdout/stderr stay plain per §2.
+SEND (§5.1.2). {§cli-color-policy} controls colour and emphasis without changing
+layout. CLI delivered answers remain verbatim per §2.
 
 CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messages use stdout (§2).
 
@@ -888,8 +889,30 @@ If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is trea
 The five alert accents are the scheme — note blue, tip green, important purple, warning orange,
 caution red — and every other role borrows from them: success and added diff lines are green,
 failure and removed lines red, the human's line blue. Links, diff hunk headers and the
-completion cursor are cyan. Any non-empty `NO_COLOR` removes colour and emphasis while
-preserving layout.
+completion cursor are cyan.
+
+### §5.5.1 Colour selection {§cli-color-policy}
+
+`--color` overrides `PLURNK_CLIENT_COLOR` through the normal configuration cascade.
+Both accept only `always`, `auto`, or `never`; invalid values are usage errors (64).
+For human-facing rendering, the first applicable rule wins:
+
+| Condition | Colour and emphasis |
+|---|---|
+| Client choice `always` / `never` | On / off, overriding environment preferences |
+| Nonempty `NO_COLOR` | Off |
+| Nonempty `FORCE_COLOR` or `CLICOLOR_FORCE` | On, including pipes and `TERM=dumb` |
+| `CLICOLOR=0` | Off |
+| Otherwise | On only when the destination is a TTY and `TERM` is not `dumb` |
+
+Empty preference variables are unset; force values have no numeric colour-depth
+semantics. The nonempty conventions follow [NO_COLOR](https://no-color.org/),
+[FORCE_COLOR](https://force-color.org/), and [CLICOLORS](https://bixense.com/clicolors/),
+with `NO_COLOR` taking precedence over force requests.
+
+Stdout and stderr are evaluated independently at rendering time. Styling never changes
+layout. Raw one-shot answers, JSON, completion scripts, help/version text, and the
+plain `render` filter receive no client-added styling, even when colour is forced.
 
 ---
 

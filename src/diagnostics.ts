@@ -5,7 +5,7 @@
 //
 // They share a renderer, not a semantic envelope. Per SPEC.md §8.
 
-import { paint } from "./color.ts";
+import { paint, withColorOutput } from "./color.ts";
 import process from "node:process";
 import {
     Problems,
@@ -138,7 +138,7 @@ export const renderDiagnostic = (diagnostic: Diagnostic): string => {
 };
 
 export const report = (diagnostic: Diagnostic): void => {
-    process.stderr.write(`${renderDiagnostic(diagnostic)}\n`);
+    process.stderr.write(withColorOutput(process.stderr, () => `${renderDiagnostic(diagnostic)}\n`));
 };
 
 export const clientProblem = (

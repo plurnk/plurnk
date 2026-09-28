@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -25,6 +25,7 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
             cwd: home, timeout: 10_000,
             env: {
                 ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), NO_COLOR: "1",
+                PLURNK_CLIENT_COLOR: undefined, FORCE_COLOR: undefined, CLICOLOR_FORCE: undefined, CLICOLOR: undefined,
                 PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}`, PLURNK_CLIENT_JSON: "0", ...env,
             },
             stdio: ["pipe", "pipe", "pipe"],
@@ -84,5 +85,68 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
         assert.equal(result.code, 0);
         assert.match(result.stdout, /--yolo[^\n]*\n[^\n]*On by default/);
         assert.doesNotMatch(result.stdout, /Review ships/);
+    });
+    await t.test("[§cli-color-policy] built diagnostics honor flags and environment preferences in a pipe", async () => {
+        const cases: [string[], NodeJS.ProcessEnv, boolean][] = [
+            [[], { NO_COLOR: "" }, false],
+            [[], { NO_COLOR: "", FORCE_COLOR: "1" }, true],
+            [[], { NO_COLOR: "1", FORCE_COLOR: "1", CLICOLOR_FORCE: "1" }, false],
+            [["--color=always"], { NO_COLOR: "1", TERM: "dumb" }, true],
+            [["--color=never"], { FORCE_COLOR: "1" }, false],
+            [[], { PLURNK_CLIENT_COLOR: "always", NO_COLOR: "1" }, true],
+        ];
+        for (const [args, env, colored] of cases) {
+            const result = await run(args, "", env);
+            assert.equal(result.code, 64, result.stderr);
+            assert.match(result.stderr, /Provide a prompt or use an interactive terminal/);
+            assert.equal(/\x1b\[/u.test(result.stderr), colored, JSON.stringify({ args, env }));
+            assert.equal(result.stdout, "");
+        }
+        assert.equal(requests, 0);
+    });
+    await t.test("[§cli-color-policy] invalid modes fail before dialing, including JSON diagnostics", async () => {
+        for (const args of [[], ["--json"]]) {
+            for (const env of [{}, { PLURNK_CLIENT_COLOR: "invalid" }]) {
+                const result = await run([...args, ...(env.PLURNK_CLIENT_COLOR ? [] : ["--color=invalid"])], "", env);
+                assert.equal(result.code, 64, result.stderr);
+                if (args.length > 0) {
+                    assert.equal(result.stderr, "");
+                    assert.equal(JSON.parse(result.stdout).problem.type, "https://problems.plurnk.xyz/client/flag/invalid");
+                } else {
+                    assert.equal(result.stdout, "");
+                    assert.match(result.stderr, /must be always, auto, or never/);
+                }
+                assert.doesNotMatch(result.stdout + result.stderr, /\x1b\[/u);
+            }
+        }
+        assert.equal(requests, 0);
+    });
+    await t.test("[§cli-color-policy] raw local surfaces ignore forced styling", async () => {
+        for (const args of [["--help"], ["--version"], ["completion", "bash"], ["render", "--width=40"]]) {
+            const result = await run([...args, "--color=always"], "# Heading\n\n**strong**", { PLURNK_CLIENT_COLOR: "always" });
+            assert.equal(result.code, 0, result.stderr);
+            assert.equal(result.stderr, "");
+            assert.ok(result.stdout.length > 0);
+            assert.doesNotMatch(result.stdout, /\x1b\[/u);
+        }
+        assert.equal(requests, 0);
+    });
+    await t.test("[§cli-color-policy] the flag overrides the same knob from the existing env cascade", async () => {
+        const layer = join(home, "colors.env");
+        await writeFile(layer, "PLURNK_CLIENT_COLOR=always\n");
+        await writeFile(join(home, ".env"), "PLURNK_CLIENT_COLOR=never\n");
+        const cases: [string[], NodeJS.ProcessEnv, boolean][] = [
+            [[], {}, false],
+            [["--env-file", layer], {}, true],
+            [["--env-file", layer], { PLURNK_CLIENT_COLOR: "never" }, false],
+            [["--color=always", "--env-file", layer], { PLURNK_CLIENT_COLOR: "never" }, true],
+        ];
+        for (const [args, env, colored] of cases) {
+            const result = await run(args, "", env);
+            assert.equal(result.code, 64, result.stderr);
+            assert.match(result.stderr, /Provide a prompt or use an interactive terminal/);
+            assert.equal(/\x1b\[/u.test(result.stderr), colored, JSON.stringify({ args, env }));
+        }
+        assert.equal(requests, 0);
     });
 });

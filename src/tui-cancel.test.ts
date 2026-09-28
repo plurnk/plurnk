@@ -1,7 +1,18 @@
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
 import CancelGesture from "./tui-cancel.ts";
+import { withColorOutput } from "./color.ts";
+
+const colorEnv = { PLURNK_CLIENT_COLOR: "auto", TERM: "xterm-256color", CLICOLOR: "", CLICOLOR_FORCE: "", FORCE_COLOR: "" };
+const savedColor = Object.keys(colorEnv).map((key) => [key, process.env[key]] as const);
+beforeEach(() => { Object.assign(process.env, colorEnv); });
+afterEach(() => {
+    for (const [key, value] of savedColor) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+    }
+});
 
 interface Recorder {
     gesture: CancelGesture;
@@ -28,7 +39,7 @@ const wire = (failure?: unknown): Recorder => {
 };
 
 for (const noColor of ["", "1"]) {
-    test(`[§cli-cancellation] the first interrupt cancels once and arms the exit (NO_COLOR=${JSON.stringify(noColor)})`, async (t) => {
+    test(`[§cli-cancellation] the first interrupt cancels once and arms the exit (NO_COLOR=${JSON.stringify(noColor)})`, (t) => withColorOutput({ isTTY: true }, async () => {
         const saved = process.env.NO_COLOR;
         process.env.NO_COLOR = noColor;
         t.after(() => {
@@ -45,7 +56,7 @@ for (const noColor of ["", "1"]) {
         assert.deepEqual(lines, [noColor ? "  cancelling… (ctrl-c again to quit)" : "  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m"]);
         assert.equal(gesture.requested, true, "the next Ctrl-C exits");
         assert.equal(rec.closes, 0, "a cancel that reached the daemon does not close the client");
-    });
+    }));
 }
 
 test("[§cli-cancellation] a cancel that never reached the daemon closes the client, naming what it could not deliver (#90)", async () => {
@@ -58,7 +69,7 @@ test("[§cli-cancellation] a cancel that never reached the daemon closes the cli
 });
 
 for (const noColor of ["", "1"]) {
-    test(`[§cli-cancellation] a refused cancel surfaces the daemon's answer and leaves the exit armed (NO_COLOR=${JSON.stringify(noColor)})`, async (t) => {
+    test(`[§cli-cancellation] a refused cancel surfaces the daemon's answer and leaves the exit armed (NO_COLOR=${JSON.stringify(noColor)})`, (t) => withColorOutput({ isTTY: true }, async () => {
         const saved = process.env.NO_COLOR;
         process.env.NO_COLOR = noColor;
         t.after(() => {
@@ -71,7 +82,7 @@ for (const noColor of ["", "1"]) {
         assert.equal(rec.closes, 0, "the daemon answered — the session continues");
         assert.equal(rec.lines.at(-1), noColor ? "  cancel failed: loop 7 is not cancellable" : "  \x1b[31mcancel failed: loop 7 is not cancellable\x1b[0m");
         assert.equal(rec.gesture.requested, true, "the next Ctrl-C exits, it does not fire a second doomed cancel");
-    });
+    }));
 }
 
 test("[§cli-cancellation] the run's end releases the latch for the next run's first interrupt", async () => {

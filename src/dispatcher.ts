@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import { buildJsonError } from "./cli.ts";
 import { loadFloor, retiredKey } from "./envdefaults.ts";
 import Knobs, { KnobError } from "./knobs.ts";
+import { isColorMode } from "./color.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
@@ -201,6 +202,8 @@ options:
       --preview-lines <n> lines of each operation body and execution output shown
                           beneath its row; the rest is named for /look. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
+      --color <when>      style terminal output: always, auto, or never. Overrides
+                          PLURNK_CLIENT_COLOR; always/never override color env preferences.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
                           daemon's PLURNK_SERVICE_MAX_COMMANDS — can only tighten). Create-time.
       --status-stream     also print one greppable accounting row per turn on stderr.
@@ -626,6 +629,7 @@ export const main = async (argv: string[]): Promise<void> => {
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
             "preview-lines": { type: "string" },
+            color: { type: "string" },
 
             "max-commands": { type: "string" },
             "no-git": { type: "boolean" },
@@ -647,6 +651,8 @@ export const main = async (argv: string[]): Promise<void> => {
         },
     });
 
+    // Apply an explicit presentation choice before any invocation diagnostic can render.
+    if (values.color !== undefined) process.env.PLURNK_CLIENT_COLOR = values.color;
     const web = positionals[0] === "web";
     if (values.help) {
         process.stdout.write(commandHelp(positionals[0]));
@@ -702,6 +708,12 @@ export const main = async (argv: string[]): Promise<void> => {
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
     const json = values.json === true || switchOf("PLURNK_CLIENT_JSON", "optional");
+    const color = Knobs.text("PLURNK_CLIENT_COLOR");
+    if (!isColorMode(color)) {
+        const problem = clientFlagInvalid(values.color === undefined ? "PLURNK_CLIENT_COLOR" : "--color", color, "must be always, auto, or never");
+        if (json) dieJson(64, problem);
+        dieWith(64, problem);
+    }
     if (!web && (values.host !== undefined || values.port !== undefined)) {
         const flag = values.host !== undefined ? "--host" : "--port";
         const problem = clientFlagMissingDependency(flag, "the web subcommand");

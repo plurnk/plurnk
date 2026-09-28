@@ -12,12 +12,9 @@ import wrapAnsi from "wrap-ansi";
 
 import { paint, type Role } from "./color.ts";
 
-// Only a terminal is styled; piped output stays raw.
-const tty = process.stdout.isTTY === true;
-
 export const displayWidth = (text: string): number => stringWidth(text);
 
-const styled = (role: Role) => (text: string): string => tty ? paint(text, role) : text;
+const styled = (role: Role) => (text: string): string => paint(text, role);
 const fitTableWidths = (
     rows: string[][],
     viewport: number,

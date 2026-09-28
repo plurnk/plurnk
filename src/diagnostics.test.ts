@@ -78,8 +78,12 @@ test("renderDiagnostic renders producer snippets and hints below the message", (
 });
 
 const colored = <T>(render: () => T): T => {
-    delete process.env.NO_COLOR; // any non-empty value disables (no-color.org, plurnk#29)
-    try { return render(); } finally { process.env.NO_COLOR = "1"; }
+    const saved = process.env.PLURNK_CLIENT_COLOR;
+    process.env.PLURNK_CLIENT_COLOR = "always";
+    try { return render(); } finally {
+        if (saved === undefined) delete process.env.PLURNK_CLIENT_COLOR;
+        else process.env.PLURNK_CLIENT_COLOR = saved;
+    }
 };
 
 test("[§cli-notice-rendering] severity picks the alert: a Problem or error is a caution, a warning a warning, the rest a note", () => {

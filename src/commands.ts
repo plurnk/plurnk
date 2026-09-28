@@ -115,9 +115,10 @@ export const COMMANDS = [
     { name: "script", usage: "/script <path>", summary: "Submit a local .plk program through op.parse.", group: "compose" },
     { name: "editor", usage: "/editor", summary: "Compose the current value in $EDITOR.", group: "compose" },
 
+    { name: "review", usage: "/review", summary: "Return to the pending proposal or question.", group: "review" },
     { name: "accept", usage: "/accept", summary: "Accept the pending proposal.", group: "review" },
     { name: "reject", usage: "/reject", summary: "Reject the pending proposal.", group: "review" },
-    { name: "cancel", usage: "/cancel", summary: "Cancel the pending proposal.", group: "review" },
+    { name: "cancel", usage: "/cancel", summary: "Cancel the pending proposal or question.", group: "review" },
     { name: "edit", usage: "/edit", summary: "Edit and resolve the pending proposal.", group: "review" },
 
     { name: "stop", usage: "/stop", summary: "Cancel the running loop.", group: "session" },
@@ -199,7 +200,7 @@ export const renderCommandHelp = (name: string = ""): string => {
     return [
         ...groups,
         `  language     ${PLURNK_FENCE}OP · ${PLURNK_FENCE}NOTE · ${PLURNK_FENCE}WAIT · ${PLURNK_FENCE}SEND · ${PLURNK_FENCE}LOOK · ! command · ? ask · ... steer`,
-        "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc cancel/clear · Alt-? help",
+        "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc back/cancel/clear · Alt-? help",
         "  tree         Alt-h parent · Alt-l newest child · Alt-j/Alt-k next/prev sibling — the prompt then speaks to that worker",
         "  /help <verb> for exact usage",
         "",

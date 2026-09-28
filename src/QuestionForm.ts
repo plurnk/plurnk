@@ -46,7 +46,7 @@ export default class QuestionForm {
         const [key, schema] = field;
         const title = typeof schema.title === "string" ? `${schema.title} (${key})` : key;
         const type = typeof schema.type === "string" ? `${schema.type}; ` : "";
-        const hint = `${type}${this.#required.has(key) ? "required" : "optional; Enter skips"}`;
+        const hint = `${type}${this.#required.has(key) ? "required" : this.choices.length > 0 ? "optional; select Skip to omit" : "optional; Enter skips"}`;
         const description = typeof schema.description === "string" ? ` — ${schema.description}` : "";
         return `${title} (${hint})${description}`;
     }
@@ -54,6 +54,11 @@ export default class QuestionForm {
     get choices(): string[] {
         const field = this.#fields?.[this.#index];
         return field === undefined || field[1].type !== "string" ? [] : questionChoices({ properties: { [field[0]]: field[1] } });
+    }
+
+    get optional(): boolean {
+        const field = this.#fields?.[this.#index];
+        return field !== undefined && !this.#required.has(field[0]);
     }
 
     static #validation(schema: Record<string, unknown>, value: unknown, label: string): QuestionAnswer | null {
@@ -77,7 +82,7 @@ export default class QuestionForm {
         }
         const field = this.#fields[this.#index];
         if (field === undefined) return line.trim() !== ""
-            ? { kind: "invalid", message: "No fields remain. Press Enter to submit, or /cancel." }
+            ? { kind: "invalid", message: "No fields remain. Press Enter to submit." }
             : { kind: "complete", content: { ...this.#content } };
         const [key, schema] = field;
         const text = line.trim();
@@ -97,11 +102,12 @@ export default class QuestionForm {
             const invalid = QuestionForm.#validation(schema, value, key);
             if (invalid !== null) return invalid;
             Object.defineProperty(this.#content, key, { value, enumerable: true, configurable: true });
+        } else delete this.#content[key];
+        if (this.#index === this.#fields.length - 1) {
+            return QuestionForm.#validation(this.#schema, this.#content, "Response")
+                ?? { kind: "complete", content: { ...this.#content } };
         }
         this.#index++;
-        return this.#index === this.#fields.length
-            ? QuestionForm.#validation(this.#schema, this.#content, "Response")
-                ?? { kind: "complete", content: { ...this.#content } }
-            : { kind: "next" };
+        return { kind: "next" };
     }
 }

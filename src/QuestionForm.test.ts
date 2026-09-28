@@ -40,6 +40,15 @@ test("empty forms explicitly submit empty content", () => {
     assert.deepEqual(form.submit(""), { kind: "complete", content: {} });
 });
 
+test("[§cli-question-forms] the last answer stays editable after a failed resolution", () => {
+    const form = new QuestionForm({ properties: { name: { type: "string" }, count: { type: "integer" } }, required: ["name"] });
+    assert.equal(form.submit("Ada").kind, "next");
+    assert.deepEqual(form.submit("3"), { kind: "complete", content: { name: "Ada", count: 3 } });
+    assert.match(form.prompt, /^count/);
+    assert.equal(form.submit("wrong").kind, "invalid");
+    assert.deepEqual(form.submit(""), { kind: "complete", content: { name: "Ada" } });
+});
+
 test("structured fields preserve types and reject mismatches without losing prior answers", () => {
     const form = new QuestionForm({ properties: {
         count: { type: "number" }, items: { type: "array" }, options: { type: "object" },

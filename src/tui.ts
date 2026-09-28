@@ -28,10 +28,9 @@ import { indentDescendant, lineageWorker, markDescendant, type Descendant } from
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
-import { renderProposalMenu, keyToResolution, renderQuestionMenu, editInEditor } from "./proposal.ts";
-import QuestionForm from "./QuestionForm.ts";
+import { keyToResolution, editInEditor } from "./proposal.ts";
+import Review from "./Review.ts";
 import { BridgeTransport, type ObservationHandle, type Transport } from "./transport.ts";
-import type { ProposalParams, Resolution } from "./proposal.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientConversationLost, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { renderInline } from "./stream.ts";
@@ -336,9 +335,7 @@ export interface VerbContext {
     attachWorker: (name: string) => void;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
-    // Resolve the pending proposal (no-op if none) — the typed no-modifier
-    // fallback for the a/e/r/c review keys. `edit` opens $EDITOR.
-    resolveProposal: (action: "accept" | "reject" | "cancel" | "edit") => Promise<void>;
+    review: (action: "open" | "accept" | "reject" | "cancel" | "edit") => Promise<void>;
     // Compose the prompt line in $EDITOR (plurnk#26) — places the result back
     // on the line (zsh edit-command-line convention); Enter submits.
     composeInEditor: () => Promise<void>;
@@ -605,8 +602,10 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "reject":
         case "cancel":
         case "edit":
-            // Typed no-modifier fallback for the a/e/r/c proposal review keys.
-            await ctx.resolveProposal(verb as "accept" | "reject" | "cancel" | "edit");
+            await ctx.review(verb);
+            return;
+        case "review":
+            await ctx.review("open");
             return;
         case "stop":
             await rpc.call("loop.cancel", { reason: "user_stop" });
@@ -695,8 +694,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         .filter(({ workerId }) => workerId === null || conversationWorkerId === null || workerId === conversationWorkerId)
         .map(({ target }) => target);
     let liveReasoning: { messageId: string; rendered: string } | null = null;
-    let pendingProposal: ProposalParams | null = null;
-    let pendingQuestion: { interactionId: number; form: QuestionForm } | null = null;
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
@@ -708,10 +705,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const fanout = new FanoutCollapse();
     let presentedTurn: string | null = null;
 
-    // A dropped connection can't carry a pending question's answer. shuttingDown
-    // (set on an intentional quit) tells the transport to suppress its reject.
+    // Intentional exit closes the transport's run-scoped interrupts.
     let shuttingDown = false;
-    transport.onClose(() => { if (!shuttingDown) pendingQuestion = null; });
 
     // Alias cache for /model completion + the active alias for the header —
     // one cheap RPC, refreshed never (aliases are daemon-boot-time config).
@@ -914,11 +909,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // pi-tui owns multiline input, paste normalization, modern keyboard
     // negotiation, history navigation, wrapping, cursor placement, and IME.
     // Plurnk's listener consumes only product-level gestures before the editor.
-    let onProposalKey: (key: string) => void = () => {};
     let dispatchShortcut: (verb: string) => void = () => {};
     let requestClose: () => void = () => {};
     const removeInputListener = surface.addInputListener((text) => {
         if (matchesKey(text, "escape")) {
+            if (surface.leaveReview()) return { consume: true };
             if (inFlight) {
                 gesture.request("user_escape");
                 return { consume: true };
@@ -931,17 +926,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             else requestClose();
             return { consume: true };
         }
-        if (matchesKey(text, "ctrl+d") && surface.editor.getText().length === 0) {
+        if (matchesKey(text, "ctrl+d") && !surface.reviewing && surface.editor.getText().length === 0) {
             requestClose();
             return { consume: true };
         }
-        // A pending proposal + an EMPTY prompt line: a single review key
-        // (a/e/r/c) resolves it. Anything else — including typing `/accept` —
-        // falls through to the editor, so the typed verb fallback works.
-        if (pendingProposal !== null && surface.editor.getText().length === 0 && /^[aerc]$/i.test(text)) {
-            onProposalKey(text);
-            return { consume: true };
-        }
+        if (surface.reviewing) return undefined;
         const dir = cycleKey(text);
         if (dir !== null) { cycleLook(dir); return { consume: true }; }
         const verb = altShortcut(text) ?? backTabShortcut(text);
@@ -950,46 +939,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     });
     void seedPromptHistory({ call: (m, p) => transport.rpc(m, p) }, surface);
 
-    // Proposal lifecycle stays non-blocking. The editor remains available for
-    // a/e/r/c or the equivalent typed verbs; only $EDITOR takes terminal custody.
-    const proposalQueue: ProposalParams[] = [];
-    const showNextProposal = (): void => {
-        if (pendingProposal !== null || proposalQueue.length === 0) return;
-        pendingProposal = proposalQueue.shift() as ProposalParams;
-        printAbove(`${renderProposalMenu(pendingProposal)}\n`
-            + paint("  resolve: a/e/r/c  or  /accept /reject /cancel /edit", "dim"));
-    };
-    const resolvePending = async (resolution: Resolution): Promise<void> => {
-        const p = pendingProposal;
-        if (p === null) return;
-        pendingProposal = null;
-        try {
-            await transport.resolve({ logEntryId: p.logEntryId, ...resolution });
-        } catch (cause) {
-            printAlert(renderTuiFailure(cause));
-        }
-        showNextProposal();
-    };
-    // `e`/`/edit` → $EDITOR through pi-tui's bounded terminal handoff.
-    const editAndResolve = async (): Promise<void> => {
-        const p = pendingProposal;
-        if (p === null) return;
-        let resolution: Resolution;
-        try {
-            resolution = (await surface.handOff(() => keyToResolution("e", p)))
-                ?? { decision: "cancel", outcome: "edit_failed" };
-        } catch (cause) {
-            printAlert(renderTuiFailure(cause));
-            resolution = { decision: "cancel", outcome: "edit_error" };
-        }
-        await resolvePending(resolution);
-    };
-    // Single review key: a/r/c resolve directly, e edits.
-    onProposalKey = (key: string): void => {
-        if (key.toLowerCase() === "e") { void editAndResolve(); return; }
-        void keyToResolution(key, pendingProposal as ProposalParams)
-            .then((r) => { if (r !== null) return resolvePending(r); });
-    };
+    const review = new Review(surface, {
+        resolveProposal: (proposal, resolution) => transport.resolve({ logEntryId: proposal.logEntryId, ...resolution }),
+        editProposal: async (proposal) => {
+            const resolution = await surface.handOff(() => keyToResolution("e", proposal));
+            if (resolution === null) throw new Error("Proposal editing returned no resolution.");
+            return resolution;
+        },
+        resolveQuestion: (id, answer) => transport.resolveInteraction(id, answer),
+        record: printAbove,
+        error: (cause) => { printAlert(renderTuiFailure(cause)); },
+    });
     // The persistent run-plane handlers — one set, wired once, driven by whichever
     // transport is live. Same bodies as the old inline rpc.onNotification handlers;
     // they render the shared workspace's activity whether this REPL started the loop
@@ -1107,22 +1067,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     .catch((cause) => printAbove(`  ${paint(`auto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}`, "failure")}`));
                 return;
             }
-            proposalQueue.push(p);
-            showNextProposal();
+            review.addProposal(p);
         },
-        onInterruptEnd: (id) => {
-            if (id === `int:${pendingQuestion?.interactionId}`) pendingQuestion = null;
-            if (id === `prop:${pendingProposal?.logEntryId}`) pendingProposal = null;
-            const index = proposalQueue.findIndex((proposal) => id === `prop:${proposal.logEntryId}`);
-            if (index !== -1) proposalQueue.splice(index, 1);
-            showNextProposal();
-        },
-        onInteraction: (i) => {
-            const form = new QuestionForm(i.responseSchema);
-            pendingQuestion = { interactionId: i.interactionId, form };
-            printAbove(renderQuestionMenu(`${i.message}\n${form.prompt}`, form.choices));
-            reprompt();
-        },
+        onInterruptEnd: (id) => { review.remove(id); },
+        onInteraction: (question) => { review.addQuestion(question); },
         // The summary is rendered from the run's own done below.
         onTerminated: () => {},
     });
@@ -1183,10 +1131,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             catch (cause) { printAbove(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}`); return; }
             surface.insertInput(content);
         },
-        resolveProposal: async (action) => {
-            if (pendingProposal === null) { printAbove("  (no pending proposal)"); return; }
-            if (action === "edit") { await editAndResolve(); return; }
-            await resolvePending({ decision: action });
+        review: async (action) => {
+            if (action === "open") {
+                if (!surface.openReview()) printAbove("  (no pending review)");
+                return;
+            }
+            await review.decide(action);
         },
         look: async (rest) => {
             const fence = lookFence(rest);
@@ -1252,32 +1202,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 printSubmittedInput(printAbove, line);
             }
             const trimmed = line.trim();
-            if (trimmed === "/cancel" && pendingQuestion !== null) {
-                const question = pendingQuestion;
-                await transport.resolveInteraction(question.interactionId, "cancel");
-                if (pendingQuestion === question) pendingQuestion = null;
-                reprompt();
-                return;
-            }
-            if (trimmed.startsWith("/") && (pendingQuestion === null || isCommandName(parseSlash(trimmed).verb))) {
+            if (trimmed.startsWith("/")) {
                 await dispatchVerb(trimmed);
-                return;
-            }
-            // Named fields consume input before prompt injection. No answer is
-            // sent until the form is complete; invalid input stays visible here.
-            if (pendingQuestion !== null) {
-                const question = pendingQuestion;
-                const { interactionId, form } = question;
-                const answer = form.submit(trimmed.startsWith("\\/") ? trimmed.slice(1) : line);
-                if (answer.kind !== "complete") {
-                    if (answer.kind === "invalid") printAbove(ModelText.plain(answer.message));
-                    printAbove(renderQuestionMenu(form.prompt, form.choices));
-                    reprompt();
-                    return;
-                }
-                await transport.resolveInteraction(interactionId, answer.content);
-                if (pendingQuestion === question) pendingQuestion = null;
-                reprompt();
                 return;
             }
             if (trimmed.length === 0) {
@@ -1396,7 +1322,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 doing = null;
                 activeRun = null;
                 gesture.release();
-                pendingQuestion = null;   // loop ended (incl. cancel) → drop any unanswered question
                 reviewRequested = false;
                 followAdmission = false;
                 reprompt();

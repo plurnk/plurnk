@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, renderProposalMenu, keyToResolution, renderQuestionMenu, questionChoices } = await import("./proposal.ts");
+const { renderBody, formatTarget, renderProposalMenu, keyToResolution, questionChoices } = await import("./proposal.ts");
 
 const proposal = () => ({
     logEntryId: 1,
@@ -28,14 +28,6 @@ test("questionChoices: the schema's single-property enum choices surface", () =>
     assert.deepEqual(questionChoices({ properties: { branch: { type: "string", enum: ["main", "feat/x"] } } }), ["main", "feat/x"]);
     assert.deepEqual(questionChoices({ properties: {} }), []);
     assert.deepEqual(questionChoices({}), []);
-});
-
-test("renderQuestionMenu: numbers enum choices without promising arbitrary values; open question just prompts", () => {
-    const mc = renderQuestionMenu("Which?", ["Alpha", "Beta"]);
-    assert.match(mc, /1\. Alpha/);
-    assert.match(mc, /2\. Beta/);
-    assert.match(mc, /enter a listed value/);
-    assert.match(renderQuestionMenu("Name?", []), /type your answer/);
 });
 
 

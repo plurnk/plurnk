@@ -112,6 +112,10 @@ Await the MCP result.
                 await tui.waitFor(prompt, 15_000, since);
                 assert.equal(requests.length, 1, "input and intermediate MRTR rounds do not start another model turn");
                 since = tui.output().length;
+                if (answer === "/cancel") {
+                    tui.write("\x1b");
+                    await tui.waitFor(/1 pending review.*\/review/, 10_000, since);
+                } else tui.write("\x15");
                 tui.write(`${answer}\r`);
             }
             await tui.waitFor(/MCP interaction finished/, 30_000, since);

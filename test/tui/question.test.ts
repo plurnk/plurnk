@@ -67,6 +67,9 @@ for (const action of ["accept", "cancel", "stop"]) {
             await tui.waitFor(/plurnk.*\/help/);
             tui.write("Ask for branch details.\r");
             await tui.waitFor(/branch \(string; optional; Enter skips\)/, 30_000);
+            tui.write("/model");
+            tui.write("\x1b");
+            await tui.waitFor(/1 pending review.*\/review/, 3_000);
             tui.write("/model\r");
             await tui.waitFor(/model: questionfixture/);
             tui.write("/look worker:///question-check.md\r");
@@ -84,11 +87,13 @@ for (const action of ["accept", "cancel", "stop"]) {
             }
             if (action === "cancel") tui.write("/cancel\r");
             else {
-                tui.write("\\/model\r");
+                tui.write("/review\r");
+                await tui.waitFor(/branch \(string; optional; Enter skips\)/);
+                tui.write("\r");
                 await tui.waitFor(/count \(integer; required\)/);
                 tui.write("wrong-type\r");
                 await tui.waitFor(/count requires a JSON integer value/);
-                tui.write("0\r");
+                tui.write("\x15" + "0\r");
                 await tui.waitFor(/notes \(string; optional; Enter skips\)/);
                 tui.write("typed-through-the-tui\r");
             }
@@ -97,7 +102,7 @@ for (const action of ["accept", "cancel", "stop"]) {
             const packet = JSON.parse(requests[1]!).messages.map((message: { content: unknown }) => JSON.stringify(message.content)).join("\n");
             assert.match(packet, new RegExp(action), "the continuation receives the elicitation result");
             if (action === "accept") {
-                assert.match(packet, /\/model/, "an escaped command is a literal answer, not a client command");
+                assert.match(packet, /\/model/, "a slash-prefixed panel answer is literal data and survives returning to the composer");
                 assert.match(packet, /typed-through-the-tui/);
                 assert.match(packet, /count/);
             }

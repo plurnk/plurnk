@@ -71,8 +71,8 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     tui.write("! printf '\\141\\143\\164\\151\\157\\156\\055\\157\\153'\r");
     // In review mode, even the operator's own `!` command is shown before it runs. Answering it is
     // part of "the command remains available": the surface has to work, not just be bypassed.
-    await tui.waitFor(/── proposal/);
-    tui.write("a");
+    await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/);
+    tui.write("\r");
     await tui.waitFor(/action-ok/);
     tui.write("/look worker:///missing.md\r");
     await tui.waitFor(/LOOK \(worker:\/\/\/missing\.md\) —/);

@@ -52,3 +52,10 @@ remains the escape hatch from the interactive client when idle.
 Side-effect proposals are rendered for human review unless loop or client
 policy has already resolved them. A transport or resolution failure is shown
 as an error; the client never fabricates success.
+
+Approvals and questions use pi-tui selection lists and multiline editors in
+the composer's place, not floating dialogs. Escape returns to the untouched
+composer; `/review` reopens the pending interaction. Background output keeps
+flowing, and ordinary commands remain available from the composer. See
+[inline review](SPEC.md#inline-review-cli-inline-review) for focus and interrupt
+identity rules.

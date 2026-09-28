@@ -306,7 +306,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         },
         write: (s) => { out.push(s); },
         importFile: async (p) => { imports.push(p); },
-        resolveProposal: async (action) => { resolved.push(action); },
+        review: async (action) => { resolved.push(action); },
         composeInEditor: async () => { composed.push(true); },
         look: async (rest) => { looks.push(rest); },
         calls, out, imports, resolved, composed, attached, looks,
@@ -487,13 +487,19 @@ test("handleVerb /worker with no name → run.fork with a daemon-assigned name",
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
 });
 
-test("[§cli-proposal-review][§cli-review-menu-interactive] handleVerb /accept /reject /cancel /edit → resolveProposal(action) — typed no-modifier fallback", async () => {
+test("[§cli-proposal-review][§cli-review-menu-interactive] review commands address the pending interrupt", async () => {
     for (const action of ["accept", "reject", "cancel", "edit"] as const) {
         const ctx = makeCtx();
         await handleVerb(`/${action}`, ctx);
         assert.deepEqual(ctx.resolved, [action], `/${action} resolves the pending proposal`);
         assert.equal(ctx.calls.length, 0, "the verb never touches the wire directly");
     }
+});
+
+test("[§cli-inline-review] /review reopens the pending inline control", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/review", ctx);
+    assert.deepEqual(ctx.resolved, ["open"]);
 });
 
 // ─── state verbs ─────────────────────────────────────────────────────

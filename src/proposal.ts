@@ -93,8 +93,7 @@ export const editInEditor = async (body: string, suffix: string): Promise<string
     }
 };
 
-// The rendered diff + key menu as a string. Shared by the CLI (writes it to
-// stderr) and the non-blocking TUI review (writes it to stdout). No I/O here.
+// The one-shot TTY client's rendered diff and raw-key menu. No I/O here.
 export const renderProposalMenu = (params: ProposalParams): string => {
     const body = ModelText.plain(params.body);   // plurnk#35 — the body is the model's
     const nl = body.endsWith("\n") ? "" : "\n";
@@ -104,10 +103,6 @@ export const renderProposalMenu = (params: ProposalParams): string => {
 };
 
 // ─── request-user-input questions ({§question-tool}) ──────────────────
-// The question tool's body is the MCP2 form-elicitation shape — { message,
-// requestedSchema } — and the answer is the standard ElicitResult payload
-// { action, content }. The client renders the message plus the schema's
-// single-property enum choices as a numbered menu.
 
 // The schema's single-property enum choices, if any. Multi-property or
 // non-enum schemas yield []. QuestionForm calls this for each named field.
@@ -121,22 +116,8 @@ export const questionChoices = (schema: Record<string, unknown>): string[] => {
     return Array.isArray(enums) ? enums.filter((c): c is string => typeof c === "string") : [];
 };
 
-// The question menu: the question, numbered choices, and the always-present
-// literal-value alternative. An open question (no choices) is just "type your answer".
-export const renderQuestionMenu = (question: string, choices: string[]): string => {
-    const lines = [`\n${paint("── question ──", "bold")}`, `  ${ModelText.plain(question)}`];
-    choices.forEach((c, i) => lines.push(`  ${paint(`${i + 1}.`, "dim")} ${ModelText.plain(c)}`));
-    lines.push(choices.length > 0
-        ? `${paint(`  type 1–${choices.length} to pick, or enter a listed value`, "dim")} `
-        : `${paint("  type your answer", "dim")} `);
-    lines.push(paint("  /cancel cancels the question", "dim"));
-    return lines.join("\n");
-};
-
 // Map a single review key to a resolution. `e` runs $EDITOR (async — caller
-// must own the terminal during the spawn). Returns null for non-review keys, so
-// callers can pass them through (the TUI lets them reach its editor) or default
-// (the CLI cancels for safety).
+// must own the terminal during the spawn). The one-shot CLI cancels on other keys.
 export const keyToResolution = async (key: string, params: ProposalParams): Promise<Resolution | null> => {
     switch (key.toLowerCase()) {
         case "a":

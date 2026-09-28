@@ -362,7 +362,7 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 | Workspace | `/workspace /rename /share /worker /attach /parent /enter /older /newer` |
 | Functionality | `/mcp /skills /a2a /members /env /schedule` |
 | Compose | `/import /script /editor` |
-| Review | `/accept /reject /cancel /edit` |
+| Review | `/review /accept /reject /cancel /edit` |
 | Session | `/stop /quit` |
 
 Completion remains demand-driven. The client offers local syntax and known
@@ -477,10 +477,9 @@ client-operation rows cannot advance that cursor. A successful observation witho
 new `plurnk.terminated` event adds no synthetic loop summary, usage, or tally.
 Malformed or incomplete history fails visibly rather than claiming lossless recovery.
 
-During a question, recognized slash commands retain their normal meaning;
-`/cancel` dismisses the question. Other input answers the current field. A literal
-command can be entered with a leading backslash. Command completion or
-failure never consumes the question's answer slot.
+Questions use their own inline controls under {§cli-inline-review}. Input there
+is answer data, including slash-prefixed text. In the composer, all input keeps
+its ordinary command/prompt meaning; `/cancel` cancels the pending review.
 
 ### §3.2 Cancellation {§cli-cancellation}
 
@@ -490,9 +489,10 @@ placed back in the composer, never auto-submitted. Enter remains the only submit
 gesture. An empty buffer leaves the value unchanged. pi-tui relinquishes and
 reclaims terminal custody for the bounded editor process.
 
-`Esc` is the same interrupt in its modern agent-CLI spelling: while a dispatch
-is in flight it fires `loop.cancel` (reason `user_escape`) through the identical
-cancel path, and while idle it clears the composed value; Esc never exits.
+In an inline review, `Esc` returns to the composer without resolving or
+cancelling the interrupt. In the composer, while a dispatch is in flight it
+fires `loop.cancel` (reason `user_escape`) through the identical cancel path;
+while idle it clears the composed value. Esc never exits.
 pi-tui owns escape-sequence reassembly and keyboard-protocol negotiation.
 
 `Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits — the escape hatch for dispatches a drain-cancel cannot unblock (`op.parse`). (Dropping a conversation run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
@@ -951,8 +951,9 @@ AG-UI emits this client surface only for proposals whose durable disposition own
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
 When a proposal arrives and manual review is required, the one-shot TTY client
-prints its menu to stderr; the TUI presents it above the composer. Both offer
-accept, edit, reject, and cancel:
+prints its menu to stderr. The TUI uses a pi-tui selection list under
+{§cli-inline-review}. Both show the proposed body and offer accept, edit,
+reject, and cancel. The one-shot menu is:
 
 ```
 ── proposal EDIT file:///path/to/file ──
@@ -975,6 +976,31 @@ commands and the `/accept`, `/edit`, `/reject`, `/cancel` spellings under
 
 Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. Execution bodies render plain.
 
+#### Inline review {§cli-inline-review}
+
+One arrival-ordered queue projects pending proposal and question interrupts by
+their AG-UI identity. pi-tui controls replace the composer in the normal main
+buffer; there are no overlays, alternate screen, or captured mouse gestures.
+
+| Event | Presentation and input |
+|---|---|
+| First request arrives | Show its controls if the composer is empty; otherwise retain the draft and focus, with a pending-review hint. |
+| `Esc` in review | Return to the same composer object, preserving its draft, cursor, undo and history. The request and any partial answer remain pending. |
+| `/review` | Reopen the oldest pending request with its partial answer/selection intact. |
+| Input in review | pi-tui owns selection, multiline editing, paste and cursor/IME placement. Enter confirms/submits; slash-prefixed answers are literal data. |
+| Input in composer | Normal commands, inspection and prompt injection; proposal keys do not intercept ordinary letters. |
+| Resolution or withdrawal | Remove only that interrupt. Show the next queued request if reviewing, otherwise retain composer focus. Restore the composer when no reviews remain. |
+
+Reasoning, transcript and status updates continue while reviewing. A pending
+submission cannot be submitted twice. An external-editor result belongs only
+to its original still-pending proposal and cannot restart a closed client.
+Resolution/editor failures surface
+without discarding a still-pending request or silently cancelling it.
+Successful local resolutions leave one concise decision/answered line in
+scrollback; form redraws and answer values are not appended to the transcript
+or prompt-recall history. The line acknowledges the human's resolution, not
+the eventual execution outcome.
+
 ### §6.3 `--yolo` / `PLURNK_CLIENT_YOLO` {§cli-yolo-plurnkyolo}
 
 Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. The startup header names explicit review as `yolo: off`; the default adds no header segment. When on, the proposal handler skips the menu and resumes the interrupt with `{decision: "accept"}`. The proposal still crosses the ordinary client-review boundary. A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
@@ -993,17 +1019,19 @@ Redirection alone does not request review. This applies when review is explicitl
 
 AG-UI `request_user_input` interrupts present the message and the exact response
 contract. Independent, directly typed fields are collected individually; each
-shows its type, required/optional status, and description. Optional fields may
-be skipped with Enter. String enums offer numbered choices or a listed value;
-unrestricted strings accept free text. Non-string values use JSON notation.
+shows its type, required/optional status, and description. String enums use
+pi-tui selection lists; optional enums include a Skip choice. Other fields use
+the multiline editor, with empty Enter skipping optional fields. Unrestricted
+strings accept free text; non-string values use JSON notation.
 Complex schemas (including composed or referenced schemas and nested forms)
 are shown whole and accept one JSON response object, without detaching schema
 fragments from their reference or cross-field context. The contracts-owned JSON
 Schema validator checks answers before submission. Invalid input remains
 editable without advancing or losing earlier field answers. Empty forms
-explicitly submit an empty object. Completed forms resume with the exact response-schema object;
-`/cancel` sends a cancelled resolution. `/stop`, `/quit`, and `/help` remain
-available. Resolution failures are visible, never swallowed. `--yolo` does not
+explicitly submit an empty object. Completed forms resume with the exact response-schema object.
+From the composer, `/cancel` sends a cancelled resolution; `/stop`, `/quit`,
+and `/help` remain available. Schema and resolution failures surface with their
+cause, leaving a pending form cancellable. `--yolo` does not
 invent answers. The originating tool constructs its own result envelope. A stale
 interaction identity cannot answer a subsequent interrupt.
 

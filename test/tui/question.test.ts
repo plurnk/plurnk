@@ -87,8 +87,9 @@ for (const action of ["accept", "cancel", "stop"]) {
             }
             if (action === "cancel") tui.write("/cancel\r");
             else {
+                const reopened = tui.output().length;
                 tui.write("/review\r");
-                await tui.waitFor(/branch \(string; optional; Enter skips\)/);
+                await tui.waitFor(/branch \(string; optional; Enter skips\)/, 10_000, reopened);
                 tui.write("\r");
                 await tui.waitFor(/count \(integer; required\)/);
                 tui.write("wrong-type\r");

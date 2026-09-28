@@ -13,6 +13,56 @@ const running: ClientStatus = {
     children: null,
 };
 
+test("[§cli-status-descendants] cumulative child snapshots replace their prior value and settle once", () => {
+    const gauge = { lifecycle: "parked", model: null, loopId: 2, packetCount: 1, activity: null, descendants: {
+        requests: 1, usage: { inputTokens: 200, outputTokens: 20 }, costUsd: "0.0200",
+    } };
+    const status = projectStatusGauge(gauge);
+    const own = { inputTokens: 100, outputTokens: 10, costUsd: "0.0100" };
+    const context = { ...CONTEXT, accrued: own };
+    const first = renderStatusLine(status, context);
+    assert.match(first, /↓300 ↑30 · \$0\.0300/);
+    assert.equal(renderStatusLine(projectStatusGauge(gauge), context), first, "a repeated snapshot adds no spend");
+    const updated = projectStatusGauge({ ...gauge, descendants: {
+        requests: 2, usage: { inputTokens: 600, outputTokens: 60 }, costUsd: "0.0600",
+    } });
+    assert.match(renderStatusLine(updated, context), /↓700 ↑70 · \$0\.0700/);
+    const tally = tallyOutcome(EMPTY_TALLY, {
+        turns: 1, wallMs: 5000, usage: { accounting: { usage: { inputTokens: 100, outputTokens: 10 }, costUsd: own.costUsd } } as never,
+        descendants: updated.descendants,
+    });
+    assert.deepEqual(tally, { turns: 1, wallMs: 5000, inputTokens: 700, outputTokens: 70, costUsd: "0.0700" });
+    assert.match(renderStatusLine({ ...updated, lifecycle: "completed" }, { ...context, tally, runningSince: null }), /↓700 ↑70 · \$0\.0700/);
+    assert.match(renderStatusLine({ ...updated, loopId: 3, lifecycle: "running", descendants: null }, {
+        ...context, tally, accrued: own,
+    }), /↓800 ↑80 · \$0\.0800/, "the following loop does not charge last loop's children again");
+});
+
+test("[§cli-status-descendants] absent evidence is not zero and malformed evidence is rejected", () => {
+    const base = { lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null };
+    const unknown = projectStatusGauge({ ...base, descendants: { requests: 1, usage: null, costUsd: null } });
+    assert.deepEqual(unknown.descendants, { inputTokens: null, outputTokens: null, costUsd: null });
+    assert.equal(projectStatusGauge({ ...base, descendants: { requests: 0, usage: null, costUsd: null } }).descendants, null);
+    for (const descendants of [null, {}, { requests: -1, usage: null, costUsd: null },
+        { requests: 1, usage: { inputTokens: -1 }, costUsd: null }, { requests: 1, usage: null, costUsd: "NaN" }]) {
+        assert.throws(() => projectStatusGauge({ ...base, descendants }), /Invalid runtime descendant accounting/);
+    }
+});
+
+test("[§cli-status-descendants] one-shot human status retains the child subtotal at settlement", () => {
+    const writes: string[] = [];
+    const line = new TerminalStatusLine((text) => writes.push(text), true, {
+        ...running, descendants: { inputTokens: 200, outputTokens: 20, costUsd: "0.02" },
+    }, CONTEXT);
+    line.accrue({ inputTokens: 100, outputTokens: 10, costUsd: "0.01" });
+    assert.match(writes.at(-1)!, /↓300 ↑30 · \$0\.0300/);
+    line.update({ lifecycle: "completed" });
+    line.settle({ turns: 1, wallMs: 3200, usage: {
+        accounting: { usage: { inputTokens: 100, outputTokens: 10 }, costUsd: "0.01" },
+    } as never });
+    assert.match(writes.at(-2)!, /⏹️[^\r\n]*↓300 ↑30 · \$0\.0300/);
+});
+
 test("[§cli-worker-status] status presentation uses only client-owned facts", () => {
     assert.equal(renderStatusLine(running, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
     assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 rtx5070", "a spawn override rides beside the model");

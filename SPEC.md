@@ -192,6 +192,16 @@ adds to, that run's accrual. Unknown usage remains unknown. The turns/wall group
 run, tokens once accounting exists, cost when nonzero, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
 worker once the conversation worker is known (the terminated outcome names it). The client does
 not infer provider packets from operation rows or turn coordinates.
+
+{§cli-status-descendants} Human status adds the daemon's cumulative
+`snapshot.plurnk.status.descendants` accounting to the parent's own settled
+evidence. Each snapshot replaces the prior descendant subtotal; snapshots and
+control-plane refreshes are not billable events. On conclusion, add the final
+descendant subtotal to the session tally once, beside—not inside—the parent's
+terminal aggregate. A later loop starts with its own descendant projection.
+Missing usage remains unknown; zero requests adds nothing. Known subtotals follow
+the daemon's accounting convention. Do not sum child durations, reconstruct a
+tree, reprice provider usage, or change own-loop JSON/summary accounting.
 Before the first state snapshot, durable worker policy and local derivation
 activity provide an honest startup fallback. Exact accounting remains in the
 loop summary.

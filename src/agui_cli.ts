@@ -451,8 +451,8 @@ export const runCliViaBridge = async (
                     : "completed",
             activity: null,
         });
-        statusLine.settle();
         const terminated = result.terminated;
+        statusLine.settle({ turns: terminated?.turnIds.length ?? 0, wallMs: Date.now() - started, usage: terminated?.usage });
         process.stderr.write(withColorOutput(process.stderr, () => `${renderSummary(
             terminated?.turnIds.length ?? 0,
             Date.now() - started,

@@ -1225,7 +1225,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const wallMs = Date.now() - start;
                     surface.archiveResponses();
                     printAbove(renderSummary(turnCount, wallMs, terminal.result, terminal.hitMaxTurns, terminal.usage));
-                    tally = tallyOutcome(tally, { turns: turnCount, wallMs, usage: terminal.usage });
+                    tally = tallyOutcome(tally, {
+                        turns: turnCount, wallMs, usage: terminal.usage,
+                        descendants: authoritativeStatus?.loopId === terminal.loopId ? authoritativeStatus?.descendants : null,
+                    });
                     accrued = null;
                 }
                 while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);

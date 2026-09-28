@@ -1,5 +1,5 @@
 import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
-import { Validator, type ModelRoute } from "@plurnk/plurnk-contracts";
+import { Validator, type JsonSchema, type ModelRoute, type ProviderUsage } from "@plurnk/plurnk-contracts";
 import type { LoopUsage } from "./render.ts";
 import { abbreviatedCount, money } from "./figures.ts";
 import ModelText from "./model-text.ts";
@@ -29,16 +29,19 @@ const addDecimal = (a: string, b: string): string => {
 const addNullable = (a: number | null, b: number | null | undefined): number | null =>
     b === null || b === undefined ? a : (a ?? 0) + b;
 
-export const tallyOutcome = (tally: SessionTally, outcome: { turns: number; wallMs: number; usage?: LoopUsage }): SessionTally => {
+export interface StatusOutcome { turns: number; wallMs: number; usage?: LoopUsage; descendants?: TurnAccounting | null }
+
+export const tallyOutcome = (tally: SessionTally, outcome: StatusOutcome): SessionTally => {
     const aggregate = outcome.usage?.accounting.usage;
     const cost = outcome.usage?.accounting.costUsd ?? null;
-    return {
+    const concluded = {
         turns: tally.turns + outcome.turns,
         wallMs: tally.wallMs + outcome.wallMs,
         inputTokens: addNullable(tally.inputTokens, aggregate?.inputTokens),
         outputTokens: addNullable(tally.outputTokens, aggregate?.outputTokens),
         costUsd: cost === null ? tally.costUsd : tally.costUsd === null ? cost : addDecimal(tally.costUsd, cost),
     };
+    return outcome.descendants == null ? concluded : { ...concluded, ...accrueTurnAccounting(concluded, outcome.descendants) };
 };
 
 // What the status line knows beyond the gauge: where it is, and the session so far.
@@ -150,6 +153,7 @@ export interface ClientStatus {
     // {§cli-status-children} — the daemon's count of the bound worker's alive direct children; null
     // when the transport carries no gauge.
     children: number | null;
+    descendants?: TurnAccounting | null;
 }
 
 // {§cli-conversation-lost} — the gauge reports no loop where the previous gauge on the same binding
@@ -164,7 +168,26 @@ export interface RuntimeStatusGauge {
     packetCount: number;
     activity: unknown;
     children?: unknown;
+    descendants?: unknown;
 }
+
+// The service owns the tree and cumulative accounting. This is only its human
+// projection, sharing the published usage schema and exact decimal arithmetic.
+const descendantAccounting = (value: unknown): TurnAccounting | null => {
+    const fail = (): never => { throw new TypeError("Invalid runtime descendant accounting."); };
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return fail();
+    const { requests, usage, costUsd } = value as { requests?: unknown; usage?: unknown; costUsd?: unknown };
+    if (!Number.isSafeInteger(requests) || (requests as number) < 0) return fail();
+    if (costUsd !== null && (typeof costUsd !== "string" || !/^[0-9]+(?:\.[0-9]+)?$/u.test(costUsd))) return fail();
+    if (usage !== null) {
+        const schema = Validator.schemaByRef("https://schemas.plurnk.xyz/ProviderUsage.json");
+        if (schema === null) throw new Error("The contracts package is missing ProviderUsage.");
+        if (!Validator.validateJsonSchemaInstance(schema as JsonSchema, usage).valid) return fail();
+    }
+    if (requests === 0) return null;
+    const totals = usage as ProviderUsage | null;
+    return { inputTokens: totals?.inputTokens ?? null, outputTokens: totals?.outputTokens ?? null, costUsd };
+};
 
 export interface StatusGaugeEnvelope {
     plurnk: { status: RuntimeStatusGauge; workspace?: { projectRoot?: string | null } };
@@ -211,6 +234,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         packetCount: value.packetCount,
         activity,
         children,
+        ...(value.descendants === undefined ? {} : { descendants: descendantAccounting(value.descendants) }),
         ...(projectRoot === undefined ? {} : { projectRoot }),
     };
 };
@@ -303,7 +327,8 @@ export const renderStatusLine = (
     const clockActive = unfinished && context.runningSince !== null;
     const elapsed = clockActive ? Math.max(0, (context.now ?? Date.now()) - context.runningSince!) : 0;
     if (context.tally.turns > 0 || running || clockActive) parts.push(formatDuration(context.tally.wallMs + elapsed));
-    const accrued = unfinished ? context.accrued ?? null : null;
+    const own = context.accrued ?? null;
+    const accrued = !unfinished ? null : value.descendants == null ? own : accrueTurnAccounting(own, value.descendants);
     const combined = accrued === null ? context.tally : accrueTurnAccounting({
         costUsd: context.tally.costUsd,
         inputTokens: context.tally.inputTokens,
@@ -397,7 +422,15 @@ export default class TerminalStatusLine {
         if (value.endsWith("\n")) this.#paint();
     }
 
-    settle(): void {
+    settle(outcome?: Omit<StatusOutcome, "descendants">): void {
+        if (outcome !== undefined) {
+            this.#context = {
+                ...this.#context,
+                tally: tallyOutcome(this.#context.tally, { ...outcome, descendants: this.#status.descendants }),
+                accrued: null, runningSince: null,
+            };
+            this.update({});
+        }
         if (this.#visible) this.#write("\n");
         this.#visible = false;
         this.#current = null;

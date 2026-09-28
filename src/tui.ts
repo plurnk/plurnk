@@ -773,11 +773,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     surface.append(paint(header, "dim"));
     surface.append("");
 
-    // Client-owned lifecycle and model lead the input affordance; ephemeral
-    // derivation, search, and branch work share its final activity position.
     const statusContext = () => ({
         workspace: current.name,
         worker: conversationWorker,
+        place: promptPrefix(
+            workerPath(placeWorkers, conversationWorker),
+            { workspace: current.name, loopId: placeLoop, turn: placeTurn },
+        ),
         position: workerPosition,
         child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
         tally,
@@ -786,15 +788,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         now: Date.now(),
         doing,
     });
-    const paintPrompt = (): void => surface.setPrompt(promptPrefix(
-        workerPath(placeWorkers, conversationWorker),
-        { workspace: current.name, loopId: placeLoop, turn: placeTurn },
-    ));
     const refreshTopology = async (): Promise<void> => {
         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
         workerPosition = siblingPosition(workers, conversationWorker);
         placeWorkers = workers;
-        paintPrompt();
         reprompt();
     };
     // {§cli-identity-effort} — the identity is the client's last server-read route. A gauge is a
@@ -818,7 +815,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         }, statusContext(), { yolo: opts.yolo });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
-    paintPrompt();
+    reprompt();
     void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
     surface.setAutocompleteProvider(makeAutocompleteProvider({
@@ -1080,7 +1077,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
             placeLoop = authoritativeStatus.loopId;
             placeTurn = authoritativeStatus.packetCount;
-            paintPrompt();
             repromptPreserving();
         },
         onStream: (payload) => {
@@ -1370,7 +1366,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                             conversationWorker = hit.name;
                             workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
                             placeWorkers = workers as WorkerRow[];
-                            paintPrompt();
                         }
                         lifecycle = t.result.status === 202 ? "parked"
                             : t.result.status === 499 ? "cancelled"

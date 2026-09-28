@@ -35,12 +35,17 @@ test("[§cli-status-project-root] status displays the bound workspace folder wit
     const path = "/projects/client work/日本語";
     const status = projectStatusGauge(gauge, path);
     assert.equal(status.projectRoot, path);
-    assert.equal(renderStatusLine(status, CONTEXT), `idle · ${path}`);
+    assert.equal(renderStatusLine(status, CONTEXT), `${path} idle`);
     assert.equal(renderStatusLine(projectStatusGauge(gauge, null), CONTEXT), "idle", "headless is not the client cwd");
     assert.equal(renderStatusLine(projectStatusGauge(gauge), CONTEXT), "idle", "no workspace projection means no known root");
     assert.throws(() => projectStatusGauge(gauge, 42 as never), /Invalid workspace project root/u);
-    assert.equal(renderStatusLine({ ...status, projectRoot: "/repo\n\t\x1b]2;not-a-title\x07name" }, CONTEXT), "idle · /repo\\n\\tname",
+    assert.equal(renderStatusLine({ ...status, projectRoot: "/repo\n\t\x1b]2;not-a-title\x07name" }, CONTEXT), "/repo\\n\\tname idle",
         "path controls cannot change the terminal title or create status rows");
+    for (const place of ["[work/1/9:main]", "[work/100/1000:main]"]) {
+        assert.equal(renderStatusLine({ ...running, projectRoot: path }, { ...CONTEXT, place }, { yolo: true }),
+            `${path} ${place} 🔥 ⌛︎  · 🎲 deepdumb · 3.2s`,
+            "the folder starts the complete footer, before even the changing turn coordinates");
+    }
 });
 
 // {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the

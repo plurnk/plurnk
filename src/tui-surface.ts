@@ -37,11 +37,8 @@ export default class TuiSurface {
     // The reasoning scroll: at most a third of the terminal, newest lines only, never durable.
     readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
     readonly #turn = new TurnDisplay();
-    // {§cli-workers-topology} — one line below the composer: the place, then the status line. The
-    // composer separates content from state, so neither needs a padding line of its own (#100).
-    readonly #prompt = new Text("", 0, 0);
-    #promptText = "";
-    #statusText = "";
+    // {§cli-status-project-root} {§cli-workers-topology} — the application composes one footer.
+    readonly #status = new Text("", 0, 0);
     readonly editor = new Editor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 });
     #started = false;
 
@@ -50,7 +47,7 @@ export default class TuiSurface {
         this.#tui.addChild(this.#live);
         this.#tui.addChild(this.#turn);
         this.#tui.addChild(this.editor);
-        this.#tui.addChild(this.#prompt);
+        this.#tui.addChild(this.#status);
         this.#tui.setFocus(this.editor);
     }
 
@@ -104,18 +101,8 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
-    setPrompt(text: string): void {
-        this.#promptText = text;
-        this.#paintPlace();
-    }
-
     setStatus(text: string): void {
-        this.#statusText = text;
-        this.#paintPlace();
-    }
-
-    #paintPlace(): void {
-        this.#prompt.setText([this.#promptText, this.#statusText].filter((part) => part.length > 0).join(" "));
+        this.#status.setText(text);
         this.#tui.requestRender();
     }
 

@@ -45,6 +45,7 @@ export const tallyOutcome = (tally: SessionTally, outcome: { turns: number; wall
 export interface StatusContext {
     workspace: string | null;
     worker: string | null;
+    place?: string;
     // {§cli-workers-topology} — the bound worker's place among its siblings, newest first.
     position?: { index: number; count: number } | null;
     child: string | null;
@@ -291,14 +292,12 @@ export const renderStatusLine = (
 ): string => {
     // {plurnk#58} — the glyph IS the lifecycle; the word beside it said the same thing twice, and
     // the turn count moved into the prompt prefix where the place is named.
-    // {plurnk#104} — YOLO is a fireball at the left edge beside the lifecycle glyph, and the model
-    // sits next, ahead of everything that ticks, so the ticking never moves it.
+    // {plurnk#104} — YOLO sits beside the lifecycle glyph, and the model precedes live counters.
     const glyph = lifecycleGlyph(value.lifecycle, "");
     const glyphs = [...(options.yolo === true ? ["🔥"] : []), ...(glyph.length > 0 ? [glyph] : [])];
     const head = glyphs.length > 0 ? glyphs.join(" ") : value.lifecycle;
     const parts: string[] = [];
     if (value.model !== null) parts.push(`🎲 ${value.model}`);
-    if (value.projectRoot != null) parts.push(ModelText.plain(value.projectRoot).replaceAll("\n", "\\n").replaceAll("\t", "\\t"));
     const running = value.lifecycle === "running";
     const unfinished = running || value.lifecycle === "parked" || value.lifecycle === "queued";
     const clockActive = unfinished && context.runningSince !== null;
@@ -319,7 +318,9 @@ export const renderStatusLine = (
     if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
     // A glyph is two columns wide: a second space keeps the first dot off its shoulder.
-    return parts.length === 0 ? head : `${head}${glyphs.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
+    const activity = parts.length === 0 ? head : `${head}${glyphs.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
+    const folder = value.projectRoot == null ? "" : ModelText.plain(value.projectRoot).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
+    return [folder, context.place ?? "", activity].filter((part) => part.length > 0).join(" ");
 };
 
 // One mutable human status row. Routine progress repaints at most once per

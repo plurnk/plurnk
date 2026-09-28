@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 import { actionViaBridge } from "../../src/agui.ts";
@@ -23,16 +24,20 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
     }, daemon.home);
     t.after(() => tui.kill());
-    await tui.waitFor(new RegExp(` · ${RegExp.escape(first)}`));
+    await tui.waitFor(new RegExp(`${RegExp.escape(first)} \\[project-first/`));
+    assert.match(stripVTControlCharacters(tui.output()), new RegExp(`(?:^|[\\r\\n])${RegExp.escape(first)} \\[project-first/`),
+        "the folder is at column zero, before the workspace/worker coordinates");
     const switched = tui.output().length;
     tui.write("/workspace project-second\r");
-    await tui.waitFor(new RegExp(` · ${RegExp.escape(second)}`), 10_000, switched);
+    await tui.waitFor(new RegExp(`${RegExp.escape(second)} \\[project-second/`), 10_000, switched);
     const headless = tui.output().length;
     tui.write("/workspace project-headless\r");
     const headlessStatus = /\[project-headless\/~project-headless\(0\)\] [^\r\n]*/;
     await tui.waitFor(headlessStatus, 10_000, headless);
-    assert.doesNotMatch(tui.output().slice(headless).match(headlessStatus)![0], new RegExp(` · (${RegExp.escape(first)}|${RegExp.escape(second)}|${RegExp.escape(daemon.home)})`),
-        "switching to a headless workspace cannot retain either old root or the creation-option cwd");
+    const headlessLines = stripVTControlCharacters(tui.output().slice(headless)).split(/[\r\n]/).filter((line) => headlessStatus.test(line));
+    assert.ok(headlessLines.length > 0);
+    assert.ok(headlessLines.every((line) => line.startsWith("[project-headless/")),
+        "a headless footer starts with its coordinates, without an old root or the creation-option cwd");
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
 });
@@ -55,8 +60,9 @@ test("[§cli-status-project-root] the built one-shot CLI status uses the resumed
     t.after(() => cli.kill());
     assert.equal(await cli.exited, 0, cli.output());
     assert.match(cli.output(), /Folder confirmed\./);
-    assert.match(cli.output(), new RegExp(` · ${RegExp.escape(daemon.workspace)}(?: ·|[\\r\\n])`));
-    assert.doesNotMatch(cli.output(), new RegExp(` · ${RegExp.escape(daemon.home)}(?: ·|[\\r\\n])`));
+    const rendered = stripVTControlCharacters(cli.output());
+    assert.match(rendered, new RegExp(`(?:^|[\\r\\n])${RegExp.escape(daemon.workspace)} ⌛︎`));
+    assert.doesNotMatch(rendered, new RegExp(`(?:^|[\\r\\n])${RegExp.escape(daemon.home)} ⌛︎`));
 });
 
 const statusRelay = async (t: TestContext, url: string, hooks: {

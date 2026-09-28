@@ -7,12 +7,12 @@
 // from locateDaemon(), and each test file's `before()` hook can skip the
 // whole suite cleanly. This keeps `npm test` from hard-failing downstream.
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtemp, mkdir, rm, access, writeFile, constants as fsConstants } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, access, realpath, constants as fsConstants } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -76,34 +76,24 @@ interface BootOptions {
     readyTimeoutMs?: number;             // default 10s
 }
 
-// Boot the daemon and wait until its AG-UI listener prints the ready line. Returns
-// the resolved URL plus a cleanup function that MUST be awaited (otherwise
-// orphan subprocess — see memory:feedback-background-task-cleanup).
+// {§cli-test-daemon-lifecycle}: the selected service owns launch/readiness/shutdown;
+// this fixture owns configuration isolation and disposal of its temporary root.
 export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promise<Daemon> => {
+    const entry = await realpath(binPath);
+    const { default: Launch } = await import(pathToFileURL(
+        createRequire(entry).resolve("@plurnk/plurnk-service/launch"),
+    ).href);
+    await using resources = new AsyncDisposableStack();
     const runtime = await mkdtemp(join(tmpdir(), "plurnk-intg-"));
-    const dbPath = join(runtime, "plurnk.db");
+    resources.defer(() => rm(runtime, { recursive: true, force: true }));
     const home = join(runtime, "home");
-    await mkdir(home, { recursive: true });
-    const workspace = await mkdtemp(join(tmpdir(), "plurnk-intg-ws-"));
-    const daemonEnv = opts.inheritOperatorConfig === true ? await locateDaemonEnv(binPath) : null;
-    // Let the daemon own ephemeral port allocation; reserving and releasing one
-    // here races other parallel tests. Read the actual bound address from readiness.
-    const overrides = Object.entries({
-        PLURNK_SERVICE_DB_PATH: dbPath,
-        PLURNK_PORT: "0",
-        PLURNK_WS_PORT: "0",
-        PLURNK_MODEL: "",
-        PLURNK_MCP_ENABLED: "[]",
-        OPENAI_BASE_URL: "http://127.0.0.1:11435",
-        ...opts.extraEnv,
-    }).map(([key, value]) => `${key}=${value}`).join("\n");
-    const overridesPath = join(dirname(dbPath), "test.env");
-    await writeFile(overridesPath, `${overrides}\n`);
+    const workspace = join(runtime, "workspace");
+    await Promise.all([mkdir(home), mkdir(workspace)]);
+    const daemonEnv = opts.inheritOperatorConfig === true ? await locateDaemonEnv(entry) : null;
     const args = [
-        ...(binPath.endsWith(".ts") ? ["--conditions=plurnk-dev"] : []),
-        binPath,
+        ...(entry.endsWith(".ts") ? ["--conditions=plurnk-dev"] : []),
+        entry,
         ...(daemonEnv !== null ? [`--env-file=${daemonEnv}`] : []),
-        `--env-file=${overridesPath}`,
     ];
     // The service's env cascade is set-if-unset with the shell highest, so an
     // operator shell that exports provider or PLURNK variables would silently
@@ -121,59 +111,36 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
             XDG_CACHE_HOME: join(home, ".cache"),
         };
 
-    const child: ChildProcess = spawn("node", args, {
-        env,
-        // Plugin discovery resolves node_modules/@plurnk/* relative to cwd —
-        // run from the service repo so its installed executors register.
-        cwd: resolve(dirname(binPath), ".."),
-        stdio: ["ignore", "pipe", "pipe"],
+    const daemon = await Launch.start({
+        command: [process.execPath, ...args],
+        env: {
+            ...env,
+            PLURNK_SERVICE_DB_PATH: "",
+            PLURNK_MODEL: "",
+            PLURNK_MCP_ENABLED: "[]",
+            OPENAI_BASE_URL: "http://127.0.0.1:11435",
+            ...opts.extraEnv,
+        },
+        cwd: resolve(dirname(entry), ".."),
+        stateRoot: runtime,
+        host: "127.0.0.1",
+        port: 0,
+        readyTimeoutMs: opts.readyTimeoutMs ?? 10_000,
+        stopGraceMs: 2_000,
+    }).catch((cause: unknown) => {
+        if (!(cause instanceof Error)
+            || !("stdout" in cause) || typeof cause.stdout !== "string"
+            || !("stderr" in cause) || typeof cause.stderr !== "string") throw cause;
+        const { stdout, stderr } = cause;
+        throw new Error(`${cause.message}\nstdout:\n${stdout}\nstderr:\n${stderr}${bootDiagnosis(stdout, stderr)}`, { cause });
     });
-
-    let stdout = "";
-    let stderr = "";
-    const readyTimeoutMs = opts.readyTimeoutMs ?? 10_000;
-
-    const url = await new Promise<string>((resolveBoot, rejectBoot) => {
-        const timeout = setTimeout(() => {
-            rejectBoot(new Error(`daemon boot timeout after ${readyTimeoutMs}ms\nstdout:\n${stdout}\nstderr:\n${stderr}${bootDiagnosis(stdout, stderr)}`));
-        }, readyTimeoutMs);
-
-        child.stdout?.on("data", (chunk: Buffer) => {
-            stdout += chunk.toString("utf8");
-            // AG-UI+ is the client surface — the module's port is the daemon's address.
-            const m = stdout.match(/agui=http:\/\/(\d+\.\d+\.\d+\.\d+):(\d+)/);
-            if (m !== null) {
-                clearTimeout(timeout);
-                resolveBoot(`http://${m[1]}:${m[2]}`);
-            }
-        });
-        child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
-        child.once("exit", (code) => {
-            clearTimeout(timeout);
-            rejectBoot(new Error(`daemon exited with code ${code} before ready\nstdout:\n${stdout}\nstderr:\n${stderr}${bootDiagnosis(stdout, stderr)}`));
-        });
-        child.once("error", (err) => {
-            clearTimeout(timeout);
-            rejectBoot(err);
-        });
-    });
-
-    const cleanup = async (): Promise<void> => {
-        if (child.exitCode === null && child.signalCode === null) {
-            child.kill("SIGTERM");
-            await new Promise<void>((r) => {
-                const done = (): void => r();
-                if (child.exitCode !== null || child.signalCode !== null) { done(); return; }
-                child.once("exit", done);
-                // Hard timeout — if SIGTERM doesn't take, escalate
-                setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* already dead */ } done(); }, 2000);
-            });
-        }
-        await rm(runtime, { recursive: true, force: true });
-        await rm(workspace, { recursive: true, force: true });
+    resources.defer(async () => { await daemon.stop(); });
+    const owned = resources.move();
+    return {
+        url: daemon.url, workspace, home, pid: daemon.child.pid,
+        output: () => `${daemon.stdout()}\n${daemon.stderr()}`,
+        cleanup: () => owned.disposeAsync(),
     };
-
-    return { url, workspace, home, pid: child.pid ?? -1, output: () => `${stdout}\n${stderr}`, cleanup };
 };
 
 // A scripted OpenAI-compatible completions endpoint for a booted daemon: route an alias to it with

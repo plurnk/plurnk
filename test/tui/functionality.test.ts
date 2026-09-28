@@ -40,7 +40,7 @@ before(async () => {
     daemon = await bootDaemon(bin, {
         readyTimeoutMs: 30_000,
         extraEnv: {
-            PLURNK_SERVICE_SKILLS_CLI: `"${process.execPath} ${skillsCli}"`,
+            PLURNK_SERVICE_SKILLS_CLI: `${process.execPath} ${skillsCli}`,
             PLURNK_SERVICE_SKILLS_REGISTRY_URL: "",
             PLURNK_A2A_RESEARCHER: agent.baseUrl,
             PLURNK_A2A_ENABLED: '["researcher"]',

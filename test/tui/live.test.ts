@@ -36,7 +36,7 @@ describe("TUI live (model-gated)", () => {
     test("[§cli-tui-flow] mid-loop inject — a line typed during a loop is folded in (loop.inject)", { timeout: 600_000 }, async (t) => {
         if (!liveEnabled) { t.skip("real-model tier requires npm run test:tui:live"); return; }
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "0" });
         try {
             await tui.waitFor(/plurnk.*\/help/);
             // {§exec-host-proposes} — an execution proposes, and this witness is the only reviewer in

@@ -6,8 +6,10 @@ import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const run = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
@@ -22,14 +24,6 @@ const listen = (server) => new Promise((accept, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => accept(server.address().port));
 });
-const stop = async (child) => {
-    if (child === undefined || child.exitCode !== null) return;
-    const exited = new Promise((accept) => child.once("exit", accept));
-    child.kill("SIGTERM");
-    await Promise.race([exited, new Promise((accept) => setTimeout(accept, 5_000))]);
-    if (child.exitCode === null) child.kill("SIGKILL");
-    await exited;
-};
 const runClient = (file, args, options) => new Promise((accept, reject) => {
     const child = spawn(file, args, {
         cwd: options.cwd,
@@ -143,16 +137,25 @@ try {
 
     const daemonBin = join(install, "node_modules", ".bin", "plurnk-service");
     const clientBin = join(install, "node_modules", ".bin", "plurnk");
-    const db = join(temp, "composition.db");
-    daemon = spawn(daemonBin, ["start"], {
+    const { default: Launch } = await import(pathToFileURL(
+        createRequire(join(install, "package.json")).resolve("@plurnk/plurnk-service/launch"),
+    ).href);
+    const isolatedEnv = {
+        ...Object.fromEntries(Object.entries(process.env)
+            .filter(([key]) => !/^PLURNK_/.test(key) && !/_(API_KEY|BASE_URL)$/.test(key))),
+        HOME: home,
+        XDG_CONFIG_HOME: join(home, ".config"),
+        XDG_DATA_HOME: join(home, ".local", "share"),
+        XDG_STATE_HOME: join(home, ".local", "state"),
+        XDG_CACHE_HOME: join(home, ".cache"),
+    };
+    daemon = await Launch.start({
+        command: [daemonBin, "start"],
         cwd: install,
         env: {
-            ...process.env,
-            HOME: home,
-            PLURNK_HOST: "127.0.0.1",
-            PLURNK_PORT: "0",
-            PLURNK_SERVICE_DB_PATH: db,
+            ...isolatedEnv,
             PLURNK_SCHEMES_HTTP_PLAYWRIGHT_METHOD: "disabled",
+            PLURNK_MCP_ENABLED: "[]",
             PLURNK_MODEL: "composition",
             PLURNK_MODEL_composition: "openai/composition",
             PLURNK_BASEURL_composition: `http://127.0.0.1:${modelPort}/v1`,
@@ -162,34 +165,19 @@ try {
             PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
         },
-        stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    daemon.stdout.setEncoding("utf8");
-    daemon.stderr.setEncoding("utf8");
-    daemon.stdout.on("data", (chunk) => { stdout += chunk; });
-    daemon.stderr.on("data", (chunk) => { stderr += chunk; });
-    const address = await new Promise((accept, reject) => {
-        const timeout = setTimeout(() => reject(new Error(`service boot timeout\nstdout:\n${stdout}\nstderr:\n${stderr}`)), 30_000);
-        const inspect = () => {
-            const match = stdout.match(/agui=http:\/\/([^:]+):(\d+)/);
-            if (match === null) return;
-            clearTimeout(timeout);
-            accept({ host: match[1], port: match[2] });
-        };
-        daemon.stdout.on("data", inspect);
-        daemon.once("exit", (code) => {
-            clearTimeout(timeout);
-            reject(new Error(`service exited ${code} before ready\nstdout:\n${stdout}\nstderr:\n${stderr}`));
-        });
+        stateRoot: join(temp, "state"),
+        host: "127.0.0.1",
+        port: 0,
+        readyTimeoutMs: 30_000,
+        stopGraceMs: 5_000,
+    }).catch((cause) => {
+        throw new Error(`service startup failed\nstdout:\n${cause.stdout ?? ""}\nstderr:\n${cause.stderr ?? ""}`, { cause });
     });
 
     const env = {
-        ...process.env,
-        HOME: home,
-        PLURNK_HOST: address.host,
-        PLURNK_PORT: address.port,
+        ...isolatedEnv,
+        PLURNK_HOST: daemon.host,
+        PLURNK_PORT: String(daemon.port),
     };
     const runPrompt = async (prompt, selector) => {
         let completed;
@@ -202,7 +190,7 @@ try {
             ], { cwd: install, env, timeout: 30_000 });
         } catch (cause) {
             throw new Error(
-                `packed client run failed\nmodel requests: ${modelRequests.join(", ") || "(none)"}\nservice stdout:\n${stdout}\nservice stderr:\n${stderr}`,
+                `packed client run failed\nmodel requests: ${modelRequests.join(", ") || "(none)"}\nservice stdout:\n${daemon.stdout()}\nservice stderr:\n${daemon.stderr()}`,
                 { cause },
             );
         }
@@ -305,7 +293,7 @@ try {
     console.log(`packed composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${servicePackage.name}@${servicePackage.version}`);
     passed = true;
 } finally {
-    await stop(daemon);
+    await daemon?.stop();
     if (model !== undefined) await new Promise((accept) => model.close(accept));
     if (passed) await rm(temp, { recursive: true, force: true });
     else process.stderr.write(`packed composition evidence preserved at ${temp}\n`);

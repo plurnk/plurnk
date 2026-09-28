@@ -1277,6 +1277,16 @@ A conforming `plurnk` client:
 8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.
 9. Projects `STATE_SNAPSHOT` and each `STATE_DELTA` into the run's status gauge (`loop/packet`, plurnk-agui SPEC); a delta before a snapshot or a patch op other than `replace` is a 502 `state-invalid` Problem.
 
+### Test daemon ownership {§cli-test-daemon-lifecycle}
+
+| Responsibility | Owner |
+|---|---|
+| Spawn, readiness address, SIGTERM-and-wait with bounded escalation | The selected service package's public `@plurnk/plurnk-service/launch` helper. |
+| Executable, fixture configuration, deadlines and disposable state root | The test caller. Deterministic tests isolate HOME and XDG configuration; only the explicit live tier inherits operator configuration. |
+| Failed startup | The helper stops and awaits its process; the caller then disposes of its temporary state. |
+| Successful shutdown | The caller awaits `stop()` before removing temporary state. Repeated cleanup is harmless. |
+| Packed composition | The helper and daemon executable come from the same installed service artifact. Failed composition retains its evidence after stopping the process. |
+
 ---
 
 ## §10 Out of scope

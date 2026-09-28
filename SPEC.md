@@ -54,6 +54,7 @@ Options:
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
 | `--max-turns <n>` | string | Model-call budget for the prompt's worker tree ({§turn-cap-counts-the-tree}): the loop's turns, its descendants' turns and every BARE call, one per call; omission leaves the daemon's ceiling in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
 | `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · /look <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
+| `--history-entries <n>` | string | Non-negative recent entry count restored on TUI attachment; zero disables history. Overrides `PLURNK_CLIENT_HISTORY_ENTRIES`. See {§cli-conversation-history}. |
 | `--color <when>` | string | `always`, `auto`, or `never`; overrides `PLURNK_CLIENT_COLOR`. See {§cli-color-policy}. |
 | `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. Overrides `PLURNK_CLIENT_TIMEOUT`. |
 | `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
@@ -314,7 +315,7 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.1 Flow {§cli-tui-flow}
 
-1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders.
+1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders. Restore the conversation under {§cli-conversation-history}.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
    and §1.2.1's aggregate line on the place line below the composer. Before AG-UI
    state arrives, derivation, search, and
@@ -424,6 +425,28 @@ and the transcript keeps the line a separate status row used to take. The status
 worker segment carries the sibling position when there is one: `worker://recheck/ (2/3)`,
 newest first (§1.2.1).
 
+### §cli-conversation-history Conversation history on attach
+
+Startup and successful workspace/worker navigation synchronize through the existing
+AG-UI Run `{§agui-conversation-sync}` before admitting new bound work. Synchronization
+submits no prompt and performs no inference. An attached live loop remains observable;
+disconnecting that observer does not cancel independently-owned work.
+
+| Surface | History behavior |
+|---|---|
+| Bound recent tail | `log.read` supplies durable order and operation outcomes; `MESSAGES_SNAPSHOT` supplies conversation speech. `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. The service's read ceiling still applies. |
+| Prompts and replies | Full text, in chronological order, with actor attribution. Rows committed after the snapshot retain their own authoritative body. |
+| Operations | Existing one-line operation headings, including failures; no historical output fetching. |
+| Reasoning | Never backfilled into the live reasoning lane or scrollback. |
+| Past/live boundary | A quiet count of earlier displayed entries and `/log` for more. Unchanged overlapping receipts are shown once by durable identity; updates to the same receipt remain visible. Identical text at different identities is not deduplicated. |
+| State/accounting | Replayed entries are not live activity, turns, terminal events, or fresh usage. Only the current gauge and subsequently observed events update status. Elapsed session time does not include time before attachment. |
+| Return visits | Each explicit binding restores its current bounded tail. Existing terminal scrollback stays intact. Input recall is separate. |
+
+Historical restoration completes before buffered live rows are released. Binding
+transitions retain the draft and keep control commands reachable; no historical
+prompt is resubmitted. A malformed snapshot or failed history read is reported,
+not presented as an empty conversation.
+
 ### §3.1.3 Inspection {§cli-inspection}
 
 `/look <address> [<scope>] [pattern]` reads a resource for the human, never for the model.
@@ -471,8 +494,8 @@ local waits, including when its SSE has already ended at a question or proposal.
 Pending injection acknowledgements keep the conversation attached through terminal
 observation. `injected_next_turn` stays on the existing stream;
 `enqueued_new_loop` requests one successor observer, not a replayed prompt. Sync
-uses {§agui-conversation-sync} and restores unseen durable rows with bounded
-`log.read`, retaining its pre-attachment conversation-row cursor; independent
+uses {§agui-conversation-sync} and restores unseen durable rows before releasing live
+rows, with bounded `log.read` and the standard message snapshot, retaining its pre-attachment conversation-row cursor; independent
 client-operation rows cannot advance that cursor. A successful observation without a
 new `plurnk.terminated` event adds no synthetic loop summary, usage, or tally.
 Malformed or incomplete history fails visibly rather than claiming lossless recovery.

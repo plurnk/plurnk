@@ -17,13 +17,16 @@ import TuiSurface from "./tui-surface.ts";
 import TerminalGuards from "./tui-guards.ts";
 import CancelGesture from "./tui-cancel.ts";
 import ModelText from "./model-text.ts";
+import Knobs from "./knobs.ts";
 import { paint } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
-import { renderDescendantBlock, renderLogEntry, renderOutsideText } from "./render-message.ts";
+import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSubmittedInput } from "./render-message.ts";
+import { renderHistory } from "./render-history.ts";
+export { renderSubmittedInput } from "./render-message.ts";
 import { indentDescendant, lineageWorker, markDescendant, type Descendant } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
@@ -128,10 +131,6 @@ export const linePolicy = promptPolicy;
 
 // {§cli-log-entry-line-format} — the human's line in scrollback: bold, in the human's own colour, so
 // the two voices read apart while the model's reply stays plain.
-export const renderSubmittedInput = (text: string): string => text.split("\n")
-    .map((line, index) => paint(`${index === 0 ? "› " : "  "}${line}`, "bold", "human"))
-    .join("\n");
-
 // A blank row above and below the line; an empty print is the surface's spacer.
 export const printSubmittedInput = (print: (text: string) => void, text: string): void => {
     print("");
@@ -332,7 +331,7 @@ export interface VerbContext {
     getWorker: () => string | null;
     // Rebind the session's thread to a worker by name, world unchanged
     // ({§cli-workers-topology}); the daemon binds or mints on the next run.
-    attachWorker: (name: string) => void;
+    attachWorker: (name: string) => Promise<void>;
     write: (s: string) => void;
     importFile: (path: string) => Promise<void>;
     review: (action: "open" | "accept" | "reject" | "cancel" | "edit") => Promise<void>;
@@ -526,7 +525,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // named at instantiation (immutable after). Bind to the fork so the
             // next prompt speaks there. The workspace (the world) is unchanged.
             const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
-            ctx.attachWorker(forked.workerName);
+            await ctx.attachWorker(forked.workerName);
             await refreshWorkerPolicy();
             write(`  worker: ${forked.workerName} (new)\n`);
             return;
@@ -537,7 +536,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
             const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             const known = workers.some((worker) => worker.name === rest);
-            ctx.attachWorker(rest);
+            await ctx.attachWorker(rest);
             await refreshWorkerPolicy();
             write(`  worker: ${rest} (${known ? "bound" : "new"})\n`);
             return;
@@ -551,7 +550,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             const { target, notice } = traverse(workers, ctx.getWorker(), verb as Hop);
             if (target === null) { write(`  (${notice ?? "nowhere to go"})\n`); return; }
-            ctx.attachWorker(target.name);
+            await ctx.attachWorker(target.name);
             await refreshWorkerPolicy();
             const position = siblingPosition(workers, target.name);
             write(`  worker: ${target.name} [${workerPath(workers, target.name)}]${position === null ? "" : ` (${position.index}/${position.count})`}\n`);
@@ -638,6 +637,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let pendingCommands = 0;
     let rebinding = false;
     let activeRun: ObservationHandle | null = null;
+    let runSettled: Promise<void> = Promise.resolve();
+    let bindingReady: Promise<void> = Promise.resolve();
+    let observingExisting = false;
     const pendingInjections = new Set<Promise<void>>();
     let followAdmission = false;
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
@@ -697,12 +699,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
-    const streams = new StreamTrace();
+    let streams = new StreamTrace();
     // A client-typed execution's inline peek is part of its presentation: the op's summary and
     // the prompt wait for it, so the next command never races the read's turn on the daemon.
     const peeks: Promise<void>[] = [];
     const settlePeeks = async (): Promise<void> => { await Promise.all(peeks.splice(0)); };
-    const fanout = new FanoutCollapse();
+    let fanout = new FanoutCollapse();
     let presentedTurn: string | null = null;
 
     // Intentional exit closes the transport's run-scoped interrupts.
@@ -784,7 +786,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         doing,
     });
     const refreshTopology = async (): Promise<void> => {
+        const threadId = transport.threadId();
+        const workspaceName = current.name;
         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
+        if (threadId !== transport.threadId() || workspaceName !== current.name) return;
+        conversationWorkerId = workers.find((worker) => worker.name === threadId)?.id ?? null;
         workerPosition = siblingPosition(workers, conversationWorker);
         placeWorkers = workers;
         reprompt();
@@ -984,6 +990,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     transport.subscribe({
         onReasoning: presentReasoning,
+        onHistory: (history) => {
+            if (shuttingDown) return;
+            surface.archiveResponses();
+            for (const block of renderHistory(history, transport.threadId(), surface.columns || 80)) printAbove(block);
+            for (const entry of history.entries) {
+                const target = entryTarget(entry);
+                if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
+            }
+        },
         onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
         onEntry: (entry) => {
             // The typed line at the prompt is the user's record — rendering the arrival
@@ -1029,6 +1044,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace?.projectRoot);
+            if (observingExisting && ["running", "queued", "parked"].includes(authoritativeStatus.lifecycle)) {
+                inFlight = true;
+                runningSince ??= Date.now();
+            }
             // {§cli-conversation-lost} — a bound name answered with no history is a new conversation.
             if (conversationLost(seenLoopId, authoritativeStatus.loopId)) {
                 printAlert(renderDiagnostic(clientConversationLost(current.name, conversationWorker ?? current.name)));
@@ -1095,6 +1114,23 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live workspace / opts / stdout / import glue.
+    const resetConversationView = (): void => {
+        surface.archiveActivity();
+        surface.setLive(null);
+        authoritativeStatus = null;
+        conversationWorkerId = null;
+        seenLoopId = null;
+        placeLoop = null;
+        placeTurn = null;
+        presentedTurn = null;
+        liveReasoning = null;
+        priorTargets.length = 0;
+        lookCursor = null;
+        descendants.clear();
+        observedNames.clear();
+        streams = new StreamTrace();
+        fanout = new FanoutCollapse();
+    };
     const verbCtx: VerbContext = {
         rpc: verbRpc, opts,
         get model(): ResolvedModelSpec | null { return workerModel; },
@@ -1106,22 +1142,23 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: async (name) => {
-            surface.archiveActivity();
-            authoritativeStatus = null;
             const workspace = await transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client });
+            resetConversationView();
             conversationWorker = workspace.name;
-            conversationWorkerId = null;
-            seenLoopId = null;
+            current = workspace;
+            observeBinding();
+            await bindingReady;
+            await refreshTopology();
             return workspace;
         },
         getWorker: () => conversationWorker,
-        attachWorker: (name) => {
-            surface.archiveActivity();
+        attachWorker: async (name) => {
             transport.useWorker(name, current.name);
+            resetConversationView();
             conversationWorker = name;
-            conversationWorkerId = null;
-            seenLoopId = null;
-            void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
+            observeBinding();
+            await bindingReady;
+            await refreshTopology();
         },
         write: (text) => { printAbove(text); },
         importFile: async (rest) => {
@@ -1157,8 +1194,77 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         },
     };
 
+    const consumeRun = async (handle: ObservationHandle, attachment: boolean): Promise<void> => {
+        activeRun = handle;
+        let start = Date.now();
+        try {
+            for (;;) {
+                const terminal = await activeRun.done;
+                reviewRequested = false;
+                if (terminal !== null && !shuttingDown && !(attachment && terminal.loopId === undefined && terminal.finalStatus === 499)) {
+                    const turnCount = terminal.turnIds?.length ?? 0;
+                    if (terminal.workerId !== undefined && terminal.workerId !== conversationWorkerId) {
+                        conversationWorkerId = terminal.workerId;
+                        const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
+                        const hit = workers.find((worker) => worker.id === conversationWorkerId);
+                        if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
+                        conversationWorker = hit.name;
+                        workerPosition = siblingPosition(workers, conversationWorker);
+                        placeWorkers = workers;
+                    }
+                    lifecycle = terminal.result.status === 202 ? "parked"
+                        : terminal.result.status === 499 ? "cancelled"
+                            : terminal.result.status >= 400 ? "failed" : "completed";
+                    const wallMs = Date.now() - start;
+                    surface.archiveResponses();
+                    printAbove(renderSummary(turnCount, wallMs, terminal.result, terminal.hitMaxTurns, terminal.usage));
+                    tally = tallyOutcome(tally, { turns: turnCount, wallMs, usage: terminal.usage });
+                    accrued = null;
+                }
+                while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
+                if (!followAdmission || shuttingDown) break;
+                followAdmission = false;
+                start = Date.now();
+                runningSince = start;
+                activeRun = transport.observe();
+            }
+        } catch (cause) {
+            if (!shuttingDown) {
+                lifecycle = "failed";
+                printAlert(renderTuiFailure(cause));
+            }
+        } finally {
+            runningSince = null;
+            inFlight = false;
+            observingExisting = false;
+            bindingReady = Promise.resolve();
+            doing = null;
+            activeRun = null;
+            gesture.release();
+            reviewRequested = false;
+            followAdmission = false;
+            reprompt();
+        }
+    };
+
+    const observeBinding = (): void => {
+        observingExisting = true;
+        const handle = transport.observe({ historyLimit: Knobs.count("PLURNK_CLIENT_HISTORY_ENTRIES") });
+        bindingReady = handle.ready;
+        runSettled = consumeRun(handle, true);
+    };
+
+    const settleIdleObserver = async (): Promise<void> => {
+        await bindingReady;
+        if (observingExisting && !inFlight) {
+            activeRun?.cancel();
+            await runSettled;
+        }
+    };
+
     const dispatchVerb = async (line: string): Promise<void> => {
         const { verb } = parseSlash(line);
+        if (!["help", "quit", "stop"].includes(verb)) await bindingReady;
         const rebinds = commandSpec(verb)?.rebinds === true;
         if (rebinds && (inFlight || pendingCommands > 0)) {
             printAbove("  The conversation stays attached until its run and submitted commands settle; /stop cancels the run.");
@@ -1171,6 +1277,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         pendingCommands += 1;
         if (rebinds) rebinding = true;
         try {
+            if (rebinds) await settleIdleObserver();
             if (await handleVerb(line, verbCtx) === "quit") requestClose();
         } catch (cause) {
             printAlert(renderTuiFailure(cause));
@@ -1210,6 +1317,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reprompt();
                 return;
             }
+
+            await settleIdleObserver();
 
             if (rebinding) {
                 printAbove("  Changing conversation; submit after the new binding is confirmed.");
@@ -1255,6 +1364,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
 
+            // `?` selects proposal review; `:` uses the base policy.
+            const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
+            const loopParams: { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] } = { policy };
+            if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
+            const openPaths = extractOpenPaths(promptText, opts.projectRoot ?? null);
+            if (openPaths.length > 0) loopParams.openPaths = openPaths;
+            reviewRequested = trimmed.startsWith("?");
             inFlight = true;
             lifecycle = "running";
             authoritativeStatus = null;
@@ -1263,69 +1379,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.
             reprompt();
-            let start = Date.now();
-            runningSince = start;
-            try {
-                // `?` selects proposal review; `:` uses the base policy.
-                const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
-                reviewRequested = trimmed.startsWith("?");
-                // {§worker-model-selection} — no model selector rides the loop: the
-                // worker owns the model; /model and /child persisted it server-side.
-                const loopParams: { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] } = { policy };
-                if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
-                const openPaths = extractOpenPaths(promptText, opts.projectRoot ?? null);   // {§cli-prompt-open-paths}
-                if (openPaths.length > 0) loopParams.openPaths = openPaths;
-                // The transport owns the ack→terminated bridge; done resolves
-                // with the loop's outcome. A pre-stream HTTP failure surfaces as
-                // an exact ProblemError (caught below; 501 gets the .env pointer).
-                activeRun = transport.run(promptText, loopParams);
-                for (;;) {
-                    const t = await activeRun.done;
-                    reviewRequested = false;
-                    if (t !== null) {
-                        const turnCount = t.turnIds?.length ?? 0;
-                        if (t.workerId !== undefined && t.workerId !== conversationWorkerId) {
-                            conversationWorkerId = t.workerId;
-                            const { workers } = await transport.rpc("workspace.workers") as { workers: Array<{ id: number; name: string }> };
-                            const hit = workers.find((worker) => worker.id === conversationWorkerId);
-                            if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
-                            conversationWorker = hit.name;
-                            workerPosition = siblingPosition(workers as WorkerRow[], conversationWorker);
-                            placeWorkers = workers as WorkerRow[];
-                        }
-                        lifecycle = t.result.status === 202 ? "parked"
-                            : t.result.status === 499 ? "cancelled"
-                                : t.result.status >= 400 ? "failed"
-                                    : "completed";
-                        const wallMs = Date.now() - start;
-                        // {plurnk#104} — the delivered answer lands in scrollback first; its summary follows it.
-                        surface.archiveResponses();
-                        printAbove(renderSummary(turnCount, wallMs, t.result, t.hitMaxTurns, t.usage));
-                        tally = tallyOutcome(tally, { turns: turnCount, wallMs, usage: t.usage });
-                        accrued = null;
-                    }
-                    // No asynchronous presentation work follows this admission barrier:
-                    // another prompt must not sneak into the completion/idle gap.
-                    while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
-                    if (!followAdmission || shuttingDown) break;
-                    followAdmission = false;
-                    start = Date.now();
-                    runningSince = start;
-                    activeRun = transport.observe();
-                }
-            } catch (cause) {
-                lifecycle = "failed";
-                printAlert(renderTuiFailure(cause));
-            } finally {
-                runningSince = null;
-                inFlight = false;
-                doing = null;
-                activeRun = null;
-                gesture.release();
-                reviewRequested = false;
-                followAdmission = false;
-                reprompt();
-            }
+            runningSince = Date.now();
+            runSettled = consumeRun(transport.run(promptText, loopParams), false);
+            await runSettled;
         };
 
         surface.editor.onSubmit = (line) => {
@@ -1336,6 +1392,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             });
         };
         reprompt();
+        observeBinding();
         surface.start();
     }).finally(() => {
         clearInterval(statusTick);

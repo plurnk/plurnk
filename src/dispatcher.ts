@@ -202,6 +202,8 @@ options:
       --preview-lines <n> lines of each operation body and execution output shown
                           beneath its row; the rest is named for /look. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
+      --history-entries <n> recent entries restored when opening or switching TUI
+                          conversations; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --color <when>      style terminal output: always, auto, or never. Overrides
                           PLURNK_CLIENT_COLOR; always/never override color env preferences.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
@@ -629,6 +631,7 @@ export const main = async (argv: string[]): Promise<void> => {
             // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
             "files-items": { type: "string" },
             "preview-lines": { type: "string" },
+            "history-entries": { type: "string" },
             color: { type: "string" },
 
             "max-commands": { type: "string" },
@@ -653,6 +656,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // Apply an explicit presentation choice before any invocation diagnostic can render.
     if (values.color !== undefined) process.env.PLURNK_CLIENT_COLOR = values.color;
+    if (values["history-entries"] !== undefined) process.env.PLURNK_CLIENT_HISTORY_ENTRIES = values["history-entries"];
     const web = positionals[0] === "web";
     if (values.help) {
         process.stdout.write(commandHelp(positionals[0]));
@@ -708,6 +712,14 @@ export const main = async (argv: string[]): Promise<void> => {
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
     const json = values.json === true || switchOf("PLURNK_CLIENT_JSON", "optional");
+    try {
+        Knobs.count("PLURNK_CLIENT_HISTORY_ENTRIES");
+    } catch (cause) {
+        if (!(cause instanceof KnobError)) throw cause;
+        const problem = clientFlagInvalid(values["history-entries"] === undefined ? cause.knob : "--history-entries", cause.value, cause.message);
+        if (json) dieJson(64, problem);
+        dieWith(64, problem);
+    }
     const color = Knobs.text("PLURNK_CLIENT_COLOR");
     if (!isColorMode(color)) {
         const problem = clientFlagInvalid(values.color === undefined ? "PLURNK_CLIENT_COLOR" : "--color", color, "must be always, auto, or never");

@@ -62,6 +62,15 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
             assert.equal(requests, 0);
         });
     }
+    for (const value of ["-1", "1.5", "invalid", "9007199254740992"]) {
+        await t.test(`invalid history count ${value} is rejected before connecting`, async () => {
+            const result = await run([`--history-entries=${value}`, "--json", "hello"]);
+            assert.equal(result.code, 64);
+            assert.equal(result.stderr, "");
+            assert.equal(JSON.parse(result.stdout).problem.type, "https://problems.plurnk.xyz/client/flag/invalid");
+            assert.equal(requests, 0);
+        });
+    }
     for (const [shell, file] of [["bash", "plurnk.bash"], ["zsh", "_plurnk"], ["fish", "plurnk.fish"]]) {
         await t.test(`completion ${shell} emits the packaged artifact`, async () => {
             const result = await run(["completion", shell], "ignored piped text", { PLURNK_CLIENT_YOLO: "not-a-boolean" });

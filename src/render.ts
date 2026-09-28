@@ -11,6 +11,7 @@ import { abbreviatedCount, money } from "./figures.ts";
 
 export interface LogEntryWire {
     id: number;
+    coordinate?: string;
     worker_id?: number;
     // {§message-causal-source} — the causal actor's address; null is the worker's own doing.
     source?: string | null;

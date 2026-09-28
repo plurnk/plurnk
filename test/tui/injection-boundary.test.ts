@@ -132,6 +132,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
     await tui.waitFor(/injectionfixture\(off\)/);
     tui.write("Start the first requirement.\r");
     await tui.waitFor(/Awaiting the controlled injection/);
+    assert.equal(observers, 1, "startup synchronizes the bound conversation once");
     tui.write("... Continue with the new requirement.\r");
     await admitted.promise;
     if (!active && !terminalFirst) {
@@ -139,7 +140,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         releaseTerminal.resolve();
     }
     await tui.waitFor(/SUCCESSOR_VISIBLE/);
-    assert.equal(observers, active ? 0 : 1, "active injection keeps its observer; a successor gets one observer");
+    assert.equal(observers, active ? 1 : 2, "after startup, active injection keeps its observer; a successor gets one observer");
     assert.equal(inferenceCount, 2, "each admitted prompt generated exactly one model request");
     assert.doesNotMatch(tui.output(), /Terminal missing|State invalid/);
     assert.match(stripVTControlCharacters(tui.output()), /Continue with the new requirement/);

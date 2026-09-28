@@ -18,6 +18,8 @@ import {
     type ProblemDetails,
 } from "./diagnostics.ts";
 import type { ApplicationPort, LoopPolicyRequest, OperationResult } from "@plurnk/plurnk-contracts";
+import type { Message } from "@ag-ui/core";
+import { createHash } from "node:crypto";
 import { runViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
@@ -42,6 +44,7 @@ export type StatusGauge = StatusGaugeEnvelope;
 // Run-plane events projected into the client's presentation shapes.
 export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
+    onHistory?: (history: ConversationHistory) => void;
     onReasoning: (reasoning: ReasoningUpdate) => void;
     onProposal: (p: ProposalParams, source?: "model" | "action") => void;
     onInterruptEnd?: (id: string) => void;
@@ -62,8 +65,14 @@ export interface RunHandlers {
     onTerminated: (t: TerminatedInfo) => void;
 }
 
-export interface RunHandle { done: Promise<TerminatedInfo>; cancel: () => void }
-export interface ObservationHandle { done: Promise<TerminatedInfo | null>; cancel: () => void }
+export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void }
+export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void }
+export interface ConversationHistory {
+    entries: LogEntryWire[];
+    messages: Message[];
+    attachment: boolean;
+}
+export interface ObserveOpts { historyLimit: number }
 export type LoopAdmission = Awaited<ReturnType<ApplicationPort["runLoop"]>>;
 
 type ProposalResolution = { logEntryId: number; decision: string; body?: string };
@@ -79,7 +88,7 @@ export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
     subscribe(handlers: RunHandlers): void;
     run(prompt: string, opts: RunOpts): RunHandle;
-    observe(): ObservationHandle;
+    observe(opts?: ObserveOpts): ObservationHandle;
     inject(prompt: string): Promise<LoopAdmission>;
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void>;
@@ -114,8 +123,9 @@ export class BridgeTransport implements Transport {
     #pendingProposals = new Map<number, (r: ProposalResolution | undefined) => void>();
     #pendingInteractions = new Map<number, (r: InteractionResolution | undefined) => void>();
     #controllers = new Set<AbortController>();
-    #seenRows = new Set<number>();
+    #seenRows = new Map<number, string>();
     #lastConversationRowId = 0;
+    #lastLoopId: number | null = null;
 
     constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
         this.#target = target;
@@ -235,15 +245,19 @@ export class BridgeTransport implements Transport {
         }) };
     }
 
-    observe(): ObservationHandle { return this.#run(); }
+    observe(opts?: ObserveOpts): ObservationHandle { return this.#run(undefined, undefined, opts); }
 
-    #run(prompt?: string, opts?: RunOpts): ObservationHandle {
+    #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
         const binding = { threadId: this.#threadId, workspace: this.#world };
         const sinceId = this.#lastConversationRowId;
         const ac = new AbortController();
         this.#controllers.add(ac);
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
         this.#modelProjection = projection;
+        const ready = Promise.withResolvers<void>();
+        // Both promises report the same failed run. Consumers that only await done
+        // must not acquire an unhandled rejection from the readiness view.
+        void ready.promise.catch(() => {});
         // Every request carries workspace options (#workspaceOpts — see #140); every
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
@@ -280,7 +294,12 @@ export class BridgeTransport implements Transport {
                 let toolArgs = "";
                 let interactionArguments: Record<string, unknown> | null = null;
                 try {
-                    for await (const e of runViaBridge(this.#target, { ...binding, ...next, forwardedProps: fp }, ac.signal)) {
+                    const events = runViaBridge(this.#target, { ...binding, ...next, forwardedProps: fp }, ac.signal);
+                    const synchronized = fp?.mode === "sync"
+                        ? this.#synchronize(events, binding, ac.signal, sinceId, observation, ready.resolve)
+                        : events;
+                    for await (const e of synchronized) {
+                        if (fp?.mode !== "sync") ready.resolve();
                         if (e.type === "RUN_ERROR") {
                             sawRunError = true;
                         } else if (e.type === "RUN_FINISHED") {
@@ -411,19 +430,11 @@ export class BridgeTransport implements Transport {
                     : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
                 fp = undefined;
             }
-        })().then(async (terminal) => {
-            if (prompt === undefined && !ac.signal.aborted && (terminal === null || terminal.loopId !== undefined)) {
-                const history = await this.#action<{ entries: LogEntryWire[] }>("log.read", { sinceId, limit: 1000 }, ac.signal, binding);
-                if (history === null || !Array.isArray(history.entries) || history.entries.length >= 1000
-                    || history.entries.some((entry) => !Number.isSafeInteger(entry?.id) || entry.id <= sinceId)) {
-                    throw new ProblemError(clientTransportResultInvalid("log.read did not supply a complete bounded history window."));
-                }
-                for (const entry of history.entries.toSorted((a, b) => a.id - b.id)) {
-                    if (!this.#seenRows.has(entry.id)) this.#row(entry, true);
-                }
-            }
+        })().then((terminal) => {
+            ready.resolve();
             return terminal;
         }).catch((cause: unknown): TerminatedInfo => {
+            ready.reject(cause);
             if (!ac.signal.aborted) throw cause;
             const problem = clientTransportCancelled();
             return { finalStatus: problem.status, hitMaxTurns: false, result: operationResult({ status: problem.status, problem }) };
@@ -432,7 +443,52 @@ export class BridgeTransport implements Transport {
             this.#controllers.delete(ac);
             if (this.#modelProjection === projection) this.#modelProjection = null;
         });
-        return { done, cancel: () => ac.abort() };
+        return { done, ready: ready.promise, cancel: () => ac.abort() };
+    }
+
+    // {§cli-conversation-history}: establish the historical prefix before releasing
+    // live events. Neither replay nor its action run owns lifecycle/accounting.
+    async *#synchronize(events: AsyncIterable<AguiEvent>, binding: { threadId: string; workspace: string | undefined },
+        signal: AbortSignal, sinceId: number, opts: ObserveOpts | undefined, ready: () => void): AsyncGenerator<AguiEvent> {
+        let restored = false;
+        const pending: AguiEvent[] = [];
+        for await (const event of events) {
+            if (restored || event.type === "RUN_STARTED" || event.type === "STATE_SNAPSHOT") {
+                yield event;
+                continue;
+            }
+            if (event.type !== "MESSAGES_SNAPSHOT") {
+                pending.push(event);
+                continue;
+            }
+            const limit = Math.max(1, opts?.historyLimit ?? 1000);
+            const afterId = Math.min(sinceId, this.#lastConversationRowId);
+            const history = await this.#action<{ entries: LogEntryWire[] }>("log.read", {
+                ...(opts === undefined ? { sinceId: afterId } : {}), limit,
+            }, signal, binding);
+            if (history === null || !Array.isArray(history.entries) || history.entries.length > limit
+                || opts === undefined && history.entries.length === limit
+                || history.entries.some((entry) => !Number.isSafeInteger(entry?.id) || entry.id <= (opts === undefined ? afterId : 0))) {
+                throw new ProblemError(clientTransportResultInvalid("log.read did not supply a complete bounded history window."));
+            }
+            const entries = history.entries.toSorted((a, b) => a.id - b.id)
+                .filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
+            for (const entry of entries) {
+                this.#seenRows.set(entry.id, this.#rowVersion(entry));
+                this.#lastConversationRowId = Math.max(this.#lastConversationRowId, entry.id);
+            }
+            this.#h?.onHistory?.({ entries: opts?.historyLimit === 0 ? [] : entries, messages: event.messages, attachment: opts !== undefined });
+            restored = true;
+            ready();
+            yield* pending;
+            pending.length = 0;
+        }
+        if (!restored) {
+            yield* pending;
+            if (pending.some((event) => event.type === "RUN_FINISHED" && event.outcome?.type === "success")) {
+                throw new ProblemError(clientTransportResultInvalid("Conversation synchronization omitted MESSAGES_SNAPSHOT."));
+            }
+        }
     }
 
     async inject(prompt: string): Promise<LoopAdmission> {
@@ -481,6 +537,7 @@ export class BridgeTransport implements Transport {
         this.#world = undefined;   // thread == world again
         this.#seenRows.clear();
         this.#lastConversationRowId = 0;
+        this.#lastLoopId = null;
         return { name: threadId };
     }
     useWorker(name: string, world: string): void {
@@ -488,12 +545,23 @@ export class BridgeTransport implements Transport {
         this.#world = world;
         this.#seenRows.clear();
         this.#lastConversationRowId = 0;
+        this.#lastLoopId = null;
     }
 
     #row(entry: LogEntryWire, conversation: boolean): void {
-        this.#seenRows.add(entry.id);
+        const version = this.#rowVersion(entry);
+        if (this.#seenRows.get(entry.id) === version) return;
+        this.#seenRows.set(entry.id, version);
         if (conversation) this.#lastConversationRowId = Math.max(this.#lastConversationRowId, entry.id);
         this.#h?.onEntry(entry);
+    }
+
+    #rowVersion(entry: LogEntryWire): string {
+        // A durable receipt can settle after attachment. Compare its full wire
+        // value, excluding the projection-only coordinate, without retaining bodies.
+        const fields = Object.entries(entry).filter(([key]) => key !== "coordinate")
+            .sort(([a], [b]) => a.localeCompare(b));
+        return createHash("sha256").update(JSON.stringify(fields)).digest("hex");
     }
 
     // Project one standard reasoning event or un-project one CUSTOM plurnk.*
@@ -508,6 +576,13 @@ export class BridgeTransport implements Transport {
         if (state.handled) {
             projection.gauge = state.gauge;
             if (this.#modelProjection === null || this.#modelProjection === projection) {
+                // {§cli-conversation-lost}: a recreated conversation cannot reuse
+                // the old database's row identities or replay cursor.
+                if (this.#lastLoopId !== null && projection.gauge.plurnk.status.loopId === null) {
+                    this.#seenRows.clear();
+                    this.#lastConversationRowId = 0;
+                }
+                this.#lastLoopId = projection.gauge.plurnk.status.loopId;
                 this.#h?.onStatus?.(structuredClone(projection.gauge));
             }
             return null;

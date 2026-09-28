@@ -8,6 +8,10 @@ import {
     type LogEntryWire, type OutsideText, type RowOverride,
 } from "./render.ts";
 
+export const renderSubmittedInput = (text: string): string => text.split("\n")
+    .map((line, index) => paint(`${index === 0 ? "› " : "  "}${line}`, "bold", "human"))
+    .join("\n");
+
 // Rich interpretation belongs to the TUI, never shared CLI extraction.
 export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.columns ?? 80): string => {
     const tx = txUnknown as { body?: string | { json?: unknown } | null } | null;

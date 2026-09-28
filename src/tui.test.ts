@@ -297,7 +297,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
         getWorker: () => worker,
-        attachWorker: (name) => { attached.push(name); worker = name; },
+        attachWorker: async (name) => { attached.push(name); worker = name; },
         switchWorkspace: async (name) => {
             calls.push({ method: "workspace.create", params: { name } });
             const r = results["workspace.create"];

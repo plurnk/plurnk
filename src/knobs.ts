@@ -22,6 +22,15 @@ export default class Knobs {
         return raw;
     }
 
+    static count(name: string, env: NodeJS.ProcessEnv = process.env): number {
+        const raw = Knobs.text(name, env);
+        const count = Number(raw);
+        if (raw.trim().length === 0 || !Number.isSafeInteger(count) || count < 0) {
+            throw new KnobError(name, raw, "must be a non-negative safe integer.");
+        }
+        return count;
+    }
+
     // A switch. Unset is off only for an optional knob, which is what `declared` says.
     static flag(name: string, declared: "live" | "optional", env: NodeJS.ProcessEnv = process.env): boolean {
         const raw = env[name];

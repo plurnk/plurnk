@@ -48,6 +48,7 @@ const collectingHandlers = () => {
     const seen: { entries: unknown[]; reasoning: unknown[]; proposals: unknown[]; interactions: unknown[]; streams: unknown[]; notices: unknown[]; problems: unknown[]; terminated: unknown[]; status: unknown[]; outside: unknown[] } = { entries: [], reasoning: [], proposals: [], interactions: [], streams: [], notices: [], problems: [], terminated: [], status: [], outside: [] };
     const h: RunHandlers = {
         onEntry: (e) => seen.entries.push(e),
+        onHistory: (history) => seen.entries.push(...history.entries),
         onOutside: (outside) => seen.outside.push(outside),
         onReasoning: (reasoning) => seen.reasoning.push(reasoning),
         onProposal: (p) => seen.proposals.push(p),
@@ -584,6 +585,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         if (mock.captured.length === 1) {
             assert.equal(input.forwardedProps.plurnk.mode, "sync");
             response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: late }));
+            response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
         } else {
             assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
             response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true, result: { entries: [late, early] } } }));
@@ -595,7 +597,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         assert.equal(await transport.observe().done, null, "a successful sync with no terminal event has no loop result");
-        assert.deepEqual(seen.entries, [late, early], "a later live row cannot skip an earlier missing row or duplicate itself");
+        assert.deepEqual(seen.entries, [early, late], "history precedes overlapping live rows without skipping or duplicating either");
         assert.deepEqual(seen.terminated, [], "no model terminal or usage was synthesized");
         assert.deepEqual(seen.problems, []);
         assert.equal(mock.captured.length, 2, "one sync and one bounded history read");
@@ -623,6 +625,7 @@ test("{§cli-active-command-admission}: client operation rows do not advance the
             return;
         }
         response.write(frame({ type: "RUN_STARTED" }));
+        if (input.forwardedProps.plurnk.mode === "sync") response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
         if (action?.kind === "op.exec") {
             response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: human }));
             response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: { status: 200 } } }));
@@ -662,6 +665,7 @@ for (const entries of [null, [{ id: null }], Array.from({ length: 1000 }, (_, in
         const mock = await bootMock((_request, response) => {
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED" }));
+            if (mock.captured.length === 1) response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
             if (mock.captured.length > 1) response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true, result: { entries } } }));
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         });
@@ -689,6 +693,101 @@ test("{§cli-active-command-admission}: a dead sync stream retains its original 
         assert.equal(result?.result.problem?.kind, "terminal-missing");
         assert.equal(mock.captured.length, 1);
     } finally { await mock.close(); }
+});
+
+for (const historyLimit of [0, 2]) {
+    test(`{§cli-conversation-history}: bounded attachment restores before live rows (${historyLimit})`, async () => {
+        const release = Promise.withResolvers<void>();
+        const older = { id: 8, op: "READ", origin: "model", tx: { body: "old output" } };
+        const overlap = { id: 9, op: "SEND", origin: "model", tx: { body: "old answer" } };
+        const fresh = { id: 10, op: "SEND", origin: "model", tx: { body: "new answer" } };
+        const updated = { ...overlap, status_rx: 200, rx: { status: 200 } };
+        const messages = [{ id: "9", role: "assistant", content: "old answer" }];
+        const mock = await bootMock((_request, response) => {
+            const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { action?: object } } };
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.write(frame({ type: "RUN_STARTED" }));
+            if (input.forwardedProps.plurnk.action !== undefined) {
+                assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", limit: Math.max(1, historyLimit) });
+                response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true,
+                    result: { entries: historyLimit === 0 ? [overlap] : [overlap, older] } } }));
+                response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+                return;
+            }
+            response.write(frame({ type: "MESSAGES_SNAPSHOT", messages }));
+            response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: overlap }));
+            void release.promise.then(() => {
+                response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: updated }));
+                response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: fresh }));
+                response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+            });
+        });
+        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        try {
+            const { h, seen } = collectingHandlers();
+            const histories: unknown[] = [];
+            transport.subscribe({ ...h, onHistory: (history) => { histories.push(history); } });
+            const run = transport.observe({ historyLimit });
+            await run.ready;
+            assert.deepEqual(histories, [{ entries: historyLimit === 0 ? [] : [older, overlap], messages, attachment: true }]);
+            assert.deepEqual(seen.entries, [], "replayed rows are historical, not new operation events");
+            release.resolve();
+            assert.equal(await run.done, null);
+            assert.deepEqual(seen.entries, [updated, fresh], "unchanged overlap is suppressed, but receipt updates and fresh work survive");
+            assert.deepEqual(seen.terminated, [], "no historical terminal or accounting event is synthesized");
+        } finally { release.resolve(); transport.shutdown(); await mock.close(); }
+    });
+}
+
+test("{§cli-conversation-history}: successful sync without a message snapshot is a protocol error", async () => {
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(frame({ type: "RUN_STARTED" }));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+    try {
+        await assert.rejects(transport.observe({ historyLimit: 10 }).done,
+            (cause: unknown) => cause instanceof ProblemError && cause.problem.kind === "result-invalid"
+                && String(cause.problem.reason).includes("MESSAGES_SNAPSHOT"));
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
+test("{§cli-conversation-history}: a recreated conversation resets replay identities and cursor", async () => {
+    const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
+    const snapshot = structuredClone(events.find((event) => event.type === "STATE_SNAPSHOT")!) as {
+        type: string; snapshot: { plurnk: { status: { loopId: number | null } } };
+    };
+    snapshot.snapshot.plurnk.status.loopId = null;
+    const row = { id: 9, op: "NOTE", tx: { body: "retained body" } };
+    const mock = await bootMock((_request, response) => {
+        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string; action?: object } } };
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        if (input.forwardedProps.plurnk.action !== undefined) {
+            assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
+            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
+                kind: "log.read", ok: true, result: { entries: [row] },
+            } }));
+        } else if (input.forwardedProps.plurnk.mode === "sync") {
+            response.write(frame(snapshot));
+            response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
+        } else {
+            for (const event of events) {
+                response.write(frame(event));
+                if (event.type === "STATE_SNAPSHOT") response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: row }));
+            }
+        }
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "thread");
+    try {
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        await transport.run("first", { policy: REVIEW_POLICY }).done;
+        seen.entries.length = 0;
+        assert.equal(await transport.observe().done, null);
+        assert.deepEqual(seen.entries, [row], "new persistence may reuse the old row identity");
+    } finally { transport.shutdown(); await mock.close(); }
 });
 
 test("[§cli-conformance] run preserves explicitly requested file paths beside its policy", async () => {

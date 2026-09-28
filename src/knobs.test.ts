@@ -12,6 +12,14 @@ const withEnv = (name: string, value: string | undefined, body: () => void): voi
     }
 };
 
+test("{§cli-env-defaults}: history counts are explicit non-negative safe integers", () => {
+    for (const value of ["0", "50", "1000"]) assert.equal(Knobs.count("HISTORY", { HISTORY: value }), Number(value));
+    for (const value of ["", " ", "-1", "1.5", "NaN", "Infinity", "9007199254740992"]) {
+        assert.throws(() => Knobs.count("HISTORY", { HISTORY: value }), /HISTORY must be a non-negative safe integer/);
+    }
+    assert.throws(() => Knobs.count("HISTORY", {}), /HISTORY is missing/);
+});
+
 test("[§cli-env-defaults] a switch is on or off, and anything else is a mistake named by its knob", () => {
     for (const on of ["1", "true", "YES", "on"]) withEnv("PLURNK_CLIENT_TEST", on, () => assert.equal(Knobs.flag("PLURNK_CLIENT_TEST", "live"), true));
     for (const off of ["0", "false", "No", "off"]) withEnv("PLURNK_CLIENT_TEST", off, () => assert.equal(Knobs.flag("PLURNK_CLIENT_TEST", "live"), false));

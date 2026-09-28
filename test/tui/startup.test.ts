@@ -17,12 +17,13 @@ for (const workspace of [undefined, "startup-worker"]) {
         await new Promise<void>((resolve) => server.close(() => resolve()));
         const tui = spawnTui(`http://127.0.0.1:${address.port}`, workspace === undefined ? [] : ["--workspace", workspace], {
             HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PLURNK_CLIENT_WORKSPACE: undefined, PLURNK_CLIENT_WORKER: undefined,
+            PLURNK_CLIENT_AUTOSTART: "0",
         }, home);
         t.after(() => tui.kill());
         assert.equal(await tui.exited, 1);
         assert.match(tui.output(), /Caution client:connection:refused/);
-        assert.match(tui.output(), /No daemon is running/);
-        assert.match(tui.output(), /npx @plurnk\/plurnk-service/);
+        assert.match(tui.output(), /Could not reach the configured service/);
+        assert.match(tui.output(), /plurnk-service start/);
         assert.doesNotMatch(tui.output(), /\n\s+at |TypeError:|node_modules\//);
     });
 }

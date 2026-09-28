@@ -15,6 +15,7 @@ import { isAbsolute, resolve } from "node:path";
 import { matchesKey, type AutocompleteItem, type AutocompleteProvider } from "@earendil-works/pi-tui";
 import TuiSurface from "./tui-surface.ts";
 import TerminalGuards from "./tui-guards.ts";
+import type Lifetime from "./lifetime.ts";
 import CancelGesture from "./tui-cancel.ts";
 import ModelText from "./model-text.ts";
 import Knobs from "./knobs.ts";
@@ -138,9 +139,13 @@ export const printSubmittedInput = (print: (text: string) => void, text: string)
     print("");
 };
 
-export const resumeCommand = (workspace: string, worker: string): string => {
+export const resumeCommand = (workspace: string, worker: string, env: Readonly<Record<string, string>> = {}): string => {
     const quote = (value: string): string => /^[A-Za-z0-9_.:/-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\"'\"'")}'`;
-    return `plurnk --workspace ${quote(workspace)} --worker ${quote(worker)}`;
+    const bindings = Object.entries(env).map(([name, value]) => {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) throw new TypeError(`Invalid environment variable name: ${name}`);
+        return `${name}=${quote(value)} `;
+    }).join("");
+    return `${bindings}plurnk --workspace ${quote(workspace)} --worker ${quote(worker)}`;
 };
 
 // Alt-p / Alt-n cycle the LOOK target through prior operations (prev/next op).
@@ -619,6 +624,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 };
 
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
+    lifetime: Lifetime;
+    resumeEnv?: Readonly<Record<string, string>>;
     // The explicit --model selector for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup.
     modelSelector?: string; modelExplicit?: boolean; effort?: string; effortExplicit?: boolean;
@@ -765,7 +772,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         yolo: opts.yolo,
     });
     const surface = new TuiSurface();
-    const releaseGuards = TerminalGuards.install(surface);
+    const releaseGuards = TerminalGuards.install(surface, opts.lifetime);
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
     surface.append("");
@@ -1298,7 +1305,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, conversationWorker ?? workspace.name)}`, "dim")}\n`);
+            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, conversationWorker ?? workspace.name, opts.resumeEnv)}`, "dim")}\n`);
             resolve();
         };
         requestClose = close;

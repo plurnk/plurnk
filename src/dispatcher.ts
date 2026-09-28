@@ -42,6 +42,8 @@ import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
 import { launchWeb } from "./web.ts";
+import Backend from "./backend.ts";
+import Lifetime from "./lifetime.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
@@ -131,7 +133,9 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
                    | disable|remove <alias> | oauth <alias> <callback-url>]
 
-Connects to the plurnk-service daemon. Run a single prompt one-shot
+Connects to plurnk-service, starting an installed private backend if the default
+local listener is absent. The private process stops on exit; saved data remains.
+Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
 enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list /
@@ -148,6 +152,10 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         the daemon's address, under the daemon's own key names.
   PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
                         remote AG-UI portal. PLURNK_AGUI_TOKEN is its bearer.
+  PLURNK_CLIENT_AUTOSTART
+                        1 (default): start a private installed backend on local
+                        connection refusal. 0: attach only. Explicit AG-UI URLs
+                        and remote hosts are always attach-only.
   PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
                         The daemon owns parsing, activation, persistence, and
                         credential expansion.
@@ -175,6 +183,11 @@ options:
       --effort <level>    persistently select the conversation worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
+      --autostart <0|1>   start a private installed backend if the local listener is
+                          absent (1), or require attachment (0).
+      --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
+      --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
+      --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
@@ -264,16 +277,21 @@ const commandHelp = (name: string | undefined): string => {
     return `usage: ${forms[0].trimStart()}${forms.slice(1).map((form) => `\n${form}`).join("")}\n\n${descriptions.join("\n")}\n\nSee plurnk --help for shared options and environment configuration.\n`;
 };
 
-// Render a Problem to stderr and exit.
+class ClientExit extends Error {
+    readonly code: number;
+    constructor(code: number) { super("Client invocation ended."); this.code = code; }
+}
+
+// Unwind through the invocation owner before exiting; owned services must be stopped.
 const dieWith = (code: number, problem: ProblemDetails): never => {
     report(problem);
-    process.exit(code);
+    throw new ClientExit(code);
 };
 
 // JSON mode embeds the exact RFC 9457 Problem document rendered in text mode.
 const dieJson = (code: number, problem: ProblemDetails): never => {
     process.stdout.write(`${JSON.stringify(buildJsonError(problem))}\n`);
-    process.exit(code);
+    throw new ClientExit(code);
 };
 
 // Env cascade, aligned with plurnk-service's XDG config so the two share one
@@ -603,6 +621,16 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
 };
 
 export const main = async (argv: string[]): Promise<void> => {
+    const lifetime = new Lifetime();
+    try { await dispatch(argv, lifetime); }
+    catch (cause) {
+        if (lifetime.interrupted) return;
+        if (!(cause instanceof ClientExit)) throw cause;
+        process.exitCode = cause.code;
+    } finally { await lifetime.close(); }
+};
+
+const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const { positionals, values } = parseArgs({
         args: argv.slice(2),
         allowPositionals: true,
@@ -618,6 +646,10 @@ export const main = async (argv: string[]): Promise<void> => {
             worker: { type: "string" },
             model: { type: "string" },
             effort: { type: "string" },
+            autostart: { type: "string" },
+            "daemon-timeout-ms": { type: "string" },
+            "daemon-stop-timeout-ms": { type: "string" },
+            "service-bin": { type: "string" },
             "project-root": { type: "string" },
             yolo: { type: "boolean" },
             auto: { type: "boolean" },
@@ -657,10 +689,14 @@ export const main = async (argv: string[]): Promise<void> => {
     // Apply an explicit presentation choice before any invocation diagnostic can render.
     if (values.color !== undefined) process.env.PLURNK_CLIENT_COLOR = values.color;
     if (values["history-entries"] !== undefined) process.env.PLURNK_CLIENT_HISTORY_ENTRIES = values["history-entries"];
+    if (values.autostart !== undefined) process.env.PLURNK_CLIENT_AUTOSTART = values.autostart;
+    if (values["daemon-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS = values["daemon-timeout-ms"];
+    if (values["daemon-stop-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS = values["daemon-stop-timeout-ms"];
+    if (values["service-bin"] !== undefined) process.env.PLURNK_CLIENT_SERVICE_BIN = values["service-bin"];
     const web = positionals[0] === "web";
     if (values.help) {
         process.stdout.write(commandHelp(positionals[0]));
-        process.exit(0);
+        return;
     }
     if (positionals[0] === "completion") {
         try {
@@ -694,7 +730,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const buildInfo = await getBuildInfo();
     if (values.version) {
         process.stdout.write(`${formatBuildInfo(buildInfo)}\n`);
-        process.exit(0);
+        return;
     }
 
     // Shared XDG user env cascade (after parse so --env-file flags participate).
@@ -801,18 +837,24 @@ export const main = async (argv: string[]): Promise<void> => {
         }
     })();
 
-    // plurnk-agui#1 — CLI one-shot through the exclusive-portal bridge: when
-    // PLURNK_AGUI_URL is set, a prompt run rides the bridge (which owns the WS +
-    // workspace) instead of raw daemon WS. Both text and --json route here now
-    // (plurnk-agui 0.2.1's plurnk.terminated carries workspaceId/loopId/turnIds/cost,
-    // so the json record matches the WS schema). Scripts + subcommands stay on the
-    // daemon. Dual-surface, per the charter.
-    // AG-UI+ IS the client surface (service 0.81.0): PLURNK_HOST/PLURNK_PORT point at
-    // the daemon's in-process module. PLURNK_AGUI_URL remains an explicit override
-    // (a remote portal); otherwise the canonical legend is the default — ordinary AG-UI+
-    // below is legacy awaiting deletion.
-    // The daemon's address is shared with it, so contracts declares it and the floor supplies it.
-    const bridgeUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}`;
+    const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}`;
+    let backend: Backend;
+    try {
+        backend = await lifetime.own(Backend.open({ bridgeUrl: configuredUrl, token: process.env.PLURNK_AGUI_TOKEN }));
+    } catch (cause) {
+        if (lifetime.interrupted) return;
+        const flag = cause instanceof KnobError ? cause.knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-") : "";
+        const problem = cause instanceof ProblemError ? cause.problem : cause instanceof KnobError
+            ? clientFlagInvalid(Object.hasOwn(values, flag) ? `--${flag}` : cause.knob, cause.value, cause.message)
+            : clientRuntimeError(cause);
+        const code = cause instanceof ProblemError ? cause.exitCode : cause instanceof KnobError ? 64 : 1;
+        if (json) dieJson(code, problem);
+        return dieWith(code, problem);
+    }
+    const { bridgeUrl, token } = backend.target;
+    if (backend.database !== null && !json) {
+        report({ source: "client:daemon", kind: "started", level: "info", message: `Private backend; data retained at ${backend.database}` });
+    }
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => ({
@@ -839,7 +881,7 @@ export const main = async (argv: string[]): Promise<void> => {
     const world = async (): Promise<string> => {
         if (resolvedWorld !== undefined) return resolvedWorld;
         resolvedWorld = await resolveWorld(
-            { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, workspaceName, await workspaceOptions(),
+            { bridgeUrl, token }, workspaceName, await workspaceOptions(),
         );
         return resolvedWorld;
     };
@@ -849,7 +891,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 throw new ProblemError(clientSubcommandUnknownVerb(`web ${positionals.slice(1).join(" ")}`));
             }
             const workspaceProperties = await workspaceOptions();
-            const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
+            const target = { bridgeUrl, token };
             const prepared = new Map<string, Promise<void>>();
             const prepareSession = (
                 session: { workspace: string; threadId: string },
@@ -888,7 +930,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 ...(typeof values.host === "string" ? { host: values.host } : {}),
                 ...(typeof values.port === "string" ? { port: values.port } : {}),
                 upstream: new URL(bridgeUrl),
-                ...(process.env.PLURNK_AGUI_TOKEN === undefined ? {} : { token: process.env.PLURNK_AGUI_TOKEN }),
+                ...(token === undefined ? {} : { token }),
                 constraints: {
                     ...(workspaceName === undefined ? {} : { workspace: workspaceName }),
                     ...(workerName === undefined ? {} : { threadId: workerName }),
@@ -915,6 +957,9 @@ export const main = async (argv: string[]): Promise<void> => {
                 autoAcceptProposals: yolo,
             }, {
                 announce: (origin) => process.stderr.write(`plurnk web: ${origin}\n`),
+                wait: () => new Promise<void>((resolve) => {
+                    const release = lifetime.handleSignals(() => { release(); resolve(); });
+                }),
             });
         } catch (cause) {
             if (cause instanceof ProblemError) {
@@ -944,7 +989,7 @@ export const main = async (argv: string[]): Promise<void> => {
             let activeModel: ModelRoute | null;
             if (values.model !== undefined && modelSelector !== undefined) {
                 activeModel = Validator.assertModelRoute(await actionViaBridge(
-                    { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN },
+                    { bridgeUrl, token },
                     {
                         threadId: workerName ?? w,
                         workspace: w,
@@ -955,7 +1000,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 ));
             } else {
                 const projection = await actionViaBridge<{ model: unknown }>(
-                    { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN },
+                    { bridgeUrl, token },
                     {
                         threadId: workerName ?? w,
                         workspace: w,
@@ -966,7 +1011,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
             }
             if (effort !== undefined && values.model === undefined) {
-                await actionViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
+                await actionViaBridge({ bridgeUrl, token }, {
                     threadId: workerName ?? w,
                     workspace: w,
                     workspaceOptions: controlWorkspaceOptions,
@@ -978,7 +1023,8 @@ export const main = async (argv: string[]): Promise<void> => {
             const openPaths = extractOpenPaths(projected.prompt, projectRoot);
             // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
             const reviewRequested = /^\s*\?/u.test(prompt);
-            const code = await runCliViaBridge({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, projected.prompt, {
+            const code = await runCliViaBridge({ bridgeUrl, token }, projected.prompt, {
+                lifetime,
                 threadId: workerName ?? w,
                 workspace: w,
                 ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
@@ -993,7 +1039,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 settings,
             });
             if (shareTarget !== undefined) {
-                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
+                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token }, {
                     threadId: workerName ?? w,
                     workspace: w,
                     kind: "workspace.share",
@@ -1036,7 +1082,7 @@ export const main = async (argv: string[]): Promise<void> => {
             const { settings } = await workspaceOptions();
             // Creation options are idempotent on an existing workspace; the
             // same public envelope is used whether the daemon named it or we did.
-            transport = new BridgeTransport({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, threadId, {
+            transport = new BridgeTransport({ bridgeUrl, token }, threadId, {
                 workspace: w,
                 projectRoot,
                 settings,
@@ -1044,6 +1090,8 @@ export const main = async (argv: string[]): Promise<void> => {
             });
             const { runTui } = await import("./tui.ts");
             await runTui(transport, { name: w }, {
+                lifetime,
+                resumeEnv: backend.resumeEnv,
                 modelSelector,
                 modelExplicit: values.model !== undefined,
                 effort,
@@ -1057,7 +1105,7 @@ export const main = async (argv: string[]): Promise<void> => {
                 mcpConfiguration,
             });
             if (shareTarget !== undefined) {
-                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN }, {
+                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token }, {
                     threadId,
                     workspace: w,
                     kind: "workspace.share",
@@ -1077,7 +1125,7 @@ export const main = async (argv: string[]): Promise<void> => {
 
     // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
     // speak the action surface through a structural Caller.
-    const target = { bridgeUrl, token: process.env.PLURNK_AGUI_TOKEN };
+    const target = { bridgeUrl, token };
     const callerThread = workerName ?? workspaceName ?? "cli";
     const caller = {
         call: (method: string, params?: object) => actionViaBridge<unknown>(target, {
@@ -1132,15 +1180,13 @@ export const main = async (argv: string[]): Promise<void> => {
             dieJson(code, problem);
         }
         if (cause instanceof ProblemError) {
-            report(cause.problem);
-            process.exit(cause.exitCode);
+            dieWith(cause.exitCode, cause.problem);
         }
         // A daemon-rejected RPC arrives as a typed RpcError carrying the failed
         // method and the daemon's code/message — surface it as client:rpc:error.
         // Nothing listening at all (subcommands, the TUI boot) gets the onboarding
         // block; any other genuine throw is the generic runtime fallback.
-        if (isUnreachable(cause)) { report(clientConnectionRefused(bridgeUrl ?? "the daemon", cause)); process.exit(1); }
-        report(clientRuntimeError(cause));
-        process.exit(1);
+        if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
+        dieWith(1, clientRuntimeError(cause));
     }
 };

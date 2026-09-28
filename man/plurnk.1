@@ -22,7 +22,11 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
                    | disable|remove <alias> | oauth <alias> <callback-url>]
 .fi
 .SH DESCRIPTION
-Connects to the plurnk-service daemon. Run a single prompt
+Connects to plurnk-service, starting an installed private backend if the
+default
+local listener is absent. The private process stops on exit; saved data
+remains.
+Run a single prompt
 one-shot
 (positional args, piped stdin, or both — positionals come first,
 stdin
@@ -57,6 +61,11 @@ loop.
       --effort <level>    persistently select the conversation worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
+      --autostart <0|1>   start a private installed backend if the local listener is
+                          absent (1), or require attachment (0).
+      --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
+      --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
+      --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
                           Default: cwd. Empty string = headless. Overrides
@@ -187,6 +196,10 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         the daemon's address, under the daemon's own key names.
   PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
                         remote AG-UI portal. PLURNK_AGUI_TOKEN is its bearer.
+  PLURNK_CLIENT_AUTOSTART
+                        1 (default): start a private installed backend on local
+                        connection refusal. 0: attach only. Explicit AG-UI URLs
+                        and remote hosts are always attach-only.
   PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
                         The daemon owns parsing, activation, persistence, and
                         credential expansion.

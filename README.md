@@ -26,7 +26,7 @@ work across tools. Interact from your terminal or editor, or compose Plurnk
 with ordinary shell pipelines.
 
 This repository provides the CLI and interactive terminal client for
-[plurnk-service](https://github.com/plurnk/plurnk-service), the shared daemon.
+[plurnk-service](https://github.com/plurnk/plurnk-service), its backend.
 
 Workspaces and worker conversations live in the daemon, independently of the
 client session. Choose your model, context limits, tools, and capability
@@ -62,17 +62,16 @@ Requires Node.js 26+, npm, Git, and a local or cloud model endpoint.
 npm install -g @plurnk/plurnk @plurnk/plurnk-service
 ```
 
-In one terminal, configure a model and start the daemon. This example uses
+Configure a model. This example uses
 DeepSeek; see [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
 for other providers and local servers.
 
 ```sh
 export DEEPSEEK_API_KEY="your-api-key"
 export PLURNK_MODEL=deepseek/deepseek-v4-flash
-plurnk-service start
 ```
 
-In another terminal, open a project:
+Then open a project:
 
 ```sh
 cd /path/to/your/project
@@ -80,11 +79,15 @@ plurnk --workspace="myProject"
 ```
 
 Give it a task in ordinary language. The model uses the operation language;
-you do not need to learn it to use Plurnk. Run the same command later to return
-to that workspace's conversation.
+you do not need to learn it to use Plurnk. The TUI prints a resume command when
+you leave, preserving both the workspace and worker.
 
-The client connects to `127.0.0.1:1066` by default and never starts the daemon.
-Provider credentials belong in the daemon's environment. Proposals are accepted
+The client connects to `127.0.0.1:1066` when a service is already running. Otherwise,
+it starts an installed backend privately for this client and stops it on exit;
+saved data remains. To share workspaces across clients, explicitly run
+`plurnk-service start` first. Set `PLURNK_CLIENT_AUTOSTART=0` to require attachment.
+Nothing is installed automatically. Provider credentials come from the environment
+of the process starting the daemon. Proposals are accepted
 automatically by default (`PLURNK_CLIENT_YOLO=1`); set it to `0` or start a prompt
 with `?` to review them. Neither overrides capability restrictions.
 

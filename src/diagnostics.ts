@@ -189,9 +189,8 @@ export const clientConnectionRefused = (url: string, cause: unknown): ProblemDet
         {
             url,
             hints: [
-                "No daemon is running — the plurnk client connects to one.",
-                "  Quick start (no install):  npx @plurnk/plurnk-service start",
-                "  Or install it:             npm i -g @plurnk/plurnk-service && plurnk-service",
+                "Could not reach the configured service. Check its address and availability.",
+                "For an explicitly shared local service: plurnk-service start",
             ],
         },
     );

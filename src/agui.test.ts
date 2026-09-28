@@ -4,6 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import Lifetime from "./lifetime.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { runViaBridge, actionViaBridge, operationResult, problemDetails, resolveWorld } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
@@ -301,6 +302,7 @@ test("resolveWorld: a missing minted name throws an exact client Problem", async
 });
 
 test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBridge: one-shot workspace options, policy, and model selection ride forwardedProps.plurnk", async () => {
+    await using lifetime = new Lifetime();
     const { runCliViaBridge } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -310,6 +312,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
     });
     try {
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
+            lifetime,
             threadId: "w",
             workspace: "w",
             policy: { proposals: "accept", attended: false },
@@ -339,6 +342,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
 });
 
 test("[§cli-workspaces-and-workers] a split worker's JSON record retains the workspace world", async () => {
+    await using lifetime = new Lifetime();
     const { runCliViaBridge } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => sse(res, [
         frame({
@@ -364,6 +368,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
     };
     try {
         await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
+            lifetime,
             threadId: "conversation",
             workspace: "world",
             policy: { proposals: "review" },
@@ -383,6 +388,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
 });
 
 test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loop, the record says timedOut, exit is 3 — the flag was parsed-and-dead since the agui migration", async () => {
+    await using lifetime = new Lifetime();
     const { runCliViaBridge } = await import("./agui_cli.ts");
     let cancelSeen = false;
     let holdOpen: (() => void) | null = null;
@@ -415,7 +421,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -428,6 +434,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
 });
 
 test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in the json record (svc#478 companion)", async () => {
+    await using lifetime = new Lifetime();
     const { runCliViaBridge } = await import("./agui_cli.ts");
     // The stream dies without terminal truth: no terminated, no RUN_FINISHED.
     const mock = await bootMock((_req, res) => {
@@ -443,7 +450,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, statusStream: false, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

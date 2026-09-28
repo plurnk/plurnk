@@ -1,9 +1,8 @@
 // Off-hot-path e2e: install the built CLIENT into a clean sandbox as a consumer
-// would (--omit=optional → no daemon), then prove OUR side of the boundary —
+// would (client only), then prove the client side of the boundary —
 // the bin runs, the AG-UI client composition is present, and the no-daemon + --json
 // structured-error paths fire. Self-contained: no daemon, no model, no sibling
-// repo. The bundled-daemon install is the service's test:installation; the
-// connect-to-a-live-daemon path is the tui harness / live checklist.
+// repo. test:composition covers attachment and private startup with an installed service.
 //
 // Mirror of plurnk-service/scripts/test-installation.mjs.
 import { execFileSync } from "node:child_process";
@@ -20,7 +19,7 @@ const mods = resolve(sandbox, "node_modules");
 // a non-TTY pipe, and a dead daemon URL unless a test overrides it.
 const runBin = (args, env = {}) => {
     try {
-        const stdout = execFileSync(bin, args, {
+        const stdout = execFileSync(process.execPath, [bin, ...args], {
             cwd: sandbox, encoding: "utf8", input: "",
             env: { ...process.env, PLURNK_AGUI_URL: "http://127.0.0.1:59999", ...env },
         });
@@ -52,10 +51,9 @@ ok(help.code === 0 && /usage: plurnk /.test(help.stdout), "`--help` prints usage
 // No daemon, text mode → onboarding hints on stderr, exit 1, stdout clean.
 const refused = runBin(["hello"]);
 ok(refused.code === 1, "no-daemon prompt exits 1");
-ok(/No daemon is running/.test(refused.stderr)
-    && /npx @plurnk\/plurnk-service/.test(refused.stderr)
-    && /npm i -g @plurnk\/plurnk-service/.test(refused.stderr),
-    "connection-refused onboarding hints on stderr (no-daemon + npx + npm-install)");
+ok(/Could not reach the configured service/.test(refused.stderr)
+    && /plurnk-service start/.test(refused.stderr),
+    "explicit endpoint failure preserves the service address/availability diagnostic");
 
 // No daemon, json mode → ONE structured error on stdout, stderr silent.
 const refusedJson = runBin(["--json", "hello"]);
@@ -68,6 +66,15 @@ ok(
     "--json emits the current schemaVersion + exact RFC 9457 Problem on stdout",
 );
 ok(refusedJson.stderr.trim() === "", "--json keeps stderr silent even on failure");
+
+const missing = runBin(["--json", "hello"], {
+    PLURNK_AGUI_URL: "", PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0",
+    PLURNK_CLIENT_AUTOSTART: "1", PLURNK_CLIENT_SERVICE_BIN: "", PATH: "",
+});
+ok(missing.code === 127, "private startup without an installed service exits 127");
+const missingDoc = JSON.parse(missing.stdout);
+ok(missingDoc.problem?.type === "https://problems.plurnk.xyz/client/daemon/not-installed", "missing service names the installation failure, not a connection failure");
+ok(missing.stderr.trim() === "", "missing service preserves JSON stderr silence");
 
 uninstallSandbox();
 process.stdout.write(failures === 0 ? "\n== PASS ==\n" : `\n== FAIL (${failures}) ==\n`);

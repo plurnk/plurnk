@@ -33,6 +33,8 @@ import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 import { withColorOutput } from "./color.ts";
+import type Lifetime from "./lifetime.ts";
+import { signalExitCode } from "./lifetime.ts";
 
 // The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
 // notification + the daemon workspaceId, so a bridge-run json record matches the
@@ -283,7 +285,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
+    opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     // The user chose to review (yolo off) and this run has no channel to review through, so it
     // states reject rather than leave a proposal held for an answer nobody can give. Every stated
@@ -413,16 +415,16 @@ export const runCliViaBridge = async (
         interruption = Promise.allSettled([
             emitRecord(partial),
             cancelLoop(reason, AbortSignal.any([cancellation.signal, AbortSignal.timeout(cancellationGraceMs)])),
-        ]).then(([flushed, cancelled]) => {
+        ]).then(async ([flushed, cancelled]) => {
             if (flushed.status === "rejected") process.stderr.write(`Could not flush interrupted CLI record: ${String(flushed.reason)}\n`);
             if (cancelled.status === "rejected") process.stderr.write(`Cancellation could not be confirmed: ${String(cancelled.reason)}\n`);
-            process.exit(exitCode);
+            // Close our response before stopping an owned backend. Deliberate cancellation
+            // must not leave the SSE reader to discover a severed socket during shutdown.
+            ac.abort();
+            await opts.lifetime.exit(exitCode);
         });
     };
-    const onInt = (): void => interrupt("user_sigint", 130);
-    const onTerm = (): void => interrupt("user_sigterm", 143);
-    process.on("SIGINT", onInt);
-    process.on("SIGTERM", onTerm);
+    const releaseSignals = opts.lifetime.handleSignals((signal) => interrupt(`user_${signal.toLowerCase()}`, signalExitCode(signal)));
     try {
         result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
         activeSegment = null;
@@ -435,8 +437,7 @@ export const runCliViaBridge = async (
         await emitRecord(result);
     } finally {
         if (interruption !== undefined) await interruption;
-        process.removeListener("SIGINT", onInt);
-        process.removeListener("SIGTERM", onTerm);
+        releaseSignals();
         if (deadline !== undefined) clearTimeout(deadline);
         if (graceTimer !== undefined) clearTimeout(graceTimer);
     }

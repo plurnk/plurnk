@@ -5,7 +5,7 @@
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, access } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -149,10 +149,7 @@ try {
         XDG_STATE_HOME: join(home, ".local", "state"),
         XDG_CACHE_HOME: join(home, ".cache"),
     };
-    daemon = await Launch.start({
-        command: [daemonBin, "start"],
-        cwd: install,
-        env: {
+    const serviceEnv = {
             ...isolatedEnv,
             PLURNK_SCHEMES_HTTP_PLAYWRIGHT_METHOD: "disabled",
             PLURNK_MCP_ENABLED: "[]",
@@ -164,7 +161,11 @@ try {
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
             PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
-        },
+    };
+    daemon = await Launch.start({
+        command: [daemonBin, "start"],
+        cwd: install,
+        env: serviceEnv,
         stateRoot: join(temp, "state"),
         host: "127.0.0.1",
         port: 0,
@@ -278,6 +279,29 @@ try {
         Number.isInteger(entry.worker_id) && Number.isInteger(entry.loop_id) && Number.isInteger(entry.turn_id))) {
         throw new Error(`packed run created no durable worker/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
     }
+
+    // {§cli-daemon-autostart}: the installed client discovers the installed service,
+    // launches privately, retains its state, and stops it without a pre-launched daemon.
+    const privateEnv = { ...serviceEnv, PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0", PLURNK_AGUI_URL: "" };
+    const privateRun = await runClient(clientBin, ["--json", "--workspace", "private-composition", "--worker", "primary", "--project-root", "", "Confirm private startup."], {
+        cwd: install, env: privateEnv, timeout: 30_000,
+    });
+    if (JSON.parse(privateRun.stdout).response !== "composition ok: composition" || privateRun.stderr !== "") {
+        throw new Error(`private packed run failed: ${privateRun.stdout}\n${privateRun.stderr}`);
+    }
+    const roots = await readdir(join(isolatedEnv.XDG_DATA_HOME, "plurnk", "instances"));
+    if (roots.length !== 1) throw new Error(`private startup allocated ${roots.length} roots`);
+    const stateRoot = join(isolatedEnv.XDG_DATA_HOME, "plurnk", "instances", roots[0]);
+    const database = join(stateRoot, "data", "plurnk", "plurnk.db");
+    await access(database);
+    await access(`${database}.lock`).then(
+        () => { throw new Error("private backend still owns its database after client exit"); },
+        (cause) => { if (cause.code !== "ENOENT") throw cause; },
+    );
+    const resumed = await runClient(clientBin, ["log", "read", "--json", "--workspace", "private-composition", "--worker", "primary"], {
+        cwd: install, env: { ...privateEnv, PLURNK_SERVICE_STATE_ROOT: stateRoot, PLURNK_SERVICE_DB_PATH: database }, timeout: 30_000,
+    });
+    if (!resumed.stdout.includes("composition ok: composition")) throw new Error("private conversation was not retained across daemon lifetimes");
 
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));

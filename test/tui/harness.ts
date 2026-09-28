@@ -19,7 +19,7 @@ export interface Tui {
     // the tail so a failure is legible).
     waitFor: (pattern: RegExp, timeoutMs?: number, since?: number) => Promise<string>;
     output: () => string;
-    kill: () => void;
+    kill: (signal?: string) => void;
     exited: Promise<number>;
 }
 
@@ -71,7 +71,7 @@ export const spawnTui = (url: string, args: string[] = [], extraEnv: NodeJS.Proc
             waiters.push({ re, since, resolve: res, timer });
         }),
         output: () => buf,
-        kill: () => { try { term.kill(); } catch { /* already gone */ } },
+        kill: (signal) => { try { term.kill(signal); } catch { /* already gone */ } },
         exited: exited.then(() => exitCode),
     };
 };

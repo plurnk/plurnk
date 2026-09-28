@@ -47,6 +47,10 @@ Options:
 | `--worker <name>` | string | Resume (or create) the named worker within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
 | `--effort <policy>` | string | Persist the daemon-validated effort on the conversation worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_EFFORT`. |
+| `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: permit private local startup or require attachment. See {§cli-daemon-autostart}. |
+| `--daemon-timeout-ms <n>` | string | Positive connection/startup limit; overrides `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`. |
+| `--daemon-stop-timeout-ms <n>` | string | Positive owned-service shutdown grace; overrides `PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS`. |
+| `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
 | `--auto` | flag | State that nobody is attending: every loop is unattended. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
@@ -81,6 +85,38 @@ The client also reads keys it does not own:
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → project `./.env` → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
 **The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring only the `PLURNK_CLIENT_*` prefix and loads it SET-IF-UNSET beneath every operator layer. A knob the operator set is never overridden; a commented knob is documentation, not a value.
+
+### Backend lifetime {§cli-daemon-autostart}
+
+The client uses the service's public `@plurnk/plurnk-service/launch` interface;
+it does not implement a second daemon supervisor. Process ownership and data
+retention are separate.
+
+| Connection/configuration | Behavior |
+|---|---|
+| Ordinary loopback host/port has a listener | Attach; ordinary AG-UI validation still applies. Never stop that service. |
+| Ordinary loopback connection is refused; `PLURNK_CLIENT_AUTOSTART=1` | Start an installed private service on an allocated loopback port with an invocation-local bearer. Each client owns a separate process. |
+| Explicit `PLURNK_AGUI_URL`, remote host, or autostart disabled | Attach only. Failure never creates a substitute environment. |
+| Timeout, DNS/routing failure, authentication rejection, or invalid protocol | Preserve the failure; do not interpret it as an absent service. |
+| Explicit loopback port `0` | Start privately on an allocated port; do not look for a shared listener. |
+
+Configuration comes from the ordinary cascade. Resolve the installed service
+package, or its executable on `PATH`; `PLURNK_CLIENT_SERVICE_BIN` explicitly
+selects an installation. The executable and launcher must come from the same
+package. Missing installation is an actionable failure, never an automatic
+download. Readiness and shutdown use the positive millisecond limits in the
+client's `.env.defaults`.
+
+| Private backend boundary | Guarantee |
+|---|---|
+| Storage | Honor an explicit service state root/database. Otherwise allocate a unique root under `$XDG_DATA_HOME/plurnk/instances` (standard home fallback). Keep the service's existing database/workspace model and exclusive database lock. |
+| Normal, failed, or interrupted invocation | Stop and await the owned service before exit. CLI interruption flushes its partial record first; TUI restores the terminal before waiting. A signal during startup cannot admit a prompt after shutdown begins. |
+| Retention | Exit never deletes private data. Text mode identifies the database; JSON stdout/stderr semantics stay unchanged. The TUI's resume command includes the exact storage binding and private port selection, not the temporary bearer. |
+| Multiple clients | No implicit rendezvous, shared background service, or reference counting. Sharing requires an explicitly running service. |
+
+The service launcher cleans failed acquisition. Shutdown errors remain visible.
+Forced process death (`SIGKILL`, host failure) cannot run graceful cleanup.
+Help, version, completion and local rendering do not acquire a backend.
 
 ### §1.1 Workspaces and workers {§cli-workspaces-and-workers}
 
@@ -1075,7 +1111,8 @@ machine-readable output (stdout product per §2.1; trace and errors stay on
 stderr). `effort [policy]` reads or changes the durable effort.
 `capabilities [json]` projects every durable capability layer and its effective
 intersection, or replaces the workspace policy. Prompt runs only carry proposal
-policy. Local `render` and launcher `web` subcommands do not contact the daemon.
+policy. Local `render` does not contact the daemon; `web` uses the same backend
+selection and lifetime as the terminal client ({§cli-daemon-autostart}).
 
 When the first positional argument matches a known subcommand verb, the dispatcher
 routes there instead of assembling a prompt. Invalid forms of that command exit
@@ -1172,7 +1209,8 @@ lifecycle. The portal inserts the client-held configuration only into an
 unscoped MCP discovery action, so raw declarations are neither serialized at
 startup nor made into a browser-side configuration authority.
 
-The launcher never downloads code or starts the daemon. If the optional module
+The web module never downloads code or owns the daemon; the client supplies its
+selected backend ({§cli-daemon-autostart}). If the optional module
 is absent, it exits 127 and names the exact installation command. `SIGINT` and
 `SIGTERM` close the portal before the foreground process exits.
 
@@ -1243,7 +1281,7 @@ throws become `client/runtime/error` Problems.
 In JSON output, a failure is
 `{"schemaVersion":6,"problem":<ProblemDetails>}`. Text mode renders the same
 Problem's title, detail, and optional recovery to stderr. A bridge that answered with a failure surfaces that failure;
-only connection-level failures receive the “no daemon” onboarding hints.
+only connection-level failures receive service address/availability hints.
 {§cli-connection-onboarding}
 
 This boundary includes workspace creation before the interactive transport is

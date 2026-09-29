@@ -1,5 +1,6 @@
 import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
-import { Validator, type JsonSchema, type ModelRoute, type ProviderUsage } from "@plurnk/plurnk-contracts";
+import { Validator, type FunctionalityPreparationActivity, type JsonSchema, type ModelRoute, type ProviderUsage } from "@plurnk/plurnk-contracts";
+import preparationSchema from "@plurnk/plurnk-contracts/schema/FunctionalityPreparationActivity.json" with { type: "json" };
 import type { LoopUsage } from "./render.ts";
 import { abbreviatedCount, money } from "./figures.ts";
 import ModelText from "./model-text.ts";
@@ -142,6 +143,7 @@ export const formatRouteIdentity = (route: {
 };
 
 export interface ClientStatus {
+    preparation?: readonly FunctionalityPreparationActivity[];
     lifecycle: StatusLifecycle;
     model: string | null;
     // {§cli-status-project-root} — the daemon's bound folder, never create-time client options.
@@ -162,6 +164,7 @@ export const conversationLost = (previousLoopId: number | null, loopId: number |
     previousLoopId !== null && loopId === null;
 
 export interface RuntimeStatusGauge {
+    preparation?: unknown;
     lifecycle: string;
     model: ModelRoute | null;
     loopId: number | null;
@@ -207,6 +210,10 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
     }
     const model = value.model === null ? null : Validator.assertModelRoute(value.model);
+    if (value.preparation !== undefined && (!Array.isArray(value.preparation)
+        || value.preparation.some((item) => !Validator.validateJsonSchemaInstance(preparationSchema, item).valid))) {
+        throw new TypeError("Invalid runtime preparation.");
+    }
     let activity: StatusActivity | null = null;
     if (value.activity !== null) {
         if (typeof value.activity !== "object") throw new TypeError("Invalid runtime activity.");
@@ -234,6 +241,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         packetCount: value.packetCount,
         activity,
         children,
+        ...(value.preparation === undefined ? {} : { preparation: value.preparation as FunctionalityPreparationActivity[] }),
         ...(value.descendants === undefined ? {} : { descendants: descendantAccounting(value.descendants) }),
         ...(projectRoot === undefined ? {} : { projectRoot }),
     };
@@ -342,6 +350,10 @@ export const renderStatusLine = (
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
     if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
+    for (const { family, alias, phase, since } of value.preparation ?? []) {
+        const capability = ModelText.plain(alias === null ? family : `${family}/${alias}`);
+        parts.push(`${phase} ${capability} ${formatDuration(Math.max(0, (context.now ?? Date.now()) - Date.parse(since)))}`);
+    }
     // A glyph is two columns wide: a second space keeps the first dot off its shoulder.
     const activity = parts.length === 0 ? head : `${head}${glyphs.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
     const folder = value.projectRoot == null ? "" : ModelText.plain(value.projectRoot).replaceAll("\n", "\\n").replaceAll("\t", "\\t");

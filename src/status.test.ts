@@ -13,6 +13,22 @@ const running: ClientStatus = {
     children: null,
 };
 
+test("[§cli-status-preparation] preparation names the capability and advances its clock before inference", () => {
+    const base = { lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null };
+    const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1_000).toISOString() }];
+    const status = projectStatusGauge({ ...base, preparation });
+    assert.match(renderStatusLine(status, CONTEXT), /preparing mcp\/search 3\.2s/);
+    assert.match(renderStatusLine(status, { ...CONTEXT, now: 11_000 }), /preparing mcp\/search 10\.0s/);
+    assert.doesNotMatch(renderStatusLine(status, CONTEXT), /awaiting model|🧮/);
+    const idle = projectStatusGauge({ ...base, lifecycle: "idle", preparation });
+    assert.match(renderStatusLine(idle, CONTEXT), /preparing mcp\/search/);
+    const settled = projectStatusGauge({ ...base, preparation: [] });
+    assert.doesNotMatch(renderStatusLine(settled, CONTEXT), /preparing mcp/);
+    for (const invalid of [null, {}, [{}], [{ ...preparation[0], since: "yesterday" }], [{ ...preparation[0], phase: "ready" }]]) {
+        assert.throws(() => projectStatusGauge({ ...base, preparation: invalid }), /Invalid runtime preparation/);
+    }
+});
+
 test("[§cli-status-descendants] cumulative child snapshots replace their prior value and settle once", () => {
     const gauge = { lifecycle: "parked", model: null, loopId: 2, packetCount: 1, activity: null, descendants: {
         requests: 1, usage: { inputTokens: 200, outputTokens: 20 }, costUsd: "0.0200",

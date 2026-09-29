@@ -426,6 +426,10 @@ export const runCliViaBridge = async (
         });
     };
     const releaseSignals = opts.lifetime.handleSignals((signal) => interrupt(`user_${signal.toLowerCase()}`, signalExitCode(signal)));
+    const statusTick = !opts.json && process.stderr.isTTY === true
+        ? setInterval(() => statusLine.update({}), 1_000)
+        : undefined;
+    statusTick?.unref();
     try {
         result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
         activeSegment = null;
@@ -437,6 +441,7 @@ export const runCliViaBridge = async (
         }
         await emitRecord(result);
     } finally {
+        if (statusTick !== undefined) clearInterval(statusTick);
         if (interruption !== undefined) await interruption;
         releaseSignals();
         if (deadline !== undefined) clearTimeout(deadline);

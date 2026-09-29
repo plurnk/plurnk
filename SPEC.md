@@ -162,6 +162,14 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 
 ### §1.2.1 Worker status {§cli-worker-status}
 
+{§cli-status-preparation} Workspace capability preparation is rendered from
+`STATE /plurnk/status/preparation`: family, current alias when present, phase,
+and elapsed time since the daemon's timestamp. The status clock advances while
+preparation is present, including before model inference and during inspection.
+An empty array clears the activity. Reattachment uses the same snapshot; the
+client neither starts capabilities nor polls for progress. This state adds no
+transcript rows and does not replace the loop lifecycle or indexing activity.
+
 Human status is the summary line's shape aggregated over the session:
 
 ```

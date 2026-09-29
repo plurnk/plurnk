@@ -2,11 +2,53 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 import { actionViaBridge } from "../../src/agui.ts";
+
+for (const mode of ["tui", "cli"] as const) {
+    test(`[§cli-status-preparation] built ${mode} displays a cold MCP and advances elapsed time before inference`, { timeout: 60_000 }, async (t) => {
+        const service = await locateDaemon();
+        assert.ok(service, "the composed test requires the sibling service");
+        let calls = 0;
+        const endpoint = await completionsEndpoint(() => { calls++; return "```KILL\nREADY_FIXTURE\n```"; });
+        t.after(() => endpoint.close());
+        const daemon = await bootDaemon(service, { extraEnv: {
+            PLURNK_MODEL: "preparefixture", PLURNK_MODEL_preparefixture: "openai/prepare-fixture",
+            OPENAI_BASE_URL: endpoint.url, OPENAI_API_KEY: "prepare-fixture",
+            PLURNK_PROVIDERS_EFFORT: "off", PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
+            PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
+            PLURNK_MCP_ENABLED: '["slow"]', PLURNK_MCP_slow: process.execPath,
+            PLURNK_MCP_slow_ARGS: JSON.stringify([resolve("../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs")]),
+            PLURNK_MCP_slow_ENV: JSON.stringify({ PLURNK_MCP_TEST_START_DELAY_MS: "3000" }),
+        } });
+        t.after(() => daemon.cleanup());
+        t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
+        const args = ["--workspace", `preparation-${mode}`, "--worker", "main", "--project-root", ""];
+        if (mode === "cli") args.push("--timeout", "25", "Reply briefly.");
+        const terminal = spawnTui(daemon.url, args, {
+            HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
+        }, daemon.workspace);
+        t.after(() => terminal.kill());
+        if (mode === "tui") {
+            await terminal.waitFor(/\[preparation-tui\/~main\(0\)\]/);
+            terminal.write("Reply briefly.\r");
+        }
+        const first = await terminal.waitFor(/preparing mcp\/slow (\d+\.\d+s)/, 10_000);
+        assert.equal(calls, 0, "preparation is visible before a model request");
+        const elapsed = /preparing mcp\/slow (\d+\.\d+s)/.exec(first)?.[1];
+        assert.ok(elapsed);
+        const offset = terminal.output().length;
+        await terminal.waitFor(new RegExp(`preparing mcp/slow (?!${RegExp.escape(elapsed)}\\b)\\d+\\.\\d+s`), 5_000, offset);
+        await terminal.waitFor(/READY_FIXTURE/, 20_000);
+        if (mode === "tui") terminal.write("/quit\r");
+        assert.equal(await terminal.exited, 0, terminal.output());
+        assert.equal(calls, 1);
+        assert.doesNotMatch(terminal.output(), /problem:|runtime:error/);
+    });
+}
 
 test("[§cli-status-project-root] startup and workspace changes show the daemon's folder, not the launch directory", { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();

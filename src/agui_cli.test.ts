@@ -276,6 +276,23 @@ test("consumeCliRun: indexing state is quiet and indexing failures remain diagno
     }], "only the explicit failure enters the transcript");
 });
 
+test("[§cli-status-preparation] snapshots, progress, and clearing stay in status, not the transcript", async () => {
+    const preparations: unknown[] = [];
+    const { io, out, err } = sink({ onStatus: (status) => preparations.push(status.preparation) });
+    const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1000).toISOString() }];
+    await consumeCliRun(stream([
+        { type: EventType.STATE_SNAPSHOT, snapshot: { plurnk: { status: {
+            lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null, preparation,
+        } }, budget: {} } },
+        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/preparation", value: [] }] },
+        terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io);
+    assert.deepEqual(preparations, [preparation, []]);
+    assert.equal(out.join(""), "");
+    assert.equal(err.join(""), "");
+});
+
 test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge and bound folder", async () => {
     const statuses: unknown[] = [];
     const { io } = sink({ onStatus: (status) => statuses.push(status) });

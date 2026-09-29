@@ -1112,7 +1112,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     });
 
     // The running loop's elapsed time ticks in the status row.
-    const statusTick = setInterval(() => { if (inFlight) reprompt(); }, 1_000);
+    const statusTick = setInterval(() => {
+        if (inFlight || (authoritativeStatus?.preparation?.length ?? 0) > 0) reprompt();
+    }, 1_000);
     statusTick.unref();
 
     // Verbs + read-only subcommands call rpc.call(...) only; route that through the

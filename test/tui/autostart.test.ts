@@ -6,7 +6,7 @@ import test from "node:test";
 import { locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-for (const [ending, code] of [["quit", 0], ["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]] as const) {
+for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]] as const) {
     test(`[§cli-daemon-autostart] private TUI backend is stopped on ${ending} while its state survives`, { timeout: 45_000 }, async () => {
         const service = await locateDaemon();
         assert.ok(service, "the composed test needs an installed service or sibling checkout");
@@ -24,15 +24,19 @@ for (const [ending, code] of [["quit", 0], ["SIGINT", 130], ["SIGTERM", 143], ["
             PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "", PLURNK_MCP_ENABLED: "[]",
             PLURNK_CLIENT_DAEMON_TIMEOUT_MS: "15000", PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS: "2000",
         };
-        const tui = spawnTui("http://127.0.0.1:0", ["--workspace", "private-world", "--worker", "primary"], env, project);
+        const tui = spawnTui("http://127.0.0.1:0", ["--workspace", "private-world", "--worker", "primary"], env, ending === "cancel folder" ? root : project);
         resources.defer(async () => { tui.kill(); await tui.exited; });
-        await tui.waitFor(/plurnk.*\/help/, 25_000);
-        await tui.waitFor(/No model selected\./);
-        assert.match(tui.output(), /Use \/models/);
+        if (ending === "cancel folder") await tui.waitFor(/Choose a project folder/, 25_000);
+        else {
+            await tui.waitFor(/plurnk.*\/help/, 25_000);
+            await tui.waitFor(/No model selected\./);
+            assert.match(tui.output(), /Use \/models/);
+        }
         assert.doesNotMatch(tui.output(), /Use the resume command printed on exit/, "explicit storage needs no first-use hint");
         const lock = JSON.parse(await readFile(`${database}.lock`, "utf8")) as { pid: number };
         assert.doesNotThrow(() => process.kill(lock.pid, 0), "the private backend is running during the session");
         if (ending === "quit") tui.write("/quit\r");
+        else if (ending === "cancel folder") tui.write("\x1b");
         else tui.kill(ending);
         assert.equal(await tui.exited, code, tui.output());
         assert.throws(() => process.kill(lock.pid, 0), { code: "ESRCH" }, "the daemon has exited, not merely disconnected");
@@ -60,6 +64,8 @@ test("{§cli-daemon-autostart} automatically allocated TUI storage explains how 
         PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "", PLURNK_MCP_ENABLED: "[]",
     }, root);
     resources.defer(async () => { tui.kill(); await tui.exited; });
+    await tui.waitFor(/Choose a project folder/, 25_000);
+    tui.write("\x1b[B\r");
     await tui.waitFor(/No model selected\./, 25_000);
     assert.match(tui.output(), /Use the resume command printed on exit/);
     assert.match(tui.output(), /plurnk#service/);

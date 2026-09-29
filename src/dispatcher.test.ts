@@ -6,7 +6,8 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveProjectRoot, resolveLoopPolicy, buildSettings, buildVersionNotice, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { resolveLoopPolicy, buildSettings, buildVersionNotice, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { resolveProjectRoot } from "./project-root.ts";
 
 test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-env-cascade-"));

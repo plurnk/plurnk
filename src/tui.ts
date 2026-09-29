@@ -331,7 +331,7 @@ export interface VerbContext {
     setWorkspace: (s: WorkspaceResult) => void;
     // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
     // bridge threadId re-map). Returns the new workspace handle.
-    switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult>;
+    switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult | undefined>;
     // The bound conversation worker's name (null until a loop or /attach names it).
     getWorker: () => string | null;
     // Rebind the session's thread to a worker by name, world unchanged
@@ -502,7 +502,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // threadId. Name is optional (auto-named/generated) and is a mutable
             // handle (/rename retargets it). client id (#249) + AGENTS override
             // (#268) ride the switch.
-            ctx.setWorkspace(await ctx.switchWorkspace(rest.length > 0 ? rest : undefined));
+            const selected = await ctx.switchWorkspace(rest.length > 0 ? rest : undefined);
+            if (selected === undefined) return;
+            ctx.setWorkspace(selected);
             await refreshWorkerPolicy();
             write(`  workspace: ${ctx.getWorkspace().name} (new)\n`);
             return;
@@ -632,6 +634,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     yolo: boolean;
     loopPolicy: LoopPolicyRequest; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
+    selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
     workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
     mcpConfiguration?: Readonly<Record<string, string>>;
@@ -926,6 +929,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let dispatchShortcut: (verb: string) => void = () => {};
     let requestClose: () => void = () => {};
     const removeInputListener = surface.addInputListener((text) => {
+        if (surface.dialogOpen) return undefined;
         if (matchesKey(text, "escape")) {
             if (surface.leaveReview()) return { consume: true };
             if (inFlight) {
@@ -1151,7 +1155,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         switchWorkspace: async (name) => {
-            const workspace = await transport.useSession(name, { projectRoot: opts.projectRoot, client: opts.client });
+            const projectRoot = opts.selectProjectRoot === undefined ? opts.projectRoot : await opts.selectProjectRoot(name, surface);
+            if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;
+            const workspace = await transport.useSession(name, { projectRoot, client: opts.client });
+            opts.projectRoot = projectRoot;
             resetConversationView();
             conversationWorker = workspace.name;
             current = workspace;

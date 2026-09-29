@@ -46,6 +46,10 @@ plurnk --workspace="myProject"
 Run from your project directory. Or try it without a global install:
 `npx @plurnk/plurnk --workspace="myProject"`.
 
+Starting a new workspace from your home directory asks for a project folder.
+For scripts, select one with `--project-root=/path/to/project`, or use
+`--project-root=` for no folder. Existing workspaces keep their saved folder.
+
 Give it a task in ordinary language. The model uses the operation language;
 you do not need to learn it to use Plurnk. If no model is selected, follow the
 startup hint or [choose one below](#models). The included backend starts

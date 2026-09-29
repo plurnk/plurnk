@@ -822,12 +822,18 @@ test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done res
 test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new workspace", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "old");
-        const s = await bt.useSession("new-thread", {});
+        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "old", { projectRoot: "/old", settings: { client: "plurnk-tui" } });
+        const s = await bt.useSession("new-thread", { projectRoot: "/chosen" });
         assert.equal(s.name, "new-thread");
         bt.subscribe(collectingHandlers().h);
         await bt.run("go", { policy: REVIEW_POLICY }).done;
         assert.equal((mock.captured[0].body as { threadId: string }).threadId, "new-thread", "the run targets the re-mapped thread");
+        const properties = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+        assert.equal(properties.projectRoot, "/chosen", "{§cli-project-root}: a switch uses its selected root, not the previous binding's root");
+        assert.deepEqual(properties.settings, { client: "plurnk-tui" });
+        await bt.useSession("headless", { projectRoot: null });
+        await bt.run("go", { policy: REVIEW_POLICY }).done;
+        assert.equal((mock.captured[1].body as { forwardedProps: { plurnk: { projectRoot: unknown } } }).forwardedProps.plurnk.projectRoot, null);
     } finally { await mock.close(); }
 });
 

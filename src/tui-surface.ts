@@ -46,6 +46,7 @@ export default class TuiSurface {
     readonly editor: Editor;
     #review: Component | null = null;
     #reviewing = false;
+    #dialog: Component | null = null;
     #started = false;
 
     constructor(terminal: Terminal = new ProcessTerminal()) {
@@ -77,6 +78,18 @@ export default class TuiSurface {
         return this.#reviewing;
     }
 
+    get dialogOpen(): boolean { return this.#dialog !== null; }
+
+    requestRender(): void { this.#tui.requestRender(); }
+
+    setDialog(component: Component | null): void {
+        if (component !== null && this.#dialog !== null) throw new Error("An input dialog is already open.");
+        this.#dialog = component;
+        this.#showInput();
+    }
+
+    get #focus(): Component { return this.#dialog ?? (this.#reviewing ? this.#review : null) ?? this.editor; }
+
     // {§cli-inline-review} — swap components, never reconstruct the composer's editing state.
     setReview(component: Component | null, count: number): void {
         if (component === null) this.#reviewing = false;
@@ -102,12 +115,13 @@ export default class TuiSurface {
 
     #showInput(): void {
         this.#input.clear();
-        if (this.#reviewing && this.#review !== null) this.#input.addChild(this.#review);
+        if (this.#dialog !== null) this.#input.addChild(this.#dialog);
+        else if (this.#reviewing && this.#review !== null) this.#input.addChild(this.#review);
         else {
             if (this.#review !== null) this.#input.addChild(this.#pending);
             this.#input.addChild(this.editor);
         }
-        this.#tui.setFocus(this.#reviewing ? this.#review : this.editor);
+        this.#tui.setFocus(this.#focus);
         this.#tui.requestRender();
     }
 
@@ -115,7 +129,7 @@ export default class TuiSurface {
         if (this.#started) return;
         this.#started = true;
         this.#tui.start();
-        this.#tui.setFocus(this.#reviewing ? this.#review : this.editor);
+        this.#tui.setFocus(this.#focus);
     }
 
     stop(): void {
@@ -190,7 +204,7 @@ export default class TuiSurface {
         } finally {
             if (wasStarted && this.#started) {
                 this.#tui.start();
-                this.#tui.setFocus(this.#reviewing ? this.#review : this.editor);
+                this.#tui.setFocus(this.#focus);
                 this.#tui.requestRender(true);
             }
         }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -16,19 +16,23 @@ import { bootDaemon, locateDaemon } from "./harness.ts";
 const exec = promisify(execFile);
 const bin = resolve(import.meta.dirname, "../../bin/plurnk.js");
 const script = "````EDIT (witness.txt)\nscript witness\n````";
-const run = (url: string, directory: string, args: string[]) => exec(process.execPath, [
-    bin, "--json", "--yolo", ...args, "script", join(directory, "input.plk"),
-], {
-    cwd: directory,
-    timeout: 30_000,
-    env: {
-        ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
-        HOME: directory,
-        XDG_CONFIG_HOME: join(directory, ".config"),
-        PLURNK_AGUI_URL: url,
-        NO_COLOR: "1",
-    },
-});
+const run = async (url: string, directory: string, args: string[]) => {
+    const home = join(directory, "fixture-home");
+    await mkdir(home, { recursive: true });
+    return exec(process.execPath, [
+        bin, "--json", "--yolo", ...args, "script", join(directory, "input.plk"),
+    ], {
+        cwd: directory,
+        timeout: 30_000,
+        env: {
+            ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
+            HOME: home,
+            XDG_CONFIG_HOME: join(home, ".config"),
+            PLURNK_AGUI_URL: url,
+            NO_COLOR: "1",
+        },
+    });
+};
 
 test("[§cli-script-binding] built scripts retain workspace, worker, and settings across proposal resumes", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-script-wire-"));

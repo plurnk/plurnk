@@ -37,6 +37,14 @@ for (const [resumed, reportedFailure, cancelMode] of [
             frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined) {
+                if (action.kind === "workspace.list") {
+                    frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: {
+                        workspaces: [{ name: "world", project_root: directory }],
+                    } } });
+                    frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
+                    response.end();
+                    return;
+                }
                 if (action.kind === "loop.cancel") {
                     assert.equal(input.threadId, "actor");
                     assert.equal(input.forwardedProps.plurnk.workspace, "world");

@@ -528,11 +528,15 @@ export class BridgeTransport implements Transport {
         pending(payload);
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
-    async useSession(name: string | undefined, _params: Parameters<Transport["useSession"]>[1]): Promise<{ name: string }> {
+    async useSession(name: string | undefined, params: Parameters<Transport["useSession"]>[1]): Promise<{ name: string }> {
         // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
         // switch is a new world + its default conversation; a split thread comes from
         // --worker at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
+        this.#workspace = {
+            ...this.#workspace,
+            ...(params.projectRoot === undefined ? {} : { projectRoot: params.projectRoot }),
+        };
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
         this.#seenRows.clear();

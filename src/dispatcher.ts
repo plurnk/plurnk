@@ -44,6 +44,8 @@ import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-comma
 import { launchWeb } from "./web.ts";
 import Backend from "./backend.ts";
 import Lifetime from "./lifetime.ts";
+import ProjectRoot, { resolveProjectRoot } from "./project-root.ts";
+import type TuiSurface from "./tui-surface.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
@@ -104,15 +106,6 @@ export const collectMcpConfiguration = (
         configuration[key] = value;
     }
     return configuration;
-};
-
-// projectRoot resolution: empty string = explicit headless (null on wire);
-// otherwise must be an absolute path. Caller passes cwd as default.
-export const resolveProjectRoot = (raw: string | undefined): string | null => {
-    if (raw === undefined) return process.cwd();
-    if (raw.length === 0) return null;
-    if (!isAbsolute(raw)) throw new ProblemError(clientFlagInvalid("--project-root", raw, "must be an absolute path"));
-    return raw;
 };
 
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
@@ -190,7 +183,7 @@ options:
       --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
-                          Default: cwd. Empty string = headless. Overrides
+                          Default: cwd (asks when home). Empty string = headless. Overrides
                           PLURNK_CLIENT_PROJECT_ROOT.
       --yolo              auto-accept every proposal locally without prompting.
                           On by default; Shift-Tab toggles it for the session.
@@ -829,7 +822,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
 
     const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
-    const projectRoot: string | null = (() => {
+    let projectRoot: string | null = (() => {
         try { return resolveProjectRoot(projectRootRaw); }
         catch (cause) {
             if (cause instanceof ProblemError) return dieWith(cause.exitCode, cause.problem);
@@ -852,6 +845,13 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         return dieWith(code, problem);
     }
     const { bridgeUrl, token } = backend.target;
+    const projectRoots = new ProjectRoot(backend.target, projectRootRaw);
+    const selectProjectRoot = (name: string | undefined, surface?: TuiSurface): Promise<string | null | undefined> =>
+        projectRoots.resolve(name, !json && process.stdin.isTTY === true && process.stdout.isTTY === true
+            ? async (home) => {
+                const { default: promptProjectRoot } = await import("./project-root-prompt.ts");
+                return promptProjectRoot(home, lifetime, surface);
+            } : undefined);
     if (backend.database !== null && !json) {
         report({
             source: "client:daemon", kind: "started", level: "info",
@@ -866,19 +866,24 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
-        workspaceOptionsPromise ??= (async () => ({
-            projectRoot,
-            settings: await buildSettings(values as {
-                "files-items"?: string;
-                "max-commands"?: string;
-                "no-git"?: boolean;
-                capabilities?: string;
-            }, process.env, web
-                ? undefined
-                : !isSubcommand && prompt.length === 0
-                    ? CLIENT_ID_TUI
-                    : CLIENT_ID_CLI),
-        }))();
+        workspaceOptionsPromise ??= (async () => {
+            const selected = await selectProjectRoot(workspaceName);
+            if (selected === undefined) return lifetime.exit(130);
+            projectRoot = selected;
+            return {
+                projectRoot: selected,
+                settings: await buildSettings(values as {
+                    "files-items"?: string;
+                    "max-commands"?: string;
+                    "no-git"?: boolean;
+                    capabilities?: string;
+                }, process.env, web
+                    ? undefined
+                    : !isSubcommand && prompt.length === 0
+                        ? CLIENT_ID_TUI
+                        : CLIENT_ID_CLI),
+            };
+        })();
         return workspaceOptionsPromise;
     };
 
@@ -1109,6 +1114,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 loopPolicy,
                 maxTurns,
                 projectRoot,
+                selectProjectRoot,
                 workerName,
                 client: CLIENT_ID_TUI,
                 mcpConfiguration,

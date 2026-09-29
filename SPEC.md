@@ -267,12 +267,25 @@ client-set policy.
 
 **Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. NULL = headless (file ops 400 with "workspace has no project_root").
 
-Client behavior:
+| Input | Creation root |
+|---|---|
+| `--project-root` or `PLURNK_CLIENT_PROJECT_ROOT` | Explicit absolute path; empty string means headless (`null`). The flag wins. |
+| Neither, cwd differs from home | cwd |
+| Neither, cwd resolves to home, existing named workspace | Stored root; no prompt or rewrite |
+| Neither, cwd resolves to home, new workspace, interactive stdin and stdout, not JSON mode | Inline choice: existing project folder with path completion, no folder, or explicit home |
+| Same new workspace, noninteractive or JSON mode | Exit 64 with `client/project-root/required` and explicit-root guidance; no workspace creation or model run |
 
-- Default: `process.cwd()` — the user's current directory.
-- Override: `--project-root <abs-path>` or `PLURNK_CLIENT_PROJECT_ROOT`.
-- Explicit headless: set to empty string (`--project-root=`) → wire as `null`.
-- Accompanies every attach-or-create request so whichever request wins can create the workspace atomically. An existing workspace preserves its stored root; the value never rewrites it.
+The same selection precedes startup and `/workspace` creation. A folder choice
+accepts absolute, home-relative and `~/` paths and validates that the directory
+exists; it creates no directory. An explicit choice becomes this invocation's
+creation default. Merely resuming a workspace does not make its stored root a
+default for new workspaces. Escape/Ctrl-C cancels selection without creating a
+workspace or changing the current binding; startup cancellation exits 130.
+Read-only global commands do not select a root.
+
+The resolved value accompanies every attach-or-create request so whichever
+request wins can create the workspace atomically. An existing workspace always
+preserves its stored root, even if an explicit creation default differs.
 
 ### §1.4 Workspace-open settings {§cli-workspace-open-settings}
 

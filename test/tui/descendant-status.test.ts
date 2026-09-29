@@ -91,7 +91,7 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
     await arrived[5].promise;
     await tui.waitFor(/⌛︎[^\r\n]*↓2k ↑150[^\r\n]*\$0\.1500/);
     release[4].resolve();
-    await tui.waitFor(/⌛︎[^\r\n]*↓3k ↑310[^\r\n]*\$0\.3100/);
+    await tui.waitFor(/⌛︎[^\r\n]*↓3k ↑310[^\r\n]*\$0\.3100(?![^\r\n]*🐜)/);
     release[5].resolve();
     await tui.waitFor(/ACCOUNTING_RESULT_5/);
     // The second child settled after the parent's packet was assembled. The normal

@@ -16,6 +16,8 @@ export const pathPartial = (line: string): string | null => {
     if (verb) return verb[1];
     const members = line.match(/^\/members\s+(?:discover|add\s+\S+)\s+(\S*)$/);
     if (members) return members[1];
+    const envImport = line.match(/^\/env\s+(?:--scope(?:=|\s+)(?:worker|workspace)\s+)?import\s+(\S*)$/);
+    if (envImport) return envImport[1];
     const mcpOptions = line.match(/^\/mcp\s+add\s+\S+\s+\S+\s+(\S*)$/);
     if (mcpOptions) return mcpOptions[1];
     // @file: a path reference anywhere in a prompt (word-boundary @ to dodge

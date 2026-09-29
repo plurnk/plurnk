@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import { handleEnv } from "./env.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 const harness = (results: Record<string, unknown> = {}) => {
     const calls: Array<{ method: string; params?: object }> = [];
@@ -127,4 +131,68 @@ test("[§cli-environment] workspace scope selects the same verbs and preserves v
         assert.deepEqual(invalid.calls, [], input);
         assert.match(invalid.out.join(""), /usage:/, input);
     }
+});
+
+const dotenv = async (text: string): Promise<{ dir: string; file: string }> => {
+    const dir = await mkdtemp(join(tmpdir(), "plurnk-env-import-"));
+    const file = join(dir, ".env.plurnk");
+    await writeFile(file, text);
+    return { dir, file };
+};
+
+test("[§cli-environment] import adds each variable of a dotenv file, to this worker only unless a scope is given", async () => {
+    const { dir, file } = await dotenv("# project settings\nAPI_BASE=https://example.test/v1\nexport MODE=\"two words\"\nRATIO=a=b\n");
+    try {
+        const h = harness();
+        await handleEnv(`import ${relative(process.cwd(), file)}`, h.rpc, h.write);
+        assert.deepEqual(h.calls, [
+            { method: "worker.env.add", params: { alias: "API_BASE", definition: { value: "https://example.test/v1" } } },
+            { method: "worker.env.add", params: { alias: "MODE", definition: { value: "two words" } } },
+            { method: "worker.env.add", params: { alias: "RATIO", definition: { value: "a=b" } } },
+        ], "each variable is one add, its value as the dotenv parser reads it; a relative path resolves from the launch folder");
+        assert.match(h.out.join(""), /imported 3 of 3 into this worker only \(--scope workspace imports workspace defaults\)\n$/u);
+
+        const shared = harness();
+        await handleEnv(["--scope", "workspace", "import", file], shared.rpc, shared.write);
+        assert.deepEqual(shared.calls.map(({ method }) => method), ["workspace.env.add", "workspace.env.add", "workspace.env.add"]);
+        assert.match(shared.out.join(""), /imported 3 of 3 into the workspace defaults\n$/u);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("[§cli-environment] an import refusal carries the daemon's detail and the other adds still land, as typed adds would", async () => {
+    const { dir, file } = await dotenv("FIRST=1\nPLURNK_MODEL=elsewhere\nLAST=2\n");
+    try {
+        const aliases: unknown[] = [];
+        const out: string[] = [];
+        const rpc = {
+            call: async (_method: string, params?: object) => {
+                const { alias } = params as { alias: string };
+                aliases.push(alias);
+                if (alias === "PLURNK_MODEL") {
+                    throw new ProblemError({ type: "https://problems.plurnk.xyz/functionality/env/reserved-name", title: "Reserved name", status: 422, detail: "PLURNK_MODEL is plurnk's own configuration." });
+                }
+                return { status: 200, alias, definition: { state: "active" } };
+            },
+        };
+        await handleEnv(`import ${file}`, rpc, (text) => out.push(text));
+        assert.deepEqual(aliases.toSorted(), ["FIRST", "LAST", "PLURNK_MODEL"]);
+        assert.deepEqual(out.slice(0, -1).toSorted(), [
+            "  added: FIRST (active)\n",
+            "  added: LAST (active)\n",
+            "  refused: PLURNK_MODEL  — PLURNK_MODEL is plurnk's own configuration.\n",
+        ]);
+        assert.equal(out.at(-1), "  imported 2 of 3 into this worker only (--scope workspace imports workspace defaults)\n");
+        const broken = { call: async () => { throw new Error("socket closed"); } };
+        await assert.rejects(handleEnv(`import ${file}`, broken, () => {}), /socket closed/u, "a transport failure is not a refusal: the import stops");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("[§cli-environment] import names its path, and an unreadable one reaches no add", async () => {
+    const h = harness();
+    assert.equal(await handleEnv("import", h.rpc, h.write), null);
+    assert.match(h.out.join(""), /usage: \/env import <path>\n/u);
+    const missing = harness();
+    assert.equal(await handleEnv("import /nonexistent/.env.plurnk", missing.rpc, missing.write), null);
+    assert.match(missing.out.join(""), /not readable: ENOENT/u);
+    assert.deepEqual(missing.calls, []);
 });

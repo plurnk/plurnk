@@ -1,6 +1,10 @@
 // {§cli-environment} Scope selects the daemon action; composition stays server-side.
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { parseEnv } from "node:util";
 import { commandUsage } from "./commands.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -70,6 +74,39 @@ const addArguments = (input: string | readonly string[]): { name: string; value:
     return { name, value: rest.join(" ") };
 };
 
+// `import <path>` takes the rest of the line as the path, as /import does.
+const importPath = (input: string | readonly string[]): string | null => {
+    if (typeof input === "string") {
+        const match = /^\s*import\s+([\s\S]+?)\s*$/u.exec(input);
+        return match === null ? null : match[1]!;
+    }
+    const [, ...rest] = input;
+    return rest.length === 0 ? null : rest.join(" ");
+};
+
+// An import is one add per variable of the file: each lands or is refused on its own, exactly as it
+// would typed, and the summary names the scope that received them.
+const importFile = async (path: string, rpc: ActionCaller, write: (text: string) => void, scope: string): Promise<unknown | null> => {
+    let text: string;
+    try { text = await readFile(resolve(process.cwd(), path), "utf8"); }
+    catch (cause) { write(`  not readable: ${cause instanceof Error ? cause.message : String(cause)}\n`); return null; }
+    const entries = Object.entries(parseEnv(text));
+    const added: MutationResult[] = [];
+    for (const [alias, value] of entries) {
+        try {
+            const result = await rpc.call(`${scope}.env.add`, { alias, definition: { value: String(value) } }) as MutationResult;
+            renderMutation(result, "added", alias, write);
+            added.push(result);
+        } catch (cause) {
+            if (!(cause instanceof ProblemError)) throw cause;
+            write(`  refused: ${alias}  — ${cause.problem.detail}\n`);
+        }
+    }
+    const target = scope === "workspace" ? "the workspace defaults" : "this worker only (--scope workspace imports workspace defaults)";
+    write(`  imported ${added.length} of ${entries.length} into ${target}\n`);
+    return added;
+};
+
 export const handleEnv = async (
     input: string | readonly string[],
     rpc: ActionCaller,
@@ -122,6 +159,15 @@ export const handleEnv = async (
         const result = await rpc.call(`${scope}.env.${command}`, { alias: name }) as MutationResult;
         renderMutation(result, command === "enable" ? "enabled" : "disabled", name, write);
         return result;
+    }
+
+    if (command === "import") {
+        const path = importPath(input);
+        if (path === null) {
+            usage(write, "import");
+            return null;
+        }
+        return importFile(path, rpc, write, scope);
     }
 
     if (command === "remove") {

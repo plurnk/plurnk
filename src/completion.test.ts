@@ -16,6 +16,8 @@ test("pathPartial: members and compose verbs expose their path arg", () => {
     assert.equal(pathPartial("/import src/fo"), "src/fo");
     assert.equal(pathPartial("/script flows/build.pl"), "flows/build.pl");
     assert.equal(pathPartial("/mcp add gitea gitea-mcp config/git"), "config/git");
+    assert.equal(pathPartial("/env import ../.env.pl"), "../.env.pl");
+    assert.equal(pathPartial("/env --scope workspace import ../.env.pl"), "../.env.pl");
 });
 
 test("pathPartial: non-path contexts → null", () => {

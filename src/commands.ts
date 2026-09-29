@@ -68,11 +68,14 @@ const MEMBERS_SUBCOMMANDS = lifecycle(
     { name: "add", usage: "add <alias> <glob>", summary: "Add and enable a members glob; a leading ! excludes.", alias: false },
 );
 
-const ENV_SUBCOMMANDS = lifecycle(
-    "name",
-    { name: "discover", usage: "discover [query]", summary: "List the names you may set, with their owning package; a query matches a name or its comment.", alias: false },
-    { name: "add", usage: "add <NAME> <value>", summary: "Set a variable in the selected scope; the value is used verbatim.", alias: false },
-);
+const ENV_SUBCOMMANDS = [
+    ...lifecycle(
+        "name",
+        { name: "discover", usage: "discover [query]", summary: "List the names you may set, with their owning package; a query matches a name or its comment.", alias: false },
+        { name: "add", usage: "add <NAME> <value>", summary: "Set a variable in the selected scope; the value is used verbatim.", alias: false },
+    ),
+    { name: "import", usage: "import <path>", summary: "Add every variable in a dotenv file to the selected scope, each exactly as add would.", alias: false },
+];
 
 const SCHEDULE_SUBCOMMANDS = lifecycle(
     "alias",

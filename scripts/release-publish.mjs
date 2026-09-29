@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
+import { assertProjection as assertReleaseProjection, stampPlatform } from "./release-projection.mjs";
 
 const run = promisify(execFile);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -80,32 +81,12 @@ const assertCanonicalSource = async ({ allowPrepared = false } = {}) => {
     await output("git", ["verify-commit", "HEAD"]);
 };
 
-const platformContractsRange = (version) => `^${version}`;
-
 const readProjection = async () => ({
     manifest: JSON.parse(await readFile(PACKAGE_FILE, "utf8")),
     lock: JSON.parse(await readFile(LOCK_FILE, "utf8")),
 });
 
-const assertProjection = ({ manifest, lock }) => {
-    if (manifest.version !== clientVersion) throw new Error(`client manifest is ${manifest.version}, expected ${clientVersion}`);
-    if (manifest.plurnk?.builtAgainst !== platformVersion) {
-        throw new Error(`client builtAgainst is ${manifest.plurnk?.builtAgainst}, expected ${platformVersion}`);
-    }
-    if (manifest.dependencies?.[CONTRACTS_PACKAGE] !== platformContractsRange(platformVersion)) {
-        throw new Error(`client contracts range ${manifest.dependencies?.[CONTRACTS_PACKAGE]} is not ${platformContractsRange(platformVersion)}`);
-    }
-    if (lock.version !== clientVersion || lock.packages?.[""]?.version !== clientVersion) {
-        throw new Error(`client lock is not stamped at ${clientVersion}`);
-    }
-    if (lock.packages?.[""]?.dependencies?.[CONTRACTS_PACKAGE] !== manifest.dependencies[CONTRACTS_PACKAGE]) {
-        throw new Error("client lock root omits the contracts dependency");
-    }
-    const lockedContracts = lock.packages?.[`node_modules/${CONTRACTS_PACKAGE}`]?.version;
-    if (lockedContracts !== platformVersion) {
-        throw new Error(`client lock resolved contracts ${lockedContracts}, expected ${platformVersion}`);
-    }
-};
+const assertProjection = (projection) => assertReleaseProjection(projection, clientVersion, platformVersion);
 
 const clientVersions = await registryVersions(CLIENT_PACKAGE);
 const targetServed = clientVersions.includes(clientVersion);
@@ -137,9 +118,7 @@ if (!targetServed) {
     }
 
     const manifest = JSON.parse(await readFile(PACKAGE_FILE, "utf8"));
-    manifest.plurnk ??= {};
-    manifest.plurnk.builtAgainst = platformVersion;
-    manifest.dependencies[CONTRACTS_PACKAGE] = platformContractsRange(platformVersion);
+    stampPlatform(manifest, platformVersion);
     await writeFile(PACKAGE_FILE, `${JSON.stringify(manifest, null, 4)}\n`);
 
     await run("npm", [

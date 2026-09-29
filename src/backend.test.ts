@@ -25,6 +25,7 @@ test("[§cli-daemon-autostart] remote, portal and attach-only targets do not res
         assert.deepEqual(backend.target, target);
         assert.equal(backend.database, null);
         assert.deepEqual(backend.resumeEnv, {});
+        assert.equal(backend.allocatedStorage, false);
     }
 });
 

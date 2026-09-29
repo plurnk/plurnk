@@ -35,7 +35,7 @@ import type { LogEntryWire } from "./render.ts";
 import { keyToResolution, editInEditor } from "./proposal.ts";
 import Review from "./Review.ts";
 import { BridgeTransport, type ObservationHandle, type Transport } from "./transport.ts";
-import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientConversationLost, NO_MODEL_HINT } from "./diagnostics.ts";
+import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientConversationLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -79,7 +79,7 @@ export const renderTuiFailure = (cause: unknown): string => {
     // A Problem may quote the model's own line; a thrown message may carry anything (plurnk#35).
     if (cause instanceof ProblemError) {
         return renderDiagnostic(ModelText.plainFields(cause.problem))
-            + (cause.problem.status === 501 ? NO_MODEL_HINT : "");
+            + (cause.problem.status === 501 ? ` — ${NO_MODEL_HINT}` : "");
     }
     return `  ${paint(`error: ${ModelText.plain(cause instanceof Error ? cause.message : String(cause))}`, "failure")}`;
 };
@@ -775,6 +775,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const releaseGuards = TerminalGuards.install(surface, opts.lifetime);
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
+    if (workerModel === null) surface.append(renderDiagnostic(clientModelUnselected()));
     surface.append("");
 
     const statusContext = () => ({

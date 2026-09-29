@@ -12,7 +12,6 @@ import {
     Validator,
     type ProblemDetails,
 } from "@plurnk/plurnk-contracts";
-import { userConfigFile } from "./paths.ts";
 
 export type { ProblemDetails } from "@plurnk/plurnk-contracts";
 
@@ -362,7 +361,15 @@ export const clientProposalEditsBlocked = (): Notice => ({
     message: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)",
 });
 
-export const NO_MODEL_HINT = ` — configure a model in ${userConfigFile()} (see: plurnk-service config defaults)`;
+export const NO_MODEL_HINT = "Use /models to list available models, then /model <selector> to choose one.";
+
+export const clientModelUnselected = (): Notice => ({
+    source: "client:model",
+    kind: "unselected",
+    level: "warn",
+    message: `No model selected. ${NO_MODEL_HINT}`,
+    hints: ["https://github.com/plurnk/plurnk#models"],
+});
 
 export const clientRpcError = (method: string, cause: unknown): ProblemDetails =>
     clientProblem(

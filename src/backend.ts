@@ -110,13 +110,15 @@ export default class Backend {
     readonly target: BridgeTarget;
     readonly database: string | null;
     readonly resumeEnv: Readonly<Record<string, string>>;
+    readonly allocatedStorage: boolean;
     readonly #daemon: Daemon | null;
     #closing: Promise<void> | undefined;
 
-    private constructor(target: BridgeTarget, daemon: Daemon | null, resumeEnv: Readonly<Record<string, string>> = {}) {
+    private constructor(target: BridgeTarget, daemon: Daemon | null, resumeEnv: Readonly<Record<string, string>> = {}, allocatedStorage = false) {
         this.target = target;
         this.database = daemon?.dbPath ?? null;
         this.resumeEnv = resumeEnv;
+        this.allocatedStorage = allocatedStorage;
         this.#daemon = daemon;
     }
 
@@ -131,7 +133,8 @@ export default class Backend {
         if (await listenerPresent(url, timeout)) return new Backend(target, null);
         const { command, launch } = await serviceInstallation(env);
         let stateRoot = env.PLURNK_SERVICE_STATE_ROOT || undefined;
-        if (stateRoot === undefined && !(env.PLURNK_SERVICE_DB_PATH ?? "").length) {
+        const allocatedStorage = stateRoot === undefined && !(env.PLURNK_SERVICE_DB_PATH ?? "").length;
+        if (allocatedStorage) {
             const data = env.XDG_DATA_HOME;
             const root = join(data !== undefined && isAbsolute(data) ? data : join(homedir(), ".local", "share"), "plurnk", "instances");
             await mkdir(root, { recursive: true, mode: 0o700 });
@@ -152,7 +155,7 @@ export default class Backend {
             ...(stateRoot === undefined ? {} : { PLURNK_SERVICE_STATE_ROOT: stateRoot }),
             PLURNK_SERVICE_DB_PATH: daemon.dbPath,
         };
-        return new Backend({ bridgeUrl: daemon.url, token }, daemon, resumeEnv);
+        return new Backend({ bridgeUrl: daemon.url, token }, daemon, resumeEnv, allocatedStorage);
     }
 
     close(): Promise<void> {

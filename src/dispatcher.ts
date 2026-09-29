@@ -853,7 +853,16 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
     const { bridgeUrl, token } = backend.target;
     if (backend.database !== null && !json) {
-        report({ source: "client:daemon", kind: "started", level: "info", message: `Private backend; data retained at ${backend.database}` });
+        report({
+            source: "client:daemon", kind: "started", level: "info",
+            message: `Private backend; data retained at ${backend.database}`,
+            ...(backend.allocatedStorage && !isSubcommand && prompt.length === 0 ? {
+                hints: [
+                    "Use the resume command printed on exit to return to this session.",
+                    "https://github.com/plurnk/plurnk#service",
+                ],
+            } : {}),
+        });
     }
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {

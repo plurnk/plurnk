@@ -3,9 +3,8 @@
 // test:installation. Mirror of plurnk-service/scripts/install-sandbox.mjs so the
 // two repos' installation stories stay aligned.
 //
-// Installs --omit=optional: this tests the CLIENT package in isolation — its own
-// footprint is just `ws`. The bundled daemon is the SERVICE's boundary (its own
-// test:installation covers the service install); ours stays on our side.
+// Installs --omit=optional to test the client-only path. The composition gate
+// covers the complete client/backend installation.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -39,8 +38,7 @@ export function installSandbox() {
         resolve(sandbox, "package.json"),
         `${JSON.stringify({ name: "plurnk-client-sandbox", version: "1.0.0", private: true }, null, 2)}\n`,
     );
-    // --omit=optional: the CLIENT alone (just ws). The optional daemon is the
-    // service's install to test, not ours — keeps the boundary clean.
+    // Deliberately omit the backend; absence must remain supported.
     sh("npm", ["install", "--omit=optional", tarball], { cwd: sandbox });
     return { sandbox, tarball };
 }

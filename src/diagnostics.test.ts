@@ -24,7 +24,15 @@ const {
     clientRuntimeError,
     clientRpcError,
     clientTransportTerminalMissing,
+    clientModelUnselected,
 } = await import("./diagnostics.ts");
+
+test("{§cli-model-selection} missing-model guidance uses existing selection commands", () => {
+    const notice = clientModelUnselected();
+    assert.equal(notice.level, "warn");
+    assert.equal(notice.message, "No model selected. Use /models to list available models, then /model <selector> to choose one.");
+    assert.deepEqual(notice.hints, ["https://github.com/plurnk/plurnk#models"]);
+});
 
 test("[§cli-notice-rendering] renderDiagnostic renders a Notice as an alert titled by its discriminator", () => {
     assert.equal(renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" }), "│ ℹ️  Note engine:rail:strike");

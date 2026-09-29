@@ -88,6 +88,10 @@ The client also reads keys it does not own:
 
 ### Backend lifetime {§cli-daemon-autostart}
 
+The client package declares the service as an optional dependency. A normal
+install includes it; `--omit=optional` preserves client-only use with an explicit
+endpoint or separately installed service. Runtime startup never downloads it.
+
 The client uses the service's public `@plurnk/plurnk-service/launch` interface;
 it does not implement a second daemon supervisor. Process ownership and data
 retention are separate.
@@ -147,6 +151,12 @@ before the CLI sends a prompt or the TUI accepts input. The client never continu
 under the worker's previous policy.
 
 The daemon alone owns provider configuration, credentials, alias declarations, and its `PLURNK_MODEL` seed. A client connected to a local or remote daemon has the same contract.
+
+When the initial worker has no selected model, the TUI emits one startup warning
+pointing to `/models`, `/model <selector>`, and README's Models section. It does
+not choose a model or fetch the catalog automatically. When startup allocates
+private storage, its existing informational notice points to the exit resume
+command and README's Service section; explicit storage bindings receive no such hint.
 
 The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the resolved durable route. `providers.list` remains the small declared-alias directory used for bare-fragment completion; a `/model` or `/child` fragment holding a provider prefix (`openai/…`) completes lazily from one bounded provider-scoped `models.list` page, cached per provider for the session — the client never preloads or owns the catalog. `/models [search]` and `plurnk models` lazily query `models.list`; no model catalog is fetched at startup or injected into a model packet.
 

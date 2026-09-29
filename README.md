@@ -39,37 +39,56 @@ policies without replacing the environment. No Plurnk account is required.
 Requires Node.js 26+, npm, Git, and a local or cloud model endpoint.
 
 ```sh
-npm install -g @plurnk/plurnk @plurnk/plurnk-service
-```
-
-Configure a model. This example uses
-DeepSeek; see [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
-for other providers and local servers.
-
-```sh
-export DEEPSEEK_API_KEY="your-api-key"
-export PLURNK_MODEL=deepseek/deepseek-v4-flash
-```
-
-Then open a project:
-
-```sh
-cd /path/to/your/project
+npm install -g @plurnk/plurnk
 plurnk --workspace="myProject"
 ```
 
-Give it a task in ordinary language. The model uses the operation language;
-you do not need to learn it to use Plurnk. The TUI prints a resume command when
-you leave, preserving both the workspace and worker.
+Run from your project directory. Or try it without a global install:
+`npx @plurnk/plurnk --workspace="myProject"`.
 
-The client connects to `127.0.0.1:1066` when a service is already running. Otherwise,
-it starts an installed backend privately for this client and stops it on exit;
-saved data remains. To share workspaces across clients, explicitly run
-`plurnk-service start` first. Set `PLURNK_CLIENT_AUTOSTART=0` to require attachment.
-Nothing is installed automatically. Provider credentials come from the environment
-of the process starting the daemon. Proposals are accepted
-automatically by default (`PLURNK_CLIENT_YOLO=1`); set it to `0` or start a prompt
-with `?` to review them. Neither overrides capability restrictions.
+Give it a task in ordinary language. The model uses the operation language;
+you do not need to learn it to use Plurnk. If no model is selected, follow the
+startup hint or [choose one below](#models). The included backend starts
+privately when no shared service is running and stops on exit. History is
+saved; the printed resume command reopens the same workspace and worker.
+
+Proposals are accepted automatically by default (`PLURNK_CLIENT_YOLO=1`);
+set it to `0` or start a prompt with `?` to review them. Neither overrides
+capability restrictions.
+
+## Models
+
+Supply your provider's API key to the backend—for example,
+`export DEEPSEEK_API_KEY="your-api-key"` before launching Plurnk.
+In the TUI, `/models` lists models with configured credentials and
+`/model <provider/model>` selects one. You can also launch with
+`--model=<provider/model>`; aliases are optional.
+
+To set a default for new workers, add your chosen route to
+`~/.config/plurnk/.env` (`$XDG_CONFIG_HOME/plurnk/.env` when set):
+
+```dotenv
+PLURNK_MODEL=deepseek/deepseek-v4-flash
+```
+
+Restart an already-running daemon to load changed startup settings; existing
+workers retain their selection. See [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
+for local endpoints and tuning.
+
+## Service
+
+For a shared, persistent environment, install `@plurnk/plurnk-service` separately
+and run `plurnk-service start`. Clients attach at `127.0.0.1:1066` by default.
+Linux users can install the package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
+(`plurnk.service` in the package root); its comments cover installation,
+executable paths, and environment setup. The service must receive your provider
+credentials—systemd does not source your interactive shell.
+
+For a client-only installation, use
+`npm install -g @plurnk/plurnk --omit=optional`.
+Set `PLURNK_CLIENT_AUTOSTART=0` to require an existing service. No system service
+is installed or enabled automatically. See [service configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
+for other deployments.
 
 ## TUI and CLI
 
@@ -133,7 +152,7 @@ schema into every prompt.
 Configuration uses cascading environment variables and `.env` files, including
 the XDG user configuration at `~/.config/plurnk/.env`. Model discovery uses
 [models.dev](https://models.dev). Inspect the complete, documented configuration
-catalog with:
+catalog with the separately installed service:
 
 ```sh
 plurnk-service config defaults

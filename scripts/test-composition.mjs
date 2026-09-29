@@ -1,5 +1,5 @@
-// Packed client/service composition gate (#630). The client candidate and an
-// explicit service artifact are installed into an empty consumer directory,
+// Packed client/service composition gate (#630). The client candidate and its
+// optional backend are installed into an empty consumer directory,
 // then exercised through the public CLI and AG-UI listener. A deterministic
 // local OpenAI-compatible endpoint supplies grammar-valid model turns.
 import { spawn, execFile } from "node:child_process";
@@ -16,7 +16,7 @@ const root = resolve(import.meta.dirname, "..");
 const temp = await mkdtemp(join(tmpdir(), "plurnk-composition-"));
 const install = join(temp, "consumer");
 const home = join(temp, "home");
-const serviceSpec = process.env.PLURNK_COMPOSITION_SERVICE ?? "@plurnk/plurnk-service@latest";
+const serviceSpec = process.env.PLURNK_COMPOSITION_SERVICE;
 const serviceRoot = process.env.PLURNK_COMPOSITION_SERVICE_ROOT;
 const clientSpec = process.env.PLURNK_COMPOSITION_CLIENT;
 
@@ -66,7 +66,7 @@ try {
         if (!Array.isArray(packed) || typeof packed[0]?.filename !== "string") throw new Error("npm pack returned no client artifact");
         installedClient = join(temp, packed[0].filename);
     }
-    let serviceSpecs = [serviceSpec];
+    let serviceSpecs = serviceSpec === undefined ? [] : [serviceSpec];
     if (serviceRoot !== undefined && serviceRoot.length > 0) {
         const absoluteServiceRoot = resolve(serviceRoot);
         await run("npm", ["run", "build"], {
@@ -85,6 +85,12 @@ try {
         cwd: install,
         maxBuffer: 64 * 1024 * 1024,
     });
+    if (serviceSpecs.length === 0) {
+        const consumer = JSON.parse(await readFile(join(install, "package.json"), "utf8"));
+        if (Object.hasOwn(consumer.dependencies, "@plurnk/plurnk-service")) {
+            throw new Error("the one-package install must obtain its backend through the client's optional dependency");
+        }
+    }
 
     model = createServer((req, res) => {
         modelRequests.push(`${req.method} ${req.url}`);

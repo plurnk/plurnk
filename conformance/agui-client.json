@@ -1016,7 +1016,7 @@
       "posture": "native",
       "evidence": [
         "src/status.test.ts — preparation status and elapsed time",
-        "test/tui/startup.test.ts — cold MCP preparation in CLI and TUI"
+        "test/tui/live-status.test.ts — cold MCP preparation in CLI and TUI"
       ],
       "dimensions": [
         "admission",

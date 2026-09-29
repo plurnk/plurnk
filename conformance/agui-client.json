@@ -1019,6 +1019,8 @@
         "test/tui/startup.test.ts — cold MCP preparation in CLI and TUI"
       ],
       "dimensions": [
+        "admission",
+        "framing",
         "projection",
         "lifecycle",
         "presentation",

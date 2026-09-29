@@ -11,7 +11,7 @@
 import process from "node:process";
 import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
-import { extractSendBody, isResponseMessage } from "./render.ts";
+import { extractSendBody, isEmission, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage, OutsideText } from "./render.ts";
 import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import {
@@ -209,6 +209,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 const separator = response.length > 0 ? "\n\n" : "";
                 if (message.length > 0) response += separator + message;
                 if (io.json) { entries.push(entry); continue; }
+                if (isEmission(entry)) continue;
                 io.err(`${formatPlain(entry)}\n`);
                 if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
             } else if (name === "plurnk.terminated") {

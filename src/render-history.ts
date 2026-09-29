@@ -1,7 +1,7 @@
 import type { ConversationHistory } from "./transport.ts";
 import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
-import { extractSendBody, isArrivalEntry, isEntryMaterialization, isOwnArrival, isResponseMessage, renderOperationRow } from "./render.ts";
+import { extractSendBody, isArrivalEntry, isEmission, isEntryMaterialization, isOwnArrival, isResponseMessage, renderOperationRow } from "./render.ts";
 import { renderSendBody, renderSubmittedInput } from "./render-message.ts";
 
 // {§cli-conversation-history}: rows supply order and operation outcomes; the
@@ -12,7 +12,7 @@ export const renderHistory = (history: ConversationHistory, threadId: string, co
     const arrivals = new Map(history.messages.filter((message) => message.role === "user").map((message) => [message.name, message]));
     const blocks: string[] = [];
     for (const entry of history.entries) {
-        if (typeof entry.op !== "string" || isEntryMaterialization(entry)) continue;
+        if (typeof entry.op !== "string" || isEntryMaterialization(entry) || isEmission(entry)) continue;
         if (isArrivalEntry(entry)) {
             if (!history.attachment && isOwnArrival(entry, threadId)) continue;
             const message = typeof entry.source === "string" ? arrivals.get(entry.source) : undefined;

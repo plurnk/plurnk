@@ -64,6 +64,13 @@ export const isEntryMaterialization = (entry: LogEntryWire): boolean =>
     && entry.op === "EDIT"
     && objectOf(entry.attrs)?.kind === "entry_materialized";
 
+// {§cli-what-is-not-rendered} — the daemon's announcement of the worker's own admitted emission, whose
+// operations already render as their own rows, so a person never needs this one.
+export const isEmission = (entry: LogEntryWire): boolean =>
+    entry.origin === "_plurnk"
+    && entry.op === "READ"
+    && objectOf(entry.attrs)?.kind === "emission";
+
 // Human output carries no coordinate gutter. Coordinates remain forensic
 // truth on the wire and in --json; this label survives for machine-adjacent
 // surfaces that still want one.

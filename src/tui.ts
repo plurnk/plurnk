@@ -24,7 +24,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow } from "./render.ts";
 import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSubmittedInput } from "./render-message.ts";
 import { renderHistory } from "./render-history.ts";
 export { renderSubmittedInput } from "./render-message.ts";
@@ -1002,6 +1002,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             surface.archiveResponses();
             for (const block of renderHistory(history, transport.threadId(), surface.columns || 80)) printAbove(block);
             for (const entry of history.entries) {
+                if (isEmission(entry)) continue;
                 const target = entryTarget(entry);
                 if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
             }
@@ -1012,7 +1013,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // the bridge sourced to this thread would duplicate it (see isOwnArrival);
             // another actor's arrival renders with its sender (#79).
             if (isOwnArrival(entry, transport.threadId())) return;
-            if (isEntryMaterialization(entry)) return;
+            if (isEntryMaterialization(entry) || isEmission(entry)) return;
             // {plurnk#108} — an observed descendant's own row: marked and stepped in per generation, and
             // never the turn presentation's, the status line's or the response area's business.
             const descendant = descendants.get(entry.worker_id ?? -1);

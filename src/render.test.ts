@@ -21,6 +21,7 @@ const {
     progressLabel,
     coordLabel,
     isEntryMaterialization,
+    isEmission,
     isArrivalEntry,
     isOwnArrival,
     entryTarget,
@@ -559,6 +560,15 @@ test("entry materialization narration is recognized from hydrated or JSON attrs"
     assert.equal(isEntryMaterialization(entry({ ...base, attrs: JSON.stringify({ kind: "entry_materialized" }) })), true);
     assert.equal(isEntryMaterialization(entry({ ...base, attrs: "{bad json" })), false);
     assert.equal(isEntryMaterialization(entry({ ...base, origin: "model", attrs: { kind: "entry_materialized" } })), false);
+});
+
+test("{§cli-what-is-not-rendered} an emission row is recognized from hydrated or JSON attrs, and only from the daemon", () => {
+    const base = { origin: "_plurnk", op: "READ" } as Partial<LogEntryWire>;
+    assert.equal(isEmission(entry({ ...base, attrs: { kind: "emission" } })), true);
+    assert.equal(isEmission(entry({ ...base, attrs: JSON.stringify({ kind: "emission" }) })), true);
+    assert.equal(isEmission(entry({ ...base, attrs: { kind: "entry_materialized" } })), false);
+    assert.equal(isEmission(entry({ ...base, origin: "model", attrs: { kind: "emission" } })), false);
+    assert.equal(isEmission(entry({ ...base, op: "EDIT", attrs: { kind: "emission" } })), false);
 });
 
 test("coordinates never leak into rows, from ordinals or DB ids", () => {

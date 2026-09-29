@@ -174,6 +174,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                 const families = new Set<string>();
                 if (seen.entries.length > 0) families.add("log/entry");
                 if (seen.status.length > 0) families.add("loop/packet");
+                if (seen.status.some((value) => ((value as { plurnk?: { status?: { preparation?: unknown[] } } }).plurnk?.status?.preparation?.length ?? 0) > 0)) families.add("workspace/preparation");
                 if (seen.proposals.length > 0) families.add("loop/proposal");
                 if (seen.interactions.length > 0) families.add("loop/interaction");
                 if (seen.reasoning.length > 0) families.add("reasoning/event");
@@ -208,11 +209,13 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
         transport.subscribe(h);
         const result = await transport.run("fixture", { policy: REVIEW_POLICY }).done;
         assert.equal(result.finalStatus, 200);
-        const gauges = seen.status as Array<{ plurnk: { status: { lifecycle: string; loopId: number | null; packetCount: number } } }>;
-        assert.equal(gauges.length, 3, "one gauge per STATE_SNAPSHOT and STATE_DELTA");
-        assert.deepEqual(gauges.map((g) => g.plurnk.status.lifecycle), ["idle", "running", "completed"]);
-        assert.deepEqual(gauges.map((g) => g.plurnk.status.packetCount), [0, 1, 1]);
-        assert.equal(gauges[2]!.plurnk.status.loopId, 1);
+        const gauges = seen.status as Array<{ plurnk: { status: { lifecycle: string; loopId: number | null; packetCount: number; preparation: unknown[] } } }>;
+        assert.equal(gauges.length, 4, "one gauge per STATE_SNAPSHOT and STATE_DELTA");
+        assert.deepEqual(gauges.map((g) => g.plurnk.status.lifecycle), ["idle", "idle", "running", "completed"]);
+        assert.deepEqual(gauges.map((g) => g.plurnk.status.packetCount), [0, 0, 1, 1]);
+        assert.deepEqual(gauges[1]!.plurnk.status.preparation, [{ family: "mcp", alias: "search", phase: "preparing", since: "2026-09-29T00:00:00.000Z" }]);
+        assert.deepEqual(gauges[2]!.plurnk.status.preparation, [], "published capabilities clear preparation");
+        assert.equal(gauges[3]!.plurnk.status.loopId, 1);
     } finally {
         await mock.close();
     }

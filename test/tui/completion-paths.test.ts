@@ -53,7 +53,7 @@ test("[§cli-path-completion] the built editor completes and opens files from th
         await tui.waitFor(new RegExp(`@pick-${name}\\.txt`), 10_000, start);
         tui.write("\r");
         await tui.waitFor(/Reference received\./, 15_000, start);
-        await tui.waitFor(/⏹️/, 10_000, start);
+        await tui.waitFor(/⏹️/, 10_000, tui.output().lastIndexOf("Reference received."));
         assert.match(packets.at(-1)!, new RegExp(contents), "the selected file reaches the model as a real READ");
         assert.doesNotMatch(packets.at(-1)!, /LAUNCH_FOLDER_NOT_SELECTED/);
     }

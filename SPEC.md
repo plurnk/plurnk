@@ -267,11 +267,11 @@ client-set policy.
 
 **Project root** is the absolute path the daemon's `file://` scheme uses as the workspace boundary for that workspace. NULL = headless (file ops 400 with "workspace has no project_root").
 
-| Input | Creation root |
+| Input | Resolved root |
 |---|---|
-| `--project-root` or `PLURNK_CLIENT_PROJECT_ROOT` | Explicit absolute path; empty string means headless (`null`). The flag wins. |
-| Neither, cwd differs from home | cwd |
-| Neither, cwd resolves to home, existing named workspace | Stored root; no prompt or rewrite |
+| Existing named workspace, regardless of cwd or creation defaults | Stored root; no prompt or rewrite |
+| New workspace, `--project-root` or `PLURNK_CLIENT_PROJECT_ROOT` | Explicit absolute path; empty string means headless (`null`). The flag wins. |
+| New workspace, neither, cwd differs from home | cwd |
 | Neither, cwd resolves to home, new workspace, interactive stdin and stdout, not JSON mode | Inline choice: existing project folder with path completion, no folder, or explicit home |
 | Same new workspace, noninteractive or JSON mode | Exit 64 with `client/project-root/required` and explicit-root guidance; no workspace creation or model run |
 
@@ -312,7 +312,7 @@ The prompt's first character has the same meaning in the CLI and TUI. `plurnk "?
 
 ### §2.0.1 Prompt file references {§cli-prompt-open-paths}
 
-A prompt token `@<path>` that starts the prompt or follows whitespace is a file reference when, at the moment the prompt is sent, `<path>` (trailing `.,;:!?)` trimmed) names an existing regular file under the project root (§1.3). The CLI, TUI, and web launcher project the distinct references, in prompt order, onto `openPaths`; the prompt text is sent unchanged and the daemon reads each path on the message's turn ({§methods-loop-run-open-paths}).
+A prompt token `@<path>` that starts the prompt or follows whitespace is a file reference when, at the moment the prompt is sent, `<path>` (trailing `.,;:!?)` trimmed) names an existing regular file under the bound workspace's project root (§1.3), not a creation default. The CLI, TUI, and web launcher project the distinct references, in prompt order, onto `openPaths`; the prompt text is sent unchanged and the daemon reads each path on the message's turn ({§methods-loop-run-open-paths}). Local absolute references under that root become workspace-relative paths on the wire.
 
 | Token | Opens |
 |---|---|
@@ -440,6 +440,20 @@ model aliases without I/O; provider-qualified models use one bounded provider
 page; MCP, Skill, and A2A aliases call only that Functionality family's list
 action after the cursor reaches an alias-taking position. A failed lazy lookup
 produces no completion and never changes the editor value.
+
+#### §3.1.1.1 Filesystem completion {§cli-path-completion}
+
+Filesystem suggestions follow the address owner; completion never changes the process working directory.
+
+| Input position | Resolution base |
+|---|---|
+| `/import`, `/script`, `/env import`, MCP options file | Client launch directory; absolute paths remain host-absolute |
+| `@file` | Bound workspace root; only paths under it ({§cli-prompt-open-paths}) |
+| `/members discover`, `/members add <alias>` | Bound workspace root; relative sibling paths retain membership semantics ({§cli-file-members}) |
+| File OP target (bare or `file:///`) | Workspace filesystem namespace; `/` denotes the workspace root ({§fs-namei}) |
+| Other schemes or authorities | No local filesystem suggestions |
+
+The TUI uses the daemon's reported workspace root for both completion and prompt references. Rebinding clears it until the new binding's state arrives; a headless or not-yet-known root yields no workspace-file suggestions. Local-file commands remain available in either case. Completion preserves the authored URI prefix and surrounding editor text. A suggested path is not a membership grant; the daemon still owns operation admission.
 
 ### §3.1.2 Worker topology and attach {§cli-workers-topology}
 One AG-UI stream binds one conversation worker. Descendants of that worker reach

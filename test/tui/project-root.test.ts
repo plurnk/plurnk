@@ -60,6 +60,7 @@ test("[§cli-project-root] home launch requires a choice before workspace creati
 
     const project = join(daemon.home, "my project");
     await mkdir(project);
+    await writeFile(join(project, "chosen-file.txt"), "chosen project");
     await writeFile(join(daemon.home, "not-a-folder"), "file");
     await t.test("folder validation and completion precede creation; later new workspaces reuse the choice", async () => {
         const tui = spawnTui(daemon.url, ["--workspace", "chosen"], env, daemon.home);
@@ -75,7 +76,11 @@ test("[§cli-project-root] home launch requires a choice before workspace creati
             tui.write("\r");
             await tui.waitFor(/workspace: chosen/);
             assert.equal((await rows()).find(({ name }) => name === "chosen")?.project_root, project);
-            tui.write("/workspace another\r");
+            await tui.waitFor(new RegExp(`${RegExp.escape(project)} \\[chosen/`));
+            const completingAt = tui.output().length;
+            tui.write("@chosen-f\t");
+            await tui.waitFor(/@chosen-file\.txt/, 10_000, completingAt);
+            tui.write("\x01\x0b/workspace another\r");
             await tui.waitFor(/workspace: another/);
             assert.equal((await rows()).find(({ name }) => name === "another")?.project_root, project);
             tui.write("/quit\r");

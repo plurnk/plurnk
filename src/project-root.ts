@@ -30,9 +30,6 @@ export default class ProjectRoot {
     }
 
     async resolve(workspace: string | undefined, choose?: ChooseProjectRoot): Promise<string | null | undefined> {
-        if (this.#explicit) return this.#root;
-        const [cwd, home] = await Promise.all([realpath(this.#cwd), realpath(this.#home)]);
-        if (cwd !== home) return this.#root;
         if (workspace !== undefined) {
             const { workspaces } = await actionViaBridge<{ workspaces: { name: string; project_root: string | null }[] }>(
                 this.#target, { threadId: "bootstrap", kind: "workspace.list" },
@@ -45,6 +42,9 @@ export default class ProjectRoot {
                 return existing.project_root;
             }
         }
+        if (this.#explicit) return this.#root;
+        const [cwd, home] = await Promise.all([realpath(this.#cwd), realpath(this.#home)]);
+        if (cwd !== home) return this.#root;
         if (choose === undefined) throw new ProblemError(clientProblem(
             "project-root", "required", 400,
             "Choose a project folder before creating a workspace from your home directory.",

@@ -9,15 +9,15 @@ import { join } from "node:path";
 import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 
-test("pathPartial: members and compose verbs expose their path arg", () => {
-    assert.equal(pathPartial("/members discover src/comp"), "src/comp");
-    assert.equal(pathPartial("/members add docs docs/"), "docs/");
-    assert.equal(pathPartial("/members add vendor packages/ap"), "packages/ap");
-    assert.equal(pathPartial("/import src/fo"), "src/fo");
-    assert.equal(pathPartial("/script flows/build.pl"), "flows/build.pl");
-    assert.equal(pathPartial("/mcp add gitea gitea-mcp config/git"), "config/git");
-    assert.equal(pathPartial("/env import ../.env.pl"), "../.env.pl");
-    assert.equal(pathPartial("/env --scope workspace import ../.env.pl"), "../.env.pl");
+test("pathPartial: members and compose verbs retain their path owners", () => {
+    assert.deepEqual(pathPartial("/members discover src/comp"), { kind: "member", partial: "src/comp" });
+    assert.deepEqual(pathPartial("/members add docs docs/"), { kind: "member", partial: "docs/" });
+    assert.deepEqual(pathPartial("/members add vendor packages/ap"), { kind: "member", partial: "packages/ap" });
+    assert.deepEqual(pathPartial("/import src/fo"), { kind: "local", partial: "src/fo" });
+    assert.deepEqual(pathPartial("/script flows/build.pl"), { kind: "local", partial: "flows/build.pl" });
+    assert.deepEqual(pathPartial("/mcp add gitea gitea-mcp config/git"), { kind: "local", partial: "config/git" });
+    assert.deepEqual(pathPartial("/env import ../.env.pl"), { kind: "local", partial: "../.env.pl" });
+    assert.deepEqual(pathPartial("/env --scope workspace import ../.env.pl"), { kind: "local", partial: "../.env.pl" });
 });
 
 test("pathPartial: non-path contexts → null", () => {
@@ -82,8 +82,8 @@ test("completePath: unreadable directory → no hits, partial echoed", async () 
 });
 
 test("pathPartial: @file completes after a word-boundary @, ignores emails", () => {
-    assert.equal(pathPartial("explain @src/fo"), "src/fo");
-    assert.equal(pathPartial("@README"), "README");
+    assert.deepEqual(pathPartial("explain @src/fo"), { kind: "reference", partial: "src/fo" });
+    assert.deepEqual(pathPartial("@README"), { kind: "reference", partial: "README" });
     assert.equal(pathPartial("mail me@example.com"), null);
 });
 
@@ -111,10 +111,10 @@ test("completeOps: LOOK completes alongside daemon operations", () => {
     assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], [`${PLURNK_FENCE}LOOK`]);
 });
 
-test("pathPartial: native and executor fence targets, scheme stripped", () => {
-    assert.equal(pathPartial("```READ (src/fo"), "src/fo");
-    assert.equal(pathPartial("````READ(file://src/fo"), "src/fo");
-    assert.equal(pathPartial("```node (docs/re"), "docs/re");
+test("pathPartial: native and executor fence targets preserve their URI", () => {
+    assert.deepEqual(pathPartial("```READ (src/fo"), { kind: "target", partial: "src/fo" });
+    assert.deepEqual(pathPartial("````READ(file:///src/fo"), { kind: "target", partial: "file:///src/fo" });
+    assert.deepEqual(pathPartial("```node (docs/re"), { kind: "target", partial: "docs/re" });
     assert.equal(pathPartial("```READ (src/foo.ts)"), null);
 });
 

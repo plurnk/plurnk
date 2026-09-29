@@ -7,28 +7,29 @@
 import { readdir } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { PLURNK_FENCE, PLURNK_OPS } from "@plurnk/plurnk-contracts";
+import { projectRelativePath } from "./openpaths.ts";
 
-// Detect a path-seeking partial in the line up to the cursor; null if the
-// cursor isn't in a path position. One case per call site: membership globs,
-// MCP option files, `@file`, and PLURNK targets all remain client-local paths.
-export const pathPartial = (line: string): string | null => {
+export interface PathPartial {
+    kind: "local" | "reference" | "member" | "target";
+    partial: string;
+}
+
+// {§cli-path-completion}: retain the address owner, not just the path fragment.
+export const pathPartial = (line: string): PathPartial | null => {
     const verb = line.match(/^\/(?:import|script)\s+(\S*)$/);
-    if (verb) return verb[1];
+    if (verb) return { kind: "local", partial: verb[1] };
     const members = line.match(/^\/members\s+(?:discover|add\s+\S+)\s+(\S*)$/);
-    if (members) return members[1];
+    if (members) return { kind: "member", partial: members[1] };
     const envImport = line.match(/^\/env\s+(?:--scope(?:=|\s+)(?:worker|workspace)\s+)?import\s+(\S*)$/);
-    if (envImport) return envImport[1];
+    if (envImport) return { kind: "local", partial: envImport[1] };
     const mcpOptions = line.match(/^\/mcp\s+add\s+\S+\s+\S+\s+(\S*)$/);
-    if (mcpOptions) return mcpOptions[1];
+    if (mcpOptions) return { kind: "local", partial: mcpOptions[1] };
     // @file: a path reference anywhere in a prompt (word-boundary @ to dodge
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);
-    if (at) return at[1];
-    // DSL target path on an opening fence: strip a leading scheme://
-    // and complete the path part. Bare/file:// resolve against the fs; other
-    // schemes (worker://, log://, …) simply find nothing — harmless.
-    const target = line.match(DSL_TARGET_PARTIAL);
-    if (target) return target[1].replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+    if (at) return { kind: "reference", partial: at[1] };
+    const target = line.slice(line.lastIndexOf("\n") + 1).match(DSL_TARGET_PARTIAL);
+    if (target) return { kind: "target", partial: target[1] };
     return null;
 };
 
@@ -81,4 +82,22 @@ export const completePath = async (partial: string, cwd: string): Promise<[strin
         .map((e) => `${dirPart}${e.name}${e.isDirectory() ? "/" : ""}`)
         .sort();
     return [hits, partial];
+};
+
+export const completeAddressPath = async (
+    { kind, partial }: PathPartial, cwd: string, projectRoot: string | null,
+): Promise<[string[], string]> => {
+    if (kind === "local") return completePath(partial, cwd);
+    if (projectRoot === null) return [[], partial];
+    if (kind === "reference") {
+        return projectRelativePath(partial, projectRoot) === null ? [[], partial] : completePath(partial, projectRoot);
+    }
+    if (kind === "member") return completePath(partial, projectRoot);
+    const scheme = partial.startsWith("file:///") ? "file://" : "";
+    const path = partial.slice(scheme.length);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return [[], partial];
+    // {§fs-namei}: a file OP's leading slash is the workspace root, not the host root.
+    const leading = path.match(/^\/+/)?.[0] ?? "";
+    const [hits] = await completePath(path.slice(leading.length), projectRoot);
+    return [hits.map((hit) => `${scheme}${leading}${hit}`), partial];
 };

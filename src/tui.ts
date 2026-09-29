@@ -21,7 +21,7 @@ import ModelText from "./model-text.ts";
 import Knobs from "./knobs.ts";
 import { paint } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
-import { pathPartial, completePath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
+import { pathPartial, completeAddressPath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow } from "./render.ts";
@@ -171,6 +171,7 @@ export const parseSlash = (line: string): { verb: string; rest: string } => {
 export interface CompletionOptions {
     getAliases: () => string[];
     cwd: string;
+    getProjectRoot: () => string | null;
     getEfforts?: () => string[];
     getProviderModels?: (provider: string) => Promise<string[]>;
     getFunctionalityAliases?: (family: FunctionalityFamily, scope?: "worker" | "workspace") => Promise<string[]>;
@@ -251,7 +252,7 @@ export const completeInput = async (line: string, options: CompletionOptions): P
         }
         const partial = pathPartial(line);
         if (partial !== null) {
-            const [values, prefix] = await completePath(partial, options.cwd);
+            const [values, prefix] = await completeAddressPath(partial, options.cwd, options.getProjectRoot());
             return { suggestions: values.map((value) => ({ value, description: "local path" })), prefix };
         }
         return { suggestions: [], prefix: line };
@@ -674,6 +675,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Ephemeral progress projected into the prompt while background work is active.
     let lifecycle: StatusLifecycle = "idle";
     let authoritativeStatus: ClientStatus | null = null;
+    let boundProjectRoot: string | null = null;
     let tally: SessionTally = EMPTY_TALLY;
     let accrued: TurnAccounting | null = null;
     let runningSince: number | null = null;
@@ -833,6 +835,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     surface.setAutocompleteProvider(makeAutocompleteProvider({
             getAliases: () => aliasCache,
             cwd: process.cwd(),
+            getProjectRoot: () => boundProjectRoot,
             // {§cli-workers-topology} — the directory plus the worker:// references
             // the waterfall has shown (the same harvest the LOOK cycler keeps).
             getWorkerNames: async () => {
@@ -1057,6 +1060,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace?.projectRoot);
+            if (authoritativeStatus.projectRoot !== undefined) boundProjectRoot = authoritativeStatus.projectRoot;
             if (observingExisting && ["running", "queued", "parked"].includes(authoritativeStatus.lifecycle)) {
                 inFlight = true;
                 runningSince ??= Date.now();
@@ -1131,6 +1135,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         surface.archiveActivity();
         surface.setLive(null);
         authoritativeStatus = null;
+        boundProjectRoot = null;
         conversationWorkerId = null;
         seenLoopId = null;
         placeLoop = null;
@@ -1387,7 +1392,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
             const loopParams: { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] } = { policy };
             if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
-            const openPaths = extractOpenPaths(promptText, opts.projectRoot ?? null);
+            const openPaths = extractOpenPaths(promptText, boundProjectRoot);
             if (openPaths.length > 0) loopParams.openPaths = openPaths;
             reviewRequested = trimmed.startsWith("?");
             inFlight = true;

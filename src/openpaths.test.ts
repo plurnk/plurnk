@@ -22,6 +22,10 @@ test("[§cli-prompt-open-paths] an existing @src/x.ts opens", () => {
     assert.deepEqual(extractOpenPaths("explain @src/x.ts please", root), ["src/x.ts"]);
 });
 
+test("[§cli-prompt-open-paths] absolute local references become workspace-relative READ targets", () => {
+    assert.deepEqual(extractOpenPaths(`@${root}/src/x.ts and @src/x.ts`, root), ["src/x.ts"]);
+});
+
 test("[§cli-prompt-open-paths] @someone with no such file opens nothing", () => {
     assert.deepEqual(extractOpenPaths("thanks to @czgdp1807 for the report", root), []);
 });

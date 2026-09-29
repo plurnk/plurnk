@@ -369,7 +369,7 @@ test("parseSlash: verb + args", () => {
 });
 
 const complete = async (getAliases: () => string[], line: string): Promise<[string[], string]> => {
-    const result = await completeInput(line, { getAliases, cwd: process.cwd() });
+    const result = await completeInput(line, { getAliases, cwd: process.cwd(), getProjectRoot: () => null });
     return [result.suggestions.map(({ value }) => value), result.prefix];
 };
 
@@ -393,6 +393,7 @@ test("completer: /effort derives choices from the daemon response", async () => 
     const result = await completeInput("/effort a", {
         getAliases: () => [],
         cwd: process.cwd(),
+        getProjectRoot: () => null,
         getEfforts: () => ["off", "adaptive", "high"],
     });
     assert.deepEqual([result.suggestions.map(({ value }) => value), result.prefix], [["adaptive"], "a"]);
@@ -415,6 +416,7 @@ test("completer: Functionality aliases are fetched only at alias-taking position
     const options = {
         getAliases: () => [],
         cwd: process.cwd(),
+        getProjectRoot: () => null,
         getFunctionalityAliases: async (family: FunctionalityFamily) => {
             fetched.push(family);
             return ["brave", "browser"];

@@ -49,7 +49,11 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
         response.writeHead(200, { "content-type": "text/event-stream" });
         const frame = (value: unknown) => response.write("data: " + JSON.stringify(value) + "\n\n");
         frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
-        if (props?.action?.kind === "workspace.create") {
+        if (props?.action?.kind === "workspace.list") {
+            frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
+                kind: "workspace.list", ok: true, result: { workspaces: [] },
+            } });
+        } else if (props?.action?.kind === "workspace.create") {
             frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
                 kind: "workspace.create", ok: true, result: { id: ++created, name: "generated-" + created },
             } });
@@ -91,16 +95,19 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             const result = await run(url, directory, ["--workspace", "world", "--worker", "actor", "--project-root", root, ...flags]);
             assert.equal(result.stderr, "");
             assert.equal(JSON.parse(result.stdout).exitCode, 0);
-            assert.equal(requests.length, 2);
-            for (const input of requests) {
+            assert.equal(requests.length, 3);
+            const [lookup, ...bound] = requests;
+            assert.deepEqual(lookup.forwardedProps?.plurnk?.action, { kind: "workspace.list" });
+            assert.equal(lookup.forwardedProps?.plurnk?.projectRoot, undefined, "root discovery imposes no creation default");
+            for (const input of bound) {
                 assert.equal(input.threadId, "actor");
                 assert.equal(input.forwardedProps?.plurnk?.workspace, "world");
             }
-            assert.equal(requests[0].forwardedProps?.plurnk?.projectRoot, root === "" ? null : root);
-            assert.deepEqual(requests[0].forwardedProps?.plurnk?.settings, settings);
-            assert.deepEqual(requests[0].forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
-            assert.deepEqual(requests[1].resume, [{ interruptId: "prop:9", status: "resolved", payload: { decision: "accept" } }]);
-            assert.equal(requests[1].forwardedProps?.plurnk?.action, undefined, "resume does not resubmit the program");
+            assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, root === "" ? null : root);
+            assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
+            assert.deepEqual(bound[0].forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
+            assert.deepEqual(bound[1].resume, [{ interruptId: "prop:9", status: "resolved", payload: { decision: "accept" } }]);
+            assert.equal(bound[1].forwardedProps?.plurnk?.action, undefined, "resume does not resubmit the program");
         });
     }
     await t.test("unnamed invocations acquire distinct daemon-owned workspaces", async () => {

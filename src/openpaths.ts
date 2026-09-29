@@ -17,17 +17,20 @@ const isFile = (path: string): boolean => {
     }
 };
 
+export const projectRelativePath = (path: string, projectRoot: string): string | null => {
+    const inside = relative(projectRoot, resolve(projectRoot, path));
+    return inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside) ? null : inside;
+};
+
 export const extractOpenPaths = (prompt: string, projectRoot: string | null): string[] => {
     if (projectRoot === null) return [];
     const seen = new Set<string>();
     for (const m of prompt.matchAll(/(?:^|\s)@(\S+)/g)) {
         const path = m[1].replace(/[.,;:!?)]+$/, "");
         if (path.length === 0) continue;
-        const absolute = resolve(projectRoot, path);
-        const inside = relative(projectRoot, absolute);
-        if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) continue;
-        if (!isFile(absolute)) continue;
-        seen.add(path);
+        const inside = projectRelativePath(path, projectRoot);
+        if (inside === null || !isFile(resolve(projectRoot, inside))) continue;
+        seen.add(inside.split(sep).join("/"));
     }
     return [...seen];
 };

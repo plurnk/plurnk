@@ -3,11 +3,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { handleVerb, completeInput, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, makeAutocompleteProvider, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
@@ -15,6 +15,48 @@ import type { Transport } from "./transport.ts";
 import Lifetime from "./lifetime.ts";
 
 const REVIEW_POLICY = { proposals: "review" as const };
+
+test("[§cli-path-completion] suggestions use the addressed filesystem, including after rebinding", async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "plurnk-completion-roots-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const local = join(root, "local");
+    const first = join(root, "first");
+    const second = join(root, "second");
+    await Promise.all([local, first, second].map(async (dir) => {
+        await mkdir(dir);
+        await writeFile(join(dir, `pick-${dir.split("/").at(-1)}.txt`), "");
+    }));
+    let projectRoot: string | null = first;
+    const options = { cwd: local, getAliases: () => [], getProjectRoot: () => projectRoot };
+    const complete = async (line: string) => (await completeInput(line, options)).suggestions.map(({ value }) => value);
+    const localForms = ["/import ", "/script ", "/env import ", "/env --scope workspace import ", "/mcp add example command "];
+    const projectForms = ["explain @", "/members discover ", "/members add docs ", "````READ ("];
+    for (const form of localForms) assert.deepEqual(await complete(`${form}pick`), ["pick-local.txt"], form);
+    for (const form of projectForms) assert.deepEqual(await complete(`${form}pick`), ["pick-first.txt"], form);
+    assert.deepEqual(await complete("````READ (/pick"), ["/pick-first.txt"]);
+    assert.deepEqual(await complete("````READ (file:///pick"), ["file:///pick-first.txt"]);
+    assert.deepEqual(await complete("explain @../local/pick"), [], "references outside the project are not opened");
+    assert.deepEqual(await complete(`explain @${local}/pick`), []);
+    assert.deepEqual(await complete(`explain @${first}/pick`), [`${first}/pick-first.txt`]);
+    assert.deepEqual(await complete("/import ../second/pick"), ["../second/pick-second.txt"]);
+    assert.deepEqual(await complete("/members add sibling ../second/pick"), ["../second/pick-second.txt"]);
+    for (const scheme of ["worker:///", "log:///", "https://example/", "file://elsewhere/"]) {
+        assert.deepEqual(await complete("````READ (" + scheme + "pick"), [], "other resource authorities are not local folders");
+    }
+    const provider = makeAutocompleteProvider(options);
+    const lines = ["````NOTE", "Earlier operation.", "````", "````READ (file:///pick"];
+    const cursor = lines[3].length;
+    const suggestions = await provider.getSuggestions(lines, 3, cursor, { signal: t.signal });
+    assert.ok(suggestions);
+    assert.equal(suggestions.prefix, "file:///pick");
+    assert.deepEqual(provider.applyCompletion(lines, 3, cursor, suggestions.items[0], suggestions.prefix).lines,
+        [...lines.slice(0, 3), "````READ (file:///pick-first.txt"], "replacement preserves the exact URI prefix");
+    projectRoot = second;
+    for (const form of projectForms) assert.deepEqual(await complete(`${form}pick`), ["pick-second.txt"], form);
+    projectRoot = null;
+    for (const form of projectForms) assert.deepEqual(await complete(`${form}pick`), [], "headless has no project files");
+    for (const form of localForms) assert.deepEqual(await complete(`${form}pick`), ["pick-local.txt"], form);
+});
 
 test("[§cli-tui-flow] the resume command preserves workspace and worker as literal shell arguments", () => {
     assert.equal(resumeCommand("project", "primary"), "plurnk --workspace project --worker primary");
@@ -34,7 +76,7 @@ test("[§cli-daemon-autostart] the resume command retains private storage withou
 
 test("[§cli-environment] scoped env completion uses that scope's variable names", async () => {
     const calls: unknown[] = [];
-    const options = { getAliases: () => [], cwd: "/tmp", getFunctionalityAliases: async (family: string, scope?: string) => { calls.push([family, scope]); return ["SHARED"]; } };
+    const options = { getAliases: () => [], cwd: "/tmp", getProjectRoot: () => null, getFunctionalityAliases: async (family: string, scope?: string) => { calls.push([family, scope]); return ["SHARED"]; } };
     const verbs = await completeInput("/env --scope workspace di", options);
     assert.deepEqual(verbs.suggestions.map(({ value }) => value), ["discover", "disable"]);
     const names = await completeInput("/env --scope=workspace enable SH", options);
@@ -372,6 +414,7 @@ test("[§cli-workers-topology] /attach completion offers worker names lazily and
     const complete = (line: string, names: () => Promise<string[]>) => completeInput(line, {
         getAliases: () => [],
         cwd: process.cwd(),
+        getProjectRoot: () => null,
         getWorkerNames: async () => { reads += 1; return await names(); },
     });
     const ok = await complete("/attach ma", async () => ["main", "main-fork", "guesser1"]);
@@ -876,6 +919,7 @@ test("[§cli-plurnk-models] /model completion: aliases synchronously, provider p
         const result = await completeInput(line, {
             getAliases: () => ["fast", "smart"],
             cwd: process.cwd(),
+            getProjectRoot: () => null,
             getEfforts: () => [],
             getProviderModels: async (provider) => {
                 fetched.push(provider);

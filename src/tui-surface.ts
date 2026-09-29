@@ -8,9 +8,11 @@ import {
     type AutocompleteProvider,
     type Component,
     type Terminal,
+    type TerminalColors,
+    type TerminalColorScheme,
     type TuiInputListener,
 } from "@earendil-works/pi-tui";
-import { paint, type Role } from "./color.ts";
+import { backgroundScheme, colorEnabled, learnScheme, paint, type Role } from "./color.ts";
 import TailText from "./tail-text.ts";
 import TurnDisplay from "./turn.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -60,6 +62,7 @@ export default class TuiSurface {
         this.#tui.addChild(this.#input);
         this.#tui.addChild(this.#status);
         this.#tui.setFocus(this.editor);
+        this.#tui.onTerminalColorSchemeChange((scheme) => this.#askScheme(scheme));
     }
 
     get columns(): number {
@@ -130,6 +133,30 @@ export default class TuiSurface {
         this.#started = true;
         this.#tui.start();
         this.#tui.setFocus(this.#focus);
+        if (colorEnabled()) this.#tui.setTerminalColorSchemeNotifications(true);
+    }
+
+    // {§cli-color-scheme} — asked before anything is painted, through an empty TUI on the same terminal so
+    // the question draws nothing. Terminals that answer DA1 reply well inside the timeout.
+    async learnGround(): Promise<void> {
+        if (!colorEnabled()) return;
+        const probe = new TuiMainScreen(this.#terminal, true);
+        probe.start();
+        try {
+            const { background } = await probe.queryTerminalColors({ timeoutMs: 100 });
+            if (background !== undefined) learnScheme(backgroundScheme(background));
+        } finally {
+            probe.stop();
+        }
+    }
+
+    #askScheme(reported: TerminalColorScheme): void {
+        const apply = ({ background }: TerminalColors): void => {
+            learnScheme(background === undefined ? reported : backgroundScheme(background));
+            this.#tui.invalidate();
+            this.#tui.requestRender();
+        };
+        void this.#tui.queryTerminalColors({ timeoutMs: 100, onLateReply: apply }).then(apply);
     }
 
     stop(): void {

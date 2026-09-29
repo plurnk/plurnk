@@ -3,6 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+// A developer's terminal may export COLORFGBG; the accents pinned here are the dark ground's.
+delete process.env.COLORFGBG;
+
 process.env.NO_COLOR = "1";
 
 const {

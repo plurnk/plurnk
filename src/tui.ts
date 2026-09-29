@@ -778,6 +778,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     });
     const surface = new TuiSurface();
     const releaseGuards = TerminalGuards.install(surface, opts.lifetime);
+    await surface.learnGround();
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
     if (workerModel === null) surface.append(renderDiagnostic(clientModelUnselected()));

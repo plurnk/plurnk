@@ -1036,6 +1036,23 @@ Stdout and stderr are evaluated independently at rendering time. Styling never c
 layout. Raw one-shot answers, JSON, completion scripts, help/version text, and the
 plain `render` filter receive no client-added styling, even when colour is forced.
 
+### §5.5.2 Light and dark grounds {§cli-color-scheme}
+
+The palette follows the terminal's ground, with no knob. On a light ground the two fixed
+256-colour accents take darker twins of the same hue: important purple 141 becomes 97, and
+warning orange 172 becomes 130. The ANSI accents follow the terminal's own theme and never pivot.
+The first known source decides:
+
+| Source | Read by |
+|---|---|
+| The background the terminal reports (OSC 11): dark when white text contrasts with it more than black text (WCAG 2) | TUI |
+| The terminal's light/dark report (DEC mode 2031); an announced switch asks for the background again | TUI |
+| The background index in `COLORFGBG`: 0–6 and 8 dark, 7 and 9–15 light | TUI and one-shot CLI |
+| None of these | The dark ground's palette |
+
+The TUI asks only while colour is enabled ({§cli-color-policy}). Text already printed keeps its
+colours; a switch applies to what renders next.
+
 ---
 
 ## §6 Proposal review {§cli-proposal-review}

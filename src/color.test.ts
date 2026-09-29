@@ -4,8 +4,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { colorEnabled, paint, withColorOutput } from "./color.ts";
+import { backgroundScheme, colorEnabled, colorFgBgScheme, learnScheme, paint, withColorOutput } from "./color.ts";
 import { renderMarkdownDocument } from "./markdown.ts";
+
+// A developer's terminal may export COLORFGBG; the accents pinned here are the dark ground's.
+delete process.env.COLORFGBG;
 
 test("[§cli-color-policy] output destination and preferences determine whether styling is enabled", () => {
     const cases: [string, boolean, NodeJS.ProcessEnv, boolean][] = [
@@ -61,15 +64,44 @@ test("[§cli-palette] no module but the palette writes a colour or emphasis code
     assert.deepEqual(writers, []);
 });
 
+const ALERTS = ["note", "tip", "important", "warning", "caution"] as const;
+const DARK_ALERTS = ["\x1b[94mx\x1b[0m", "\x1b[32mx\x1b[0m", "\x1b[38;5;141mx\x1b[0m", "\x1b[38;5;172mx\x1b[0m", "\x1b[31mx\x1b[0m"];
+const LIGHT_ALERTS = ["\x1b[94mx\x1b[0m", "\x1b[32mx\x1b[0m", "\x1b[38;5;97mx\x1b[0m", "\x1b[38;5;130mx\x1b[0m", "\x1b[31mx\x1b[0m"];
+
 test("[§cli-palette] the alert accents are the scheme, and roles combine into one sequence", () => {
     withColor(undefined, () => {
-        assert.deepEqual(
-            (["note", "tip", "important", "warning", "caution"] as const).map((role) => paint("x", role)),
-            ["\x1b[94mx\x1b[0m", "\x1b[32mx\x1b[0m", "\x1b[38;5;141mx\x1b[0m", "\x1b[38;5;172mx\x1b[0m", "\x1b[31mx\x1b[0m"],
-        );
+        assert.deepEqual(ALERTS.map((role) => paint("x", role)), DARK_ALERTS);
         assert.equal(paint("x", "bold", "failure"), "\x1b[1;31mx\x1b[0m");
         assert.equal(paint("x"), "x", "no role, no sequence");
     });
+});
+
+test("[§cli-color-scheme] COLORFGBG's background index decides as Vim does, and anything else is unknown", () => {
+    const cases: [string | undefined, "dark" | "light" | undefined][] = [
+        ["15;0", "dark"], ["0;15", "light"], ["15;8", "dark"], ["0;7", "light"], ["0;default;15", "light"],
+        [" 0 ; 6 ", "dark"], ["0;default", undefined], ["0;16", undefined], ["", undefined], [undefined, undefined],
+    ];
+    for (const [value, expected] of cases) {
+        assert.equal(colorFgBgScheme(value === undefined ? {} : { COLORFGBG: value }), expected, JSON.stringify(value));
+    }
+});
+
+test("[§cli-color-scheme] a background is dark when white text contrasts with it more than black text", () => {
+    const [black, solarizedDark, white, solarizedLight] = [[0, 0, 0], [0, 43, 54], [255, 255, 255], [253, 246, 227]]
+        .map(([r, g, b]) => backgroundScheme({ r, g, b }));
+    assert.deepEqual([black, solarizedDark, white, solarizedLight], ["dark", "dark", "light", "light"]);
+});
+
+test("[§cli-color-scheme] a light ground darkens only the two fixed accents, and the terminal's answer outranks COLORFGBG", (t) => {
+    t.after(() => { learnScheme(undefined); delete process.env.COLORFGBG; });
+    const alerts = () => withColor(undefined, () => ALERTS.map((role) => paint("x", role)));
+    process.env.COLORFGBG = "0;15";
+    assert.deepEqual(alerts(), LIGHT_ALERTS, "the one-shot CLI has only COLORFGBG");
+    learnScheme("dark");
+    assert.deepEqual(alerts(), DARK_ALERTS, "the TUI's answer from the terminal wins");
+    learnScheme("light");
+    delete process.env.COLORFGBG;
+    assert.deepEqual(alerts(), LIGHT_ALERTS);
 });
 
 test("[§cli-palette] any non-empty NO_COLOR removes colour and emphasis; an empty one does not", () => {

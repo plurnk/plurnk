@@ -98,7 +98,7 @@ test("handleVerb /help <verb> renders contextual registry usage without RPC", as
     await handleVerb("/help mcp", ctx);
     assert.deepEqual(ctx.calls, []);
     assert.match(ctx.out.join(""), /\/mcp discover <query>/);
-    assert.match(ctx.out.join(""), /\/mcp add \[--plurnk\|--global\] <alias> <command\|url> \[args\.\.\.\]/);
+    assert.match(ctx.out.join(""), /\/mcp add <alias> <command\|url> \[args\.\.\.\]/);
     assert.match(ctx.out.join(""), /\/mcp remove <alias>/);
     assert.match(ctx.out.join(""), /\/mcp oauth <alias> <callback-url>/);
 });
@@ -827,14 +827,14 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
     const ctx = makeCtx({
         "workspace.mcp.list": {
             definitions: [
-                { alias: "gitea", origin: "service", state: "active", definition: { name: "gitea", scope: "global", plugin: { name: "forge", root: "/plugins/forge", data: "/data/forge" }, type: "streamable-http", url: "https://gitea.test/mcp" }, detail: { tools: ["issue_read", "issue_search"] } },
-                { alias: "local", origin: "workspace", state: "disabled", definition: { name: "local", scope: "project", type: "stdio", command: "local-mcp", args: ["--stdio"] } },
+                { alias: "gitea", origin: "service", state: "active", definition: { name: "gitea", type: "streamable-http", url: "https://gitea.test/mcp" }, detail: { tools: ["issue_read", "issue_search"] } },
+                { alias: "local", origin: "workspace", state: "disabled", definition: { name: "local", type: "stdio", command: "local-mcp", args: ["--stdio"] } },
             ],
         },
     });
     await handleVerb("/mcp", ctx);
     assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: {} }]);
-    assert.match(ctx.out.join(""), /gitea\s+active\s+streamable-http\s+https:\/\/gitea\.test\/mcp\s+2 tools\s+plugin forge/);
+    assert.match(ctx.out.join(""), /gitea\s+active\s+streamable-http\s+https:\/\/gitea\.test\/mcp\s+2 tools/);
     assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+local-mcp\s+\(workspace\)/);
 });
 

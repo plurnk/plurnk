@@ -15,12 +15,12 @@ for (const mode of ["tui", "cli"] as const) {
         let calls = 0;
         const endpoint = await completionsEndpoint(() => { calls++; return "```KILL\nREADY_FIXTURE\n```"; });
         t.after(() => endpoint.close());
-        const daemon = await bootDaemon(service, { plugins: {
-            slow: { slow: {
+        const daemon = await bootDaemon(service, { mcp: {
+            slow: {
                 type: "stdio", command: "node",
                 args: [resolve("../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs")],
                 env: { PLURNK_MCP_TEST_START_DELAY_MS: "3000" },
-            } },
+            },
         }, extraEnv: {
             PLURNK_MODEL: "preparefixture", PLURNK_MODEL_preparefixture: "openai/prepare-fixture",
             OPENAI_BASE_URL: endpoint.url, OPENAI_API_KEY: "prepare-fixture",

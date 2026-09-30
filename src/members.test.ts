@@ -18,7 +18,7 @@ test("[§cli-file-members] list renders every definition with what its glob reso
     const h = harness({
         "workspace.members.list": {
             definitions: [
-                { alias: "docs", origin: "service", state: "active", definition: { glob: "docs/**", provenance: { kind: "service-configuration", source: "PLURNK_MEMBERS_DOCS" } }, detail: { effect: "include", pattern: "docs/**", matched: 12, files: ["docs/a.md"], ignored: 3 } },
+                { alias: "docs", origin: "service", state: "active", definition: { glob: "docs/**", provenance: { kind: "service-configuration", source: "PLURNK_MEMBERS_docs" } }, detail: { effect: "include", pattern: "docs/**", matched: 12, files: ["docs/a.md"], ignored: 3 } },
                 { alias: "no-tokenizer", origin: "workspace", state: "active", definition: { glob: "!**/tokenizer.json" }, detail: { effect: "exclude", pattern: "**/tokenizer.json", matched: 4, files: ["a/tokenizer.json"], ignored: 0 } },
                 { alias: "note", origin: "workspace", state: "active", definition: { glob: "note.md" }, detail: { effect: "include", pattern: "note.md", matched: 1, files: ["note.md"], ignored: 0 } },
                 { alias: "drafts", origin: "workspace", state: "disabled", definition: { glob: "drafts/*.md" } },

@@ -625,13 +625,10 @@ small pastes remain native lines and large pastes become one expandable marker.
 MCP management is a thin projection of the daemon's `mcp` Functionality
 family: the common lifecycle plus the MCP OAuth continuation. The client
 composes one exact `McpServerDefinition` and renders the daemon's states; it
-reads no MCP configuration. The registry search, the one-server Agent Plugin
-an added server becomes, its connection, and an alias's operator settings (its
-enabled tools, its authorization) are the daemon's. A server also arrives in
-any Agent Plugin installed in the project's `.agents/plugins/`,
-`$XDG_CONFIG_HOME/plurnk/plugins/`, or `~/.agents/plugins/`: installing it
-enables its servers, the daemon admits a plugin installed or removed out of
-band at the next turn, and such a server is disable-only.
+reads no MCP configuration. The cascade, workspace persistence, registry search,
+connections, authorization and tool filtering belong to the daemon. `add`
+persists a workspace definition, not a plugin installation; `remove` restores
+any inherited definition and enabled state. An inherited server is disable-only.
 
 The interactive and positional forms share one tokenizer-independent command
 handler. `plurnk mcp …` requires `--workspace` or
@@ -640,24 +637,20 @@ result.
 
 | TUI / CLI input | AG-UI+ action |
 |---|---|
-| `/mcp` / `plurnk mcp` | `workspace.mcp.list {}` — one row per server: alias, state, `type`, command or URL, the tool count of an active server's catalog, and its plugin, or `(workspace)` for a server the workspace added |
+| `/mcp` / `plurnk mcp` | `workspace.mcp.list {}` — one row per server: alias, state, `type`, command or URL, active tool count, and `(workspace)` for a locally added definition |
 | `/mcp discover <query>` | `workspace.mcp.discover {query}` — one row per MCP Registry candidate: alias, `type`, command or URL, and the daemon's summary of how it launches and what it needs |
-| `/mcp add [--plurnk\|--global] <alias> <command\|url> [args...]` | `workspace.mcp.add {alias, definition}` — an absolute `http(s)://` target is `{name: alias, scope, type: "streamable-http", url}`, anything else `{name: alias, scope, type: "stdio", command, args}` without `args` when none follow; `scope` is `project` unless `--plurnk` or `--global` |
+| `/mcp add <alias> <command\|url> [args...]` | `workspace.mcp.add {alias, definition}` — an absolute `http(s)://` target is `{name: alias, type: "streamable-http", url}`, anything else `{name: alias, type: "stdio", command, args}` without `args` when none follow |
 | `/mcp enable <alias>` | `workspace.mcp.enable {alias}` — publishes a dormant server or retries an unavailable one |
 | `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
 | `/mcp oauth <alias> <callback-url>` | `workspace.mcp.oauth.complete {alias, callbackUrl}` |
 
-The scope flag precedes the alias, so every token after the target reaches the
-server verbatim, `--global` included; a URL target takes none. Every
-slash-command row also admits the same arguments after `plurnk mcp`, where the
-end-of-options marker `--` precedes a scope flag or the first server argument
-that begins with `-`: `plurnk --workspace w mcp -- add --global example npx -y @example/server`.
+Every token after a command target reaches the server verbatim; a URL target
+takes none. The positional form uses `--` before server options so the client
+does not consume them: `plurnk --workspace w mcp -- add example npx -y @example/server`.
 
 An add or enable requiring interactive authorization prints the authorization
-URL and exact `/mcp oauth …` completion command. Daemon Problems — an
-unavailable scope root, a `./` command, a different plugin at the alias, the
-removal of a plugin's server, an unsupported MCP protocol revision — cross the
+URL and exact `/mcp oauth …` completion command. Daemon Problems cross the
 existing diagnostic path without rewriting or retry.
 
 ### §3.5 Universal Agent Skills {§cli-universal-agent-skills}
@@ -1473,7 +1466,7 @@ A conforming `plurnk` client:
 | Responsibility | Owner |
 |---|---|
 | Spawn, readiness address, SIGTERM-and-wait with bounded escalation | The selected service package's public `@plurnk/plurnk-service/launch` helper. |
-| Executable, fixture configuration, deadlines and disposable state root | The test caller. Deterministic tests isolate HOME and XDG configuration, so every MCP server they install or add is an Agent Plugin in disposable state; only the explicit live tier inherits operator configuration, installed plugins included. |
+| Executable, fixture configuration, deadlines and disposable state root | The test caller. Deterministic tests isolate HOME and XDG configuration; MCP fixtures supply complete environment definitions or workspace additions. Only the explicit live tier inherits operator configuration. |
 | Failed startup | The helper stops and awaits its process; the caller then disposes of its temporary state. |
 | Successful shutdown | The caller awaits `stop()` before removing temporary state. Repeated cleanup is harmless. |
 | Packed composition | The helper and daemon executable come from the same installed service artifact. Failed composition retains its evidence after stopping the process. |

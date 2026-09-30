@@ -16,10 +16,10 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,
-        plugins: { durable: { durable: { type: "stdio", command: "node", args: [fixture] } } },
+        mcp: { durable: { type: "stdio", command: "node", args: [fixture] } },
         extraEnv: {
-            PLURNK_A2A_DURABLE: agent.baseUrl,
-            PLURNK_A2A_ENABLED: '["durable"]',
+            PLURNK_A2A_durable: JSON.stringify({ name: "durable", url: agent.baseUrl }),
+            PLURNK_A2A_ENABLED: "1",
             PLURNK_MODEL_controlfixture: "lmstudio/control-family/selected",
             PLURNK_PROVIDERS_CONTEXT_WINDOW_controlfixture: "32768",
             PLURNK_PROVIDERS_EFFORT_controlfixture: "off",
@@ -89,22 +89,21 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.deepEqual(capabilities.workspace, { deny: [{ runtime: "sh" }] });
     assert.deepEqual(capabilities.effective, { deny: [{ runtime: "sh" }] });
 
-    // An installed plugin's server is enabled by installation and withdrawn and restored by durable
-    // controls; a server the workspace adds is durable workspace state until it is removed.
-    type Server = { alias: string; origin: string; state: string; definition: { plugin?: { name: string } } };
+    // Configured servers and workspace additions share the durable lifecycle.
+    type Server = { alias: string; origin: string; state: string; definition: object };
     const server = async (name: string): Promise<Server | undefined> =>
         (await from<{ definitions: Server[] }>("b", "workspace.mcp.list")).definitions.find(({ alias }) => alias === name);
-    const installed = await server("durable");
-    assert.equal(installed?.definition.plugin?.name, "durable");
-    assert.equal(installed?.origin, "service");
-    assert.notEqual(installed?.state, "disabled", "installing the plugin enabled its server");
+    const configured = await server("durable");
+    assert.deepEqual(configured?.definition, { name: "durable", type: "stdio", command: "node", args: [fixture] });
+    assert.equal(configured?.origin, "service");
+    assert.notEqual(configured?.state, "disabled", "declared servers default enabled");
     await from("a", "workspace.mcp.disable", { alias: "durable" });
     assert.equal((await server("durable"))?.state, "disabled");
     await from("a", "workspace.mcp.enable", { alias: "durable" });
     assert.equal((await server("durable"))?.state, "active");
     await from("a", "workspace.mcp.add", {
         alias: "added",
-        definition: { name: "added", scope: "plurnk", type: "stdio", command: "node", args: [fixture] },
+        definition: { name: "added", type: "stdio", command: "node", args: [fixture] },
     });
     const added = await server("added");
     assert.equal(added?.origin, "workspace");
@@ -142,7 +141,7 @@ test("[§cli-file-members] separate client connections observe the durable file 
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,
-        extraEnv: { PLURNK_MEMBERS_DOCS: "docs/**", PLURNK_MEMBERS_ENABLED: '["docs"]' },
+        extraEnv: { PLURNK_MEMBERS_docs: "docs/**", PLURNK_MEMBERS_ENABLED: "1" },
     });
     t.after(daemon.cleanup);
     const target = { bridgeUrl: daemon.url };

@@ -1,13 +1,13 @@
 // Built-client dogfood for workspace MCP management. A current SDK server the
-// workspace adds and a pre-server/discover standard peer an installed Agent
-// Plugin declares prove the host's negotiate-and-degrade admission contract
+// workspace adds and a configured pre-server/discover standard peer prove the
+// host's negotiate-and-degrade admission contract
 // through the public client, beside MCP Registry discovery and the positional form.
 
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -70,7 +70,7 @@ before(async () => {
         server.listen(0, "127.0.0.1", () => resolvePort((server.address() as { port: number }).port));
     });
     daemon = await bootDaemon(bin, {
-        plugins: { peers: { legacy: { type: "stdio", command: "node", args: [legacyFixture] } } },
+        mcp: { legacy: { type: "stdio", command: "node", args: [legacyFixture] } },
         extraEnv: { PLURNK_MCP_REGISTRY_URL: `http://127.0.0.1:${port}` },
     });
 });
@@ -82,7 +82,7 @@ after(async () => {
 });
 
 describe("TUI workspace MCP dogfood", () => {
-    test("[§cli-workspace-mcp-controls] an added current peer and an installed standard peer share the client lifecycle", { timeout: 90_000 }, async (t) => {
+    test("[§cli-workspace-mcp-controls] an added current peer and a configured standard peer share the client lifecycle", { timeout: 90_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with MCP fixtures is not reachable"); return; }
         const project = await mkdtemp(join(scratch, "project-"));
         // This drives a model that EXECUTES; the subject is the lifecycle grammar, not consent.
@@ -91,21 +91,20 @@ describe("TUI workspace MCP dogfood", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
 
-            // Installing the plugin enabled its server; inspecting a cold workspace connects nothing.
+            // Declared servers default enabled; inspecting a cold workspace connects nothing.
             let since = tui.output().length;
             tui.write("/mcp\r");
-            await tui.waitFor(/legacy\s+dormant\s+stdio\s+node\s+plugin peers/, 20_000, since);
+            await tui.waitFor(/legacy\s+dormant\s+stdio\s+node/, 20_000, since);
 
             // Discovery searches the registry and adds nothing.
             since = tui.output().length;
             tui.write("/mcp discover echo\r");
             await tui.waitFor(/echo\s+candidate\s+stdio\s+npx\s+Echo\.\s+—\s+npx\s+-y\s+@example\/echo@1\.0\.0\s+—\s+Needs\s+ECHO_KEY\./, 20_000, since);
 
-            // An added server is a one-server plugin at the default project scope, active at once.
+            // Add persists in the workspace, not the project's filesystem.
             tui.write(`/mcp add current node "${currentFixture}"\r`);
             await tui.waitFor(/added: current \(active\)/, 20_000);
-            const plugin = join(project, ".agents", "plugins", "current");
-            await access(join(plugin, "mcp.json"));
+            assert.deepEqual(await readdir(project), []);
 
             tui.write(`/script ${currentCall}\r`);
             const used = await tui.waitFor(/script: 1 op ok/, 20_000);
@@ -114,7 +113,7 @@ describe("TUI workspace MCP dogfood", () => {
             since = tui.output().length;
             tui.write("/mcp\r");
             await tui.waitFor(/current\s+active\s+stdio\s+node\s+2 tools\s+\(workspace\)/, 20_000, since);
-            await tui.waitFor(/legacy\s+active\s+stdio\s+node\s+1 tools\s+plugin peers/, 20_000, since);
+            await tui.waitFor(/legacy\s+active\s+stdio\s+node\s+1 tools/, 20_000, since);
 
             tui.write("/mcp disable current\r");
             await tui.waitFor(/disabled: current \(disabled\)/, 20_000);
@@ -125,7 +124,7 @@ describe("TUI workspace MCP dogfood", () => {
             tui.write("\t\r");
             await tui.waitFor(/enabled: current \(active\)/, 20_000, since);
 
-            // A plugin's server is disable-only: the daemon's Problem crosses unrewritten.
+            // An inherited server is disable-only: the daemon's Problem crosses unrewritten.
             since = tui.output().length;
             tui.write("/mcp remove legacy\r");
             const refused = await tui.waitFor(/'legacy' is provided to this workspace, not added by it/, 20_000, since);
@@ -134,7 +133,7 @@ describe("TUI workspace MCP dogfood", () => {
             since = tui.output().length;
             tui.write("/mcp remove current\r");
             await tui.waitFor(/removed: current/, 20_000, since);
-            await assert.rejects(access(plugin), "remove uninstalls the plugin add wrote");
+            assert.deepEqual(await readdir(project), [], "MCP management leaves the project untouched");
             since = tui.output().length;
             tui.write("/mcp\r");
             await tui.waitFor(/legacy\s+active\s+stdio\s+node/, 20_000, since);
@@ -146,7 +145,7 @@ describe("TUI workspace MCP dogfood", () => {
         }
     });
 
-    test("[§cli-workspace-mcp-controls] the positional form takes add's scope flag and server arguments after --", { timeout: 60_000 }, async (t) => {
+    test("[§cli-workspace-mcp-controls] the positional form retains server arguments after --", { timeout: 60_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with MCP fixtures is not reachable"); return; }
         const workspace = "mcp-positional";
         await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
@@ -162,12 +161,12 @@ describe("TUI workspace MCP dogfood", () => {
             JSON.parse((await exec(process.execPath, [BIN, "--workspace", workspace, "--json", "mcp", ...args], { cwd: scratch, env, timeout: 30_000 })).stdout) as T;
 
         type Added = { status: number; definition: { origin: string; state: string; definition: object } };
-        const added = await plurnk<Added>("--", "add", "--plurnk", "flagged", "node", currentFixture, "--global");
+        const added = await plurnk<Added>("--", "add", "flagged", "node", currentFixture, "--global");
         assert.equal(added.status, 201);
         assert.equal(added.definition.origin, "workspace");
         assert.equal(added.definition.state, "active");
         assert.deepEqual(added.definition.definition, {
-            name: "flagged", scope: "plurnk", type: "stdio", command: "node", args: [currentFixture, "--global"],
+            name: "flagged", type: "stdio", command: "node", args: [currentFixture, "--global"],
         }, "the flag after the target is the server's argument");
         assert.equal((await plurnk<{ removed?: boolean }>("remove", "flagged")).removed, true);
     });

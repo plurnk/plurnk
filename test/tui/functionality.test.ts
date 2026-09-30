@@ -40,8 +40,8 @@ before(async () => {
     daemon = await bootDaemon(bin, {
         readyTimeoutMs: 30_000,
         extraEnv: {
-            PLURNK_A2A_RESEARCHER: agent.baseUrl,
-            PLURNK_A2A_ENABLED: '["researcher"]',
+            PLURNK_A2A_researcher: JSON.stringify({ name: "researcher", url: agent.baseUrl }),
+            PLURNK_A2A_ENABLED: "1",
         },
     });
 });

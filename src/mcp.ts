@@ -1,25 +1,18 @@
 // Thin TUI projection of the daemon-owned MCP Functionality family: the common
 // lifecycle (list | discover | add | enable | disable | remove) plus the MCP
 // OAuth continuation. The client composes exact definitions and renders the
-// daemon's states; the registry search, the Agent Plugin an added server
-// becomes, and its connection are the service's.
+// daemon's states; configuration persistence, registry search and connections
+// belong to the service.
 
 import { commandUsage } from "./commands.ts";
+import type { McpServerDefinition } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
 
-type McpScope = "project" | "plurnk" | "global";
-
-// The McpServerDefinition an add composes: a standard mcp.json server entry with its alias and
-// scope. The service records the plugin that carries it.
-type McpServerDefinition =
-    | { name: string; scope: McpScope; type: "stdio"; command: string; args?: string[] }
-    | { name: string; scope: McpScope; type: "streamable-http"; url: string };
-
 // One listed or discovered definition: a stdio or streamable-http server entry.
-type Definition = { type?: unknown; command?: unknown; url?: unknown; plugin?: { name?: unknown } };
+type Definition = { type?: unknown; command?: unknown; url?: unknown };
 
 type DefinitionState = {
     alias?: unknown;
@@ -40,7 +33,6 @@ type MutationResult = {
 };
 
 const HTTP_TARGET = /^https?:\/\//u;
-const SCOPE_FLAGS: ReadonlyMap<string, McpScope> = new Map([["--plurnk", "plurnk"], ["--global", "global"]]);
 
 const argumentsOf = (source: string): string[] | null => {
     const values: string[] = [];
@@ -89,10 +81,10 @@ const argumentsOf = (source: string): string[] | null => {
 
 // An absolute HTTP(S) target is a Streamable HTTP endpoint; anything else is one executable,
 // whose arguments follow verbatim.
-export const composeDefinition = (alias: string, scope: McpScope, target: string, args: readonly string[] = []): McpServerDefinition =>
+export const composeDefinition = (alias: string, target: string, args: readonly string[] = []): McpServerDefinition =>
     HTTP_TARGET.test(target)
-        ? { name: alias, scope, type: "streamable-http", url: target }
-        : { name: alias, scope, type: "stdio", command: target, ...(args.length === 0 ? {} : { args: [...args] }) };
+        ? { name: alias, type: "streamable-http", url: target }
+        : { name: alias, type: "stdio", command: target, ...(args.length === 0 ? {} : { args: [...args] }) };
 
 const targetOf = (definition: Definition | undefined): string | null => {
     if (definition?.type === "stdio" && typeof definition.command === "string") return definition.command;
@@ -110,10 +102,9 @@ const renderDefinition = (entry: DefinitionState): string => {
     const targetText = target === null ? "" : `  ${target}`;
     // The catalog of an active server; the operator's tool narrowing is the daemon's setting.
     const tools = Array.isArray(entry.detail?.tools) ? `  ${entry.detail.tools.length} tools` : "";
-    const plugin = typeof entry.definition?.plugin?.name === "string" ? `  plugin ${entry.definition.plugin.name}` : "";
     const origin = entry.origin === "workspace" ? "  (workspace)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}  ${typeOf(entry.definition)}${targetText}${tools}${plugin}${origin}${problem}\n`;
+    return `  ${alias}  ${state}  ${typeOf(entry.definition)}${targetText}${tools}${origin}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {
@@ -176,15 +167,13 @@ export const handleMcp = async (
     }
 
     if (command === "add") {
-        // The scope flag precedes the alias, so every token after the target is the server's own.
-        const scope = SCOPE_FLAGS.get(args[1]);
-        const [name, target, ...serverArgs] = args.slice(scope === undefined ? 1 : 2);
-        if (name === undefined || name.length === 0 || target === undefined || target.length === 0
+        const [name, target, ...serverArgs] = args.slice(1);
+        if (name === undefined || name.length === 0 || name.startsWith("--") || target === undefined || target.length === 0
             || (HTTP_TARGET.test(target) && serverArgs.length > 0)) {
             usage(write, "add");
             return null;
         }
-        const definition = composeDefinition(name, scope ?? "project", target, serverArgs);
+        const definition = composeDefinition(name, target, serverArgs);
         const result = await rpc.call("workspace.mcp.add", { alias: name, definition }) as MutationResult;
         renderMutation(result, "added", name, write);
         return result;

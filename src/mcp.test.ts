@@ -15,34 +15,31 @@ const harness = (results: Record<string, unknown> = {}) => {
     return { rpc, write: (text: string) => out.push(text), calls, out };
 };
 
-const plugin = (name: string) => ({ name, root: `/home/user/.agents/plugins/${name}`, data: `/home/user/.local/share/plurnk/plugins/${name}` });
-
-test("[§cli-workspace-mcp-controls] list renders each server's state, type, target, catalog, plugin or workspace origin, and Problem", async () => {
+test("[§cli-workspace-mcp-controls] list renders each server's state, type, target, catalog, workspace origin, and Problem", async () => {
     const h = harness({
         "workspace.mcp.list": {
             family: "mcp",
             definitions: [
-                { alias: "brave", origin: "service", state: "disabled", definition: { name: "brave", scope: "global", plugin: plugin("search"), type: "streamable-http", url: "https://example.test/mcp" } },
-                { alias: "echo", origin: "workspace", state: "dormant", definition: { name: "echo", scope: "project", type: "stdio", command: "echo-mcp" } },
+                { alias: "brave", origin: "service", state: "disabled", definition: { name: "brave", type: "streamable-http", url: "https://example.test/mcp" } },
+                { alias: "echo", origin: "workspace", state: "dormant", definition: { name: "echo", type: "stdio", command: "echo-mcp" } },
                 {
                     alias: "gitea",
                     origin: "service",
                     state: "active",
-                    definition: { name: "gitea", scope: "global", plugin: plugin("forge"), type: "stdio", command: "gitea-mcp", args: ["--stdio"] },
+                    definition: { name: "gitea", type: "stdio", command: "gitea-mcp", args: ["--stdio"] },
                     detail: { tools: ["issue_read", "issue_write"] },
                 },
-                { alias: "flaky", origin: "service", state: "unavailable", definition: { name: "flaky", scope: "global", plugin: plugin("tools"), type: "stdio", command: "./bin/flaky" }, problem: { detail: "spawn failed" } },
+                { alias: "flaky", origin: "service", state: "unavailable", definition: { name: "flaky", type: "stdio", command: "./bin/flaky" }, problem: { detail: "spawn failed" } },
             ],
         },
     });
     await handleMcp("", h.rpc, h.write);
     assert.deepEqual(h.calls, [{ method: "workspace.mcp.list", params: {} }], "listing is one inspection");
     const text = h.out.join("");
-    assert.match(text, /^  brave  disabled  streamable-http  https:\/\/example\.test\/mcp  plugin search$/mu);
+    assert.match(text, /^  brave  disabled  streamable-http  https:\/\/example\.test\/mcp$/mu);
     assert.match(text, /^  echo  dormant  stdio  echo-mcp  \(workspace\)$/mu, "a server the workspace added is the one remove applies to");
-    assert.match(text, /^  gitea  active  stdio  gitea-mcp  2 tools  plugin forge$/mu);
-    assert.match(text, /^  flaky  unavailable  stdio  \.\/bin\/flaky  plugin tools  — spawn failed$/mu);
-    assert.doesNotMatch(text, /\(service\)/u, "a plugin's server names its plugin");
+    assert.match(text, /^  gitea  active  stdio  gitea-mcp  2 tools$/mu);
+    assert.match(text, /^  flaky  unavailable  stdio  \.\/bin\/flaky  — spawn failed$/mu);
 
     const empty = harness({ "workspace.mcp.list": { family: "mcp", definitions: [] } });
     await handleMcp([], empty.rpc, empty.write);
@@ -58,13 +55,13 @@ test("[§cli-workspace-mcp-controls] discover searches the MCP Registry by query
                 {
                     alias: "server",
                     summary: "Search the example index. — npx -y @example/server@1.2.3 — Needs EXAMPLE_API_KEY.",
-                    definition: { name: "server", scope: "project", type: "stdio", command: "npx", args: ["-y", "@example/server@1.2.3"] },
+                    definition: { name: "server", type: "stdio", command: "npx", args: ["-y", "@example/server@1.2.3"] },
                     provenance,
                 },
                 {
                     alias: "server",
                     summary: "Search the example index. — https://example.test/mcp",
-                    definition: { name: "server", scope: "project", type: "streamable-http", url: "https://example.test/mcp" },
+                    definition: { name: "server", type: "streamable-http", url: "https://example.test/mcp" },
                     provenance,
                 },
             ],
@@ -82,34 +79,34 @@ test("[§cli-workspace-mcp-controls] discover searches the MCP Registry by query
     assert.equal(none.out.join(""), "  candidates: none\n");
 });
 
-test("[§cli-workspace-mcp-controls] add composes one exact definition from its scope flag, alias, target, and verbatim arguments", async () => {
+test("[§cli-workspace-mcp-controls] add composes one exact definition from its alias and target, and verbatim arguments", async () => {
     const h = harness({
         "workspace.mcp.add": { status: 201, family: "mcp", alias: "echo", definition: { alias: "echo", origin: "workspace", state: "active" } },
     });
     await handleMcp("add echo npx -y @example/echo", h.rpc, h.write);
-    await handleMcp(["add", "--plurnk", "echo", "node", "/srv/echo.js", "--global"], h.rpc, h.write);
-    await handleMcp(`add --global docs node "/srv/mcp servers/docs.js" --plurnk`, h.rpc, h.write);
+    await handleMcp(["add", "echo", "node", "/srv/echo.js", "--global"], h.rpc, h.write);
+    await handleMcp(`add docs node "/srv/mcp servers/docs.js" --plurnk`, h.rpc, h.write);
     await handleMcp("add brave https://example.test/mcp", h.rpc, h.write);
     await handleMcp("add echo ./bin/echo", h.rpc, h.write);
     assert.deepEqual(h.calls.map(({ params }) => params), [
-        { alias: "echo", definition: { name: "echo", scope: "project", type: "stdio", command: "npx", args: ["-y", "@example/echo"] } },
-        { alias: "echo", definition: { name: "echo", scope: "plurnk", type: "stdio", command: "node", args: ["/srv/echo.js", "--global"] } },
-        { alias: "docs", definition: { name: "docs", scope: "global", type: "stdio", command: "node", args: ["/srv/mcp servers/docs.js", "--plurnk"] } },
-        { alias: "brave", definition: { name: "brave", scope: "project", type: "streamable-http", url: "https://example.test/mcp" } },
-        // The daemon, not the client, refuses a command its one-server plugin cannot carry.
-        { alias: "echo", definition: { name: "echo", scope: "project", type: "stdio", command: "./bin/echo" } },
+        { alias: "echo", definition: { name: "echo", type: "stdio", command: "npx", args: ["-y", "@example/echo"] } },
+        { alias: "echo", definition: { name: "echo", type: "stdio", command: "node", args: ["/srv/echo.js", "--global"] } },
+        { alias: "docs", definition: { name: "docs", type: "stdio", command: "node", args: ["/srv/mcp servers/docs.js", "--plurnk"] } },
+        { alias: "brave", definition: { name: "brave", type: "streamable-http", url: "https://example.test/mcp" } },
+        // Relative commands resolve against the daemon-owned working directory.
+        { alias: "echo", definition: { name: "echo", type: "stdio", command: "./bin/echo" } },
     ]);
     assert.ok(h.calls.every(({ method }) => method === "workspace.mcp.add"));
     assert.match(h.out.join(""), /^  added: echo \(active\)$/mu);
 });
 
 test("[§cli-workspace-mcp-controls] composeDefinition selects Streamable HTTP for absolute URLs and stdio otherwise", () => {
-    assert.deepEqual(composeDefinition("brave", "global", "https://example.test/mcp"), {
-        name: "brave", scope: "global", type: "streamable-http", url: "https://example.test/mcp",
+    assert.deepEqual(composeDefinition("brave", "https://example.test/mcp"), {
+        name: "brave", type: "streamable-http", url: "https://example.test/mcp",
     });
-    assert.deepEqual(composeDefinition("echo", "project", "echo-mcp"), { name: "echo", scope: "project", type: "stdio", command: "echo-mcp" }, "no arguments, no args member");
-    assert.deepEqual(composeDefinition("echo", "plurnk", "echo-mcp", ["--stdio"]), {
-        name: "echo", scope: "plurnk", type: "stdio", command: "echo-mcp", args: ["--stdio"],
+    assert.deepEqual(composeDefinition("echo", "echo-mcp"), { name: "echo", type: "stdio", command: "echo-mcp" }, "no arguments, no args member");
+    assert.deepEqual(composeDefinition("echo", "echo-mcp", ["--stdio"]), {
+        name: "echo", type: "stdio", command: "echo-mcp", args: ["--stdio"],
     });
 });
 
@@ -165,7 +162,7 @@ test("[§cli-workspace-mcp-controls] daemon Problems cross unchanged and nothing
         status: 409,
         detail: "'legacy' is provided to this workspace, not added by it, so it cannot be removed here.",
     });
-    for (const input of ["discover echo", "add --global echo echo-mcp", "enable legacy", "disable legacy", "remove legacy"]) {
+    for (const input of ["discover echo", "add echo echo-mcp", "enable legacy", "disable legacy", "remove legacy"]) {
         const out: string[] = [];
         const rpc = { call: async (): Promise<unknown> => { throw refused; } };
         await assert.rejects(handleMcp(input, rpc, (text) => out.push(text)), (error: unknown) => error === refused, input);

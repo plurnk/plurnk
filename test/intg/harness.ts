@@ -8,7 +8,7 @@
 // whole suite cleanly. This keeps `npm test` from hard-failing downstream.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtemp, mkdir, rm, access, realpath, writeFile, constants as fsConstants } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, access, realpath, constants as fsConstants } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
@@ -74,23 +74,12 @@ interface BootOptions {
     extraEnv?: Record<string, string>;  // additional env vars (override file-loaded ones)
     inheritOperatorConfig?: boolean;    // only real-model tiers may read the operator's config
     readyTimeoutMs?: number;             // default 10s
-    // Agent Plugins installed in the isolated home before boot, by plugin name: the MCP servers
-    // each one's mcp.json declares. An MCP server reaches the daemon no other way.
-    plugins?: Readonly<Record<string, Readonly<Record<string, object>>>>;
+    mcp?: Readonly<Record<string, object>>;
 }
-
-const installPlugin = async (root: string, name: string, servers: Readonly<Record<string, object>>): Promise<void> => {
-    await mkdir(root, { recursive: true });
-    await writeFile(join(root, "plugin.json"), JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name }));
-    await writeFile(join(root, "mcp.json"), JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: servers }));
-};
 
 // {§cli-test-daemon-lifecycle}: the selected service owns launch/readiness/shutdown;
 // this fixture owns configuration isolation and disposal of its temporary root.
 export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promise<Daemon> => {
-    if (opts.plugins !== undefined && opts.inheritOperatorConfig === true) {
-        throw new Error("Plugin fixtures install into the isolated home; the live tier reads the operator's own.");
-    }
     const entry = await realpath(binPath);
     const { default: Launch } = await import(pathToFileURL(
         createRequire(entry).resolve("@plurnk/plurnk-service/launch"),
@@ -101,9 +90,6 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
     const home = join(runtime, "home");
     const workspace = join(runtime, "workspace");
     await Promise.all([mkdir(home), mkdir(workspace)]);
-    for (const [name, servers] of Object.entries(opts.plugins ?? {})) {
-        await installPlugin(join(home, ".config", "plurnk", "plugins", name), name, servers);
-    }
     const daemonEnv = opts.inheritOperatorConfig === true ? await locateDaemonEnv(entry) : null;
     const args = [
         ...(entry.endsWith(".ts") ? ["--conditions=plurnk-dev"] : []),
@@ -133,6 +119,9 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
             PLURNK_SERVICE_DB_PATH: "",
             PLURNK_MODEL: "",
             OPENAI_BASE_URL: "http://127.0.0.1:11435",
+            ...Object.fromEntries(Object.entries(opts.mcp ?? {}).map(([name, definition]) => [
+                `PLURNK_MCP_${name.replaceAll("-", "_")}`, JSON.stringify({ name, ...definition }),
+            ])),
             ...opts.extraEnv,
         },
         cwd: resolve(dirname(entry), ".."),

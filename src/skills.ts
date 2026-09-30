@@ -5,6 +5,7 @@
 // policy live in the service.
 
 import { commandUsage } from "./commands.ts";
+import { configurationSource } from "./functionality-source.ts";
 import type { SkillDefinition } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
@@ -78,7 +79,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const description = typeof entry.detail?.description === "string" ? `  ${entry.detail.description}` : "";
     const origin = entry.origin === "workspace" ? "  (workspace)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}${source}${ref}${commit}${description}${origin}${problem}\n`;
+    return `  ${alias}  ${state}${source}${ref}${commit}${description}${origin}${configurationSource(entry)}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {

@@ -5,6 +5,7 @@
 // belong to the service.
 
 import { commandUsage } from "./commands.ts";
+import { configurationSource } from "./functionality-source.ts";
 import type { McpServerDefinition } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
@@ -104,7 +105,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const tools = Array.isArray(entry.detail?.tools) ? `  ${entry.detail.tools.length} tools` : "";
     const origin = entry.origin === "workspace" ? "  (workspace)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}  ${typeOf(entry.definition)}${targetText}${tools}${origin}${problem}\n`;
+    return `  ${alias}  ${state}  ${typeOf(entry.definition)}${targetText}${tools}${origin}${configurationSource(entry)}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {

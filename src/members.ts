@@ -7,6 +7,7 @@
 // ceiling, and enablement policy live in the service.
 
 import { commandUsage } from "./commands.ts";
+import { configurationSource } from "./functionality-source.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -95,7 +96,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const state = typeof entry.state === "string" ? entry.state : "unknown";
     const { effect, pattern } = effectOf(typeof entry.definition?.glob === "string" ? entry.definition.glob : "unknown");
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${origin}  ${state}  ${effect} ${pattern}${renderResolution(effect, entry.detail)}${problem}\n`;
+    return `  ${alias}  ${origin}  ${state}  ${effect} ${pattern}${renderResolution(effect, entry.detail)}${configurationSource(entry)}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {

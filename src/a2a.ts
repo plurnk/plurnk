@@ -7,6 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { commandUsage } from "./commands.ts";
+import { configurationSource } from "./functionality-source.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -104,7 +105,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const skills = Array.isArray(entry.detail?.skills) ? `  ${entry.detail.skills.length} skills` : "";
     const origin = entry.origin === "service" ? "  (service)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}${url}${name}${version}${skills}${origin}${problem}\n`;
+    return `  ${alias}  ${state}${url}${name}${version}${skills}${origin}${configurationSource(entry)}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { commandUsage } from "./commands.ts";
+import { configurationSource } from "./functionality-source.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 interface ActionCaller {
@@ -32,7 +33,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const value = typeof entry.definition?.value === "string" ? `  ${entry.definition.value}` : "";
     const inherited = typeof entry.inherited === "string" ? `  (from ${entry.inherited})` : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${origin}  ${state}${value}${inherited}${problem}\n`;
+    return `  ${alias}  ${origin}  ${state}${value}${inherited}${configurationSource(entry)}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {

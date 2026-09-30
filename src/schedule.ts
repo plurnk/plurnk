@@ -5,6 +5,7 @@
 // and the delivery live in the service.
 
 import { commandUsage } from "./commands.ts";
+import { configurationSource } from "./functionality-source.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -87,7 +88,7 @@ const renderDefinition = (entry: DefinitionState): string => {
     const target = typeof entry.definition?.target === "string" ? `  ${entry.definition.target}` : "";
     const origin = entry.origin === "service" ? "  (service)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}${text}${when}${target}${origin}${problem}\n`;
+    return `  ${alias}  ${state}${text}${when}${target}${origin}${configurationSource(entry)}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {

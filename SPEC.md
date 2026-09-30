@@ -622,6 +622,13 @@ small pastes remain native lines and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
+§cli-configuration-source Subsystem listings (`mcp`, `skills`, `a2a`, `schedule`,
+`members`, `env`) append `source=<provenance.source>` when the daemon supplies
+that field. The client does not infer a source, open its path, or resolve a
+configuration cascade. Ownership and readiness remain separate; absent provenance
+adds no placeholder. Positional and interactive commands use the same projection;
+JSON output retains the complete action result.
+
 MCP management is a thin projection of the daemon's `mcp` Functionality
 family: the common lifecycle plus the MCP OAuth continuation. The client
 composes one exact `McpServerDefinition` and renders the daemon's states; it

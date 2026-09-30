@@ -87,7 +87,7 @@ let passed = false;
 const inputs = [];
 try {
     await mkdir(consumer, { recursive: true });
-    await mkdir(configHome, { recursive: true });
+    await mkdir(join(configHome, "plurnk"), { recursive: true });
     await mkdir(projectRoot, { recursive: true });
     await run("npm", ["init", "-y"], { cwd: consumer });
 
@@ -109,8 +109,6 @@ try {
                         ? { workers: [{ id: 1, name: input.threadId, created_at: "now", origin: "client", parentWorkerId: null }] }
                         : action.kind === "workspace.list"
                             ? { workspaces: [{ id: 1, name: "web-composition", project_root: projectRoot, created_at: "now" }] }
-                            : action.kind === "workspace.mcp.discover"
-                                ? { candidates: [{ alias: "gitea", definition: { name: "gitea", transport: "stdio", command: "gitea-mcp", args: [] }, provenance: { kind: "client-configuration", source: "PLURNK_MCP_GITEA" } }] }
                             : {};
                 sendEvents(response, input, [{
                     type: "CUSTOM",
@@ -135,13 +133,12 @@ try {
     const portalPort = await listen(reservation);
     await close(reservation);
 
-    await writeFile(join(consumer, ".env"), [
+    await writeFile(join(configHome, "plurnk", ".env"), [
         "PLURNK_CLIENT_WORKSPACE=web-composition",
         "PLURNK_CLIENT_WORKER=browser",
         "PLURNK_CLIENT_YOLO=1",
         "PLURNK_WEB_HOST=127.0.0.1",
         `PLURNK_WEB_PORT=${portalPort}`,
-        "PLURNK_MCP_GITEA=gitea-mcp",
         "",
     ].join("\n"));
 
@@ -270,26 +267,6 @@ try {
         openPaths: ["README.md"],
     });
     assert.equal(inputs[5].messages.at(-1)?.content, "exercise the browser path @README.md");
-
-    const mcpEvents = await collect(agent, {
-        ...runInput,
-        runId: "web-mcp-discovery",
-        messages: [],
-        forwardedProps: { plurnk: { action: { kind: "workspace.mcp.discover" } } },
-    });
-    assert(mcpEvents.some((event) => event.type === "CUSTOM" && event.name === "plurnk.action.result"));
-    assert.equal(inputs.length, 7);
-    assert.deepEqual(inputs[6].forwardedProps.plurnk, {
-        workspace: "web-composition",
-        projectRoot,
-        settings: clientSettings,
-        policy: { proposals: "accept" },
-        maxTurns: 7,
-        action: {
-            kind: "workspace.mcp.discover",
-            configuration: { PLURNK_MCP_GITEA: "gitea-mcp" },
-        },
-    });
 
     const clientPackage = JSON.parse(await readFile(join(consumer, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     process.stdout.write(`packed web composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${webPackage.name}@${webPackage.version}\n`);

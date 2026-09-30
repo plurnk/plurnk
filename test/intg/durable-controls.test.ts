@@ -13,8 +13,10 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
     const agent = await startDemoAgent();
     t.after(() => agent.close());
+    const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,
+        plugins: { durable: { durable: { type: "stdio", command: "node", args: [fixture] } } },
         extraEnv: {
             PLURNK_A2A_DURABLE: agent.baseUrl,
             PLURNK_A2A_ENABLED: '["durable"]',
@@ -87,20 +89,28 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     assert.deepEqual(capabilities.workspace, { deny: [{ runtime: "sh" }] });
     assert.deepEqual(capabilities.effective, { deny: [{ runtime: "sh" }] });
 
-    const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
-    await from("a", "workspace.mcp.add", {
-        alias: "durable",
-        definition: { name: "durable", transport: "stdio", command: process.execPath, args: [fixture], tools: ["echo"], read: ["echo"] },
-    });
-    const servers = async (): Promise<Array<{ alias: string; state: string }>> =>
-        (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.mcp.list")).definitions;
-    assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "active");
+    // An installed plugin's server is enabled by installation and withdrawn and restored by durable
+    // controls; a server the workspace adds is durable workspace state until it is removed.
+    type Server = { alias: string; origin: string; state: string; definition: { plugin?: { name: string } } };
+    const server = async (name: string): Promise<Server | undefined> =>
+        (await from<{ definitions: Server[] }>("b", "workspace.mcp.list")).definitions.find(({ alias }) => alias === name);
+    const installed = await server("durable");
+    assert.equal(installed?.definition.plugin?.name, "durable");
+    assert.equal(installed?.origin, "service");
+    assert.notEqual(installed?.state, "disabled", "installing the plugin enabled its server");
     await from("a", "workspace.mcp.disable", { alias: "durable" });
-    assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "disabled");
+    assert.equal((await server("durable"))?.state, "disabled");
     await from("a", "workspace.mcp.enable", { alias: "durable" });
-    assert.equal((await servers()).find(({ alias }) => alias === "durable")?.state, "active");
-    await from("a", "workspace.mcp.remove", { alias: "durable" });
-    assert.equal((await servers()).some(({ alias }) => alias === "durable"), false);
+    assert.equal((await server("durable"))?.state, "active");
+    await from("a", "workspace.mcp.add", {
+        alias: "added",
+        definition: { name: "added", scope: "plurnk", type: "stdio", command: "node", args: [fixture] },
+    });
+    const added = await server("added");
+    assert.equal(added?.origin, "workspace");
+    assert.equal(added?.state, "active");
+    await from("a", "workspace.mcp.remove", { alias: "added" });
+    assert.equal(await server("added"), undefined);
 
     const skills = async (): Promise<Array<{ alias: string; state: string }>> =>
         (await from<{ definitions: Array<{ alias: string; state: string }> }>("b", "workspace.skills.list")).definitions;

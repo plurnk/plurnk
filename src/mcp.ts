@@ -1,23 +1,25 @@
-// Thin TUI projection of the daemon-owned MCP Functionality family: one common
+// Thin TUI projection of the daemon-owned MCP Functionality family: the common
 // lifecycle (list | discover | add | enable | disable | remove) plus the MCP
 // OAuth continuation. The client composes exact definitions and renders the
-// daemon's states; it owns no lifecycle policy.
+// daemon's states; the registry search, the Agent Plugin an added server
+// becomes, and its connection are the service's.
 
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { commandUsage } from "./commands.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
 
-export interface McpClientConfiguration {
-    // The client's own PLURNK_MCP_* environment, offered to the daemon as
-    // discovery configuration; it contributes candidates, never durable state.
-    readonly overlay?: Readonly<Record<string, string>>;
-}
+type McpScope = "project" | "plurnk" | "global";
 
-type Definition = Record<string, unknown> & { transport?: unknown; command?: unknown; url?: unknown; tools?: unknown };
+// The McpServerDefinition an add composes: a standard mcp.json server entry with its alias and
+// scope. The service records the plugin that carries it.
+type McpServerDefinition =
+    | { name: string; scope: McpScope; type: "stdio"; command: string; args?: string[] }
+    | { name: string; scope: McpScope; type: "streamable-http"; url: string };
+
+// One listed or discovered definition: a stdio or streamable-http server entry.
+type Definition = { type?: unknown; command?: unknown; url?: unknown; plugin?: { name?: unknown } };
 
 type DefinitionState = {
     alias?: unknown;
@@ -29,34 +31,16 @@ type DefinitionState = {
     problem?: { detail?: unknown };
 };
 
-type Candidate = { alias?: unknown; definition?: Definition; provenance?: { kind?: unknown; source?: unknown } };
+type Candidate = { alias?: unknown; summary?: unknown; definition?: Definition };
 
 type MutationResult = {
     status?: unknown;
     alias?: unknown;
-    removed?: unknown;
     definition?: DefinitionState;
 };
 
-const readOptions = async (path: string): Promise<Record<string, unknown>> => {
-    const absolute = resolve(path);
-    let text: string;
-    try {
-        text = await readFile(absolute, "utf8");
-    } catch (cause) {
-        throw new Error(`MCP options not readable: ${absolute}`, { cause });
-    }
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(text) as unknown;
-    } catch (cause) {
-        throw new Error(`MCP options are not valid JSON: ${absolute}`, { cause });
-    }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        throw new Error(`MCP options must be a JSON object: ${absolute}`);
-    }
-    return parsed as Record<string, unknown>;
-};
+const HTTP_TARGET = /^https?:\/\//u;
+const SCOPE_FLAGS: ReadonlyMap<string, McpScope> = new Map([["--plurnk", "plurnk"], ["--global", "global"]]);
 
 const argumentsOf = (source: string): string[] | null => {
     const values: string[] = [];
@@ -103,42 +87,40 @@ const argumentsOf = (source: string): string[] | null => {
     return values;
 };
 
-// An absolute HTTP(S) target selects Streamable HTTP; anything else is one
-// exact stdio executable. Options are the closed McpServerOptions supplement.
-export const composeDefinition = (alias: string, target: string, options: Record<string, unknown> = {}): Definition =>
-    /^https?:\/\//u.test(target)
-        ? { name: alias, transport: "http", url: target, ...options }
-        : { name: alias, transport: "stdio", command: target, ...options, args: Array.isArray(options.args) ? options.args : [] };
+// An absolute HTTP(S) target is a Streamable HTTP endpoint; anything else is one executable,
+// whose arguments follow verbatim.
+export const composeDefinition = (alias: string, scope: McpScope, target: string, args: readonly string[] = []): McpServerDefinition =>
+    HTTP_TARGET.test(target)
+        ? { name: alias, scope, type: "streamable-http", url: target }
+        : { name: alias, scope, type: "stdio", command: target, ...(args.length === 0 ? {} : { args: [...args] }) };
 
 const targetOf = (definition: Definition | undefined): string | null => {
-    if (definition === undefined) return null;
-    if (definition.transport === "http" && typeof definition.url === "string") return definition.url;
-    if (definition.transport === "stdio" && typeof definition.command === "string") return definition.command;
+    if (definition?.type === "stdio" && typeof definition.command === "string") return definition.command;
+    if (definition?.type === "streamable-http" && typeof definition.url === "string") return definition.url;
     return null;
 };
+
+const typeOf = (definition: Definition | undefined): string =>
+    typeof definition?.type === "string" ? definition.type : "unknown";
 
 const renderDefinition = (entry: DefinitionState): string => {
     const alias = typeof entry.alias === "string" ? entry.alias : "(unnamed)";
     const state = typeof entry.state === "string" ? entry.state : "unknown";
-    const transport = typeof entry.definition?.transport === "string" ? entry.definition.transport : "unknown";
     const target = targetOf(entry.definition);
     const targetText = target === null ? "" : `  ${target}`;
-    const enabledTools = Array.isArray(entry.definition?.tools) ? entry.definition.tools.length : null;
-    const available = Array.isArray(entry.detail?.tools) ? entry.detail.tools.length : null;
-    const count = enabledTools === null
-        ? available === null ? null : String(available)
-        : available === null ? String(enabledTools) : `${enabledTools}/${available}`;
-    const tools = count === null ? "" : `  ${count} tools`;
-    const origin = entry.origin === "service" ? "  (service)" : "";
+    // The catalog of an active server; the operator's tool narrowing is the daemon's setting.
+    const tools = Array.isArray(entry.detail?.tools) ? `  ${entry.detail.tools.length} tools` : "";
+    const plugin = typeof entry.definition?.plugin?.name === "string" ? `  plugin ${entry.definition.plugin.name}` : "";
+    const origin = entry.origin === "workspace" ? "  (workspace)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}  ${transport}${targetText}${tools}${origin}${problem}\n`;
+    return `  ${alias}  ${state}  ${typeOf(entry.definition)}${targetText}${tools}${plugin}${origin}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {
     const alias = typeof candidate.alias === "string" ? candidate.alias : "(unnamed)";
-    const transport = typeof candidate.definition?.transport === "string" ? candidate.definition.transport : "unknown";
     const target = targetOf(candidate.definition);
-    return `  ${alias}  candidate  ${transport}${target === null ? "" : `  ${target}`}\n`;
+    const summary = typeof candidate.summary === "string" ? `  ${candidate.summary}` : "";
+    return `  ${alias}  candidate  ${typeOf(candidate.definition)}${target === null ? "" : `  ${target}`}${summary}\n`;
 };
 
 const renderMutation = (
@@ -163,30 +145,16 @@ const usage = (write: (text: string) => void, subcommand?: string): void => {
     write(`  usage: ${commandUsage("mcp", subcommand)}\n`);
 };
 
-const candidatesFrom = async (rpc: ActionCaller, overlay: Readonly<Record<string, string>>): Promise<Candidate[]> => {
-    if (Object.keys(overlay).length === 0) return [];
-    const discovered = await rpc.call("workspace.mcp.discover", { configuration: overlay }) as { candidates?: unknown };
-    if (!Array.isArray(discovered.candidates)) throw new Error("workspace.mcp.discover returned an invalid result.");
-    return discovered.candidates as Candidate[];
-};
-
 export const handleMcp = async (
     input: string | readonly string[],
     rpc: ActionCaller,
     write: (text: string) => void,
-    configuration: McpClientConfiguration = {},
 ): Promise<unknown | null> => {
-    const overlay = { ...configuration.overlay };
     if (input.length === 0) {
         const result = await rpc.call("workspace.mcp.list", {}) as { definitions?: unknown };
         if (!Array.isArray(result.definitions)) throw new Error("workspace.mcp.list returned an invalid result.");
         if (result.definitions.length === 0) write("  MCP servers: none\n");
         else for (const definition of result.definitions) write(renderDefinition(definition as DefinitionState));
-        const candidates = await candidatesFrom(rpc, overlay);
-        if (candidates.length > 0) {
-            write("  from your configuration (not added):\n");
-            for (const candidate of candidates) write(renderCandidate(candidate));
-        }
         return result;
     }
 
@@ -195,11 +163,12 @@ export const handleMcp = async (
     const [command, alias] = args;
 
     if (command === "discover") {
-        if (args.length !== 2 || alias.length === 0) {
+        const query = args.slice(1).join(" ");
+        if (query.length === 0) {
             usage(write, "discover");
             return null;
         }
-        const result = await rpc.call("workspace.mcp.discover", { source: alias }) as { candidates?: unknown };
+        const result = await rpc.call("workspace.mcp.discover", { query }) as { candidates?: unknown };
         if (!Array.isArray(result.candidates)) throw new Error("workspace.mcp.discover returned an invalid result.");
         if (result.candidates.length === 0) write("  candidates: none\n");
         else for (const candidate of result.candidates) write(renderCandidate(candidate as Candidate));
@@ -207,50 +176,27 @@ export const handleMcp = async (
     }
 
     if (command === "add") {
-        if (args.length < 3 || args.length > 4 || alias.length === 0 || args[2].length === 0) {
+        // The scope flag precedes the alias, so every token after the target is the server's own.
+        const scope = SCOPE_FLAGS.get(args[1]);
+        const [name, target, ...serverArgs] = args.slice(scope === undefined ? 1 : 2);
+        if (name === undefined || name.length === 0 || target === undefined || target.length === 0
+            || (HTTP_TARGET.test(target) && serverArgs.length > 0)) {
             usage(write, "add");
             return null;
         }
-        const [, , target, path] = args;
-        const options = path === undefined ? {} : await readOptions(path);
-        const result = await rpc.call("workspace.mcp.add", { alias, definition: composeDefinition(alias, target, options) }) as MutationResult;
-        renderMutation(result, "added", alias, write);
+        const definition = composeDefinition(name, scope ?? "project", target, serverArgs);
+        const result = await rpc.call("workspace.mcp.add", { alias: name, definition }) as MutationResult;
+        renderMutation(result, "added", name, write);
         return result;
     }
 
-    if (command === "enable") {
-        if (args.length < 2 || args.length > 3 || alias.length === 0) {
-            usage(write, "enable");
-            return null;
-        }
-        if (args[2] === undefined) {
-            // A candidate from the client's own configuration is added; an
-            // available definition is enabled.
-            const candidate = (await candidatesFrom(rpc, overlay)).find((entry) => entry.alias === alias);
-            const result = candidate?.definition === undefined
-                ? await rpc.call("workspace.mcp.enable", { alias }) as MutationResult
-                : await rpc.call("workspace.mcp.add", { alias, definition: candidate.definition }) as MutationResult;
-            renderMutation(result, candidate === undefined ? "enabled" : "added", alias, write);
-            return result;
-        }
-        // Options specialize the alias's current definition into this Worker's own.
-        const options = await readOptions(args[2]);
-        const listed = await rpc.call("workspace.mcp.list", {}) as { definitions?: DefinitionState[] };
-        const current = listed.definitions?.find((entry) => entry.alias === alias)?.definition
-            ?? (await candidatesFrom(rpc, overlay)).find((entry) => entry.alias === alias)?.definition;
-        if (current === undefined) throw new Error(`MCP server '${alias}' is not available to this Worker or your configuration.`);
-        const result = await rpc.call("workspace.mcp.add", { alias, definition: { ...current, ...options } }) as MutationResult;
-        renderMutation(result, "added", alias, write);
-        return result;
-    }
-
-    if (command === "disable") {
+    if (command === "enable" || command === "disable") {
         if (args.length !== 2 || alias.length === 0) {
-            usage(write, "disable");
+            usage(write, command);
             return null;
         }
-        const result = await rpc.call("workspace.mcp.disable", { alias }) as MutationResult;
-        renderMutation(result, "disabled", alias, write);
+        const result = await rpc.call(`workspace.mcp.${command}`, { alias }) as MutationResult;
+        renderMutation(result, command === "enable" ? "enabled" : "disabled", alias, write);
         return result;
     }
 

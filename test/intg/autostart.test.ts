@@ -30,7 +30,6 @@ const fixture = async (t: { after(fn: () => Promise<void>): void }, service: str
         PLURNK_PORT: "0",
         PLURNK_AGUI_URL: "",
         PLURNK_MODEL: "",
-        PLURNK_MCP_ENABLED: "[]",
         PLURNK_CLIENT_SERVICE_BIN: service,
         NO_COLOR: "1",
     };

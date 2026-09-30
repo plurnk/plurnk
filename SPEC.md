@@ -80,7 +80,6 @@ The client also reads keys it does not own:
 | `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's address — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
 | `PLURNK_AGUI_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
 | `PLURNK_AGUI_TOKEN` | `@plurnk/plurnk-agui` | The portal's bearer, presented when set. |
-| `PLURNK_MCP_*` | `@plurnk/plurnk-mcp` | Raw server declarations forwarded with MCP list and enable. |
 
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. A working directory's `.env` belongs to that directory's application and is never read; a project's variables reach its commands through the workspace environment (`/env import .env`). The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
@@ -401,7 +400,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the `/env import` position, the MCP options-file position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
@@ -455,7 +454,7 @@ Filesystem suggestions follow the address owner; completion never changes the pr
 
 | Input position | Resolution base |
 |---|---|
-| `/import`, `/script`, `/env import`, MCP options file | Client launch directory; absolute paths remain host-absolute |
+| `/import`, `/script`, `/env import` | Client launch directory; absolute paths remain host-absolute |
 | `@file` | Bound workspace root; only paths under it ({§cli-prompt-open-paths}) |
 | `/members discover`, `/members add <alias>` | Bound workspace root; relative sibling paths retain membership semantics ({§cli-file-members}) |
 | File OP target (bare or `file:///`) | Workspace filesystem namespace; `/` denotes the workspace root ({§fs-namei}) |
@@ -623,17 +622,16 @@ small pastes remain native lines and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
-MCP management is a thin projection of the daemon's workspace actions. The
-client tokenizes quoted alias/target arguments and JSON-decodes an optional
-local options file, but the daemon owns normalization, schema validation,
-connection behavior, persistence, and exact Problem Details. Symbolic
-credential references remain unchanged. After resolving the ordinary client
-environment cascade, the client projects string-valued `PLURNK_MCP_*`
-variables as one raw `McpConfigurationOverlay`, whole. Which of those names
-are the daemon's own controls is the daemon's fact: its parser skips them, so
-the client holds no copy of that vocabulary and interprets no server,
-transport, companion, or credential semantics. Merely listing configuration
-never activates or persists a server.
+MCP management is a thin projection of the daemon's `mcp` Functionality
+family: the common lifecycle plus the MCP OAuth continuation. The client
+composes one exact `McpServerDefinition` and renders the daemon's states; it
+reads no MCP configuration. The registry search, the one-server Agent Plugin
+an added server becomes, its connection, and an alias's operator settings (its
+enabled tools, its authorization) are the daemon's. A server also arrives in
+any Agent Plugin installed in the project's `.agents/plugins/`,
+`$XDG_CONFIG_HOME/plurnk/plugins/`, or `~/.agents/plugins/`: installing it
+enables its servers, the daemon admits a plugin installed or removed out of
+band at the next turn, and such a server is disable-only.
 
 The interactive and positional forms share one tokenizer-independent command
 handler. `plurnk mcp …` requires `--workspace` or
@@ -642,22 +640,25 @@ result.
 
 | TUI / CLI input | AG-UI+ action |
 |---|---|
-| `/mcp` / `plurnk mcp` | `workspace.mcp.list {}`, then `workspace.mcp.discover {configuration}` when the client holds `PLURNK_MCP_*` declarations |
-| `/mcp discover <url\|command>` | `workspace.mcp.discover {source}` |
-| `/mcp add <alias> <target> [options.json]` | `workspace.mcp.add {alias, definition}` — the client composes the exact `McpServerDefinition`: `name = alias`; an absolute `http(s)://` target is `{transport: "http", url}`, anything else `{transport: "stdio", command, args: []}`; `options.json` supplies the remaining definition members |
-| `/mcp enable <alias>` | `workspace.mcp.enable {alias}` for an available definition; `workspace.mcp.add {alias, definition}` when `alias` is a candidate of the client's own configuration |
-| `/mcp enable <alias> options.json` | `workspace.mcp.add {alias, definition}` with the alias's current (listed or discovered) definition specialized by `options.json` |
+| `/mcp` / `plurnk mcp` | `workspace.mcp.list {}` — one row per server: alias, state, `type`, command or URL, the tool count of an active server's catalog, and its plugin, or `(workspace)` for a server the workspace added |
+| `/mcp discover <query>` | `workspace.mcp.discover {query}` — one row per MCP Registry candidate: alias, `type`, command or URL, and the daemon's summary of how it launches and what it needs |
+| `/mcp add [--plurnk\|--global] <alias> <command\|url> [args...]` | `workspace.mcp.add {alias, definition}` — an absolute `http(s)://` target is `{name: alias, scope, type: "streamable-http", url}`, anything else `{name: alias, scope, type: "stdio", command, args}` without `args` when none follow; `scope` is `project` unless `--plurnk` or `--global` |
+| `/mcp enable <alias>` | `workspace.mcp.enable {alias}` — publishes a dormant server or retries an unavailable one |
 | `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
 | `/mcp oauth <alias> <callback-url>` | `workspace.mcp.oauth.complete {alias, callbackUrl}` |
 
-Every slash-command row also admits the same arguments after `plurnk mcp`.
+The scope flag precedes the alias, so every token after the target reaches the
+server verbatim, `--global` included; a URL target takes none. Every
+slash-command row also admits the same arguments after `plurnk mcp`, where the
+end-of-options marker `--` precedes a scope flag or the first server argument
+that begins with `-`: `plurnk --workspace w mcp -- add --global example npx -y @example/server`.
 
-An add or enable requiring interactive authorization prints the
-authorization URL and exact `/mcp oauth …` completion command. Invalid or
-unreadable local JSON fails before dispatch; daemon Problems—including an
-unsupported MCP protocol revision—cross the existing diagnostic path without
-rewriting or retry.
+An add or enable requiring interactive authorization prints the authorization
+URL and exact `/mcp oauth …` completion command. Daemon Problems — an
+unavailable scope root, a `./` command, a different plugin at the alias, the
+removal of a plugin's server, an unsupported MCP protocol revision — cross the
+existing diagnostic path without rewriting or retry.
 
 ### §3.5 Universal Agent Skills {§cli-universal-agent-skills}
 
@@ -1258,7 +1259,6 @@ There is one configuration owner and one interpretation of every shared knob:
 | `--max-turns` | Per-prompt model-call budget for the worker tree ({§turn-cap-counts-the-tree}) |
 | `--timeout` | Portal-owned deadline followed by `loop.cancel {reason:"client_timeout"}` for the exact workspace/Worker |
 | `--yolo` | Automatic acceptance of client-owned proposals; interactions remain user-owned |
-| client `PLURNK_MCP_*` declarations | Host-side discovery overlay for the browser's ordinary `workspace.mcp.*` management actions; never bootstrap data |
 
 Terminal output controls (`--json`, `--width`) and state-subcommand filters do
 not project into browser behavior. The web package parses no second environment
@@ -1277,12 +1277,10 @@ process; it does not turn them into per-loop policy. `--yolo` remains
 client-side proposal behavior: the browser auto-resolves proposal interrupts
 while interaction requests still require user input.
 
-The MCP manager is lazy: opening it lists the workspace's durable MCP state and
-discovers client-configured candidates through AG-UI. Discovery remains inert;
-adding, enabling, disabling, and removing use the daemon-owned Functionality
-lifecycle. The portal inserts the client-held configuration only into an
-unscoped MCP discovery action, so raw declarations are neither serialized at
-startup nor made into a browser-side configuration authority.
+The MCP manager is lazy: opening it lists the workspace's MCP servers through
+AG-UI, and discovering, adding, enabling, disabling, and removing one use the
+daemon-owned Functionality lifecycle ({§cli-workspace-mcp-controls}). The
+client holds no MCP configuration, so the portal receives none.
 
 The web module never downloads code or owns the daemon; the client supplies its
 selected backend ({§cli-daemon-autostart}). If the optional module
@@ -1475,7 +1473,7 @@ A conforming `plurnk` client:
 | Responsibility | Owner |
 |---|---|
 | Spawn, readiness address, SIGTERM-and-wait with bounded escalation | The selected service package's public `@plurnk/plurnk-service/launch` helper. |
-| Executable, fixture configuration, deadlines and disposable state root | The test caller. Deterministic tests isolate HOME and XDG configuration; only the explicit live tier inherits operator configuration. |
+| Executable, fixture configuration, deadlines and disposable state root | The test caller. Deterministic tests isolate HOME and XDG configuration, so every MCP server they install or add is an Agent Plugin in disposable state; only the explicit live tier inherits operator configuration, installed plugins included. |
 | Failed startup | The helper stops and awaits its process; the caller then disposes of its temporary state. |
 | Successful shutdown | The caller awaits `stop()` before removing temporary state. Repeated cleanup is harmless. |
 | Packed composition | The helper and daemon executable come from the same installed service artifact. Failed composition retains its evidence after stopping the process. |

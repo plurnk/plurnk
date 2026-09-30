@@ -820,7 +820,8 @@
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
-        "../plurnk-service/scripts/test-client-conformance.mjs — client-local MCP isolation"
+        "test/tui/mcp.test.ts — built-client MCP dogfood",
+        "../plurnk-service/scripts/test-client-conformance.mjs — installed TUI journey"
       ],
       "dimensions": [
         "admission",
@@ -835,7 +836,7 @@
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
-        "../plurnk-service/scripts/test-client-conformance.mjs — client-local MCP isolation"
+        "test/tui/mcp.test.ts — built-client MCP dogfood"
       ],
       "dimensions": [
         "admission",
@@ -850,7 +851,8 @@
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+        "test/intg/durable-controls.test.ts — separate-connection durable controls",
+        "test/tui/mcp.test.ts — built-client MCP dogfood"
       ],
       "dimensions": [
         "admission",
@@ -858,7 +860,8 @@
         "success",
         "failure",
         "presentation",
-        "durability"
+        "durability",
+        "composition"
       ]
     },
     "workspace.mcp.enable": {
@@ -895,7 +898,8 @@
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
+        "test/intg/durable-controls.test.ts — separate-connection durable controls",
+        "test/tui/mcp.test.ts — built-client MCP dogfood"
       ],
       "dimensions": [
         "admission",
@@ -903,7 +907,8 @@
         "success",
         "failure",
         "presentation",
-        "durability"
+        "durability",
+        "composition"
       ]
     },
     "workspace.schedule.list": {

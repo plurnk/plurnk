@@ -15,7 +15,6 @@ test("pathPartial: members and compose verbs retain their path owners", () => {
     assert.deepEqual(pathPartial("/members add vendor packages/ap"), { kind: "member", partial: "packages/ap" });
     assert.deepEqual(pathPartial("/import src/fo"), { kind: "local", partial: "src/fo" });
     assert.deepEqual(pathPartial("/script flows/build.pl"), { kind: "local", partial: "flows/build.pl" });
-    assert.deepEqual(pathPartial("/mcp add gitea gitea-mcp config/git"), { kind: "local", partial: "config/git" });
     assert.deepEqual(pathPartial("/env import ../.env.pl"), { kind: "local", partial: "../.env.pl" });
     assert.deepEqual(pathPartial("/env --scope workspace import ../.env.pl"), { kind: "local", partial: "../.env.pl" });
 });

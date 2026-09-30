@@ -18,8 +18,8 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
        plurnk web [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
-       plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
-                   | disable|remove <alias> | oauth <alias> <callback-url>]
+       plurnk mcp [discover <query> | add [--plurnk|--global] <alias> <command|url> [args...]
+                   | enable|disable|remove <alias> | oauth <alias> <callback-url>]
 .fi
 .SH DESCRIPTION
 Connects to plurnk-service, starting an installed private backend if the
@@ -137,7 +137,8 @@ loop.
                           resolved configuration and optional workspace/Worker
                           constraints; each tab is URL-addressed as /workspace/threadId;
                           performs no package install or daemon startup
-  mcp ...                 list and manage MCP servers for --workspace
+  mcp ...                 list and manage the MCP servers of --workspace; put -- before
+                          add's scope flag or any server argument that begins with -
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + workspace-open settings. The daemon owns the
@@ -200,9 +201,6 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         1 (default): start a private installed backend on local
                         connection refusal. 0: attach only. Explicit AG-UI URLs
                         and remote hosts are always attach-only.
-  PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
-                        The daemon owns parsing, activation, persistence, and
-                        credential expansion.
 .fi
 .SH EXIT STATUS
 .TP

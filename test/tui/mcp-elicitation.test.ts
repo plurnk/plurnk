@@ -84,7 +84,9 @@ Await the MCP result.
         t.after(() => new Promise<void>((resolve, reject) => endpoint.close((error) => error ? reject(error) : resolve())));
         const address = endpoint.address();
         assert.ok(address !== null && typeof address !== "string");
-        const daemon = await bootDaemon(service, { readyTimeoutMs: 30_000, extraEnv: {
+        const daemon = await bootDaemon(service, { readyTimeoutMs: 30_000, plugins: {
+            fixture: { fixture: { type: "stdio", command: "node", args: [fixture] } },
+        }, extraEnv: {
             PLURNK_MODEL: "elicitationfixture",
             PLURNK_MODEL_elicitationfixture: "openai/elicitation-fixture",
             PLURNK_BASEURL_elicitationfixture: `http://127.0.0.1:${address.port}/v1`,
@@ -93,10 +95,6 @@ Await the MCP result.
             PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
             PLURNK_PROVIDERS_EFFORT: "off",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
-            PLURNK_MCP_ENABLED: '["fixture"]',
-            PLURNK_MCP_FIXTURE: process.execPath,
-            PLURNK_MCP_FIXTURE_ARGS: JSON.stringify([fixture]),
-            PLURNK_MCP_FIXTURE_READ: '["batch","round-trip","url"]',
             PLURNK_MCP_REQUEST_TIMEOUT: "60000",
             PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0",
         } });

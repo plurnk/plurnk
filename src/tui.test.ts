@@ -29,7 +29,7 @@ test("[§cli-path-completion] suggestions use the addressed filesystem, includin
     let projectRoot: string | null = first;
     const options = { cwd: local, getAliases: () => [], getProjectRoot: () => projectRoot };
     const complete = async (line: string) => (await completeInput(line, options)).suggestions.map(({ value }) => value);
-    const localForms = ["/import ", "/script ", "/env import ", "/env --scope workspace import ", "/mcp add example command "];
+    const localForms = ["/import ", "/script ", "/env import ", "/env --scope workspace import "];
     const projectForms = ["explain @", "/members discover ", "/members add docs ", "````READ ("];
     for (const form of localForms) assert.deepEqual(await complete(`${form}pick`), ["pick-local.txt"], form);
     for (const form of projectForms) assert.deepEqual(await complete(`${form}pick`), ["pick-first.txt"], form);
@@ -40,6 +40,7 @@ test("[§cli-path-completion] suggestions use the addressed filesystem, includin
     assert.deepEqual(await complete(`explain @${first}/pick`), [`${first}/pick-first.txt`]);
     assert.deepEqual(await complete("/import ../second/pick"), ["../second/pick-second.txt"]);
     assert.deepEqual(await complete("/members add sibling ../second/pick"), ["../second/pick-second.txt"]);
+    assert.deepEqual(await complete("/mcp add echo node pick"), [], "a server's arguments resolve where the daemon launches it");
     for (const scheme of ["worker:///", "log:///", "https://example/", "file://elsewhere/"]) {
         assert.deepEqual(await complete("````READ (" + scheme + "pick"), [], "other resource authorities are not local folders");
     }
@@ -96,7 +97,9 @@ test("handleVerb /help <verb> renders contextual registry usage without RPC", as
     const ctx = makeCtx();
     await handleVerb("/help mcp", ctx);
     assert.deepEqual(ctx.calls, []);
-    assert.match(ctx.out.join(""), /\/mcp discover <url\|command>/);
+    assert.match(ctx.out.join(""), /\/mcp discover <query>/);
+    assert.match(ctx.out.join(""), /\/mcp add \[--plurnk\|--global\] <alias> <command\|url> \[args\.\.\.\]/);
+    assert.match(ctx.out.join(""), /\/mcp remove <alias>/);
     assert.match(ctx.out.join(""), /\/mcp oauth <alias> <callback-url>/);
 });
 
@@ -824,15 +827,15 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
     const ctx = makeCtx({
         "workspace.mcp.list": {
             definitions: [
-                { alias: "gitea", origin: "workspace", state: "active", definition: { name: "gitea", transport: "http", url: "https://gitea.test/mcp", tools: ["issue_read"] }, detail: { tools: ["issue_read", "issue_search"] } },
-                { alias: "local", origin: "service", state: "disabled", definition: { name: "local", transport: "stdio", command: "local-mcp", args: [] }, detail: { tools: [] } },
+                { alias: "gitea", origin: "service", state: "active", definition: { name: "gitea", scope: "global", plugin: { name: "forge", root: "/plugins/forge", data: "/data/forge" }, type: "streamable-http", url: "https://gitea.test/mcp" }, detail: { tools: ["issue_read", "issue_search"] } },
+                { alias: "local", origin: "workspace", state: "disabled", definition: { name: "local", scope: "project", type: "stdio", command: "local-mcp", args: ["--stdio"] } },
             ],
         },
     });
     await handleVerb("/mcp", ctx);
     assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: {} }]);
-    assert.match(ctx.out.join(""), /gitea\s+active\s+http\s+https:\/\/gitea\.test\/mcp\s+1\/2 tools/);
-    assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+local-mcp\s+0 tools\s+\(service\)/);
+    assert.match(ctx.out.join(""), /gitea\s+active\s+streamable-http\s+https:\/\/gitea\.test\/mcp\s+2 tools\s+plugin forge/);
+    assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+local-mcp\s+\(workspace\)/);
 });
 
 // ─── seedPromptHistory (svc#238) ─────────────────────────────────────

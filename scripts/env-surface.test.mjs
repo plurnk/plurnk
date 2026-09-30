@@ -77,8 +77,7 @@ test("[§cli-env-defaults] the client's panel declares only its own prefix: one 
 });
 
 test("[§cli-env-defaults] every key the client names is declared or has a stated owner, and every declaration is read", () => {
-    const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key) && !retired.has(key)
-        && !key.startsWith("PLURNK_MCP_")).toSorted();
+    const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key) && !retired.has(key)).toSorted();
     assert.deepEqual(undeclared, [], `named by src but declared on no panel the client knows: ${undeclared.join(", ")}`);
     const dead = [...declared].filter((key) => !read.has(key)).toSorted();
     assert.deepEqual(dead, [], `declared but never read: ${dead.join(", ")}`);

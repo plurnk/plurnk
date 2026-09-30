@@ -42,13 +42,13 @@ const lifecycle = (noun: string, discover: CommandSubcommand, add: CommandSubcom
 ];
 
 const MCP_SUBCOMMANDS = [
-    { name: "discover", usage: "discover <url|command>", summary: "Inspect one MCP source without adding it.", alias: false },
-    { name: "add", usage: "add <alias> <target> [options.json]", summary: "Add and enable an MCP server.", alias: false },
-    { name: "enable", usage: "enable <alias> [options.json]", summary: "Enable or specialize a current MCP server.", alias: true },
-    { name: "disable", usage: "disable <alias>", summary: "Disable a current MCP server.", alias: true },
-    { name: "remove", usage: "remove <alias>", summary: "Remove a current MCP server.", alias: true },
+    ...lifecycle(
+        "alias",
+        { name: "discover", usage: "discover <query>", summary: "Search the MCP Registry for servers to add.", alias: false },
+        { name: "add", usage: "add [--plurnk|--global] <alias> <command|url> [args...]", summary: "Add and enable an MCP server from a command or an http(s) URL.", alias: false },
+    ),
     { name: "oauth", usage: "oauth <alias> <callback-url>", summary: "Complete authorization for an MCP server.", alias: true },
-] as const;
+];
 
 const SKILL_SUBCOMMANDS = lifecycle(
     "name",

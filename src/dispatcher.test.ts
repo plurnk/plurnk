@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveLoopPolicy, buildSettings, buildVersionNotice, collectMcpConfiguration, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { resolveLoopPolicy, buildSettings, buildVersionNotice, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
 import { resolveProjectRoot } from "./project-root.ts";
 
 test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
@@ -67,19 +67,6 @@ test("[§cli-invocation] a working directory's .env is not part of the cascade",
     process.chdir(root);
     loadEnvCascade([], user);
     assert.equal(process.env[key], "user");
-});
-
-test("[§cli-workspace-mcp-controls] collectMcpConfiguration carries every PLURNK_MCP_* variable whole and nothing else", () => {
-    const carried = {
-        PLURNK_MCP_GITEA: "gitea-mcp",
-        PLURNK_MCP_GITEA_ARGS: '["plurnk_pk"]',
-        PLURNK_MCP_gitea_tools: '["issue_read"]',
-        PLURNK_MCP_ENABLED: '["gitea"]',
-        PLURNK_MCP_REQUEST_TIMEOUT: "2",
-        PLURNK_MCP_A_CONTROL_NOT_YET_INVENTED: "1",
-    };
-    assert.deepEqual(collectMcpConfiguration({ ...carried, GITEA_TOKEN: "secret" }), carried, "the client holds no list of the daemon's control keys");
-    assert.deepEqual(collectMcpConfiguration({ PATH: "/usr/bin" }), {});
 });
 
 test("buildSettings carries the canonical workspace capability policy", async () => {

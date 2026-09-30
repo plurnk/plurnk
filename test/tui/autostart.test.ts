@@ -21,7 +21,7 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
             ...Object.fromEntries(Object.keys(process.env).filter((key) => /^PLURNK_|_(API_KEY|BASE_URL)$/u.test(key)).map((key) => [key, undefined])),
             HOME: root, XDG_CONFIG_HOME: join(root, "config"), PLURNK_SERVICE_STATE_ROOT: stateRoot,
             PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0", PLURNK_AGUI_URL: "",
-            PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "", PLURNK_MCP_ENABLED: "[]",
+            PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "",
             PLURNK_CLIENT_DAEMON_TIMEOUT_MS: "15000", PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS: "2000",
         };
         const tui = spawnTui("http://127.0.0.1:0", ["--workspace", "private-world", "--worker", "primary"], env, ending === "cancel folder" ? root : project);
@@ -61,7 +61,7 @@ test("{§cli-daemon-autostart} automatically allocated TUI storage explains how 
         ...Object.fromEntries(Object.keys(process.env).filter((key) => /^PLURNK_|_(API_KEY|BASE_URL)$/u.test(key)).map((key) => [key, undefined])),
         HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"),
         PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0", PLURNK_AGUI_URL: "",
-        PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "", PLURNK_MCP_ENABLED: "[]",
+        PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "",
     }, root);
     resources.defer(async () => { tui.kill(); await tui.exited; });
     await tui.waitFor(/Choose a project folder/, 25_000);

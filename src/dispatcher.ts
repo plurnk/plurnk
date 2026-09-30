@@ -93,21 +93,6 @@ export const resolveLoopPolicy = (proposals: string | undefined, auto = false): 
     }
 };
 
-const MCP_CONFIGURATION_PREFIX = "PLURNK_MCP_";
-
-// {§cli-workspace-mcp-controls} — carried whole: which of these names are the daemon's own controls
-// is the daemon's fact, and its parser skips them.
-export const collectMcpConfiguration = (
-    env: NodeJS.ProcessEnv = process.env,
-): Record<string, string> => {
-    const configuration: Record<string, string> = {};
-    for (const [key, value] of Object.entries(env)) {
-        if (value === undefined || !key.startsWith(MCP_CONFIGURATION_PREFIX)) continue;
-        configuration[key] = value;
-    }
-    return configuration;
-};
-
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
@@ -123,8 +108,8 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk web [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
-       plurnk mcp [add <alias> <target> [options.json] | enable <alias> [options.json]
-                   | disable|remove <alias> | oauth <alias> <callback-url>]
+       plurnk mcp [discover <query> | add [--plurnk|--global] <alias> <command|url> [args...]
+                   | enable|disable|remove <alias> | oauth <alias> <callback-url>]
 
 Connects to plurnk-service, starting an installed private backend if the default
 local listener is absent. The private process stops on exit; saved data remains.
@@ -149,9 +134,6 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         1 (default): start a private installed backend on local
                         connection refusal. 0: attach only. Explicit AG-UI URLs
                         and remote hosts are always attach-only.
-  PLURNK_MCP_*          raw server declarations accompany MCP list and enable.
-                        The daemon owns parsing, activation, persistence, and
-                        credential expansion.
 
 options:
   -h, --help              print this message and exit
@@ -251,7 +233,8 @@ subcommands:
                           resolved configuration and optional workspace/Worker
                           constraints; each tab is URL-addressed as /workspace/threadId;
                           performs no package install or daemon startup
-  mcp ...                 list and manage MCP servers for --workspace
+  mcp ...                 list and manage the MCP servers of --workspace; put -- before
+                          add's scope flag or any server argument that begins with -
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + workspace-open settings. The daemon owns the
@@ -453,7 +436,6 @@ interface SubcommandOpts {
     workerName?: string;
     projectRoot: string | null;
     values: Record<string, string | boolean | string[] | undefined>;
-    mcpConfiguration: Readonly<Record<string, string>>;
 }
 
 // Dispatch a positional-driven subcommand over the action surface. Returns the
@@ -523,7 +505,6 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
             positionals.slice(1),
             rpc,
             opts.json ? () => undefined : (text) => process.stdout.write(text),
-            { overlay: opts.mcpConfiguration },
         );
         if (result === null) return 64;
         if (opts.json) process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -734,7 +715,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         dieWith(64, clientFlagInvalid("--preview-lines", previewLinesRaw, "must be a non-negative integer"));
     }
     process.env.PLURNK_CLIENT_PREVIEW_LINES = String(previewLines);
-    const mcpConfiguration = collectMcpConfiguration(process.env);
 
     // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
     // read). One complete document on stdout, stderr silent, structured errors.
@@ -965,7 +945,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     };
                 },
                 ...(timeoutSec === undefined ? {} : { timeoutSec }),
-                mcpConfiguration,
                 autoAcceptProposals: yolo,
             }, {
                 announce: (origin) => process.stderr.write(`plurnk web: ${origin}\n`),
@@ -1115,7 +1094,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 selectProjectRoot,
                 workerName,
                 client: CLIENT_ID_TUI,
-                mcpConfiguration,
             });
             if (shareTarget !== undefined) {
                 const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token }, {
@@ -1175,7 +1153,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(caller, positionals, {
-                json, workspaceName, workerName, projectRoot, values, mcpConfiguration,
+                json, workspaceName, workerName, projectRoot, values,
             });
             process.exitCode = exitCode;
             return;

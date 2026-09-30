@@ -318,7 +318,7 @@ export const buildHeader = (opts: {
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
     rpc: VerbCaller;
-    opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null; client?: string; mcpConfiguration?: Readonly<Record<string, string>> };
+    opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null; client?: string };
     // The worker's durable model truth ({§worker-model-selection}): the server's
     // resolved specs, updated by the set verbs. The display label AND the routing
     // both come from the server; the client never reasserts a model per loop.
@@ -582,7 +582,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "mcp": {
-            await handleMcp(rest, rpc, write, { overlay: opts.mcpConfiguration });
+            await handleMcp(rest, rpc, write);
             return;
         }
         case "skills": {
@@ -638,7 +638,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
     workerName?: string;        // shown in the banner when explicitly set
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
-    mcpConfiguration?: Readonly<Record<string, string>>;
 }): Promise<void> => {
     let current = workspace;
     // Loop state, hoisted so the line handler and SIGINT can share it.

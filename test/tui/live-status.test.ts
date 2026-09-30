@@ -15,14 +15,17 @@ for (const mode of ["tui", "cli"] as const) {
         let calls = 0;
         const endpoint = await completionsEndpoint(() => { calls++; return "```KILL\nREADY_FIXTURE\n```"; });
         t.after(() => endpoint.close());
-        const daemon = await bootDaemon(service, { extraEnv: {
+        const daemon = await bootDaemon(service, { plugins: {
+            slow: { slow: {
+                type: "stdio", command: "node",
+                args: [resolve("../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs")],
+                env: { PLURNK_MCP_TEST_START_DELAY_MS: "3000" },
+            } },
+        }, extraEnv: {
             PLURNK_MODEL: "preparefixture", PLURNK_MODEL_preparefixture: "openai/prepare-fixture",
             OPENAI_BASE_URL: endpoint.url, OPENAI_API_KEY: "prepare-fixture",
             PLURNK_PROVIDERS_EFFORT: "off", PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
             PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
-            PLURNK_MCP_ENABLED: '["slow"]', PLURNK_MCP_slow: process.execPath,
-            PLURNK_MCP_slow_ARGS: JSON.stringify([resolve("../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs")]),
-            PLURNK_MCP_slow_ENV: JSON.stringify({ PLURNK_MCP_TEST_START_DELAY_MS: "3000" }),
         } });
         t.after(() => daemon.cleanup());
         t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });

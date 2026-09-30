@@ -22,8 +22,6 @@ export const pathPartial = (line: string): PathPartial | null => {
     if (members) return { kind: "member", partial: members[1] };
     const envImport = line.match(/^\/env\s+(?:--scope(?:=|\s+)(?:worker|workspace)\s+)?import\s+(\S*)$/);
     if (envImport) return { kind: "local", partial: envImport[1] };
-    const mcpOptions = line.match(/^\/mcp\s+add\s+\S+\s+\S+\s+(\S*)$/);
-    if (mcpOptions) return { kind: "local", partial: mcpOptions[1] };
     // @file: a path reference anywhere in a prompt (word-boundary @ to dodge
     // emails). The leading @ stays; only the path part completes.
     const at = line.match(/(?:^|\s)@(\S*)$/);

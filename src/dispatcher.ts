@@ -135,7 +135,7 @@ enters the scrollback-native interactive terminal. Read-only subcommands (models
 log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
-     < ./.env < repeated --env-file flags (last wins) < shell):
+     < repeated --env-file flags (last wins) < shell; a working directory's .env is never read):
                         Works with no config at all.
   PLURNK_CLIENT_*       every option below is one knob's spelling for one invocation:
                         --max-turns is PLURNK_CLIENT_MAX_TURNS, --no-git is
@@ -290,8 +290,7 @@ const dieJson = (code: number, problem: ProblemDetails): never => {
 // Env cascade, aligned with plurnk-service's XDG config so the two share one
 // file. process.loadEnvFile only fills UNSET vars, so loading
 // highest-precedence-first yields:
-//   shell > --env-file > --env-file-if-exists > ./.env
-//   > $XDG_CONFIG_HOME/plurnk/.env
+//   shell > --env-file > --env-file-if-exists > $XDG_CONFIG_HOME/plurnk/.env
 //   > the client's OWN packaged .env.defaults (#141 — the self-serve floor:
 //     the client is the one member the daemon cannot assemble).
 export interface ExplicitEnvFile {
@@ -330,7 +329,6 @@ export const loadEnvCascade = (
         try { process.loadEnvFile(path); }
         catch { dieWith(64, clientFlagInvalid("--env-file", path, "file not found")); }
     }
-    ifExists(".env");
     ifExists(userConfig);
     loadFloor();
     const retired = retiredKey();

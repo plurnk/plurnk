@@ -49,6 +49,26 @@ test("[§cli-invocation] env cascade uses XDG user configuration and last repeat
     assert.equal(process.env[key], "shell");
 });
 
+test("[§cli-invocation] a working directory's .env is not part of the cascade", async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "plurnk-env-cwd-"));
+    const user = join(root, "user.env");
+    const key = "PLURNK_TEST_CLIENT_CWD_ENV_142";
+    const original = process.env[key];
+    const cwd = process.cwd();
+    t.after(async () => {
+        process.chdir(cwd);
+        if (original === undefined) delete process.env[key];
+        else process.env[key] = original;
+        await rm(root, { recursive: true, force: true });
+    });
+    await writeFile(join(root, ".env"), `${key}=cwd\n`);
+    await writeFile(user, `${key}=user\n`);
+    delete process.env[key];
+    process.chdir(root);
+    loadEnvCascade([], user);
+    assert.equal(process.env[key], "user");
+});
+
 test("[§cli-workspace-mcp-controls] collectMcpConfiguration carries every PLURNK_MCP_* variable whole and nothing else", () => {
     const carried = {
         PLURNK_MCP_GITEA: "gitea-mcp",

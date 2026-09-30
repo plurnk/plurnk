@@ -622,7 +622,7 @@ small pastes remain native lines and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
-§cli-configuration-source Subsystem listings (`mcp`, `skills`, `a2a`, `schedule`,
+{§cli-configuration-source} Subsystem listings (`mcp`, `skills`, `a2a`, `schedule`,
 `members`, `env`) append `source=<provenance.source>` when the daemon supplies
 that field. The client does not infer a source, open its path, or resolve a
 configuration cascade. Ownership and readiness remain separate; absent provenance

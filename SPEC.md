@@ -665,24 +665,25 @@ Agent Skills management is a thin projection of the daemon's `skills`
 Functionality family — the same common lifecycle as `/mcp`. The client
 composes one exact `SkillDefinition` and renders the daemon's states; it
 runs no package manager, reads no registry, parses no frontmatter, and keeps
-no parallel package metadata. The standard universal roots
-(`.agents/skills` in the project, `~/.agents/skills` globally) stay
-interoperable with every other agent; a skill installed there by any other
+no parallel package metadata. The daemon fetches every source. The standard
+universal roots (`.agents/skills` in the project, `~/.agents/skills` globally)
+stay interoperable with every other agent, beside plurnk's own
+`$XDG_CONFIG_HOME/plurnk/skills`; a skill placed in any of them by any other
 tool is admitted by the daemon at the next turn.
 
 | TUI input | AG-UI+ action |
 |---|---|
 | `/skills` | `workspace.skills.list {}` |
-| `/skills discover <query>` | `workspace.skills.discover {query}` — registry search |
-| `/skills discover <source>` | `workspace.skills.discover {source}` — a single term holding `/`, `:`, or `\\`, or starting with `.` or `~`, is a package reference |
-| `/skills add <name> <source> [--global]` | `workspace.skills.add {alias, definition: {name, scope, source}}` with `scope` `project` unless `--global` |
+| `/skills discover <source>` | `workspace.skills.discover {source}`; a source is a git remote as a full https or ssh URL, a folder, a lone `SKILL.md`, or a zip or tar archive |
+| `/skills add <name> <source> [--ref <ref>] [--plurnk\|--global]` | `workspace.skills.add {alias, definition: {name, scope, source, ref?}}` with `scope` `project` unless `--plurnk` or `--global` |
 | `/skills enable <name>` | `workspace.skills.enable {alias}` |
 | `/skills disable <name>` | `workspace.skills.disable {alias}` |
 | `/skills remove <name>` | `workspace.skills.remove {alias}` |
 
-Daemon Problems — an uninstallable source, a missing project root, a
+Daemon Problems — an unreachable source, a moved ref, a missing project root, a
 service-owned skill that cannot be removed — cross the existing diagnostic
-path without rewriting or retry.
+path without rewriting or retry. The list shows a git source's ref and the
+commit it was added at.
 
 ### §3.6 Outbound A2A agents {§cli-outbound-agents}
 

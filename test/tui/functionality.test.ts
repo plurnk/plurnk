@@ -1,5 +1,5 @@
 // Built-client dogfood for the Worker Functionality families the TUI projects
-// beside /mcp: /skills against the standard-CLI contract (fixture installer)
+// beside /mcp: /skills against a folder source the daemon copies from,
 // and /a2a against an independent official-SDK A2A agent. One grammar, the
 // daemon's states, and one exact unavailable Problem per family.
 
@@ -20,13 +20,13 @@ before(async () => {
     const bin = await locateDaemon();
     if (bin === null) return;
     const serviceRoot = resolve(process.cwd(), "../plurnk-service");
-    const skillsCli = join(serviceRoot, "plurnk-core/test/intg/_skills-cli.mjs");
+    const demoAgent = join(serviceRoot, "plurnk-a2a/test/fixtures/DemoAgent.ts");
     try {
-        await access(skillsCli);
+        await access(demoAgent);
     } catch {
         return;
     }
-    const { startDemoAgent } = await import(join(serviceRoot, "plurnk-a2a/test/fixtures/DemoAgent.ts")) as { startDemoAgent: () => Promise<{ baseUrl: string; close(): Promise<void> }> };
+    const { startDemoAgent } = await import(demoAgent) as { startDemoAgent: () => Promise<{ baseUrl: string; close(): Promise<void> }> };
     agent = await startDemoAgent();
     scratch = await mkdtemp(join(tmpdir(), "plurnk-functionality-tui-"));
     source = join(scratch, "source");
@@ -40,8 +40,6 @@ before(async () => {
     daemon = await bootDaemon(bin, {
         readyTimeoutMs: 30_000,
         extraEnv: {
-            PLURNK_SERVICE_SKILLS_CLI: `${process.execPath} ${skillsCli}`,
-            PLURNK_SERVICE_SKILLS_REGISTRY_URL: "",
             PLURNK_A2A_RESEARCHER: agent.baseUrl,
             PLURNK_A2A_ENABLED: '["researcher"]',
         },
@@ -74,7 +72,7 @@ describe("TUI Functionality dogfood", () => {
             tui.write("/skills enable extra\r");
             await tui.waitFor(/enabled: extra \(active\)/, 20_000);
             tui.write(`/skills add ghost ${source} --global\r`);
-            const skillProblem = await tui.waitFor(/ghost[\s\S]*(install|not found|could not)/i, 20_000);
+            const skillProblem = await tui.waitFor(/ghost[\s\S]*carries no Agent Skill named 'ghost'/, 20_000);
             assert.doesNotMatch(skillProblem, /added: ghost/);
             tui.write("/skills remove extra\r");
             await tui.waitFor(/removed: extra/, 20_000);

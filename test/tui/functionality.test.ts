@@ -1,5 +1,5 @@
 // Built-client dogfood for the Worker Functionality families the TUI projects
-// beside /mcp: /skills against a folder source the daemon copies from,
+// beside /mcp: /skills against a live folder reference,
 // and /a2a against an independent official-SDK A2A agent. One grammar, the
 // daemon's states, and one exact unavailable Problem per family.
 
@@ -62,16 +62,15 @@ describe("TUI Functionality dogfood", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/);
 
-            // Skills: the global root is the daemon's isolated home.
-            tui.write(`/skills add extra ${source} --global\r`);
+            tui.write(`/skills add extra ${source}\r`);
             await tui.waitFor(/added: extra \(active\)/, 20_000);
             tui.write("/skills\r");
-            await tui.waitFor(/extra\s+active\s+global[\s\S]*Extra dogfood skill/, 20_000);
+            await tui.waitFor(/extra\s+active[\s\S]*Extra dogfood skill/, 20_000);
             tui.write("/skills disable extra\r");
             await tui.waitFor(/disabled: extra \(disabled\)/, 20_000);
             tui.write("/skills enable extra\r");
             await tui.waitFor(/enabled: extra \(active\)/, 20_000);
-            tui.write(`/skills add ghost ${source} --global\r`);
+            tui.write(`/skills add ghost ${source}\r`);
             const skillProblem = await tui.waitFor(/ghost[\s\S]*carries no Agent Skill named 'ghost'/, 20_000);
             assert.doesNotMatch(skillProblem, /added: ghost/);
             tui.write("/skills remove extra\r");

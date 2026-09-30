@@ -659,17 +659,20 @@ Agent Skills management is a thin projection of the daemon's `skills`
 Functionality family — the same common lifecycle as `/mcp`. The client
 composes one exact `SkillDefinition` and renders the daemon's states; it
 runs no package manager, reads no registry, parses no frontmatter, and keeps
-no parallel package metadata. The daemon fetches every source. The standard
+no parallel package metadata. The daemon resolves every source: local folders
+stay live references and Git/archive copies belong to workspace state. The standard
 universal roots (`.agents/skills` in the project, `~/.agents/skills` globally)
 stay interoperable with every other agent, beside plurnk's own
 `$XDG_CONFIG_HOME/plurnk/skills`; a skill placed in any of them by any other
-tool is admitted by the daemon at the next turn.
+tool is admitted by the daemon at the next turn. These roots are configuration
+inputs, never installation targets of `/skills`. Removing a workspace binding
+preserves its source and restores any inherited definition and enabledness.
 
 | TUI input | AG-UI+ action |
 |---|---|
 | `/skills` | `workspace.skills.list {}` |
 | `/skills discover <source>` | `workspace.skills.discover {source}`; a source is a git remote as a full https or ssh URL, a folder, a lone `SKILL.md`, or a zip or tar archive |
-| `/skills add <name> <source> [--ref <ref>] [--plurnk\|--global]` | `workspace.skills.add {alias, definition: {name, scope, source, ref?}}` with `scope` `project` unless `--plurnk` or `--global` |
+| `/skills add <name> <source> [--ref <ref>]` | `workspace.skills.add {alias, definition: {name, source, ref?}}`; names retain their standard digit-leading and Unicode forms |
 | `/skills enable <name>` | `workspace.skills.enable {alias}` |
 | `/skills disable <name>` | `workspace.skills.disable {alias}` |
 | `/skills remove <name>` | `workspace.skills.remove {alias}` |

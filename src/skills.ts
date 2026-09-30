@@ -5,19 +5,18 @@
 // policy live in the service.
 
 import { commandUsage } from "./commands.ts";
+import type { SkillDefinition } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
-
-type SkillDefinition = { name: string; scope: "project" | "plurnk" | "global"; source?: string; ref?: string; commit?: string };
 
 type DefinitionState = {
     alias?: unknown;
     origin?: unknown;
     state?: unknown;
     definition?: Partial<SkillDefinition>;
-    detail?: { scope?: unknown; description?: unknown };
+    detail?: { description?: unknown };
     problem?: { detail?: unknown };
 };
 
@@ -73,14 +72,13 @@ const argumentsOf = (source: string): string[] | null => {
 const renderDefinition = (entry: DefinitionState): string => {
     const alias = typeof entry.alias === "string" ? entry.alias : "(unnamed)";
     const state = typeof entry.state === "string" ? entry.state : "unknown";
-    const scope = typeof entry.definition?.scope === "string" ? entry.definition.scope : "unknown";
     const source = typeof entry.definition?.source === "string" ? `  ${entry.definition.source}` : "";
     const ref = typeof entry.definition?.ref === "string" ? `#${entry.definition.ref}` : "";
     const commit = typeof entry.definition?.commit === "string" ? ` @${entry.definition.commit.slice(0, 12)}` : "";
     const description = typeof entry.detail?.description === "string" ? `  ${entry.detail.description}` : "";
     const origin = entry.origin === "workspace" ? "  (workspace)" : "";
     const problem = typeof entry.problem?.detail === "string" ? `  — ${entry.problem.detail}` : "";
-    return `  ${alias}  ${state}  ${scope}${source}${ref}${commit}${description}${origin}${problem}\n`;
+    return `  ${alias}  ${state}${source}${ref}${commit}${description}${origin}${problem}\n`;
 };
 
 const renderCandidate = (candidate: Candidate): string => {
@@ -132,19 +130,17 @@ export const handleSkills = async (
 
     if (command === "add") {
         const positional: string[] = [];
-        let scope: SkillDefinition["scope"] = "project";
         let ref: string | undefined;
         let valid = true;
         for (let index = 1; index < args.length; index += 1) {
             const arg = args[index];
-            if (arg === "--global" || arg === "--plurnk") {
-                if (scope !== "project") valid = false;
-                scope = arg === "--global" ? "global" : "plurnk";
-            } else if (arg === "--ref") {
+            if (arg === "--ref") {
                 const value = args[index + 1];
                 if (ref !== undefined || value === undefined || value.length === 0) valid = false;
                 ref = value;
                 index += 1;
+            } else if (arg.startsWith("--")) {
+                valid = false;
             } else {
                 positional.push(arg);
             }
@@ -154,7 +150,7 @@ export const handleSkills = async (
             return null;
         }
         const [alias, source] = positional;
-        const definition: SkillDefinition = { name: alias, scope, source, ...(ref === undefined ? {} : { ref }) };
+        const definition: SkillDefinition = { name: alias, source, ...(ref === undefined ? {} : { ref }) };
         const result = await rpc.call("workspace.skills.add", { alias, definition }) as MutationResult;
         renderMutation(result, "added", alias, write);
         return result;

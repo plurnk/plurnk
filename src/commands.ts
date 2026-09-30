@@ -53,7 +53,7 @@ const MCP_SUBCOMMANDS = [
 const SKILL_SUBCOMMANDS = lifecycle(
     "name",
     { name: "discover", usage: "discover <source>", summary: "List the Agent Skills a git URL, folder, or file carries.", alias: false },
-    { name: "add", usage: "add <name> <source> [--ref <ref>] [--plurnk|--global]", summary: "Add and enable an Agent Skill from a git URL, folder, or file.", alias: false },
+    { name: "add", usage: "add <name> <source> [--ref <ref>]", summary: "Add and enable an Agent Skill from a git URL, folder, or file.", alias: false },
 );
 
 const AGENT_SUBCOMMANDS = lifecycle(

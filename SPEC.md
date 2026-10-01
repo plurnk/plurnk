@@ -832,7 +832,7 @@ A row is the operation as written, literal text with the client's own styling an
 Markdown pass:
 
 ```
-<OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <problem title>]
+<OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <problem title>[: <diagnostic>]]
 ```
 
 - `OP` is the operation's name, bold: green when the outcome succeeded, red otherwise. An
@@ -872,8 +872,14 @@ Markdown pass:
   also render whole (§5.4);
   the reasoning lane (§5.1.1) is a separate, live window.
 - An unsuccessful outcome (`status_rx >= 400`) names the structured result's own `problem.title`
-  (else its `detail`, else the bare status) at the right of the row. A 204 is not a failure: a
-  FIND counts `{0}`; a glob READ that matched no path carries the daemon's detail instead of a count.
+  (else its `detail`, else the bare status) at the right of the row. A nonblank string
+  `problem.diagnostic` follows the title after `: `, unless identical to the title.
+  Both are terminal-safe literal text with whitespace collapsed for the row, never Markdown.
+  Ordinary rows, collapsed failures, history replay, and known or unknown stream conclusions
+  use the same presentation; absent or non-string diagnostics add nothing. The client neither
+  interprets output bodies to invent an explanation nor changes the wire result.
+  A 204 is not a failure: a FIND counts `{0}`; a glob READ that matched no path carries the
+  daemon's detail instead of a count.
 - No body, preview, hit count beyond `{n}`, byte count, numeric status, glyph, or log coordinate
   reaches the row; coordinates and every exact status remain on the wire and in `--json`.
 

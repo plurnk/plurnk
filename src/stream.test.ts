@@ -80,6 +80,16 @@ test("StreamTrace: a conclusion consumes its launch; the next conclusion with th
     assert.equal(t.concluded(concluded()), "python (python:///0c0ffee1)", "no launch known: the stream's scheme and address");
 });
 
+test("[§cli-log-entry-line-format] stream failures retain diagnostics with and without a known launch", () => {
+    const t = new StreamTrace();
+    const result = { status: 502, problem: { type: "https://problems.plurnk.xyz/executor/mcp/tool-reported-error",
+        title: "Tool reported error", status: 502, detail: "The MCP tool reported an error.", diagnostic: "No web results found" } };
+    const event: Concluded = { ...concluded(), scheme: "brave", target: "brave:///0c0ffee1", result };
+    t.launch(launch({ op: "brave", tx: { runtime: "brave", target: { kind: "local", raw: "brave_web_search" } }, attrs: { stream: event.target } }));
+    assert.equal(t.concluded(event), "brave (brave_web_search) — Tool reported error: No web results found");
+    assert.equal(t.concluded(event), "brave (brave:///0c0ffee1) — Tool reported error: No web results found");
+});
+
 test("StreamTrace: a stream without a launching fence renders from its own payload", () => {
     const t = new StreamTrace();
     const line = t.concluded({ entryId: 9, workerId: 7, target: "sse://feed", subscriptionId: 2, scheme: "sse", result: { status: 499 }, summary: "", wakeAction: "skipped-cancelled" });

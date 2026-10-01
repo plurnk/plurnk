@@ -127,6 +127,25 @@ test("consumeCliRun: RUN_ERROR without the exact Problem is a transport contract
     assert.doesNotMatch(err.join(""), /maxTurns/, "the client does not reconstruct failure truth from lossy RUN_ERROR fields");
 });
 
+test("[§cli-log-entry-line-format] the AG-UI CLI trace displays a server's tool failure explanation", async () => {
+    const { io, err, out } = sink();
+    const result = await consumeCliRun(stream([
+        row({ op: "brave", tx: { runtime: "brave", target: { kind: "local", raw: "brave_web_search" } },
+            attrs: { stream: "brave:///0c0ffee1" }, rx: { status: 200, outcome: "started" } }),
+        { type: EventType.CUSTOM, name: "plurnk.stream", value: {
+            entryId: 1, workerId: 11, subscriptionId: 1, scheme: "brave", target: "brave:///0c0ffee1",
+            result: { status: 502, problem: { type: "https://problems.plurnk.xyz/executor/mcp/tool-reported-error",
+                title: "Tool reported error", status: 502, detail: "The MCP tool reported an error.", diagnostic: "No web results found" } },
+            summary: "", wakeAction: "no-op-active-loop",
+        } },
+        terminalSend("The search returned no results."), terminated(),
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" },
+    ]), io);
+    assert.match(err.join(""), /brave \(brave:\/\/\/0c0ffee1\) — Tool reported error: No web results found/);
+    assert.equal(out.join(""), "The search returned no results.\n", "diagnostics stay out of the answer channel");
+    assert.equal(result.exitCode, 0, "a recovered tool failure does not rewrite the loop's result");
+});
+
 test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERROR cannot encode", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted",

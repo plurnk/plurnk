@@ -226,13 +226,24 @@ export const receiptCount = (entry: LogEntryWire): number | null => {
     return null;
 };
 
-// The structured result's own words for an unsuccessful outcome: the Problem title, else
-// the detail, else the bare status. A 204 with nothing countable carries its detail too.
+// {§cli-log-entry-line-format}: the owner's bounded diagnostic explains a failure without
+// making the client interpret tool output or change the result.
+export const problemSummary = (value: unknown): string | null => {
+    const problem = objectOf(value);
+    const plain = (text: unknown): string => typeof text === "string" ? ModelText.plain(text).replace(/\s+/gu, " ").trim() : "";
+    const title = plain(problem?.title);
+    if (title.length === 0) return null;
+    const diagnostic = plain(problem?.diagnostic);
+    return diagnostic.length === 0 || diagnostic === title ? title : `${title}: ${diagnostic}`;
+};
+
+// The structured result's own words for an unsuccessful outcome, else the detail, else
+// the bare status. A 204 with nothing countable carries its detail too.
 export const outcomeTitle = (entry: LogEntryWire): string | null => {
     const rx = objectOf(entry.rx);
     if (entry.status_rx >= 400) {
-        const title = objectOf(rx?.problem)?.title;
-        if (typeof title === "string" && title.length > 0) return title;
+        const summary = problemSummary(rx?.problem);
+        if (summary !== null) return summary;
         return typeof rx?.detail === "string" && rx.detail.length > 0 ? rx.detail : String(entry.status_rx);
     }
     if (entry.status_rx === 204 && typeof rx?.detail === "string" && receiptCount(entry) === null) return rx.detail;

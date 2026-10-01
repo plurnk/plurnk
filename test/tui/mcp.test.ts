@@ -22,6 +22,7 @@ let registry: Server | null = null;
 let scratch = "";
 let currentFixture = "";
 let currentCall = "";
+let failedCall = "";
 
 // One MCP Registry (API v0.1) server: an npm package the daemon runs as the registry's examples do.
 const REGISTRY_SERVER = {
@@ -58,6 +59,8 @@ before(async () => {
         '{"message":"installed daemon current peer"}',
         "````",
     ].join("\n"));
+    failedCall = join(scratch, "call-failure.plk");
+    await writeFile(failedCall, "````current (fail)\n````");
     const server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", "http://registry.test");
         if (url.pathname !== "/v0.1/servers") { response.writeHead(404).end(); return; }
@@ -109,6 +112,11 @@ describe("TUI workspace MCP dogfood", () => {
             tui.write(`/script ${currentCall}\r`);
             const used = await tui.waitFor(/script: 1 op ok/, 20_000);
             assert.match(used, /echo/);  // the execution row keeps its target; routine codes left the waterfall (plurnk#21)
+
+            // {§cli-log-entry-line-format}: the real MCP failure reaches the built TUI with its explanation.
+            since = tui.output().length;
+            tui.write(`/script ${failedCall}\r`);
+            await tui.waitFor(/current \(fail\) — Tool reported error: fixture failure/, 20_000, since);
 
             since = tui.output().length;
             tui.write("/mcp\r");

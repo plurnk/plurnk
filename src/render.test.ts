@@ -277,6 +277,25 @@ test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the
     })), "READ (pets_*.md) — No path matched pets_*.md.");
 });
 
+test("[§cli-log-entry-line-format] failed rows show structured diagnostics as literal text beside their title", () => {
+    const failed = (diagnostic: unknown) => entry({
+        op: "brave", status_rx: 502, tx: { target: { kind: "local", raw: "brave_web_search" } },
+        rx: { status: 502, problem: { type: "https://problems.plurnk.xyz/executor/mcp/tool-reported-error", status: 502,
+            title: "Tool reported error", detail: "The MCP tool reported an error.", diagnostic } },
+    });
+    assert.equal(renderLogEntry(failed("No web results found")), "brave (brave_web_search) — Tool reported error: No web results found");
+    for (const diagnostic of [undefined, null, 42, {}, "", " \n ", "Tool reported error"]) {
+        assert.equal(renderLogEntry(failed(diagnostic)), "brave (brave_web_search) — Tool reported error");
+    }
+    assert.equal(renderLogEntry(failed("\x1b[31mNo\x1b[0m\n\t**results** \x1b]52;c;c2VjcmV0\x07found\r")),
+        "brave (brave_web_search) — Tool reported error: No **results** found");
+    assert.equal(outcomeTitle({ ...failed("No web results found"), status_rx: 200 }), null, "success does not acquire failure narration");
+    const value = failed("No web results found");
+    const original = structuredClone(value);
+    renderLogEntry(value);
+    assert.deepEqual(value, original, "rendering does not rewrite the wire result");
+});
+
 test("[§cli-log-entry-line-format] an execution row is named by its runtime and previews its body beneath", () => {
     const line = renderLogEntry(entry({
         op: "sh", scheme: null, pathname: null,
@@ -348,6 +367,12 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
     const failed = collapse.admit(row(2));
     if (failed.kind !== "collapsed") { assert.fail("expected the collapsed row"); return; }
     assert.equal(renderLogEntry(row(2), 80, failed.override), "READ (pets_*.md) /dogs/i {3} every dog — Entry not member", "a failed path names the collapsed row");
+    collapse.admit(row(0, { status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not member", status: 404, diagnostic: "Not indexed" } } }));
+    collapse.admit(row(1));
+    const explained = collapse.admit(row(2));
+    assert.equal(explained.kind, "collapsed");
+    if (explained.kind !== "collapsed") return;
+    assert.equal(renderLogEntry(row(2), 80, explained.override), "READ (pets_*.md) /dogs/i {3} every dog — Entry not member: Not indexed", "collapsing preserves the failed path's diagnostic");
 });
 
 // ─── SEND blocks ({§cli-broadcast-send-rendering}) ─────

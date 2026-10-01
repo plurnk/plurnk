@@ -7,7 +7,7 @@ import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { PREVIEW_OFFSET, lineageWorker, objectOf, previewLine, previewLines, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
+import { PREVIEW_OFFSET, lineageWorker, objectOf, previewLine, previewLines, problemSummary, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -101,8 +101,7 @@ export default class StreamTrace {
         this.#greyed.delete(ev.target);
         const status = ev.result.status ?? 0;
         const failed = status !== 200;
-        const title = ev.result.problem?.title;
-        const failure = !failed ? null : typeof title === "string" && title.length > 0 ? title : summaryTail(ev) || String(status);
+        const failure = !failed ? null : problemSummary(ev.result.problem) ?? (summaryTail(ev) || String(status));
         if (launch !== undefined) return renderOperationBlock(launch, { failed, failure });
         const parts = [paint(ModelText.plain(ev.scheme), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
         if (failure !== null) parts.push(`— ${paint(ModelText.plain(failure), "failure")}`);

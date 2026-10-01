@@ -37,3 +37,11 @@ test("{§cli-conversation-history}: an empty history emits no decorative seam or
         { id: "reasoning", role: "reasoning", content: "private thought" },
     ] }, "alice", 80), []);
 });
+
+test("{§cli-log-entry-line-format}: history retains the same structured failure explanation as live rows", () => {
+    assert.deepEqual(renderHistory({ attachment: false, messages: [], entries: [
+        entry({ op: "brave", status_rx: 502, tx: { target: { kind: "local", raw: "brave_web_search" } },
+            rx: { status: 502, problem: { type: "https://problems.plurnk.xyz/executor/mcp/tool-reported-error",
+                title: "Tool reported error", status: 502, diagnostic: "No web results found" } } }),
+    ] }, "alice", 80), ["brave (brave_web_search) — Tool reported error: No web results found"]);
+});

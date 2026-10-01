@@ -1031,9 +1031,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // A glob READ's rows collapse to the authored statement once the last row is in.
             const verdict = fanout.admit(entry);
             if (verdict.kind === "suppressed") return;
-            const rendered = renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined);
             if (isResponseMessage(entry, transport.threadId())) surface.addResponse(entry);
-            else printAbove(rendered);
+            else printAbove(renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined));
         },
         // {§cli-outside-text} — the turn's prose outside its fences, a NOTE's block in the waterfall.
         onOutside: (outside) => printAbove(renderOutsideText(outside, surface.columns || 80)),

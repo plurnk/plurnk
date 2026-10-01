@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
+import { Script } from "node:vm";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import TurnDisplay from "./turn.ts";
 import type { LogEntryWire } from "./render.ts";
 
 const row = (loop: number, turn: number, op = "READ"): LogEntryWire => ({
     id: 1, loop_seq: loop, turn_seq: turn, sequence: 1, op, origin: "model", signal: null, scheme: null, pathname: null,
-    hostname: null, fragment: null, lineMarker: null, tx: {}, rx: { status: 200 }, status_rx: 200, tags: [],
+    hostname: null, fragment: null, lineMarker: null, tx: {}, rx: { status: 200, answers: [] }, status_rx: 200, tags: [],
 });
 
 test("[§cli-response-order] deliberate and addressed SEND responses retain delivery order", () => {
@@ -47,4 +48,24 @@ test("[§cli-response-order] response lines fit the viewport after render and re
             assert.ok(visible.includes(content), "the complete response value remains visible");
         }
     }
+});
+
+test("{§cli-response-order} unchanged responses reuse their projection across refreshes and archival", (t) => {
+    const bounded = t.mock.method(Script.prototype, "runInNewContext");
+    const view = new TurnDisplay();
+    view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "```mermaid\ngraph TD\nA-->B\n```" } } });
+    const first = view.render(80);
+    assert.match(first.join("\n"), /┌/);
+    assert.equal(bounded.mock.callCount(), 1);
+    assert.deepEqual(view.render(80), first);
+    view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "A new response." } } });
+    assert.match(view.render(80).join("\n"), /A new response/);
+    const archived = view.take();
+    assert.match(archived.render(80).join("\n"), /A new response/);
+    assert.equal(bounded.mock.callCount(), 1, "status changes and archival do not repeat layout");
+    archived.render(40);
+    assert.equal(bounded.mock.callCount(), 2, "resize rerenders at the new width");
+    archived.invalidate();
+    archived.render(40);
+    assert.equal(bounded.mock.callCount(), 3, "presentation changes can invalidate the projection");
 });

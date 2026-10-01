@@ -39,6 +39,7 @@ complete -c plurnk -l timeout
 complete -c plurnk -l files-items
 complete -c plurnk -l preview-lines
 complete -c plurnk -l history-entries
+complete -c plurnk -l mermaid-timeout-ms
 complete -c plurnk -l color
 complete -c plurnk -l max-commands
 complete -c plurnk -l status-stream

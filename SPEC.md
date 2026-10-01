@@ -941,17 +941,23 @@ viewport. A ```mermaid fence projects as
 a topology- and label-preserving Unicode diagram when it fits the same live
 viewport. Preserve the authored layout when it fits; otherwise try one alternate
 flowchart layout exchanging horizontal and vertical directions, including explicit
-subgraph directions. Invalid, unsupported,
-or still-overwide diagrams render as ordinary `mermaid` source blocks without
-diagnostic or recovery narration, never a half-drawn diagram. The wire always
+subgraph directions. Both attempts share the `PLURNK_CLIENT_MERMAID_TIMEOUT_MS`
+execution deadline from the client panel. An error, unsupported diagram, or
+expired deadline renders the complete source under
+`💻 mermaid — diagram failed to render`; a valid but still-overwide diagram uses
+the ordinary `💻 mermaid` header. An invalid deadline is diagnosed in that same
+fallback header without preventing the rest of the message from rendering.
+Decide the projection before appending it;
+there is no delayed replacement, recovery narration, or half-drawn diagram. The wire always
 carries semantic source; no pre-rendered channel exists at the protocol boundary.
 
 #### §5.1.0a Local rendering filter {§cli-render-filter}
 
 `plurnk render --width <columns>` is the renderer's daemon-free Unix filter:
 it reads semantic Markdown from stdin and writes one width-bounded plain-Unicode
-projection to stdout. It performs no configuration loading, model work, network
-activity, startup narration, or ANSI styling. Other clients may discover this
+projection to stdout. It loads only the packaged environment floor beneath
+exported settings and explicit options, not operator configuration files. It
+performs no model work, network activity, startup narration, or ANSI styling. Other clients may discover this
 optional executable for presentation while retaining their protocol-native
 transport and a faithful source fallback. `plurnk render --help` begins with
 the exact filter synopsis and is the side-effect-free capability probe; clients
@@ -977,6 +983,8 @@ when the next turn begins; final responses remain below reasoning until the next
 interaction or conversation switch. No task inventory or fixed task-table slot exists.
 Every response line fits the current viewport, including plain text and JSON;
 resizing rewraps the retained content through pi-tui's ANSI-aware text layout.
+Unchanged response projections, including diagram failures, are reused across
+refreshes and archival; only a width or presentation invalidation rerenders them.
 
 | Operation | Waterfall projection |
 |---|---|

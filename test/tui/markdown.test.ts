@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
@@ -21,6 +22,8 @@ for (const op of ["KILL", "NOTE", "prose"]) test(`[Â§cli-markdown-projection] [Â
         "graph TD",
         `a[${"abcdefghijklmnopqrstuvwxyz".repeat(8)}] --> b[End]`,
         "```",
+        "",
+        await readFile(new URL("../fixtures/mermaid-fan-in.md", import.meta.url), "utf8"),
         "",
         "RENDER_FINISHED",
     ].join("\n");
@@ -63,6 +66,7 @@ for (const op of ["KILL", "NOTE", "prose"]) test(`[Â§cli-markdown-projection] [Â
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
     const tui = spawnTui(daemon.url, ["--workspace", "markdown", "--worker", "main", "--project-root", ""], {
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "", NO_COLOR: "",
+        NODE_OPTIONS: "--max-old-space-size=256", PLURNK_CLIENT_MERMAID_TIMEOUT_MS: "1000",
     }, daemon.workspace);
     t.after(() => tui.kill());
     await tui.waitFor(/plurnk.*\/help/);
@@ -73,6 +77,7 @@ for (const op of ["KILL", "NOTE", "prose"]) test(`[Â§cli-markdown-projection] [Â
     assert.match(output, /Addressable Context/);
     assert.doesNotMatch(output, /\*\*Addressable Context\*\*/);
     assert.match(output, /ðŸ’» mermaid/);
+    assert.match(output, /mermaid â€” diagram failed to render/);
     assert.doesNotMatch(output, /exceeds terminal width|rendered width|mermaid source|runtime:error/);
     const afterResponse = tui.output().length;
     tui.write("/model\r");

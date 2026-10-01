@@ -193,6 +193,8 @@ options:
                           PLURNK_CLIENT_PREVIEW_LINES.
       --history-entries <n> recent entries restored when opening or switching TUI
                           conversations; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
+      --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
+                          Overrides PLURNK_CLIENT_MERMAID_TIMEOUT_MS.
       --color <when>      style terminal output: always, auto, or never. Overrides
                           PLURNK_CLIENT_COLOR; always/never override color env preferences.
       --max-commands <n>  ceiling on ops per emission for the workspace (min with the
@@ -646,6 +648,7 @@ export const CLIENT_OPTIONS = {
     "files-items": { type: "string" },
     "preview-lines": { type: "string" },
     "history-entries": { type: "string" },
+    "mermaid-timeout-ms": { type: "string" },
     color: { type: "string" },
 
     "max-commands": { type: "string" },
@@ -697,6 +700,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     // Apply an explicit presentation choice before any invocation diagnostic can render.
     if (values.color !== undefined) process.env.PLURNK_CLIENT_COLOR = values.color;
     if (values["history-entries"] !== undefined) process.env.PLURNK_CLIENT_HISTORY_ENTRIES = values["history-entries"];
+    if (values["mermaid-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS = values["mermaid-timeout-ms"];
     if (values.autostart !== undefined) process.env.PLURNK_CLIENT_AUTOSTART = values.autostart;
     if (values["daemon-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS = values["daemon-timeout-ms"];
     if (values["daemon-stop-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS = values["daemon-stop-timeout-ms"];

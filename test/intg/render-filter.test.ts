@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 
-const runClient = async (args: string[], source: string = ""): Promise<{
+const runClient = async (args: string[], source: string = "", env: NodeJS.ProcessEnv = {}): Promise<{
     readonly code: number | null;
     readonly stdout: string;
     readonly stderr: string;
 }> => await new Promise((resolveRun, reject) => {
     const child = spawn(process.execPath, [
+        "--max-old-space-size=256",
         resolve(import.meta.dirname, "../../bin/plurnk.js"),
         ...args,
     ], {
@@ -16,7 +18,10 @@ const runClient = async (args: string[], source: string = ""): Promise<{
             ...process.env,
             NO_COLOR: "",
             PLURNK_AGUI_URL: "http://127.0.0.1:1",
+            PLURNK_CLIENT_MERMAID_TIMEOUT_MS: undefined,
+            ...env,
         },
+        timeout: 4000, killSignal: "SIGKILL",
         stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -28,6 +33,30 @@ const runClient = async (args: string[], source: string = ""): Promise<{
     child.once("error", reject);
     child.once("close", (code) => resolveRun({ code, stdout, stderr }));
     child.stdin.end(source);
+});
+
+test("{§cli-render-filter} the built filter interrupts pathological layout using its packaged deadline", async () => {
+    const source = await readFile(new URL("../fixtures/mermaid-fan-in.md", import.meta.url), "utf8");
+    const result = await runFilter(`${source}\nStill responsive.`, 135);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.match(result.stdout, /^💻 mermaid — diagram failed to render$/mu);
+    assert.match(result.stdout, /│     MODEL <--> MODELS/);
+    assert.match(result.stdout, /Still responsive\./);
+    assert.doesNotMatch(result.stdout, /\x1b\[/u);
+});
+
+test("{§cli-render-filter} the deadline flag overrides exported settings", async () => {
+    const source = "```mermaid\ngraph TD\nA-->B\n```";
+    const env = { PLURNK_CLIENT_MERMAID_TIMEOUT_MS: "invalid" };
+    const invalid = await runClient(["render"], source, env);
+    assert.equal(invalid.code, 0, invalid.stderr);
+    assert.match(invalid.stdout, /diagram failed to render: PLURNK_CLIENT_MERMAID_TIMEOUT_MS/);
+    const overridden = await runClient(["render", "--mermaid-timeout-ms=1000"], source, env);
+    assert.equal(overridden.code, 0, overridden.stderr);
+    assert.equal(overridden.stderr, "");
+    assert.match(overridden.stdout, /┌/);
+    assert.doesNotMatch(overridden.stdout, /diagram failed to render/);
 });
 
 const runFilter = async (source: string, width: number) =>

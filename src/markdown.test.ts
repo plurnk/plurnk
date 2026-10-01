@@ -3,9 +3,45 @@
 // assertions ANSI-free.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { Script } from "node:vm";
 
 process.env.NO_COLOR = "1";
 const { displayWidth, renderMarkdownDocument, renderMermaid, looksLikeMarkdown } = await import("./markdown.ts");
+
+test("{§cli-markdown-projection} pathological layout returns labeled source and leaves later responses usable", () => {
+    // An external deadline and heap ceiling contain a regression in the synchronous renderer.
+    const result = spawnSync(process.execPath, ["--max-old-space-size=256", "--input-type=module", "-e", `
+        import assert from "node:assert/strict";
+        import { readFileSync } from "node:fs";
+        import TurnDisplay from ${JSON.stringify(new URL("./turn.ts", import.meta.url).href)};
+        import { displayWidth } from ${JSON.stringify(new URL("./markdown.ts", import.meta.url).href)};
+        const source = readFileSync(${JSON.stringify(new URL("../test/fixtures/mermaid-fan-in.md", import.meta.url).pathname)}, "utf8");
+        const row = (raw) => ({
+            id: 1, loop_seq: 1, turn_seq: 1, sequence: 1, op: "SEND", origin: "model",
+            signal: null, scheme: null, pathname: null, hostname: null, fragment: null, lineMarker: null,
+            tx: { body: { raw } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] }, status_rx: 200, tags: [],
+        });
+        const view = new TurnDisplay();
+        view.addResponse(row(source));
+        const first = view.render(135);
+        assert.match(first.join("\\n"), /mermaid — diagram failed to render/);
+        assert.ok(first.every((line) => displayWidth(line) <= 135));
+        const renderedSource = first.slice(first.findIndex((line) => line.startsWith("│ "))).map((line) => line.replace(/^│ /u, "")).join("\\n");
+        assert.equal(renderedSource.trimEnd(), source.split("\\n").slice(1, -2).join("\\n"));
+        for (let index = 0; index < 5; index++) assert.deepEqual(view.render(135), first);
+        view.addResponse(row("Still responsive."));
+        assert.match(view.render(135).join("\\n"), /Still responsive/);
+        const archived = view.take();
+        assert.match(archived.render(135).join("\\n"), /diagram failed to render/);
+        view.addResponse(row("\\x60\\x60\\x60mermaid\\ngraph TD\\nA-->B\\n\\x60\\x60\\x60"));
+        assert.doesNotMatch(view.render(135).join("\\n"), /diagram failed to render/);
+        console.log("responsive");
+    `], { encoding: "utf8", timeout: 4000, killSignal: "SIGKILL", env: { ...process.env, NO_COLOR: "1", PLURNK_CLIENT_MERMAID_TIMEOUT_MS: "1000" } });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "responsive");
+});
 
 test("[§cli-markdown-projection] a pipe table projects as aligned box-drawn columns", () => {
     const out = renderMarkdownDocument([
@@ -122,11 +158,12 @@ test("[§cli-markdown-projection] long code and fallback source wrap without los
     for (const language of ["text", "mermaid"]) {
         const out = renderMarkdownDocument(`\`\`\`${language}\n${code}\n\`\`\``, 32);
         const lines = out.split("\n");
-        assert.equal(lines[0], `💻 ${language}`);
+        const firstBodyLine = lines.findIndex((line) => line.startsWith("│ "));
+        assert.equal(lines.slice(0, firstBodyLine).join("").trimEnd(), `💻 ${language}${language === "mermaid" ? " — diagram failed to render" : ""}`);
         assert.ok(lines.every((line) => displayWidth(line) <= 32));
         // Every row of a block carries the gutter, wrapped rows included ({§cli-markdown-projection}).
-        assert.ok(lines.slice(1).filter((line) => line.length > 0).every((line) => line.startsWith("│ ")));
-        assert.equal(lines.slice(1).map((line) => line.replace(/^│ /u, "")).join(""), code);
+        assert.ok(lines.slice(firstBodyLine).filter((line) => line.length > 0).every((line) => line.startsWith("│ ")));
+        assert.equal(lines.slice(firstBodyLine).map((line) => line.replace(/^│ /u, "")).join(""), code);
     }
 });
 
@@ -226,9 +263,36 @@ test("[§cli-markdown-projection] standard sequence diagrams also project for th
     assert.match(out.join("\n"), /hi/);
 });
 
-test("[§cli-markdown-projection] invalid Mermaid quietly projects its source as a code block", () => {
+test("{§cli-markdown-projection} invalid Mermaid labels its failure and retains the original source", () => {
     const source = "notMermaid\n  A->>B: hi";
-    assert.deepEqual(renderMermaid(source), ["💻 mermaid", "│ notMermaid", "│   A->>B: hi"]);
+    assert.deepEqual(renderMermaid(source), ["💻 mermaid — diagram failed to render", "│ notMermaid", "│   A->>B: hi"]);
+});
+
+test("{§cli-markdown-projection} both orientations share the configured execution deadline", (t) => {
+    const key = "PLURNK_CLIENT_MERMAID_TIMEOUT_MS";
+    const before = process.env[key];
+    t.after(() => { if (before === undefined) delete process.env[key]; else process.env[key] = before; });
+    process.env[key] = "1234";
+    const bounded = t.mock.method(Script.prototype, "runInNewContext");
+    const result = renderMermaid("graph LR\nA[Long first node]-->B[Long second node]", 22);
+    assert.doesNotMatch(result.join("\n"), /💻 mermaid/);
+    assert.ok(result.every((line) => displayWidth(line) <= 22));
+    assert.equal(bounded.mock.callCount(), 1, "rotation must not obtain a second execution budget");
+    assert.equal(bounded.mock.calls[0].arguments[1]?.timeout, 1234);
+});
+
+test("{§cli-markdown-projection} invalid deadline settings explain the problem without hiding the message", (t) => {
+    const key = "PLURNK_CLIENT_MERMAID_TIMEOUT_MS";
+    const before = process.env[key];
+    t.after(() => { if (before === undefined) delete process.env[key]; else process.env[key] = before; });
+    for (const value of ["0", "-1", "nope", "1.5", ""]) {
+        process.env[key] = value;
+        const result = renderMarkdownDocument("Before.\n```mermaid\ngraph TD\nA-->B\n```\nAfter.", 160);
+        assert.match(result, /diagram failed to render: PLURNK_CLIENT_MERMAID_TIMEOUT_MS must be/);
+        assert.match(result, /Before\./);
+        assert.match(result, /After\./);
+        assert.match(result, /│ A-->B/);
+    }
 });
 
 for (const direction of ["TD", "TB", "BT"]) {

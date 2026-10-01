@@ -4,6 +4,7 @@
 // this module composes them with the live viewport and Mermaid projection.
 // One-shot output stays raw.
 
+import { Script } from "node:vm";
 import { renderMermaidASCII, type AsciiRenderOptions } from "beautiful-mermaid";
 import Table from "cli-table3";
 import { Marked, type RendererObject, type Tokens } from "marked";
@@ -11,6 +12,7 @@ import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 
 import { paint, type Role } from "./color.ts";
+import Knobs, { KnobError } from "./knobs.ts";
 
 export const displayWidth = (text: string): number => stringWidth(text);
 
@@ -42,18 +44,19 @@ const MERMAID_OPTIONS = {
     colorMode: "none",
 } satisfies AsciiRenderOptions;
 
-const renderMermaidLines = (source: string): string[] | null => {
-    try {
-        const lines = renderMermaidASCII(source, MERMAID_OPTIONS)
-            .replaceAll("\r\n", "\n")
-            .split("\n")
-            .map((line) => line.trimEnd());
-        while (lines[0]?.length === 0) lines.shift();
-        while (lines.at(-1)?.length === 0) lines.pop();
-        return lines.length === 0 ? null : lines;
-    } catch {
-        return null;
-    }
+// {§cli-markdown-projection}: a JS timer cannot interrupt synchronous layout.
+// Only this fixed call executes as code; Mermaid remains data passed to the renderer.
+const mermaidProjection = new Script("project()", { filename: "plurnk-mermaid-render" });
+
+const renderMermaidLines = (source: string): string[] => {
+    const lines = renderMermaidASCII(source, MERMAID_OPTIONS)
+        .replaceAll("\r\n", "\n")
+        .split("\n")
+        .map((line) => line.trimEnd());
+    while (lines[0]?.length === 0) lines.shift();
+    while (lines.at(-1)?.length === 0) lines.pop();
+    if (lines.length === 0) throw new Error("Mermaid produced no diagram.");
+    return lines;
 };
 
 const transposeFlowchart = (source: string): string => {
@@ -86,15 +89,24 @@ export const renderMermaid = (
     viewport: number = process.stdout.columns ?? 80,
 ): string[] => {
     const width = Math.max(1, Math.trunc(viewport));
-    const authored = renderMermaidLines(source);
-    if (authored !== null && widestLine(authored) <= width) return authored;
-
-    const alternateSource = transposeFlowchart(source);
-    const alternate = alternateSource === source ? null : renderMermaidLines(alternateSource);
-    if (alternate !== null && widestLine(alternate) <= width) return alternate;
-
+    let failure = "";
+    try {
+        const timeout = Knobs.count("PLURNK_CLIENT_MERMAID_TIMEOUT_MS");
+        if (timeout === 0) throw new KnobError("PLURNK_CLIENT_MERMAID_TIMEOUT_MS", String(timeout), "must be positive.");
+        const lines = mermaidProjection.runInNewContext({ project: () => {
+            const authored = renderMermaidLines(source);
+            if (widestLine(authored) <= width) return authored;
+            const alternateSource = transposeFlowchart(source);
+            const alternate = alternateSource === source ? null : renderMermaidLines(alternateSource);
+            return alternate !== null && widestLine(alternate) <= width ? alternate : null;
+        } }, { timeout }) as string[] | null;
+        if (lines !== null) return lines;
+    } catch (cause) {
+        failure = " — diagram failed to render";
+        if (cause instanceof KnobError) failure += `: ${cause.message}`;
+    }
     return [
-        styled("dim")("💻 mermaid"),
+        styled("dim")(`💻 mermaid${failure}`),
         ...source.split("\n").map((line) => styled("dim")(`│ ${line}`)),
     ];
 };

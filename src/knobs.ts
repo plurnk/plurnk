@@ -8,8 +8,8 @@ export class KnobError extends TypeError {
     readonly knob: string;
     readonly value: string;
 
-    constructor(knob: string, value: string, reason: string) {
-        super(`${knob} ${reason}`);
+    constructor(knob: string, value: string, reason: string, options?: ErrorOptions) {
+        super(`${knob} ${reason}`, options);
         this.knob = knob;
         this.value = value;
     }

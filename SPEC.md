@@ -1188,9 +1188,38 @@ Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1
 
 This is distinct from a loop that settles its own proposals (`--proposals accept` or `reject`, or an unattended loop), where proposal authority never crosses into client review.
 
-### §6.4 Fail-closed (non-TTY, no yolo) {§cli-fail-closed-no-review-channel}
+### §6.4 Configured tool acceptance {§cli-tool-acceptance}
 
-When stdin is not a TTY and yolo is off, the user chose review and the client has no channel to review through. Unless the user stated `accept` or `reject`, the client states `proposals:"reject"`; Core settles admitted side effects without a client round-trip.
+Client-owned proposals use one ordered decision across CLI, scripts, and TUI:
+
+| Condition | Resolution |
+|---|---|
+| Prompt starts with `?` | Review, regardless of automatic acceptance settings |
+| YOLO enabled | Accept |
+| Matching enabled runtime/tool rule | Accept |
+| Otherwise | Review |
+
+`PLURNK_CLIENT_ACCEPT_<runtime>` is an optional boolean switch. Runtime aliases
+are lowercase, with `_` encoding `-`. An optional `_TOOLS` JSON array restricts
+acceptance to exact tool names: no patterns, command-prefix matching, or body
+inspection. The list alone enables nothing; `[]` accepts nothing. Restricted
+matching requires the proposal's execution attributes to identify the same
+runtime and exact tool target, not a resource-backed script. Without `_TOOLS`,
+the switch accepts all proposals from that runtime.
+
+These settings answer ordinary proposals; they do not grant capabilities,
+change operation effects, or override loop-owned dispositions. Each automatic
+resolution carries its reason through {§agui-proposal-resolve} into the durable
+result. Invalid acceptance configuration emits a diagnostic and disables
+selective acceptance, without blocking startup or changing YOLO.
+
+### §6.4.1 No review terminal {§cli-fail-closed-no-review-channel}
+
+When stdin is not a TTY, client-owned proposals are accepted by YOLO or matching
+configured rules and otherwise rejected with `client_no_review_channel`.
+Explicit `?` requests cannot be auto-accepted. When no automatic acceptance is
+available and no disposition was stated, the client states `proposals:"reject"`
+so Core settles directly. Explicit loop-policy choices remain unchanged.
 
 The one-shot client cancels input-request interrupts through the standard AG-UI resume contract because it has no interactive form. It does not alter workspace capabilities or invent an answer; the worker receives the cancellation and can continue.
 
@@ -1220,7 +1249,7 @@ interaction identity cannot answer a subsequent interrupt.
 
 - Concurrent proposals. The daemon pauses one dispatch per proposal; at most one proposal is pending per loop at any time. Client handles them sequentially as they arrive.
 - Patch validation. The client does not parse the udiff. `body` is treated as opaque text for display and (when edited) re-submission.
-- Persisting decisions. Each proposal is reviewed in isolation; no "always accept this scheme" memory.
+- Persisting decisions. Review does not create remembered approvals; reusable acceptance is explicit configuration under {§cli-tool-acceptance}.
 
 ---
 

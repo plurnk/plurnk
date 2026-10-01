@@ -106,7 +106,7 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, root === "" ? null : root);
             assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
             assert.deepEqual(bound[0].forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
-            assert.deepEqual(bound[1].resume, [{ interruptId: "prop:9", status: "resolved", payload: { decision: "accept" } }]);
+            assert.deepEqual(bound[1].resume, [{ interruptId: "prop:9", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
             assert.equal(bound[1].forwardedProps?.plurnk?.action, undefined, "resume does not resubmit the program");
         });
     }

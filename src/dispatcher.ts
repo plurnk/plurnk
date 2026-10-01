@@ -1065,6 +1065,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 ...(openPaths.length === 0 ? {} : { openPaths }),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
                 yolo: yolo && !reviewRequested,
+                reviewRequested,
                 json,
                 statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
                 projectRoot,

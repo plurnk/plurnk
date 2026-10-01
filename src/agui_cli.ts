@@ -13,7 +13,8 @@ import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody, isEmission, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage, OutsideText } from "./render.ts";
-import { reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
+import { proposalResume, reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
+import ToolAcceptance from "./tool-acceptance.ts";
 import {
     ProblemError,
     clientActionResultMissing,
@@ -69,6 +70,8 @@ export interface CliRunSinks {
     json: boolean;              // json mode: stay silent, accumulate; the caller emits ONE doc
     yolo: boolean;
     noReviewChannel: boolean;
+    acceptance: ToolAcceptance;
+    reviewRequested?: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
     onActionResult?: (v: ActionOutcome) => void;
     onTurnAccounting?: (turn: TurnAccounting) => void;
@@ -95,13 +98,9 @@ const runOutcome = (result: CliRunResult): OperationResult => {
 // on the tool-call; the decision returns as the next run's resume payload. A
 // A projected proposal tool-call is client-owned; loop-owned dispositions settle
 // before the AG-UI boundary.
-const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<{ logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }> => {
-    if (io.yolo) return { logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" };
-    // Name the reason. Review ships, so this is the ordinary shape of a piped run, and a bare
-    // "rejected" would read as a judgement on the proposal instead of the absence of a reviewer.
-    if (io.noReviewChannel) return { logEntryId: p.logEntryId, decision: "reject", outcome: "client_no_review_channel" };
-    const resolution = await io.review(p);
-    return { logEntryId: p.logEntryId, decision: resolution.decision, ...(resolution.body !== undefined ? { body: resolution.body } : {}) };
+const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<Resolution & { logEntryId: number }> => {
+    const resolution = io.acceptance.resolve(p, io) ?? await io.review(p);
+    return { logEntryId: p.logEntryId, ...resolution };
 };
 
 // Drive a bridge run's AG-UI event stream. Text mode renders to the sinks
@@ -166,9 +165,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                     continue;
                 }
                 const r = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
-                pendingResume = r.decision === "cancel"
-                    ? { interruptId: toolId, status: "cancelled" }
-                    : { interruptId: toolId, status: "resolved", payload: { decision: r.decision, ...(r.body === undefined ? {} : { body: r.body }) } };
+                pendingResume = proposalResume(logEntryId, r);
                 continue;
             }
             if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
@@ -286,16 +283,16 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
+    opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
-    // The user chose to review (yolo off) and this run has no channel to review through, so it
-    // states reject rather than leave a proposal held for an answer nobody can give. Every stated
-    // disposition is the user's own and stands — INCLUDING review: someone who typed
-    // `--proposals review` into a pipe has asked for something this run cannot do, and the daemon
-    // says so ({§cli-loop-policy}). Only the disposition nobody stated is ours to settle.
-    const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
+    // {§cli-fail-closed-no-review-channel} With no local acceptance or review channel,
+    // reject directly. An explicit loop disposition remains the user's choice.
+    const diagnostics: Notice[] = [];
+    const acceptance = new ToolAcceptance((notice) => { diagnostics.push(notice); if (!opts.json) report(notice); });
+    const noReviewChannel = process.stdin.isTTY !== true;
     const heldForReview = opts.policy.proposals === undefined;
-    const policy: LoopPolicyRequest = noReviewChannel && heldForReview ? { ...opts.policy, proposals: "reject" } : opts.policy;
+    const autoAccepts = opts.reviewRequested !== true && (opts.yolo || acceptance.enabled);
+    const policy: LoopPolicyRequest = noReviewChannel && !autoAccepts && heldForReview ? { ...opts.policy, proposals: "reject" } : opts.policy;
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
     // worker owns the model ({§worker-model-selection}), and an explicit --model
     // was already persisted by the dispatcher before this run.
@@ -309,7 +306,7 @@ export const runCliViaBridge = async (
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
     let result: CliRunResult = {
-        exitCode: 4, pendingResume: null, entries: [], notices: [], response: "",
+        exitCode: 4, pendingResume: null, entries: [], notices: diagnostics, response: "",
         terminated: null, modelWorkerId: null, problem: null,
     };
     let activeSegment: CliRunResult | null = null;
@@ -343,6 +340,8 @@ export const runCliViaBridge = async (
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,
+        acceptance,
+        reviewRequested: opts.reviewRequested,
         review: reviewProposal,
     };
     // --timeout <s> (svc#478 — the flag was parsed-and-dead since the agui migration):
@@ -431,7 +430,7 @@ export const runCliViaBridge = async (
         : undefined;
     statusTick?.unref();
     try {
-        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
+        result = mergeRunSegments(result, await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
         activeSegment = null;
         while (result.pendingResume !== null) {
             next = { resume: [result.pendingResume] };
@@ -477,13 +476,14 @@ export const runScriptViaBridge = async (
     text: string,
     opts: { threadId: string; workspace: string; yolo: boolean; json: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
-    const noReviewChannel = !opts.yolo && process.stdin.isTTY !== true;
+    const noReviewChannel = process.stdin.isTTY !== true;
+    const acceptance = new ToolAcceptance(report);
     let parse: { results: Array<{ status: number }> } | null = null;
     const io: CliRunSinks = {
         out: (s) => process.stdout.write(s),
         err: (s) => process.stderr.write(s),
         notice: (notice) => report(notice),
-        json: opts.json, yolo: opts.yolo, noReviewChannel,
+        json: opts.json, yolo: opts.yolo, noReviewChannel, acceptance,
         review: reviewProposal,
         onActionResult: (v) => {
             if (v.kind !== "op.parse") return;

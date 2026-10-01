@@ -3,7 +3,7 @@
 
 import type { Descendant, OutsideText } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import type { ProposalParams } from "./proposal.ts";
+import { proposalResume, type ProposalParams, type Resolution } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { Notice } from "./diagnostics.ts";
 import {
@@ -75,7 +75,7 @@ export interface ConversationHistory {
 export interface ObserveOpts { historyLimit: number }
 export type LoopAdmission = Awaited<ReturnType<ApplicationPort["runLoop"]>>;
 
-type ProposalResolution = { logEntryId: number; decision: string; body?: string };
+type ProposalResolution = Resolution & { logEntryId: number };
 type InteractionResolution = Record<string, unknown> | "cancel";
 type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents };
 
@@ -217,9 +217,7 @@ export class BridgeTransport implements Transport {
             const resolution = await proposalResolution;
             signal.throwIfAborted();
             if (resolution === undefined) throw new Error("proposal ended without a resolution");
-            next = resolution.decision === "cancel"
-                ? { resume: [{ interruptId: `prop:${resolution.logEntryId}`, status: "cancelled" }] }
-                : { resume: [{ interruptId: `prop:${resolution.logEntryId}`, status: "resolved", payload: { decision: resolution.decision, ...(resolution.body !== undefined ? { body: resolution.body } : {}) } }] };
+            next = { resume: [proposalResume(resolution.logEntryId, resolution)] };
         }
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
@@ -425,9 +423,7 @@ export class BridgeTransport implements Transport {
                 const r = await proposalResolution;
                 ac.signal.throwIfAborted();
                 if (r === undefined) throw new Error("proposal ended without a resolution");
-                next = r.decision === "cancel"
-                    ? { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "cancelled" }] }
-                    : { resume: [{ interruptId: `prop:${r.logEntryId}`, status: "resolved", payload: { decision: r.decision, ...(r.body !== undefined ? { body: r.body } : {}) } }] };
+                next = { resume: [proposalResume(r.logEntryId, r)] };
                 fp = undefined;
             }
         })().then((terminal) => {

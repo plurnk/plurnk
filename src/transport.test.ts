@@ -474,7 +474,7 @@ test("BridgeTransport.rpc: a proposal-gated action resumes and returns its resul
         assert.equal(seen.proposals.length, 1);
         assert.equal(call, 2);
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept" } }]);
+        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
     } finally { await mock.close(); }
 });
 
@@ -865,11 +865,11 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
         while (seen.proposals.length === 0) await new Promise((r) => setTimeout(r, 10));
         assert.equal((seen.proposals[0] as { logEntryId: number; op: string }).logEntryId, 42);
         assert.equal((seen.proposals[0] as { op: string }).op, "EDIT");
-        await bt.resolve({ logEntryId: 42, decision: "accept", body: "edited" });
+        await bt.resolve({ logEntryId: 42, decision: "accept", body: "edited", outcome: "reviewed" });
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", body: "edited" } }], "the standard resume carries the decision + edited body");
+        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
     } finally { await mock.close(); }
 });
 
@@ -1018,7 +1018,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
         assert.equal(t.finalStatus, 200, "immediate yolo resolution resumes and finishes the loop");
         assert.equal(call, 2, "the proposal segment is followed by one resume segment");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "prop:575", status: "resolved", payload: { decision: "accept" } }]);
+        assert.deepEqual(resume.resume, [{ interruptId: "prop:575", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
     } finally { await mock.close(); }
 });
 

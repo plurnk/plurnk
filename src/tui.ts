@@ -49,6 +49,7 @@ import {
     type OperationResult,
 } from "@plurnk/plurnk-contracts";
 import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
+import ToolAcceptance from "./tool-acceptance.ts";
 import { FAMILY_HANDLERS } from "./functionality.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
@@ -636,6 +637,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
     // {plurnk#104} — an alert block stands apart: a blank row above and below it.
     const printAlert = (block: string): void => { printAbove(""); printAbove(block); printAbove(""); };
+    const acceptance = new ToolAcceptance((notice) => printAlert(renderDiagnostic(notice)));
     const cancelLoop = async (reason: string): Promise<unknown> => {
         const run = activeRun;
         const result = await transport.rpc("loop.cancel", { reason });
@@ -1078,8 +1080,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         },
         onProposal: (p, source = "model") => {
-            if (opts.yolo && !(source === "model" && reviewRequested)) {
-                void transport.resolve({ logEntryId: p.logEntryId, decision: "accept", outcome: "client_yolo" })
+            const resolution = acceptance.resolve(p, { yolo: opts.yolo, reviewRequested: source === "model" && reviewRequested });
+            if (resolution !== null) {
+                void transport.resolve({ logEntryId: p.logEntryId, ...resolution })
                     .catch((cause) => printAbove(`  ${paint(`auto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}`, "failure")}`));
                 return;
             }

@@ -10,6 +10,7 @@ import { consumeCliRun, type CliRunSinks } from "./agui_cli.ts";
 import type { AguiEvent } from "./agui.ts";
 import type { LogEntryWire } from "./render.ts";
 import type { Resolution } from "./proposal.ts";
+import ToolAcceptance from "./tool-acceptance.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", origin: "model", signal: null,
@@ -62,6 +63,7 @@ const sink = (over: Partial<CliRunSinks> = {}) => {
     const io: CliRunSinks = {
         out: (s) => out.push(s), err: (s) => err.push(s), notice: () => {},
         json: false, yolo: false, noReviewChannel: false,
+        acceptance: new ToolAcceptance(() => {}),
         review: async () => ({ decision: "accept" } as Resolution),
         ...over,
     };
@@ -196,13 +198,30 @@ test("[§cli-yolo-plurnkyolo] consumeCliRun: yolo auto-accepts a proposal withou
     const { io } = sink({ yolo: true, review: async () => { reviewed = true; return { decision: "accept" }; } });
     const r = await consumeCliRun(stream(proposalCall(3)), io);
     assert.equal(reviewed, false, "yolo skips review");
-    assert.deepEqual(r.pendingResume, { interruptId: "prop:3", status: "resolved", payload: { decision: "accept" } });
+    assert.deepEqual(r.pendingResume, { interruptId: "prop:3", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } });
+});
+
+test("{§cli-tool-acceptance} configured tools accept through ordinary resumes while unmatched tools reject without a terminal", async (t) => {
+    const original = process.env;
+    process.env = { ...original, PLURNK_CLIENT_ACCEPT_brave: "1", PLURNK_CLIENT_ACCEPT_brave_TOOLS: '["brave_web_search"]' };
+    t.after(() => { process.env = original; });
+    for (const [op, tool, decision, outcome] of [
+        ["brave", "brave_web_search", "accept", "auto: brave (brave_web_search)"],
+        ["brave", "brave_other_search", "reject", "client_no_review_channel"],
+        ["other", "brave_web_search", "reject", "client_no_review_channel"],
+    ]) {
+        const { io } = sink({ noReviewChannel: true, review: async () => { throw new Error("no reviewer is available"); } });
+        const result = await consumeCliRun(stream(proposalCall(5, {
+            op, target: { scheme: null, pathname: tool }, attrs: { runtime: op, target: tool },
+        })), io);
+        assert.deepEqual(result.pendingResume, { interruptId: "prop:5", status: "resolved", payload: { decision, outcome } });
+    }
 });
 
 test("[§cli-fail-closed-no-review-channel] consumeCliRun: no review channel rejects the proposal (fail-closed, no hang)", async () => {
     const { io } = sink({ noReviewChannel: true });
     const r = await consumeCliRun(stream(proposalCall(4)), io);
-    assert.deepEqual(r.pendingResume, { interruptId: "prop:4", status: "resolved", payload: { decision: "reject" } });
+    assert.deepEqual(r.pendingResume, { interruptId: "prop:4", status: "resolved", payload: { decision: "reject", outcome: "client_no_review_channel" } });
 });
 
 test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals never reach the wire)", async () => {

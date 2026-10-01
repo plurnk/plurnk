@@ -8,7 +8,24 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, renderProposalMenu, keyToResolution, questionChoices } = await import("./proposal.ts");
+const { renderBody, formatTarget, renderProposalMenu, keyToResolution, questionChoices, proposalResume } = await import("./proposal.ts");
+
+test("[§cli-proposal-review]: resolution bodies and outcomes survive standard AG-UI resume", () => {
+    for (const decision of ["accept", "reject"] as const) {
+        assert.deepEqual(proposalResume(7, { decision }), {
+            interruptId: "prop:7", status: "resolved", payload: { decision },
+        });
+        for (const outcome of ["", "reviewed"]) {
+            assert.deepEqual(proposalResume(7, { decision, body: "", outcome }), {
+                interruptId: "prop:7", status: "resolved", payload: { decision, body: "", outcome },
+            });
+        }
+    }
+    assert.deepEqual(proposalResume(7, { decision: "cancel" }), { interruptId: "prop:7", status: "cancelled" });
+    assert.deepEqual(proposalResume(7, { decision: "cancel", outcome: "client_cancelled" }), {
+        interruptId: "prop:7", status: "cancelled", payload: { outcome: "client_cancelled" },
+    });
+});
 
 const proposal = () => ({
     logEntryId: 1,

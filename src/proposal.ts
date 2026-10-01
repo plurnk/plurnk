@@ -14,7 +14,8 @@ import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LoopPolicy } from "@plurnk/plurnk-contracts";
+import type { LoopPolicy, ProposalResolution } from "@plurnk/plurnk-contracts";
+import type { ResumeEntry } from "@ag-ui/core";
 
 // An execution's op is its lowercase runtime tag; operation keywords are uppercase (plurnk-service #659).
 const isRuntimeOp = (op: string): boolean => /^[a-z]/.test(op);
@@ -30,11 +31,16 @@ export interface ProposalParams {
     policy: LoopPolicy;
 }
 
-export interface Resolution {
-    decision: "accept" | "reject" | "cancel";
-    body?: string;
-    outcome?: string;
-}
+export type Resolution = ProposalResolution;
+
+// {§cli-proposal-review} Preserve the same resolution through every client run plane.
+export const proposalResume = (logEntryId: number, resolution: Resolution): ResumeEntry => {
+    const { decision, body, outcome } = resolution;
+    const reason = outcome === undefined ? {} : { outcome };
+    return decision === "cancel"
+        ? { interruptId: `prop:${logEntryId}`, status: "cancelled", ...(outcome === undefined ? {} : { payload: reason }) }
+        : { interruptId: `prop:${logEntryId}`, status: "resolved", payload: { decision, ...(body === undefined ? {} : { body }), ...reason } };
+};
 
 // Color udiff lines for EDIT proposals. Anything else renders plain.
 export const renderBody = (op: string, body: string): string => {

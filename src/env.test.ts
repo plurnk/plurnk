@@ -47,7 +47,7 @@ test("[§cli-environment] discover takes an optional query and renders each cand
         "worker.env.discover": {
             candidates: [
                 { alias: "PAGER", definition: { value: "cat" }, provenance: { kind: "declaration", source: "@plurnk/plurnk-execs", reference: ".env.defaults" }, summary: "A pager that waits for a keypress hangs a spawn that has no terminal." },
-                { alias: "TAVILY_API_KEY", definition: { value: "" }, provenance: { kind: "declaration", source: "@plurnk/plurnk-schemes-http-tavily", reference: ".env.defaults" }, summary: "The Tavily API key." },
+                { alias: "TAVILY_API_KEY", definition: { value: "" }, provenance: { kind: "declaration", source: "@plurnk/plurnk-tavily-plugin", reference: ".env.defaults" }, summary: "The Tavily API key." },
             ],
         },
     });
@@ -59,7 +59,7 @@ test("[§cli-environment] discover takes an optional query and renders each cand
     ], "an empty query is the whole catalog");
     const text = h.out.join("");
     assert.match(text, /PAGER\s+@plurnk\/plurnk-execs\s+=cat\s+A pager that waits/);
-    assert.match(text, /TAVILY_API_KEY\s+@plurnk\/plurnk-schemes-http-tavily\s+The Tavily API key\./, "an optional declaration shows no empty value");
+    assert.match(text, /TAVILY_API_KEY\s+@plurnk\/plurnk-tavily-plugin\s+The Tavily API key\./, "an optional declaration shows no empty value");
 
     const none = harness({ "worker.env.discover": { candidates: [] } });
     await handleEnv("discover nothing", none.rpc, none.write);

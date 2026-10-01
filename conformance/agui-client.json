@@ -993,6 +993,8 @@
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP authorization",
+        "src/oauth.test.ts — loopback callback guards and lifetime",
+        "test/intg/mcp-oauth.test.ts — built CLI browser redirect and real daemon token exchange",
         "../plurnk-service/plurnk-mcp/src/Module.test.ts — OAuth completion persistence and restart behavior"
       ],
       "dimensions": [

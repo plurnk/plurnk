@@ -149,10 +149,30 @@ test("[§cli-workspace-mcp-controls] an add or enable requiring authorization pr
     await handleMcp("enable forge", h.rpc, h.write);
     assert.equal(h.out.join(""), [
         "  authorization required: https://gitea.example/authorize?state=gitea\n",
-        "  complete: /mcp oauth gitea <callback-url>\n",
+        "  authorize: /mcp oauth gitea [callback-url]\n",
         "  authorization required: https://gitea.example/authorize?state=forge\n",
-        "  complete: /mcp oauth forge <callback-url>\n",
+        "  authorize: /mcp oauth forge [callback-url]\n",
     ].join(""));
+});
+
+test("[§cli-mcp-oauth-callback] an already authorized server needs no browser or callback submission", async () => {
+    const result = { status: 200, alias: "ready", definition: { alias: "ready", state: "active" } };
+    const h = harness({ "workspace.mcp.enable": result });
+    assert.equal(await handleMcp("oauth ready", h.rpc, h.write), result);
+    assert.deepEqual(h.calls, [{ method: "workspace.mcp.enable", params: { alias: "ready" } }]);
+    assert.equal(h.out.join(""), "  authorized: ready (active)\n");
+});
+
+test("[§cli-mcp-oauth-callback] an invalid reception deadline fails before mutating the server", async (t) => {
+    const key = "PLURNK_CLIENT_OAUTH_TIMEOUT_MS";
+    const previous = process.env[key];
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+    for (const value of ["0", "-1", "not-a-number"]) {
+        process.env[key] = value;
+        const h = harness();
+        await assert.rejects(handleMcp("oauth server", h.rpc, h.write), { name: "TypeError", knob: key });
+        assert.deepEqual(h.calls, []);
+    }
 });
 
 test("[§cli-workspace-mcp-controls] daemon Problems cross unchanged and nothing renders as success", async () => {
@@ -183,7 +203,8 @@ test("[§cli-workspace-mcp-controls] only tokenization and arity are client vali
         "disable two aliases",
         "remove",
         "remove one two",
-        "oauth gitea",
+        "oauth",
+        "oauth gitea callback extra",
         "add echo 'unterminated",
         "unknown",
     ]) {

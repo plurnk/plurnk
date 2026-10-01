@@ -140,8 +140,8 @@ options:
   -v, --version           print executable provenance and exit
       --json              json OUTPUT MODE: one complete structured document on
                           stdout (the whole client-observed record — turns/ops,
-                          notices, the answer at .response, usage), stderr
-                          silent, Problems emitted under "problem". Drill into one
+                          notices, the answer at .response, usage), Problems emitted
+                          under "problem". Interactive OAuth instructions go to stderr. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
@@ -162,6 +162,7 @@ options:
                           absent (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
       --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
+      --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
@@ -437,6 +438,7 @@ const parseIntFlag = (raw: string | undefined, name: string): number | undefined
     return n;
 };
 interface SubcommandOpts {
+    signal?: AbortSignal;
     json: boolean;
     workspaceName?: string;
     workerName?: string;
@@ -510,7 +512,10 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         const result = await FAMILY_HANDLERS[verb](
             positionals.slice(1),
             rpc,
-            opts.json ? () => undefined : (text) => process.stdout.write(text),
+            opts.json
+                ? verb === "mcp" && positionals[1] === "oauth" ? (text) => process.stderr.write(text) : () => undefined
+                : (text) => process.stdout.write(text),
+            { signal: opts.signal },
         );
         if (result === null) {
             throw new ProblemError(clientProblem("usage", "invalid-arguments", 400, `Invalid arguments for plurnk ${verb}. See plurnk ${verb} --help.`, { command: verb }));
@@ -625,6 +630,7 @@ export const CLIENT_OPTIONS = {
     autostart: { type: "string" },
     "daemon-timeout-ms": { type: "string" },
     "daemon-stop-timeout-ms": { type: "string" },
+    "oauth-timeout-ms": { type: "string" },
     "service-bin": { type: "string" },
     "project-root": { type: "string" },
     yolo: { type: "boolean" },
@@ -694,6 +700,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     if (values.autostart !== undefined) process.env.PLURNK_CLIENT_AUTOSTART = values.autostart;
     if (values["daemon-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS = values["daemon-timeout-ms"];
     if (values["daemon-stop-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS = values["daemon-stop-timeout-ms"];
+    if (values["oauth-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS = values["oauth-timeout-ms"];
     if (values["service-bin"] !== undefined) process.env.PLURNK_CLIENT_SERVICE_BIN = values["service-bin"];
     const web = positionals[0] === "web";
     if (values.help) {
@@ -1183,7 +1190,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(caller, positionals, {
-                json, workspaceName, workerName, projectRoot, values,
+                json, workspaceName, workerName, projectRoot, values, signal: lifetime.signal,
             });
             process.exitCode = exitCode;
             return;

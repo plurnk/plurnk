@@ -100,7 +100,7 @@ test("handleVerb /help <verb> renders contextual registry usage without RPC", as
     assert.match(ctx.out.join(""), /\/mcp discover <query>/);
     assert.match(ctx.out.join(""), /\/mcp add <alias> <command\|url> \[args\.\.\.\]/);
     assert.match(ctx.out.join(""), /\/mcp remove <alias>/);
-    assert.match(ctx.out.join(""), /\/mcp oauth <alias> <callback-url>/);
+    assert.match(ctx.out.join(""), /\/mcp oauth <alias> \[callback-url\]/);
 });
 
 test("renderTuiFailure preserves exact Problem fields and recovery", () => {
@@ -836,6 +836,16 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
     assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: {} }]);
     assert.match(ctx.out.join(""), /gitea\s+active\s+streamable-http\s+https:\/\/gitea\.test\/mcp\s+2 tools/);
     assert.match(ctx.out.join(""), /local\s+disabled\s+stdio\s+local-mcp\s+\(workspace\)/);
+});
+
+test("[§cli-mcp-oauth-callback] the TUI passes its lifetime cancellation to callback reception", async () => {
+    const ctx = makeCtx({ "workspace.mcp.enable": {
+        status: 202, definition: { state: "authorization-required", authorization: { url: "https://identity.example/authorize" } },
+    } });
+    const reason = new Error("client is closing");
+    await assert.rejects(handleVerb("/mcp oauth server", { ...ctx, signal: AbortSignal.abort(reason) }), (error: unknown) => error === reason);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.enable", params: { alias: "server" } }]);
+    assert.doesNotMatch(ctx.out.join(""), /authorized:/u);
 });
 
 // ─── seedPromptHistory (svc#238) ─────────────────────────────────────

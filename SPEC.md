@@ -51,7 +51,7 @@ Options:
 | Flag | Type | Meaning |
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
-| `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, stderr silent, structured errors. See §2.1. |
+| `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, structured errors; interactive OAuth instructions use stderr. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
 | `--worker <name>` | string | Resume (or create) the named worker within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
@@ -59,6 +59,7 @@ Options:
 | `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: permit private local startup or require attachment. See {§cli-daemon-autostart}. |
 | `--daemon-timeout-ms <n>` | string | Positive connection/startup limit; overrides `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`. |
 | `--daemon-stop-timeout-ms <n>` | string | Positive owned-service shutdown grace; overrides `PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS`. |
+| `--oauth-timeout-ms <n>` | string | Positive browser OAuth callback deadline; overrides `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. See {§cli-mcp-oauth-callback}. |
 | `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
@@ -659,7 +660,8 @@ result.
 | `/mcp enable <alias>` | `workspace.mcp.enable {alias}` — publishes a dormant server or retries an unavailable one |
 | `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
-| `/mcp oauth <alias> <callback-url>` | `workspace.mcp.oauth.complete {alias, callbackUrl}` |
+| `/mcp oauth <alias>` | Enable the alias; if authorization is required, receive its configured loopback callback and call `workspace.mcp.oauth.complete {alias, callbackUrl}` |
+| `/mcp oauth <alias> <callback-url>` | Submit the complete callback directly to `workspace.mcp.oauth.complete {alias, callbackUrl}` (remote/headless continuation) |
 
 Every token after a command target reaches the server verbatim; a URL target
 takes none. The positional form uses `--` before server options so the client
@@ -668,6 +670,24 @@ does not consume them: `plurnk --workspace w mcp -- add example npx -y @example/
 An add or enable requiring interactive authorization prints the authorization
 URL and exact `/mcp oauth …` completion command. Daemon Problems cross the
 existing diagnostic path without rewriting or retry.
+
+#### OAuth callbacks {§cli-mcp-oauth-callback}
+
+Automatic reception binds only the authorization
+request's configured HTTP loopback IP literal and port, before opening the
+system browser. It never rewrites a registered redirect URI. The listener
+accepts one GET with the exact Host, path and state; unrelated requests cannot
+consume the attempt. Duplicate response parameters and duplicate callbacks
+are rejected. The complete callback is forwarded once; only successful daemon
+completion produces a success response. PKCE, issuer checks and token exchange
+remain daemon-owned. Callback codes are neither printed nor retained.
+
+The listener closes on completion, failure, cancellation or the client panel's
+`PLURNK_CLIENT_OAUTH_TIMEOUT_MS` deadline and cannot keep an exiting client
+alive. An unavailable browser leaves the URL available to open manually while
+the listener remains active. Occupied ports, non-loopback or HTTPS redirects
+require direct callback submission; the client starts no remote listener or
+SSH forwarding and does not change the MCP definition.
 
 ### §3.5 Universal Agent Skills {§cli-universal-agent-skills}
 

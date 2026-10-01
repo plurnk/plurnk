@@ -6,6 +6,8 @@
 
 import { commandUsage } from "./commands.ts";
 import { configurationSource } from "./functionality-source.ts";
+import Knobs, { KnobError } from "./knobs.ts";
+import { receiveAuthorization } from "./oauth.ts";
 import type { McpServerDefinition } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
@@ -126,7 +128,7 @@ const renderMutation = (
         const url = result.definition?.authorization?.url;
         if (typeof url !== "string") throw new Error("MCP authorization response omitted its URL.");
         write(`  authorization required: ${url}\n`);
-        write(`  complete: /mcp oauth ${alias} <callback-url>\n`);
+        write(`  authorize: /mcp oauth ${alias} [callback-url]\n`);
         return;
     }
     const state = typeof result.definition?.state === "string" ? ` (${result.definition.state})` : "";
@@ -141,6 +143,7 @@ export const handleMcp = async (
     input: string | readonly string[],
     rpc: ActionCaller,
     write: (text: string) => void,
+    options: { signal?: AbortSignal } = {},
 ): Promise<unknown | null> => {
     if (input.length === 0) {
         const result = await rpc.call("workspace.mcp.list", {}) as { definitions?: unknown };
@@ -201,14 +204,27 @@ export const handleMcp = async (
     }
 
     if (command === "oauth") {
-        if (args.length !== 3 || alias.length === 0 || args[2].length === 0) {
+        if ((args.length !== 2 && args.length !== 3) || alias.length === 0 || args[2] === "") {
             usage(write, "oauth");
             return null;
         }
-        const result = await rpc.call("workspace.mcp.oauth.complete", {
-            alias,
-            callbackUrl: args[2],
-        }) as MutationResult;
+        const complete = (callbackUrl: string) => rpc.call("workspace.mcp.oauth.complete", { alias, callbackUrl }) as Promise<MutationResult>;
+        let result: MutationResult;
+        if (args[2] !== undefined) result = await complete(args[2]);
+        else {
+            const timeout = Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS");
+            if (timeout === 0) throw new KnobError("PLURNK_CLIENT_OAUTH_TIMEOUT_MS", String(timeout), "must be positive.");
+            result = await rpc.call("workspace.mcp.enable", { alias }) as MutationResult;
+            if (result.status === 202) {
+                const url = result.definition?.authorization?.url;
+                if (typeof url !== "string") throw new Error("MCP authorization response omitted its URL.");
+                write(`  authorization required: ${url}\n`);
+                const deadline = AbortSignal.timeout(timeout);
+                result = await receiveAuthorization(url, complete, {
+                    signal: options.signal === undefined ? deadline : AbortSignal.any([options.signal, deadline]), write,
+                });
+            }
+        }
         renderMutation(result, "authorized", alias, write);
         return result;
     }

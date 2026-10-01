@@ -25,6 +25,7 @@ complete -c plurnk -l effort
 complete -c plurnk -l autostart
 complete -c plurnk -l daemon-timeout-ms
 complete -c plurnk -l daemon-stop-timeout-ms
+complete -c plurnk -l oauth-timeout-ms
 complete -c plurnk -l service-bin
 complete -c plurnk -l project-root
 complete -c plurnk -l yolo

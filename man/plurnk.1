@@ -1,4 +1,4 @@
-.TH PLURNK 1 "" "plurnk 0.91.0" "User Commands"
+.TH PLURNK 1 "" "plurnk 0.92.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -47,8 +47,8 @@ loop.
   -v, --version           print executable provenance and exit
       --json              json OUTPUT MODE: one complete structured document on
                           stdout (the whole client-observed record — turns/ops,
-                          notices, the answer at .response, usage), stderr
-                          silent, Problems emitted under "problem". Drill into one
+                          notices, the answer at .response, usage), Problems emitted
+                          under "problem". Interactive OAuth instructions go to stderr. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Without it, a fresh
@@ -69,6 +69,7 @@ loop.
                           absent (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
       --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
+      --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).

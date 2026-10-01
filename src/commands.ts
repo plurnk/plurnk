@@ -47,7 +47,7 @@ const MCP_SUBCOMMANDS = [
         { name: "discover", usage: "discover <query>", summary: "Search the MCP Registry for servers to add.", alias: false },
         { name: "add", usage: "add <alias> <command|url> [args...]", summary: "Add and enable an MCP server from a command or an http(s) URL.", alias: false },
     ),
-    { name: "oauth", usage: "oauth <alias> <callback-url>", summary: "Complete authorization for an MCP server.", alias: true },
+    { name: "oauth", usage: "oauth <alias> [callback-url]", summary: "Authorize an MCP server in the browser or submit its callback URL.", alias: true },
 ];
 
 const SKILL_SUBCOMMANDS = lifecycle(

@@ -312,6 +312,7 @@ export const buildHeader = (opts: {
 // (stub rpc, collect writes, fake workspace/import). Verbs never call loop.run —
 // they're run-tab furniture. Returns "quit" to close the REPL.
 export interface VerbContext {
+    signal?: AbortSignal;
     rpc: VerbCaller;
     opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null; client?: string };
     // The worker's durable model truth ({§worker-model-selection}): the server's
@@ -582,7 +583,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "schedule":
         case "members":
         case "env": {
-            await FAMILY_HANDLERS[verb](rest, rpc, write);
+            await FAMILY_HANDLERS[verb](rest, rpc, write, { signal: ctx.signal });
             return;
         }
         case "accept":
@@ -1132,6 +1133,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         fanout = new FanoutCollapse();
     };
     const verbCtx: VerbContext = {
+        signal: opts.lifetime.signal,
         rpc: verbRpc, opts,
         get model(): ResolvedModelSpec | null { return workerModel; },
         get spawnModel(): ResolvedModelSpec | null { return workerSpawnModel; },
@@ -1286,11 +1288,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (rebinds) await settleIdleObserver();
             if (await handleVerb(line, verbCtx) === "quit") requestClose();
         } catch (cause) {
-            printAlert(renderTuiFailure(cause));
+            if (!shuttingDown) printAlert(renderTuiFailure(cause));
         } finally {
             pendingCommands -= 1;
             if (rebinds) rebinding = false;
-            reprompt();
+            if (!shuttingDown) reprompt();
         }
     };
     dispatchShortcut = (line) => { void dispatchVerb(line); };

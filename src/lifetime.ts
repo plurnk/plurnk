@@ -13,6 +13,7 @@ export default class Lifetime {
     #closing: Promise<void> | undefined;
     #interrupted = false;
     readonly #process: OwnedProcess;
+    readonly #abort = new AbortController();
 
     constructor(proc: OwnedProcess = process) {
         this.#process = proc;
@@ -40,6 +41,7 @@ export default class Lifetime {
     }
 
     get interrupted(): boolean { return this.#interrupted; }
+    get signal(): AbortSignal { return this.#abort.signal; }
 
     handleSignals(handler: (signal: ExitSignal) => void): () => void {
         if (this.#handler !== null) throw new Error("Two foreground surfaces cannot own process interruption.");
@@ -49,6 +51,7 @@ export default class Lifetime {
 
     close(): Promise<void> {
         return this.#closing ??= (async () => {
+            this.#abort.abort();
             try { await this.#resources.disposeAsync(); }
             finally {
                 for (const [signal, listener] of this.#listeners) this.#process.off(signal, listener);

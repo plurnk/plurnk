@@ -1,6 +1,8 @@
 // Packed client/web composition gate. Installs both candidates into an empty
 // consumer, launches the public `plurnk web` command, and verifies its resolved
 // invocation at the AG-UI boundary without running a model.
+// Optional positional package specs install candidate dependencies alongside
+// both artifacts before a release makes those versions available on npm.
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
@@ -89,11 +91,12 @@ try {
     await mkdir(consumer, { recursive: true });
     await mkdir(join(configHome, "plurnk"), { recursive: true });
     await mkdir(projectRoot, { recursive: true });
+    await writeFile(join(projectRoot, "README.md"), "# Web composition fixture\n");
     await run("npm", ["init", "-y"], { cwd: consumer });
 
     const clientArtifact = await pack(root);
     const webArtifact = webRoot === undefined ? webSpec : await pack(resolve(webRoot));
-    await run("npm", ["install", "--ignore-scripts", clientArtifact, webArtifact], {
+    await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", clientArtifact, webArtifact, ...process.argv.slice(2)], {
         cwd: consumer,
         maxBuffer: 128 * 1024 * 1024,
     });
@@ -154,7 +157,7 @@ try {
         "--files-items=3",
         "--max-commands=12",
         "--no-git",
-        "--capabilities={\"deny\":[{\"operation\":\"EXEC\"}]}",
+        "--capabilities={\"deny\":[{\"access\":\"execute\"}]}",
         "--proposals=accept",
         "--max-turns=7",
     ], {
@@ -204,6 +207,7 @@ try {
         workerLocked: true,
         workspaces: ["web-composition"],
         workers: ["browser"],
+        workerRows: [{ id: 1, name: "browser", origin: "client", parentWorkerId: null, createdAt: "now" }],
         autoAcceptProposals: true,
     });
 
@@ -223,13 +227,17 @@ try {
     const webPackage = JSON.parse(await readFile(join(consumer, "node_modules", "@plurnk", "plurnk-web", "package.json"), "utf8"));
     const clientSettings = {
         client: `@plurnk/plurnk-web/${webPackage.version}`,
-        capabilities: { deny: [{ operation: "EXEC" }] },
+        capabilities: { deny: [{ access: "execute" }] },
         maxCommands: 12,
         git: false,
         filesItems: 3,
     };
     assert.equal(inputs.length, 6);
     assert.deepEqual(inputs[0].forwardedProps.plurnk, {
+        workspace: "bootstrap",
+        action: { kind: "workspace.list" },
+    });
+    assert.deepEqual(inputs[1].forwardedProps.plurnk, {
         action: {
             kind: "workspace.create",
             name: "web-composition",
@@ -237,23 +245,17 @@ try {
             settings: clientSettings,
         },
     });
-    assert.deepEqual(inputs[1].forwardedProps.plurnk, {
+    assert.deepEqual(inputs[2].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
         settings: clientSettings,
         action: { kind: "workspace.workers" },
     });
-    assert.deepEqual(inputs[2].forwardedProps.plurnk, {
-        workspace: "web-composition",
-        projectRoot,
-        settings: clientSettings,
-        action: { kind: "worker.model.set", selector: "fireox" },
-    });
     assert.deepEqual(inputs[3].forwardedProps.plurnk, {
         workspace: "web-composition",
         projectRoot,
         settings: clientSettings,
-        action: { kind: "worker.effort.set", effort: "low" },
+        action: { kind: "worker.model.set", selector: "fireox", effort: "low" },
     });
     assert.deepEqual(inputs[4].forwardedProps.plurnk, {
         action: { kind: "workspace.list" },
@@ -262,7 +264,7 @@ try {
         workspace: "web-composition",
         projectRoot,
         settings: clientSettings,
-        policy: { proposals: "accept" },
+        policy: { proposals: "review" },
         maxTurns: 7,
         openPaths: ["README.md"],
     });

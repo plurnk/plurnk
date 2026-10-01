@@ -13,7 +13,8 @@ import { isColorMode } from "./color.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
 import { actionViaBridge, resolveWorld } from "./agui.ts";
-import { handleMcp } from "./mcp.ts";
+import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
+import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
 import {
     formatWorkerEffort,
@@ -108,8 +109,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk web [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
-       plurnk mcp [discover <query> | add [--plurnk|--global] <alias> <command|url> [args...]
-                   | enable|disable|remove <alias> | oauth <alias> <callback-url>]
+${COMMANDS.filter(({ group }) => group === "functionality").map(({ usage }) => `       plurnk ${usage.slice(1)}`).join("\n")}
 
 Connects to plurnk-service, starting an installed private backend if the default
 local listener is absent. The private process stops on exit; saved data remains.
@@ -233,18 +233,24 @@ subcommands:
                           resolved configuration and optional workspace/Worker
                           constraints; each tab is URL-addressed as /workspace/threadId;
                           performs no package install or daemon startup
-  mcp ...                 list and manage the MCP servers of --workspace; put -- before
-                          add's scope flag or any server argument that begins with -
+${COMMANDS.filter(({ group }) => group === "functionality").map(({ name, summary }) => `  ${name} ...${" ".repeat(22 - name.length)}${summary}`).join("\n")}
+                          For family commands, put client options before the family name;
+                          everything after it belongs to the family, including server flags.
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + workspace-open settings. The daemon owns the
                           grammar; the client just feeds the file.
 `;
 
-const subcommandNames = new Set([...USAGE.slice(USAGE.indexOf("\nsubcommands:")).matchAll(/^  ([a-z]+)\b/gm)].map((match) => match[1]));
+const subcommandNames = new Set([...USAGE.slice(USAGE.indexOf("\nsubcommands:")).matchAll(/^  ([a-z][a-z0-9]*)\b/gm)].map((match) => match[1]));
 
 const commandHelp = (name: string | undefined): string => {
     if (name === "render") return RENDER_USAGE;
+    if (name !== undefined && isFamily(name)) {
+        const spec = commandSpec(name)!;
+        const forms = (spec.subcommands ?? []).map(({ usage, summary }) => `  plurnk [options] ${name} ${usage}\n      ${summary}`).join("\n");
+        return `usage: plurnk ${spec.usage.slice(1)}\n\n${spec.summary}\n${forms}\n\nPut client options before ${name}; all following arguments belong to the family.\n`;
+    }
     if (name === undefined || !subcommandNames.has(name)) return USAGE;
     const synopsis = USAGE.slice(0, USAGE.indexOf("\n\n"));
     const forms = synopsis.match(new RegExp(`^ {7}plurnk ${name}\\b[^\\n]*(?:\\n {8,}[^\\n]*)*`, "gm"));
@@ -494,19 +500,21 @@ const runSubcommand = async (rpc: Caller, positionals: string[], opts: Subcomman
         throw new ProblemError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
     }
 
-    if (verb === "mcp") {
+    if (isFamily(verb)) {
         if (opts.workspaceName === undefined) {
             throw new ProblemError(clientFlagMissingDependency(
-                "plurnk mcp",
+                `plurnk ${verb}`,
                 "--workspace (or PLURNK_CLIENT_WORKSPACE)",
             ));
         }
-        const result = await handleMcp(
+        const result = await FAMILY_HANDLERS[verb](
             positionals.slice(1),
             rpc,
             opts.json ? () => undefined : (text) => process.stdout.write(text),
         );
-        if (result === null) return 64;
+        if (result === null) {
+            throw new ProblemError(clientProblem("usage", "invalid-arguments", 400, `Invalid arguments for plurnk ${verb}. See plurnk ${verb} --help.`, { command: verb }));
+        }
         if (opts.json) process.stdout.write(`${JSON.stringify(result)}\n`);
         return 0;
     }
@@ -602,61 +610,83 @@ export const main = async (argv: string[]): Promise<void> => {
     } finally { await lifetime.close(); }
 };
 
-const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
-    const { positionals, values } = parseArgs({
-        args: argv.slice(2),
-        allowPositionals: true,
-        options: {
-            help: { type: "boolean", short: "h" },
-            version: { type: "boolean", short: "v" },
-            json: { type: "boolean" },
-            // Node-native env layering (mirrors plurnk-service): --env-file
-            // requires the file, --env-file-if-exists skips a missing one.
-            "env-file": { type: "string", multiple: true },
-            "env-file-if-exists": { type: "string", multiple: true },
-            workspace: { type: "string" },
-            worker: { type: "string" },
-            model: { type: "string" },
-            effort: { type: "string" },
-            autostart: { type: "string" },
-            "daemon-timeout-ms": { type: "string" },
-            "daemon-stop-timeout-ms": { type: "string" },
-            "service-bin": { type: "string" },
-            "project-root": { type: "string" },
-            yolo: { type: "boolean" },
-            auto: { type: "boolean" },
-            proposals: { type: "string" },
-            // Retired; parsed only to be refused with its successors named.
-            policy: { type: "string" },
-            reasoning: { type: "string" },
-            capabilities: { type: "string" },
-            "max-turns": { type: "string" },
-            timeout: { type: "string" },
-            // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
-            "files-items": { type: "string" },
-            "preview-lines": { type: "string" },
-            "history-entries": { type: "string" },
-            color: { type: "string" },
+export const CLIENT_OPTIONS = {
+    help: { type: "boolean", short: "h" },
+    version: { type: "boolean", short: "v" },
+    json: { type: "boolean" },
+    // Node-native env layering (mirrors plurnk-service): --env-file
+    // requires the file, --env-file-if-exists skips a missing one.
+    "env-file": { type: "string", multiple: true },
+    "env-file-if-exists": { type: "string", multiple: true },
+    workspace: { type: "string" },
+    worker: { type: "string" },
+    model: { type: "string" },
+    effort: { type: "string" },
+    autostart: { type: "string" },
+    "daemon-timeout-ms": { type: "string" },
+    "daemon-stop-timeout-ms": { type: "string" },
+    "service-bin": { type: "string" },
+    "project-root": { type: "string" },
+    yolo: { type: "boolean" },
+    auto: { type: "boolean" },
+    proposals: { type: "string" },
+    // Retired; parsed only to be refused with its successors named.
+    policy: { type: "string" },
+    reasoning: { type: "string" },
+    capabilities: { type: "string" },
+    "max-turns": { type: "string" },
+    timeout: { type: "string" },
+    // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
+    "files-items": { type: "string" },
+    "preview-lines": { type: "string" },
+    "history-entries": { type: "string" },
+    color: { type: "string" },
 
-            "max-commands": { type: "string" },
-            "no-git": { type: "boolean" },
-            "status-stream": { type: "boolean" },
-            share: { type: "string" },
-            // log read filters
-            loop: { type: "string" },
-            turn: { type: "string" },
-            since: { type: "string" },
-            limit: { type: "string" },
-            provider: { type: "string" },
-            all: { type: "boolean" },
-            offset: { type: "string" },
-            width: { type: "string" },
-            // Browser-portal listener options. All session and loop options above
-            // retain this client's canonical interpretation in `plurnk web`.
-            host: { type: "string" },
-            port: { type: "string" },
-        },
-    });
+    "max-commands": { type: "string" },
+    "no-git": { type: "boolean" },
+    "status-stream": { type: "boolean" },
+    share: { type: "string" },
+    // log read filters
+    loop: { type: "string" },
+    turn: { type: "string" },
+    since: { type: "string" },
+    limit: { type: "string" },
+    provider: { type: "string" },
+    all: { type: "boolean" },
+    offset: { type: "string" },
+    width: { type: "string" },
+    // Browser-portal listener options. All session and loop options above
+    // retain this client's canonical interpretation in `plurnk web`.
+    host: { type: "string" },
+    port: { type: "string" },
+} as const;
+
+const parseInvocation = (args: string[]) => {
+    // Node owns option arity, including a family name used as an option value.
+    // The first positional alone can select a family; its remaining argv is opaque.
+    const scanned = parseArgs({ args, options: CLIENT_OPTIONS, allowPositionals: true, strict: false, tokens: true });
+    const first = scanned.tokens.find((token) => token.kind === "positional");
+    const boundary = first?.kind === "positional" && isFamily(first.value) ? first.index + 1 : args.length;
+    const clientArgs = args.slice(0, boundary);
+    const remaining = args.slice(boundary);
+    const familyArgs = remaining[0] === "--" ? remaining.slice(1) : remaining;
+    try {
+        const { values, positionals } = parseArgs({ args: clientArgs, options: CLIENT_OPTIONS, allowPositionals: true });
+        const help = familyArgs.length === 1 && (familyArgs[0] === "--help" || familyArgs[0] === "-h");
+        if (help) values.help = true;
+        return { values, positionals: [...positionals, ...(help ? [] : familyArgs)], clientArgs };
+    } catch (cause) {
+        if (!(cause instanceof Error) || !("code" in cause) || !String(cause.code).startsWith("ERR_PARSE_ARGS_")) throw cause;
+        const { values } = parseArgs({ args: clientArgs, options: CLIENT_OPTIONS, allowPositionals: true, strict: false });
+        if (typeof values.color === "string" && isColorMode(values.color)) process.env.PLURNK_CLIENT_COLOR = values.color;
+        const problem = clientProblem("usage", "invalid-arguments", 400, cause.message);
+        if (values.json === true || switchOf("PLURNK_CLIENT_JSON", "optional")) dieJson(64, problem);
+        return dieWith(64, problem);
+    }
+};
+
+const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
+    const { positionals, values, clientArgs } = parseInvocation(argv.slice(2));
 
     // Apply an explicit presentation choice before any invocation diagnostic can render.
     if (values.color !== undefined) process.env.PLURNK_CLIENT_COLOR = values.color;
@@ -706,7 +736,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
 
     // Shared XDG user env cascade (after parse so --env-file flags participate).
-    loadEnvCascade(orderedEnvFiles(argv.slice(2)));
+    loadEnvCascade(orderedEnvFiles(clientArgs));
     // {§cli-env-defaults} — a flag is a knob's spelling for one invocation: the resolved preview
     // count is written back to its knob, the one place every renderer reads it ({plurnk#107}).
     const previewLinesRaw = values["preview-lines"] ?? stated("PLURNK_CLIENT_PREVIEW_LINES") ?? "";

@@ -49,12 +49,7 @@ import {
     type OperationResult,
 } from "@plurnk/plurnk-contracts";
 import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
-import { handleMcp } from "./mcp.ts";
-import { handleSkills } from "./skills.ts";
-import { handleA2a } from "./a2a.ts";
-import { handleSchedule } from "./schedule.ts";
-import { handleMembers } from "./members.ts";
-import { handleEnv } from "./env.ts";
+import { FAMILY_HANDLERS } from "./functionality.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
     formatWorkerEffort,
@@ -581,28 +576,13 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  script: ${results.length} op${results.length === 1 ? "" : "s"}${worst >= 400 ? `, worst status ${worst}` : " ok"}\n`);
             return;
         }
-        case "mcp": {
-            await handleMcp(rest, rpc, write);
-            return;
-        }
-        case "skills": {
-            await handleSkills(rest, rpc, write);
-            return;
-        }
-        case "a2a": {
-            await handleA2a(rest, rpc, write);
-            return;
-        }
-        case "schedule": {
-            await handleSchedule(rest, rpc, write);
-            return;
-        }
-        case "members": {
-            await handleMembers(rest, rpc, write);
-            return;
-        }
+        case "mcp":
+        case "skills":
+        case "a2a":
+        case "schedule":
+        case "members":
         case "env": {
-            await handleEnv(rest, rpc, write);
+            await FAMILY_HANDLERS[verb](rest, rpc, write);
             return;
         }
         case "accept":

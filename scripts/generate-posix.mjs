@@ -22,7 +22,7 @@ const subcommandsBlock = USAGE.slice(subcommandsAt + 1).trimEnd();
 const flags = [...new Set([...optionsBlock.matchAll(/--[a-z][a-z0-9_-]*/g)].map((m) => m[0]))];
 const subcommands = [...new Set(
     subcommandsBlock.split("\n").slice(1)
-        .map((line) => /^  ([a-z]+)\b/.exec(line)?.[1])
+        .map((line) => /^  ([a-z][a-z0-9]*)\b/.exec(line)?.[1])
         .filter((name) => name !== undefined),
 )];
 

@@ -150,12 +150,11 @@ agent has bulk operations over its own context, not just over your code.
 Plurnk uses **AG-UI** for clients, **MCP** for external tools, **Agent Skills**
 for reusable instructions, and **A2A** for remote agents. Tools, skills, and
 agents can be discovered, added, and enabled per workspace without restarting
-the daemon: `/mcp discover` searches the MCP Registry, and `/mcp add` installs
-a server as a one-server [Agent Plugin](https://agent-plugins.org). A plugin
-that any tool places in the project's `.agents/plugins/`,
-`~/.config/plurnk/plugins/`, or `~/.agents/plugins/` enables its MCP servers at
-the next turn. Documentation is retrieved on demand rather than loading every
-tool's schema into every prompt.
+the daemon: `/mcp discover <query>` searches the MCP Registry, and
+`/mcp add <alias> <command|url> [args...]` declares a workspace server. Standard
+MCP files, Agent Skills folders, and [Agent Plugin](https://agent-plugins.org)
+bundles contribute through the same configuration cascade. Documentation is
+retrieved on demand rather than loading every tool's schema into every prompt.
 
 Configuration uses cascading environment variables and `.env` files, including
 the XDG user configuration at `~/.config/plurnk/.env`. Model discovery uses

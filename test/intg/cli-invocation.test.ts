@@ -21,7 +21,7 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
     const run = (args: string[], source = "", env: NodeJS.ProcessEnv = {}) => new Promise<{
         code: number | null; stdout: string; stderr: string;
     }>((resolveRun, reject) => {
-        const child = spawn(process.execPath, [resolve(import.meta.dirname, "../../bin/plurnk.js"), ...args], {
+        const child = spawn(resolve(import.meta.dirname, "../../bin/plurnk.js"), args, {
             cwd: home, timeout: 10_000,
             env: {
                 ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), NO_COLOR: "1",
@@ -52,13 +52,28 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
             assert.equal(requests, 0, "empty input must not create a workspace or load the TUI");
         });
     }
-    for (const name of ["models", "workspace", "log", "read", "script", "mcp", "effort", "capabilities", "web", "completion"]) {
+    for (const name of ["models", "workspace", "log", "read", "script", "mcp", "skills", "a2a", "members", "env", "schedule", "effort", "capabilities", "web", "completion"]) {
         await t.test(`${name} --help`, async () => {
             const result = await run([name, "--help"]);
             assert.equal(result.code, 0, result.stderr);
             assert.equal(result.stderr, "");
             assert.ok(result.stdout.startsWith(`usage: plurnk ${name} `), result.stdout);
             assert.doesNotMatch(result.stdout, new RegExp(`plurnk ${name === "models" ? "workspace" : "models"} `));
+            assert.equal(requests, 0);
+        });
+    }
+    for (const args of [["--bogus"], ["--json", "--bogus"], ["--workspace", "mcp", "--bogus"], ["--workspace"], ["--json", "--yolo=yes"]]) {
+        await t.test(`invalid arguments produce usage diagnostics: ${args.join(" ")}`, async () => {
+            const result = await run(args);
+            assert.equal(result.code, 64, result.stderr);
+            if (args.includes("--json")) {
+                assert.equal(result.stderr, "");
+                assert.equal(JSON.parse(result.stdout).problem.type, "https://problems.plurnk.xyz/client/usage/invalid-arguments");
+            } else {
+                assert.equal(result.stdout, "");
+                assert.match(result.stderr, /--bogus|--workspace/u);
+            }
+            assert.doesNotMatch(result.stderr, /\n\s+at |ERR_PARSE_ARGS/u);
             assert.equal(requests, 0);
         });
     }

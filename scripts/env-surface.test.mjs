@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { CLIENT_OPTIONS } from "../src/dispatcher.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OWNED = /^PLURNK_CLIENT_[A-Z0-9_]+$/u;
@@ -95,11 +96,8 @@ test("[§cli-env-defaults] a knob read never carries a value of its own", () => 
 });
 
 test("[§cli-env-defaults] a flag is a knob's spelling: every option mirrors one, or says why it is an argument", () => {
-    const dispatcher = readFileSync(join(ROOT, "src/dispatcher.ts"), "utf8");
-    const block = /\boptions: \{\n([\s\S]*?)\n {8}\},\n {4}\}\);/u.exec(dispatcher);
-    assert.ok(block, "the parseArgs option block is where it was");
-    const options = [...block[1].matchAll(/^\s+"?([a-z][a-z-]*)"?: \{ type:/gmu)].map((match) => match[1]);
-    assert.ok(options.length > 20, `parsed ${options.length} options`);
+    const options = Object.keys(CLIENT_OPTIONS);
+    assert.ok(options.length > 20, `declared ${options.length} options`);
     const flagOf = (knob) => knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-");
     const knobFlags = new Map([...declared].filter((key) => OWNED.test(key)).map((knob) => [flagOf(knob), knob]));
     const unexplained = options.filter((option) => !knobFlags.has(option) && !ARGUMENTS.has(option));

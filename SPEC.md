@@ -37,6 +37,15 @@ The prompt is assembled from positional args + piped stdin. If both are present,
 `plurnk <subcommand> --help` prints that command's invocation forms and summary
 from the same inventory as global help, without contacting the daemon.
 
+{§cli-family-arguments} The CLI configuration families `mcp`, `skills`, `a2a`,
+`members`, `env`, and `schedule` use the same handlers and command inventory as
+their TUI counterparts. Client options precede the family name; everything after
+that first positional belongs to the family, without re-tokenizing shell arguments
+or interpreting server options as client settings. One immediately following `--`
+is an optional argument separator; subsequent `--` tokens remain literal arguments.
+An otherwise empty family invocation with `--help` or `-h` prints local help.
+Invalid client options produce a usage Problem (exit 64), never a stack trace.
+
 Options:
 
 | Flag | Type | Meaning |

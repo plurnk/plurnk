@@ -9,6 +9,11 @@ complete -c plurnk -n __fish_use_subcommand -a render
 complete -c plurnk -n __fish_use_subcommand -a completion
 complete -c plurnk -n __fish_use_subcommand -a web
 complete -c plurnk -n __fish_use_subcommand -a mcp
+complete -c plurnk -n __fish_use_subcommand -a skills
+complete -c plurnk -n __fish_use_subcommand -a a2a
+complete -c plurnk -n __fish_use_subcommand -a members
+complete -c plurnk -n __fish_use_subcommand -a env
+complete -c plurnk -n __fish_use_subcommand -a schedule
 complete -c plurnk -n __fish_use_subcommand -a script
 complete -c plurnk -l help
 complete -c plurnk -l version

@@ -2,7 +2,7 @@
 _plurnk() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     local flags="--help --version --json --workspace --worker --model --effort --autostart --daemon-timeout-ms --daemon-stop-timeout-ms --service-bin --project-root --yolo --auto --proposals --capabilities --env-file --env-file-if-exists --max-turns --timeout --files-items --preview-lines --history-entries --color --max-commands --status-stream --share --no-git --loop --turn --since --limit --provider --all --offset --width --host --port"
-    local subs="models workspace log read effort capabilities render completion web mcp script"
+    local subs="models workspace log read effort capabilities render completion web mcp skills a2a members env schedule script"
     local candidate
     COMPREPLY=()
     while IFS= read -r candidate; do

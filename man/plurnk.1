@@ -18,8 +18,12 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
        plurnk web [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
-       plurnk mcp [discover <query> | add [--plurnk|--global] <alias> <command|url> [args...]
-                   | enable|disable|remove <alias> | oauth <alias> <callback-url>]
+       plurnk mcp [subcommand]
+       plurnk skills [subcommand]
+       plurnk a2a [subcommand]
+       plurnk members [subcommand]
+       plurnk env [--scope worker|workspace] [subcommand]
+       plurnk schedule [subcommand]
 .fi
 .SH DESCRIPTION
 Connects to plurnk-service, starting an installed private backend if the
@@ -137,8 +141,14 @@ loop.
                           resolved configuration and optional workspace/Worker
                           constraints; each tab is URL-addressed as /workspace/threadId;
                           performs no package install or daemon startup
-  mcp ...                 list and manage the MCP servers of --workspace; put -- before
-                          add's scope flag or any server argument that begins with -
+  mcp ...                   List or manage this workspace's MCP servers.
+  skills ...                List or manage this workspace's Agent Skills.
+  a2a ...                   List or manage this workspace's outbound A2A agents.
+  members ...               List or manage this workspace's file members.
+  env ...                   Manage worker overrides or shared workspace environment defaults.
+  schedule ...              List or manage this workspace's scheduled messages.
+                          For family commands, put client options before the family name;
+                          everything after it belongs to the family, including server flags.
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
                           trace, exit by worst op status. Honors --workspace/--yolo
                           /--project-root + workspace-open settings. The daemon owns the

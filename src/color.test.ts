@@ -6,6 +6,7 @@ import { glob, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { backgroundScheme, colorEnabled, colorFgBgScheme, learnScheme, paint, withColorOutput } from "./color.ts";
 import { renderMarkdownDocument } from "./markdown.ts";
+import { renderSummary } from "./render.ts";
 
 // A developer's terminal may export COLORFGBG; the accents pinned here are the dark ground's.
 delete process.env.COLORFGBG;
@@ -92,7 +93,7 @@ test("[§cli-color-scheme] a background is dark when white text contrasts with i
     assert.deepEqual([black, solarizedDark, white, solarizedLight], ["dark", "dark", "light", "light"]);
 });
 
-test("[§cli-color-scheme] a light ground darkens only the two fixed accents, and the terminal's answer outranks COLORFGBG", (t) => {
+test("[§cli-color-scheme] a light ground darkens the fixed accents, and the terminal's answer outranks COLORFGBG", (t) => {
     t.after(() => { learnScheme(undefined); delete process.env.COLORFGBG; });
     const alerts = () => withColor(undefined, () => ALERTS.map((role) => paint("x", role)));
     process.env.COLORFGBG = "0;15";
@@ -102,6 +103,21 @@ test("[§cli-color-scheme] a light ground darkens only the two fixed accents, an
     learnScheme("light");
     delete process.env.COLORFGBG;
     assert.deepEqual(alerts(), LIGHT_ALERTS);
+});
+
+test("[§cli-color-scheme] muted UI and inline code use a ground-aware foreground, not terminal faint intensity", (t) => {
+    t.after(() => { learnScheme(undefined); });
+    for (const [scheme, index] of [["dark", 145], ["light", 60]] as const) {
+        learnScheme(scheme);
+        withColor(undefined, () => {
+            const foreground = `\x1b[38;5;${index}m`;
+            assert.equal(paint("muted", "dim"), `${foreground}muted\x1b[0m`);
+            assert.equal(paint("aside", "dim", "italic"), `\x1b[38;5;${index};3maside\x1b[0m`);
+            assert.equal(renderMarkdownDocument("Plain `inline` text.", 80).trimEnd(), `Plain ${foreground}inline\x1b[0m text.`);
+            assert.equal(renderSummary(1, 500, { status: 200 }, false), `${foreground}  done · 1 turn · 500ms\x1b[0m`);
+        });
+        assert.equal(withColor("1", () => paint("muted", "dim")), "muted");
+    }
 });
 
 test("[§cli-palette] any non-empty NO_COLOR removes colour and emphasis; an empty one does not", () => {

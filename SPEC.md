@@ -1062,9 +1062,9 @@ If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is trea
 
 `src/color.ts` names every colour and emphasis by role; no other module writes an escape code.
 The five alert accents are the scheme — note blue, tip green, important purple, warning orange,
-caution red — and every other role borrows from them: success and added diff lines are green,
+caution red — and semantic roles borrow from them: success and added diff lines are green,
 failure and removed lines red, the human's line blue. Links, diff hunk headers and the
-completion cursor are cyan.
+completion cursor are cyan. Secondary text uses the shared muted foreground, not ANSI faint intensity.
 
 ### §5.5.1 Colour selection {§cli-color-policy}
 
@@ -1091,9 +1091,21 @@ plain `render` filter receive no client-added styling, even when colour is force
 
 ### §5.5.2 Light and dark grounds {§cli-color-scheme}
 
-The palette follows the terminal's ground, with no knob. On a light ground the two fixed
-256-colour accents take darker twins of the same hue: important purple 141 becomes 97, and
-warning orange 172 becomes 130. The ANSI accents follow the terminal's own theme and never pivot.
+The palette follows the terminal's ground, with no knob or theme catalogue.
+The ANSI accents follow the terminal's own theme and never pivot. Fixed 256-colour roles are:
+
+| Role | Dark ground | Light ground |
+|---|---|---|
+| Important | Purple 141 | Purple 97 |
+| Warning | Orange 172 | Orange 130 |
+| Muted | Neutral 145 | Neutral 60 |
+
+The muted pair uses the 256-colour projection of Pi's built-in
+[dark](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/dark.json)
+and [light](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/light.json)
+muted colours. Prompt borders, statuslines, summaries and inline code share this role;
+ordinary response text retains the terminal's foreground.
+
 The first known source decides:
 
 | Source | Read by |

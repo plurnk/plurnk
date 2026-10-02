@@ -1,6 +1,6 @@
 // The client's one palette (plurnk#97): every colour and emphasis is named here by role, and no
-// other module writes an SGR code. The five alert accents are the scheme (plurnk#87); every other
-// role borrows from them.
+// other module writes an SGR code. Semantic colours borrow the five alert accents (plurnk#87);
+// secondary text uses a ground-aware neutral.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { RgbColor, TerminalColorScheme } from "@earendil-works/pi-tui";
 
@@ -54,8 +54,11 @@ const DARK = Object.freeze({
     orange: "38;5;172",
     red: "31",
     cyan: "36",
+    // Pi's built-in muted colours, projected to 256 colours by pi-tui:
+    // dark okhsl(229 6% 67%), light okhsl(229 8% 47%). See {§cli-color-scheme}.
+    muted: "38;5;145",
 });
-const LIGHT = Object.freeze({ ...DARK, purple: "38;5;97", orange: "38;5;130" });
+const LIGHT = Object.freeze({ ...DARK, purple: "38;5;97", orange: "38;5;130", muted: "38;5;60" });
 
 const byRole = (accent: Readonly<Record<keyof typeof DARK, string>>) => Object.freeze({
     note: accent.blue,
@@ -70,7 +73,7 @@ const byRole = (accent: Readonly<Record<keyof typeof DARK, string>>) => Object.f
     removed: accent.red,
     reference: accent.cyan,
     bold: "1",
-    dim: "2",
+    dim: accent.muted,
     italic: "3",
     strike: "9",
 });

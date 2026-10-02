@@ -2,7 +2,7 @@ import test, { afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
 import CancelGesture from "./tui-cancel.ts";
-import { withColorOutput } from "./color.ts";
+import { paint, withColorOutput } from "./color.ts";
 
 const colorEnv = { PLURNK_CLIENT_COLOR: "auto", TERM: "xterm-256color", CLICOLOR: "", CLICOLOR_FORCE: "", FORCE_COLOR: "" };
 const savedColor = Object.keys(colorEnv).map((key) => [key, process.env[key]] as const);
@@ -53,7 +53,7 @@ for (const noColor of ["", "1"]) {
         gesture.request("user_escape");
         await tick();
         assert.deepEqual(reasons, ["user_sigint"], "the armed latch swallows the second gesture's cancel");
-        assert.deepEqual(lines, [noColor ? "  cancelling… (ctrl-c again to quit)" : "  \x1b[2mcancelling… (ctrl-c again to quit)\x1b[0m"]);
+        assert.deepEqual(lines, [`  ${paint("cancelling… (ctrl-c again to quit)", "dim")}`]);
         assert.equal(gesture.requested, true, "the next Ctrl-C exits");
         assert.equal(rec.closes, 0, "a cancel that reached the daemon does not close the client");
     }));

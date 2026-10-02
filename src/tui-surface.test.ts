@@ -38,18 +38,23 @@ const fixture = (t: TestContext, color: "always" | "never", onWrite?: (text: str
     return { surface, output, reply };
 };
 
-for (const color of ["always", "never"] as const) {
-    test(`[§cli-status-project-root] the statusline is muted with color ${color}`, { timeout: 3_000 }, async (t) => {
+for (const [scheme, index] of [["dark", 145], ["light", 60]] as const) for (const color of ["always", "never"] as const) {
+    test(`[§cli-status-project-root] the statusline and prompt borders are muted on ${scheme} with color ${color}`, { timeout: 3_000 }, async (t) => {
         const text = "[~/project/~user] idle";
         const rendered = Promise.withResolvers<void>();
         const { surface, output } = fixture(t, color, (value) => {
             if (value.includes(text)) rendered.resolve();
         });
+        learnScheme(scheme);
         surface.setStatus(text);
         surface.start();
         await rendered.promise;
-        assert.ok(output.join("").includes(color === "always" ? `\x1b[2m${text}\x1b[0m` : text));
-        if (color === "never") assert.ok(!output.join("").includes(`\x1b[2m${text}`));
+        const renderedOutput = output.join("");
+        const foreground = `\x1b[38;5;${index}m`;
+        assert.ok(renderedOutput.includes(color === "always" ? `${foreground}${text}\x1b[0m` : text));
+        if (color === "always") assert.ok(renderedOutput.includes(`${foreground}─`), "the prompt borders share the muted foreground");
+        else assert.doesNotMatch(renderedOutput, /\x1b\[38;/);
+        assert.doesNotMatch(renderedOutput, /\x1b\[2m/, "muted must not depend on terminal faint rendering");
     });
 }
 

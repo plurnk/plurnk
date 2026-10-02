@@ -18,6 +18,10 @@ import TurnDisplay from "./turn.ts";
 import type { LogEntryWire } from "./render.ts";
 
 const styled = (role: Role) => (text: string): string => paint(text, role);
+const muted = (text: Text): Component => ({
+    render: (width) => text.render(width).map(styled("dim")),
+    invalidate: () => text.invalidate(),
+});
 
 export const editorTheme = {
     borderColor: styled("dim"),
@@ -60,7 +64,7 @@ export default class TuiSurface {
         this.#tui.addChild(this.#live);
         this.#tui.addChild(this.#turn);
         this.#tui.addChild(this.#input);
-        this.#tui.addChild(this.#status);
+        this.#tui.addChild(muted(this.#status));
         this.#tui.setFocus(this.editor);
         this.#tui.onTerminalColorSchemeChange((scheme) => this.#askScheme(scheme));
     }
@@ -98,7 +102,7 @@ export default class TuiSurface {
         if (component === null) this.#reviewing = false;
         else if (this.#review === null && this.editor.getText().length === 0) this.#reviewing = true;
         this.#review = component;
-        this.#pending.setText(paint(`${count} pending review${count === 1 ? "" : "s"} · /review · /cancel`, "dim"));
+        this.#pending.setText(`${count} pending review${count === 1 ? "" : "s"} · /review · /cancel`);
         this.#showInput();
     }
 
@@ -121,7 +125,7 @@ export default class TuiSurface {
         if (this.#dialog !== null) this.#input.addChild(this.#dialog);
         else if (this.#reviewing && this.#review !== null) this.#input.addChild(this.#review);
         else {
-            if (this.#review !== null) this.#input.addChild(this.#pending);
+            if (this.#review !== null) this.#input.addChild(muted(this.#pending));
             this.#input.addChild(this.editor);
         }
         this.#tui.setFocus(this.#focus);
@@ -195,7 +199,7 @@ export default class TuiSurface {
     }
 
     setStatus(text: string): void {
-        this.#status.setText(paint(text, "dim"));
+        this.#status.setText(text);
         this.#tui.requestRender();
     }
 

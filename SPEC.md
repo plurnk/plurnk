@@ -1115,8 +1115,9 @@ The first known source decides:
 | The background index in `COLORFGBG`: 0–6 and 8 dark, 7 and 9–15 light | TUI and one-shot CLI |
 | None of these | The dark ground's palette |
 
-The TUI asks only while colour is enabled ({§cli-color-policy}). Text already printed keeps its
-colours; a switch applies to what renders next.
+The TUI asks only while colour is enabled ({§cli-color-policy}). Archived text keeps its colours;
+live prompt borders, the footer and pending-review text repaint for the new ground even when their
+contents have not changed. Subsequent output uses the new palette.
 
 ---
 

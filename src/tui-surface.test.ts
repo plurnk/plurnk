@@ -51,9 +51,12 @@ for (const [scheme, index] of [["dark", 145], ["light", 60]] as const) for (cons
         await rendered.promise;
         const renderedOutput = output.join("");
         const foreground = `\x1b[38;5;${index}m`;
-        assert.ok(renderedOutput.includes(color === "always" ? `${foreground}${text}\x1b[0m` : text));
-        if (color === "always") assert.ok(renderedOutput.includes(`${foreground}─`), "the prompt borders share the muted foreground");
+        if (color === "always") {
+            assert.match(renderedOutput, new RegExp(`${RegExp.escape(foreground + text)} *${RegExp.escape("\x1b[0m")}`));
+            assert.ok(renderedOutput.includes(`${foreground}─`), "the prompt borders share the muted foreground");
+        }
         else assert.doesNotMatch(renderedOutput, /\x1b\[38;/);
+        assert.ok(renderedOutput.includes(text));
         assert.doesNotMatch(renderedOutput, /\x1b\[2m/, "muted must not depend on terminal faint rendering");
     });
 }
@@ -82,6 +85,27 @@ test("[§cli-color-scheme] without a background the terminal's light/dark report
     surface.start();
     await reply("\x1b[?997;2n", DA1);
     assert.equal(paint("x", "warning"), WARNING.light);
+});
+
+test("[§cli-color-scheme] a terminal appearance change repaints unchanged footer, prompt and pending-review text", { timeout: 3_000 }, async (t) => {
+    const text = "[~/project/~user] idle";
+    const dark = Promise.withResolvers<void>();
+    const light = Promise.withResolvers<void>();
+    const { surface, reply, output } = fixture(t, "always", (value) => {
+        if (value.includes(`\x1b[38;5;145m${text}`)) dark.resolve();
+        if (value.includes(`\x1b[38;5;60m${text}`)) light.resolve();
+    });
+    learnScheme("dark");
+    surface.setInput("Unchanged draft");
+    surface.setReview({ render: () => [], invalidate() {} }, 1);
+    surface.setStatus(text);
+    surface.start();
+    await dark.promise;
+    await reply("\x1b[?997;2n", "\x1b]11;rgb:fdfd/f6f6/e3e3\x07", DA1);
+    await light.promise;
+    assert.ok(output.join("").includes("\x1b[38;5;60m1 pending review · /review · /cancel"));
+    assert.ok(output.join("").includes("\x1b[38;5;60m─"));
+    assert.equal(surface.editor.getText(), "Unchanged draft");
 });
 
 test("[§cli-color-scheme] with colour off the TUI asks the terminal nothing", async (t) => {

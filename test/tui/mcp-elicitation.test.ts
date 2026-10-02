@@ -103,7 +103,7 @@ Await the MCP result.
             HOME: daemon.home, PLURNK_MODEL: "", XDG_CONFIG_HOME: `${daemon.home}/.config`,
         }, daemon.workspace);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("Perform the MCP operation.\r");
             let since = tui.output().length;
             for (const { prompt, answer } of specimen.steps) {

@@ -28,7 +28,7 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
         resources.defer(async () => { tui.kill(); await tui.exited; });
         if (ending === "cancel folder") await tui.waitFor(/Choose a project folder/, 25_000);
         else {
-            await tui.waitFor(/plurnk.*\/help/, 25_000);
+            await tui.waitFor(/plurnk.*\/help/s, 25_000);
             await tui.waitFor(/No model selected\./);
             assert.match(tui.output(), /Use \/models/);
         }

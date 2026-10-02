@@ -680,15 +680,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // A `?` prompt asks for review of that run; the request outranks the standing yolo setting.
     let reviewRequested = false;
     // Inspection: the REAL target URIs of prior operations the waterfall has shown
-    // (oldest→newest, e.g. worker:///plan.md), each with the worker it was seen under, feed
-    // the Alt-p/Alt-n cycler — not synthesized log-entry coordinates. lookCursor walks them.
-    const priorTargets: Array<{ target: string; workerId: number | null }> = [];
+    // (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/Alt-n cycler. The binding
+    // scopes both model and client-authored operations; resetConversationView clears it on attach.
+    const priorTargets: string[] = [];
     let lookCursor: number | null = null;
-    // The cycler offers the bound conversation's targets only: a hop is a full attach, and an
-    // address harvested under another worker would resolve against the wrong log.
-    const lookCandidates = (): string[] => priorTargets
-        .filter(({ workerId }) => workerId === null || conversationWorkerId === null || workerId === conversationWorkerId)
-        .map(({ target }) => target);
     let liveReasoning: { messageId: string; rendered: string } | null = null;
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
@@ -823,7 +818,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // the waterfall has shown (the same harvest the LOOK cycler keeps).
             getWorkerNames: async () => {
                 const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
-                const seen = priorTargets.map(({ target }) => workerNameFromTarget(target)).filter((name): name is string => name !== null);
+                const seen = priorTargets.map(workerNameFromTarget).filter((name): name is string => name !== null);
                 return [...new Set([...workers.map((worker) => worker.name), ...seen])];
             },
             getEfforts: () => workerEffort.supportedEfforts,
@@ -882,10 +877,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const cycleLook = (dir: "up" | "down"): void => {
         const current = surface.editor.getText();
         if (current.length > 0 && !current.startsWith("/look ")) return;
-        const candidates = lookCandidates();
-        lookCursor = cycleCoord(candidates.length, lookCursor, dir);
+        lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
         if (lookCursor === null) return;
-        setLine(`/look ${candidates[lookCursor]}`);
+        setLine(`/look ${priorTargets[lookCursor]}`);
     };
 
     // Inspection is the human's, never the loop's ({§cli-inspection}): op.look validates and
@@ -995,7 +989,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             for (const entry of history.entries) {
                 if (isEmission(entry)) continue;
                 const target = entryTarget(entry);
-                if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
+                if (target !== null) priorTargets.push(target);
             }
         },
         onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
@@ -1023,7 +1017,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
             // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
-            if (target !== null) priorTargets.push({ target, workerId: entry.worker_id ?? null });
+            if (target !== null) priorTargets.push(target);
             if (inFlight && entry.origin === "model" && typeof entry.op === "string") {
                 doing = { phase: "working", since: Date.now(), op: entry.op, target };
                 repromptPreserving();

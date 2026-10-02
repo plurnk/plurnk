@@ -67,7 +67,7 @@ test("{§cli-conversation-history}: startup and attach restore the bound convers
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "", PLURNK_CLIENT_HISTORY_ENTRIES: "0",
     }, daemon.workspace);
     t.after(() => quiet.kill());
-    await quiet.waitFor(/plurnk.*\/help/);
+    await quiet.waitFor(/plurnk.*\/help/s);
     quiet.write("/model\r");
     await quiet.waitFor(/model: historyfixture/);
     assert.doesNotMatch(quiet.output(), /RESTORED_ANSWER|Remember the alpha question|earlier entries/);

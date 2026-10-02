@@ -223,7 +223,7 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    await tui.waitFor(/plurnk.*\/help/);
+    await tui.waitFor(/plurnk.*\/help/s);
     tui.write("Work through two turns.\r");
     await incoming[0].promise;
     await tui.waitFor(/LIVE_REASONING_1/);
@@ -314,7 +314,7 @@ test("[§cli-worker-status] the built TUI clock advances through parked and resu
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    await tui.waitFor(/plurnk.*\/help/);
+    await tui.waitFor(/plurnk.*\/help/s);
     tui.write("Delegate and wait for the result.\r");
     const parked = /💤[^\r\n]* · (\d+(?:\.\d+)?s)\b/u;
     const first = await tui.waitFor(parked);

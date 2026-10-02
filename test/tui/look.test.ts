@@ -27,7 +27,7 @@ describe("TUI inspection (/look)", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             // Seed an op whose target the cycler can surface (--yolo accepts the EDIT proposal).
             tui.write("\x1b[200~````EDIT (worker:///plan.md)\nlook-probe-42\n````\x1b[201~\r");
             await tui.waitFor(/final 2\d\d/, 45_000);  // cold-boot embedding derivation (svc: first op warms ~70 entries)
@@ -45,6 +45,18 @@ describe("TUI inspection (/look)", () => {
             assert.equal(prefills(), seen, "Alt-p left the draft alone");
             assert.match(tui.output().slice(-400), /a draft of my own/, "the draft is still the composer's value");
             tui.write("\x15");
+            tui.write("/attach look-second\r");
+            await tui.waitFor(/worker: look-second \(new\)/);
+            const switched = tui.output().length;
+            tui.write("\x1bp");
+            await delay(300);
+            assert.doesNotMatch(tui.output().slice(switched), /\/look worker:\/\/\/plan\.md/,
+                "switching bindings clears the previous conversation's targets");
+            tui.write("\x1b[200~````EDIT (worker:///second.md)\nsecond binding\n````\x1b[201~\r");
+            await tui.waitFor(/final 2\d\d/, 10_000, switched);
+            tui.write("\x1bp");
+            await tui.waitFor(/\/look worker:\/\/\/second\.md/, 10_000, switched);
+            tui.write("\x15");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {
@@ -59,7 +71,7 @@ describe("TUI inspection (/look)", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("\x1b[200~````EDIT (worker:///note.md)\nlook-harvest-99\n````\x1b[201~\r");
             await tui.waitFor(/final 2\d\d/, 45_000);  // cold-boot embedding derivation (svc: first op warms ~70 entries)
             const before = tui.output().length;
@@ -84,7 +96,7 @@ describe("TUI inspection (/look)", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--yolo"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/look worker:///missing.md\r");
             await tui.waitFor(/LOOK \(worker:\/\/\/missing\.md\) — \S/, 45_000);
             assert.doesNotMatch(tui.output(), /no content\)/, "the old status-only readout is gone");

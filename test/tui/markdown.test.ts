@@ -69,7 +69,7 @@ for (const op of ["KILL", "NOTE", "prose"]) test(`[Â§cli-markdown-projection] [Â
         NODE_OPTIONS: "--max-old-space-size=256", PLURNK_CLIENT_MERMAID_TIMEOUT_MS: "1000",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    await tui.waitFor(/plurnk.*\/help/);
+    await tui.waitFor(/plurnk.*\/help/s);
     tui.write("Describe the project.\r");
     await tui.waitFor(/RENDER_FINISHED/);
     if (op !== "KILL") await tui.waitFor(/ANSWER_DELIVERED/);

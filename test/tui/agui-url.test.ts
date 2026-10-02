@@ -23,7 +23,7 @@ test("PLURNK_AGUI_URL reaches the in-process module despite an unusable host and
         PLURNK_AGUI_URL: daemon.url,
     });
     try {
-        await tui.waitFor(/plurnk.*\/help/);
+        await tui.waitFor(/plurnk.*\/help/s);
         tui.write("/quit\r");
         await tui.waitFor(/resume this workspace:\s+plurnk --workspace /);
         assert.equal(await tui.exited, 0);

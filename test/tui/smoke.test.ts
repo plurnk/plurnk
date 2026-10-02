@@ -43,7 +43,7 @@ describe("TUI pty harness", () => {
         const tui = spawnTui(daemon.url, ["--workspace", "tui-startup-contract", "--worker", "startup-worker"]);
         try {
             // 1. The startup header proves the TUI connected and is at the prompt.
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             // 2. A verb keystroke round-trips: /help prints the verb table.
             tui.write("/help\r");
             const afterHelp = await tui.waitFor(/\/yolo/);
@@ -66,7 +66,7 @@ describe("TUI pty harness", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("\x1bm");                 // ESC m = Alt-m → /models
             await tui.waitFor(/selector\s+name\s+context|no models match/, 8_000);
             tui.write("/quit\r");
@@ -81,7 +81,7 @@ describe("TUI pty harness", () => {
         const args = ["--workspace", "resume-workers", "--worker", "second"];
         const tui = spawnTui(daemon.url, ["--workspace", "resume-workers", "--worker", "first"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/attach second\r");
             await tui.waitFor(/worker: second \(new\)/);
             tui.write("/quit\r");
@@ -90,7 +90,7 @@ describe("TUI pty harness", () => {
         } finally { tui.kill(); }
         const resumed = spawnTui(daemon.url, args);
         try {
-            await resumed.waitFor(/plurnk.*\/help/);
+            await resumed.waitFor(/plurnk.*\/help/s);
             resumed.write("/workers\r");
             await resumed.waitFor(/● second[^\n]*← bound/);
             resumed.write("/workspace fresh-resume\r");
@@ -104,7 +104,7 @@ describe("TUI pty harness", () => {
             await resumed.waitFor(/RESUME_WITNESS\s+worker\s+active\s+before-rename/, 10000, since);
             resumed.write("/quit\r");
             assert.equal(await resumed.exited, 0);
-            assert.match(resumed.output(), /plurnk --workspace renamed-resume --worker fresh-resume/);
+            assert.match(resumed.output(), /plurnk --workspace renamed-resume --worker second/);
         } finally { resumed.kill(); }
     });
 
@@ -112,12 +112,12 @@ describe("TUI pty harness", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--workspace", "implicit-resume"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/rename implicit-renamed\r");
             await tui.waitFor(/workspace: implicit-renamed/);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
-            assert.match(tui.output(), /plurnk --workspace implicit-renamed --worker implicit-resume/);
+            assert.match(tui.output(), /plurnk --workspace implicit-renamed --worker user/);
         } finally { tui.kill(); }
     });
 
@@ -125,7 +125,7 @@ describe("TUI pty harness", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             // Real keypresses arrive as separate chunks; over a pipe the
             // writes would coalesce and hide the lone-ESC chunk. Space them.
             const key = async (bytes: string): Promise<void> => {
@@ -154,7 +154,7 @@ describe("TUI pty harness", () => {
         await writeFile(editor, "#!/bin/sh\nprintf '/help\\n' > \"$1\"\n", { mode: 0o755 });
         const tui = spawnTui(daemon.url, [], { VISUAL: editor });
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             const key = async (bytes: string): Promise<void> => {
                 tui.write(bytes);
                 await setTimeout(80);

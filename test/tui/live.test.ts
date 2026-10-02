@@ -38,7 +38,7 @@ describe("TUI live (model-gated)", () => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "0" });
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             // {§exec-host-proposes} — an execution proposes, and this witness is the only reviewer in
             // the room: yolo is its consent, so the model's steps run and the loop stays live.
             tui.write("/yolo\r");

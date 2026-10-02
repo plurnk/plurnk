@@ -60,7 +60,7 @@ describe("TUI Functionality dogfood", () => {
         // Pin consent independently of the operator's environment.
         const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "1" }, project);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
 
             tui.write(`/skills add extra ${source}\r`);
             await tui.waitFor(/added: extra \(active\)/, 20_000);

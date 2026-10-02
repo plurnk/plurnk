@@ -565,7 +565,8 @@ composer: the heading as submitted, then the content verbatim; an empty result s
 the daemon's words; an unsuccessful one names the Problem title, with its detail and
 recovery beneath. Inspection touches no loop lifecycle, summary, or tally, and stays
 available while a loop runs. Alt-p and Alt-n cycle the real targets of the bound
-conversation's prior operations into an empty composer as `/look <target>`, an editable
+conversation's prior operations, including client-authored operations on that binding,
+into an empty composer as `/look <target>`, an editable
 starting point; a composer holding anything else is left alone.
 
 ### §cli-active-command-admission Commands during an active run

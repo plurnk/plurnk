@@ -92,7 +92,7 @@ describe("TUI workspace MCP dogfood", () => {
         // Pin consent independently of the operator's environment.
         const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "1" }, project);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
 
             // Declared servers default enabled; inspecting a cold workspace connects nothing.
             let since = tui.output().length;

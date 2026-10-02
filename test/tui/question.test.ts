@@ -64,7 +64,7 @@ for (const action of ["accept", "cancel", "stop"]) {
             HOME: daemon.home, PLURNK_MODEL: "", XDG_CONFIG_HOME: `${daemon.home}/.config`,
         }, daemon.workspace);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("Ask for branch details.\r");
             await tui.waitFor(/branch \(string; optional; Enter skips\)/, 30_000);
             tui.write("/model");

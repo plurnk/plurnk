@@ -48,9 +48,9 @@ after(async () => { await daemon?.cleanup(); await endpoint?.close(); });
 describe("TUI verbs + input (model-independent; was HITL-only)", () => {
     test("/yolo and Shift-Tab both toggle local auto-accept on then off from explicit review", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, [], { PLURNK_CLIENT_YOLO: "0" });
+        const tui = spawnTui(daemon.url, ["--workspace", t.name], { PLURNK_CLIENT_YOLO: "0" });
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/yolo\r"); await tui.waitFor(/yolo: ON/);
             tui.write("/yolo\r"); await tui.waitFor(/yolo: OFF/);
             // The gesture an operator actually reaches for, proved against the real terminal:
@@ -62,9 +62,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-model-selection][§cli-effort] the model and its effort persist through the live TUI", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/model clientfirst\r"); await tui.waitFor(/model: clientfirst/);
             tui.write("/model clienttest\r"); await tui.waitFor(/model: clienttest/);
             tui.write("/model\r");            await tui.waitFor(/model: clienttest/); // sticky — the switch persisted
@@ -87,9 +87,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-identity-effort] /effort repaints the identity from the readback while idle, before any loop", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--model", "clienttest"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             await tui.waitFor(/🎲 clienttest\(adaptive\)/);
             await status(tui, "/effort high", /🎲 clienttest\[high\]/);
         } finally { tui.kill(); }
@@ -97,9 +97,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-identity-effort] /effort repaints the identity after a gauge has already been received", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             await status(tui, "/model clienttest", /🎲 clienttest\(adaptive\)/);
             await status(tui, "/effort high", /🎲 clienttest\[high\]/);
         } finally { tui.kill(); }
@@ -107,9 +107,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-identity-effort] /effort repaints the identity after a loop's gauge, keeping the loop's lifecycle", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--model", "clientloop"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clientloop"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("run one turn\r");
             await tui.waitFor(/⏹️ {2}· 🎲 clientloop\(adaptive\)/, 30_000);
             // A base-URL-routed alias is an OpenAI-compatible provider admitting only off and adaptive.
@@ -120,9 +120,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-identity-effort] a chosen effort follows the worker across /model, and the readback paints it", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--model", "clienttest", "--effort", "high"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest", "--effort", "high"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             await tui.waitFor(/🎲 clienttest\[high\]/);
             await status(tui, "/model clientfirst", /🎲 clientfirst\[high\]/);
         } finally { tui.kill(); }
@@ -132,9 +132,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
     // witnessed through the bare inspection, which prints the client's last server-read route.
     test("[§cli-identity-effort] /child override and inherit are read back with the parent, and /effort re-reads the child too", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--model", "clienttest"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             await status(tui, "/child clientfirst", /child: clientfirst/);
             await status(tui, "/child", /child: clientfirst\(adaptive\)/);
             await status(tui, "/effort high", /🎲 clienttest\[high\]/);
@@ -146,9 +146,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-identity-effort] a rejected /effort keeps the daemon Problem visible and the identity unchanged", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--model", "clienttest"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             await tui.waitFor(/🎲 clienttest\(adaptive\)/);
             const since = tui.output().length;
             tui.write("/effort bogus\r");
@@ -160,9 +160,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-identity-effort] brackets mark a chosen effort, parentheses a provider default, from admission on", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const given = spawnTui(daemon.url, ["--model", "clientfirst"]);
+        const given = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clientfirst"]);
         try {
-            await given.waitFor(/plurnk.*\/help/);
+            await given.waitFor(/plurnk.*\/help/s);
             await given.waitFor(/🎲 clientfirst\(adaptive\)/);
             await status(given, "/effort adaptive", /🎲 clientfirst\[adaptive\]/);
         } finally { given.kill(); }
@@ -170,9 +170,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("/workspace [name] opens a new named workspace", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/workspace ptytest\r");
             await tui.waitFor(/workspace: ptytest \(new\)/);
         } finally { tui.kill(); }
@@ -180,9 +180,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("[§cli-import-and-bracketed-paste] a small multiline paste remains one editable submission", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--yolo"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--yolo"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("\x1b[200~````EDIT (worker:///pasted.md)\nline one\nline two\n````\x1b[201~\r");
             const output = await tui.waitFor(/final 2\d\d/, 15_000);
             assert.equal(output.match(/worker:\/\/\/pasted\.md/g)?.length, 2, "one submitted prompt echo and one operation receipt");
@@ -195,9 +195,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const project = await mkdtemp(join(tmpdir(), "plurnk-members-"));
         await writeFile(join(project, "note.md"), "# note\n");
         await writeFile(join(project, "other.txt"), "x\n");
-        const tui = spawnTui(daemon.url, [], {}, project);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name], {}, project);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/members add note note.md\r");
             await tui.waitFor(/added: note \(active\)/, 20_000);
             tui.write("/members\r");
@@ -218,9 +218,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
     test("[§cli-environment] /env shares the Functionality lifecycle grammar against the built daemon, for this tab's worker", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         if (!env) { t.skip("the daemon does not serve the env family"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/env add CARGO_TARGET_DIR /tmp/plurnk-verbs\r");
             await tui.waitFor(/added: CARGO_TARGET_DIR \(active\)/, 20_000);
             tui.write("/env\r");
@@ -249,9 +249,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("Tab completes a verb prefix (/mo → /model)", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/mo\t");           // Tab → common prefix of /models, /model
             await tui.waitFor(/\/model\b/);
         } finally { tui.kill(); }
@@ -262,9 +262,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const dir = await mkdtemp(join(tmpdir(), "plurnk-import-"));
         const file = join(dir, "note.md");
         await writeFile(file, "first line\nsecond line\nthird line\n");
-        const tui = spawnTui(daemon.url);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write(`/import ${file}\r`);
             await tui.waitFor(/first line[\s\S]*second line[\s\S]*third line/);
         } finally { tui.kill(); await rm(dir, { recursive: true, force: true }); }
@@ -272,9 +272,9 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
 
     test("a concluded client execution reads inline output from the notified entry owner", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
-        const tui = spawnTui(daemon.url, ["--yolo"]);
+        const tui = spawnTui(daemon.url, ["--workspace", t.name, "--yolo"]);
         try {
-            await tui.waitFor(/plurnk.*\/help/);
+            await tui.waitFor(/plurnk.*\/help/s);
             tui.write("! printf '\\157\\167\\156\\145\\162\\055\\162\\145\\141\\144\\055\\064\\062'\r");
             await tui.waitFor(/owner-read-42/, 15_000);
             tui.write("/quit\r");

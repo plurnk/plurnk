@@ -72,7 +72,7 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    await tui.waitFor(/plurnk.*\/help/);
+    await tui.waitFor(/plurnk.*\/help/s);
     tui.write("Delegate to two workers and finish together.\r");
     release[0].resolve();
     await Promise.all([arrived[1].promise, arrived[2].promise]);

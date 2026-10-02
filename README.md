@@ -39,7 +39,12 @@ policies without replacing the environment. No Plurnk account is required.
 
 ## Get started
 
-Requires Node.js 26+, npm, Git, and a local or cloud model endpoint.
+Requirements:
+
+* Node.js 26+
+* npm
+* git
+* model(s) with open, streaming, verbatim reasoning
 
 ```sh
 npm install -g @plurnk/plurnk

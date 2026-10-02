@@ -29,6 +29,7 @@ test("[§cli-tool-acceptance]: built TUI auto-accepts a configured runtime but e
     let since = tui.output().length;
     tui.write("Write the witness.\r");
     await tui.waitFor(/Approval fixture finished\./, 20_000, since);
+    await tui.waitFor(/done · 3 turns ·/, 20_000, since);
     assert.doesNotMatch(tui.output().slice(since), /↑\/↓: choose.*Enter: confirm/);
     assert.equal(await readFile(join(daemon.workspace, "witness.txt"), "utf8"), "permitted");
     since = tui.output().length;

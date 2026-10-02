@@ -53,7 +53,8 @@ Options:
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, structured errors; interactive OAuth instructions use stderr. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
-| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Requires `--workspace` outside web mode; an unconstrained web portal resolves the workspace first. Overrides `PLURNK_CLIENT_WORKER`. See §1.1. |
+| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Overrides `PLURNK_CLIENT_WORKER`. TUI default: `PLURNK_CLIENT_TUI_WORKER`; CLI default: the workspace's conversation. See §1.1. |
+| `--tui-worker <name>` | string | TUI-only default when no worker is selected. Overrides `PLURNK_CLIENT_TUI_WORKER`. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the conversation worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
 | `--effort <policy>` | string | Persist the daemon-validated effort on the conversation worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_EFFORT`. |
 | `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: permit private local startup or require attachment. See {§cli-daemon-autostart}. |
@@ -135,12 +136,12 @@ Help, version, completion and local rendering do not acquire a backend.
 
 Workspaces and workers are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the conversation by name, including after a fork.
 
-**The name IS the identity.** With `--workspace`/`PLURNK_CLIENT_WORKSPACE`, the client sends that name verbatim as `forwardedProps.plurnk.workspace`. AG-UI owns attach-or-create admission under {§agui-thread-binding}. Without a workspace, the daemon mints one through a no-name `workspace.create` carrying the invocation's create-time options. The client binds to the returned name, never a fixed `tui` or `cli` label. The required workspace and the conversation's `threadId` are separate wire fields.
+**The name IS the identity.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim, otherwise the launch working directory, as `forwardedProps.plurnk.workspace`. The derived name replaces the complete home-directory prefix with `~`; paths outside home remain absolute. Clients launched in the same directory against the same daemon/database therefore attach to the same workspace. AG-UI owns attach-or-create admission under {§agui-thread-binding}. Workspace identity and project root are independent: a derived name does not override a saved root or an explicit headless/different creation root. The workspace and conversation `threadId` remain separate wire fields. Web mode retains its unconstrained workspace selection when none is configured.
 
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
-- **`--worker <name>` names the conversation**: the worker name becomes `threadId`, binding an existing model worker or creating one. Without it, `threadId` is the workspace name, selecting the daemon's durable default conversation worker. For read subcommands, an explicit `--worker` resolves via `workspace.workers`; an unknown name fails rather than falling back.
-- **`--worker` set without `--workspace`** → usage error (exit 64) for the one-shot, TUI, and state-command surfaces. Web mode may retain the Worker constraint while each browser route selects or creates its workspace first; the Worker never exists outside that resolved world.
+- **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, selecting the daemon's durable default conversation worker. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
+- An explicit worker does not require an explicit workspace: it can attach within the directory-derived workspace. Web mode resolves its workspace before applying a worker constraint.
 
 CLI flag takes precedence over env when both are set.
 
@@ -196,7 +197,10 @@ hundredth of a cent with grouped thousands (`$3,333.3333`).
 at column zero, before TUI place coordinates, glyphs, model and counters. It comes from
 `snapshot.plurnk.workspace.projectRoot`. The launch directory and
 create-time options cannot override it on reattachment. Switching workspaces replaces
-the folder; a headless or unknown root omits it. Path text is terminal-safe.
+the folder; a headless or unknown root omits it. Home paths use `~`. The TUI omits
+the separate folder when its home-shortened form equals the workspace name's
+home-shortened form; the place already identifies it. Path text is terminal-safe.
+The TUI footer uses the muted color role, subject to {§cli-color-policy}.
 
 {§cli-status-children} The ant is the daemon's count of the bound worker's alive
 direct children (`snapshot.plurnk.status.children`: queued, running, or parked —
@@ -648,8 +652,8 @@ persists a workspace definition, not a plugin installation; `remove` restores
 any inherited definition and enabled state. An inherited server is disable-only.
 
 The interactive and positional forms share one tokenizer-independent command
-handler. `plurnk mcp …` requires `--workspace` or
-`PLURNK_CLIENT_WORKSPACE`; `--json` emits the unmodified successful action
+handler. `plurnk mcp …` uses the workspace selected under §1.1;
+`--json` emits the unmodified successful action
 result.
 
 | TUI / CLI input | AG-UI+ action |
@@ -1293,8 +1297,8 @@ Typical use: discover a worker name to pass as `--worker` on `plurnk log read`.
 
 ### §7.4 `plurnk log read` {§cli-plurnk-log-read}
 
-Reads a worker's log through `log.read`. **Requires `--workspace <name>`** (exit
-`64` if unset). `--worker <name>` selects an existing conversation worker;
+Reads a worker's log through `log.read` in the workspace selected under §1.1.
+`--worker <name>` selects an existing conversation worker;
 omission selects the workspace's durable default conversation under §1.1.
 
 Filter flags (all numeric, all optional):
@@ -1310,7 +1314,7 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 
 ### §7.5 `plurnk effort [level]` {§cli-plurnk-effort}
 
-Requires `--workspace`; `--worker` selects a named conversation. With no
+Uses the workspace selected under §1.1; `--worker` selects a named conversation. With no
 level, calls `worker.effort.get`. With one level, calls
 `worker.effort.set`. Text mode prints the effective effort and supported
 choices; JSON mode emits the daemon result unchanged.

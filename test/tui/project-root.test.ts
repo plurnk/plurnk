@@ -76,7 +76,7 @@ test("[§cli-project-root] home launch requires a choice before workspace creati
             tui.write("\r");
             await tui.waitFor(/workspace: chosen/);
             assert.equal((await rows()).find(({ name }) => name === "chosen")?.project_root, project);
-            await tui.waitFor(new RegExp(`${RegExp.escape(project)} \\[chosen/`));
+            await tui.waitFor(/~\/my project \[chosen\//);
             const completingAt = tui.output().length;
             tui.write("@chosen-f\t");
             await tui.waitFor(/@chosen-file\.txt/, 10_000, completingAt);

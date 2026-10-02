@@ -12,7 +12,7 @@ const SCHEME_NOTIFICATIONS = "\x1b[?2031h";
 const DA1 = "\x1b[?62;22c";
 const ORIGINAL = { color: process.env.PLURNK_CLIENT_COLOR, colorFgBg: process.env.COLORFGBG };
 
-const fixture = (t: TestContext, color: "always" | "never") => {
+const fixture = (t: TestContext, color: "always" | "never", onWrite?: (text: string) => void) => {
     process.env.PLURNK_CLIENT_COLOR = color;
     delete process.env.COLORFGBG;
     let input: (data: string) => void = () => {};
@@ -20,7 +20,7 @@ const fixture = (t: TestContext, color: "always" | "never") => {
     const terminal: Terminal = {
         columns: 100, rows: 30, kittyProtocolActive: false,
         start: (handler) => { input = handler; }, stop() {}, drainInput: async () => {},
-        write: (text) => { output.push(text); }, moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {},
+        write: (text) => { output.push(text); onWrite?.(text); }, moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {},
         clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {},
     };
     const surface = new TuiSurface(terminal);
@@ -37,6 +37,21 @@ const fixture = (t: TestContext, color: "always" | "never") => {
     };
     return { surface, output, reply };
 };
+
+for (const color of ["always", "never"] as const) {
+    test(`[§cli-status-project-root] the statusline is muted with color ${color}`, { timeout: 3_000 }, async (t) => {
+        const text = "[~/project/~user] idle";
+        const rendered = Promise.withResolvers<void>();
+        const { surface, output } = fixture(t, color, (value) => {
+            if (value.includes(text)) rendered.resolve();
+        });
+        surface.setStatus(text);
+        surface.start();
+        await rendered.promise;
+        assert.ok(output.join("").includes(color === "always" ? `\x1b[2m${text}\x1b[0m` : text));
+        if (color === "never") assert.ok(!output.join("").includes(`\x1b[2m${text}`));
+    });
+}
 
 test("[§cli-color-scheme] the background the terminal reports decides before anything is painted, and an announced switch asks again", async (t) => {
     const { surface, output, reply } = fixture(t, "always");

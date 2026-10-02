@@ -78,7 +78,7 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
     await tui.waitFor(/workspace: project-second \(new\)/, 10_000, switched);
     const headless = tui.output().length;
     tui.write("/workspace project-headless\r");
-    const headlessStatus = /\[project-headless\/~project-headless\(0\)\] [^\r\n]*/;
+    const headlessStatus = /\[project-headless\/~user\(0\)\] [^\r\n]*/;
     await tui.waitFor(headlessStatus, 10_000, headless);
     const headlessLines = stripVTControlCharacters(tui.output().slice(headless)).split(/[\r\n]/).filter((line) => headlessStatus.test(line));
     assert.ok(headlessLines.length > 0);

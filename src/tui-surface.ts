@@ -195,7 +195,7 @@ export default class TuiSurface {
     }
 
     setStatus(text: string): void {
-        this.#status.setText(text);
+        this.#status.setText(paint(text, "dim"));
         this.#tui.requestRender();
     }
 

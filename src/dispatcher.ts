@@ -12,7 +12,7 @@ import Knobs, { KnobError } from "./knobs.ts";
 import { isColorMode } from "./color.ts";
 import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
 import { BridgeTransport } from "./transport.ts";
-import { actionViaBridge, resolveWorld } from "./agui.ts";
+import { actionViaBridge } from "./agui.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
@@ -40,7 +40,7 @@ import {
 } from "./diagnostics.ts";
 import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
-import { userConfigFile } from "./paths.ts";
+import { homePath, userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
 import { launchWeb } from "./web.ts";
 import Backend from "./backend.ts";
@@ -144,12 +144,15 @@ options:
                           under "problem". Interactive OAuth instructions go to stderr. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
-                          if none exists (attach-or-create). Without it, a fresh
-                          auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
+                          if none exists (attach-or-create). Defaults to the launch
+                          directory, home-shortened with ~ (web: unconstrained).
+                          Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Requires --workspace except in web mode, which resolves
-                          the workspace before applying this constraint. Overrides
-                          PLURNK_CLIENT_WORKER.
+                          Overrides PLURNK_CLIENT_WORKER. TUI defaults to
+                          PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
+                          default conversation; web remains unconstrained.
+      --tui-worker <name> TUI-only default when no worker is selected; overrides
+                          PLURNK_CLIENT_TUI_WORKER.
       --model <selector>  persistently select the conversation worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -225,7 +228,7 @@ subcommands:
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
-  read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
+  read <loop/turn/op>     inspect one log row in the selected workspace/worker
   effort [level]          inspect or set a worker's effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
@@ -627,6 +630,7 @@ export const CLIENT_OPTIONS = {
     "env-file-if-exists": { type: "string", multiple: true },
     workspace: { type: "string" },
     worker: { type: "string" },
+    "tui-worker": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
     autostart: { type: "string" },
@@ -809,16 +813,16 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
 
     // Client flags select client behavior. Provider defaults remain daemon-owned.
-    const workspaceName = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
-    const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER;
+    const configuredWorkspace = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
+    const workspaceName = configuredWorkspace ?? homePath(process.cwd());
+    const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER
+        ?? (!web && !isSubcommand && prompt.length === 0
+            ? values["tui-worker"] ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER") : undefined);
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
     const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
     const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
-    if (!web && workerName !== undefined && workspaceName === undefined) {
-        dieWith(64, clientFlagMissingDependency("--worker (or PLURNK_CLIENT_WORKER)", "--workspace (or PLURNK_CLIENT_WORKSPACE)"));
-    }
 
     // {§cli-loop-policy} — one flag per choice; a prompt prefix states review immediately before its run.
     let loopPolicy!: LoopPolicyRequest;
@@ -886,7 +890,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => {
-            const selected = await selectProjectRoot(workspaceName);
+            const selected = await selectProjectRoot(web ? configuredWorkspace : workspaceName);
             if (selected === undefined) return lifetime.exit(130);
             projectRoot = selected;
             return {
@@ -906,17 +910,10 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         return workspaceOptionsPromise;
     };
 
-    // THE WORLD (workspace) name. An explicit --workspace/PLURNK_CLIENT_WORKSPACE names it;
-    // otherwise the daemon mints a fresh, uniquely-named workspace (resolveWorld) —
-    // never a literal "tui"/"cli". Resolved once, lazily, only when a conversation
-    // needs a world. Minted WITH its options so creation is atomic with the root.
-    let resolvedWorld: string | undefined;
+    // {§cli-workspaces-and-workers} — resolve creation options before attaching by name.
     const world = async (): Promise<string> => {
-        if (resolvedWorld !== undefined) return resolvedWorld;
-        resolvedWorld = await resolveWorld(
-            { bridgeUrl, token }, workspaceName, await workspaceOptions(),
-        );
-        return resolvedWorld;
+        await workspaceOptions();
+        return workspaceName;
     };
     if (web) {
         try {
@@ -965,7 +962,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 upstream: new URL(bridgeUrl),
                 ...(token === undefined ? {} : { token }),
                 constraints: {
-                    ...(workspaceName === undefined ? {} : { workspace: workspaceName }),
+                    ...(configuredWorkspace === undefined ? {} : { workspace: configuredWorkspace }),
                     ...(workerName === undefined ? {} : { threadId: workerName }),
                 },
                 workspaceProperties,
@@ -1009,9 +1006,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            // Thread-per-worker (svc#366): --worker names the CONVERSATION (the threadId);
-            // the world is --workspace, else a fresh daemon-minted workspace. Without --worker,
-            // thread == world (the model worker).
+            // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the default conversation.
             const w = await world();
             const controlWorkspaceOptions = await workspaceOptions();
             const { settings } = controlWorkspaceOptions;
@@ -1113,8 +1108,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const w = await world();
             const threadId = workerName ?? w;
             const { settings } = await workspaceOptions();
-            // Creation options are idempotent on an existing workspace; the
-            // same public envelope is used whether the daemon named it or we did.
+            // Creation options are idempotent on an existing workspace.
             transport = new BridgeTransport({ bridgeUrl, token }, threadId, {
                 workspace: w,
                 projectRoot,
@@ -1159,11 +1153,11 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
     // speak the action surface through a structural Caller.
     const target = { bridgeUrl, token };
-    const callerThread = workerName ?? workspaceName ?? "cli";
+    const callerThread = workerName ?? workspaceName;
     const caller = {
         call: (method: string, params?: object) => actionViaBridge<unknown>(target, {
             threadId: callerThread,
-            ...(workspaceName !== undefined ? { workspace: workspaceName } : {}),
+            workspace: workspaceName,
             kind: method,
             params,
         }),

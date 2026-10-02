@@ -4,6 +4,7 @@ import preparationSchema from "@plurnk/plurnk-contracts/schema/FunctionalityPrep
 import type { LoopUsage } from "./render.ts";
 import { abbreviatedCount, money } from "./figures.ts";
 import ModelText from "./model-text.ts";
+import { homePath } from "./paths.ts";
 
 // The session's running total in the summary line's shape — every concluded
 // loop adds its turns, wall time, and exact accounting.
@@ -356,7 +357,9 @@ export const renderStatusLine = (
     }
     // A glyph is two columns wide: a second space keeps the first dot off its shoulder.
     const activity = parts.length === 0 ? head : `${head}${glyphs.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
-    const folder = value.projectRoot == null ? "" : ModelText.plain(value.projectRoot).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
+    const path = value.projectRoot == null ? "" : homePath(value.projectRoot);
+    const redundant = context.place !== undefined && context.workspace !== null && homePath(context.workspace) === path;
+    const folder = redundant ? "" : ModelText.plain(path).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
     return [folder, context.place ?? "", activity].filter((part) => part.length > 0).join(" ");
 };
 

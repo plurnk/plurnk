@@ -51,12 +51,15 @@ loop.
                           under "problem". Interactive OAuth instructions go to stderr. Drill into one
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
-                          if none exists (attach-or-create). Without it, a fresh
-                          auto-named workspace is created. Overrides PLURNK_CLIENT_WORKSPACE.
+                          if none exists (attach-or-create). Defaults to the launch
+                          directory, home-shortened with ~ (web: unconstrained).
+                          Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Requires --workspace except in web mode, which resolves
-                          the workspace before applying this constraint. Overrides
-                          PLURNK_CLIENT_WORKER.
+                          Overrides PLURNK_CLIENT_WORKER. TUI defaults to
+                          PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
+                          default conversation; web remains unconstrained.
+      --tui-worker <name> TUI-only default when no worker is selected; overrides
+                          PLURNK_CLIENT_TUI_WORKER.
       --model <selector>  persistently select the conversation worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -133,7 +136,7 @@ loop.
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; workers are immutable)
   log read --workspace ...  read log entries from the named workspace's worker
-  read <loop/turn/op>     inspect one log row; requires --workspace, optional --worker
+  read <loop/turn/op>     inspect one log row in the selected workspace/worker
   effort [level]          inspect or set a worker's effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;

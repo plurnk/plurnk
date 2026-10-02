@@ -1,5 +1,11 @@
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
+
+export const homePath = (path: string, home = homedir()): string => {
+    if (path === home) return "~";
+    const prefix = home.endsWith(sep) ? home : `${home}${sep}`;
+    return path.startsWith(prefix) ? `~${sep}${path.slice(prefix.length)}` : path;
+};
 
 // XDG is the cross-process user-configuration contract. The client owns no
 // daemon data path and never reads the retired mixed application home.

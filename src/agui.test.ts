@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Lifetime from "./lifetime.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaBridge, actionViaBridge, operationResult, problemDetails, resolveWorld } from "./agui.ts";
+import { runViaBridge, actionViaBridge, operationResult, problemDetails } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
@@ -258,46 +258,6 @@ test("[§cli-workspaces-and-workers] runViaBridge: an explicit workspace rides w
         const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
         assert.equal(body.threadId, "chat-2", "the thread names the conversation run");
         assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the world — independently");
-    } finally { await mock.close(); }
-});
-
-test("[§cli-workspaces-and-workers] resolveWorld: no --workspace → the daemon MINTS a fresh workspace (no 'tui'/'cli' label); the minted name is the world", async () => {
-    const mock = await bootMock((_req, res) => {
-        res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.create", ok: true, result: { id: 9, name: "workspace-1783-abc", runId: 3 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
-        res.end();
-    });
-    try {
-        const name = await resolveWorld({ bridgeUrl: mock.url }, undefined, { projectRoot: "/repo" });
-        assert.equal(name, "workspace-1783-abc", "the world is the daemon-minted name, never a literal client label");
-        const action = (mock.captured[0].body as { forwardedProps: { plurnk: { action: { kind: string; name?: string; projectRoot?: string } } } }).forwardedProps.plurnk.action;
-        assert.equal(action.kind, "workspace.create");
-        assert.equal(action.name, undefined, "NO name is sent — the daemon mints a fresh unique one");
-        assert.equal(action.projectRoot, "/repo", "created WITH options — atomic with the root (#140)");
-    } finally { await mock.close(); }
-});
-
-test("[§cli-workspaces-and-workers] resolveWorld: an explicit --workspace short-circuits — no wire touch, name verbatim", async () => {
-    let touched = false;
-    const mock = await bootMock((_req, res) => { touched = true; res.writeHead(200).end(); });
-    try {
-        assert.equal(await resolveWorld({ bridgeUrl: mock.url }, "my-world", { projectRoot: "/x" }), "my-world");
-        assert.equal(touched, false, "a named workspace never hits the wire to mint");
-    } finally { await mock.close(); }
-});
-
-test("resolveWorld: a missing minted name throws an exact client Problem", async () => {
-    const mock = await bootMock((_req, res) => sse(res, [
-        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.create", ok: true, result: { id: 9 } } }),
-        frame({ type: "RUN_FINISHED" }),
-    ]));
-    try {
-        await assert.rejects(
-            () => resolveWorld({ bridgeUrl: mock.url }, undefined, { projectRoot: "/repo" }),
-            (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.xyz/client/workspace/name-missing",
-        );
     } finally { await mock.close(); }
 });
 

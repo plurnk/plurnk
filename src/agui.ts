@@ -22,7 +22,6 @@ import {
     clientActionResultMissing,
     clientTransportProblemInvalid,
     clientTransportResultInvalid,
-    clientWorkspaceNameMissing,
     ProblemError,
 } from "./diagnostics.ts";
 
@@ -178,24 +177,6 @@ export async function* runViaBridge(
         agent.abortRun();
     }
 }
-
-// Resolve the WORLD (workspace) name for a conversation. An explicit name (--workspace)
-// is used verbatim; otherwise the DAEMON mints a fresh, uniquely-named workspace via a
-// no-name workspace.create — the paradigm the agui transition regressed into a literal
-// "tui"/"cli" client label. Created WITH its options so creation is atomic with the
-// project root (#140). No wire touch when a name is given.
-export const resolveWorld = async (
-    target: BridgeTarget,
-    workspaceName: string | undefined,
-    createParams: Record<string, unknown>,
-): Promise<string> => {
-    if (workspaceName !== undefined) return workspaceName;
-    const created = await actionViaBridge<{ name: string }>(target, { threadId: "bootstrap", kind: "workspace.create", params: createParams });
-    if (typeof created?.name !== "string" || created.name.length === 0) {
-        throw new ProblemError(clientWorkspaceNameMissing());
-    }
-    return created.name;
-};
 
 // AG-UI+ verb surface (§3): a management action rides its own run —
 // forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.

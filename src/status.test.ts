@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import TerminalStatusLine, { conversationLost, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
@@ -116,6 +118,21 @@ test("[§cli-status-project-root] status displays the bound workspace folder wit
 
 // {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the
 // child model rides beside it, and the worker segment carries the sibling position.
+test("[§cli-status-project-root] the TUI omits a redundant folder and shortens other home paths", () => {
+    const root = join(homedir(), "projects", "client");
+    const status = { ...running, projectRoot: root };
+    const activity = renderStatusLine(running, CONTEXT);
+    const place = "[~/projects/client/~user]";
+    for (const workspace of ["~/projects/client", root]) {
+        assert.equal(renderStatusLine(status, { ...CONTEXT, workspace, place }), `${place} ${activity}`);
+    }
+    assert.equal(renderStatusLine(status, { ...CONTEXT, workspace: "named", place: "[named/~user]" }),
+        `~/projects/client [named/~user] ${activity}`);
+    assert.equal(renderStatusLine(status, { ...CONTEXT, workspace: "~/projects/client" }),
+        `~/projects/client ${activity}`, "the CLI has no workspace label to replace the folder");
+    assert.equal(renderStatusLine({ ...status, projectRoot: null }, { ...CONTEXT, place }), `${place} ${activity}`);
+});
+
 test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {
     assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
     assert.equal(renderStatusLine({ ...running, children: 0 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s", "a configured child model is not active child work");

@@ -618,7 +618,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     loopPolicy: LoopPolicyRequest; maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
-    workerName?: string;        // shown in the banner when explicitly set
+    workerName?: string;        // resolved invocation selection, also used after workspace switches
     client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
 }): Promise<void> => {
     let current = workspace;
@@ -1149,9 +1149,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const projectRoot = opts.selectProjectRoot === undefined ? opts.projectRoot : await opts.selectProjectRoot(name, surface);
             if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;
             const workspace = await transport.useSession(name, { projectRoot, client: opts.client });
+            const worker = opts.workerName ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
+            transport.useWorker(worker, workspace.name);
             opts.projectRoot = projectRoot;
             resetConversationView();
-            conversationWorker = workspace.name;
+            conversationWorker = worker;
             current = workspace;
             observeBinding();
             await bindingReady;

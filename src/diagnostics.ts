@@ -276,12 +276,6 @@ export const clientActionResultMissing = (kind: string): ProblemDetails =>
         retryable: false,
     });
 
-export const clientWorkspaceNameMissing = (): ProblemDetails =>
-    clientProblem("workspace", "name-missing", 502, "workspace.create completed without a non-empty workspace name.", {
-        stage: "action-result",
-        retryable: false,
-    });
-
 export const clientWorkerNotFound = (name: string): ProblemDetails =>
     clientProblem("worker", "not-found", 404, `No worker named ${JSON.stringify(name)} exists in the workspace.`, {
         name,

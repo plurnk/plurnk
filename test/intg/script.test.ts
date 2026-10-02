@@ -110,25 +110,19 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             assert.equal(bound[1].forwardedProps?.plurnk?.action, undefined, "resume does not resubmit the program");
         });
     }
-    await t.test("unnamed invocations acquire distinct daemon-owned workspaces", async () => {
-        const identities: string[] = [];
+    await t.test("unnamed invocations use the same directory identity independently of their root", async () => {
         for (let attempt = 0; attempt < 2; attempt += 1) {
             requests.length = 0;
             await run(url, directory, ["--project-root=", ...flags]);
             assert.equal(requests.length, 3);
-            const create = requests[0].forwardedProps?.plurnk?.action;
-            assert.equal(create?.kind, "workspace.create");
-            assert.equal(create?.name, undefined);
-            assert.equal(create?.projectRoot, null);
-            assert.deepEqual(create?.settings, settings);
-            const expected = "generated-" + created;
+            assert.equal(requests[0].forwardedProps?.plurnk?.action?.kind, "workspace.list");
+            assert.equal(requests[1].forwardedProps?.plurnk?.projectRoot, null);
+            assert.deepEqual(requests[1].forwardedProps?.plurnk?.settings, settings);
             for (const input of requests.slice(1)) {
-                assert.equal(input.threadId, expected);
-                assert.equal(input.forwardedProps?.plurnk?.workspace, expected);
+                assert.equal(input.threadId, directory);
+                assert.equal(input.forwardedProps?.plurnk?.workspace, directory);
             }
-            identities.push(expected);
         }
-        assert.equal(new Set(identities).size, 2);
     });
 });
 

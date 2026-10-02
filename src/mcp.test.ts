@@ -155,11 +155,22 @@ test("[§cli-workspace-mcp-controls] an add or enable requiring authorization pr
     ].join(""));
 });
 
+test("[§cli-workspace-mcp-controls] a URL-only authentication challenge names the client handoff without requiring a URL", async () => {
+    const h = harness({ "workspace.mcp.add": {
+        status: 202, family: "mcp", alias: "remote",
+        definition: { alias: "remote", state: "authorization-required", authorization: {} },
+    } });
+    await handleMcp("add remote https://example.test/mcp", h.rpc, h.write);
+    assert.match(h.out.join(""), /authorization required: remote/u);
+    assert.match(h.out.join(""), /\/mcp oauth remote/u);
+    assert.equal(h.calls.length, 1, "adding a server does not begin browser authorization");
+});
+
 test("[§cli-mcp-oauth-callback] an already authorized server needs no browser or callback submission", async () => {
     const result = { status: 200, alias: "ready", definition: { alias: "ready", state: "active" } };
-    const h = harness({ "workspace.mcp.enable": result });
-    assert.equal(await handleMcp("oauth ready", h.rpc, h.write), result);
-    assert.deepEqual(h.calls, [{ method: "workspace.mcp.enable", params: { alias: "ready" } }]);
+    const h = harness({ "workspace.mcp.list": { family: "mcp", definitions: [result.definition] } });
+    assert.deepEqual(await handleMcp("oauth ready", h.rpc, h.write), result);
+    assert.deepEqual(h.calls, [{ method: "workspace.mcp.list", params: {} }]);
     assert.equal(h.out.join(""), "  authorized: ready (active)\n");
 });
 

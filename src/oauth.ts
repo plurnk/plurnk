@@ -1,6 +1,13 @@
 import type { ChildProcess } from "node:child_process";
 import { addAbortListener, once } from "node:events";
 import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
+
+interface AuthorizationRequest {
+    readonly redirectUrl?: string;
+    readonly begin: (redirectUrl: string) => Promise<FunctionalityMutationResult>;
+}
 
 interface ReceptionOptions {
     readonly signal: AbortSignal;
@@ -9,27 +16,20 @@ interface ReceptionOptions {
 }
 
 // {§cli-mcp-oauth-callback} Only reception belongs here; the daemon validates and exchanges the grant.
-export const receiveAuthorization = async <T>(
-    authorizationUrl: string,
-    complete: (callbackUrl: string) => Promise<T>,
+export const receiveAuthorization = async (
+    request: AuthorizationRequest,
+    complete: (callbackUrl: string) => Promise<FunctionalityMutationResult>,
     { signal, write, openBrowser = async (url) => (await import("open")).default(url) }: ReceptionOptions,
-): Promise<T> => {
+): Promise<FunctionalityMutationResult> => {
     signal.throwIfAborted();
-    const authorization = new URL(authorizationUrl);
-    const states = authorization.searchParams.getAll("state");
-    const redirects = authorization.searchParams.getAll("redirect_uri");
-    if (states.length !== 1 || states[0].length === 0 || redirects.length !== 1) {
-        throw new Error("MCP authorization must supply one state and redirect_uri.");
-    }
-    const redirect = new URL(redirects[0]);
+    // RFC 8252 §7.3: bind an OS-assigned loopback port before requesting authorization.
+    const redirect = new URL(request.redirectUrl ?? "http://127.0.0.1:0/callback");
     if (redirect.protocol !== "http:" || !["127.0.0.1", "[::1]"].includes(redirect.hostname)
-        || redirect.port === "0" || redirect.username || redirect.password || redirect.hash) {
+        || (request.redirectUrl !== undefined && redirect.port === "0") || redirect.username || redirect.password || redirect.hash) {
         throw new Error("Automatic OAuth reception requires an HTTP loopback IP redirect with a usable port. Submit the callback URL directly for other redirects.");
     }
-    if (authorization.protocol !== "https:" && !(authorization.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(authorization.hostname))) {
-        throw new Error("OAuth authorization must use HTTPS (or HTTP loopback).");
-    }
-    const completed = Promise.withResolvers<T>();
+    let state: string | undefined;
+    const completed = Promise.withResolvers<FunctionalityMutationResult>();
     let consumed = false;
     const browserObservers = new DisposableStack();
     const browserFailed = (cause: unknown): void => {
@@ -46,7 +46,7 @@ export const receiveAuthorization = async <T>(
         response.setHeader("cache-control", "no-store");
         response.setHeader("referrer-policy", "no-referrer");
         if (request.method !== "GET") { response.writeHead(405).end(); return; }
-        if (request.headers.host !== redirect.host || !request.url?.startsWith("/") || request.url.startsWith("//")) {
+        if (state === undefined || request.headers.host !== redirect.host || !request.url?.startsWith("/") || request.url.startsWith("//")) {
             response.writeHead(400).end(); return;
         }
         const callback = URL.parse(request.url, redirect.href);
@@ -56,7 +56,7 @@ export const receiveAuthorization = async <T>(
         const ambiguous = [...new Set(parameters.keys())].some((key) => parameters.getAll(key).length !== 1);
         const responseCount = Number(parameters.has("code")) + Number(parameters.has("error"));
         const changedQuery = [...redirect.searchParams].some(([key, value]) => parameters.get(key) !== value);
-        if (ambiguous || changedQuery || parameters.get("state") !== states[0] || responseCount !== 1
+        if (ambiguous || changedQuery || parameters.get("state") !== state || responseCount !== 1
             || parameters.get("code") === "" || parameters.get("error") === "") {
             response.writeHead(400).end(); return;
         }
@@ -75,6 +75,24 @@ export const receiveAuthorization = async <T>(
         server.listen({ port: redirect.port.length === 0 ? 80 : Number(redirect.port), host: redirect.hostname.replace(/^\[|\]$/gu, ""), signal });
         // Observe completion failures even while binding; occupied ports must not leave a rejection behind.
         await Promise.race([listening, completed.promise]);
+        if (request.redirectUrl === undefined) redirect.port = String((server.address() as AddressInfo).port);
+        const redirectUri = request.redirectUrl ?? redirect.href;
+        const begun = await Promise.race([request.begin(redirectUri), completed.promise]);
+        signal.throwIfAborted();
+        if (begun.status !== 202) return begun;
+        const url = begun.definition?.authorization?.url;
+        if (typeof url !== "string") throw new Error("MCP authorization response omitted its URL.");
+        const authorization = new URL(url);
+        const states = authorization.searchParams.getAll("state");
+        const redirects = authorization.searchParams.getAll("redirect_uri");
+        if (states.length !== 1 || states[0].length === 0 || redirects.length !== 1 || redirects[0] !== redirectUri) {
+            throw new Error("MCP authorization must supply one state and the bound redirect_uri.");
+        }
+        if (authorization.protocol !== "https:" && !(authorization.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(authorization.hostname))) {
+            throw new Error("OAuth authorization must use HTTPS (or HTTP loopback).");
+        }
+        state = states[0];
+        write(`  authorization required: ${authorization.href}\n`);
         const opening = Promise.resolve().then(() => openBrowser(authorization.href)).then((child) => {
             if (child === undefined || browserObservers.disposed) return;
             if (child.exitCode !== null || child.signalCode !== null) browserExited(child.exitCode, child.signalCode);

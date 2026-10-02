@@ -2,7 +2,20 @@ import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { receiveAuthorization } from "./oauth.ts";
+import type { FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
+import { receiveAuthorization as beginAndReceive } from "./oauth.ts";
+
+const active: FunctionalityMutationResult = { status: 200, family: "mcp", alias: "fixture", definition: { alias: "fixture", origin: "workspace", state: "active" } };
+const receiveAuthorization = (
+    url: string,
+    complete: (url: string) => Promise<unknown>,
+    options: Parameters<typeof beginAndReceive>[2],
+) => beginAndReceive({
+    redirectUrl: new URL(url).searchParams.get("redirect_uri") ?? undefined,
+    begin: async () => ({ status: 202, family: "mcp", alias: "fixture", definition: {
+        alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url },
+    } }),
+}, async (url) => { await complete(url); return active; }, options);
 
 const redirectUrl = async (host = "127.0.0.1"): Promise<string> => {
     const server = createServer();
@@ -26,12 +39,62 @@ const callbackUrl = (redirect: string): string => {
     url.searchParams.set("iss", "https://identity.example");
     return url.href;
 };
-const noBrowserFailure = (message: string): never => assert.fail(message);
+const noBrowserFailure = (message: string): void => {
+    if (!message.startsWith("  authorization required: ")) assert.fail(message);
+};
+
+test("[§cli-mcp-oauth-callback] an ephemeral callback is bound before OAuth begins and is closed afterward", async () => {
+    let redirect = "";
+    const result = await beginAndReceive({ begin: async (bound) => {
+        redirect = bound;
+        assert.equal(new URL(bound).hostname, "127.0.0.1");
+        assert.notEqual(new URL(bound).port, "0");
+        assert.equal((await fetch(bound)).status, 400, "the bound listener cannot accept a callback before the state exists");
+        return { status: 202, family: "mcp", alias: "fixture", definition: {
+            alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url: authorizationUrl(bound) },
+        } };
+    } }, async (url) => { assert.equal(url, callbackUrl(redirect)); return active; }, {
+        signal: AbortSignal.timeout(2_000), write: noBrowserFailure,
+        openBrowser: async () => { assert.equal((await fetch(callbackUrl(redirect))).status, 200); },
+    });
+    assert.deepEqual(result, active);
+    await assert.rejects(fetch(redirect), /fetch failed/u);
+});
+
+test("[§cli-mcp-oauth-callback] failed or cancelled preparation closes its already-bound listener", async () => {
+    for (const cancel of [false, true]) {
+        let redirect = "";
+        const controller = new AbortController();
+        const failure = new Error("preparation stopped");
+        await assert.rejects(beginAndReceive({ begin: async (bound) => {
+            redirect = bound;
+            if (!cancel) throw failure;
+            controller.abort(failure);
+            return new Promise(() => {});
+        } }, async () => assert.fail("no callback"), {
+            signal: controller.signal, write: noBrowserFailure, openBrowser: async () => assert.fail("no browser"),
+        }), (error) => error === failure);
+        await assert.rejects(fetch(redirect), /fetch failed/u);
+    }
+});
+
+test("[§cli-mcp-oauth-callback] a configured redirect retains its exact registration spelling", async () => {
+    const redirect = new URL(await redirectUrl()).origin;
+    await beginAndReceive({ redirectUrl: redirect, begin: async (bound) => {
+        assert.equal(bound, redirect, "binding a listener does not rewrite an explicitly registered URI");
+        return { status: 202, family: "mcp", alias: "fixture", definition: {
+            alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url: authorizationUrl(redirect) },
+        } };
+    } }, async () => active, {
+        signal: AbortSignal.timeout(2_000), write: noBrowserFailure,
+        openBrowser: async () => { assert.equal((await fetch(callbackUrl(redirect))).status, 200); },
+    });
+});
 
 test("[§cli-mcp-oauth-callback] listener precedes browser launch and forwards one complete callback", async () => {
     const redirect = await redirectUrl();
     const received: string[] = [];
-    const completed = { status: 200, definition: { state: "active" } };
+    const completed = active;
     let browserResponse: Response | undefined;
     const result = await receiveAuthorization(authorizationUrl(redirect), async (url) => {
         received.push(url);

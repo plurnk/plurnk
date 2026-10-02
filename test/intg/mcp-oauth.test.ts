@@ -8,25 +8,34 @@ import type { AddressInfo } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
+import type { FunctionalityListResult, FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
 import { actionViaBridge } from "../../src/agui.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
-for (const browserFails of [false, true]) {
-    test(`[§cli-mcp-oauth-callback] built CLI authorizes through ${browserFails ? "manual navigation after browser failure" : "its system browser"}`, { timeout: 60_000 }, async (t) => {
+for (const { browserFails, fixedRedirect } of [
+    { browserFails: false, fixedRedirect: false },
+    { browserFails: true, fixedRedirect: false },
+    { browserFails: false, fixedRedirect: true },
+]) {
+    test(`[§cli-mcp-oauth-callback] built CLI authorizes ${fixedRedirect ? "a configured callback" : "a URL-only server"} through ${browserFails ? "manual navigation after browser failure" : "its system browser"}`, { timeout: 60_000 }, async (t) => {
         if (process.platform !== "linux") { t.skip("the controlled browser uses Linux's BROWSER convention"); return; }
         const bin = await locateDaemon();
         if (bin === null) { t.skip("service checkout is not reachable"); return; }
         const require = createRequire(join(dirname(bin), "../package.json"));
         const { McpServer, createMcpHandler } = await import(pathToFileURL(require.resolve("@modelcontextprotocol/server")).href);
+        const called = Promise.withResolvers<string>();
         const handler = createMcpHandler(() => {
             const peer = new McpServer({ name: "oauth-callback-fixture", version: "1.0.0" });
-            peer.registerTool("inspect", { description: "Read the fixture." }, async () => ({ content: [{ type: "text", text: "authorized fixture" }] }));
+            peer.registerTool("inspect", { description: "Read the fixture.", annotations: { readOnlyHint: true } }, async () => {
+                called.resolve("authorized fixture");
+                return { content: [{ type: "text", text: "authorized fixture" }] };
+            });
             return peer;
         }, { legacy: "reject", responseMode: "auto", keepAliveMs: 0 });
         const slot = createServer();
         slot.listen(0, "127.0.0.1");
         await once(slot, "listening");
-        const redirect = `http://127.0.0.1:${(slot.address() as AddressInfo).port}/callback`;
+        let redirect = fixedRedirect ? `http://127.0.0.1:${(slot.address() as AddressInfo).port}/callback` : "";
         await new Promise<void>((resolveClose) => slot.close(() => resolveClose()));
         let origin = "";
         let challenge = "";
@@ -45,8 +54,17 @@ for (const browserFails of [false, true]) {
                         issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`,
                         response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"],
                         code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"],
+                        registration_endpoint: `${origin}/register`,
                         client_id_metadata_document_supported: true, authorization_response_iss_parameter_supported: true,
                     }); return;
+                }
+                if (url.pathname === "/register") {
+                    assert.equal(fixedRedirect, false, "the explicitly configured CIMD identity is not re-registered");
+                    const metadata = JSON.parse(body) as { redirect_uris: string[] };
+                    assert.equal(metadata.redirect_uris.length, 1);
+                    redirect = metadata.redirect_uris[0];
+                    assert.match(redirect, /^http:\/\/127\.0\.0\.1:[1-9]\d*\/callback$/u);
+                    json({ ...metadata, client_id: "fixture-client" }); return;
                 }
                 if (url.pathname === "/authorize") {
                     assert.equal(url.searchParams.get("redirect_uri"), redirect);
@@ -69,7 +87,7 @@ for (const browserFails of [false, true]) {
                     json({ access_token: "fixture-token", token_type: "Bearer", scope: "mcp:read" }); return;
                 }
                 if (incoming.headers.authorization !== "Bearer fixture-token") {
-                    outgoing.writeHead(401, { "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"` }).end(); return;
+                    outgoing.writeHead(401, fixedRedirect ? { "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"` } : {}).end(); return;
                 }
                 const request = new Request(url, {
                     method: incoming.method, headers: incoming.headers as Record<string, string>,
@@ -85,14 +103,19 @@ for (const browserFails of [false, true]) {
         await once(server, "listening");
         origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
         t.after(async () => { await handler.close(); server.closeAllConnections(); await new Promise<void>((done) => server.close(() => done())); });
-        const daemon = await bootDaemon(bin, { mcp: { oauth: {
-            type: "streamable-http", url: `${origin}/mcp`, authorization: {
-                type: "oauth", redirectUrl: redirect, clientMetadataUrl: "https://client.example/oauth.json",
-            },
-        } } });
+        const definition = { name: "oauth", type: "streamable-http", url: `${origin}/mcp`, ...(fixedRedirect ? { authorization: {
+            type: "oauth", redirectUrl: redirect, clientMetadataUrl: "https://client.example/oauth.json",
+        } } : {}) };
+        const daemon = await bootDaemon(bin);
         t.after(daemon.cleanup);
         const workspace = "oauth-client";
         await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        const added = await actionViaBridge({ bridgeUrl: daemon.url }, {
+            threadId: workspace, kind: "workspace.mcp.add", params: { definition },
+        }) as FunctionalityMutationResult;
+        assert.equal(added.status, 202);
+        assert.equal(added.definition?.state, "authorization-required");
+        if (!fixedRedirect) assert.deepEqual(added.definition?.authorization, {}, "URL-only setup asks the client to start sign-in, not invent callback configuration");
         const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_")));
         const child = spawn(process.execPath, [
             resolve("bin/plurnk.js"), "--workspace", workspace, "--json",
@@ -127,6 +150,15 @@ for (const browserFails of [false, true]) {
         assert.equal(result.definition.state, "active");
         assert.deepEqual(result.definition.detail.tools, ["inspect"]);
         assert.equal(tokenRequests.length, 1);
+        const listed = await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.mcp.list" }) as FunctionalityListResult;
+        assert.deepEqual(listed.definitions.find(({ alias }) => alias === "oauth")?.definition, definition,
+            "the callback binding and tokens never become persisted MCP configuration");
+        const invocation = await actionViaBridge({ bridgeUrl: daemon.url }, {
+            threadId: workspace, kind: "op.parse", params: { text: "````oauth (inspect)\n{}\n````" },
+        }) as { results: { status: number }[] };
+        assert.equal(invocation.results.length, 1);
+        assert.ok(invocation.results[0].status < 400, JSON.stringify(invocation));
+        assert.equal(await called.promise, "authorized fixture", "authorization publishes a usable protected tool, not just an active label");
         if (browserFails) {
             assert.equal(await navigation, 200);
             assert.match(stderr, /Could not open the browser: launcher exited 3/u);

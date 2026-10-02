@@ -839,12 +839,12 @@ test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", a
 });
 
 test("[§cli-mcp-oauth-callback] the TUI passes its lifetime cancellation to callback reception", async () => {
-    const ctx = makeCtx({ "workspace.mcp.enable": {
-        status: 202, definition: { state: "authorization-required", authorization: { url: "https://identity.example/authorize" } },
+    const ctx = makeCtx({ "workspace.mcp.list": {
+        definitions: [{ alias: "server", state: "authorization-required", definition: { type: "streamable-http", url: "https://server.example/mcp" }, authorization: {} }],
     } });
     const reason = new Error("client is closing");
     await assert.rejects(handleVerb("/mcp oauth server", { ...ctx, signal: AbortSignal.abort(reason) }), (error: unknown) => error === reason);
-    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.enable", params: { alias: "server" } }]);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.mcp.list", params: {} }]);
     assert.doesNotMatch(ctx.out.join(""), /authorized:/u);
 });
 

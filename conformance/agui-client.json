@@ -989,6 +989,15 @@
         "presentation"
       ]
     },
+    "workspace.mcp.oauth.begin": {
+      "posture": "native",
+      "evidence": [
+        "src/mcp.test.ts — URL-only authentication handoff",
+        "src/oauth.test.ts — callback binding precedes authorization",
+        "test/intg/mcp-oauth.test.ts — built client URL-only setup and protected tool invocation"
+      ],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
+    },
     "workspace.mcp.oauth.complete": {
       "posture": "native",
       "evidence": [

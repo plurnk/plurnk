@@ -665,22 +665,25 @@ result.
 | `/mcp enable <alias>` | `workspace.mcp.enable {alias}` — publishes a dormant server or retries an unavailable one |
 | `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
-| `/mcp oauth <alias>` | Enable the alias; if authorization is required, receive its configured loopback callback and call `workspace.mcp.oauth.complete {alias, callbackUrl}` |
+| `/mcp oauth <alias>` | Inspect the alias; if not active, bind a loopback callback, call `workspace.mcp.oauth.begin {alias, redirectUrl}`, open the returned authorization URL and call `workspace.mcp.oauth.complete {alias, callbackUrl}` |
 | `/mcp oauth <alias> <callback-url>` | Submit the complete callback directly to `workspace.mcp.oauth.complete {alias, callbackUrl}` (remote/headless continuation) |
 
 Every token after a command target reaches the server verbatim; a URL target
 takes none. The positional form uses `--` before server options so the client
 does not consume them: `plurnk --workspace w mcp -- add example npx -y @example/server`.
 
-An add or enable requiring interactive authorization prints the authorization
-URL and exact `/mcp oauth …` completion command. Daemon Problems cross the
+An add or enable requiring authorization prints the alias (or authorization URL
+when already available) and exact `/mcp oauth …` command. It does not itself open
+a browser. Daemon Problems cross the
 existing diagnostic path without rewriting or retry.
 
 #### OAuth callbacks {§cli-mcp-oauth-callback}
 
-Automatic reception binds only the authorization
-request's configured HTTP loopback IP literal and port, before opening the
-system browser. It never rewrites a registered redirect URI. The listener
+Automatic reception binds an OS-assigned port on the IPv4 loopback interface
+before requesting authorization (RFC 8252 §7.3). An explicit fixed callback
+instead binds that exact HTTP loopback IP and port; it is never rewritten.
+The callback is transient client session state, not a persisted definition.
+The daemon's authorization URL must name the already bound callback. The listener
 accepts one GET with the exact Host, path and state; unrelated requests cannot
 consume the attempt. Duplicate response parameters and duplicate callbacks
 are rejected. The complete callback is forwarded once; only successful daemon

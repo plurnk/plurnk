@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
@@ -145,12 +146,18 @@ for (const { browserFails, fixedRedirect } of [
         });
         const [code] = await once(child, "close");
         assert.equal(code, 0, `${stdout}\n${stderr}\n${daemon.output()}`);
-        const result = JSON.parse(stdout) as { status: number; definition: { state: string; detail: { tools: string[] } } };
-        assert.equal(result.status, 200);
-        assert.equal(result.definition.state, "active");
-        assert.deepEqual(result.definition.detail.tools, ["inspect"]);
+        assert.deepEqual(JSON.parse(stdout), { status: 202, alias: "oauth" });
+        assert.match(stderr, /Sign-in accepted; tools awaiting activation/);
         assert.equal(tokenRequests.length, 1);
-        const listed = await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.mcp.list" }) as FunctionalityListResult;
+        const list = () => actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
+        let listed = await list();
+        for (let attempt = 0; attempt < 100 && listed.definitions.find(({ alias }) => alias === "oauth")?.state !== "active"; attempt++) {
+            await delay(20);
+            listed = await list();
+        }
+        const active = listed.definitions.find(({ alias }) => alias === "oauth");
+        assert.equal(active?.state, "active");
+        assert.deepEqual((active?.detail as { tools?: unknown } | undefined)?.tools, ["inspect"]);
         assert.deepEqual(listed.definitions.find(({ alias }) => alias === "oauth")?.definition, definition,
             "the callback binding and tokens never become persisted MCP configuration");
         const invocation = await actionViaBridge({ bridgeUrl: daemon.url }, {

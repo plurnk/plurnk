@@ -694,8 +694,11 @@ The callback is transient client session state, not a persisted definition.
 The daemon's authorization URL must name the already bound callback. The listener
 accepts one GET with the exact Host, path and state; unrelated requests cannot
 consume the attempt. Duplicate response parameters and duplicate callbacks
-are rejected. The complete callback is forwarded once; only successful daemon
-completion produces a success response. PKCE, issuer checks and token exchange
+are rejected. The complete callback is forwarded once; only the daemon's
+accepted result produces a success response. The browser and client say
+“Sign-in accepted; tools awaiting activation.” They do not claim tool readiness
+or wait for capability publication; normal workspace inspection reports it.
+PKCE, issuer checks and token exchange
 remain daemon-owned. Callback codes are neither printed nor retained.
 
 The listener closes on completion, failure, cancellation or the client panel's

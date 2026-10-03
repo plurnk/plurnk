@@ -8,7 +8,7 @@ import { commandUsage } from "./commands.ts";
 import { configurationSource } from "./functionality-source.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 import { receiveAuthorization } from "./oauth.ts";
-import type { McpServerDefinition, FunctionalityListResult, FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
+import type { McpServerDefinition, McpOAuthCompletionResult, FunctionalityListResult, FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -207,7 +207,7 @@ export const handleMcp = async (
             usage(write, "oauth");
             return null;
         }
-        const complete = (callbackUrl: string) => rpc.call("workspace.mcp.oauth.complete", { alias, callbackUrl }) as Promise<FunctionalityMutationResult>;
+        const complete = (callbackUrl: string) => rpc.call("workspace.mcp.oauth.complete", { alias, callbackUrl }) as Promise<McpOAuthCompletionResult>;
         let result: MutationResult;
         if (args[2] !== undefined) result = await complete(args[2]);
         else {
@@ -230,7 +230,8 @@ export const handleMcp = async (
                 });
             }
         }
-        renderMutation(result, "authorized", alias, write);
+        if (result.status === 202) write(`  ${alias}: Sign-in accepted; tools awaiting activation.\n`);
+        else renderMutation(result, "authorized", alias, write);
         return result;
     }
 

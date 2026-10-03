@@ -115,7 +115,7 @@ test("[§cli-workspace-mcp-controls] enable, disable, remove, and oauth map exac
         "workspace.mcp.enable": { status: 200, alias: "echo", definition: { alias: "echo", state: "active" } },
         "workspace.mcp.disable": { status: 200, alias: "echo", definition: { alias: "echo", state: "disabled" } },
         "workspace.mcp.remove": { status: 200, family: "mcp", alias: "echo", removed: true },
-        "workspace.mcp.oauth.complete": { status: 200, alias: "gitea", definition: { alias: "gitea", state: "active" } },
+        "workspace.mcp.oauth.complete": { status: 202, alias: "gitea" },
     });
     await handleMcp("enable echo", h.rpc, h.write);
     await handleMcp(["disable", "echo"], h.rpc, h.write);
@@ -134,7 +134,7 @@ test("[§cli-workspace-mcp-controls] enable, disable, remove, and oauth map exac
         "  enabled: echo (active)\n",
         "  disabled: echo (disabled)\n",
         "  removed: echo\n",
-        "  authorized: gitea (active)\n",
+        "  gitea: Sign-in accepted; tools awaiting activation.\n",
     ].join(""));
 });
 

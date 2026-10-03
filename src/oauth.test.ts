@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import type { FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
+import type { McpOAuthCompletionResult } from "@plurnk/plurnk-contracts";
 import { receiveAuthorization as beginAndReceive } from "./oauth.ts";
 
-const active: FunctionalityMutationResult = { status: 200, family: "mcp", alias: "fixture", definition: { alias: "fixture", origin: "workspace", state: "active" } };
+const accepted: McpOAuthCompletionResult = { status: 202, alias: "fixture" };
 const receiveAuthorization = (
     url: string,
     complete: (url: string) => Promise<unknown>,
@@ -15,7 +15,7 @@ const receiveAuthorization = (
     begin: async () => ({ status: 202, family: "mcp", alias: "fixture", definition: {
         alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url },
     } }),
-}, async (url) => { await complete(url); return active; }, options);
+}, async (url) => { await complete(url); return accepted; }, options);
 
 const redirectUrl = async (host = "127.0.0.1"): Promise<string> => {
     const server = createServer();
@@ -53,11 +53,11 @@ test("[§cli-mcp-oauth-callback] an ephemeral callback is bound before OAuth beg
         return { status: 202, family: "mcp", alias: "fixture", definition: {
             alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url: authorizationUrl(bound) },
         } };
-    } }, async (url) => { assert.equal(url, callbackUrl(redirect)); return active; }, {
+    } }, async (url) => { assert.equal(url, callbackUrl(redirect)); return accepted; }, {
         signal: AbortSignal.timeout(2_000), write: noBrowserFailure,
         openBrowser: async () => { assert.equal((await fetch(callbackUrl(redirect))).status, 200); },
     });
-    assert.deepEqual(result, active);
+    assert.deepEqual(result, accepted);
     await assert.rejects(fetch(redirect), /fetch failed/u);
 });
 
@@ -85,7 +85,7 @@ test("[§cli-mcp-oauth-callback] a configured redirect retains its exact registr
         return { status: 202, family: "mcp", alias: "fixture", definition: {
             alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url: authorizationUrl(redirect) },
         } };
-    } }, async () => active, {
+    } }, async () => accepted, {
         signal: AbortSignal.timeout(2_000), write: noBrowserFailure,
         openBrowser: async () => { assert.equal((await fetch(callbackUrl(redirect))).status, 200); },
     });
@@ -94,7 +94,7 @@ test("[§cli-mcp-oauth-callback] a configured redirect retains its exact registr
 test("[§cli-mcp-oauth-callback] listener precedes browser launch and forwards one complete callback", async () => {
     const redirect = await redirectUrl();
     const received: string[] = [];
-    const completed = active;
+    const completed = accepted;
     let browserResponse: Response | undefined;
     const result = await receiveAuthorization(authorizationUrl(redirect), async (url) => {
         received.push(url);
@@ -109,7 +109,9 @@ test("[§cli-mcp-oauth-callback] listener precedes browser launch and forwards o
     assert.deepEqual(result, completed);
     assert.deepEqual(received, [callbackUrl(redirect)]);
     assert.equal(browserResponse?.status, 200);
-    assert.doesNotMatch(await browserResponse!.text(), /private-code|expected-state/u);
+    const message = await browserResponse!.text();
+    assert.match(message, /Sign-in accepted; tools awaiting activation/u);
+    assert.doesNotMatch(message, /private-code|expected-state/u);
     await assert.rejects(fetch(redirect), /fetch failed/u, "listener closed");
 });
 

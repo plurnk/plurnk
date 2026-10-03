@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { addAbortListener, once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
+import type { FunctionalityMutationResult, McpOAuthCompletionResult } from "@plurnk/plurnk-contracts";
 
 interface AuthorizationRequest {
     readonly redirectUrl?: string;
@@ -18,9 +18,9 @@ interface ReceptionOptions {
 // {§cli-mcp-oauth-callback} Only reception belongs here; the daemon validates and exchanges the grant.
 export const receiveAuthorization = async (
     request: AuthorizationRequest,
-    complete: (callbackUrl: string) => Promise<FunctionalityMutationResult>,
+    complete: (callbackUrl: string) => Promise<McpOAuthCompletionResult>,
     { signal, write, openBrowser = async (url) => (await import("open")).default(url) }: ReceptionOptions,
-): Promise<FunctionalityMutationResult> => {
+): Promise<FunctionalityMutationResult | McpOAuthCompletionResult> => {
     signal.throwIfAborted();
     // RFC 8252 §7.3: bind an OS-assigned loopback port before requesting authorization.
     const redirect = new URL(request.redirectUrl ?? "http://127.0.0.1:0/callback");
@@ -29,7 +29,7 @@ export const receiveAuthorization = async (
         throw new Error("Automatic OAuth reception requires an HTTP loopback IP redirect with a usable port. Submit the callback URL directly for other redirects.");
     }
     let state: string | undefined;
-    const completed = Promise.withResolvers<FunctionalityMutationResult>();
+    const completed = Promise.withResolvers<McpOAuthCompletionResult>();
     let consumed = false;
     const browserObservers = new DisposableStack();
     const browserFailed = (cause: unknown): void => {
@@ -63,7 +63,7 @@ export const receiveAuthorization = async (
         if (consumed) { response.writeHead(409).end(); return; }
         consumed = true;
         void Promise.resolve().then(() => complete(callback.href)).then(
-            (result) => response.end("Authorization completed. You may close this window.", () => completed.resolve(result)),
+            (result) => response.end("Sign-in accepted; tools awaiting activation. You may close this window.", () => completed.resolve(result)),
             (cause: unknown) => response.writeHead(400).end("Authorization could not be completed. Return to the client for details.", () => completed.reject(cause)),
         );
     });
@@ -80,7 +80,7 @@ export const receiveAuthorization = async (
         const begun = await Promise.race([request.begin(redirectUri), completed.promise]);
         signal.throwIfAborted();
         if (begun.status !== 202) return begun;
-        const url = begun.definition?.authorization?.url;
+        const url = "definition" in begun ? begun.definition?.authorization?.url : undefined;
         if (typeof url !== "string") throw new Error("MCP authorization response omitted its URL.");
         const authorization = new URL(url);
         const states = authorization.searchParams.getAll("state");

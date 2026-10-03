@@ -128,8 +128,8 @@ describe("TUI workspace MCP dogfood", () => {
 
             since = tui.output().length;
             tui.write("/mcp enable cur\t");
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            tui.write("\t\r");
+            await tui.waitFor(/\/mcp enable current/, 20_000, since);
+            tui.write("\r");
             await tui.waitFor(/enabled: current \(active\)/, 20_000, since);
 
             // An inherited server is disable-only: the daemon's Problem crosses unrewritten.

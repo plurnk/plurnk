@@ -15,6 +15,21 @@ const running: ClientStatus = {
     children: null,
 };
 
+test("[§cli-status-wait] the parked countdown uses the daemon deadline and clears on wake", () => {
+    const gauge = { lifecycle: "parked", model: null, loopId: 1, packetCount: 2, activity: null, waitUntil: 304_200 };
+    const status = projectStatusGauge(gauge);
+    assert.match(renderStatusLine(status, CONTEXT), /updates in 5m00s/);
+    assert.match(renderStatusLine(status, { ...CONTEXT, now: 5_200 }), /updates in 4m59s/);
+    assert.match(renderStatusLine(status, { ...CONTEXT, now: 304_201 }), /updates due/);
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...gauge, lifecycle: "queued", waitUntil: null }), CONTEXT), /updates/);
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...gauge, waitUntil: null }), CONTEXT), /updates/,
+        "provider recovery and review have no invented observation deadline");
+    assert.doesNotMatch(renderStatusLine({ ...status, lifecycle: "completed" }, CONTEXT), /updates/);
+    for (const waitUntil of [-1, Infinity, NaN, "soon"]) {
+        assert.throws(() => projectStatusGauge({ ...gauge, waitUntil }), /Invalid runtime wait deadline/);
+    }
+});
+
 test("[§cli-status-preparation] preparation names the capability and advances its clock before inference", () => {
     const base = { lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null };
     const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1_000).toISOString() }];

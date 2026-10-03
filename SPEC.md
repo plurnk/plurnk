@@ -172,6 +172,14 @@ The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; 
 
 ### §1.2.1 Worker status {§cli-worker-status}
 
+{§cli-status-wait} While parked with a daemon-supplied `status.waitUntil`, human
+status shows `updates in <remaining>` and repaints every second, including after
+reattachment. Expiry reads `updates due` until the next lifecycle event; it does
+not promise immediate inference or completion of the underlying work. Waking,
+concluding, or a null deadline removes the countdown. The timestamp is the
+service's durable deadline, never a client timer inferred from a WAIT receipt;
+untimed recovery and review receive no invented deadline.
+
 {§cli-status-preparation} Workspace capability preparation is rendered from
 `STATE /plurnk/status/preparation`: family, current alias when present, phase,
 and elapsed time since the daemon's timestamp. The status clock advances while

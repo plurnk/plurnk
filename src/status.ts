@@ -145,6 +145,7 @@ export const formatRouteIdentity = (route: {
 
 export interface ClientStatus {
     preparation?: readonly FunctionalityPreparationActivity[];
+    waitUntil?: number | null;
     lifecycle: StatusLifecycle;
     model: string | null;
     // {§cli-status-project-root} — the daemon's bound folder, never create-time client options.
@@ -166,6 +167,7 @@ export const conversationLost = (previousLoopId: number | null, loopId: number |
 
 export interface RuntimeStatusGauge {
     preparation?: unknown;
+    waitUntil?: unknown;
     lifecycle: string;
     model: ModelRoute | null;
     loopId: number | null;
@@ -211,6 +213,9 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
     }
     const model = value.model === null ? null : Validator.assertModelRoute(value.model);
+    if (value.waitUntil != null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
+        throw new TypeError("Invalid runtime wait deadline.");
+    }
     if (value.preparation !== undefined && (!Array.isArray(value.preparation)
         || value.preparation.some((item) => !Validator.validateJsonSchemaInstance(preparationSchema, item).valid))) {
         throw new TypeError("Invalid runtime preparation.");
@@ -242,6 +247,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         packetCount: value.packetCount,
         activity,
         children,
+        ...(value.waitUntil === undefined ? {} : { waitUntil: value.waitUntil as number | null }),
         ...(value.preparation === undefined ? {} : { preparation: value.preparation as FunctionalityPreparationActivity[] }),
         ...(value.descendants === undefined ? {} : { descendants: descendantAccounting(value.descendants) }),
         ...(projectRoot === undefined ? {} : { projectRoot }),
@@ -347,6 +353,10 @@ export const renderStatusLine = (
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${abbreviatedCount(inputTokens)} ↑${abbreviatedCount(outputTokens)}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${money(costUsd)}`);
     if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
+    if (value.lifecycle === "parked" && value.waitUntil != null) {
+        const seconds = Math.ceil(Math.max(0, value.waitUntil - (context.now ?? Date.now())) / 1000);
+        parts.push(seconds === 0 ? "updates due" : `updates in ${formatDuration(seconds * 1000)}`);
+    }
     // {§cli-status-children} — a known zero hides the child segment, including its model override.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
     if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);

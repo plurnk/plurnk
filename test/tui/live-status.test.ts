@@ -8,6 +8,49 @@ import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.t
 import { spawnTui } from "./harness.ts";
 import { actionViaBridge } from "../../src/agui.ts";
 
+test("[§cli-status-wait] built TUI counts down a bounded park and retains its deadline on reattachment", { timeout: 60_000 }, async (t) => {
+    const service = await locateDaemon();
+    assert.ok(service, "the composed test requires the sibling service");
+    let calls = 0;
+    const endpoint = await completionsEndpoint(() => ++calls === 1
+        ? "```sh\nsleep 30\n```\n\n```WAIT <8>\nAwait the check.\n```"
+        : "```KILL (worker://user)\nEnd the fixture.\n```");
+    t.after(() => endpoint.close());
+    const daemon = await bootDaemon(service, { extraEnv: {
+        PLURNK_MODEL: "waitfixture", PLURNK_MODEL_waitfixture: "openai/wait-fixture",
+        OPENAI_BASE_URL: endpoint.url, OPENAI_API_KEY: "wait-fixture",
+        PLURNK_PROVIDERS_EFFORT: "off", PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
+        PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0", PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0",
+        PLURNK_SERVICE_WAIT_SEC: "300",
+    } });
+    t.after(() => daemon.cleanup());
+    t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
+    const args = ["--workspace", "wait-countdown", "--worker", "user", "--project-root", "", "--yolo"];
+    const env = { HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "" };
+    const first = spawnTui(daemon.url, args, env, daemon.workspace);
+    t.after(() => first.kill());
+    await first.waitFor(/\[wait-countdown\/~user\(0\)\]/);
+    first.write("Start the check.\r");
+    await first.waitFor(/updates in [78]\.0s/);
+    await first.waitFor(/updates in [56]\.0s/);
+    const second = spawnTui(daemon.url, args, env, daemon.workspace);
+    t.after(() => second.kill());
+    await second.waitFor(/updates in [1-6]\.0s/);
+    assert.equal(calls, 1, "reattachment observes the existing park without another model call");
+    const beforeWake = first.output().length;
+    await first.waitFor(/✋|cancelled|499/, 12_000, beforeWake);
+    assert.equal(calls, 2, "the explicit eight-second wait expires before the 30-second process ends");
+    await first.waitFor(/\[wait-countdown\/~user[^\r\n]*(?:✋|❌)/, 5_000, beforeWake);
+    const footer = stripVTControlCharacters(first.output()).split(/\r?\n/).filter((line) => line.includes("[wait-countdown/~user")).at(-1);
+    assert.ok(footer);
+    assert.doesNotMatch(footer, /updates (?:in|due)/,
+        "the settled status no longer carries a countdown");
+    first.write("/quit\r");
+    second.write("/quit\r");
+    assert.equal(await first.exited, 0);
+    assert.equal(await second.exited, 0);
+});
+
 for (const mode of ["tui", "cli"] as const) {
     test(`[§cli-status-preparation] built ${mode} displays a cold MCP and advances elapsed time before inference`, { timeout: 60_000 }, async (t) => {
         const service = await locateDaemon();

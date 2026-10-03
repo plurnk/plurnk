@@ -353,13 +353,13 @@ export const renderStatusLine = (
     if (inputTokens !== null || outputTokens !== null) parts.push(`↓${abbreviatedCount(inputTokens)} ↑${abbreviatedCount(outputTokens)}`);
     if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${money(costUsd)}`);
     if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
+    // {§cli-status-children} — a known zero hides the child segment, including its model override.
+    const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
+    if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.lifecycle === "parked" && value.waitUntil != null) {
         const seconds = Math.ceil(Math.max(0, value.waitUntil - (context.now ?? Date.now())) / 1000);
         parts.push(seconds === 0 ? "updates due" : `updates in ${formatDuration(seconds * 1000)}`);
     }
-    // {§cli-status-children} — a known zero hides the child segment, including its model override.
-    const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
-    if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     if (value.activity !== null) parts.push(activityText(value.activity));
     for (const { family, alias, phase, since } of value.preparation ?? []) {
         const capability = ModelText.plain(alias === null ? family : `${family}/${alias}`);

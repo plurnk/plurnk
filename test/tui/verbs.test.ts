@@ -34,6 +34,11 @@ before(async () => {
                 PLURNK_PROVIDERS_EFFORT_clientfirst: "adaptive",
                 PLURNK_PROVIDERS_EFFORT_clienttest: "adaptive",
                 PLURNK_PROVIDERS_EFFORT_clientloop: "adaptive",
+                ...Object.fromEntries(["clientfirst", "clienttest"].flatMap((alias) => [
+                    [`PLURNK_PROVIDERS_OPTIONS_NAMESPACE_${alias}`, "openai"],
+                    [`PLURNK_PROVIDERS_REASONING_EFFORT_PATH_${alias}`, "/reasoningEffort"],
+                    [`PLURNK_PROVIDERS_REASONING_EFFORTS_${alias}`, "high"],
+                ])),
                 PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
                 OPENAI_API_KEY: "client-control-plane-test",
             },

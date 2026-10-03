@@ -3,5 +3,6 @@
 # remote ever sees it. Wired via `prepare` → git config core.hooksPath .githooks.
 # The PTY tier runs the built bundle (bin/plurnk.js reads dist), so build first: a
 # stale dist would test yesterday's client (plurnk-service#646).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR
 npm run build --silent || exit 1
 exec npm test

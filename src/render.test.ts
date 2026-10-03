@@ -402,8 +402,9 @@ test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a
 const usage = (inputTokens: number, outputTokens: number, costUsd = "0") => ({
     accounting: {
         requests: [{ provider: "provider:test", model: "test", outcome: "response" }],
-        usage: { inputTokens, outputTokens },
+        usage: { inputTokens, outputTokens }, knownUsage: { inputTokens, outputTokens },
         costUsd,
+        knownCostUsd: costUsd,
     },
     curationWeight: null,
     curationBudget: null,
@@ -660,12 +661,12 @@ test("renderSummary: zero cost omits the $ part", () => {
     assert.doesNotMatch(out, /\$/);
 });
 
-test("renderSummary: unavailable money is omitted, never a gross $unknown", () => {
+test("renderSummary: unavailable money is explicitly unknown, not silently omitted", () => {
     const out = renderSummary(1, 100, terminalResult(200), false, {
         accounting: {
             requests: [{ provider: "provider:test", model: "test", outcome: "response", cost: { kind: "unknown" } }],
-            usage: { inputTokens: 10, outputTokens: 5 },
-            costUsd: null,
+            usage: { inputTokens: 10, outputTokens: 5 }, knownUsage: { inputTokens: 10, outputTokens: 5 },
+            costUsd: null, knownCostUsd: null,
         },
         curationWeight: null,
         curationBudget: null,
@@ -674,7 +675,7 @@ test("renderSummary: unavailable money is omitted, never a gross $unknown", () =
         meta: {},
     });
     assert.match(out, /↓10 ↑5/, "physical evidence still renders");
-    assert.doesNotMatch(out, /\$/, "no cost segment at all when the price is not available");
+    assert.match(out, /loop \$\?/, "a missing price is not a free request");
 });
 
 test("[§cli-summary-line-per-looprun] contextGauge renders the daemon's request-matched physical capacity", () => {

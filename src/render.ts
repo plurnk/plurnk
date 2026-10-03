@@ -7,7 +7,7 @@ import { paint } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import ModelText from "./model-text.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { abbreviatedCount, money } from "./figures.ts";
+import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 
 export interface LogEntryWire {
     id: number;
@@ -388,7 +388,9 @@ export interface LoopUsage {
             inputTokens?: number;
             outputTokens?: number;
         } | null;
+        knownUsage: { inputTokens?: number; outputTokens?: number } | null;
         costUsd: string | null;
+        knownCostUsd: string | null;
     };
     // The daemon reports curation pressure and physical request occupancy as two
     // independent gauges. The client renders them verbatim and never compares
@@ -439,21 +441,18 @@ export const terminalStatusLabel = (result: OperationResult): string => {
                         : `final ${status}`;
 };
 
-const isZeroDecimal = (value: string): boolean => /^0(?:\.0+)?$/.test(value);
-
 export const renderSummary = (turns: number, wallMs: number, result: OperationResult, hitMaxTurns: boolean, usage?: LoopUsage): string => {
     const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(result);
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
     if (usage !== undefined) {
         const aggregate = usage.accounting.usage;
-        tokenPart = ` · ↓${abbreviatedCount(aggregate?.inputTokens)} ↑${abbreviatedCount(aggregate?.outputTokens)}`;
+        const known = usage.accounting.knownUsage;
+        tokenPart = ` · ↓${countWithSubtotal(aggregate?.inputTokens, known?.inputTokens)} ↑${countWithSubtotal(aggregate?.outputTokens, known?.outputTokens)}`;
         tokenPart += curationGauge(usage.curationWeight, usage.curationBudget);
         tokenPart += contextGauge(usage.contextTokens, usage.contextCapacity);
-        const costUsd = usage.accounting.costUsd;
-        if (costUsd !== null && !isZeroDecimal(costUsd)) {
-            tokenPart += ` · loop $${money(costUsd)}`;
-        }
+        const cost = costWithSubtotal(usage.accounting.costUsd, usage.accounting.knownCostUsd);
+        if (cost.length > 0) tokenPart += ` · loop ${cost}`;
     }
     return paint(`  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}`, "dim");
 };

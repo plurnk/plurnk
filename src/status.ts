@@ -2,7 +2,7 @@ import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
 import { Validator, type FunctionalityPreparationActivity, type JsonSchema, type ModelRoute, type ProviderUsage } from "@plurnk/plurnk-contracts";
 import preparationSchema from "@plurnk/plurnk-contracts/schema/FunctionalityPreparationActivity.json" with { type: "json" };
 import type { LoopUsage } from "./render.ts";
-import { abbreviatedCount, money } from "./figures.ts";
+import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 import ModelText from "./model-text.ts";
 import { homePath } from "./paths.ts";
 
@@ -11,12 +11,10 @@ import { homePath } from "./paths.ts";
 export interface SessionTally {
     turns: number;
     wallMs: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    costUsd: string | null;
+    accounting: TurnAccounting | null;
 }
 
-export const EMPTY_TALLY: SessionTally = Object.freeze({ turns: 0, wallMs: 0, inputTokens: null, outputTokens: null, costUsd: null });
+export const EMPTY_TALLY: SessionTally = Object.freeze({ turns: 0, wallMs: 0, accounting: null });
 
 // Exact decimal addition on the daemon's decimal strings — never a float.
 const addDecimal = (a: string, b: string): string => {
@@ -35,15 +33,23 @@ export interface StatusOutcome { turns: number; wallMs: number; usage?: LoopUsag
 
 export const tallyOutcome = (tally: SessionTally, outcome: StatusOutcome): SessionTally => {
     const aggregate = outcome.usage?.accounting.usage;
+    const known = outcome.usage?.accounting.knownUsage;
     const cost = outcome.usage?.accounting.costUsd ?? null;
+    const own: TurnAccounting = {
+        inputTokens: aggregate?.inputTokens ?? null,
+        outputTokens: aggregate?.outputTokens ?? null,
+        costUsd: cost,
+        knownInputTokens: known?.inputTokens ?? aggregate?.inputTokens ?? null,
+        knownOutputTokens: known?.outputTokens ?? aggregate?.outputTokens ?? null,
+        knownCostUsd: outcome.usage?.accounting.knownCostUsd ?? cost,
+    };
+    const accounting = accrueTurnAccounting(tally.accounting, own);
     const concluded = {
+        accounting: outcome.descendants == null ? accounting : accrueTurnAccounting(accounting, outcome.descendants),
         turns: tally.turns + outcome.turns,
         wallMs: tally.wallMs + outcome.wallMs,
-        inputTokens: addNullable(tally.inputTokens, aggregate?.inputTokens),
-        outputTokens: addNullable(tally.outputTokens, aggregate?.outputTokens),
-        costUsd: cost === null ? tally.costUsd : tally.costUsd === null ? cost : addDecimal(tally.costUsd, cost),
     };
-    return outcome.descendants == null ? concluded : { ...concluded, ...accrueTurnAccounting(concluded, outcome.descendants) };
+    return concluded;
 };
 
 // What the status line knows beyond the gauge: where it is, and the session so far.
@@ -96,6 +102,9 @@ export interface TurnAccounting {
     costUsd: string | null;
     inputTokens: number | null;
     outputTokens: number | null;
+    knownCostUsd: string | null;
+    knownInputTokens: number | null;
+    knownOutputTokens: number | null;
 }
 
 export const turnAccountingFromNotice = (notice: {
@@ -106,11 +115,14 @@ export const turnAccountingFromNotice = (notice: {
     if (notice.source !== "engine:turn" || notice.kind !== "turn_generated") return null;
     const accounting = notice.accounting;
     if (typeof accounting !== "object" || accounting === null) return null;
-    const a = accounting as { costUsd?: unknown; inputTokens?: unknown; outputTokens?: unknown };
+    const a = accounting as Partial<Record<keyof TurnAccounting, unknown>>;
     return {
         costUsd: typeof a.costUsd === "string" ? a.costUsd : null,
         inputTokens: typeof a.inputTokens === "number" ? a.inputTokens : null,
         outputTokens: typeof a.outputTokens === "number" ? a.outputTokens : null,
+        knownCostUsd: typeof a.knownCostUsd === "string" ? a.knownCostUsd : typeof a.costUsd === "string" ? a.costUsd : null,
+        knownInputTokens: typeof a.knownInputTokens === "number" ? a.knownInputTokens : typeof a.inputTokens === "number" ? a.inputTokens : null,
+        knownOutputTokens: typeof a.knownOutputTokens === "number" ? a.knownOutputTokens : typeof a.outputTokens === "number" ? a.outputTokens : null,
     };
 };
 
@@ -118,9 +130,12 @@ export const accrueTurnAccounting = (
     accrued: TurnAccounting | null,
     turn: TurnAccounting,
 ): TurnAccounting => accrued === null ? turn : {
-    costUsd: accrued.costUsd === null ? turn.costUsd : turn.costUsd === null ? accrued.costUsd : addDecimal(accrued.costUsd, turn.costUsd),
-    inputTokens: accrued.inputTokens === null ? turn.inputTokens : turn.inputTokens === null ? accrued.inputTokens : accrued.inputTokens + turn.inputTokens,
-    outputTokens: accrued.outputTokens === null ? turn.outputTokens : turn.outputTokens === null ? accrued.outputTokens : accrued.outputTokens + turn.outputTokens,
+    costUsd: accrued.costUsd === null || turn.costUsd === null ? null : addDecimal(accrued.costUsd, turn.costUsd),
+    inputTokens: accrued.inputTokens === null || turn.inputTokens === null ? null : accrued.inputTokens + turn.inputTokens,
+    outputTokens: accrued.outputTokens === null || turn.outputTokens === null ? null : accrued.outputTokens + turn.outputTokens,
+    knownCostUsd: accrued.knownCostUsd === null ? turn.knownCostUsd : turn.knownCostUsd === null ? accrued.knownCostUsd : addDecimal(accrued.knownCostUsd, turn.knownCostUsd),
+    knownInputTokens: addNullable(accrued.knownInputTokens, turn.knownInputTokens),
+    knownOutputTokens: addNullable(accrued.knownOutputTokens, turn.knownOutputTokens),
 };
 
 // {plurnk#41} — effort is identity-grade: contracts ≥1.14 routes carry the worker's
@@ -182,17 +197,23 @@ export interface RuntimeStatusGauge {
 const descendantAccounting = (value: unknown): TurnAccounting | null => {
     const fail = (): never => { throw new TypeError("Invalid runtime descendant accounting."); };
     if (value === null || typeof value !== "object" || Array.isArray(value)) return fail();
-    const { requests, usage, costUsd } = value as { requests?: unknown; usage?: unknown; costUsd?: unknown };
+    const { requests, usage, knownUsage, costUsd, knownCostUsd } = value as {
+        requests?: unknown; usage?: unknown; knownUsage?: unknown; costUsd?: unknown; knownCostUsd?: unknown;
+    };
     if (!Number.isSafeInteger(requests) || (requests as number) < 0) return fail();
     if (costUsd !== null && (typeof costUsd !== "string" || !/^[0-9]+(?:\.[0-9]+)?$/u.test(costUsd))) return fail();
-    if (usage !== null) {
+    if (knownCostUsd !== null && (typeof knownCostUsd !== "string" || !/^[0-9]+(?:\.[0-9]+)?$/u.test(knownCostUsd))) return fail();
+    for (const part of [usage, knownUsage]) {
+        if (part === null) continue;
         const schema = Validator.schemaByRef("https://schemas.plurnk.xyz/ProviderUsage.json");
         if (schema === null) throw new Error("The contracts package is missing ProviderUsage.");
-        if (!Validator.validateJsonSchemaInstance(schema as JsonSchema, usage).valid) return fail();
+        if (!Validator.validateJsonSchemaInstance(schema as JsonSchema, part).valid) return fail();
     }
     if (requests === 0) return null;
     const totals = usage as ProviderUsage | null;
-    return { inputTokens: totals?.inputTokens ?? null, outputTokens: totals?.outputTokens ?? null, costUsd };
+    const known = knownUsage as ProviderUsage | null;
+    return { inputTokens: totals?.inputTokens ?? null, outputTokens: totals?.outputTokens ?? null, costUsd,
+        knownInputTokens: known?.inputTokens ?? null, knownOutputTokens: known?.outputTokens ?? null, knownCostUsd };
 };
 
 export interface StatusGaugeEnvelope {
@@ -344,14 +365,13 @@ export const renderStatusLine = (
     if (context.tally.turns > 0 || running || clockActive) parts.push(formatDuration(context.tally.wallMs + elapsed));
     const own = context.accrued ?? null;
     const accrued = !unfinished ? null : value.descendants == null ? own : accrueTurnAccounting(own, value.descendants);
-    const combined = accrued === null ? context.tally : accrueTurnAccounting({
-        costUsd: context.tally.costUsd,
-        inputTokens: context.tally.inputTokens,
-        outputTokens: context.tally.outputTokens,
-    }, accrued);
-    const { inputTokens, outputTokens, costUsd } = combined;
-    if (inputTokens !== null || outputTokens !== null) parts.push(`↓${abbreviatedCount(inputTokens)} ↑${abbreviatedCount(outputTokens)}`);
-    if (costUsd !== null && !/^0(?:\.0+)?$/.test(costUsd)) parts.push(`$${money(costUsd)}`);
+    const combined = accrued === null ? context.tally.accounting : accrueTurnAccounting(context.tally.accounting, accrued);
+    if (combined !== null) {
+        const { inputTokens, outputTokens, costUsd } = combined;
+        parts.push(`↓${countWithSubtotal(inputTokens, combined.knownInputTokens)} ↑${countWithSubtotal(outputTokens, combined.knownOutputTokens)}`);
+        const cost = costWithSubtotal(costUsd, combined.knownCostUsd);
+        if (cost.length > 0) parts.push(cost);
+    }
     if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
     // {§cli-status-children} — a known zero hides the child segment, including its model override.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];

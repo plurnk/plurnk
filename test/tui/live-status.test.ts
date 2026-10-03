@@ -225,7 +225,7 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
             frame({ content: `\`\`\`\`${index === 0 ? "SEND" : "KILL"}\n${message}\n\`\`\`\`${work}` });
             frame({}, "stop");
             const factor = 2 ** index;
-            response.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 } })}\n\n`);
+            response.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 }, knownUsage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 } })}\n\n`);
             response.end("data: [DONE]\n\n");
         };
         void serve().catch((error: Error) => { incoming.forEach((gate) => gate.reject(error)); response.destroy(error); });

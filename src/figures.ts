@@ -9,3 +9,10 @@ export const abbreviatedCount = (value: number | null | undefined): string => va
 
 // "3333.3333" → "3,333.3333", "0.024" → "0.0240".
 export const money = (usd: string): string => Number(usd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+
+export const countWithSubtotal = (total: number | null | undefined, known: number | null | undefined): string =>
+    total != null ? abbreviatedCount(total) : known == null ? "?" : `${abbreviatedCount(known)}+?`;
+
+export const costWithSubtotal = (total: string | null, known: string | null): string =>
+    total !== null ? /^0(?:\.0+)?$/.test(total) ? "" : `$${money(total)}`
+        : known === null ? "$?" : `$${money(known)} + ?`;

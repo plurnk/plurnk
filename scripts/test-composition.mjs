@@ -51,6 +51,7 @@ let passed = false;
 const modelRequests = [];
 const selectedModels = [];
 const scriptedResponses = [];
+let failNextRequest = false;
 try {
     await run("npm", ["init", "-y"], { cwd: temp });
     await mkdir(install, { recursive: true });
@@ -117,6 +118,15 @@ try {
         req.once("end", () => {
             const request = JSON.parse(body);
             selectedModels.push(request.model);
+            if (failNextRequest) {
+                failNextRequest = false;
+                res.writeHead(200, { "content-type": "text/event-stream" });
+                res.end(`data: ${JSON.stringify({
+                    id: "failed-composition", model: request.model,
+                    choices: [{ index: 0, delta: { reasoning_content: "Interrupted reasoning.", content: "not a completed answer" }, finish_reason: null }],
+                })}\n\n`);
+                return;
+            }
             const response = scriptedResponses.shift()
                 // {§kill-conclusion}: final-answer fixtures conclude with parameterless KILL.
                 ?? `\`\`\`\`KILL\ncomposition ok: ${request.model}
@@ -273,6 +283,16 @@ try {
         throw new Error(
             `descendant proposal used ${selectedModels.length - requestsBeforeDelegation} provider requests with ${scriptedResponses.length} scripted responses left`,
         );
+    }
+
+    // One failed physical request must survive recovery and the public JSON boundary.
+    failNextRequest = true;
+    const recovered = await runPrompt("Recover an interrupted response.");
+    const accounting = recovered.usage?.accounting;
+    if (accounting?.requests.length !== 2 || accounting.requests[0].outcome !== "error"
+        || accounting.requests[1].outcome !== "response" || accounting.costUsd !== null
+        || accounting.usage !== null || accounting.knownUsage?.inputTokens !== 1) {
+        throw new Error(`packed recovery lost incomplete accounting: ${JSON.stringify(accounting)}`);
     }
 
     const log = await runClient(clientBin, [

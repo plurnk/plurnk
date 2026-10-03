@@ -227,8 +227,12 @@ completion, cancellation or failure freezes it. A missing start time is not inve
 Token and cost totals combine concluded
 loops with settled `engine:turn` accounting from the current observed run. Every
 completion beat refreshes them. The terminal loop aggregate replaces, rather than
-adds to, that run's accrual. Unknown usage remains unknown. The turns/wall group appears once a loop has
-run, tokens once accounting exists, cost when nonzero, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
+adds to, that run's accrual. Complete `usage`/`costUsd` and `knownUsage`/`knownCostUsd`
+subtotals remain distinct: any unknown contribution keeps the total unknown
+through later turns, descendants, and session accumulation. A known subtotal
+renders with `+ ?`; wholly unknown money renders `$?`. An explicit complete
+zero remains hidden. The turns/wall group appears once a loop has
+run, tokens once accounting exists, cost when nonzero or unknown, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
 worker once the conversation worker is known (the terminated outcome names it). The client does
 not infer provider packets from operation rows or turn coordinates.
 

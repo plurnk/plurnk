@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { setTimeout } from "node:timers/promises";
+import { BridgeTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -92,6 +94,16 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
     await tui.waitFor(/⌛︎[^\r\n]*↓2k ↑150[^\r\n]*\$0\.1500/);
     release[4].resolve();
     await tui.waitFor(/⌛︎[^\r\n]*↓3k ↑310[^\r\n]*\$0\.3100(?![^\r\n]*🐜)/);
+    // Usage settles before the child's operations and lifecycle. Observe actual
+    // completion before asking the parent to exercise the unreviewed-result guard.
+    const observer = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "tree-status" });
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+        const { workers } = await observer.rpc<{ workers: Array<{ name: string; lifecycle: string }> }>("workspace.workers");
+        if (["first_child", "second_child"].every((name) => workers.some((worker) => worker.name === name && worker.lifecycle === "completed"))) break;
+        assert.ok(Date.now() < deadline, "both child lifecycles must conclude before the parent response is released");
+        await setTimeout(10);
+    }
     release[5].resolve();
     await tui.waitFor(/ACCOUNTING_RESULT_5/);
     // The second child settled after the parent's packet was assembled. The normal

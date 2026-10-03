@@ -687,6 +687,10 @@ existing diagnostic path without rewriting or retry.
 
 #### OAuth callbacks {§cli-mcp-oauth-callback}
 
+Beginning sign-in does not enable or publish capabilities. A begin result with
+an authorization URL opens consent; an already-active result or an accepted
+connection awaiting publication closes the listener without opening a browser.
+
 Automatic reception binds an OS-assigned port on the IPv4 loopback interface
 before requesting authorization (RFC 8252 §7.3). An explicit fixed callback
 instead binds that exact HTTP loopback IP and port; it is never rewritten.

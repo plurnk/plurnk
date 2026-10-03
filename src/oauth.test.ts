@@ -12,9 +12,7 @@ const receiveAuthorization = (
     options: Parameters<typeof beginAndReceive>[2],
 ) => beginAndReceive({
     redirectUrl: new URL(url).searchParams.get("redirect_uri") ?? undefined,
-    begin: async () => ({ status: 202, family: "mcp", alias: "fixture", definition: {
-        alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url },
-    } }),
+    begin: async () => ({ status: 202, alias: "fixture", authorization: { url } }),
 }, async (url) => { await complete(url); return accepted; }, options);
 
 const redirectUrl = async (host = "127.0.0.1"): Promise<string> => {
@@ -50,15 +48,28 @@ test("[§cli-mcp-oauth-callback] an ephemeral callback is bound before OAuth beg
         assert.equal(new URL(bound).hostname, "127.0.0.1");
         assert.notEqual(new URL(bound).port, "0");
         assert.equal((await fetch(bound)).status, 400, "the bound listener cannot accept a callback before the state exists");
-        return { status: 202, family: "mcp", alias: "fixture", definition: {
-            alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url: authorizationUrl(bound) },
-        } };
+        return { status: 202, alias: "fixture", authorization: { url: authorizationUrl(bound) } };
     } }, async (url) => { assert.equal(url, callbackUrl(redirect)); return accepted; }, {
         signal: AbortSignal.timeout(2_000), write: noBrowserFailure,
         openBrowser: async () => { assert.equal((await fetch(callbackUrl(redirect))).status, 200); },
     });
     assert.deepEqual(result, accepted);
     await assert.rejects(fetch(redirect), /fetch failed/u);
+});
+
+test("[§cli-mcp-oauth-callback] accepted and already-active begin results close reception without opening consent", async () => {
+    for (const status of [200, 202] as const) {
+        let redirect = "";
+        const result = await beginAndReceive({ begin: async (bound) => {
+            redirect = bound;
+            return { status, alias: "fixture" };
+        } }, async () => assert.fail("no grant to exchange"), {
+            signal: AbortSignal.timeout(2_000), write: () => assert.fail("no consent URL"),
+            openBrowser: async () => assert.fail("no browser for active or accepted sign-in"),
+        });
+        assert.deepEqual(result, { status, alias: "fixture" });
+        await assert.rejects(fetch(redirect), /fetch failed/u);
+    }
 });
 
 test("[§cli-mcp-oauth-callback] failed or cancelled preparation closes its already-bound listener", async () => {
@@ -82,9 +93,7 @@ test("[§cli-mcp-oauth-callback] a configured redirect retains its exact registr
     const redirect = new URL(await redirectUrl()).origin;
     await beginAndReceive({ redirectUrl: redirect, begin: async (bound) => {
         assert.equal(bound, redirect, "binding a listener does not rewrite an explicitly registered URI");
-        return { status: 202, family: "mcp", alias: "fixture", definition: {
-            alias: "fixture", origin: "workspace", state: "authorization-required", authorization: { url: authorizationUrl(redirect) },
-        } };
+        return { status: 202, alias: "fixture", authorization: { url: authorizationUrl(redirect) } };
     } }, async () => accepted, {
         signal: AbortSignal.timeout(2_000), write: noBrowserFailure,
         openBrowser: async () => { assert.equal((await fetch(callbackUrl(redirect))).status, 200); },

@@ -8,7 +8,7 @@ import { commandUsage } from "./commands.ts";
 import { configurationSource } from "./functionality-source.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 import { receiveAuthorization } from "./oauth.ts";
-import type { McpServerDefinition, McpOAuthCompletionResult, FunctionalityListResult, FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
+import type { McpServerDefinition, McpOAuthBeginResult, McpOAuthCompletionResult, FunctionalityListResult } from "@plurnk/plurnk-contracts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -224,7 +224,7 @@ export const handleMcp = async (
                 const deadline = AbortSignal.timeout(timeout);
                 result = await receiveAuthorization({
                     ...(redirectUrl === undefined ? {} : { redirectUrl }),
-                    begin: (redirectUrl) => rpc.call("workspace.mcp.oauth.begin", { alias, redirectUrl }) as Promise<FunctionalityMutationResult>,
+                    begin: (redirectUrl) => rpc.call("workspace.mcp.oauth.begin", { alias, redirectUrl }) as Promise<McpOAuthBeginResult>,
                 }, complete, {
                     signal: options.signal === undefined ? deadline : AbortSignal.any([options.signal, deadline]), write,
                 });

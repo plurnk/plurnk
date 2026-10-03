@@ -2,11 +2,11 @@ import type { ChildProcess } from "node:child_process";
 import { addAbortListener, once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { FunctionalityMutationResult, McpOAuthCompletionResult } from "@plurnk/plurnk-contracts";
+import type { McpOAuthBeginResult, McpOAuthCompletionResult } from "@plurnk/plurnk-contracts";
 
 interface AuthorizationRequest {
     readonly redirectUrl?: string;
-    readonly begin: (redirectUrl: string) => Promise<FunctionalityMutationResult>;
+    readonly begin: (redirectUrl: string) => Promise<McpOAuthBeginResult>;
 }
 
 interface ReceptionOptions {
@@ -20,7 +20,7 @@ export const receiveAuthorization = async (
     request: AuthorizationRequest,
     complete: (callbackUrl: string) => Promise<McpOAuthCompletionResult>,
     { signal, write, openBrowser = async (url) => (await import("open")).default(url) }: ReceptionOptions,
-): Promise<FunctionalityMutationResult | McpOAuthCompletionResult> => {
+): Promise<McpOAuthBeginResult> => {
     signal.throwIfAborted();
     // RFC 8252 §7.3: bind an OS-assigned loopback port before requesting authorization.
     const redirect = new URL(request.redirectUrl ?? "http://127.0.0.1:0/callback");
@@ -79,9 +79,8 @@ export const receiveAuthorization = async (
         const redirectUri = request.redirectUrl ?? redirect.href;
         const begun = await Promise.race([request.begin(redirectUri), completed.promise]);
         signal.throwIfAborted();
-        if (begun.status !== 202) return begun;
-        const url = "definition" in begun ? begun.definition?.authorization?.url : undefined;
-        if (typeof url !== "string") throw new Error("MCP authorization response omitted its URL.");
+        if (!("authorization" in begun)) return begun;
+        const { url } = begun.authorization;
         const authorization = new URL(url);
         const states = authorization.searchParams.getAll("state");
         const redirects = authorization.searchParams.getAll("redirect_uri");

@@ -1,8 +1,5 @@
 # Plurnk
 
-> [!WARNING]
-> Plurnk requires endpoints with open, verbatim reasoning.
-
 **The [Bitter Lesson](https://bitterlesson.ai/) applies to the harness, too.**
 
 - **Perpetual Context.** Like a "perpetual stew" for your tokens, Plurnk

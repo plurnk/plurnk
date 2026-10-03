@@ -118,7 +118,6 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
             ...env,
             PLURNK_SERVICE_DB_PATH: "",
             PLURNK_MODEL: "",
-            OPENAI_BASE_URL: "http://127.0.0.1:11435",
             ...Object.fromEntries(Object.entries(opts.mcp ?? {}).map(([name, definition]) => [
                 `PLURNK_MCP_${name.replaceAll("-", "_")}`, JSON.stringify({ name, ...definition }),
             ])),

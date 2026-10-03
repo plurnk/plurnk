@@ -24,21 +24,20 @@ before(async () => {
         endpoint = await completionsEndpoint(() => "````KILL\nloop gauge\n````");
         daemon = await bootDaemon(bin, {
             extraEnv: {
-                PLURNK_MODEL_clientfirst: "openai/client-first",
-                PLURNK_MODEL_clienttest: "openai/client-test",
+                PLURNK_MODEL_clientfirst: "clientfixture/client-first",
+                PLURNK_MODEL_clienttest: "clientfixture/client-test",
                 PLURNK_MODEL_clientloop: "openai/client-loop",
                 PLURNK_BASEURL_clientloop: endpoint.url,
+                PLURNK_PROVIDERS_PROVIDER_CLIENTFIXTURE_NPM: "@ai-sdk/openai-compatible",
+                PLURNK_PROVIDERS_PROVIDER_CLIENTFIXTURE_BASE_URL: endpoint.url,
+                PLURNK_PROVIDERS_PROVIDER_CLIENTFIXTURE_REASONING_EFFORT_PATH: "/reasoning_effort",
+                PLURNK_PROVIDERS_PROVIDER_CLIENTFIXTURE_REASONING_EFFORTS: "high",
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clientfirst: "32768",
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clienttest: "32768",
                 PLURNK_PROVIDERS_CONTEXT_WINDOW_clientloop: "32768",
                 PLURNK_PROVIDERS_EFFORT_clientfirst: "adaptive",
                 PLURNK_PROVIDERS_EFFORT_clienttest: "adaptive",
                 PLURNK_PROVIDERS_EFFORT_clientloop: "adaptive",
-                ...Object.fromEntries(["clientfirst", "clienttest"].flatMap((alias) => [
-                    [`PLURNK_PROVIDERS_OPTIONS_NAMESPACE_${alias}`, "openai"],
-                    [`PLURNK_PROVIDERS_REASONING_EFFORT_PATH_${alias}`, "/reasoningEffort"],
-                    [`PLURNK_PROVIDERS_REASONING_EFFORTS_${alias}`, "high"],
-                ])),
                 PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
                 OPENAI_API_KEY: "client-control-plane-test",
             },

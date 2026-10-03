@@ -58,16 +58,16 @@ test("[§cli-mcp-oauth-callback] an ephemeral callback is bound before OAuth beg
 });
 
 test("[§cli-mcp-oauth-callback] accepted and already-active begin results close reception without opening consent", async () => {
-    for (const status of [200, 202] as const) {
+    for (const begun of [{ status: 200, alias: "fixture" }, { status: 202, alias: "fixture" }] as const) {
         let redirect = "";
         const result = await beginAndReceive({ begin: async (bound) => {
             redirect = bound;
-            return { status, alias: "fixture" };
+            return begun;
         } }, async () => assert.fail("no grant to exchange"), {
             signal: AbortSignal.timeout(2_000), write: () => assert.fail("no consent URL"),
             openBrowser: async () => assert.fail("no browser for active or accepted sign-in"),
         });
-        assert.deepEqual(result, { status, alias: "fixture" });
+        assert.deepEqual(result, begun);
         await assert.rejects(fetch(redirect), /fetch failed/u);
     }
 });

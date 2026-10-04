@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import { paint } from "./color.ts";
 import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
@@ -34,14 +35,22 @@ const leadLine = (entry: LogEntryWire, detail: boolean): string => {
     return parts.join(" ");
 };
 
-// Full model text, whether a delivered reply or a NOTE ({§cli-note-rendering}). Presentation
-// does not imply delivery: reply accounting remains isResponseMessage's responsibility.
+// Full model text of a delivered reply. Presentation does not imply delivery: reply accounting
+// remains isResponseMessage's responsibility.
 const modelBlock = (lead: string, body: string): string => body.length === 0 ? lead : `${lead}\n${body}`;
 const renderModelText = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string =>
     modelBlock(leadLine(entry, TurnDisposition.isOp(entry.op)), body);
 
-// Outside text ({§cli-outside-text}): the turn's prose outside its fences, one block exactly as a
-// model NOTE's — blank lead, full Markdown at the width — and never speech.
+// A model NOTE ({§cli-note-rendering}): a reply's blank lead and aside, then its body whole in the
+// Markdown layout at the width, stripped of every weight and painted dim — the status line's
+// weight — so bearings never read as an answer.
+const renderNoteText = (entry: LogEntryWire, columns: number): string => {
+    const body = stripVTControlCharacters(renderSendBody(entry.tx, Math.max(1, columns)));
+    return modelBlock(leadLine(entry, false), body.length === 0 ? "" : body.split("\n").map((line) => paint(line, "dim")).join("\n"));
+};
+
+// Outside text ({§cli-outside-text}): the turn's prose outside its fences, one block with a
+// reply's layout — blank lead, full Markdown at the width — and never speech.
 export const renderOutsideText = ({ text }: OutsideText, columns: number): string =>
     modelBlock("", renderSendBody({ body: { raw: text } }, Math.max(1, columns)));
 
@@ -59,17 +68,17 @@ const renderArrival = (entry: LogEntryWire): string => {
 };
 
 // A descendant's row ({plurnk#108}): the child's name marks it, the block sits one step in per
-// generation. Model NOTEs retain their Markdown within that indentation. A lineage row is the
+// generation. Model NOTEs stay plain and dim within that indentation. A lineage row is the
 // direct child's, at depth one ({§cli-workers-topology}).
 export const renderDescendantBlock = (entry: LogEntryWire, name: string, depth: number, override?: RowOverride, columns = process.stdout.columns ?? 80): string =>
     markDescendant(entry.op === "NOTE" && entry.origin === "model"
-        ? renderModelText(entry, Math.max(1, columns - LINEAGE_OFFSET.length * depth))
+        ? renderNoteText(entry, Math.max(1, columns - LINEAGE_OFFSET.length * depth))
         : renderOperationBlock(entry, override, true), name, depth);
 
 // Render a log entry for the waterfall WITHOUT a trailing newline. A disposition renders
 // its outcome, an arrival its sender and block, a delivered conversation reply its whole block
 // ({§cli-broadcast-send-rendering}), every other operation, an undelivered SEND included, its literal row with its body previewed beneath ({plurnk#104}). Model
-// NOTEs use the same Markdown projection as replies without becoming delivered messages.
+// NOTEs render plain and dim ({§cli-note-rendering}) without becoming delivered messages.
 export const renderLogEntry = (
     entry: LogEntryWire,
     columns: number = process.stdout.columns ?? 80,
@@ -78,7 +87,7 @@ export const renderLogEntry = (
     if (isResponseMessage(entry)) return renderModelText(entry, columns);
     const lineage = lineageWorker(entry);
     if (lineage !== null) return renderDescendantBlock(entry, lineage, 1, override, columns);
-    if (entry.op === "NOTE" && entry.origin === "model") return renderModelText(entry, columns);
+    if (entry.op === "NOTE" && entry.origin === "model") return renderNoteText(entry, columns);
     if (TurnDisposition.isOp(entry.op) || entry.op === "KILL" && objectOf(entry.tx)?.target === null) {
         const rx = objectOf(entry.rx);
         const detail = typeof rx?.detail === "string" ? rx.detail : null;

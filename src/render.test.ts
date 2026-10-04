@@ -3,6 +3,7 @@
 // enough that visual inspection during smoke covers them.
 
 import { renderDescendantBlock } from "./render-message.ts";
+import { paint } from "./color.ts";
 import { indentDescendant, markDescendant } from "./render.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -728,6 +729,23 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
     assert.equal(noteRows.length, 41, "the blank lead and all forty lines");
     assert.deepEqual(noteRows.slice(1, 3), ["line 1", "line 2"], "a model NOTE uses the full column width");
     assert.ok(!noteRows.some((row) => row.includes("/look")), "a NOTE is never cut");
+});
+
+test("{§cli-note-rendering} a model NOTE renders plain and dim, the status line's weight, never as a reply", () => {
+    const note = entry({
+        op: "NOTE", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 4,
+        tx: { op: "NOTE", target: null, aside: null, body: { raw: "bearings kept\nnext: read the test", json: null } },
+    });
+    process.env.PLURNK_CLIENT_COLOR = "always";
+    try {
+        const rows = renderLogEntry(note, 80).split("\n");
+        assert.deepEqual(rows, ["", paint("bearings kept", "dim"), paint("next: read the test", "dim")],
+            "a blank lead, then every line dim: no reply weight");
+        const bold = entry({ ...note, tx: { op: "NOTE", target: null, aside: null, body: { raw: "**bold**", json: null } } });
+        assert.equal(renderLogEntry(bold, 80), `\n${paint("bold", "dim")}`, "Markdown weight is stripped before the dim paint");
+    } finally {
+        delete process.env.PLURNK_CLIENT_COLOR;
+    }
 });
 
 test("{plurnk#108} a lineage row renders two columns in with the child's name, its body previewed, and a child's conclusion names its outcome", () => {

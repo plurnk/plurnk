@@ -38,11 +38,11 @@ test("[§cli-note-rendering] a model NOTE renders as full Markdown without becom
     assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE\n    Working memory, not a response.\n", "a harness NOTE keeps its heading, its body whole beneath, a blank row under it");
 });
 
-for (const columns of [24, 80]) test(`[§cli-note-rendering] model notes use the existing Markdown projection at ${columns} columns without truncation`, () => {
+for (const columns of [24, 80]) test(`[§cli-note-rendering] model notes use the Markdown layout at ${columns} columns, dim and without truncation`, () => {
     const body = "# Findings\n\n**Important** result.\n\n- first item\n- second item\n\n```js\nconsole.log(42);\n```\n\n" + "Full notes stay visible.\n\n".repeat(20) + "End of note.";
     const note = row("NOTE", body, 200);
     const rendered = renderLogEntry(note, columns);
-    assert.equal(rendered, `\n${renderSendBody(note.tx, columns)}`, "one shared Markdown projection, no preview or NOTE keyword");
+    assert.equal(stripVTControlCharacters(rendered), `\n${stripVTControlCharacters(renderSendBody(note.tx, columns))}`, "the shared Markdown layout with its weight removed, no preview or NOTE keyword");
     const plain = stripVTControlCharacters(rendered);
     assert.doesNotMatch(plain, /\*\*Important\*\*|```js|\/look/u);
     assert.match(plain, /console\.log\(42\);/u);
@@ -61,11 +61,11 @@ test("[§cli-note-rendering] model notes retain asides and failure visibility; r
     assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE Investigation\n    **Result**\n");
 });
 
-for (const columns of [24, 80]) test(`[§cli-outside-text] outside text renders as a model NOTE's block at ${columns} columns and is never speech`, () => {
+for (const columns of [24, 80]) test(`[§cli-outside-text] outside text renders with a reply's layout at ${columns} columns and is never speech`, () => {
     const text = "# Findings\n\n**Important** result.\n\n- first item\n- second item\n\nA sentence long enough to wrap inside a narrow viewport without truncation.";
     const outside = { coordinate: "alice-1-2", text, tokens: 31 };
     const rendered = renderOutsideText(outside, columns);
-    assert.equal(rendered, renderLogEntry(row("NOTE", text, 200), columns), "one block, the model NOTE's own");
+    assert.equal(rendered, `\n${renderSendBody({ body: { raw: text } }, columns)}`, "one block with a reply's layout, its Markdown weight kept");
     const plain = stripVTControlCharacters(rendered);
     assert.match(plain, /^\nFindings/u, "blank lead line, body at column zero");
     assert.doesNotMatch(plain, /\*\*Important\*\*|\/look|alice-1-2/u, "Markdown projected, no preview, no coordinate");
@@ -73,7 +73,7 @@ for (const columns of [24, 80]) test(`[§cli-outside-text] outside text renders 
     assert.equal(isResponseMessage(row("NOTE", text, 200)), false, "the block it shares is not speech");
 });
 
-test("[§cli-note-rendering] observed child notes retain Markdown within their lineage indentation", () => {
+test("[§cli-note-rendering] observed child notes keep the Markdown layout, dim, within their lineage indentation", () => {
     const note = row("NOTE", "**Child finding**\n\nA paragraph that wraps inside the child's available column width.", 200);
     const rendered = renderDescendantBlock(note, "alice", 2, undefined, 32);
     assert.match(stripVTControlCharacters(rendered), /^    🐜 alice \n    Child finding/u);

@@ -923,7 +923,7 @@ Markdown pass:
   the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),
   ending in `… +N lines · /look <address>` when cut, and a blank row closes the block. A
   concluded execution's output previews the same way under its row, and its blank row follows
-  the output. Model NOTEs instead use full Markdown ({§cli-note-rendering}), including within
+  the output. Model NOTEs render whole, in the Markdown layout but dim ({§cli-note-rendering}), including within
   an observed descendant's indentation; runtime NOTEs stay whole and plain. Delivered answers
   also render whole (§5.4);
   the reasoning lane (§5.1.1) is a separate, live window.
@@ -1015,8 +1015,8 @@ refreshes and archival; only a width or presentation invalidation rerenders them
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | {§cli-note-rendering} A model NOTE renders its full body as Markdown at the current width, with the same blank lead/aside and column-zero layout as a reply. Its log identity and failure visibility remain; it is not a delivered message and does not enter CLI response stdout. A harness NOTE retains its operation heading and whole plain, dim, four-column-indented body. |
-| Outside text (`plurnk.outside`) | {§cli-outside-text} A turn's prose outside its fences arrives once per turn as `CUSTOM plurnk.outside` ({§agui-outside-text}: its log coordinate, the text verbatim, its packet weight), never as a row. It renders exactly as a model NOTE does — blank lead line, full Markdown body at column zero at the current width — where the turn's rows are, in arrival order. It is not speech: never the response surface, never a delivered reply, never CLI stdout. The one-shot CLI traces the text verbatim to stderr, and the `--json` record's `response` excludes it. |
+| NOTE | {§cli-note-rendering} A model NOTE renders its whole body in the Markdown layout at the current width, stripped of every weight and painted dim — the status line's weight — with the same blank lead/aside and column-zero layout as a reply, so bearings never read as an answer. Its log identity and failure visibility remain; it is not a delivered message and does not enter CLI response stdout. A harness NOTE retains its operation heading and whole plain, dim, four-column-indented body. |
+| Outside text (`plurnk.outside`) | {§cli-outside-text} A turn's prose outside its fences arrives once per turn as `CUSTOM plurnk.outside` ({§agui-outside-text}: its log coordinate, the text verbatim, its packet weight), never as a row. It renders with a reply's layout — blank lead line, full Markdown body at column zero at the current width — where the turn's rows are, in arrival order. It is not speech: never the response surface, never a delivered reply, never CLI stdout. The one-shot CLI traces the text verbatim to stderr, and the `--json` record's `response` excludes it. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered conversation SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |

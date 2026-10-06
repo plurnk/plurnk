@@ -6,6 +6,7 @@ import { renderDescendantBlock } from "./render-message.ts";
 import { paint } from "./color.ts";
 import { indentDescendant, markDescendant } from "./render.ts";
 import { test } from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import assert from "node:assert/strict";
 import { PLURNK_OPS } from "@plurnk/plurnk-contracts";
 
@@ -52,6 +53,21 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     turn_seq: 1,
     sequence: 1,
     ...overrides,
+});
+
+// ─── WAIT body is model speech ────────────────────────────────────────
+
+test("a model WAIT with a body renders as the model's message: Markdown at full paint, not a dim preview", () => {
+    const body = "Pilot at **12 of 30** graded.\n\n- 9 passes\n- next read in ten minutes";
+    const spoken = renderLogEntry(entry({ op: "WAIT", origin: "model", signal: 202, status_rx: 202, lineMarker: { marks: [600] }, tx: { body, aside: "park while the poll runs" }, rx: { status: 202, attrs: { waiting: 600 } } }));
+    const plain = stripVTControlCharacters(spoken);
+    assert.match(plain, /park while the poll runs/u, "the lead line keeps the aside");
+    assert.match(plain, /12 of 30/u);
+    assert.match(plain, /9 passes/u);
+    assert.doesNotMatch(plain, /\*\*12 of 30\*\*/u, "the body went through the Markdown layout, not the literal preview");
+    assert.equal(spoken, renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: body }, aside: "park while the poll runs" }, rx: { answers: [] } })).replace(/^[^\n]*\n/u, spoken.split("\n")[0] + "\n"), "the body is painted exactly as a reply's body is");
+    const silent = stripVTControlCharacters(renderLogEntry(entry({ op: "WAIT", origin: "model", signal: 202, status_rx: 202, lineMarker: { marks: [600] }, tx: { body: null, aside: "park while the poll runs" }, rx: { status: 202, attrs: { waiting: 600 } } })));
+    assert.match(silent, /^WAIT/u, "a bodiless WAIT is still its operation row");
 });
 
 // ─── sendSubGlyph ─────────────────────────────────────────────────────

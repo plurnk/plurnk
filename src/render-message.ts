@@ -85,6 +85,10 @@ export const renderLogEntry = (
     override?: RowOverride,
 ): string => {
     if (isResponseMessage(entry)) return renderModelText(entry, columns);
+    // A model WAIT that carries a body speaks it (plurnk-service {§agui-projection}, plurnk#161): the
+    // lead line keeps the wait's detail and aside, the body renders as model text at full paint.
+    // A bodiless WAIT stays the lifecycle row it is.
+    if (entry.op === "WAIT" && entry.origin === "model" && ModelText.plain(extractSendBody(entry.tx)).trim().length > 0) return renderModelText(entry, columns);
     const lineage = lineageWorker(entry);
     if (lineage !== null) return renderDescendantBlock(entry, lineage, 1, override, columns);
     if (entry.op === "NOTE" && entry.origin === "model") return renderNoteText(entry, columns);

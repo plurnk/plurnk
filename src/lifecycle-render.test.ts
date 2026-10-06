@@ -81,11 +81,19 @@ test("[§cli-note-rendering] observed child notes keep the Markdown layout, dim,
     assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= 32));
 });
 
-for (const op of ["WAIT", "KILL"]) test(`${op} without delivery is an operation, not speech or a task inventory`, () => {
-    const entry = row(op, "Working memory, not a response.", 200);
+test("KILL without delivery is an operation, not speech or a task inventory", () => {
+    const entry = row("KILL", "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(entry), false);
     const rendered = stripVTControlCharacters(renderLogEntry(entry, 80));
-    assert.equal(rendered, `${op}\n    Working memory, not a response.\n`, "{plurnk#104} the row, its body whole beneath, a blank row under it");
+    assert.equal(rendered, "KILL\n    Working memory, not a response.\n", "{plurnk#104} the row, its body whole beneath, a blank row under it");
+});
+
+test("a WAIT body is the model's words to the user: rendered as model text, never counted as the reply (plurnk#161)", () => {
+    const spoken = row("WAIT", "Pilot at 12 of 30; next read in ten minutes.", 200);
+    assert.equal(isResponseMessage(spoken), false, "accounting unchanged: a WAIT body is communication, not the answer");
+    assert.equal(stripVTControlCharacters(renderLogEntry(spoken, 80)), "\nPilot at 12 of 30; next read in ten minutes.", "the same block a delivered answer gets (plurnk-service {§agui-projection})");
+    const silent = row("WAIT", "", 200);
+    assert.match(stripVTControlCharacters(renderLogEntry(silent, 80)), /^WAIT/u, "a bodiless WAIT is still its operation row");
 });
 
 test("{§cli-broadcast-send-rendering} a final KILL is speech only when its answer was delivered", () => {

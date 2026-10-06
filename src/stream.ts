@@ -7,7 +7,7 @@ import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import process from "node:process";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
-import { PREVIEW_OFFSET, lineageWorker, objectOf, previewLine, previewLines, problemSummary, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
+import { PREVIEW_OFFSET, fitRow, lineageWorker, objectOf, previewLine, previewLines, problemSummary, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
 
 // loop_seq/turn_seq/sequence: the entry's coordinate, on the wire for
 // coordinate-bearing streams (exec) — plurnk-service #224. Optional: a
@@ -95,14 +95,14 @@ export default class StreamTrace {
 
     // One row per execution, at its conclusion, in the operation grammar: the launching
     // fence when it is known, the stream's own scheme and address otherwise.
-    concluded(ev: StreamConcludedPayload): string {
+    concluded(ev: StreamConcludedPayload, columns: number): string {
         const launch = this.#launched.get(ev.target);
         this.#launched.delete(ev.target);
         this.#greyed.delete(ev.target);
         const status = ev.result.status ?? 0;
         const failed = status !== 200;
         const failure = !failed ? null : problemSummary(ev.result.problem) ?? (summaryTail(ev) || String(status));
-        if (launch !== undefined) return renderOperationBlock(launch, { failed, failure });
+        if (launch !== undefined) return renderOperationBlock(launch, { failed, failure }, false, columns);
         const parts = [paint(ModelText.plain(ev.scheme), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
         if (failure !== null) parts.push(`— ${paint(ModelText.plain(failure), "failure")}`);
         return parts.join(" ");
@@ -118,10 +118,12 @@ export const inlineable = (content: string): boolean => {
 };
 
 // Render a concluded channel's content as indented lines under the conclusion, previewed
-// ({plurnk#107}): the knob's line count. stderr is marked and tinted.
-export const renderInline = (channel: string, content: string): string =>
+// ({plurnk#107}): the knob's line count, each line one row ({plurnk#162}). stderr is marked and tinted.
+export const renderInline = (channel: string, content: string, columns: number): string =>
     previewLines(ModelText.plain(content).trimEnd().split("\n"), (remaining) => `… +${remaining} lines`)
-        .map((l) => channel === "stderr" ? `${PREVIEW_OFFSET}${paint("!", "failure")} ${paint(l, "dim")}` : previewLine(l))
+        .map((l) => channel === "stderr"
+            ? `${PREVIEW_OFFSET}${paint("!", "failure")} ${paint(fitRow(l, Math.max(2, columns - PREVIEW_OFFSET.length - 2)), "dim")}`
+            : previewLine(l, columns))
         .join("\n");
 
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in

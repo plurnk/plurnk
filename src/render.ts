@@ -5,6 +5,7 @@
 
 import { paint } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
+import stringWidth from "string-width";
 import ModelText from "./model-text.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
@@ -295,23 +296,43 @@ export const previewMore = (entry: LogEntryWire, remaining: number): string =>
 // A preview line: four columns in and dim, the reasoning lane's fade without its italic, so
 // it competes with neither the operations nor the delivered answer.
 export const PREVIEW_OFFSET = "    ";
-export const previewLine = (line: string): string => `${PREVIEW_OFFSET}${paint(line, "dim")}`;
+
+// {plurnk#162} — a preview line is one row. A line wider than its row (minified code, a JSON
+// blob) would wrap without bound, so it is cut at the width and the cut marked; /look has it
+// whole. Tabs count as four columns; an unbounded width cuts nothing.
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+export const fitRow = (line: string, width: number): string => {
+    const text = line.replaceAll("\t", "    ");
+    if (stringWidth(text) <= width) return text;
+    let kept = "";
+    let used = 0;
+    for (const { segment } of graphemes.segment(text)) {
+        const next = stringWidth(segment);
+        if (used + next > width - 1) break;
+        kept += segment;
+        used += next;
+    }
+    return `${kept}…`;
+};
+
+export const previewLine = (line: string, columns: number): string =>
+    `${PREVIEW_OFFSET}${paint(fitRow(line, Math.max(2, columns - PREVIEW_OFFSET.length)), "dim")}`;
 
 // The authored body beneath its row: previewed, or whole for a NOTE, the working memory a human
 // reads in place ({§cli-note-rendering}).
-export const renderBodyPreview = (entry: LogEntryWire): string | null => {
+export const renderBodyPreview = (entry: LogEntryWire, columns: number): string | null => {
     const body = ModelText.plain(extractSendBody(entry.tx)).trimEnd();
     if (body.length === 0) return null;
     const lines = body.split("\n");
     const shown = entry.op === "NOTE" ? lines : previewLines(lines, (remaining) => previewMore(entry, remaining));
-    return shown.map(previewLine).join("\n");
+    return shown.map((line) => previewLine(line, columns)).join("\n");
 };
 
 // A row and, beneath it, the preview of its authored body. A spaced block closes with a blank
 // row; an execution's block is left open because its output preview follows it.
-export const renderOperationBlock = (entry: LogEntryWire, override: RowOverride = {}, spaced = false): string => {
+export const renderOperationBlock = (entry: LogEntryWire, override: RowOverride = {}, spaced = false, columns = process.stdout.columns ?? 80): string => {
     const row = renderOperationRow(entry, override);
-    const preview = renderBodyPreview(entry);
+    const preview = renderBodyPreview(entry, columns);
     return preview === null ? row : `${row}\n${preview}${spaced ? "\n" : ""}`;
 };
 

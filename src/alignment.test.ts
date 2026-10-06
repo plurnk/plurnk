@@ -29,7 +29,7 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
         ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } }, rx: { answers: [] } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
         ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410, tx: { target: { raw: "worker:///gone" } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } }))],
-        ["execution", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "sh:///1a2b3c4d completed (exit 0)", wakeAction: "no-op-active-loop" })],
+        ["execution", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "sh:///1a2b3c4d completed (exit 0)", wakeAction: "no-op-active-loop" }, 80)],
     ];
 
     for (const [label, value] of rows) {

@@ -53,13 +53,13 @@ test("StreamTrace: launch records a started execution only; a client `!` with no
     const t = new StreamTrace();
     assert.equal(t.launch(unstarted()), false, "a refused execution is an ordinary row");
     assert.equal(t.launch(launch({ origin: "client", tx: { runtime: "python", aside: null, target: null, body: "printf x" } })), true);
-    assert.equal(t.concluded(concluded()), "python\n    printf x", "no executor authored, no aside: the runtime the daemon resolved, the command beneath");
+    assert.equal(t.concluded(concluded(), 80), "python\n    printf x", "no executor authored, no aside: the runtime the daemon resolved, the command beneath");
 });
 
 test("[§cli-stream-event-and-stream-concluded] [§cli-log-entry-line-format] an execution appears once, at its conclusion, as the fence that launched it", () => {
     const t = new StreamTrace();
     t.launch(launch());
-    const line = t.concluded(concluded());
+    const line = t.concluded(concluded(), 80);
     assert.equal(line, "python Run the focused tests\n    print(1)", "the executor is the identity, the aside rides along, the body previews beneath; no bytes, no code");
     assert.doesNotMatch(line, /completed|stdout=|200/);
 });
@@ -67,17 +67,17 @@ test("[§cli-stream-event-and-stream-concluded] [§cli-log-entry-line-format] an
 test("[§cli-log-entry-line-format] a failed execution names its outcome on the row", () => {
     const t = new StreamTrace();
     t.launch(launch());
-    assert.equal(t.concluded(concluded({ status: 500 })), "python Run the focused tests — failed (exit 2); stdout=12 bytes, stderr=0 bytes\n    print(1)");
+    assert.equal(t.concluded(concluded({ status: 500 }), 80), "python Run the focused tests — failed (exit 2); stdout=12 bytes, stderr=0 bytes\n    print(1)");
     t.launch(launch());
-    assert.equal(t.concluded(concluded({ status: 500, problem: { type: "https://problems.plurnk.xyz/executor/nonzero-exit", title: "Command exited 2" } })),
+    assert.equal(t.concluded(concluded({ status: 500, problem: { type: "https://problems.plurnk.xyz/executor/nonzero-exit", title: "Command exited 2" } }), 80),
         "python Run the focused tests — Command exited 2\n    print(1)", "a Problem title outranks the summary");
 });
 
 test("StreamTrace: a conclusion consumes its launch; the next conclusion with that address stands alone", () => {
     const t = new StreamTrace();
     t.launch(launch());
-    t.concluded(concluded());
-    assert.equal(t.concluded(concluded()), "python (python:///0c0ffee1)", "no launch known: the stream's scheme and address");
+    t.concluded(concluded(), 80);
+    assert.equal(t.concluded(concluded(), 80), "python (python:///0c0ffee1)", "no launch known: the stream's scheme and address");
 });
 
 test("[§cli-log-entry-line-format] stream failures retain diagnostics with and without a known launch", () => {
@@ -86,13 +86,13 @@ test("[§cli-log-entry-line-format] stream failures retain diagnostics with and 
         title: "Tool reported error", status: 502, detail: "The MCP tool reported an error.", diagnostic: "No web results found" } };
     const event: Concluded = { ...concluded(), scheme: "brave", target: "brave:///0c0ffee1", result };
     t.launch(launch({ op: "brave", tx: { runtime: "brave", target: { kind: "local", raw: "brave_web_search" } }, attrs: { stream: event.target } }));
-    assert.equal(t.concluded(event), "brave (brave_web_search) — Tool reported error: No web results found");
-    assert.equal(t.concluded(event), "brave (brave:///0c0ffee1) — Tool reported error: No web results found");
+    assert.equal(t.concluded(event, 80), "brave (brave_web_search) — Tool reported error: No web results found");
+    assert.equal(t.concluded(event, 80), "brave (brave:///0c0ffee1) — Tool reported error: No web results found");
 });
 
 test("StreamTrace: a stream without a launching fence renders from its own payload", () => {
     const t = new StreamTrace();
-    const line = t.concluded({ entryId: 9, workerId: 7, target: "sse://feed", subscriptionId: 2, scheme: "sse", result: { status: 499 }, summary: "", wakeAction: "skipped-cancelled" });
+    const line = t.concluded({ entryId: 9, workerId: 7, target: "sse://feed", subscriptionId: 2, scheme: "sse", result: { status: 499 }, summary: "", wakeAction: "skipped-cancelled" }, 80);
     assert.equal(line, "sse (sse://feed) — 499");
     assert.doesNotMatch(line, /resumed|wake/);
 });
@@ -106,10 +106,10 @@ test("inlineable: short one-or-two-line content only", () => {
 });
 
 test("renderInline: indents under the conclusion; stderr is marked", () => {
-    assert.equal(renderInline("stdout", "Ulaanbaatar\n"), "    Ulaanbaatar");
-    assert.match(renderInline("stderr", "oh no\n"), /^    ! oh no$/);
+    assert.equal(renderInline("stdout", "Ulaanbaatar\n", 80), "    Ulaanbaatar");
+    assert.match(renderInline("stderr", "oh no\n", 80), /^    ! oh no$/);
     // {plurnk#107} — an execution's output previews like any body: the knob's line count.
-    const long = renderInline("stdout", Array.from({ length: 40 }, (_, index) => `l${index + 1}`).join("\n")).split("\n");
+    const long = renderInline("stdout", Array.from({ length: 40 }, (_, index) => `l${index + 1}`).join("\n"), 80).split("\n");
     assert.equal(long.length, 4);
     assert.equal(long[3], "    … +37 lines");
 });
@@ -127,6 +127,14 @@ test("[§cli-what-is-not-rendered] an execution still open when the following tu
     assert.deepEqual(t.staleBefore(1, 2), [], "its own turn: nothing is stale");
     assert.equal(t.staleBefore(1, 3).length, 1, "the following turn: once");
     assert.deepEqual(t.staleBefore(1, 4), [], "never twice");
-    assert.equal(t.concluded(concluded()), "python Run the focused tests\n    print(1)", "the conclusion is its second and final appearance");
+    assert.equal(t.concluded(concluded(), 80), "python Run the focused tests\n    print(1)", "the conclusion is its second and final appearance");
     assert.deepEqual(t.staleBefore(2, 1), [], "concluded: nothing left");
+});
+
+test("{plurnk#162} an execution's output previews one row per line, stderr's marker included", () => {
+    const stdout = renderInline("stdout", `${"y".repeat(29_290)}\nshort\n`, 60).split("\n");
+    assert.deepEqual(stdout, [`    ${"y".repeat(55)}…`, "    short"]);
+    const stderr = renderInline("stderr", "z".repeat(20_621), 60);
+    assert.equal(stderr, `    ! ${"z".repeat(53)}…`);
+    assert.equal(renderInline("stdout", "w".repeat(500), Number.POSITIVE_INFINITY), `    ${"w".repeat(500)}`, "an unbounded width cuts nothing");
 });

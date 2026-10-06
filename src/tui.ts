@@ -28,7 +28,7 @@ import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryT
 import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSubmittedInput } from "./render-message.ts";
 import { renderHistory } from "./render-history.ts";
 export { renderSubmittedInput } from "./render-message.ts";
-import { indentDescendant, lineageWorker, markDescendant, type Descendant } from "./render.ts";
+import { LINEAGE_OFFSET, indentDescendant, lineageWorker, markDescendant, type Descendant } from "./render.ts";
 import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
@@ -1057,7 +1057,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (typeof (payload as { result?: { status?: unknown } }).result?.status === "number") {
                 const p = payload as StreamConcludedPayload;
                 const observed = descendants.get(p.workerId);
-                const block = streams.concluded(p);
+                const block = streams.concluded(p, observed === undefined ? surface.columns || 80 : Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth));
                 printAbove(observed === undefined ? block : markDescendant(block, observed.name, observed.depth));
                 // Every execution is asked for its output, the human's and the model's alike: a
                 // preview of each channel inlines under its row ({plurnk#104}).
@@ -1065,7 +1065,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
                     for (const name of ["stdout", "stderr"]) {
                         const content = channels[name]?.content;
-                        if (typeof content === "string" && content.trim().length > 0) printAbove(observed === undefined ? renderInline(name, content) : indentDescendant(renderInline(name, content), observed.depth));
+                        if (typeof content === "string" && content.trim().length > 0) printAbove(observed === undefined
+                            ? renderInline(name, content, surface.columns || 80)
+                            : indentDescendant(renderInline(name, content, Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth)), observed.depth));
                     }
                 }).catch(() => { /* peek is best-effort */ }).finally(() => { printAbove(""); }));
             } else {

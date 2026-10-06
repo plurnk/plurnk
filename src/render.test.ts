@@ -815,3 +815,18 @@ test("{plurnk#107} the preview count is the knob's, never the terminal's height,
         else process.env.PLURNK_CLIENT_PREVIEW_LINES = shipped;
     }
 });
+
+test("{plurnk#162} a previewed line is one row: a line wider than the terminal is cut at its width and marked", () => {
+    const minified = "x".repeat(43_761);
+    const sh = entry({
+        op: "sh", scheme: null, pathname: null, loop_seq: 8, turn_seq: 1, sequence: 5,
+        tx: { runtime: "sh", target: null, aside: null, body: `${minified}\n${"漢".repeat(200)}\n\tindented` },
+        rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///92689a95" },
+    });
+    const rows = stripVTControlCharacters(renderLogEntry(sh, 80)).split("\n");
+    assert.equal(rows.length, 5, "a row, three preview rows and the closing blank: no line wraps");
+    assert.equal(rows[1], `    ${"x".repeat(75)}…`, "the cut fills the row and is marked");
+    assert.ok(rows[2]!.endsWith("…") && rows[2]!.length <= 4 + 38, "wide characters count two columns each");
+    assert.equal(rows[3], "        indented", "a tab is four columns");
+    for (const row of rows) assert.ok(row.length <= 80, `no preview row is wider than the terminal: ${row.length}`);
+});

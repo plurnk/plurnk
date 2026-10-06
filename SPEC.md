@@ -921,7 +921,9 @@ Markdown pass:
 - Every authored body renders beneath its row as a preview: the plain text, no Markdown pass,
   `PLURNK_CLIENT_PREVIEW_LINES` lines (`--preview-lines` for one invocation), independent of
   the terminal's height, four columns in and dim (the reasoning lane's fade, never italic),
-  ending in `… +N lines · /look <address>` when cut, and a blank row closes the block. A
+  each line one row: a line wider than the terminal is cut at its width and ends in `…`, a tab
+  counting four columns ({plurnk#162}), so three lines of minified output are three rows.
+  The preview ends in `… +N lines · /look <address>` when lines are cut, and a blank row closes the block. A
   concluded execution's output previews the same way under its row, and its blank row follows
   the output. Model NOTEs render whole, in the Markdown layout but dim ({§cli-note-rendering}), including within
   an observed descendant's indentation; runtime NOTEs stay whole and plain. Delivered answers

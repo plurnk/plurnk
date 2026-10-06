@@ -247,7 +247,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 // the record — content is fetched on demand via `read L/T/S`.)
                 if (!io.json) {
                     if (typeof (value as { result?: { status?: unknown } }).result?.status === "number") {
-                        io.err(`${streams.concluded(value as StreamConcludedPayload)}\n`);
+                        io.err(`${streams.concluded(value as StreamConcludedPayload, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
                     } else {
                         const line = streams.event(value as StreamEventPayload);
                         if (line !== null) io.err(`${line}\n`);

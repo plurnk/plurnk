@@ -6,7 +6,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveLoopPolicy, buildSettings, buildVersionNotice, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
+import { buildSettings, buildVersionNotice, resolveWorkerId, loadEnvCascade, orderedEnvFiles } from "./dispatcher.ts";
 import { resolveProjectRoot } from "./project-root.ts";
 
 test("[§cli-invocation] env cascade uses XDG user configuration and last repeated flag wins", async (t) => {
@@ -104,27 +104,6 @@ test("buildSettings does not reinterpret service executor configuration as works
         PLURNK_EXECS_ONLY: "atlas",
         PLURNK_EXECS_SH: "0",
     }), {});
-});
-
-test("resolveLoopPolicy: a user with nothing to say states nothing", () => {
-    assert.deepEqual(resolveLoopPolicy(undefined), {});
-});
-
-// {§loop-attendance} — `--auto` is one statement: nobody is watching. What an unattended loop does
-// with a proposal is the daemon's panel's to say, unless the user states that too.
-test("[§cli-invocation] resolveLoopPolicy: --auto declares an unattended run and --proposals a disposition", () => {
-    assert.deepEqual(resolveLoopPolicy("reject"), { proposals: "reject" });
-    assert.deepEqual(resolveLoopPolicy(undefined, true), { attended: false });
-    assert.deepEqual(resolveLoopPolicy("reject", true), { proposals: "reject", attended: false });
-});
-
-test("resolveLoopPolicy: a disposition outside the vocabulary is a flag Problem naming the flag", () => {
-    assert.throws(() => resolveLoopPolicy("sometimes"), (error: unknown) => {
-        const problem = (error as { problem: { flag: string; detail: string } }).problem;
-        assert.equal(problem.flag, "--proposals");
-        assert.match(problem.detail, /proposals must be one of review, accept, reject/);
-        return true;
-    });
 });
 
 // ─── resolveProjectRoot ──────────────────────────────────────────────

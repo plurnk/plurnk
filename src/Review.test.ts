@@ -8,7 +8,7 @@ import type { ProposalParams, Resolution } from "./proposal.ts";
 
 const proposal = (id = 1): ProposalParams => ({
     logEntryId: id, loopId: 1, turnId: 1, op: "sh", target: { scheme: null, pathname: null },
-    body: "printf hello", attrs: {}, policy: { proposals: "review", attended: true },
+    body: "printf hello", attrs: {}, owner: "agui://anonymous/threads/client",
 });
 const question = (id = 1, responseSchema: Record<string, unknown> = {
     type: "object", properties: { name: { type: "string" } }, required: ["name"],

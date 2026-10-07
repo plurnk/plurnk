@@ -80,7 +80,7 @@ const ENV_SUBCOMMANDS = [
 const SCHEDULE_SUBCOMMANDS = lifecycle(
     "alias",
     { name: "discover", usage: "discover <rule>", summary: "Read the time and preview a rule's occurrences without adding it.", alias: false },
-    { name: "add", usage: "add [--accept] <alias> <worker> <rule> <prompt...>", summary: "Add and arm a rule that delivers the prompt to a worker at each occurrence.", alias: false },
+    { name: "add", usage: "add <alias> <worker> <rule> <prompt...>", summary: "Add and arm a rule that delivers the prompt to a worker at each occurrence.", alias: false },
 );
 
 export const COMMANDS = [

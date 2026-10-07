@@ -161,13 +161,16 @@ const statusRelay = async (t: TestContext, url: string, hooks: {
     const failures: unknown[] = [];
     const shutdown = new AbortController();
     const relay = createServer((request, response) => {
+        const connection = new AbortController();
+        response.on("close", () => { if (!response.writableFinished) connection.abort(); });
+        const signal = AbortSignal.any([shutdown.signal, connection.signal]);
         void (async () => {
             let raw = "";
             for await (const chunk of request) raw += chunk;
             if (raw.length > 0 && JSON.parse(raw).messages?.length > 0) hooks.onPrompt?.(response);
             const upstream = await fetch(new URL(request.url ?? "/", url), {
                 method: request.method, headers: { "content-type": "application/json" },
-                ...(raw.length > 0 ? { body: raw } : {}), signal: shutdown.signal,
+                ...(raw.length > 0 ? { body: raw } : {}), signal,
             });
             response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" });
             assert.ok(upstream.body);
@@ -184,7 +187,7 @@ const statusRelay = async (t: TestContext, url: string, hooks: {
             }
             response.end(pending + decoder.decode());
         })().catch((error: Error) => {
-            if (!shutdown.signal.aborted) failures.push(error);
+            if (!signal.aborted) failures.push(error);
             response.destroy(error);
         });
     });

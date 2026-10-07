@@ -7,14 +7,13 @@ import { writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { handleVerb, completeInput, makeAutocompleteProvider, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, linePolicy, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, makeAutocompleteProvider, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 import type { Transport } from "./transport.ts";
 import Lifetime from "./lifetime.ts";
 
-const REVIEW_POLICY = { proposals: "review" as const };
 
 test("[§cli-path-completion] suggestions use the addressed filesystem, including after rebinding", async (t) => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-completion-roots-"));
@@ -139,7 +138,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
     };
 
     await assert.rejects(
-        runTui(transport, { name: "world" }, { lifetime, yolo: false, loopPolicy: REVIEW_POLICY }),
+        runTui(transport, { name: "world" }, { lifetime, yolo: false }),
         /model control plane unavailable/,
     );
     // {§cli-identity-effort} — one readback path: effort before the final route projection.
@@ -166,7 +165,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
     };
 
     await assert.rejects(
-        runTui(transport, { name: "world" }, { lifetime, yolo: false, loopPolicy: REVIEW_POLICY }),
+        runTui(transport, { name: "world" }, { lifetime, yolo: false }),
         /invalid ModelRoute/,
     );
 });
@@ -866,41 +865,6 @@ test("seedPromptHistory: empty / error → history untouched", async () => {
     await seedPromptHistory({ call: async () => ({ prompts: [] }) } as unknown as VerbContext["rpc"], history);
     await seedPromptHistory({ call: async () => { throw new Error("nope"); } } as unknown as VerbContext["rpc"], history);
     assert.equal(calls, 0);
-});
-
-test("[§cli-prompt-prefixes] linePolicy: '?' selects review; ':' preserves ordinary policy", () => {
-    assert.deepEqual(linePolicy("? what is truth"), {
-        policy: { proposals: "review" },
-        prompt: "what is truth",
-    });
-    assert.deepEqual(linePolicy(": do the thing"), {
-        policy: {},
-        prompt: "do the thing",
-    });
-});
-
-test("linePolicy: '?' replaces proposal acceptance with review", () => {
-    const base = { proposals: "accept" as const };
-    assert.deepEqual(linePolicy("hello", base), { policy: base, prompt: "hello" });
-    assert.deepEqual(linePolicy("? hello", base), {
-        policy: { proposals: "review" },
-        prompt: "hello",
-    });
-});
-
-// {§loop-attendance} — a prefix asks for a different disposition, never a different room: who is
-// present is a property of the run, and typing `?` cannot conjure a reviewer into a headless one.
-test("linePolicy: a prefix never changes who is attending", () => {
-    const unattended = { proposals: "accept" as const, attended: false };
-    assert.deepEqual(linePolicy("? hello", unattended).policy, { proposals: "review", attended: false });
-    assert.deepEqual(linePolicy(": hello", unattended).policy, unattended);
-});
-
-test("linePolicy: '...' strips without altering the base policy", () => {
-    assert.deepEqual(linePolicy("... btw also"), {
-        policy: {},
-        prompt: "btw also",
-    });
 });
 
 test("{§cli-log-entry-line-format} the human's line becomes durable scrollback: bold, in its own colour, a blank row above and below", () => {

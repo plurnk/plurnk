@@ -52,14 +52,12 @@ import { formatShare, shareFolder, type ShareResult } from "./share.ts";
 import {
     Validator,
     type CapabilityPolicy,
-    type LoopPolicyRequest,
     type ModelRoute,
 } from "@plurnk/plurnk-contracts";
 import {
     formatCapabilityProjection,
     parseCapabilityPolicy,
-    promptPolicy,
-    statedLoopPolicy,
+    parsePrompt,
 } from "./policy.ts";
 
 // Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
@@ -86,13 +84,7 @@ const switchOf = (name: string, declared: "live" | "optional", env: NodeJS.Proce
     }
 };
 
-export const resolveLoopPolicy = (proposals: string | undefined, auto = false): LoopPolicyRequest => {
-    try {
-        return statedLoopPolicy(proposals, auto);
-    } catch (cause) {
-        throw new ProblemError(clientFlagInvalid("--proposals", proposals ?? "", cause instanceof Error ? cause.message : String(cause)));
-    }
-};
+
 
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
@@ -174,13 +166,6 @@ options:
       --yolo              auto-accept every proposal locally without prompting.
                           On by default; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
-      --auto              nobody is attending: the daemon offers no human-in-the-loop
-                          surface rather than one nothing could answer, and settles
-                          proposals inside the loop as its panel says.
-                          Overrides PLURNK_CLIENT_AUTO.
-      --proposals <p>     what every loop does with a proposal: review, accept or
-                          reject. Unstated, the daemon's panel decides; '?' states
-                          review for that prompt. Overrides PLURNK_CLIENT_PROPOSALS.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -824,19 +809,15 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
     const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
 
-    // {§cli-loop-policy} — one flag per choice; a prompt prefix states review immediately before its run.
-    let loopPolicy!: LoopPolicyRequest;
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
-        if (values.policy !== undefined) {
-            throw new ProblemError(clientFlagInvalid("--policy", values.policy, "--policy was retired; state --proposals <review|accept|reject> and --auto"));
+        for (const flag of ["policy", "auto", "proposals"] as const) {
+            if (values[flag] !== undefined) throw new ProblemError(clientFlagInvalid(`--${flag}`, String(values[flag]), "Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS."));
         }
         if (values.reasoning !== undefined) {
             throw new ProblemError(clientFlagInvalid("--reasoning", values.reasoning, "--reasoning was renamed to --effort"));
         }
-        const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
-        loopPolicy = resolveLoopPolicy(values.proposals ?? process.env.PLURNK_CLIENT_PROPOSALS, auto);
         maxTurns = parseIntFlag(values["max-turns"] ?? stated("PLURNK_CLIENT_MAX_TURNS"), "--max-turns");
         timeoutSec = parseIntFlag(values.timeout ?? stated("PLURNK_CLIENT_TIMEOUT"), "--timeout");
     } catch (cause) {
@@ -968,16 +949,14 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 workspaceProperties,
                 runProperties: {
                     ...workspaceProperties,
-                    policy: loopPolicy,
                     ...(maxTurns === undefined ? {} : { maxTurns }),
                 },
                 prepareSession,
                 projectPrompt: (value) => {
-                    const projected = promptPolicy(value, loopPolicy);
+                    const projected = parsePrompt(value);
                     return {
                         prompt: projected.prompt,
                         runProperties: {
-                            policy: projected.policy,
                             openPaths: extractOpenPaths(projected.prompt, projectRoot),
                         },
                     };
@@ -1046,7 +1025,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     params: { effort },
                 });
             }
-            const projected = promptPolicy(prompt, loopPolicy);
+            const projected = parsePrompt(prompt);
             const openPaths = extractOpenPaths(projected.prompt, projectRoot);
             // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
             const reviewRequested = /^\s*\?/u.test(prompt);
@@ -1055,7 +1034,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 threadId: workerName ?? w,
                 workspace: w,
                 ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
-                policy: projected.policy,
                 ...(maxTurns !== undefined ? { maxTurns } : {}),
                 ...(openPaths.length === 0 ? {} : { openPaths }),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
@@ -1124,7 +1102,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 effort,
                 effortExplicit: effort !== undefined,
                 yolo,
-                loopPolicy,
                 maxTurns,
                 projectRoot,
                 selectProjectRoot,

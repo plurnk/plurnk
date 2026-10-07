@@ -64,8 +64,6 @@ Options:
 | `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
-| `--auto` | flag | State that nobody is attending: every loop is unattended. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
-| `--proposals <p>` | string | State what every loop does with a proposal: `review`, `accept`, or `reject`. Overrides `PLURNK_CLIENT_PROPOSALS`. See §6.0. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
 | `--max-turns <n>` | string | Model-call budget for the prompt's worker tree ({§turn-cap-counts-the-tree}): the loop's turns, its descendants' turns and every BARE call, one per call; omission leaves the daemon's ceiling in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
 | `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · /look <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
@@ -429,7 +427,7 @@ Triggered when `argv` has no positional prompt.
     - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
-    - Lines starting with `? ` → a conversation run whose loop policy selects proposal review. `: ` uses the configured ordinary loop policy. Both are client projections of the generic contract.
+    - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
     (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
@@ -594,7 +592,7 @@ without changing the client's selected policy after a refusal.
 | `/help`, `/import`, `/editor`, `/yolo` | Ordinary local behavior; the composer remains editable |
 | `!`, executable fences, `/script` | Client-owned operation run; its results and proposal resolutions remain separate from the model run |
 | Plain prompt or `...` | Inject into the bound conversation; observe an admitted successor through the standard sync Run after the existing stream settles |
-| `?`, or `:` removing an active `?` request | Explain that the requested policy belongs to a new loop; do not silently strip it and inject |
+| `?`, or `:` removing an active `?` request | Explain that the local review choice belongs to a new run; do not silently strip it and inject |
 | `/stop`, proposal responses, question responses, `/quit` | Remain reachable; resolve the identified owner, never whichever request arrived last |
 | `/workspace`, `/rename`, `/worker`, `/attach`, topology hops | Refused until the attached model run and submitted commands settle, with that specific reason |
 
@@ -830,8 +828,8 @@ diagnostic path without rewriting or retry.
 
 Scheduled messages are a thin projection of the daemon's `schedule`
 Functionality family — the same common lifecycle as `/mcp` and `/a2a`. The
-client composes one exact definition (`rule`, `target`, `prompt`, optional
-`policy`) and renders the daemon's states; the clock, the rule's canonical
+client composes one exact definition (`rule`, `target`, `prompt`)
+and renders the daemon's states; the clock, the rule's canonical
 form, the timers and the delivery live in the service, and an occurrence
 reaches its worker as an ordinary message from `schedule://<alias>`.
 
@@ -839,7 +837,7 @@ reaches its worker as an ordinary message from `schedule://<alias>`.
 |---|---|
 | `/schedule` | `workspace.schedule.list {}` — each rule with its state, wording, next occurrence or `exhausted`, and target |
 | `/schedule discover <rule>` | `workspace.schedule.discover {source}` — one inert candidate whose summary opens with the current time in the effective zone |
-| `/schedule add [--accept] <alias> <worker> <rule> <prompt...>` | `workspace.schedule.add {alias, definition: {rule, target: worker://<worker>, prompt, policy?}}`; `--accept` sets `policy.proposals` to `accept` |
+| `/schedule add <alias> <worker> <rule> <prompt...>` | `workspace.schedule.add {alias, definition: {rule, target: worker://<worker>, prompt}}`; the receiving worker retains its owner |
 | `/schedule enable <alias>` | `workspace.schedule.enable {alias}` |
 | `/schedule disable <alias>` | `workspace.schedule.disable {alias}` |
 | `/schedule remove <alias>` | `workspace.schedule.remove {alias}` |
@@ -1151,9 +1149,31 @@ Client-owned proposals arrive through standard AG-UI tool-call interrupts under
 {§agui-proposal-disposition}. The client presents the proposal and resumes the
 Run with the selected decision; the following sections describe its local review projection.
 
-### §6.0 What the client states {§cli-loop-policy}
+### §6.0 Worker ownership {§cli-worker-ownership}
 
-The client states only what its user chose, one knob per choice, and sends it as the daemon's `LoopPolicyRequest`. `--proposals` (`PLURNK_CLIENT_PROPOSALS`) states a disposition. `--auto` (`PLURNK_CLIENT_AUTO`) states exactly one thing, that nobody is attending; what an unattended loop then does with a proposal is the daemon's panel's to say unless `--proposals` says it. A `?` prompt states `review` for that loop. Everything left unsaid is supplied by the daemon's panel, so the client holds no default of its own. The daemon refuses a statement that asks for review with nobody attending. The retired `--policy`, `PLURNK_CLIENT_LOOP_POLICY` and `PLURNK_AUTO` fail hard, naming their successors.
+The conversation's workspace-scoped AG-UI identity owns approvals. Prompt submission,
+client operations, and explicit TUI attachment claim only runtime-owned conversations
+and their runtime-owned descendants; observing another owner never transfers authority.
+`RunAgentInput.tools` advertises implemented client tools, not permission grants:
+
+| Client mode | Advertised tools |
+|---|---|
+| Every mode | `request_approval`, including fail-closed headless resolution |
+| Interactive terminal | Also `question` and `mcp_input_required` |
+
+The TUI maintains `/agui/connect` while idle and reconnects after a terminal or
+resolved interrupt. Inspection and direct operations do not detach that owner
+connection. Future owned work, including independently active children, can request
+review without a new user prompt. Disconnect changes neither ownership nor pending gates.
+Concurrent Runs share one local resolver per interrupt. A resurfaced gate does not
+open another review or submit another decision; its observer resumes after the standard
+`TOOL_CALL_RESULT` acknowledges settlement, without waiting for the approved work to finish.
+
+`--yolo`, configured acceptance, and `?` remain client-side decisions. Server
+`PLURNK_SERVICE_PROPOSALS` owns automatic server disposition. The retired `--policy`,
+`--proposals`, `--auto`, `PLURNK_AUTO`, `PLURNK_CLIENT_LOOP_POLICY`,
+`PLURNK_CLIENT_PROPOSALS`, and `PLURNK_CLIENT_AUTO` fail and name their replacement;
+no approval policy travels with a message or schedule.
 
 ### §6.1 Notification shape {§cli-notification-shape}
 
@@ -1165,11 +1185,12 @@ loop/proposal {
     target: { scheme: string | null, pathname: string | null },
     body: string,                 // udiff for EDIT; command summary for an execution
     attrs: object,                // scheme-specific payload (opaque to client)
-    policy: LoopPolicy,           // loop's immutable proposal disposition
+    owner: string,                // workspace-scoped approval owner
+    disposition: { decision: "review" },
 }
 ```
 
-AG-UI emits this client surface only for proposals whose durable disposition owner is the client. Loop-owned `accept` and `reject` dispositions settle in Core and never become client review work. The client does not infer ownership from policy fields.
+AG-UI routes review to the recorded owner. Server `accept` and `reject` dispositions settle in Core and never become client review work.
 
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
@@ -1228,7 +1249,7 @@ the eventual execution outcome.
 
 Client-side, and on by default: the packaged defaults ship `PLURNK_CLIENT_YOLO=1`; `0` or `/yolo` turns it off. The startup header names explicit review as `yolo: off`; the default adds no header segment. When on, the proposal handler skips the menu and resumes the interrupt with `{decision: "accept"}`. The proposal still crosses the ordinary client-review boundary. A prompt that starts with `?` asks for review of that run: its proposals take the menu even while yolo is on.
 
-This is distinct from a loop that settles its own proposals (`--proposals accept` or `reject`, or an unattended loop), where proposal authority never crosses into client review.
+This is distinct from server auto-approval, where the proposal never crosses into client review.
 
 ### §6.4 Configured tool acceptance {§cli-tool-acceptance}
 
@@ -1250,7 +1271,7 @@ runtime and exact tool target, not a resource-backed script. Without `_TOOLS`,
 the switch accepts all proposals from that runtime.
 
 These settings answer ordinary proposals; they do not grant capabilities,
-change operation effects, or override loop-owned dispositions. Each automatic
+change operation effects, or override server dispositions. Each automatic
 resolution carries its reason through {§agui-proposal-resolve} into the durable
 result. Invalid acceptance configuration emits a diagnostic and disables
 selective acceptance, without blocking startup or changing YOLO.
@@ -1259,11 +1280,12 @@ selective acceptance, without blocking startup or changing YOLO.
 
 When stdin is not a TTY, client-owned proposals are accepted by YOLO or matching
 configured rules and otherwise rejected with `client_no_review_channel`.
-Explicit `?` requests cannot be auto-accepted. When no automatic acceptance is
-available and no disposition was stated, the client states `proposals:"reject"`
-so Core settles directly. Explicit loop-policy choices remain unchanged.
+Explicit `?` requests cannot be auto-accepted. Resolution still crosses the normal
+owner-checked AG-UI resume boundary; the client does not change server policy.
 
-The one-shot client cancels input-request interrupts through the standard AG-UI resume contract because it has no interactive form. It does not alter workspace capabilities or invent an answer; the worker receives the cancellation and can continue.
+A headless client advertises no clarification tools. Unsupported requests fail in
+Core without parking or inventing an answer. If an already-pending interaction is
+delivered after a mode change, the client cancels it through ordinary AG-UI resume.
 
 Redirection alone does not request review. This applies when review is explicitly selected, such as `PLURNK_CLIENT_YOLO=0 plurnk "X" > answer.txt` or a prompt starting with `?`.
 
@@ -1303,7 +1325,7 @@ prompt-driven flow, but skip `loop.run` entirely. They support `--json` for
 machine-readable output (stdout product per §2.1; trace and errors stay on
 stderr). `effort [policy]` reads or changes the durable effort.
 `capabilities [json]` projects every durable capability layer and its effective
-intersection, or replaces the workspace policy. Prompt runs only carry proposal
+intersection, or replaces the workspace policy. Prompt runs carry no approval
 policy. Local `render` does not contact the daemon; `web` uses the same backend
 selection and lifetime as the terminal client ({§cli-daemon-autostart}).
 
@@ -1370,7 +1392,6 @@ There is one configuration owner and one interpretation of every shared knob:
 | workspace and Worker | Optional URL-coordinate constraints |
 | project root, files preview, command ceiling, git policy, workspace capabilities | Create-time properties accompanying every selected workspace |
 | explicit model and reasoning | Durable Worker actions before that session's first prompt |
-| LoopPolicy and `--auto` | Base policy on every prompt Run |
 | `?` prompt prefix | Per-prompt proposal review, using the same projector as CLI/TUI |
 | prompt `@path` references | Per-prompt `openPaths` projection ({§cli-prompt-open-paths}) |
 | `--max-turns` | Per-prompt model-call budget for the worker tree ({§turn-cap-counts-the-tree}) |
@@ -1410,7 +1431,7 @@ is absent, it exits 127 and names the exact installation command. `SIGINT` and
 - Hide state changes: workspace rename, reasoning and capability setters, MCP
   management, and scripts explicitly request mutations; inspection commands do not.
 - Honor flags that only matter to a conversation (`--model`, `--effort`,
-  `--yolo`, `--auto`) in state-command mode. Those parse without effect there;
+  `--yolo`) in state-command mode. Those parse without effect there;
   `web` is a client presentation mode and therefore does honor them. Reasoning
   mutation uses the positional policy above.
 

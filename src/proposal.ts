@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LoopPolicy, ProposalResolution } from "@plurnk/plurnk-contracts";
+import type { ProposalResolution } from "@plurnk/plurnk-contracts";
 import type { ResumeEntry } from "@ag-ui/core";
 
 // An execution's op is its lowercase runtime tag; operation keywords are uppercase (plurnk-service #659).
@@ -28,7 +28,7 @@ export interface ProposalParams {
     target: { scheme: string | null; pathname: string | null };
     body: string;
     attrs: unknown;
-    policy: LoopPolicy;
+    owner: string;
 }
 
 export type Resolution = ProposalResolution;

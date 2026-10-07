@@ -261,7 +261,7 @@ test("[§cli-workspaces-and-workers] runViaBridge: an explicit workspace rides w
     } finally { await mock.close(); }
 });
 
-test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBridge: one-shot workspace options, policy, and model selection ride forwardedProps.plurnk", async () => {
+test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBridge: one-shot workspace options and owner capabilities reach the wire", async () => {
     await using lifetime = new Lifetime();
     const { runCliViaBridge } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
@@ -275,7 +275,6 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
             lifetime,
             threadId: "w",
             workspace: "w",
-            policy: { proposals: "accept", attended: false },
             maxTurns: 7,
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
@@ -293,9 +292,9 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         assert.equal(fp.childAlias, undefined);
         assert.equal(fp.childModel, undefined);
         assert.equal(fp.childSelector, undefined);
-        // {§loop-attendance} — the whole policy crosses, attendance included: the daemon cannot
-        // refuse a human-in-the-loop surface it was never told about (service#765).
-        assert.deepEqual(fp.policy, { proposals: "accept", attended: false }, "the loop policy reaches the wire without hidden capability restrictions");
+        assert.equal(Object.hasOwn(fp, "policy"), false);
+        const input = mock.captured[0].body as { tools: { name: string }[] };
+        assert.ok(input.tools.some(({ name }) => name === "request_approval"));
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
         assert.deepEqual(fp.openPaths, ["README.md", "src/index.ts"], "prompt file references reach the wire");
     } finally { await mock.close(); }
@@ -331,7 +330,6 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
             lifetime,
             threadId: "conversation",
             workspace: "world",
-            policy: { proposals: "review" },
             yolo: true,
             json: true,
             statusStream: false,
@@ -381,7 +379,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", policy: { proposals: "review" }, timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -410,7 +408,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", policy: { proposals: "review" }, yolo: true, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, json: true, statusStream: false, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

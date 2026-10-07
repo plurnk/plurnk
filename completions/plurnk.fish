@@ -30,8 +30,6 @@ complete -c plurnk -l oauth-timeout-ms
 complete -c plurnk -l service-bin
 complete -c plurnk -l project-root
 complete -c plurnk -l yolo
-complete -c plurnk -l auto
-complete -c plurnk -l proposals
 complete -c plurnk -l capabilities
 complete -c plurnk -l env-file
 complete -c plurnk -l env-file-if-exists

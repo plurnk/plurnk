@@ -57,7 +57,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
     const admitted = Promise.withResolvers<void>();
     const releaseTerminal = Promise.withResolvers<void>();
     let observers = 0;
-    const relay = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const relay = async (request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> => {
         const body = await json(request);
         const properties = body.forwardedProps?.plurnk;
         const injecting = properties?.action?.kind === "loop.inject";
@@ -67,7 +67,9 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
             release.resolve();
             await originalClosed.promise;
         }
-        const result = await fetch(daemon.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        const result = await fetch(new URL(request.url ?? "/", daemon.url), {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal,
+        });
         if (injecting) {
             const receipt = await result.text();
             if (active) {
@@ -116,8 +118,10 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         }
     };
     const proxy = createServer((request, response) => {
-        void relay(request, response).catch((error) => {
-            admitted.reject(error);
+        const connection = new AbortController();
+        response.on("close", () => { if (!response.writableFinished) connection.abort(); });
+        void relay(request, response, connection.signal).catch((error) => {
+            if (!connection.signal.aborted) admitted.reject(error);
             response.destroy(error);
         });
     });

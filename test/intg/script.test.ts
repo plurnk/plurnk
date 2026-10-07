@@ -62,7 +62,8 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:9", delta: JSON.stringify({
                 logEntryId: 9, loopId: 1, turnId: 1, op: "EDIT",
                 target: { scheme: "file", pathname: "/witness.txt" }, body: "script witness", attrs: {},
-                policy: { proposals: "review" },
+                owner: "agui://anonymous/threads/script",
+                disposition: { decision: "review" },
             }) });
             frame({ type: "TOOL_CALL_END", toolCallId: "prop:9" });
             frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: {

@@ -54,20 +54,20 @@ test("[§cli-schedule] discover sends the rule text and renders the inert candid
 });
 
 test("[§cli-schedule] add composes one exact definition; enable, disable, and remove map to workspace actions", async () => {
-    assert.deepEqual(composeDefinition("scribe", "FREQ=DAILY;COUNT=3", "Summarize.", false), { rule: "FREQ=DAILY;COUNT=3", target: "worker://scribe", prompt: "Summarize." });
-    assert.deepEqual(composeDefinition("worker://scribe", "FREQ=DAILY;COUNT=3", "Summarize.", true), { rule: "FREQ=DAILY;COUNT=3", target: "worker://scribe", prompt: "Summarize.", policy: { proposals: "accept" } });
+    assert.deepEqual(composeDefinition("scribe", "FREQ=DAILY;COUNT=3", "Summarize."), { rule: "FREQ=DAILY;COUNT=3", target: "worker://scribe", prompt: "Summarize." });
+    assert.deepEqual(composeDefinition("worker://scribe", "FREQ=DAILY;COUNT=3", "Summarize."), { rule: "FREQ=DAILY;COUNT=3", target: "worker://scribe", prompt: "Summarize." });
     const h = harness({
         "workspace.schedule.add": { status: 201, alias: "standup", definition: { alias: "standup", state: "active", detail: { next: "2026-09-17T09:00:00+00:00[UTC]" } } },
         "workspace.schedule.enable": { status: 200, alias: "standup", definition: { alias: "standup", state: "active" } },
         "workspace.schedule.disable": { status: 200, alias: "standup", definition: { alias: "standup", state: "disabled" } },
         "workspace.schedule.remove": { status: 200, alias: "standup", removed: true },
     });
-    await handleSchedule("add --accept standup scribe FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;COUNT=20 Summarize the log for the team.", h.rpc, h.write);
+    await handleSchedule("add standup scribe FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;COUNT=20 Summarize the log for the team.", h.rpc, h.write);
     await handleSchedule(["enable", "standup"], h.rpc, h.write);
     await handleSchedule("disable standup", h.rpc, h.write);
     await handleSchedule("remove standup", h.rpc, h.write);
     assert.deepEqual(h.calls, [
-        { method: "workspace.schedule.add", params: { alias: "standup", definition: { rule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;COUNT=20", target: "worker://scribe", prompt: "Summarize the log for the team.", policy: { proposals: "accept" } } } },
+        { method: "workspace.schedule.add", params: { alias: "standup", definition: { rule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;COUNT=20", target: "worker://scribe", prompt: "Summarize the log for the team." } } },
         { method: "workspace.schedule.enable", params: { alias: "standup" } },
         { method: "workspace.schedule.disable", params: { alias: "standup" } },
         { method: "workspace.schedule.remove", params: { alias: "standup" } },
@@ -86,4 +86,10 @@ test("[§cli-schedule] incomplete arguments print the exact usage and dispatch n
         assert.deepEqual(h.calls, [], line);
         assert.match(h.out.join(""), /usage: \/schedule/u, line);
     }
+});
+
+test("{§cli-schedule} a schedule cannot carry a client approval switch", async () => {
+    const h = harness();
+    await assert.rejects(handleSchedule("add --accept beat bot FREQ=HOURLY;COUNT=1 Beat.", h.rpc, h.write), /--accept is retired/);
+    assert.deepEqual(h.calls, []);
 });

@@ -61,9 +61,9 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
             action: { kind: "workspace.env.add", alias: "FLAGS", definition: { value: "--model=mcp  --port=8080" } },
         },
         {
-            args: ["schedule", "add", "--accept", "daily", "actor", "FREQ=DAILY", "Check", "--json"],
+            args: ["schedule", "add", "daily", "actor", "FREQ=DAILY", "Check", "--json"],
             action: { kind: "workspace.schedule.add", alias: "daily", definition: {
-                rule: "FREQ=DAILY", target: "worker://actor", prompt: "Check --json", policy: { proposals: "accept" },
+                rule: "FREQ=DAILY", target: "worker://actor", prompt: "Check --json",
             } },
         },
     ];

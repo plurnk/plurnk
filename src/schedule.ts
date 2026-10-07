@@ -11,7 +11,7 @@ interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
 
-type Definition = Record<string, unknown> & { rule?: unknown; target?: unknown; prompt?: unknown; policy?: unknown };
+type Definition = Record<string, unknown> & { rule?: unknown; target?: unknown; prompt?: unknown };
 
 type DefinitionState = {
     alias?: unknown;
@@ -71,13 +71,10 @@ const argumentsOf = (source: string): string[] | null => {
     return values;
 };
 
-// A bare worker name is the `worker://` target; `--accept` lets a loop the delivery starts act
-// on its own proposals.
-export const composeDefinition = (worker: string, rule: string, prompt: string, accept = false): Definition => ({
+export const composeDefinition = (worker: string, rule: string, prompt: string): Definition => ({
     rule,
     target: worker.startsWith("worker://") ? worker : `worker://${worker}`,
     prompt,
-    ...(accept ? { policy: { proposals: "accept" } } : {}),
 });
 
 const renderDefinition = (entry: DefinitionState): string => {
@@ -141,13 +138,13 @@ export const handleSchedule = async (
     }
 
     if (command === "add") {
-        const accept = args[1] === "--accept";
-        const [alias, worker, rule, ...prompt] = args.slice(accept ? 2 : 1);
+        if (args[1] === "--accept") throw new TypeError("--accept is retired. Scheduled work uses the receiving worker's approval owner.");
+        const [alias, worker, rule, ...prompt] = args.slice(1);
         if (alias === undefined || alias.length === 0 || worker === undefined || worker.length === 0 || rule === undefined || rule.length === 0 || prompt.length === 0) {
             usage(write, "add");
             return null;
         }
-        const result = await rpc.call("workspace.schedule.add", { alias, definition: composeDefinition(worker, rule, prompt.join(" "), accept) }) as MutationResult;
+        const result = await rpc.call("workspace.schedule.add", { alias, definition: composeDefinition(worker, rule, prompt.join(" ")) }) as MutationResult;
         renderMutation(result, "added", alias, write);
         return result;
     }

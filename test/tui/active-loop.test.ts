@@ -81,7 +81,7 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     tui.write("... added while streaming\r");
     await tui.waitFor(/added to the run/);
     tui.write("? do this in review mode\r");
-    await tui.waitFor(/review.*new loop/);
+    await tui.waitFor(/stop before changing its review setting/);
     tui.write("/stop\r");
     await tui.waitFor(/cancelled|final 499/);
     tui.write("/attach elsewhere\r");

@@ -33,7 +33,7 @@ test("{§cli-conversation-history}: startup and attach restore the bound convers
     const daemon = await historyDaemon(t, provider.url);
     for (const name of ["alpha", "beta"]) {
         const transport = new BridgeTransport({ bridgeUrl: daemon.url }, name, { workspace: "history", projectRoot: null });
-        assert.equal((await transport.run(`Remember the ${name} question.`, { policy: { proposals: "accept" } }).done).finalStatus, 200);
+        assert.equal((await transport.run(`Remember the ${name} question.`, {}).done).finalStatus, 200);
         transport.shutdown();
     }
 
@@ -102,7 +102,7 @@ test("{§cli-conversation-history}: quitting an attached live observer leaves th
     const daemon = await historyDaemon(t, `http://127.0.0.1:${address.port}/v1`);
     const owner = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "observed", projectRoot: null });
     t.after(() => owner.shutdown());
-    const run = owner.run("Finish the independent work.", { policy: { proposals: "accept" } });
+    const run = owner.run("Finish the independent work.", {});
     await waiting.promise;
     const tui = spawnTui(daemon.url, ["--workspace", "observed", "--worker", "main"], {
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
@@ -137,7 +137,7 @@ test("{§cli-conversation-history}: reattachment presents a durable unanswered q
         onEntry: () => {}, onReasoning: () => {}, onProposal: () => {}, onStream: () => {}, onOutside: () => {},
         onNotice: () => {}, onTerminated: () => {}, onInteraction: () => { question.resolve(); },
     });
-    const run = owner.run("Ask for a value.", { policy: { proposals: "review" } });
+    const run = owner.run("Ask for a value.", {});
     await question.promise;
     owner.shutdown();
     assert.equal((await run.done).finalStatus, 499, "the old client released its local interrupt wait");

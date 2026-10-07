@@ -35,7 +35,7 @@ const proposal = () => ({
     target: { scheme: "file", pathname: "/tmp/x" },
     body: "",
     attrs: {},
-    policy: { proposals: "review" as const, attended: true },
+    owner: "agui://anonymous/threads/client",
 });
 
 // ─── request-user-input questions ({§question-tool}) ─────────────────

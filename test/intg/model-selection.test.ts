@@ -174,7 +174,7 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
     assert.equal(selectedModels.length, requestsBeforeEffort, "effort is a durable worker action, never an inference prompt");
 });
 
-test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels input requests and the worker resumes with that result", { timeout: 120_000 }, async (t) => {
+test("[§cli-worker-ownership]: a headless owner advertises no clarification tool and the worker receives an unsupported result", { timeout: 120_000 }, async (t) => {
     const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
     const packets: string[] = [];
     const endpoint = createServer(async (request, response) => {
@@ -210,70 +210,13 @@ test("{§cli-what-one-shot-mode-does-not-do}: a built one-shot client cancels in
     assert.equal(result.code, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).response, "No input channel; continuing without a fabricated answer.");
     assert.equal(packets.length, 2, "the interaction resolves without losing or restarting the worker loop");
-    assert.match(packets[1]!, /\\"action\\": ?\\"cancel\\"/, "the next model packet contains the actual tool cancellation");
+    assert.match(packets[1]!, /interaction-unsupported/u, "the next model packet contains the actual unsupported-interaction result");
     assert.doesNotMatch(packets[1]!, /capability-denied|interaction-denied/, "input topology is not a workspace permission change");
-});
-
-// {§loop-attendance} — the seam nothing else covers: the client tests prove the policy reaches
-// forwardedProps, the service tests prove behaviour given a policy, and only this proves they meet.
-// `--auto` asserts nobody is watching, so the daemon must refuse the question outright rather than
-// write it down and wait (plurnk/plurnk-service#765).
-test("[§cli-invocation] {§loop-attendance} --auto is refused an interactive partner, and says so in one turn", { timeout: 60_000 }, async (t) => {
-    const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
-    const packets: string[] = [];
-    const endpoint = createServer(async (request, response) => {
-        if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
-            response.writeHead(404).end();
-            return;
-        }
-        const body = await jsonBody(request);
-        packets.push(JSON.stringify(body.messages));
-        answer(response, "interaction-fixture", packets.length === 1
-            ? "````question\n{\"message\":\"Choose a branch\",\"requestedSchema\":{\"type\":\"object\",\"properties\":{\"branch\":{\"type\":\"string\"}},\"required\":[\"branch\"]}}\n````\n\n````WAIT\nawait the answer\n````"
-            : "````KILL\nNobody could answer; concluding on what I have.\n````");
-    });
-    const endpointPort = await listen(endpoint);
-    t.after(() => close(endpoint));
-    const daemon = await bootDaemon(service, {
-        readyTimeoutMs: 30_000,
-        extraEnv: {
-            PLURNK_MODEL: "inputfixture",
-            PLURNK_MODEL_inputfixture: "openai/interaction-fixture",
-            PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
-            OPENAI_API_KEY: "input-fixture",
-            PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-            PLURNK_PROVIDERS_EFFORT: "off",
-            PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
-            // The question runtime stays REGISTERED: this proves attendance refuses it, not the
-            // operator's executor switch, which is the only thing that protected a headless run before.
-            PLURNK_EXECS_QUESTION: "1",
-        },
-    });
-    t.after(daemon.cleanup);
-
-    const started = Date.now();
-    const result = await runClient(daemon.url, [
-        "--json", "--auto", "--workspace", "cli-auto-unattended", "--worker", "auto-worker",
-        "--project-root", "", "--max-turns", "3", "--timeout", "30", "Choose a branch.",
-    ]);
-    const elapsed = Date.now() - started;
-
-    assert.equal(result.code, 0, result.stderr);
-    const record = JSON.parse(result.stdout);
-    assert.equal(record.timedOut, false, "the run ends on its own, never on the client's clock");
-    assert.ok(elapsed < 25_000, `the refusal is immediate, not a wait: took ${elapsed}ms of a 30s budget`);
-    assert.equal(record.response, "Nobody could answer; concluding on what I have.");
-    assert.equal(packets.length, 2, "the model asked once, was refused, and concluded — no third turn");
-    // The refusal comes from the cascade's loop ring, and names both the ring and what to do
-    // instead: a tool that vanished must say why, or the model has learned nothing.
-    assert.match(packets[1]!, /loop policy/, "the refusal names the ring that subtracted the tool");
-    assert.match(packets[1]!, /unattended/, "and the reason, in terms the model can act on");
-    assert.match(packets[1]!, /conclude stating what you could not resolve/, "and the recovery");
 });
 
 // The client states and the daemon composes: only this proves the refusals a user can meet arrive
 // as sentences that name the way out.
-test("[§cli-loop-policy] a refused statement and a retired spelling each name the way out", { timeout: 60_000 }, async (t) => {
+test("{§cli-worker-ownership} retired approval flags and environment keys name their replacements", { timeout: 60_000 }, async (t) => {
     const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,
@@ -286,31 +229,23 @@ test("[§cli-loop-policy] a refused statement and a retired spelling each name t
         },
     });
     t.after(daemon.cleanup);
-    const base = ["--json", "--workspace", "cli-loop-policy", "--worker", "policy-worker", "--project-root", "", "--timeout", "20"];
+    const base = ["--json", "--workspace", "cli-worker-owner", "--worker", "policy-worker", "--project-root", "", "--timeout", "20"];
 
-    // Review with nobody attending is a wait nothing could end, so the daemon refuses the statement.
-    const contradiction = await runClient(daemon.url, [...base, "--auto", "--proposals", "review", "Do the thing."]);
-    assert.notEqual(contradiction.code, 0);
-    const refused = JSON.parse(contradiction.stdout).problem;
-    assert.match(refused.type, /loop-policy-invalid$/u);
-    assert.match(refused.detail, /unattended loop cannot hold a proposal for review: nobody is present to answer/u);
-    assert.equal(refused.recovery, "State proposals accept or reject, or attend the loop.");
-
-    const vocabulary = await runClient(daemon.url, [...base, "--proposals", "sometimes", "Do the thing."]);
-    assert.equal(vocabulary.code, 64);
-    assert.match(vocabulary.stderr + vocabulary.stdout, /proposals must be one of review, accept, reject/u);
-
-    const flag = await runClient(daemon.url, [...base, "--policy", "{\"proposals\":\"accept\"}", "Do the thing."]);
-    assert.equal(flag.code, 64);
-    assert.match(flag.stderr + flag.stdout, /--policy was retired; state --proposals <review\|accept\|reject> and --auto/u);
+    for (const flags of [["--auto"], ["--proposals", "review"], ["--proposals", "sometimes"], ["--policy", '{"proposals":"accept"}']]) {
+        const result = await runClient(daemon.url, [...base, ...flags, "Do the thing."]);
+        assert.equal(result.code, 64);
+        assert.match(result.stderr + result.stdout, /Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS/u);
+    }
 
     const renamedFlag = await runClient(daemon.url, [...base, "--reasoning", "high", "Do the thing."]);
     assert.equal(renamedFlag.code, 64);
     assert.match(renamedFlag.stderr + renamedFlag.stdout, /--reasoning was renamed to --effort/u);
 
     for (const [name, successor] of [
-        ["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"],
-        ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_PROPOSALS and PLURNK_CLIENT_AUTO"],
+        ["PLURNK_AUTO", "PLURNK_CLIENT_YOLO"],
+        ["PLURNK_CLIENT_AUTO", "worker ownership"],
+        ["PLURNK_CLIENT_PROPOSALS", "PLURNK_CLIENT_YOLO"],
+        ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_YOLO"],
         ["PLURNK_CLIENT_REASONING", "PLURNK_CLIENT_EFFORT"],
         ["PLURNK_CLIENT_WORKSPACE_CAPABILITIES", "PLURNK_CLIENT_CAPABILITIES"],
         ["PLURNK_STATUS_STREAM", "PLURNK_CLIENT_STATUS_STREAM"],

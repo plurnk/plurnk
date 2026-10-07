@@ -22,6 +22,7 @@ const FOREIGN = new Map([
     ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, retained in a private resume command"],
     ["PLURNK_SERVICE_STATE_ROOT", "@plurnk/plurnk-core — the selected service's storage root, passed through its public launcher"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
+    ["PLURNK_SERVICE_PROPOSALS", "@plurnk/plurnk-core — server proposal disposition, named by retired client-flag diagnostics"],
     ["PLURNK_WEB_HOST", "@plurnk/plurnk-web — the portal's own knob, which usage names beside `--host`"],
     ["PLURNK_WEB_PORT", "@plurnk/plurnk-web — the portal's own knob, which usage names beside `--port`"],
 ]);
@@ -39,6 +40,8 @@ const ARGUMENTS = new Map([
     ["env-file", "chooses the environment itself, so it cannot be a knob of it"],
     ["env-file-if-exists", "chooses the environment itself, so it cannot be a knob of it"],
     ["policy", "retired; parsed only to be refused with its successors named"],
+    ["auto", "retired; worker ownership and frontend tools replace per-loop attendance"],
+    ["proposals", "retired; local YOLO or server disposition replaces per-loop approval"],
     ["reasoning", "retired; parsed only to be refused with its successor named"],
     ["loop", "an argument of `log read`"],
     ["turn", "an argument of `log read`"],

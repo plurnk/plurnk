@@ -27,9 +27,10 @@ import {
 } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
+import { frontendTools } from "./frontend-tools.ts";
 import { actionViaBridge, runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
-import type { LoopPolicyRequest, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
+import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
@@ -283,23 +284,19 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
 export const runCliViaBridge = async (
     target: BridgeTarget,
     prompt: string,
-    opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
+    opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
     // {§cli-fail-closed-no-review-channel} With no local acceptance or review channel,
-    // reject directly. An explicit loop disposition remains the user's choice.
+    // reject locally. A submitted message cannot change the worker's authority.
     const diagnostics: Notice[] = [];
     const acceptance = new ToolAcceptance((notice) => { diagnostics.push(notice); if (!opts.json) report(notice); });
     const noReviewChannel = process.stdin.isTTY !== true;
-    const heldForReview = opts.policy.proposals === undefined;
-    const autoAccepts = opts.reviewRequested !== true && (opts.yolo || acceptance.enabled);
-    const policy: LoopPolicyRequest = noReviewChannel && !autoAccepts && heldForReview ? { ...opts.policy, proposals: "reject" } : opts.policy;
     // Workspace options ride forwardedProps.plurnk — the model must NOT: the
     // worker owns the model ({§worker-model-selection}), and an explicit --model
     // was already persisted by the dispatcher before this run.
     const fp: Record<string, unknown> = {
         ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
-        policy,
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
         ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
     };
@@ -430,11 +427,11 @@ export const runCliViaBridge = async (
         : undefined;
     statusTick?.unref();
     try {
-        result = mergeRunSegments(result, await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
+        result = mergeRunSegments(result, await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, tools: frontendTools(!noReviewChannel), ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
         activeSegment = null;
         while (result.pendingResume !== null) {
             next = { resume: [result.pendingResume] };
-            const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
+            const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, tools: frontendTools(!noReviewChannel), ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
             result = mergeRunSegments(result, seg);
             activeSegment = null;
         }
@@ -498,10 +495,10 @@ export const runScriptViaBridge = async (
         ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     };
     let next: { resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, ...next }), io);
+    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, tools: frontendTools(!noReviewChannel), ...next }), io);
     while (result.pendingResume !== null) {
         next = { resume: [result.pendingResume] };
-        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, ...next }), io);
+        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, tools: frontendTools(!noReviewChannel), ...next }), io);
     }
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.

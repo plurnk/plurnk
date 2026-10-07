@@ -44,11 +44,10 @@ import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNa
 import {
     Validator,
     type CapabilityPolicy,
-    type LoopPolicyRequest,
     type ModelRoute,
     type OperationResult,
 } from "@plurnk/plurnk-contracts";
-import { formatCapabilityProjection, parseCapabilityPolicy, promptPolicy } from "./policy.ts";
+import { formatCapabilityProjection, parseCapabilityPolicy, parsePrompt } from "./policy.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
 import { FAMILY_HANDLERS } from "./functionality.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
@@ -124,7 +123,7 @@ export const backTabShortcut = (forward: string): string | null =>
 export const lookStatement = (line: string): string | null =>
     /^`{3,}LOOK(?![A-Za-z0-9_.+-])/.test(line) ? line : null;
 
-export const linePolicy = promptPolicy;
+export { parsePrompt } from "./policy.ts";
 
 // {§cli-log-entry-line-format} — the human's line in scrollback: bold, in the human's own colour, so
 // the two voices read apart while the model's reply stays plain.
@@ -615,7 +614,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // an explicit flag persistently selects the worker at startup.
     modelSelector?: string; modelExplicit?: boolean; effort?: string; effortExplicit?: boolean;
     yolo: boolean;
-    loopPolicy: LoopPolicyRequest; maxTurns?: number;
+    maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
     workerName?: string;        // resolved invocation selection, also used after workspace switches
@@ -1201,12 +1200,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     const consumeRun = async (handle: ObservationHandle, attachment: boolean): Promise<void> => {
         activeRun = handle;
+        let observing = attachment;
         let start = Date.now();
         try {
             for (;;) {
                 const terminal = await activeRun.done;
+                const detached = observing && terminal?.loopId === undefined && terminal?.finalStatus === 499;
                 reviewRequested = false;
-                if (terminal !== null && !shuttingDown && !(attachment && terminal.loopId === undefined && terminal.finalStatus === 499)) {
+                if (terminal !== null && !shuttingDown && !detached) {
                     const turnCount = terminal.turnIds?.length ?? 0;
                     if (terminal.workerId !== undefined && terminal.workerId !== conversationWorkerId) {
                         conversationWorkerId = terminal.workerId;
@@ -1230,11 +1231,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     accrued = null;
                 }
                 while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
-                if (!followAdmission || shuttingDown) break;
+                if (shuttingDown || detached || terminal !== null && terminal.loopId === undefined && terminal.finalStatus >= 400) break;
                 followAdmission = false;
                 start = Date.now();
-                runningSince = start;
+                runningSince = null;
+                inFlight = false;
+                doing = null;
+                observing = true;
+                observingExisting = true;
                 activeRun = transport.observe();
+                bindingReady = activeRun.ready;
+                reprompt();
             }
         } catch (cause) {
             if (!shuttingDown) {
@@ -1292,6 +1299,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         } finally {
             pendingCommands -= 1;
             if (rebinds) rebinding = false;
+            if (!shuttingDown && activeRun === null) observeBinding();
             if (!shuttingDown) reprompt();
         }
     };
@@ -1326,7 +1334,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
 
-            await settleIdleObserver();
+            await bindingReady;
 
             if (rebinding) {
                 printAbove("  Changing conversation; submit after the new binding is confirmed.");
@@ -1353,12 +1361,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
 
+            await settleIdleObserver();
+
             if (inFlight) {
                 if (trimmed.startsWith("?") || (trimmed.startsWith(":") && reviewRequested)) {
-                    printAbove("  Explicit review policy selects a new loop; use ... to steer this run, or /stop before starting another.");
+                    printAbove("  Use ... to steer this run, or /stop before changing its review setting.");
                     return;
                 }
-                const admitted = transport.inject(linePolicy(trimmed, opts.loopPolicy).prompt).then((result) => {
+                const admitted = transport.inject(parsePrompt(trimmed).prompt).then((result) => {
                     if (result.action === "enqueued_new_loop") followAdmission = true;
                 });
                 pendingInjections.add(admitted);
@@ -1372,9 +1382,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
 
-            // `?` selects proposal review; `:` uses the base policy.
-            const { policy, prompt: promptText } = linePolicy(trimmed, opts.loopPolicy);
-            const loopParams: { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] } = { policy };
+            // `?` requests local review; no authority rides the message.
+            const { prompt: promptText } = parsePrompt(trimmed);
+            const loopParams: { maxTurns?: number; openPaths?: string[] } = {};
             if (opts.maxTurns !== undefined) loopParams.maxTurns = opts.maxTurns;
             const openPaths = extractOpenPaths(promptText, boundProjectRoot);
             if (openPaths.length > 0) loopParams.openPaths = openPaths;

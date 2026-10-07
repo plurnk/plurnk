@@ -8,7 +8,7 @@ const proposal = (op = "brave", target = "brave_web_search"): ProposalParams => 
     logEntryId: 1, loopId: 1, turnId: 1, op,
     target: { scheme: "worker", pathname: "/output" },
     body: '{"query":"example"}', attrs: { runtime: op, target },
-    policy: { proposals: "review", attended: true },
+    owner: "agui://anonymous/threads/client",
 });
 const policy = (environment: NodeJS.ProcessEnv) => new ToolAcceptance((notice) => assert.fail(notice.message ?? "Unexpected diagnostic"), environment);
 const manual = { yolo: false };

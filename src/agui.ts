@@ -108,18 +108,17 @@ export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {
 };
 
 // Run one turn through the bridge, async-yielding each AG-UI event until the
-// bridge ends the stream (it does so after RUN_FINISHED / RUN_ERROR). Breaking
-// out of the iteration drops the connection, which the bridge treats as the abort
-// signal (its req.on("close") cancels the loop) — hanging up IS cancellation.
+// bridge ends the stream. A connect request observes existing work; disconnecting
+// it does not cancel the worker. An authored run retains its cancellation scope.
 export async function* runViaBridge(
     target: BridgeTarget,
-    run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },
+    run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; tools?: RunAgentInput["tools"]; connect?: boolean; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
     const messages: RunAgentInput["messages"] = run.messages
         ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
     const agent = new HttpAgent({
-        url: target.bridgeUrl,
+        url: run.connect === true ? `${target.bridgeUrl.replace(/\/$/, "")}/connect` : target.bridgeUrl,
         fetch: problemFetch,
         headers: target.token !== undefined && target.token.length > 0
             ? { authorization: `Bearer ${target.token}` }
@@ -130,7 +129,7 @@ export async function* runViaBridge(
         runId: run.runId ?? crypto.randomUUID(),
         state: {},
         messages,
-        tools: [],
+        tools: run.tools ?? [],
         context: [],
         ...(run.resume !== undefined ? { resume: run.resume } : {}),
         // The workspace (world) is REQUIRED — a run has no existence without one. The

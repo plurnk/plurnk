@@ -28,6 +28,7 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
         },
     });
     t.after(daemon.cleanup);
+    t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
     // A standard global Agent Skill present before the Worker's first Functionality demand.
     await mkdir(join(daemon.home, ".agents", "skills", "durable-skill"), { recursive: true });
     await writeFile(join(daemon.home, ".agents", "skills", "durable-skill", "SKILL.md"), "---\nname: durable-skill\ndescription: Durable skill\n---\nUse it.\n");

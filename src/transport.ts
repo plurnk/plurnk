@@ -17,7 +17,8 @@ import {
     clientTransportResultInvalid,
     type ProblemDetails,
 } from "./diagnostics.ts";
-import type { ApplicationPort, LoopPolicyRequest, OperationResult } from "@plurnk/plurnk-contracts";
+import type { ApplicationPort, OperationResult } from "@plurnk/plurnk-contracts";
+import { frontendTools } from "./frontend-tools.ts";
 import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
 import { runViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
@@ -78,11 +79,17 @@ export type LoopAdmission = Awaited<ReturnType<ApplicationPort["runLoop"]>>;
 type ProposalResolution = Resolution & { logEntryId: number };
 type InteractionResolution = Record<string, unknown> | "cancel";
 type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents };
+interface PendingInterrupt<T> {
+    readonly signal: AbortSignal;
+    readonly settle: (value: T | undefined) => void;
+    readonly release: () => void;
+    decided: boolean;
+}
 
 // loop.run knobs. Model and child-model selection are durable worker policy,
 // changed through worker.model.set / worker.child.set rather than reasserted on
 // individual runs.
-export interface RunOpts { policy: LoopPolicyRequest; maxTurns?: number; openPaths?: string[] }
+export interface RunOpts { maxTurns?: number; openPaths?: string[] }
 
 export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
@@ -120,8 +127,8 @@ export class BridgeTransport implements Transport {
     #workspace: BridgeSessionOpts;
     #h: RunHandlers | null = null;
     #modelProjection: StreamProjection | null = null;
-    #pendingProposals = new Map<number, (r: ProposalResolution | undefined) => void>();
-    #pendingInteractions = new Map<number, (r: InteractionResolution | undefined) => void>();
+    #pendingProposals = new Map<number, PendingInterrupt<ProposalResolution>>();
+    #pendingInteractions = new Map<number, PendingInterrupt<InteractionResolution>>();
     #controllers = new Set<AbortController>();
     #seenRows = new Map<number, string>();
     #lastConversationRowId = 0;
@@ -172,6 +179,7 @@ export class BridgeTransport implements Transport {
             for await (const e of runViaBridge(this.#target, {
                 ...binding,
                 ...next,
+                tools: frontendTools(true),
             }, signal)) {
                 if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                     const v = actionOutcome<T>((e as { value?: unknown }).value);
@@ -199,7 +207,7 @@ export class BridgeTransport implements Transport {
                         throw new ProblemError(invalid);
                     }
                     proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, signal, "Proposal");
-                    this.#h?.onProposal({ logEntryId: pausedProp, op: args.op, target: args.target, body: args.body, attrs: args.attrs } as unknown as ProposalParams, "action");
+                    this.#h?.onProposal({ ...args, logEntryId: pausedProp } as unknown as ProposalParams, "action");
                     continue;
                 }
                 if (e.type === "RUN_FINISHED") {
@@ -262,8 +270,8 @@ export class BridgeTransport implements Transport {
             ...this.#workspaceOpts(),
             // {plurnk#108} — a session that observes its delegation asks on every conversation run.
             ...(this.#workspace.descendants === true ? { descendants: true } : {}),
+            control: true,
             ...(opts === undefined ? { mode: "sync" } : {
-                policy: opts.policy,
                 ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
                 ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
             }),
@@ -285,6 +293,7 @@ export class BridgeTransport implements Transport {
                 let pausedInteraction: number | null = null;
                 let proposalResolution: Promise<ProposalResolution | undefined> | null = null;
                 let interactionResolution: Promise<InteractionResolution | undefined> | null = null;
+                let joined: AbortSignal | undefined;
                 let interrupted = false;
                 let observed = false;
                 let toolId = "";
@@ -292,7 +301,10 @@ export class BridgeTransport implements Transport {
                 let toolArgs = "";
                 let interactionArguments: Record<string, unknown> | null = null;
                 try {
-                    const events = runViaBridge(this.#target, { ...binding, ...next, forwardedProps: fp }, ac.signal);
+                    const events = runViaBridge(this.#target, {
+                        ...binding, ...next, forwardedProps: fp, tools: frontendTools(true),
+                        connect: prompt === undefined && next.resume === undefined,
+                    }, ac.signal);
                     const synchronized = fp?.mode === "sync"
                         ? this.#synchronize(events, binding, ac.signal, sinceId, observation, ready.resolve)
                         : events;
@@ -309,6 +321,8 @@ export class BridgeTransport implements Transport {
                             interrupted = interrupt !== undefined;
                             if (pausedInteraction !== null && interrupt !== undefined && interactionArguments !== null) {
                                 const interactionId = pausedInteraction;
+                                joined = this.#pendingInteractions.get(interactionId)?.signal;
+                                if (joined !== undefined) continue;
                                 interactionResolution = this.#interrupt(this.#pendingInteractions, interactionId, ac.signal, "Interaction");
                                 this.#h?.onInteraction?.({
                                     interactionId,
@@ -353,8 +367,10 @@ export class BridgeTransport implements Transport {
                                     result: operationResult({ status: problem.status, problem }),
                                 };
                             }
+                            joined = this.#pendingProposals.get(pausedProp)?.signal;
+                            if (joined !== undefined) continue;
                             proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, ac.signal, "Proposal");
-                            this.#h?.onProposal({ logEntryId: pausedProp, op: a.op, target: a.target, body: a.body, attrs: a.attrs } as unknown as ProposalParams, "model");
+                            this.#h?.onProposal({ ...a, logEntryId: pausedProp } as unknown as ProposalParams, "model");
                         } else {
                             const t = this.#dispatch(e, projection);
                             if (t !== null) terminated = t;
@@ -406,6 +422,16 @@ export class BridgeTransport implements Transport {
                         hitMaxTurns: false,
                         result: operationResult({ status: problem.status, problem }),
                     };
+                }
+                if (joined !== undefined) {
+                    // One resolver per interrupt in this client; a reconnect may
+                    // resurface a gate already held by a concurrent action Run.
+                    const completed = AbortSignal.any([joined, ac.signal]);
+                    if (!completed.aborted) await new Promise<void>((resolve) => completed.addEventListener("abort", () => resolve(), { once: true }));
+                    ac.signal.throwIfAborted();
+                    next = {};
+                    fp = { ...forwardedProps, mode: "sync" };
+                    continue;
                 }
                 if (proposalResolution === null && interactionResolution === null) throw new Error("paused run ended without a resolution channel");
                 if (interactionResolution !== null && pausedInteraction !== null) {
@@ -500,28 +526,35 @@ export class BridgeTransport implements Transport {
         // Terminate-resume: the decision releases the paused run loop, which POSTs the
         // standard resume. No paused run = a contract violation — fail hard.
         const pending = this.#pendingProposals.get(r.logEntryId);
-        if (pending === undefined) throw new Error(`Proposal ${r.logEntryId} has no pending AG-UI interrupt.`);
-        pending(r);
+        if (pending === undefined || pending.decided) throw new Error(`Proposal ${r.logEntryId} has no pending AG-UI interrupt.`);
+        pending.settle(r);
     }
-    #interrupt<T>(pending: Map<number, (value: T | undefined) => void>, id: number, signal: AbortSignal, kind: string): Promise<T | undefined> {
+    #interrupt<T>(pending: Map<number, PendingInterrupt<T>>, id: number, signal: AbortSignal, kind: string): Promise<T | undefined> {
         if (pending.has(id)) throw new Error(`${kind} ${id} already has a pending AG-UI interrupt.`);
         return new Promise((resolve) => {
+            const completed = new AbortController();
             const settle = (value: T | undefined): void => {
-                pending.delete(id);
-                signal.removeEventListener("abort", cancel);
+                if (entry.decided) return;
+                entry.decided = true;
                 resolve(value);
                 this.#h?.onInterruptEnd?.(`${kind === "Proposal" ? "prop" : "int"}:${id}`);
             };
-            const cancel = (): void => settle(undefined);
-            pending.set(id, settle);
+            const release = (): void => {
+                pending.delete(id);
+                signal.removeEventListener("abort", cancel);
+                completed.abort();
+            };
+            const entry = { signal: completed.signal, settle, release, decided: false };
+            const cancel = (): void => { settle(undefined); release(); };
+            pending.set(id, entry);
             if (signal.aborted) cancel();
             else signal.addEventListener("abort", cancel, { once: true });
         });
     }
     async resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void> {
         const pending = this.#pendingInteractions.get(interactionId);
-        if (pending === undefined) throw new Error(`Interaction ${interactionId} has no pending AG-UI interrupt.`);
-        pending(payload);
+        if (pending === undefined || pending.decided) throw new Error(`Interaction ${interactionId} has no pending AG-UI interrupt.`);
+        pending.settle(payload);
     }
     onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
     async useSession(name: string | undefined, params: Parameters<Transport["useSession"]>[1]): Promise<{ name: string }> {
@@ -567,6 +600,12 @@ export class BridgeTransport implements Transport {
     // Project one standard reasoning event or un-project one CUSTOM plurnk.*
     // event into the family handlers; returns terminal truth when present.
     #dispatch(e: AguiEvent, projection: StreamProjection): TerminatedInfo | null {
+        if (e.type === "TOOL_CALL_RESULT") {
+            const proposal = /^prop:(\d+)$/u.exec(e.toolCallId);
+            const interaction = /^int:(\d+)$/u.exec(e.toolCallId);
+            if (proposal !== null) this.#pendingProposals.get(Number(proposal[1]))?.release();
+            if (interaction !== null) this.#pendingInteractions.get(Number(interaction[1]))?.release();
+        }
         const reasoning = projection.reasoning.consume(e);
         if (reasoning.handled) {
             if (reasoning.update !== undefined) this.#h?.onReasoning(reasoning.update);

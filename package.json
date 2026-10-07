@@ -47,7 +47,7 @@
         "test:installation": "node scripts/test-installation.mjs",
         "test:composition": "node scripts/test-composition.mjs",
         "test:web-composition": "node scripts/test-web-composition.mjs",
-        "release:publish": "node scripts/release-publish.mjs",
+        "release:gate": "node scripts/audit-gate.mjs && npm run deps:fresh",
         "build:posix": "node scripts/generate-posix.mjs"
     },
     "devDependencies": {
@@ -70,9 +70,6 @@
     },
     "optionalDependencies": {
         "@plurnk/plurnk-service": "^1.29.0"
-    },
-    "plurnk": {
-        "builtAgainst": "1.29.0"
     },
     "man": "./man/plurnk.1"
 }

@@ -4,7 +4,7 @@
 // local OpenAI-compatible endpoint supplies grammar-valid model turns.
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { promisify } from "node:util";
+import { parseArgs, promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, readdir, rm, access } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -12,9 +12,10 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const run = promisify(execFile);
+const { values } = parseArgs({ options: { installed: { type: "string" } } });
 const root = resolve(import.meta.dirname, "..");
 const temp = await mkdtemp(join(tmpdir(), "plurnk-composition-"));
-const install = join(temp, "consumer");
+const install = values.installed === undefined ? join(temp, "consumer") : resolve(values.installed);
 const home = join(temp, "home");
 const serviceSpec = process.env.PLURNK_COMPOSITION_SERVICE;
 const serviceRoot = process.env.PLURNK_COMPOSITION_SERVICE_ROOT;
@@ -56,40 +57,42 @@ try {
     await run("npm", ["init", "-y"], { cwd: temp });
     await mkdir(install, { recursive: true });
     await mkdir(home, { recursive: true });
-    await run("npm", ["init", "-y"], { cwd: install });
+    if (values.installed === undefined) {
+        await run("npm", ["init", "-y"], { cwd: install });
 
-    let installedClient = clientSpec;
-    if (installedClient === undefined) {
-        await run("npm", ["run", "build"], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
-        const packed = JSON.parse((await run("npm", [
-            "pack", "--ignore-scripts", "--json", "--pack-destination", temp,
-        ], { cwd: root, maxBuffer: 64 * 1024 * 1024 })).stdout);
-        if (!Array.isArray(packed) || typeof packed[0]?.filename !== "string") throw new Error("npm pack returned no client artifact");
-        installedClient = join(temp, packed[0].filename);
-    }
-    let serviceSpecs = serviceSpec === undefined ? [] : [serviceSpec];
-    if (serviceRoot !== undefined && serviceRoot.length > 0) {
-        const absoluteServiceRoot = resolve(serviceRoot);
-        await run("npm", ["run", "build"], {
-            cwd: absoluteServiceRoot,
-            maxBuffer: 128 * 1024 * 1024,
-        });
-        const packed = JSON.parse((await run("npm", [
-            "pack", "--workspaces", "--ignore-scripts", "--json", "--pack-destination", temp,
-        ], { cwd: absoluteServiceRoot, maxBuffer: 128 * 1024 * 1024 })).stdout);
-        if (!Array.isArray(packed) || packed.some((item) => typeof item?.filename !== "string")) {
-            throw new Error("npm pack returned an invalid service workspace artifact set");
+        let installedClient = clientSpec;
+        if (installedClient === undefined) {
+            await run("npm", ["run", "build"], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
+            const packed = JSON.parse((await run("npm", [
+                "pack", "--ignore-scripts", "--json", "--pack-destination", temp,
+            ], { cwd: root, maxBuffer: 64 * 1024 * 1024 })).stdout);
+            if (!Array.isArray(packed) || typeof packed[0]?.filename !== "string") throw new Error("npm pack returned no client artifact");
+            installedClient = join(temp, packed[0].filename);
         }
-        serviceSpecs = packed.map(({ filename }) => join(temp, filename));
-    }
-    await run("npm", ["install", "--ignore-scripts", installedClient, ...serviceSpecs], {
-        cwd: install,
-        maxBuffer: 64 * 1024 * 1024,
-    });
-    if (serviceSpecs.length === 0) {
-        const consumer = JSON.parse(await readFile(join(install, "package.json"), "utf8"));
-        if (Object.hasOwn(consumer.dependencies, "@plurnk/plurnk-service")) {
-            throw new Error("the one-package install must obtain its backend through the client's optional dependency");
+        let serviceSpecs = serviceSpec === undefined ? [] : [serviceSpec];
+        if (serviceRoot !== undefined && serviceRoot.length > 0) {
+            const absoluteServiceRoot = resolve(serviceRoot);
+            await run("npm", ["run", "build"], {
+                cwd: absoluteServiceRoot,
+                maxBuffer: 128 * 1024 * 1024,
+            });
+            const packed = JSON.parse((await run("npm", [
+                "pack", "--workspaces", "--ignore-scripts", "--json", "--pack-destination", temp,
+            ], { cwd: absoluteServiceRoot, maxBuffer: 128 * 1024 * 1024 })).stdout);
+            if (!Array.isArray(packed) || packed.some((item) => typeof item?.filename !== "string")) {
+                throw new Error("npm pack returned an invalid service workspace artifact set");
+            }
+            serviceSpecs = packed.map(({ filename }) => join(temp, filename));
+        }
+        await run("npm", ["install", "--ignore-scripts", installedClient, ...serviceSpecs], {
+            cwd: install,
+            maxBuffer: 64 * 1024 * 1024,
+        });
+        if (serviceSpecs.length === 0) {
+            const consumer = JSON.parse(await readFile(join(install, "package.json"), "utf8"));
+            if (Object.hasOwn(consumer.dependencies, "@plurnk/plurnk-service")) {
+                throw new Error("the one-package install must obtain its backend through the client's optional dependency");
+            }
         }
     }
 

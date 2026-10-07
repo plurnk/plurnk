@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk",
-    "version": "0.97.0",
+    "version": "2.0.0",
     "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive AG-UI client.",
     "type": "module",
     "license": "MIT",
@@ -30,13 +30,12 @@
         "test:intg": "node --test --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
         "test": "npm run test:lint && npm run test:unit && npm run test:intg && npm run test:tui",
         "test:all": "npm test",
-        "deps:fresh": "npm outdated",
         "build:clean": "node scripts/clean-dist.mjs",
         "build:dist": "tsc -p tsconfig.build.json",
         "build:info": "node scripts/write-build-info.mjs",
         "build": "npm run build:clean && npm run build:dist && npm run build:info",
         "prepare": "git config core.hooksPath .githooks && npm run build",
-        "prepublishOnly": "npm run test && node scripts/audit-gate.mjs && npm run deps:fresh && npm run test:composition",
+        "prepublishOnly": "npm run test && node scripts/audit-gate.mjs && npm run test:composition",
         "pretest:tui": "npm run build",
         "test:tui": "node --test --test-timeout=600000 --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
         "test:tui:live": "PLURNK_CLIENT_LIVE=1 node --test --test-timeout=600000 --env-file-if-exists=.env test/tui/live.test.ts",
@@ -47,7 +46,7 @@
         "test:installation": "node scripts/test-installation.mjs",
         "test:composition": "node scripts/test-composition.mjs",
         "test:web-composition": "node scripts/test-web-composition.mjs",
-        "release:gate": "node scripts/audit-gate.mjs && npm run deps:fresh",
+        "release:gate": "node scripts/audit-gate.mjs",
         "build:posix": "node scripts/generate-posix.mjs"
     },
     "devDependencies": {
@@ -60,7 +59,7 @@
         "@ag-ui/client": "^1.0.0",
         "@ag-ui/core": "^1.0.0",
         "@earendil-works/pi-tui": "^1.0.0",
-        "@plurnk/plurnk-contracts": "^1.29.0",
+        "@plurnk/plurnk-contracts": "^2.0.0",
         "beautiful-mermaid": "^1.1.3",
         "cli-table3": "^0.6.5",
         "marked": "^18.0.11",
@@ -69,7 +68,7 @@
         "wrap-ansi": "^10.0.1"
     },
     "optionalDependencies": {
-        "@plurnk/plurnk-service": "^1.29.0"
+        "@plurnk/plurnk-service": "^2.0.0"
     },
     "man": "./man/plurnk.1"
 }

@@ -41,7 +41,6 @@ Requirements:
 * Node.js 26+
 * npm
 * git
-* model(s) with open, streaming, verbatim reasoning
 
 ```sh
 npm install -g @plurnk/plurnk

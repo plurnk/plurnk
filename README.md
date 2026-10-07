@@ -91,7 +91,7 @@ for local endpoints and tuning.
 ## Service
 
 For a shared, persistent environment, install `@plurnk/plurnk-service` separately
-and run `plurnk-service start`. Clients attach at `127.0.0.1:1066` by default.
+and run `plurnk-service start`. Clients attach at `http://127.0.0.1:1066/agui` by default.
 Linux users can install the package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
 (`plurnk.service` in the package root); its comments cover installation,
 executable paths, and environment setup. The service must receive your provider

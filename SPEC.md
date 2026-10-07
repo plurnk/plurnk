@@ -88,7 +88,7 @@ The client also reads keys it does not own:
 
 | Var | Owner | Meaning |
 |---|---|---|
-| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's address — `http://$PLURNK_HOST:$PLURNK_PORT`, the client's sole surface. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
+| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's bind address and port; the client dials `http://$PLURNK_HOST:$PLURNK_PORT/agui`. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
 | `PLURNK_AGUI_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
 | `PLURNK_AGUI_TOKEN` | `@plurnk/plurnk-agui` | The portal's bearer, presented when set. |
 
@@ -394,7 +394,7 @@ Consequence:
 
 ### §2.2 Flow {§cli-one-shot-flow}
 
-1. Read the conversation worker's durable model, then `POST /` (RunAgentInput) with the workspace and thread selected under §1.1, the prompt as a user message, and per-loop options on `forwardedProps.plurnk`.
+1. Read the conversation worker's durable model, then `POST /agui` (RunAgentInput) with the workspace and thread selected under §1.1, the prompt as a user message, and per-loop options on `forwardedProps.plurnk`.
 2. Consume the SSE: `CUSTOM plurnk.row` events advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
@@ -1576,7 +1576,7 @@ remain an implicit client assumption.
 A conforming `plurnk` client:
 
 1. Speaks AG-UI+ (RunAgentInput over HTTP, AG-UI events + `CUSTOM plurnk.*` over SSE) per the plurnk-agui SPEC.
-2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT` (or `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
+2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT/agui` (or the exact `PLURNK_AGUI_URL`), bearer from `PLURNK_AGUI_TOKEN` when set.
 3. Resolves the workspace and conversation separately under §1.1, retaining their binding for subsequent requests until an explicit navigation command changes it.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Consumes client-owned proposal interrupts and resolves each through standard AG-UI resume per §6; loop-owned dispositions are absent from that surface.

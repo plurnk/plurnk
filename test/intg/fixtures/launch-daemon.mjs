@@ -19,6 +19,6 @@ if (process.env.LAUNCH_CASE === "exit") {
     process.exit(17);
 }
 if (process.env.LAUNCH_CASE !== "timeout") {
-    process.stdout.write(`plurnk-service agui=http://127.0.0.1:43210 db=${JSON.stringify(join(root, "plurnk.db"))} route="fixture"\n`);
+    process.stdout.write(`plurnk-service agui=http://127.0.0.1:43210/agui db=${JSON.stringify(join(root, "plurnk.db"))} route="fixture"\n`);
 }
 setInterval(() => {}, 1_000);

@@ -1,5 +1,10 @@
 # @plurnk/plurnk
 
+## Unreleased
+
+- Connect to `/agui` by default and preserve the complete configured or advertised
+  endpoint URL, including custom paths.
+
 ## 2.0.0
 
 - Join the one-time Plurnk 2.0 baseline. Subsequent client releases follow the

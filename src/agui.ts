@@ -1,6 +1,6 @@
 // The Node consumer of the plurnk-agui bridge. Terminal clients POST a run to
 // the bridge and consume the AG-UI SSE projection. This module mirrors the
-// standard AG-UI HTTP/SSE transport: POST / for runs, including interrupt
+// standard AG-UI HTTP/SSE transport: POST /agui for runs, including interrupt
 // resolution through RunAgentInput.resume.
 //
 // The official HttpAgent owns HTTP/SSE parsing. AG-UI 1.0 made event validation
@@ -119,7 +119,7 @@ export async function* runViaBridge(
     const messages: RunAgentInput["messages"] = run.messages
         ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
     const agent = new HttpAgent({
-        url: new URL("/", target.bridgeUrl).href,
+        url: target.bridgeUrl,
         fetch: problemFetch,
         headers: target.token !== undefined && target.token.length > 0
             ? { authorization: `Bearer ${target.token}` }

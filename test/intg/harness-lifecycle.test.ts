@@ -36,7 +36,7 @@ for (const mode of ["ready", "exit", "timeout"] as const) {
             const daemon = await started;
             t.after(daemon.cleanup);
             state = JSON.parse(await readFile(witness, "utf8"));
-            assert.equal(daemon.url, "http://127.0.0.1:43210");
+            assert.equal(daemon.url, "http://127.0.0.1:43210/agui");
             assert.equal(state?.model, "", "the deterministic fixture cannot inherit an operator model");
             assert.equal(state?.home, daemon.home);
             await daemon.cleanup();

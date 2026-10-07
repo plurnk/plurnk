@@ -165,7 +165,7 @@ const statusRelay = async (t: TestContext, url: string, hooks: {
             let raw = "";
             for await (const chunk of request) raw += chunk;
             if (raw.length > 0 && JSON.parse(raw).messages?.length > 0) hooks.onPrompt?.(response);
-            const upstream = await fetch(`${url}${request.url ?? "/"}`, {
+            const upstream = await fetch(new URL(request.url ?? "/", url), {
                 method: request.method, headers: { "content-type": "application/json" },
                 ...(raw.length > 0 ? { body: raw } : {}), signal: shutdown.signal,
             });

@@ -853,7 +853,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         }
     })();
 
-    const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}`;
+    const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/agui`;
     let backend: Backend;
     try {
         backend = await lifetime.own(Backend.open({ bridgeUrl: configuredUrl, token: process.env.PLURNK_AGUI_TOKEN }));

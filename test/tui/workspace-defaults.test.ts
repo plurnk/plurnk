@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -16,15 +16,15 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
     const elsewhere = join(daemon.home, "other");
     await Promise.all([mkdir(folder, { recursive: true }), mkdir(elsewhere)]);
     const workspace = "~/projects/example";
-    const target = { bridgeUrl: daemon.url };
+    const target = { aguiUrl: daemon.url };
     const env = {
         ...Object.fromEntries(Object.keys(process.env).filter((key) => key.startsWith("PLURNK_")).map((key) => [key, undefined])),
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_CLIENT_AUTOSTART: "0", PLURNK_AGUI_URL: daemon.url,
     };
-    const rows = async () => (await actionViaBridge<{ workspaces: { name: string; project_root: string | null }[] }>(
+    const rows = async () => (await actionViaAgui<{ workspaces: { name: string; project_root: string | null }[] }>(
         target, { threadId: "inspect", kind: "workspace.list" },
     )).workspaces;
-    const workers = async (name: string, worker = "user") => (await actionViaBridge<{ workers: { id: number; name: string }[] }>(
+    const workers = async (name: string, worker = "user") => (await actionViaAgui<{ workers: { id: number; name: string }[] }>(
         target, { threadId: worker, workspace: name, kind: "workspace.workers" },
     )).workers;
 

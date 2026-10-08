@@ -9,8 +9,12 @@ contract and does not absorb daemon or provider responsibilities.
 
 **A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in
 one landing: types, schema, methods, Problems, knobs, wire actions, spec tags, tests, fixtures and docs.
-Retired names fail hard and name their successor. A surface-only rename, a new flag over old internals,
-is a defect, not a first step.
+A surface-only rename, a new flag over old internals, is a defect, not a first step.
+
+**Retired forms are erased.** A retired name, syntax, knob or behaviour leaves no trace in the living
+tree: no code, spec, doc, test, comment or diagnostic refers to it, and nothing recognizes it to refuse
+or translate it. Any record of it invites its resurrection. History lives in git, issues and published
+changelogs.
 
 ## Releases
 

@@ -5,7 +5,7 @@ import { connect, isIP } from "node:net";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BridgeTarget } from "./agui.ts";
+import type { AguiTarget } from "./agui.ts";
 import { clientProblem, ProblemError } from "./diagnostics.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 
@@ -107,14 +107,14 @@ export const listenerPresent = (url: URL, timeoutMs: number): Promise<boolean> =
 // {§cli-daemon-autostart} — one invocation owns at most one backend. Persistent state and
 // process ownership are separate: close never deletes user data or stops an attached service.
 export default class Backend {
-    readonly target: BridgeTarget;
+    readonly target: AguiTarget;
     readonly database: string | null;
     readonly resumeEnv: Readonly<Record<string, string>>;
     readonly allocatedStorage: boolean;
     readonly #daemon: Daemon | null;
     #closing: Promise<void> | undefined;
 
-    private constructor(target: BridgeTarget, daemon: Daemon | null, resumeEnv: Readonly<Record<string, string>> = {}, allocatedStorage = false) {
+    private constructor(target: AguiTarget, daemon: Daemon | null, resumeEnv: Readonly<Record<string, string>> = {}, allocatedStorage = false) {
         this.target = target;
         this.database = daemon?.dbPath ?? null;
         this.resumeEnv = resumeEnv;
@@ -122,8 +122,8 @@ export default class Backend {
         this.#daemon = daemon;
     }
 
-    static async open(target: BridgeTarget, env: NodeJS.ProcessEnv = process.env): Promise<Backend> {
-        const url = new URL(target.bridgeUrl);
+    static async open(target: AguiTarget, env: NodeJS.ProcessEnv = process.env): Promise<Backend> {
+        const url = new URL(target.aguiUrl);
         if ((env.PLURNK_AGUI_URL ?? "").length > 0 || !isLoopback(url.hostname)
             || !Knobs.flag("PLURNK_CLIENT_AUTOSTART", "live", env)) return new Backend(target, null);
         const timeout = Knobs.count("PLURNK_CLIENT_DAEMON_TIMEOUT_MS", env);
@@ -155,7 +155,7 @@ export default class Backend {
             ...(stateRoot === undefined ? {} : { PLURNK_SERVICE_STATE_ROOT: stateRoot }),
             PLURNK_SERVICE_DB_PATH: daemon.dbPath,
         };
-        return new Backend({ bridgeUrl: daemon.url, token }, daemon, resumeEnv, allocatedStorage);
+        return new Backend({ aguiUrl: daemon.url, token }, daemon, resumeEnv, allocatedStorage);
     }
 
     close(): Promise<void> {

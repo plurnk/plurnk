@@ -1,4 +1,4 @@
-// Unit tests for src/subcommands.ts using a fake Rpc that captures calls and
+// Unit tests for src/subcommands.ts using a fake Caller that captures calls and
 // returns canned responses. Stdout is monkey-patched per test so assertions
 // can inspect what each subcommand wrote as its "product."
 
@@ -13,16 +13,13 @@ interface RecordedCall { method: string; params: unknown }
 
 const fakeRpc = (responses: Record<string, unknown>): { rpc: Caller; calls: RecordedCall[] } => {
     const calls: RecordedCall[] = [];
-    const rpc = {
+    const rpc: Caller = {
         call: async (method: string, params?: object): Promise<unknown> => {
             calls.push({ method, params });
             if (method in responses) return responses[method];
             throw new Error(`fakeRpc: unmocked method '${method}'`);
         },
-        connect: async (): Promise<void> => {},
-        close: async (): Promise<void> => {},
-        onNotification: (): void => {},
-    } as Caller;
+    };
     return { rpc, calls };
 };
 
@@ -129,7 +126,7 @@ test("[§cli-plurnk-models] [§cli-models-efforts] runModels: bounded catalog ta
     assert.match(out, /Gemini 3 Pro/);
     assert.match(out, /GOOGLE_GENERATIVE_AI_API_KEY/);
     assert.match(out, /next --offset 2/);
-    // {§cli-models-efforts} — the daemon's admitted efforts per route (service#529), never inferred.
+    // {§cli-models-efforts} — the daemon's admitted efforts per route, never inferred.
     assert.match(out, /efforts/);
     assert.match(out, /off,low,high/);
     assert.match(out, /adaptive,max/);
@@ -327,7 +324,7 @@ test("runLogRead: only sends defined filters (no undefined keys)", async () => {
     assert.deepEqual(calls[0].params, { limit: 10 });
 });
 
-// ─── plurnk read <L/T/S> (clean log.read coordinate contract, svc#271) ────
+// ─── plurnk read <L/T/S> (log.read coordinate contract) ───────────────
 
 test("parseCoord: accepts bare and zero-padded; rejects malformed", () => {
     assert.deepEqual(parseCoord("3/1/2"), [3, 1, 2]);
@@ -354,7 +351,7 @@ test("runRead: hands the display coordinate to log.read — the daemon resolves 
     assert.ok(typeof doc.schemaVersion === "number");
 });
 
-test("runRead: a SEND's tx body IS reachable by coordinate (the svc#271 fix); zero-pad normalizes", async () => {
+test("runRead: a SEND's tx body IS reachable by coordinate; zero-pad normalizes", async () => {
     const { rpc, calls } = fakeRpc({ "log.read": { status: 200, entries: [fullEntry("SEND", { signal: 200, tx: { body: { raw: "Paris", json: null } } })] } });
     const out = await captureStdout(() => runRead(rpc, "03/01/02", { json: false }));
     assert.deepEqual(calls[0].params, { loopSeq: 3, turnSeq: 1, sequence: 2 });

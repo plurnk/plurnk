@@ -460,17 +460,17 @@ test("renderSummary: differentiated terminal codes get distinct labels (#70)", (
 });
 
 test("renderSummary: status 500 is a strike-out only for the rail Problem (#7)", () => {
-    const invalidEmission = {
+    const loopThrew = {
         status: 500,
         problem: {
-            type: "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted",
-            title: "Invalid emission exhausted",
+            type: "https://problems.plurnk.xyz/daemon/drain/loop-threw",
+            title: "Loop threw",
             status: 500,
-            detail: "No valid PLAN...SEND turn was received after 3 emission attempts.",
+            detail: "The loop failed outside its operation result contract.",
         },
     };
-    const line = renderSummary(0, 83, invalidEmission, false, usage(10, 5));
-    assert.match(line, /invalid emission/);
+    const line = renderSummary(0, 83, loopThrew, false, usage(10, 5));
+    assert.match(line, /failed/);
     assert.doesNotMatch(line, /strike-out/);
 });
 
@@ -486,11 +486,11 @@ test("renderSummary: real usage renders conventional input/output + exact loop c
 
 // ─── dimensionally independent terminal gauges ───────────────────────
 
-test("[§cli-summary-line-per-looprun] curationGauge: weight + budget → 'cur N%/Mk'", () => {
+test("[§cli-summary-line-per-loop] curationGauge: weight + budget → 'cur N%/Mk'", () => {
     assert.equal(curationGauge(12000, 48000), " · cur 25%/48k");
 });
 
-test("[§cli-summary-line-per-looprun] contextGauge: occupancy + window → 'ctx N%/Mk'", () => {
+test("[§cli-summary-line-per-loop] contextGauge: occupancy + window → 'ctx N%/Mk'", () => {
     assert.equal(contextGauge(7360, 49152), " · ctx 15%/49k");
 });
 
@@ -581,7 +581,7 @@ test("[§cli-log-entry-line-format] the human waterfall carries no log coordinat
         op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
     }));
-    assert.doesNotMatch(out, /01\/02\/03/, "the 01/02/03 gutter is gone from human rows");
+    assert.doesNotMatch(out, /01\/02\/03/, "a human row carries no log coordinate");
     assert.doesNotMatch(out, /(?:^|\s)200(?:\s|$)/, "a routine non-SEND success shows no status code");
     assert.match(out, /worker:\/\/\/x/);
 });
@@ -695,13 +695,13 @@ test("renderSummary: unavailable money is explicitly unknown, not silently omitt
     assert.match(out, /loop \$\?/, "a missing price is not a free request");
 });
 
-test("[§cli-summary-line-per-looprun] contextGauge renders the daemon's request-matched physical capacity", () => {
+test("[§cli-summary-line-per-loop] contextGauge renders the daemon's request-matched physical capacity", () => {
     assert.equal(contextGauge(18000, 36000), " · ctx 50%/36k");
     assert.equal(contextGauge(18000, 128000), " · ctx 14%/128k");
     assert.equal(contextGauge(18000, null), "", "a loop the daemon can't window omits the gauge, never lies with a stale one");
 });
 
-test("[§cli-summary-line-per-looprun] renderSummary takes both gauge denominators from the terminal envelope", () => {
+test("[§cli-summary-line-per-loop] renderSummary takes both gauge denominators from the terminal envelope", () => {
     const loopUsage = {
         ...usage(1, 1),
         curationWeight: 18000,

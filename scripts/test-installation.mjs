@@ -34,14 +34,12 @@ process.stdout.write("-- local sandbox install (--omit=optional, client alone) -
 installSandbox();
 
 ok(existsSync(bin), "plurnk bin linked in the sandbox");
-// Our boundary: the client carries the standard AG-UI transport, not the retired
-// direct WebSocket dependency or the optional daemon composition.
+// Our boundary: the client carries the standard AG-UI transport, not the optional
+// daemon composition.
 ok(
     existsSync(resolve(mods, "@ag-ui", "client")) && existsSync(resolve(mods, "@ag-ui", "core")),
     "standard AG-UI client dependencies are installed",
 );
-ok(!existsSync(resolve(mods, "ws")), "retired direct WebSocket dependency is absent");
-ok(!existsSync(resolve(mods, "@plurnk", "plurnk", "dist", "paste.js")), "retired readline paste machinery is absent from the package projection");
 ok(!existsSync(resolve(mods, "@plurnk", "plurnk-service")), "optional daemon NOT pulled (--omit=optional; the service's install is its own)");
 ok(!existsSync(resolve(mods, "onnxruntime-node")) && !existsSync(resolve(mods, "sharp")), "no native onnxruntime/sharp in the client tree");
 

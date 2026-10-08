@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
-import { actionViaBridge, type BridgeTarget } from "./agui.ts";
+import { actionViaAgui, type AguiTarget } from "./agui.ts";
 import { clientFlagInvalid, clientProblem, ProblemError } from "./diagnostics.ts";
 
 export const resolveProjectRoot = (raw: string | undefined, cwd = process.cwd()): string | null => {
@@ -15,13 +15,13 @@ type ChooseProjectRoot = (home: string) => Promise<string | null | undefined>;
 
 /** {§cli-project-root}: a creation default, not authority over an existing workspace. */
 export default class ProjectRoot {
-    readonly #target: BridgeTarget;
+    readonly #target: AguiTarget;
     readonly #cwd: string;
     readonly #home: string;
     #explicit: boolean;
     #root: string | null;
 
-    constructor(target: BridgeTarget, raw: string | undefined, cwd = process.cwd(), home = homedir()) {
+    constructor(target: AguiTarget, raw: string | undefined, cwd = process.cwd(), home = homedir()) {
         this.#target = target;
         this.#cwd = cwd;
         this.#home = home;
@@ -31,7 +31,7 @@ export default class ProjectRoot {
 
     async resolve(workspace: string | undefined, choose?: ChooseProjectRoot): Promise<string | null | undefined> {
         if (workspace !== undefined) {
-            const { workspaces } = await actionViaBridge<{ workspaces: { name: string; project_root: string | null }[] }>(
+            const { workspaces } = await actionViaAgui<{ workspaces: { name: string; project_root: string | null }[] }>(
                 this.#target, { threadId: "bootstrap", kind: "workspace.list" },
             );
             const existing = workspaces.find(({ name }) => name === workspace);

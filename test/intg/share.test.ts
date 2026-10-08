@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { shareFolder, type ShareResult } from "../../src/share.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
@@ -17,10 +17,10 @@ test("[§cli-invocation] workspace.share writes the bound workspace's share wher
     t.after(() => rm(root, { recursive: true, force: true }));
 
     const name = `terminal-share-${crypto.randomUUID()}`;
-    await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: "terminal-share", kind: "workspace.create", params: { name, projectRoot: null } });
+    await actionViaAgui({ aguiUrl: daemon.url }, { threadId: "terminal-share", kind: "workspace.create", params: { name, projectRoot: null } });
     const folder = shareFolder("report", root);
-    const shared = await actionViaBridge<ShareResult>(
-        { bridgeUrl: daemon.url },
+    const shared = await actionViaAgui<ShareResult>(
+        { aguiUrl: daemon.url },
         { threadId: name, workspace: name, kind: "workspace.share", params: { folder } },
     );
 

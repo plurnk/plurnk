@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { objectOf, type LogEntryWire } from "../../src/render.ts";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "./harness.ts";
 
@@ -59,7 +59,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     assert.equal(calls, 2);
     assert.equal(await readFile(join(daemon.workspace, "accepted.txt"), "utf8"), "accepted");
     await assert.rejects(readFile(join(daemon.workspace, "rejected.txt")), { code: "ENOENT" });
-    const { entries } = await actionViaBridge<{ entries: LogEntryWire[] }>({ bridgeUrl: daemon.url }, {
+    const { entries } = await actionViaAgui<{ entries: LogEntryWire[] }>({ aguiUrl: daemon.url }, {
         kind: "log.read", workspace: "acceptance", threadId: "main", params: { workerId: record.workerId, limit: 100 },
     });
     const settled = entries.filter((row) => row.origin === "model" && ["fixture", "sh", "EDIT"].includes(row.op))
@@ -73,7 +73,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     const reviewed = await run("explicit-review", ["? Do not automatically accept these."], { ...environment, PLURNK_CLIENT_YOLO: "1" });
     const reviewRecord = JSON.parse(reviewed.stdout) as { finalStatus: number; workerId: number };
     assert.equal(reviewRecord.finalStatus, 200, reviewed.stdout);
-    const history = await actionViaBridge<{ entries: LogEntryWire[] }>({ bridgeUrl: daemon.url }, {
+    const history = await actionViaAgui<{ entries: LogEntryWire[] }>({ aguiUrl: daemon.url }, {
         kind: "log.read", workspace: "explicit-review", threadId: "main", params: { workerId: reviewRecord.workerId, limit: 100 },
     });
     const rejected = history.entries.filter((row) => row.origin === "model" && ["fixture", "sh", "EDIT"].includes(row.op));

@@ -2,7 +2,7 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
-import { BridgeTransport } from "../../src/transport.ts";
+import { AguiTransport } from "../../src/transport.ts";
 import { spawnTui } from "./harness.ts";
 
 const historyDaemon = async (t: TestContext, url: string, extraEnv: Record<string, string> = {}) => {
@@ -32,7 +32,7 @@ test("{§cli-conversation-history}: startup and attach restore the bound convers
     t.after(() => provider.close());
     const daemon = await historyDaemon(t, provider.url);
     for (const name of ["alpha", "beta"]) {
-        const transport = new BridgeTransport({ bridgeUrl: daemon.url }, name, { workspace: "history", projectRoot: null });
+        const transport = new AguiTransport({ aguiUrl: daemon.url }, name, { workspace: "history", projectRoot: null });
         assert.equal((await transport.run(`Remember the ${name} question.`, {}).done).finalStatus, 200);
         transport.shutdown();
     }
@@ -100,7 +100,7 @@ test("{§cli-conversation-history}: quitting an attached live observer leaves th
     const address = provider.address();
     assert.ok(address !== null && typeof address !== "string");
     const daemon = await historyDaemon(t, `http://127.0.0.1:${address.port}/v1`);
-    const owner = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "observed", projectRoot: null });
+    const owner = new AguiTransport({ aguiUrl: daemon.url }, "main", { workspace: "observed", projectRoot: null });
     t.after(() => owner.shutdown());
     const run = owner.run("Finish the independent work.", {});
     await waiting.promise;
@@ -130,7 +130,7 @@ test("{§cli-conversation-history}: reattachment presents a durable unanswered q
     });
     t.after(() => provider.close());
     const daemon = await historyDaemon(t, provider.url, { PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0" });
-    const owner = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "question-history", projectRoot: null });
+    const owner = new AguiTransport({ aguiUrl: daemon.url }, "main", { workspace: "question-history", projectRoot: null });
     t.after(() => owner.shutdown());
     const question = Promise.withResolvers<void>();
     owner.subscribe({

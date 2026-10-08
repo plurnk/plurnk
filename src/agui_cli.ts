@@ -1,10 +1,8 @@
-// CLI one-shot through the plurnk-agui bridge:
-// text mode. The bridge owns the WS + workspace; we POST the run and render the
+// CLI one-shot through the daemon's AG-UI endpoint: we POST the run and render the
 // AG-UI SSE projection. A FAMILY client renders operations from CUSTOM
 // plurnk.row for full fidelity and provider reasoning from AG-UI's standard
 // reasoning lifecycle. Generic TEXT_MESSAGE events remain third-party speech.
-// This reuses runCli's exact text-mode rendering:
-// stdout = delivered response messages, stderr = the per-row trace.
+// Text mode: stdout = delivered response messages, stderr = the per-row trace.
 //
 // JSON mode uses the terminal projection's complete loop identity and usage.
 
@@ -28,7 +26,7 @@ import {
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
-import { actionViaBridge, runViaBridge, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./agui.ts";
 import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
@@ -38,9 +36,8 @@ import { withColorOutput } from "./color.ts";
 import type Lifetime from "./lifetime.ts";
 import { signalExitCode } from "./lifetime.ts";
 
-// The plurnk.terminated custom payload (plurnk-agui 0.2.1): the loop/terminated
-// notification + the daemon workspaceId, so a bridge-run json record matches the
-// WS-run schema exactly.
+// The plurnk.terminated custom payload: the loop/terminated notification plus the
+// daemon workspaceId.
 interface TerminatedValue {
     workspaceId: number | null;
     workerId: number;
@@ -104,12 +101,12 @@ const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<Resol
     return { logEntryId: p.logEntryId, ...resolution };
 };
 
-// Drive a bridge run's AG-UI event stream. Text mode renders to the sinks
+// Drive one AG-UI run's event stream. Text mode renders to the sinks
 // (stdout = answer, stderr = trace); json mode stays silent and accumulates the
 // full record (entries/notices/response/terminated/modelWorkerId) for the caller
 // to emit as ONE document. plurnk.terminated is the authoritative outcome (its
 // result.status/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
-// injected so it's testable without a live bridge.
+// injected so it's testable without a live daemon.
 export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
     let finalStatus = 200;
     let hitMaxTurns = false;
@@ -265,8 +262,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
         finalStatus = problem.status;
     }
     // A stream that ended with NO terminal truth (no terminated, no RUN_ERROR, no
-    // pending resume) is a DEAD stream — 502, never the initialized 200 (svc#478:
-    // the fabricated-success default made a killed run exit 0 with an empty record).
+    // pending resume) is a DEAD stream — 502, never the initialized 200.
     if (terminated === null && pendingResume === null && problem === null && !sawActionResult) {
         problem = sawRunError ? clientTransportProblemMissing() : clientTransportTerminalMissing();
         finalStatus = problem.status;
@@ -277,12 +273,12 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     return snapshot();
 });
 
-// Wire the live bridge + terminal for one CLI prompt. text: stdout=answer,
+// Wire the live AG-UI endpoint + terminal for one CLI prompt. text: stdout=answer,
 // stderr=trace. json: silent, then ONE buildJsonRecord document on stdout —
 // identical schema in both CLI modes (plurnk.terminated carries workspaceId/loopId/
 // turnIds/cost; modelWorkerId derived from the rows).
-export const runCliViaBridge = async (
-    target: BridgeTarget,
+export const runCliViaAgui = async (
+    target: AguiTarget,
     prompt: string,
     opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
@@ -343,14 +339,14 @@ export const runCliViaBridge = async (
         reviewRequested: opts.reviewRequested,
         review: reviewProposal,
     };
-    // --timeout <s> (svc#478 — the flag was parsed-and-dead since the agui migration):
-    // at the deadline, fire loop.cancel at the daemon (the loop resolves 499) and, if the
-    // stream still hasn't ended after a grace, abort the SSE locally (hangup is the abort).
-    // Exit 3 with timedOut:true in the record, per SPEC §1.
+    // --timeout <s>: at the deadline, fire loop.cancel at the daemon (the loop
+    // resolves 499) and, if the stream still hasn't ended after a grace, abort the
+    // SSE locally (hangup is the abort). Exit 3 with timedOut:true in the record,
+    // per SPEC §1.
     let timedOut = false;
     const ac = new AbortController();
     const cancellationGraceMs = 15_000;
-    const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaBridge(target, {
+    const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAgui(target, {
         threadId: opts.threadId,
         ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}),
         kind: "loop.cancel", params: { reason },
@@ -429,11 +425,11 @@ export const runCliViaBridge = async (
         : undefined;
     statusTick?.unref();
     try {
-        result = mergeRunSegments(result, await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
+        result = mergeRunSegments(result, await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
         activeSegment = null;
         while (result.pendingResume !== null) {
             next = { resume: [result.pendingResume] };
-            const seg = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
+            const seg = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
             result = mergeRunSegments(result, seg);
             activeSegment = null;
         }
@@ -469,9 +465,9 @@ export const runCliViaBridge = async (
 };
 
 // Script mode over AG-UI+ (one op.parse action; gated ops pause/resume like any run).
-// Exit honesty matches the WS runScript: worst op status ≥400 → 4, else 0.
-export const runScriptViaBridge = async (
-    target: BridgeTarget,
+// Exit honesty: worst op status ≥400 → 4, else 0.
+export const runScriptViaAgui = async (
+    target: AguiTarget,
     text: string,
     opts: { threadId: string; workspace: string; yolo: boolean; auto: boolean; json: boolean; projectRoot?: string | null; settings?: object },
 ): Promise<number> => {
@@ -499,10 +495,10 @@ export const runScriptViaBridge = async (
         ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     };
     let next: { resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { forwardedProps };
-    let result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, ...next }), io);
+    let result = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, ...next }), io);
     while (result.pendingResume !== null) {
         next = { resume: [result.pendingResume] };
-        result = await consumeCliRun(runViaBridge(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, ...next }), io);
+        result = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, ...next }), io);
     }
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.

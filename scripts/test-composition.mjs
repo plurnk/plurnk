@@ -170,7 +170,6 @@ try {
     };
     const serviceEnv = {
             ...isolatedEnv,
-            PLURNK_SCHEMES_HTTP_PLAYWRIGHT_METHOD: "disabled",
             PLURNK_MODEL: "composition",
             PLURNK_MODEL_composition: "openai/composition",
             PLURNK_BASEURL_composition: `http://127.0.0.1:${modelPort}/v1`,

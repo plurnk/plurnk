@@ -158,15 +158,6 @@ export const clientProblem = (
     },
 );
 
-export const clientDaemonStale = (missing: string[]): Notice => ({
-    source: "client:connection",
-    kind: "daemon_stale",
-    level: "warn",
-    message: `daemon is older than this client (missing: ${missing.join(", ")})`,
-    missing,
-    hints: ["Restart plurnk-service from a current checkout."],
-});
-
 // {§cli-conversation-lost} — the daemon answered a bound name with no history at all: the worker
 // behind it is new (a fresh database, a deleted worker), and the transcript above is this terminal's.
 export const clientConversationLost = (workspace: string, worker: string): Notice => ({
@@ -204,9 +195,6 @@ export const isUnreachable = (cause: unknown): boolean => {
 
 export const clientRuntimeError = (cause: unknown): ProblemDetails =>
     clientProblem("runtime", "error", 500, cause instanceof Error ? cause.message : String(cause));
-
-export const clientConnectionClosed = (cause: unknown): ProblemDetails =>
-    clientProblem("connection", "closed", 502, cause instanceof Error ? cause.message : String(cause));
 
 export const clientTransportCancelled = (): ProblemDetails =>
     clientProblem("transport", "cancelled", 499, "The client cancelled the active run.", {
@@ -357,12 +345,3 @@ export const clientModelUnselected = (): Notice => ({
     message: `No model selected. ${NO_MODEL_HINT}`,
     hints: ["https://github.com/plurnk/plurnk#models"],
 });
-
-export const clientRpcError = (method: string, cause: unknown): ProblemDetails =>
-    clientProblem(
-        "rpc",
-        "error",
-        502,
-        cause instanceof Error ? cause.message : String(cause),
-        { method },
-    );

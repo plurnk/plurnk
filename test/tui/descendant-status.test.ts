@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { setTimeout } from "node:timers/promises";
-import { BridgeTransport } from "../../src/transport.ts";
+import { AguiTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -96,7 +96,7 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
     await tui.waitFor(/⌛︎[^\r\n]*↓3k ↑310[^\r\n]*\$0\.3100(?![^\r\n]*🐜)/);
     // Usage settles before the child's operations and lifecycle. Observe actual
     // completion before asking the parent to exercise the unreviewed-result guard.
-    const observer = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "tree-status" });
+    const observer = new AguiTransport({ aguiUrl: daemon.url }, "main", { workspace: "tree-status" });
     const deadline = Date.now() + 10_000;
     for (;;) {
         const { workers } = await observer.rpc<{ workers: Array<{ name: string; lifecycle: string }> }>("workspace.workers");

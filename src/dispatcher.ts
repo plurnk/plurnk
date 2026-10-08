@@ -7,12 +7,12 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { buildJsonError } from "./cli.ts";
-import { loadFloor, retiredKey } from "./envdefaults.ts";
+import { loadFloor } from "./envdefaults.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 import { isColorMode } from "./color.ts";
-import { runCliViaBridge, runScriptViaBridge } from "./agui_cli.ts";
-import { BridgeTransport } from "./transport.ts";
-import { actionViaBridge } from "./agui.ts";
+import { runCliViaAgui, runScriptViaAgui } from "./agui_cli.ts";
+import { AguiTransport } from "./transport.ts";
+import { actionViaAgui } from "./agui.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
@@ -110,7 +110,7 @@ enters the scrollback-native interactive terminal. Read-only subcommands (models
 log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
-     < repeated --env-file flags (last wins) < shell; a working directory's .env is never read):
+     < repeated --env-file flags (last wins) < shell):
                         Works with no config at all.
   PLURNK_CLIENT_*       every option below is one knob's spelling for one invocation:
                         --max-turns is PLURNK_CLIENT_MAX_TURNS, --no-git is
@@ -306,22 +306,11 @@ export const loadEnvCascade = (
     }
     ifExists(userConfig);
     loadFloor();
-    const retired = retiredKey();
-    if (retired !== null) {
-        dieWith(64, clientFlagInvalid(retired.name, process.env[retired.name] ?? "", `${retired.name} was retired; use ${retired.successor}`));
-    }
 };
 
-interface WorkspaceResult { id: number; name: string }
-
-// Resolve the workspace by name (via workspace.list filter) or create a fresh one.
-// Names are the user-facing handle — ids are internals, not exposed via flags.
-// Workspace-open settings. Open-context: filesItems replaces PLURNK_SERVICE_FILES_ITEMS
-// (it only ever capped the tracked-file list; memory always foists full).
-// The mdDocs channel is retired — operator reference material is skills under
-// the workspace .agents/skills tree ({§skills-functionality} in the service SPEC).
-// Ceilings (svc#232, most-restrictive-wins): maxCommands min()s
-// PLURNK_SERVICE_MAX_COMMANDS; git:false ANDs PLURNK_SERVICE_GIT_ALLOWED (deny-only).
+// Workspace-open settings: filesItems is the turn-0 tracked-file preview.
+// Ceilings (most-restrictive-wins): maxCommands min()s PLURNK_SERVICE_MAX_COMMANDS;
+// git:false ANDs PLURNK_SERVICE_GIT_ALLOWED (deny-only).
 export interface Settings {
     filesItems?: number;
     maxCommands?: number;
@@ -368,15 +357,14 @@ export const buildSettings = async (
     return settings;
 };
 
-// svc#235: discover.versions { service:{installed, latest?}, client:{latest?} }.
+// discover.versions { service:{installed, latest?}, client:{latest?} }.
 // The daemon polls npm; the client compares its OWN installed version against
 // the advertised latest and renders both lines + an "(update available)"
 // marker. The client never does registry IO — it just reads what discover says.
 export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
-// #249 — workspace-stable frontend id, passed on workspace.create and forwarded by
-// the daemon to the plurnk provider as the Plurnk-Client header (dropped by
-// every other provider).
+// #249 — workspace-stable frontend id, passed on workspace creation and stored with
+// the workspace.
 // #71 — one id per FRONTEND, name/version form, workspace-stable. CLI and TUI are
 // distinct frontends of this package;
 // splitting them lets the service attribute usage per surface.
@@ -621,14 +609,10 @@ export const CLIENT_OPTIONS = {
     "project-root": { type: "string" },
     yolo: { type: "boolean" },
     auto: { type: "boolean" },
-    proposals: { type: "string" },
-    // Retired; parsed only to be refused with its successors named.
-    policy: { type: "string" },
-    reasoning: { type: "string" },
     capabilities: { type: "string" },
     "max-turns": { type: "string" },
     timeout: { type: "string" },
-    // workspace-open settings (svc#231) + tighten-only ceilings (svc#232)
+    // workspace-open settings + tighten-only ceilings
     "files-items": { type: "string" },
     "preview-lines": { type: "string" },
     "history-entries": { type: "string" },
@@ -798,12 +782,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
-        for (const flag of ["policy", "proposals"] as const) {
-            if (values[flag] !== undefined) throw new ProblemError(clientFlagInvalid(`--${flag}`, String(values[flag]), "Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS."));
-        }
-        if (values.reasoning !== undefined) {
-            throw new ProblemError(clientFlagInvalid("--reasoning", values.reasoning, "--reasoning was renamed to --effort"));
-        }
         maxTurns = parseIntFlag(values["max-turns"] ?? stated("PLURNK_CLIENT_MAX_TURNS"), "--max-turns");
         timeoutSec = parseIntFlag(values.timeout ?? stated("PLURNK_CLIENT_TIMEOUT"), "--timeout");
     } catch (cause) {
@@ -823,7 +801,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/agui`;
     let backend: Backend;
     try {
-        backend = await lifetime.own(Backend.open({ bridgeUrl: configuredUrl, token: process.env.PLURNK_AGUI_TOKEN }));
+        backend = await lifetime.own(Backend.open({ aguiUrl: configuredUrl, token: process.env.PLURNK_AGUI_TOKEN }));
     } catch (cause) {
         if (lifetime.interrupted) return;
         const flag = cause instanceof KnobError ? cause.knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-") : "";
@@ -834,7 +812,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         if (json) dieJson(code, problem);
         return dieWith(code, problem);
     }
-    const { bridgeUrl, token } = backend.target;
+    const { aguiUrl, token } = backend.target;
     const projectRoots = new ProjectRoot(backend.target, projectRootRaw);
     const selectProjectRoot = (name: string | undefined, surface?: TuiSurface): Promise<string | null | undefined> =>
         projectRoots.resolve(name, !json && process.stdin.isTTY === true && process.stdout.isTTY === true
@@ -880,7 +858,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         await workspaceOptions();
         return workspaceName;
     };
-    if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
+    if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the default conversation.
             const w = await world();
@@ -891,8 +869,8 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             // a per-loop model selector (the worker owns the model).
             let activeModel: ModelRoute | null;
             if (values.model !== undefined && modelSelector !== undefined) {
-                activeModel = Validator.assertModelRoute(await actionViaBridge(
-                    { bridgeUrl, token },
+                activeModel = Validator.assertModelRoute(await actionViaAgui(
+                    { aguiUrl, token },
                     {
                         threadId: workerName ?? w,
                         workspace: w,
@@ -902,8 +880,8 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     },
                 ));
             } else {
-                const projection = await actionViaBridge<{ model: unknown }>(
-                    { bridgeUrl, token },
+                const projection = await actionViaAgui<{ model: unknown }>(
+                    { aguiUrl, token },
                     {
                         threadId: workerName ?? w,
                         workspace: w,
@@ -914,7 +892,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
             }
             if (effort !== undefined && values.model === undefined) {
-                await actionViaBridge({ bridgeUrl, token }, {
+                await actionViaAgui({ aguiUrl, token }, {
                     threadId: workerName ?? w,
                     workspace: w,
                     workspaceOptions: controlWorkspaceOptions,
@@ -926,7 +904,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const openPaths = extractOpenPaths(projected.prompt, projectRoot);
             // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
             const reviewRequested = /^\s*\?/u.test(prompt);
-            const code = await runCliViaBridge({ bridgeUrl, token }, projected.prompt, {
+            const code = await runCliViaAgui({ aguiUrl, token }, projected.prompt, {
                 lifetime,
                 threadId: workerName ?? w,
                 workspace: w,
@@ -943,7 +921,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 settings,
             });
             if (shareTarget !== undefined) {
-                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token }, {
+                const shared = await actionViaAgui<ShareResult>({ aguiUrl, token }, {
                     threadId: workerName ?? w,
                     workspace: w,
                     kind: "workspace.share",
@@ -958,7 +936,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         } catch (cause) {
             // Two distinct failures, two distinct messages: NOTHING LISTENING gets the
             // onboarding block (no daemon is a first-run moment, not a stack trace);
-            // a bridge that ANSWERED with an error surfaces its real cause — claiming
+            // an endpoint that ANSWERED with an error surfaces its real cause — claiming
             // "no daemon running" over a 500 would lie. json mode still emits ONE
             // valid document on stdout either way.
             if (cause instanceof ProblemError) {
@@ -968,24 +946,24 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const detail = cause instanceof Error ? cause.message : String(cause);
             if (json) {
                 const problem = isUnreachable(cause)
-                    ? clientConnectionRefused(bridgeUrl, cause)
-                    : clientProblem("bridge", "error", 502, detail, { bridge: bridgeUrl });
+                    ? clientConnectionRefused(aguiUrl, cause)
+                    : clientProblem("agui", "error", 502, detail, { url: aguiUrl });
                 dieJson(1, problem);
             }
-            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
-            dieWith(1, clientRuntimeError(new Error(`plurnk-agui bridge (${bridgeUrl}) — ${detail}`)));
+            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(aguiUrl, cause));
+            dieWith(1, clientRuntimeError(new Error(`AG-UI endpoint (${aguiUrl}) — ${detail}`)));
         }
     }
 
     // The transport owns the workspace binding; the TUI receives its name, not a fabricated database ID.
-    if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
-        let transport: BridgeTransport | undefined;
+    if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
+        let transport: AguiTransport | undefined;
         try {
             const w = await world();
             const threadId = workerName ?? w;
             const { settings } = await workspaceOptions();
             // Creation options are idempotent on an existing workspace.
-            transport = new BridgeTransport({ bridgeUrl, token }, threadId, {
+            transport = new AguiTransport({ aguiUrl, token }, threadId, {
                 workspace: w,
                 projectRoot,
                 settings,
@@ -1005,10 +983,9 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 projectRoot,
                 selectProjectRoot,
                 workerName,
-                client: CLIENT_ID_TUI,
             });
             if (shareTarget !== undefined) {
-                const shared = await actionViaBridge<ShareResult>({ bridgeUrl, token }, {
+                const shared = await actionViaAgui<ShareResult>({ aguiUrl, token }, {
                     threadId,
                     workspace: w,
                     kind: "workspace.share",
@@ -1021,17 +998,16 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         } catch (cause) {
             transport?.shutdown();
             if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
+            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(aguiUrl, cause));
             dieWith(1, clientRuntimeError(cause));
         }
     }
 
-    // AG-UI+ is the ONLY wire (the WS transport is deleted). Subcommands + script
-    // speak the action surface through a structural Caller.
-    const target = { bridgeUrl, token };
+    // Subcommands + script speak the action surface through a structural Caller.
+    const target = { aguiUrl, token };
     const callerThread = workerName ?? workspaceName;
     const caller = {
-        call: (method: string, params?: object) => actionViaBridge<unknown>(target, {
+        call: (method: string, params?: object) => actionViaAgui<unknown>(target, {
             threadId: callerThread,
             workspace: workspaceName,
             kind: method,
@@ -1052,7 +1028,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
             const workspace = await world();
-            const exitCode = await runScriptViaBridge(target, text, {
+            const exitCode = await runScriptViaAgui(target, text, {
                 threadId: workerName ?? workspace,
                 workspace,
                 yolo,
@@ -1072,7 +1048,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             return;
         }
 
-        // Reaching here is a dispatcher bug: prompts + the TUI ride the bridge
+        // Reaching here is a dispatcher bug: prompts + the TUI ride the AG-UI
         // branches above; script + subcommands returned above. Fail hard.
         throw new Error("dispatcher fell through every AG-UI+ path — unreachable");
     } catch (cause) {
@@ -1086,11 +1062,9 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         if (cause instanceof ProblemError) {
             dieWith(cause.exitCode, cause.problem);
         }
-        // A daemon-rejected RPC arrives as a typed RpcError carrying the failed
-        // method and the daemon's code/message — surface it as client:rpc:error.
         // Nothing listening at all (subcommands, the TUI boot) gets the onboarding
         // block; any other genuine throw is the generic runtime fallback.
-        if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(bridgeUrl, cause));
+        if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(aguiUrl, cause));
         dieWith(1, clientRuntimeError(cause));
     }
 };

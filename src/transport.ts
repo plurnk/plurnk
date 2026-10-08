@@ -21,7 +21,7 @@ import type { ApplicationPort, OperationResult } from "@plurnk/plurnk-contracts"
 import { clientCapabilities } from "./client-capabilities.ts";
 import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
-import { runViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
+import { runViaAgui, actionOutcome, operationResult, problemDetails, type AguiEvent, type AguiTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
 
@@ -38,7 +38,7 @@ export interface TerminatedInfo {
 }
 
 
-// The run's status gauge — the AG-UI state the bridge snapshots on RUN_STARTED and
+// The run's status gauge — the AG-UI state the daemon snapshots on RUN_STARTED and
 // patches per packet, termination, and derivation (plurnk-agui SPEC, `loop/packet`).
 export type StatusGauge = StatusGaugeEnvelope;
 
@@ -61,7 +61,6 @@ export interface RunHandlers {
     onOutside: (outside: OutsideText) => void;   // {§cli-outside-text} — the turn's prose outside its fences
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
-    onQuiesced?: (payload: unknown) => void;
     onStatus?: (gauge: StatusGauge) => void;
     onTerminated: (t: TerminatedInfo) => void;
 }
@@ -86,9 +85,9 @@ interface PendingInterrupt<T> {
     decided: boolean;
 }
 
-// loop.run knobs. Model and child-model selection are durable worker policy,
-// changed through worker.model.set / worker.child.set rather than reasserted on
-// individual runs.
+// The knobs one prompt's loop carries. Model and child-model selection are durable
+// worker policy, changed through worker.model.set / worker.child.set rather than
+// reasserted on individual runs.
 export interface RunOpts { maxTurns?: number; openPaths?: string[] }
 
 export interface Transport {
@@ -99,12 +98,10 @@ export interface Transport {
     inject(prompt: string): Promise<LoopAdmission>;
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void>;
-    onClose(handler: () => void): void;   // WS: the daemon socket dropped. Bridge: no-op (each run is its own SSE).
-    shutdown(): void;   // suppress the connection-lost reject on an intentional quit
-    // Switch to (or create) a named workspace. WS rebinds the connection via
-    // workspace.create; the bridge re-maps its threadId (the bridge lazy-creates the
-    // workspace on the next run). Returns the workspace handle for the header.
-    useSession(name: string | undefined, params: { projectRoot?: string | null; client?: string }): Promise<{ name: string }>;
+    shutdown(): void;   // abort every in-flight request on an intentional quit
+    // Switch to (or create) a named workspace by re-mapping the threadId; the daemon
+    // creates the workspace on the next run. Returns the workspace handle for the header.
+    useWorkspace(name: string | undefined, params: { projectRoot?: string | null }): Promise<{ name: string }>;
     // Rebind this session's conversation to a worker by name, keeping the world:
     // the daemon binds an existing conversation or mints a fresh one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
@@ -117,14 +114,14 @@ export interface Transport {
 // Model and sync Runs share event projection and interrupt handling. An idle sync
 // can finish without a loop terminal; it cannot manufacture accounting evidence.
 // Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
-// (§agui-forwarded-props) — the bridge applies them at workspace.create.
-export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object; descendants?: boolean; auto?: boolean }
+// (§agui-forwarded-props) — the daemon applies them at workspace creation.
+export interface AguiTransportOpts { workspace?: string; projectRoot?: string | null; settings?: object; descendants?: boolean; auto?: boolean }
 
-export class BridgeTransport implements Transport {
-    #target: BridgeTarget;
+export class AguiTransport implements Transport {
+    #target: AguiTarget;
     #threadId: string;
     #world: string | undefined;   // the workspace name when it differs from the thread (--worker)
-    #workspace: BridgeSessionOpts;
+    #workspace: AguiTransportOpts;
     #h: RunHandlers | null = null;
     #modelProjection: StreamProjection | null = null;
     #pendingProposals = new Map<number, PendingInterrupt<ProposalResolution>>();
@@ -134,7 +131,7 @@ export class BridgeTransport implements Transport {
     #lastConversationRowId = 0;
     #lastLoopId: number | null = null;
 
-    constructor(target: BridgeTarget, threadId: string, workspace: BridgeSessionOpts = {}) {
+    constructor(target: AguiTarget, threadId: string, workspace: AguiTransportOpts = {}) {
         this.#target = target;
         this.#threadId = threadId;
         this.#world = workspace.workspace;
@@ -146,9 +143,8 @@ export class BridgeTransport implements Transport {
     // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
     // emitted (a raw-DSL op's rows, notices, streams). Feed those through the same
-    // persistent handlers a run uses (the WS socket delivered every workspace row;
-    // parity demands the action stream does too — e.g. the Alt-p cycler harvests
-    // targets from onEntry).
+    // persistent handlers a run uses (e.g. the Alt-p cycler harvests targets from
+    // onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
         const ac = new AbortController();
         this.#controllers.add(ac);
@@ -176,7 +172,7 @@ export class BridgeTransport implements Transport {
             let interrupted = false;
             let toolId = "";
             let toolArgs = "";
-            for await (const e of runViaBridge(this.#target, {
+            for await (const e of runViaAgui(this.#target, {
                 ...binding,
                 ...next,
                 capabilities: clientCapabilities(this.#workspace.auto !== true),
@@ -301,7 +297,7 @@ export class BridgeTransport implements Transport {
                 let toolArgs = "";
                 let interactionArguments: Record<string, unknown> | null = null;
                 try {
-                    const events = runViaBridge(this.#target, {
+                    const events = runViaAgui(this.#target, {
                         ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
@@ -556,8 +552,7 @@ export class BridgeTransport implements Transport {
         if (pending === undefined || pending.decided) throw new Error(`Interaction ${interactionId} has no pending AG-UI interrupt.`);
         pending.settle(payload);
     }
-    onClose(_handler: () => void): void { /* each run is its own SSE — no persistent socket to watch */ }
-    async useSession(name: string | undefined, params: Parameters<Transport["useSession"]>[1]): Promise<{ name: string }> {
+    async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<{ name: string }> {
         // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
         // switch is a new world + its default conversation; a split thread comes from
         // --worker at invocation, not from this verb). Lazy-created on the next run.
@@ -635,7 +630,6 @@ export class BridgeTransport implements Transport {
         else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);
         else if (name === "plurnk.outside") this.#h?.onOutside(value as OutsideText);
         else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));
-        else if (name === "plurnk.quiesced") this.#h?.onQuiesced?.(value);
         else if (name === "plurnk.terminated") {
             const raw = value as Omit<TerminatedInfo, "finalStatus"> & { finalStatus?: unknown };
             const result = operationResult(raw.result);

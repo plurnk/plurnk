@@ -11,7 +11,7 @@ import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { BIN, spawnTui } from "./harness.ts";
 
@@ -156,7 +156,7 @@ describe("TUI workspace MCP dogfood", () => {
     test("[§cli-workspace-mcp-controls] the positional form retains server arguments after --", { timeout: 60_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with MCP fixtures is not reachable"); return; }
         const workspace = "mcp-positional";
-        await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        await actionViaAgui({ aguiUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
         const home = await mkdtemp(join(scratch, "home-"));
         const env = {
             ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),

@@ -1,8 +1,7 @@
 // TUI mode — interactive Plurnk client on pi-tui's main-screen renderer.
-// Per TUI.md §3.
 //
 // Line language:
-//   /verb [args]   command verbs (see VERBS); never call loop.run
+//   /verb [args]   command verbs (see VERBS); never start a loop
 //   named executable fences through op.parse
 //   LOOK fences via op.look — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
@@ -34,7 +33,7 @@ import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
 import { keyToResolution, editInEditor } from "./proposal.ts";
 import Review from "./Review.ts";
-import { BridgeTransport, type ObservationHandle, type Transport } from "./transport.ts";
+import { AguiTransport, type ObservationHandle, type Transport } from "./transport.ts";
 import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientConversationLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { renderInline } from "./stream.ts";
@@ -79,17 +78,12 @@ export const renderTuiFailure = (cause: unknown): string => {
     return `  ${paint(`error: ${ModelText.plain(cause instanceof Error ? cause.message : String(cause))}`, "failure")}`;
 };
 
-// The loop.run ack/terminated bridge (fire-and-forget: ACK {finalStatus:100} then
-// the outcome on loop/terminated; a synchronous 501/error surfaces immediately)
-// now lives in the Transport (WsTransport's loopId-keyed done, TerminatedInfo).
-
 interface WorkspaceResult { name: string }
 
 // One verb vocabulary across the TUI and (where they exist) argv subcommands.
 // Singular = CREATE, plural = LIST: /workspace makes a new workspace, /workspaces
-// lists them; /worker forks a new worker, /workers lists them. The old /new was
-// ambiguous (workspace or worker?) and is gone. /rename retargets the current
-// workspace's mutable handle (a worker's name is immutable — no /rename for workers).
+// lists them; /worker forks a new worker, /workers lists them. /rename retargets the
+// current workspace's mutable handle (a worker's name is immutable — no /rename for workers).
 export const VERBS: readonly CommandName[] = COMMANDS.map(({ name }) => name);
 export const TUI_HELP = renderCommandHelp();
 
@@ -309,12 +303,12 @@ export const buildHeader = (opts: {
 };
 
 // Verb dispatch, extracted from runTui so the handlers are unit-testable
-// (stub rpc, collect writes, fake workspace/import). Verbs never call loop.run —
-// they're run-tab furniture. Returns "quit" to close the REPL.
+// (stub rpc, collect writes, fake workspace/import). Verbs never start a loop.
+// Returns "quit" to close the REPL.
 export interface VerbContext {
     signal?: AbortSignal;
     rpc: VerbCaller;
-    opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null; client?: string };
+    opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null };
     // The worker's durable model truth ({§worker-model-selection}): the server's
     // resolved specs, updated by the set verbs. The display label AND the routing
     // both come from the server; the client never reasserts a model per loop.
@@ -326,8 +320,8 @@ export interface VerbContext {
     setEffort: (effort: WorkerEffort) => void;
     getWorkspace: () => WorkspaceResult;
     setWorkspace: (s: WorkspaceResult) => void;
-    // Switch to (or create) a named workspace — transport-agnostic (WS rebind /
-    // bridge threadId re-map). Returns the new workspace handle.
+    // Switch to (or create) a named workspace by re-mapping the transport's thread.
+    // Returns the new workspace handle.
     switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult | undefined>;
     // The bound conversation worker's name (null until a loop or /attach names it).
     getWorker: () => string | null;
@@ -494,11 +488,9 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
             return;
         case "workspace": {
-            // New workspace — a fresh world. Transport-agnostic: WS rebinds the
-            // client context in place; the transport re-maps its
-            // threadId. Name is optional (auto-named/generated) and is a mutable
-            // handle (/rename retargets it). client id (#249) + AGENTS override
-            // (#268) ride the switch.
+            // New workspace — a fresh world: the transport re-maps its threadId. The
+            // name is optional (generated when omitted) and is a mutable handle
+            // (/rename retargets it).
             const selected = await ctx.switchWorkspace(rest.length > 0 ? rest : undefined);
             if (selected === undefined) return;
             ctx.setWorkspace(selected);
@@ -508,7 +500,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "rename": {
             // workspace.rename — a workspace's name is a mutable handle on the world
-            // (a run's is not). Mutates the attached workspace in place. svc#248.
+            // (a worker's is not). Mutates the attached workspace in place.
             if (rest.length === 0) { write("  usage: /rename <name>\n"); return; }
             const renamed = await rpc.call("workspace.rename", { name: rest }) as WorkspaceResult;
             ctx.setWorkspace(renamed);
@@ -618,7 +610,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     projectRoot?: string | null; versionNotice?: string;
     selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
     workerName?: string;        // resolved invocation selection, also used after workspace switches
-    client?: string;            // #249 — frontend id, carried onto /workspace-created workspaces
 }): Promise<void> => {
     let current = workspace;
     // Loop state, hoisted so the line handler and SIGINT can share it.
@@ -947,10 +938,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         record: printAbove,
         error: (cause) => { printAlert(renderTuiFailure(cause)); },
     });
-    // The persistent run-plane handlers — one set, wired once, driven by whichever
-    // transport is live. Same bodies as the old inline rpc.onNotification handlers;
-    // they render the shared workspace's activity whether this REPL started the loop
-    // or a worker/second client did (multi-client observability).
+    // The persistent run-plane handlers — one set, wired once. They render the
+    // shared workspace's activity whether this REPL started the loop or a
+    // worker/second client did (multi-client observability).
     const handleNotice = (notice: Notice): void => {
         if (notice.source === "engine:turn") {
             if (inFlight && notice.kind === "turn_awaiting_model") {
@@ -994,7 +984,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
         onEntry: (entry) => {
             // The typed line at the prompt is the user's record — rendering the arrival
-            // the bridge sourced to this thread would duplicate it (see isOwnArrival);
+            // the daemon sourced to this thread would duplicate it (see isOwnArrival);
             // another actor's arrival renders with its sender (#79).
             if (isOwnArrival(entry, transport.threadId())) return;
             if (isEntryMaterialization(entry) || isEmission(entry)) return;
@@ -1096,9 +1086,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     statusTick.unref();
 
     // Verbs + read-only subcommands call rpc.call(...) only; route that through the
-    // live transport (WS, or the bridge's management plane over /plurnk/rpc). A
-    // .call-only adapter — no verb/subcommand here subscribes, so the other Rpc
-    // methods are never reached.
+    // transport's action runs.
     const verbRpc = {
         call: async (method: string, params?: object): Promise<unknown> => {
             const result = method === "loop.cancel"
@@ -1143,7 +1131,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         switchWorkspace: async (name) => {
             const projectRoot = opts.selectProjectRoot === undefined ? opts.projectRoot : await opts.selectProjectRoot(name, surface);
             if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;
-            const workspace = await transport.useSession(name, { projectRoot, client: opts.client });
+            const workspace = await transport.useWorkspace(name, { projectRoot });
             const worker = opts.workerName ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
             transport.useWorker(worker, workspace.name);
             opts.projectRoot = projectRoot;

@@ -138,19 +138,10 @@ export const accrueTurnAccounting = (
     knownOutputTokens: addNullable(accrued.knownOutputTokens, turn.knownOutputTokens),
 };
 
-// {plurnk#41} — effort is identity-grade: contracts ≥1.14 routes carry the worker's
-// durable effort; when absent (older daemon, or a model with no reasoning
-// dimension) the identity renders bare. Structural input so both contract eras format.
 // {§cli-identity-effort} — effort is identity-grade: `alias[low]` is a chosen level, `alias(low)`
 // a provider default the daemon seeded (brackets read as chosen, parentheses as given); bare when
 // the model has no effort dimension. The daemon states the source; the client never infers it.
-export const formatRouteIdentity = (route: {
-    alias?: string;
-    provider: string;
-    model: string;
-    effort?: string;
-    effortSource?: "default" | "explicit";
-}): string => {
+export const formatRouteIdentity = (route: ModelRoute): string => {
     const name = route.alias ?? `${route.provider}/${route.model}`;
     if (route.effort === undefined) return name;
     return route.effortSource === "default"
@@ -181,15 +172,15 @@ export const conversationLost = (previousLoopId: number | null, loopId: number |
     previousLoopId !== null && loopId === null;
 
 export interface RuntimeStatusGauge {
-    preparation?: unknown;
-    waitUntil?: unknown;
+    preparation: unknown;
+    waitUntil: unknown;
     lifecycle: string;
     model: ModelRoute | null;
     loopId: number | null;
     packetCount: number;
     activity: unknown;
-    children?: unknown;
-    descendants?: unknown;
+    children: unknown;
+    descendants: unknown;
 }
 
 // The service owns the tree and cumulative accounting. This is only its human
@@ -234,11 +225,11 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
     }
     const model = value.model === null ? null : Validator.assertModelRoute(value.model);
-    if (value.waitUntil != null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
+    if (value.waitUntil !== null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
         throw new TypeError("Invalid runtime wait deadline.");
     }
-    if (value.preparation !== undefined && (!Array.isArray(value.preparation)
-        || value.preparation.some((item) => !Validator.validateJsonSchemaInstance(preparationSchema, item).valid))) {
+    if (!Array.isArray(value.preparation)
+        || value.preparation.some((item) => !Validator.validateJsonSchemaInstance(preparationSchema, item).valid)) {
         throw new TypeError("Invalid runtime preparation.");
     }
     let activity: StatusActivity | null = null;
@@ -254,12 +245,8 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
             percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.floor(percent))) : null,
         };
     }
-    let children: number | null = null;
-    if (value.children !== undefined) {
-        if (!Number.isSafeInteger(value.children) || (value.children as number) < 0) {
-            throw new TypeError(`Invalid runtime children count '${String(value.children)}'.`);
-        }
-        children = value.children as number;
+    if (!Number.isSafeInteger(value.children) || (value.children as number) < 0) {
+        throw new TypeError(`Invalid runtime children count '${String(value.children)}'.`);
     }
     return {
         lifecycle: value.lifecycle as StatusLifecycle,
@@ -267,10 +254,10 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         loopId: value.loopId,
         packetCount: value.packetCount,
         activity,
-        children,
-        ...(value.waitUntil === undefined ? {} : { waitUntil: value.waitUntil as number | null }),
-        ...(value.preparation === undefined ? {} : { preparation: value.preparation as FunctionalityPreparationActivity[] }),
-        ...(value.descendants === undefined ? {} : { descendants: descendantAccounting(value.descendants) }),
+        children: value.children as number,
+        waitUntil: value.waitUntil as number | null,
+        preparation: value.preparation as FunctionalityPreparationActivity[],
+        descendants: descendantAccounting(value.descendants),
         ...(projectRoot === undefined ? {} : { projectRoot }),
     };
 };

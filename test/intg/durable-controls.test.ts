@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { actionViaBridge } from "../../src/agui.ts";
-import { BridgeTransport } from "../../src/transport.ts";
+import { actionViaAgui } from "../../src/agui.ts";
+import { AguiTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 import { startDemoAgent } from "../../../plurnk-service/plurnk-a2a/test/fixtures/DemoAgent.ts";
 
@@ -34,25 +34,25 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     await writeFile(join(daemon.home, ".agents", "skills", "durable-skill", "SKILL.md"), "---\nname: durable-skill\ndescription: Durable skill\n---\nUse it.\n");
 
     const original = `terminal-durable-${crypto.randomUUID()}`;
-    const created = await actionViaBridge<{ id: number; name: string; workerId: number }>(
-        { bridgeUrl: daemon.url },
+    const created = await actionViaAgui<{ id: number; name: string; workerId: number }>(
+        { aguiUrl: daemon.url },
         { threadId: "terminal-control", kind: "workspace.create", params: { name: original, projectRoot: null } },
     );
-    const connectionA = new BridgeTransport(
-        { bridgeUrl: daemon.url },
+    const connectionA = new AguiTransport(
+        { aguiUrl: daemon.url },
         "terminal-durable-worker",
         { workspace: original },
     );
-    const connectionB = new BridgeTransport(
-        { bridgeUrl: daemon.url },
+    const connectionB = new AguiTransport(
+        { aguiUrl: daemon.url },
         "terminal-durable-worker",
         { workspace: original },
     );
     const from = <T>(connection: "a" | "b", kind: string, params: object = {}): Promise<T> =>
         (connection === "a" ? connectionA : connectionB).rpc<T>(kind, params);
 
-    const listed = await actionViaBridge<{ workspaces: Array<{ id: number; name: string }> }>(
-        { bridgeUrl: daemon.url },
+    const listed = await actionViaAgui<{ workspaces: Array<{ id: number; name: string }> }>(
+        { aguiUrl: daemon.url },
         { threadId: "terminal-observer", kind: "workspace.list" },
     );
     assert.ok(listed.workspaces.some(({ id, name }) => id === created.id && name === original));
@@ -73,7 +73,7 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
         provider: "lmstudio",
         model: "control-family/selected",
         effort: "off",
-        // {§cli-identity-effort} — the daemon states the provenance beside the policy (service#528).
+        // {§cli-identity-effort} — the daemon states the provenance beside the policy.
         effortSource: "default",
     });
 
@@ -130,8 +130,8 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
 
     const renamed = `${original}-renamed`;
     await from("a", "workspace.rename", { name: renamed });
-    const afterRename = await actionViaBridge<{ workspaces: Array<{ id: number; name: string }> }>(
-        { bridgeUrl: daemon.url },
+    const afterRename = await actionViaAgui<{ workspaces: Array<{ id: number; name: string }> }>(
+        { aguiUrl: daemon.url },
         { threadId: "terminal-observer-after-rename", kind: "workspace.list" },
     );
     assert.ok(afterRename.workspaces.some(({ id, name }) => id === created.id && name === renamed));
@@ -145,8 +145,8 @@ test("[§cli-file-members] separate client connections observe the durable file 
         extraEnv: { PLURNK_MEMBERS_docs: "docs/**", PLURNK_MEMBERS_ENABLED: "1" },
     });
     t.after(daemon.cleanup);
-    const target = { bridgeUrl: daemon.url };
-    const discovery = await actionViaBridge<{ actions: Record<string, unknown> }>(target, { threadId: "terminal-members-discovery", kind: "discover" });
+    const target = { aguiUrl: daemon.url };
+    const discovery = await actionViaAgui<{ actions: Record<string, unknown> }>(target, { threadId: "terminal-members-discovery", kind: "discover" });
     if (!("workspace.members.list" in discovery.actions)) { t.skip("the daemon does not serve the members family"); return; }
 
     const project = await mkdtemp(join(tmpdir(), "plurnk-members-durable-"));
@@ -155,9 +155,9 @@ test("[§cli-file-members] separate client connections observe the durable file 
     await writeFile(join(project, "docs", "guide.md"), "# guide\n");
     await writeFile(join(project, "note.md"), "# note\n");
     const name = `terminal-members-${crypto.randomUUID()}`;
-    await actionViaBridge(target, { threadId: "terminal-members-control", kind: "workspace.create", params: { name, projectRoot: project } });
-    const connectionA = new BridgeTransport(target, "terminal-members-worker", { workspace: name });
-    const connectionB = new BridgeTransport(target, "terminal-members-worker", { workspace: name });
+    await actionViaAgui(target, { threadId: "terminal-members-control", kind: "workspace.create", params: { name, projectRoot: project } });
+    const connectionA = new AguiTransport(target, "terminal-members-worker", { workspace: name });
+    const connectionB = new AguiTransport(target, "terminal-members-worker", { workspace: name });
     type Definition = { alias: string; origin: string; state: string; detail?: { effect: string; pattern: string; matched: number; files: string[]; ignored: number } };
     const members = async (): Promise<Definition[]> =>
         (await connectionB.rpc<{ definitions: Definition[] }>("workspace.members.list", {})).definitions;

@@ -23,7 +23,6 @@ client.
   turn's reasoning at `reasoning://<worker>/L/T` for a READ, so a model with a fat reasoning
   habit costs a third of the screen, not the session.
 - Prompts, command verbs, and raw DSL use the same AG-UI+ action/run transport.
-  There is no client side channel or persistent socket.
 
 ## Rendering
 

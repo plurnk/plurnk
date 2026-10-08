@@ -1,6 +1,6 @@
 // Proves the PTY harness actually drives keystrokes and captures output —
 // the prerequisite for any TUI coverage claim (live e2e checklist item #1).
-// Daemon-gated, NOT model-gated: /help and /quit never call loop.run, so this
+// Daemon-gated, NOT model-gated: /help and /quit never start a loop, so this
 // runs reliably wherever the service binary is reachable.
 
 import { test, before, after, describe } from "node:test";

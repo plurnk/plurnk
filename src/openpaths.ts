@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-// {§cli-prompt-open-paths} — @file refs (#260) → loop.run.openPaths. The daemon
+// {§cli-prompt-open-paths} — @file refs (#260) → forwardedProps.plurnk.openPaths. The daemon
 // foists turn-0 READs of these paths; the client sends paths, never bytes. The
 // `@` must start a token so an email's `user@host` isn't mistaken for a ref.
 // Trailing sentence punctuation is trimmed ("see @a.ts." → "a.ts"); deduped.

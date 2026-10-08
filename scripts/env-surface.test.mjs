@@ -22,7 +22,6 @@ const FOREIGN = new Map([
     ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, retained in a private resume command"],
     ["PLURNK_SERVICE_STATE_ROOT", "@plurnk/plurnk-core — the selected service's storage root, passed through its public launcher"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
-    ["PLURNK_SERVICE_PROPOSALS", "@plurnk/plurnk-core — server proposal disposition, named by retired client-flag diagnostics"],
 ]);
 
 // `PLURNK_*` strings that are not knobs.
@@ -37,9 +36,6 @@ const ARGUMENTS = new Map([
     ["version", "prints provenance"],
     ["env-file", "chooses the environment itself, so it cannot be a knob of it"],
     ["env-file-if-exists", "chooses the environment itself, so it cannot be a knob of it"],
-    ["policy", "retired; parsed only to be refused with its successors named"],
-    ["proposals", "retired; local YOLO or server disposition replaces per-loop approval"],
-    ["reasoning", "retired; parsed only to be refused with its successor named"],
     ["loop", "an argument of `log read`"],
     ["turn", "an argument of `log read`"],
     ["since", "an argument of `log read`"],
@@ -66,17 +62,14 @@ const read = new Set();
 for (const { code } of sources) {
     for (const match of code.matchAll(/\bPLURNK_[A-Z0-9_]*[A-Z0-9]\b/gu)) read.add(match[0]);
 }
-// A retired key is named only by the code that refuses it.
-const retired = new Set([...readFileSync(join(ROOT, "src/envdefaults.ts"), "utf8").matchAll(/^\s+(PLURNK_[A-Z0-9_]+): "/gmu)].map((match) => match[1]));
 
 test("[§cli-env-defaults] the client's panel declares only its own prefix: one owner per key", () => {
     const strays = [...declared].filter((key) => !OWNED.test(key));
     assert.deepEqual(strays, [], `declared outside PLURNK_CLIENT_*: ${strays.join(", ")}`);
-    assert.deepEqual([...retired].filter((key) => declared.has(key)), [], "a retired key is declared nowhere");
 });
 
 test("[§cli-env-defaults] every key the client names is declared or has a stated owner, and every declaration is read", () => {
-    const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key) && !retired.has(key)).toSorted();
+    const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key)).toSorted();
     assert.deepEqual(undeclared, [], `named by src but declared on no panel the client knows: ${undeclared.join(", ")}`);
     const dead = [...declared].filter((key) => !read.has(key)).toSorted();
     assert.deepEqual(dead, [], `declared but never read: ${dead.join(", ")}`);

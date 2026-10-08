@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
-import { BridgeTransport } from "../../src/transport.ts";
+import { AguiTransport } from "../../src/transport.ts";
 
 test("[§cli-active-command-admission] stopping a model proposal preserves a concurrent client proposal", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
@@ -75,8 +75,8 @@ test("[§cli-active-command-admission] stopping a model proposal preserves a con
     assert.equal(await readFile(join(daemon.workspace, "client.txt"), "utf8"), "client-result");
     await assert.rejects(readFile(join(daemon.workspace, "model.txt")), { code: "ENOENT" });
     assert.equal(requests, 1, "only the human's operation is resumed after cancelling the model");
-    const parent = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "proposal-controls" });
-    const child = new BridgeTransport({ bridgeUrl: daemon.url }, "background", { workspace: "proposal-controls" });
+    const parent = new AguiTransport({ aguiUrl: daemon.url }, "main", { workspace: "proposal-controls" });
+    const child = new AguiTransport({ aguiUrl: daemon.url }, "background", { workspace: "proposal-controls" });
     t.after(() => { parent.shutdown(); child.shutdown(); });
     await parent.rpc("run.fork", { name: "background" });
     const childReview = tui.output().length;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { BridgeTransport } from "../../src/transport.ts";
+import { AguiTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -59,10 +59,10 @@ test("[§cli-worker-ownership] an idle TUI reviews later child work after inspec
     assert.equal(await readFile(join(daemon.workspace, "local.txt"), "utf8"), "local-result");
     assert.equal(requests, 0, "inspection and direct commands admit no model inference");
 
-    const parent = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "idle-owner" });
+    const parent = new AguiTransport({ aguiUrl: daemon.url }, "main", { workspace: "idle-owner" });
     t.after(() => parent.shutdown());
     await parent.rpc("run.fork", { name: "background" });
-    const child = new BridgeTransport({ bridgeUrl: daemon.url }, "background", { workspace: "idle-owner" });
+    const child = new AguiTransport({ aguiUrl: daemon.url }, "background", { workspace: "idle-owner" });
     t.after(() => child.shutdown());
     const since = tui.output().length;
     const running = child.run("Write the child witness.", { maxTurns: 3 });

@@ -87,9 +87,3 @@ test("[§cli-schedule] incomplete arguments print the exact usage and dispatch n
         assert.match(h.out.join(""), /usage: \/schedule/u, line);
     }
 });
-
-test("{§cli-schedule} a schedule cannot carry a client approval switch", async () => {
-    const h = harness();
-    await assert.rejects(handleSchedule("add --accept beat bot FREQ=HOURLY;COUNT=1 Beat.", h.rpc, h.write), /--accept is retired/);
-    assert.deepEqual(h.calls, []);
-});

@@ -1,5 +1,5 @@
-// The Node consumer of the plurnk-agui bridge. Terminal clients POST a run to
-// the bridge and consume the AG-UI SSE projection. This module mirrors the
+// The Node consumer of the daemon's AG-UI endpoint. Terminal clients POST a run
+// to it and consume the AG-UI SSE projection. This module mirrors the
 // standard AG-UI HTTP/SSE transport: POST /agui for runs, including interrupt
 // resolution through RunAgentInput.resume.
 //
@@ -28,7 +28,7 @@ import {
 
 export type AguiEvent = AGUIEvent;
 
-export interface BridgeTarget { bridgeUrl: string; token?: string }
+export interface AguiTarget { aguiUrl: string; token?: string }
 
 export type ActionOutcome<T = unknown> =
     | { kind: string; ok: true; result?: T }
@@ -108,18 +108,18 @@ export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {
     throw new ProblemError(clientActionResultInvalid("The event does not contain a boolean ok."));
 };
 
-// Run one turn through the bridge, async-yielding each AG-UI event until the
-// bridge ends the stream. A connect request observes existing work; disconnecting
+// Run one turn through the AG-UI endpoint, async-yielding each AG-UI event until
+// the daemon ends the stream. A connect request observes existing work; disconnecting
 // it does not cancel the worker. An authored run retains its cancellation scope.
-export async function* runViaBridge(
-    target: BridgeTarget,
+export async function* runViaAgui(
+    target: AguiTarget,
     run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; capabilities?: ClientCapabilities; connect?: boolean; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
     const messages: RunAgentInput["messages"] = run.messages
         ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
     const agent = new HttpAgent({
-        url: run.connect === true ? `${target.bridgeUrl.replace(/\/$/, "")}/connect` : target.bridgeUrl,
+        url: run.connect === true ? `${target.aguiUrl.replace(/\/$/, "")}/connect` : target.aguiUrl,
         fetch: problemFetch,
         headers: target.token !== undefined && target.token.length > 0
             ? { authorization: `Bearer ${target.token}` }
@@ -185,9 +185,9 @@ export async function* runViaBridge(
 
 // AG-UI+ verb surface (§3): a management action rides its own run —
 // forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.
-// Replaces the retired /plurnk/rpc side-channel; the run envelope is the interface.
-export const actionViaBridge = async <T = unknown>(
-    target: BridgeTarget,
+// The run envelope is the interface.
+export const actionViaAgui = async <T = unknown>(
+    target: AguiTarget,
     req: {
         threadId: string;
         workspace?: string;
@@ -197,7 +197,7 @@ export const actionViaBridge = async <T = unknown>(
     },
     signal?: AbortSignal,
 ): Promise<T> => {
-    for await (const e of runViaBridge(target, {
+    for await (const e of runViaAgui(target, {
         threadId: req.threadId,
         ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
         messages: [],

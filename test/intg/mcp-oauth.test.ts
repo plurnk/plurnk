@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import type { FunctionalityListResult, FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
 for (const { browserFails, fixedRedirect } of [
@@ -110,8 +110,8 @@ for (const { browserFails, fixedRedirect } of [
         const daemon = await bootDaemon(bin);
         t.after(daemon.cleanup);
         const workspace = "oauth-client";
-        await actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
-        const added = await actionViaBridge({ bridgeUrl: daemon.url }, {
+        await actionViaAgui({ aguiUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        const added = await actionViaAgui({ aguiUrl: daemon.url }, {
             threadId: workspace, kind: "workspace.mcp.add", params: { definition },
         }) as FunctionalityMutationResult;
         assert.equal(added.status, 202);
@@ -149,7 +149,7 @@ for (const { browserFails, fixedRedirect } of [
         assert.deepEqual(JSON.parse(stdout), { status: 202, alias: "oauth" });
         assert.match(stderr, /Sign-in accepted; tools awaiting activation/);
         assert.equal(tokenRequests.length, 1);
-        const list = () => actionViaBridge({ bridgeUrl: daemon.url }, { threadId: workspace, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
+        const list = () => actionViaAgui({ aguiUrl: daemon.url }, { threadId: workspace, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
         let listed = await list();
         for (let attempt = 0; attempt < 100 && listed.definitions.find(({ alias }) => alias === "oauth")?.state !== "active"; attempt++) {
             await delay(20);
@@ -160,7 +160,7 @@ for (const { browserFails, fixedRedirect } of [
         assert.deepEqual((active?.detail as { tools?: unknown } | undefined)?.tools, ["inspect"]);
         assert.deepEqual(listed.definitions.find(({ alias }) => alias === "oauth")?.definition, definition,
             "the callback binding and tokens never become persisted MCP configuration");
-        const invocation = await actionViaBridge({ bridgeUrl: daemon.url }, {
+        const invocation = await actionViaAgui({ aguiUrl: daemon.url }, {
             threadId: workspace, kind: "op.parse", params: { text: "````oauth (inspect)\n{}\n````" },
         }) as { results: { status: number }[] };
         assert.equal(invocation.results.length, 1);

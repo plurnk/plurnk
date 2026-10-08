@@ -19,7 +19,6 @@ const close = (server: ReturnType<typeof createServer>): Promise<void> =>
 const runClient = async (
     url: string,
     args: string[],
-    extraEnv: Record<string, string> = {},
 ): Promise<{ code: number | null; stdout: string; stderr: string }> => {
     const address = new URL(url);
     return new Promise((resolveRun, reject) => {
@@ -32,7 +31,6 @@ const runClient = async (
                 PLURNK_HOST: address.hostname,
                 PLURNK_PORT: address.port,
                 NO_COLOR: "1",
-                ...extraEnv,
             },
             stdio: ["ignore", "pipe", "pipe"],
         });
@@ -212,45 +210,4 @@ test("[§cli-worker-ownership]: a headless owner advertises no clarification too
     assert.equal(packets.length, 2, "the refusal neither loses nor restarts the worker loop");
     assert.match(packets[1]!, /capability-denied/u, "the daemon refuses a tool the worker's owner does not receive");
     assert.match(packets[1]!, /Nobody is present to answer/u, "and the refusal says what to do instead");
-});
-
-// The client states and the daemon composes: only this proves the refusals a user can meet arrive
-// as sentences that name the way out.
-test("{§cli-worker-ownership} retired approval flags and environment keys name their replacements", { timeout: 60_000 }, async (t) => {
-    const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
-    const daemon = await bootDaemon(service, {
-        readyTimeoutMs: 30_000,
-        extraEnv: {
-            PLURNK_MODEL: "unreached",
-            PLURNK_MODEL_unreached: "openai/never-called",
-            PLURNK_BASEURL_unreached: "http://127.0.0.1:9/v1",
-            OPENAI_API_KEY: "unreached",
-            PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768",
-        },
-    });
-    t.after(daemon.cleanup);
-    const base = ["--json", "--workspace", "cli-worker-owner", "--worker", "policy-worker", "--project-root", "", "--timeout", "20"];
-
-    for (const flags of [["--proposals", "review"], ["--proposals", "sometimes"], ["--policy", '{"proposals":"accept"}']]) {
-        const result = await runClient(daemon.url, [...base, ...flags, "Do the thing."]);
-        assert.equal(result.code, 64);
-        assert.match(result.stderr + result.stdout, /Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS/u);
-    }
-
-    const renamedFlag = await runClient(daemon.url, [...base, "--reasoning", "high", "Do the thing."]);
-    assert.equal(renamedFlag.code, 64);
-    assert.match(renamedFlag.stderr + renamedFlag.stdout, /--reasoning was renamed to --effort/u);
-
-    for (const [name, successor] of [
-        ["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"],
-        ["PLURNK_CLIENT_PROPOSALS", "PLURNK_CLIENT_YOLO"],
-        ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_AUTO"],
-        ["PLURNK_CLIENT_REASONING", "PLURNK_CLIENT_EFFORT"],
-        ["PLURNK_CLIENT_WORKSPACE_CAPABILITIES", "PLURNK_CLIENT_CAPABILITIES"],
-        ["PLURNK_STATUS_STREAM", "PLURNK_CLIENT_STATUS_STREAM"],
-    ] as const) {
-        const retired = await runClient(daemon.url, [...base, "Do the thing."], { [name]: "1" });
-        assert.equal(retired.code, 64, name);
-        assert.match(retired.stderr + retired.stdout, new RegExp(`${name} was retired; use ${successor}`, "u"));
-    }
 });

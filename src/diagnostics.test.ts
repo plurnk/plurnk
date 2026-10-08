@@ -14,7 +14,6 @@ const {
     ProblemError,
     clientConnectionRefused,
     isUnreachable,
-    clientConnectionClosed,
     clientFlagInvalid,
     clientFlagMissingDependency,
     clientSubcommandWorkspaceNotFound,
@@ -25,7 +24,6 @@ const {
     clientSubcommandEntryNotFound,
     clientProposalEditsBlocked,
     clientRuntimeError,
-    clientRpcError,
     clientTransportTerminalMissing,
     clientModelUnselected,
 } = await import("./diagnostics.ts");
@@ -153,7 +151,7 @@ test("[§cli-connection-onboarding] isUnreachable only classifies connection-lev
     (refused as { cause?: unknown }).cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:1066"), { code: "ECONNREFUSED" });
     assert.equal(isUnreachable(refused), true);
     assert.equal(isUnreachable(new TypeError("fetch failed")), true);
-    assert.equal(isUnreachable(new Error("bridge run failed: 500 — runLoop exploded")), false);
+    assert.equal(isUnreachable(new Error("AG-UI run failed: 500 — runLoop exploded")), false);
     assert.equal(isUnreachable("not even an error"), false);
 });
 
@@ -219,17 +217,10 @@ test("clientProposalEditsBlocked remains a transient Notice", () => {
     assert.equal("status" in notice, false);
 });
 
-test("RPC, runtime, and connection failures are Problems", () => {
-    const rpc = clientRpcError("loop.run", new Error("method not found"));
+test("runtime failures are Problems", () => {
     const runtime = clientRuntimeError("a string");
-    const closed = clientConnectionClosed(new Error("connection closed before response"));
-    assert.equal(rpc.status, 502);
-    assert.equal(rpc.method, "loop.run");
-    assert.match(rpc.detail, /method not found/);
     assert.equal(runtime.status, 500);
     assert.equal(runtime.detail, "a string");
-    assert.equal(closed.status, 502);
-    assert.match(closed.detail, /connection closed/);
 });
 
 test("a missing terminal cannot recommend replaying a possibly completed run", () => {

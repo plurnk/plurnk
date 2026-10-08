@@ -4,7 +4,7 @@
 // prefill, the submit→op.look path, and the readout printed above the composer.
 //
 // Daemon-gated, NOT model-gated: we seed content with a raw EDIT (op.parse,
-// --yolo auto-accepts the proposal) — no loop.run, no provider needed.
+// --yolo auto-accepts the proposal) — no loop, no provider needed.
 
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -99,7 +99,6 @@ describe("TUI inspection (/look)", () => {
             await tui.waitFor(/plurnk.*\/help/s);
             tui.write("/look worker:///missing.md\r");
             await tui.waitFor(/LOOK \(worker:\/\/\/missing\.md\) — \S/, 45_000);
-            assert.doesNotMatch(tui.output(), /no content\)/, "the old status-only readout is gone");
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
         } finally {

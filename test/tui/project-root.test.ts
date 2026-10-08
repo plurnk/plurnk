@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { BIN, spawnTui } from "./harness.ts";
 
@@ -19,8 +19,8 @@ test("[§cli-project-root] home launch requires a choice before workspace creati
         PLURNK_CLIENT_WORKSPACE: undefined, PLURNK_CLIENT_WORKER: undefined,
         PLURNK_CLIENT_PROJECT_ROOT: undefined,
     };
-    const rows = async () => (await actionViaBridge<{ workspaces: { name: string; project_root: string | null }[] }>(
-        { bridgeUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.list" },
+    const rows = async () => (await actionViaAgui<{ workspaces: { name: string; project_root: string | null }[] }>(
+        { aguiUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.list" },
     )).workspaces;
     const run = (args: string[]) => new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
         const child = spawn(process.execPath, [BIN, ...args], { cwd: daemon.home, env, timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] });

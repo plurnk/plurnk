@@ -26,13 +26,12 @@ after(async () => { await daemon?.cleanup(); });
 
 describe("TUI live (model-gated)", () => {
     // The CLIENT contract: a line typed while a loop is
-    // in flight is folded in via loop.inject (NOT a new loop.run) and acknowledged,
+    // in flight is folded in via loop.inject (NOT a new loop) and acknowledged,
     // with the prompt surviving the trace burst. Its ⌛︎ badge makes the active
     // lifecycle visible without disturbing injection. (Whether the MODEL honors
     // the injected content is the model's behavior, not the client's.)
     // 10-minute test budget + 9-minute waits below: dramatically generous so a
-    // failure is unambiguously a real hang (svc#265 is fixed — errored loops now
-    // broadcast loop/terminated), never "the model was slow." Only daemon-gated.
+    // failure is unambiguously a real hang, never "the model was slow." Only daemon-gated.
     test("[§cli-tui-flow] mid-loop inject — a line typed during a loop is folded in (loop.inject)", { timeout: 600_000 }, async (t) => {
         if (!liveEnabled) { t.skip("real-model tier requires npm run test:tui:live"); return; }
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
@@ -52,7 +51,7 @@ describe("TUI live (model-gated)", () => {
             // after an erase-line, never after a bare newline, and turn 0 has no execution rows.
             await tui.waitFor(/\x1b\[2K(?:python3?|sh)(?:\s|\x1b|$)/, 540_000);
             tui.write("btw keep the summary short\r");
-            await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop.run)
+            await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop)
         } finally { tui.kill(); }
     });
 });

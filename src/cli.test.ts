@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatPlain, buildJsonRecord, buildScriptJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
+import { formatPlain, buildJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
 import { isResponseMessage } from "./render.ts";
 import { clientFlagInvalid } from "./diagnostics.ts";
 import type { FunctionalityFamily } from "./commands.ts";
@@ -193,7 +193,7 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.response, "Paris");          // the jq -r .response common case
     assert.equal(doc.finalStatus, 200);
     assert.equal(doc.loopId, 7);
-    assert.equal(doc.workerId, 39);   // the conversation worker, from loop.run's modelWorkerId
+    assert.equal(doc.workerId, 39);   // the conversation worker
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
     assert.deepEqual(doc.usage, accountedUsage, "JSON preserves the cardinal accounting envelope verbatim");
@@ -286,52 +286,20 @@ test("buildJsonRecord: round-trips through JSON.stringify as one valid document"
     assert.equal(parsed.notices[0].source, "engine");
 });
 
-// ─── buildScriptJsonRecord (`plurnk script foo.plk` record) ───────────
-
-test("buildScriptJsonRecord: results + turn-grouped ops + Notices, no loop fields", () => {
-    const doc = buildScriptJsonRecord({
-        workspace: { id: 5, name: "scripted" },
-        results: [{ status: 200 }, { status: 404 }],
-        entries: [
-            entry({ op: "EDIT", origin: "client", scheme: "file", pathname: "/a.md", status_rx: 200, loop_seq: 1, turn_seq: 1, sequence: 1 }),
-            entry({ op: "READ", origin: "client", scheme: "file", pathname: "/gone.md", status_rx: 404, loop_seq: 1, turn_seq: 2, sequence: 1 }),
-        ],
-        notices: [{ source: "scheme", kind: "degraded", level: "warn", message: "no /gone.md" }],
-        wallMs: 42,
-    }) as Record<string, unknown>;
-    assert.equal(doc.schemaVersion, JSON_SCHEMA_VERSION);
-    assert.deepEqual(doc.workspace, { id: 5, name: "scripted" });
-    assert.deepEqual(doc.results, [{ status: 200 }, { status: 404 }]);
-    assert.equal(doc.wallMs, 42);
-    // grouped by turn, sharing buildJsonRecord's op shape
-    const turns = doc.turns as Array<{ turn: number; ops: Array<Record<string, unknown>> }>;
-    assert.equal(turns.length, 2);
-    assert.deepEqual(turns[0].ops[0], { coord: "01/01/01", op: "EDIT", origin: "client", target: "file:///a.md", status: 200, scope: null, signal: null, tags: [] });
-    // no loop-only fields leak in (it's a straight-line script, no model)
-    assert.ok(!("response" in doc) && !("loopId" in doc) && !("usage" in doc));
-});
-
-test("buildScriptJsonRecord: round-trips through JSON.stringify", () => {
-    const s = JSON.stringify(buildScriptJsonRecord({
-        workspace: { id: 1, name: "s" }, results: [{ status: 200 }], entries: [], notices: [], wallMs: 1,
-    }));
-    assert.deepEqual(JSON.parse(s).results, [{ status: 200 }]);
-});
-
 // ─── buildJsonError (json mode fails as valid JSON too) ───────────────
 
 test("buildJsonError embeds the exact RFC 9457 Problem", () => {
     const problem = {
-        type: "https://problems.plurnk.xyz/client/rpc/error",
-        title: "Error",
+        type: "https://problems.plurnk.xyz/client/action/result-missing",
+        title: "Result missing",
         status: 502,
-        detail: "loop.run rejected",
-        method: "loop.run",
+        detail: "Action 'workspace.list' ended without a plurnk.action.result event.",
+        action: "workspace.list",
     };
     const e = buildJsonError(problem) as { schemaVersion: number; problem: Record<string, unknown> };
     assert.equal(e.schemaVersion, JSON_SCHEMA_VERSION);
     assert.deepEqual(e.problem, problem);
-    assert.equal(e.problem.method, "loop.run");
+    assert.equal(e.problem.action, "workspace.list");
     assert.equal("error" in e, false);
     JSON.parse(JSON.stringify(e)); // must be valid JSON
 });

@@ -15,6 +15,14 @@
   acceptance or `PLURNK_SERVICE_PROPOSALS` for server-side disposition.
 - Remove `plurnk web`, its `--host` and `--port` options, and the `web/not-installed`
   Problem. The optional browser client is retired.
+- `--policy`, `--reasoning` and `schedule --accept` are unknown options, and
+  `PLURNK_AUTO`, `PLURNK_CLIENT_LOOP_POLICY`, `PLURNK_CLIENT_REASONING`,
+  `PLURNK_CLIENT_WORKSPACE_CAPABILITIES` and `PLURNK_STATUS_STREAM` are unread; none
+  has a refusal of its own.
+- A failure to reach the daemon is the `client/agui/error` Problem, naming the endpoint
+  in `url`.
+- The status line reads the complete status gauge the daemon sends, including
+  `children`, `waitUntil`, `preparation` and `descendants`.
 
 ## 2.0.0
 

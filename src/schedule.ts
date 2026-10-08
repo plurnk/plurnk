@@ -138,7 +138,6 @@ export const handleSchedule = async (
     }
 
     if (command === "add") {
-        if (args[1] === "--accept") throw new TypeError("--accept is retired. Scheduled work uses the receiving worker's approval owner.");
         const [alias, worker, rule, ...prompt] = args.slice(1);
         if (alias === undefined || alias.length === 0 || worker === undefined || worker.length === 0 || rule === undefined || rule.length === 0 || prompt.length === 0) {
             usage(write, "add");

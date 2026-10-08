@@ -8,7 +8,7 @@ export const homePath = (path: string, home = homedir()): string => {
 };
 
 // XDG is the cross-process user-configuration contract. The client owns no
-// daemon data path and never reads the retired mixed application home.
+// daemon data path.
 export const userConfigFile = (
     env: NodeJS.ProcessEnv = process.env,
     home: string = homedir(),

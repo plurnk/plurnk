@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { ProblemError } from "../../src/diagnostics.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
@@ -61,8 +61,8 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
         resolve(import.meta.dirname, "../../conformance/agui-client.json"),
         "utf8",
     )) as Conformance;
-    const discovery = await actionViaBridge<Discovery>(
-        { bridgeUrl: daemon.url },
+    const discovery = await actionViaAgui<Discovery>(
+        { aguiUrl: daemon.url },
         { threadId: "terminal-conformance", kind: "discover" },
     );
 
@@ -78,8 +78,8 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
         assert.ok(object(contract.outputSchema), `${name} declares an output schema`);
         assertDisposition(`action ${name}`, manifest.actions[name]!);
         await assert.rejects(
-            () => actionViaBridge(
-                { bridgeUrl: daemon.url },
+            () => actionViaAgui(
+                { aguiUrl: daemon.url },
                 {
                     threadId: "terminal-conformance-invalid",
                     ...(contract.scope === "workspace"

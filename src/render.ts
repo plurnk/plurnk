@@ -105,7 +105,7 @@ export const isArrivalEntry = (entry: LogEntryWire): boolean =>
     entry.op === "SEND" && entry.origin === "_plurnk" && objectOf(entry.attrs)?.kind === "message";
 
 // The viewer's own messages: the typed line at the prompt is already their record, so the
-// arrivals the bridge sourced to this thread render nowhere else (#79).
+// arrivals the daemon sourced to this thread render nowhere else (#79).
 export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     isArrivalEntry(entry) && typeof entry.source === "string"
     && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
@@ -443,7 +443,6 @@ export const contextGauge = (tokens?: number | null, capacity?: number | null): 
 // call) — those render no token part. It is NOT a fallback for missing
 // data: a model loop always carries real usage (plurnk-service #197).
 const STRIKE_THRESHOLD = "https://problems.plurnk.xyz/engine/rails/strike-threshold";
-const INVALID_EMISSION_EXHAUSTED = "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted";
 
 // The status class is not the verdict. Preserve the exact terminal Problem so
 // unrelated engine failures do not masquerade as rail strike-outs.
@@ -451,7 +450,6 @@ export const terminalStatusLabel = (result: OperationResult): string => {
     const status = result.status ?? 0;
     if (status === 500) {
         if (result.problem?.type === STRIKE_THRESHOLD) return "strike-out";
-        if (result.problem?.type === INVALID_EMISSION_EXHAUSTED) return "invalid emission";
         return "failed";
     }
     return status === 200 ? "done"

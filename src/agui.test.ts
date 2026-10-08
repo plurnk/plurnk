@@ -1,12 +1,11 @@
-// Unit tests for the bridge consumer (plurnk-agui#1 migration substrate). A mock
-// HTTP bridge scripts the SSE run + captures the /resolve and /plurnk/rpc shapes —
-// no daemon, no real bridge.
+// Unit tests for the AG-UI consumer. A mock HTTP endpoint scripts the SSE run and
+// captures the request shapes — no daemon.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Lifetime from "./lifetime.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaBridge, actionViaBridge, operationResult, problemDetails } from "./agui.ts";
+import { runViaAgui, actionViaAgui, operationResult, problemDetails } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
@@ -49,7 +48,7 @@ test("AG-UI validators map invalid Problems and results to exact client Problems
     );
 });
 
-test("runViaBridge: yields AG-UI events in order, reassembling frames split across chunks", async () => {
+test("runViaAgui: yields AG-UI events in order, reassembling frames split across chunks", async () => {
     const tm = frame({ type: "TEXT_MESSAGE_START", messageId: "1", role: "assistant" });
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -63,7 +62,7 @@ test("runViaBridge: yields AG-UI events in order, reassembling frames split acro
     try {
         const types: string[] = [];
         let text = "";
-        for await (const e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "largest planet?" })) {
+        for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "largest planet?" })) {
             types.push(e.type);
             if (e.type === "TEXT_MESSAGE_CONTENT") text += String(e.delta);
         }
@@ -82,11 +81,11 @@ test("runViaBridge: yields AG-UI events in order, reassembling frames split acro
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: forwardedProps.plurnk ALWAYS carries the workspace (world) + any options", async () => {
+test("runViaAgui: forwardedProps.plurnk ALWAYS carries the workspace (world) + any options", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         const seen: string[] = [];
-        for await (const e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
+        for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
         assert.deepEqual(seen, ["RUN_FINISHED"]);
         // The workspace is REQUIRED and rides verbatim — the client sends its world, never
         // relying on the module to forge one from the threadId.
@@ -94,15 +93,15 @@ test("runViaBridge: forwardedProps.plurnk ALWAYS carries the workspace (world) +
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: even with NO options, the workspace (world) still rides — it is not optional", async () => {
+test("runViaAgui: even with NO options, the workspace (world) still rides — it is not optional", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
-        for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "solo", prompt: "hi" })) void _e;
+        for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "solo", prompt: "hi" })) void _e;
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "solo" } });
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: a PLURNK HTTP failure preserves exact Problem Details", async () => {
+test("runViaAgui: a PLURNK HTTP failure preserves exact Problem Details", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/agui/http/bearer-token-required",
         title: "Bearer token required",
@@ -113,7 +112,7 @@ test("runViaBridge: a PLURNK HTTP failure preserves exact Problem Details", asyn
     const mock = await bootMock((_req, res) => res.writeHead(401, { "content-type": "application/problem+json" }).end(JSON.stringify(problem)));
     try {
         await assert.rejects(
-            async () => { for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
+            async () => { for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === problem.type
                 && error.problem.retryable === problem.retryable,
@@ -121,17 +120,17 @@ test("runViaBridge: a PLURNK HTTP failure preserves exact Problem Details", asyn
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: a foreign non-Problem HTTP failure remains an AG-UI transport error", async () => {
+test("runViaAgui: a foreign non-Problem HTTP failure remains an AG-UI transport error", async () => {
     const mock = await bootMock((_req, res) => res.writeHead(502, { "content-type": "text/plain" }).end("relay failed"));
     try {
         await assert.rejects(
-            async () => { for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
+            async () => { for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
             /HTTP 502:.*relay failed/,
         );
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: the standard transport handles comments, CRLF, split chunks, and multiline data", async () => {
+test("runViaAgui: the standard transport handles comments, CRLF, split chunks, and multiline data", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(": keepalive\r\n\r");
@@ -141,12 +140,12 @@ test("runViaBridge: the standard transport handles comments, CRLF, split chunks,
     });
     try {
         const seen: string[] = [];
-        for await (const event of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) seen.push(event.type);
+        for await (const event of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) seen.push(event.type);
         assert.deepEqual(seen, ["RUN_STARTED"]);
     } finally { await mock.close(); }
 });
 
-test("runViaBridge: malformed AG-UI events fail at the standard client boundary", async () => {
+test("runViaAgui: malformed AG-UI events fail at the standard client boundary", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(`data: ${JSON.stringify({ type: "RUN_FINISHED" })}\n\n`);
@@ -155,14 +154,14 @@ test("runViaBridge: malformed AG-UI events fail at the standard client boundary"
     try {
         await assert.rejects(
             async () => {
-                for await (const _event of runViaBridge({ bridgeUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _event;
+                for await (const _event of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _event;
             },
             /threadId|runId/,
         );
     } finally { await mock.close(); }
 });
 
-test("actionViaBridge: a verb rides its own run and returns its result verbatim", async () => {
+test("actionViaAgui: a verb rides its own run and returns its result verbatim", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list", ok: true, result: { workspaces: [{ id: 1, name: "s" }] } } }) + "\n\n");
@@ -170,7 +169,7 @@ test("actionViaBridge: a verb rides its own run and returns its result verbatim"
         res.end();
     });
     try {
-        const out = await actionViaBridge<{ workspaces: Array<{ id: number }> }>({ bridgeUrl: mock.url }, { threadId: "t", workspace: "world", kind: "workspace.list" });
+        const out = await actionViaAgui<{ workspaces: Array<{ id: number }> }>({ aguiUrl: mock.url }, { threadId: "t", workspace: "world", kind: "workspace.list" });
         assert.equal(out.workspaces[0].id, 1);
         const sent = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string; action: { kind: string } } } };
         assert.equal(sent.threadId, "t", "the thread continues to name the worker conversation");
@@ -179,7 +178,7 @@ test("actionViaBridge: a verb rides its own run and returns its result verbatim"
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] actionViaBridge carries workspace options beside the action", async () => {
+test("[§cli-workspaces-and-workers] actionViaAgui carries workspace options beside the action", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.model.get", ok: true, result: { model: null } } }) + "\n\n");
@@ -187,7 +186,7 @@ test("[§cli-workspaces-and-workers] actionViaBridge carries workspace options b
         res.end();
     });
     try {
-        await actionViaBridge({ bridgeUrl: mock.url }, {
+        await actionViaAgui({ aguiUrl: mock.url }, {
             threadId: "worker",
             workspace: "world",
             workspaceOptions: { projectRoot: "/repo", settings: { filesItems: 16 } },
@@ -202,7 +201,7 @@ test("[§cli-workspaces-and-workers] actionViaBridge carries workspace options b
     } finally { await mock.close(); }
 });
 
-test("actionViaBridge: an action failure throws the exact validated Problem", async () => {
+test("actionViaAgui: an action failure throws the exact validated Problem", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/agui/action/unknown-action",
         title: "Unknown action",
@@ -217,7 +216,7 @@ test("actionViaBridge: an action failure throws the exact validated Problem", as
     ]));
     try {
         await assert.rejects(
-            () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "missing" }),
+            () => actionViaAgui({ aguiUrl: mock.url }, { threadId: "t", kind: "missing" }),
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === problem.type
                 && error.problem.recovery === problem.recovery,
@@ -225,11 +224,11 @@ test("actionViaBridge: an action failure throws the exact validated Problem", as
     } finally { await mock.close(); }
 });
 
-test("actionViaBridge: a missing action result throws an exact client Problem", async () => {
+test("actionViaAgui: a missing action result throws an exact client Problem", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         await assert.rejects(
-            () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
+            () => actionViaAgui({ aguiUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === "https://problems.plurnk.xyz/client/action/result-missing"
                 && error.problem.action === "workspace.list",
@@ -237,33 +236,33 @@ test("actionViaBridge: a missing action result throws an exact client Problem", 
     } finally { await mock.close(); }
 });
 
-test("actionViaBridge: a malformed action result throws an exact client Problem", async () => {
+test("actionViaAgui: a malformed action result throws an exact client Problem", async () => {
     const mock = await bootMock((_req, res) => sse(res, [
         frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list" } }),
         frame({ type: "RUN_FINISHED" }),
     ]));
     try {
         await assert.rejects(
-            () => actionViaBridge({ bridgeUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
+            () => actionViaAgui({ aguiUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === "https://problems.plurnk.xyz/client/action/result-invalid",
         );
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] runViaBridge: an explicit workspace rides with a DIFFERENT threadId (thread-per-run, svc#366)", async () => {
+test("[§cli-workspaces-and-workers] runViaAgui: an explicit workspace rides with a DIFFERENT threadId", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
-        for await (const _e of runViaBridge({ bridgeUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
+        for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
         const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
-        assert.equal(body.threadId, "chat-2", "the thread names the conversation run");
+        assert.equal(body.threadId, "chat-2", "the thread names the conversation");
         assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the world — independently");
     } finally { await mock.close(); }
 });
 
-test("{§cli-worker-ownership} runCliViaBridge: a terminal declares a person, and --auto declares nobody", async () => {
+test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and --auto declares nobody", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
@@ -274,7 +273,7 @@ test("{§cli-worker-ownership} runCliViaBridge: a terminal declares a person, an
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     try {
         for (const auto of [false, true]) {
-            await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto, json: true, statusStream: false, projectRoot: null });
+            await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto, json: true, statusStream: false, projectRoot: null });
         }
         const declared = mock.captured.map(({ body }) => {
             const run = body as { tools: { name: string }[]; forwardedProps: { plurnk: { interactive?: boolean } } };
@@ -291,9 +290,9 @@ test("{§cli-worker-ownership} runCliViaBridge: a terminal declares a person, an
     }
 });
 
-test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBridge: one-shot workspace options and owner capabilities reach the wire", async () => {
+test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgui: one-shot workspace options and owner capabilities reach the wire", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
@@ -301,7 +300,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         res.end();
     });
     try {
-        await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
+        await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
             lifetime,
             threadId: "w",
             workspace: "w",
@@ -317,13 +316,8 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
         assert.equal(fp.projectRoot, "/repo", "the project root reaches the wire");
         assert.deepEqual(fp.settings, { filesItems: 0 }, "workspace settings reach the wire");
-        assert.equal(fp.alias, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
-        assert.equal(fp.model, undefined);
-        assert.equal(fp.selector, undefined);
-        assert.equal(fp.childAlias, undefined);
-        assert.equal(fp.childModel, undefined);
+        assert.equal(fp.selector, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
         assert.equal(fp.childSelector, undefined);
-        assert.equal(Object.hasOwn(fp, "policy"), false);
         const input = mock.captured[0].body as { tools: { name: string }[] };
         assert.deepEqual(input.tools.map(({ name }) => name), ["request_approval"], "with no terminal, approval is the only client tool");
         assert.equal(fp.interactive, false, "with no terminal, nobody attends");
@@ -334,7 +328,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
 
 test("[§cli-workspaces-and-workers] a split worker's JSON record retains the workspace world", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => sse(res, [
         frame({
             type: "CUSTOM",
@@ -358,7 +352,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
         return true;
     };
     try {
-        await runCliViaBridge({ bridgeUrl: mock.url }, "hi", {
+        await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
             lifetime,
             threadId: "conversation",
             workspace: "world",
@@ -378,9 +372,9 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
     }
 });
 
-test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loop, the record says timedOut, exit is 3 — the flag was parsed-and-dead since the agui migration", async () => {
+test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the record says timedOut, exit is 3", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const { runCliViaAgui } = await import("./agui_cli.ts");
     let cancelSeen = false;
     let holdOpen: (() => void) | null = null;
     const mock = await bootMock((req, res) => {
@@ -412,7 +406,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaAgui({ aguiUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -424,9 +418,9 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
     }
 });
 
-test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in the json record (svc#478 companion)", async () => {
+test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in the json record", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const { runCliViaAgui } = await import("./agui_cli.ts");
     // The stream dies without terminal truth: no terminated, no RUN_FINISHED.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -441,7 +435,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

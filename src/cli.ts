@@ -1,7 +1,7 @@
-// CLI mode — single loop.run, plain text, no glyphs. Unix-tool posture
-// per SPEC.md §2 / TUI.md §2. Subscribes to log/entry notifications and
-// prints each op as a plain trace line on stderr; delivered response messages
-// land on stdout (§5.4). Suitable for piping to grep / awk / head / jq.
+// CLI mode helpers — plain text, no glyphs, Unix-tool posture per SPEC.md §2:
+// exit codes, the plain per-op trace line for stderr, and the --json record
+// documents. Delivered response messages land on stdout (§5.4); the output suits
+// piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { contextGauge, entryAside, entryScope, entryTarget, lineageWorker } from "./render.ts";
@@ -113,20 +113,3 @@ export const formatPlain = (entry: LogEntryWire): string => {
     return line;
 };
 
-// One-shot exec: `plurnk "! make test"` — op.exec via the daemon, stream to
-export const buildScriptJsonRecord = (input: {
-    workspace: WorkspaceResult; results: Array<{ status: number }>;
-    entries: LogEntryWire[]; notices: Notice[]; wallMs: number;
-}): Record<string, unknown> => ({
-    schemaVersion: JSON_SCHEMA_VERSION,
-    workspace: { id: input.workspace.id, name: input.workspace.name },
-    results: input.results,
-    turns: groupOpsByTurn(input.entries),
-    notices: input.notices,
-    wallMs: input.wallMs,
-});
-
-// `plurnk script foo.plk` — feed a .plk file's DSL to op.parse and render the
-// trace. The client is a dumb feeder: read bytes, hand the text to the daemon
-// (which owns the grammar + dispatch), render the log/entry broadcasts, exit by
-// worst op status. What's IN the file — flat ops today, richer topologies later

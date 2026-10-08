@@ -19,8 +19,8 @@ what it guarantees, what its exit codes mean, and what it renders.
 | **AG-UI Run** | One protocol exchange on a conversation thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
 | **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; `CUSTOM plurnk.terminated` carries the authoritative terminal result. |
 | **log/entry notification** | A durable operation row or its update, projected through `CUSTOM plurnk.row`. Rendering follows §5. |
-| **one-shot mode** | `plurnk "prompt"` — single loop.run, render, exit. Unix-tool posture. |
-| **TUI mode** | `plurnk` (no args) — interactive REPL; multiple loop.run invocations per workspace. |
+| **one-shot mode** | `plurnk "prompt"` — one prompt's loop, rendered, then exit. Unix-tool posture. |
+| **TUI mode** | `plurnk` (no args) — interactive REPL; many prompts per workspace. |
 
 ---
 
@@ -89,7 +89,7 @@ The client also reads keys it does not own:
 | `PLURNK_AGUI_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
 | `PLURNK_AGUI_TOKEN` | `@plurnk/plurnk-agui` | The portal's bearer, presented when set. |
 
-**Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. A working directory's `.env` belongs to that directory's application and is never read; a project's variables reach its commands through the workspace environment (`/env import .env`). The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
+**Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. A project's variables reach its commands through the workspace environment (`/env import .env`). The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
 **The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring only the `PLURNK_CLIENT_*` prefix and loads it SET-IF-UNSET beneath every operator layer. A knob the operator set is never overridden; a commented knob is documentation, not a value.
 
@@ -276,10 +276,8 @@ and child labels, loop headers) one formatter renders the daemon's durable effor
 with the identity, and the daemon's stated provenance decides the marker:
 `deepdumb[low]` is a chosen level (`worker.effort.set`), `deepdumb(low)` a
 provider default the daemon seeded from the alias; brackets read as chosen,
-parentheses as given. A route without an effort dimension renders bare, and a
-daemon that states no source renders brackets as before. `/effort` says the
-same in words. The client never infers provenance (plurnk#41 ask 2,
-plurnk-service#528).
+parentheses as given. A route without an effort dimension renders bare. `/effort`
+says the same in words. The client never infers provenance (plurnk#41 ask 2).
 
 The identity is the client's last server-read route. Every durable-policy change
 (`/model`, `/child` including `inherit`, `/effort`, a rebind or hop, and an explicit
@@ -385,7 +383,7 @@ Consequence:
 
 - `plurnk "X" > answer.txt` captures just the delivered response messages.
 - `plurnk "X" 2>/dev/null` suppresses the trace.
-- A TTY user sees both interleaved as before (the terminal merges streams).
+- A TTY user sees both interleaved (the terminal merges streams).
 - `plurnk "X" | tool` pipes only the answer.
 - `plurnk --json "X" | jq -r .response` pulls the answer; `… | jq .turns` the structured trace. One document, no stderr archaeology — the CLI is the integration layer, no third-party client needed for basic needs.
 
@@ -414,7 +412,7 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.1 Flow {§cli-tui-flow}
 
-1. Bind a `BridgeTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders. Restore the conversation under {§cli-conversation-history}.
+1. Bind an `AguiTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders. Restore the conversation under {§cli-conversation-history}.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
    and §1.2.1's aggregate line on the place line below the composer. Before AG-UI
    state arrives, derivation, search, and
@@ -423,13 +421,13 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never call `loop.run`; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a conversation run (the prompt as the user message). Standard prompt-driven loop.
-    (Verbs and injections ride §3 action runs on the same AG-UI+ surface — one wire, no side-channel.)
+    (Verbs and injections ride §3 action runs on the same AG-UI+ surface.)
 4. Input remains available during a run under {§cli-active-command-admission}; typed commands and shortcuts share admission.
 5. `Ctrl-C`, `EOF`, and `/quit` exit cleanly. The resume command identifies the
    current workspace and worker with shell-safe arguments, including after rebinding.
@@ -533,10 +531,9 @@ is in, a presentation marker rather than a URI alias, and the loop and turn besi
 the worker they belong to. `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
 hops down, `[/~]` before the worker is named; an unknown loop or turn is elided. A child
 always shows that it is a child, so a session opened on a child reads its full lineage. The
-§1.2.1 footer includes the place after the project folder and before activity, so the composer has one line above it
-and the transcript keeps the line a separate status row used to take. The status line's
-worker segment carries the sibling position when there is one: `worker://recheck/ (2/3)`,
-newest first (§1.2.1).
+§1.2.1 footer includes the place after the project folder and before activity, so the composer has one line above it.
+The status line's worker segment carries the sibling position when there is one:
+`worker://recheck/ (2/3)`, newest first (§1.2.1).
 
 ### §cli-conversation-history Conversation history on attach
 
@@ -641,8 +638,8 @@ CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 
 `/import <path>` reads a **local** file (co-location law — the client reads its own fs, the daemon never sees the path) and inserts its content at the editor cursor. Relative paths resolve against cwd; an unreadable file prints an error and is a no-op.
 
 **Bracketed paste.** A multiline paste is one editable value and therefore one
-submission, never one `loop.run` per line. pi-tui owns bracketed-paste framing;
-small pastes remain native lines and large pastes become one expandable marker.
+submission. pi-tui owns bracketed-paste framing; small pastes remain native lines
+and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
@@ -1022,13 +1019,13 @@ refreshes and archival; only a width or presentation invalidation rerenders them
 
 Loop state comes from the daemon's status events, not an inference from a verb or body.
 
-### §5.2 Summary line (per `loop.run`) {§cli-summary-line-per-looprun}
+### §5.2 Summary line (per loop) {§cli-summary-line-per-loop}
 
 ```
   <tag> · <N> turns · <wall>ms · ↓<input> ↑<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<usd to the hundredth of a cent>]
 ```
 
-`tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; exhausted invalid emission is `invalid emission`, and another 500 is `failed`.
+`tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; another 500 is `failed`.
 Input and output are the conventional aggregate fields from the daemon's accounting envelope. Missing token quantities render as `?`; zero or unavailable aggregate cost is omitted; a nonzero exact decimal is rendered without floating-point conversion. JSON output retains the complete accounting evidence.
 
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
@@ -1177,9 +1174,7 @@ open another review or submit another decision; its observer resumes after the s
 `TOOL_CALL_RESULT` acknowledges settlement, without waiting for the approved work to finish.
 
 `--yolo`, configured acceptance, and `?` remain client-side decisions. Server
-`PLURNK_SERVICE_PROPOSALS` owns automatic server disposition. The retired `--policy`,
-`--proposals`, `PLURNK_AUTO`, `PLURNK_CLIENT_LOOP_POLICY`, and `PLURNK_CLIENT_PROPOSALS`
-fail and name their replacement; no approval policy travels with a message or schedule.
+`PLURNK_SERVICE_PROPOSALS` owns automatic server disposition.
 
 ### §6.1 Notification shape {§cli-notification-shape}
 
@@ -1327,11 +1322,10 @@ interaction identity cannot answer a subsequent interrupt.
 
 Daemon subcommands inspect or deliberately configure state without running a
 loop. They share the same connection and workspace-resolution machinery as the
-prompt-driven flow, but skip `loop.run` entirely. They support `--json` for
-machine-readable output (stdout product per §2.1; trace and errors stay on
-stderr). `effort [policy]` reads or changes the durable effort.
-`capabilities [json]` projects every durable capability layer and its effective
-intersection, or replaces the workspace policy. Prompt runs carry no approval
+prompt-driven flow. They support `--json` for machine-readable output (stdout
+product per §2.1; trace and errors stay on stderr). `effort [policy]` reads or
+changes the durable effort. `capabilities [json]` projects every durable
+capability layer and its effective intersection, or replaces the workspace
 policy. Local `render` does not contact the daemon.
 
 When the first positional argument matches a known subcommand verb, the dispatcher
@@ -1342,7 +1336,7 @@ routes there instead of assembling a prompt. Invalid forms of that command exit
 
 Queries one bounded page from the daemon's release-pinned catalog through `models.list`. No workspace is attached and no provider request is made. Positional words form a case-insensitive search; `--provider <name>` narrows the provider, `--all` includes models missing local configuration, and `--offset`/`--limit` page without loading the full catalog.
 
-Default output is a column-aligned table of `selector / name / context / efforts / readiness`, where `efforts` {§cli-models-efforts} lists the daemon's admitted efforts for the exact route (`capabilities.efforts`, plurnk-service#529) or `-` for a model without an effort dimension, plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
+Default output is a column-aligned table of `selector / name / context / efforts / readiness`, where `efforts` {§cli-models-efforts} lists the daemon's admitted efforts for the exact route (`capabilities.efforts`) or `-` for a model without an effort dimension, plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
 
 ### §7.2 `plurnk workspace list` {§cli-plurnk-workspace-list}
 
@@ -1386,7 +1380,7 @@ choices; JSON mode emits the daemon result unchanged.
 
 ### §7.6 What subcommands do NOT do
 
-- Send prompts. They never call `loop.run`.
+- Send prompts.
 - Hide state changes: workspace rename, reasoning and capability setters, MCP
   management, and scripts explicitly request mutations; inspection commands do not.
 - Honor flags that only matter to a conversation (`--model`, `--effort`,
@@ -1410,7 +1404,7 @@ The client has two product-level diagnostic contracts, not one generic event
 envelope:
 
 - An RFC 9457 Problem is failure truth. Client-owned flag, connection,
-  subcommand, RPC, and runtime failures use `{type, title, status, detail}` plus
+  subcommand, action, and runtime failures use `{type, title, status, detail}` plus
   useful extensions. Daemon operation failures remain durable log results; the
   client does not recreate them as push events.
 - Incoming Problems remain exact. The client accepts them from
@@ -1449,7 +1443,7 @@ throws become `client/runtime/error` Problems.
 
 In JSON output, a failure is
 `{"schemaVersion":6,"problem":<ProblemDetails>}`. Text mode renders the same
-Problem's title, detail, and optional recovery to stderr. A bridge that answered with a failure surfaces that failure;
+Problem's title, detail, and optional recovery to stderr. An AG-UI endpoint that answered with a failure surfaces that failure;
 only connection-level failures receive service address/availability hints.
 {§cli-connection-onboarding}
 
@@ -1560,7 +1554,7 @@ A conforming `plurnk` client:
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Consumes client-owned proposal interrupts and resolves each through standard AG-UI resume per §6; loop-owned dispositions are absent from that surface.
 6. Consumes `CUSTOM plurnk.notice` and renders each Notice per §8.
-7. Maps `loop.run` results to exit codes per §4.
+7. Maps each loop's terminal result to exit codes per §4.
 8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.
 9. Projects `STATE_SNAPSHOT` and each `STATE_DELTA` into the run's status gauge (`loop/packet`, plurnk-agui SPEC); a delta before a snapshot or a patch op other than `replace` is a 502 `state-invalid` Problem.
 

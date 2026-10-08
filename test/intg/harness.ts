@@ -16,28 +16,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Where to look for plurnk-service. Env override wins; otherwise we look at
-// the sibling repo on disk. Returns absolute path or null.
+// Where to look for plurnk-service. Env override wins; otherwise the sibling
+// checkout's service entrypoint. Returns absolute path or null.
 export const locateDaemon = async (): Promise<string | null> => {
     const envPath = process.env.PLURNK_SERVICE_BIN;
     if (envPath !== undefined && envPath.length > 0) {
         try { await access(envPath, fsConstants.R_OK); return envPath; } catch { /* fall through */ }
     }
-    // The service entrypoint has moved over time: bin/plurnk-service.js →
-    // bin/plurnk-service.ts (#183) → src/service.ts (bin: dist/service.js,
-    // 2026-06-20). Probe newest-first, keeping the old paths for older checkouts.
-    const candidates = [
-        "plurnk-core/src/service.ts",   // monorepo layout (2026-07-12 cutover)
-        "src/service.ts",
-        "dist/service.js",
-        "bin/plurnk-service.ts",
-        "bin/plurnk-service.js",
-    ];
-    for (const rel of candidates) {
-        const sibling = resolve(__dirname, `../../../plurnk-service/${rel}`);
-        try { await access(sibling, fsConstants.R_OK); return sibling; } catch { /* not present */ }
-    }
-    return null;
+    const sibling = resolve(__dirname, "../../../plurnk-service/plurnk-core/src/service.ts");
+    try { await access(sibling, fsConstants.R_OK); return sibling; } catch { return null; }
 };
 
 // A source entrypoint still loads its workspace siblings through their `dist`, so an unbuilt

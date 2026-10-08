@@ -1,7 +1,7 @@
-// Unit tests for the bridge CLI consumer (plurnk-agui#1 slice 2). Scripted AG-UI
-// events + capturing sinks — no bridge, no daemon. Asserts the family-client
-// rendering (plurnk.row → trace/answer), proposal settlement over /resolve, and
-// the exit code from RUN_FINISHED/RUN_ERROR.
+// Unit tests for the CLI's AG-UI consumer. Scripted AG-UI events + capturing
+// sinks — no daemon. Asserts the family-client rendering (plurnk.row →
+// trace/answer), proposal settlement through AG-UI resumes, and the exit code
+// from RUN_FINISHED/RUN_ERROR.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -21,7 +21,9 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 });
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
-const rowRun = (e: Partial<LogEntryWire>, runId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: runId } });
+const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: workerId } });
+// A whole status gauge as the daemon sends it; each specimen overrides what it is about.
+const STATUS = { waitUntil: null, preparation: [], children: 0, descendants: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
@@ -76,7 +78,7 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
         row({ op: "FIND", scheme: "file", pathname: "/x" }),
         terminalSend("Jupiter is the largest planet."),
         // The real wire ALWAYS emits terminated before RUN_FINISHED; a stream without
-        // it is a dead stream (502, svc#478) — the fixture matches the protocol.
+        // it is a dead stream (502) — the fixture matches the protocol.
         { type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 1, loopId: 1, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } },
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" },
     ]), io);
@@ -150,12 +152,12 @@ test("[§cli-log-entry-line-format] the AG-UI CLI trace displays a server's tool
 
 test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERROR cannot encode", async () => {
     const problem = {
-        type: "https://problems.plurnk.xyz/engine/generation/invalid-emission-exhausted",
-        title: "Invalid emission exhausted",
+        type: "https://problems.plurnk.xyz/engine/rails/strike-threshold",
+        title: "Strike threshold",
         status: 500,
-        detail: "The model did not emit a valid turn in three attempts.",
-        attempts: 3,
-        recovery: "Use a model that can emit the required turn structure.",
+        detail: "The loop reached its strike threshold after 3 model turns because consecutive turns failed.",
+        turns: 3,
+        stage: "loop",
         retryable: false,
     };
     const { io } = sink({ json: true });
@@ -296,7 +298,7 @@ test("consumeCliRun: indexing state is quiet and indexing failures remain diagno
     });
     await consumeCliRun(stream([
         { type: EventType.STATE_SNAPSHOT, snapshot: {
-            plurnk: { status: { lifecycle: "running", model: null, loopId: 1, packetCount: 0,
+            plurnk: { status: { ...STATUS, lifecycle: "running", model: null, loopId: 1, packetCount: 0,
                 activity: { kind: "derivation", phase: "indexing", completed: 3, total: 10, percent: 30 } } }, budget: {},
         } },
         { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/activity", value: null }] },
@@ -320,7 +322,7 @@ test("[§cli-status-preparation] snapshots, progress, and clearing stay in statu
     const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1000).toISOString() }];
     await consumeCliRun(stream([
         { type: EventType.STATE_SNAPSHOT, snapshot: { plurnk: { status: {
-            lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null, preparation,
+            ...STATUS, lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null, preparation,
         } }, budget: {} } },
         { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/preparation", value: [] }] },
         terminated(),
@@ -340,7 +342,7 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
             snapshot: {
                 plurnk: {
                     workspace: { id: 1, name: "work", projectRoot: "/projects/client" },
-                    status: { lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null },
+                    status: { ...STATUS, lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null },
                 },
                 budget: {},
             },
@@ -350,16 +352,16 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: null, projectRoot: "/projects/client" },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: null, projectRoot: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, waitUntil: null, preparation: [], descendants: null, projectRoot: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, waitUntil: null, preparation: [], descendants: null, projectRoot: "/projects/client" },
     ]);
 });
 
 test("consumeCliRun: json mode stays silent + accumulates the full record", async () => {
     const { io, out, err } = sink({ json: true });
     const res = await consumeCliRun(stream([
-        rowRun({ op: "NOTE", origin: "model", tx: { body: "Find evidence" } }, 42),
-        rowRun({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
+        workerRow({ op: "NOTE", origin: "model", tx: { body: "Find evidence" } }, 42),
+        workerRow({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
         terminalSend("Jupiter."),
         terminated({
             workspaceId: 512,
@@ -425,8 +427,8 @@ test("consumeCliRun: plurnk.terminated is authoritative for the exit code", asyn
 test("consumeCliRun: a child worker's SEND cannot duplicate or replace the run response", async () => {
     const { io, out } = sink();
     const result = await consumeCliRun(stream([
-        rowRun({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
-        rowRun({ op: "SEND", signal: null, tx: { body: { raw: "child cancelled" } } }, 12),
+        workerRow({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
+        workerRow({ op: "SEND", signal: null, tx: { body: { raw: "child cancelled" } } }, 12),
         terminated({ workerId: 11 }),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
@@ -437,11 +439,11 @@ test("consumeCliRun: a child worker's SEND cannot duplicate or replace the run r
 for (const json of [false, true]) test(`consumeCliRun: ordered response messages survive failure (json=${json})`, async () => {
     const { io, out } = sink({ json });
     const result = await consumeCliRun(stream([
-        rowRun({ id: 10, op: "SEND", tx: { body: { raw: "First." } } }, 11),
-        rowRun({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
-        rowRun({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
-        rowRun({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
-        rowRun({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: [] } }, 11),
+        workerRow({ id: 10, op: "SEND", tx: { body: { raw: "First." } } }, 11),
+        workerRow({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
+        workerRow({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
+        workerRow({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
+        workerRow({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: [] } }, 11),
         terminated({ workerId: 11, result: { status: 499, problem: {
             type: "https://problems.plurnk.xyz/lifecycle/failed", title: "Task failed", status: 499, detail: "Verification failed.",
         } } }),
@@ -457,10 +459,10 @@ test("consumeCliRun: exact and foreign-worker replies reach stdout only for this
     const receipt = (thread: string) => ({ answers: [`agui://anonymous/threads/${thread}/messages/m1`] });
     const result = await consumeCliRun(stream([
         { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
-        rowRun({ op: "SEND", scheme: "agui", pathname: "/threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
-        rowRun({ op: "SEND", origin: "_plurnk", source: "worker://peer", attrs: { kind: "reply" }, tx: { body: { raw: "Peer answer." } }, rx: receipt("t") }, 11),
-        rowRun({ op: "SEND", tx: { body: { raw: "Other conversation." } }, rx: receipt("other") }, 11),
-        rowRun({ op: "SEND", tx: { body: { raw: "Peer work." } }, rx: { answers: ["worker://peer/?message=abcdef01"] } }, 11),
+        workerRow({ op: "SEND", scheme: "agui", pathname: "/threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
+        workerRow({ op: "SEND", origin: "_plurnk", source: "worker://peer", attrs: { kind: "reply" }, tx: { body: { raw: "Peer answer." } }, rx: receipt("t") }, 11),
+        workerRow({ op: "SEND", tx: { body: { raw: "Other conversation." } }, rx: receipt("other") }, 11),
+        workerRow({ op: "SEND", tx: { body: { raw: "Peer work." } }, rx: { answers: ["worker://peer/?message=abcdef01"] } }, 11),
         terminated({ workerId: 11 }),
     ]), io);
     assert.equal(result.response, "Direct answer.\n\nPeer answer.");
@@ -482,7 +484,7 @@ test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) 
 
 test("runScript segments: a run with NO parse result must not report success", async () => {
     // consumeCliRun sees a stream that ends without plurnk.action.result — the
-    // caller (runScriptViaBridge) must treat a missing parse as failure, so the
+    // caller (runScriptViaAgui) must treat a missing parse as failure, so the
     // sink-level contract here: no onActionResult fired, pendingResume null,
     // and the CALLER-visible marker (parse missing) is testable via the sink.
     let fired = false;

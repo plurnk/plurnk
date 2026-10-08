@@ -1,6 +1,5 @@
 // Model-INDEPENDENT TUI behaviors driven through the pty — verbs that hit the
-// daemon but never run a loop, and pure-client input handling. These were
-// HITL-only ("verify by hand") until the harness existed; now they're real.
+// daemon but never run a loop, and pure-client input handling.
 // Daemon-gated (bootDaemon), never model-gated. Each test asserts the behavior
 // and kills — the clean /quit→exit-0 path is covered by smoke.test.ts.
 
@@ -10,7 +9,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootDaemon, completionsEndpoint, locateDaemon, type CompletionsEndpoint, type Daemon } from "../intg/harness.ts";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
@@ -42,7 +41,7 @@ before(async () => {
                 OPENAI_API_KEY: "client-control-plane-test",
             },
         });
-        const discovery = await actionViaBridge<{ actions: Record<string, unknown> }>({ bridgeUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
+        const discovery = await actionViaAgui<{ actions: Record<string, unknown> }>({ aguiUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
         members = "workspace.members.list" in discovery.actions;
         env = "worker.env.list" in discovery.actions;
     }

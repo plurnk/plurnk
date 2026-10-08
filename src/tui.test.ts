@@ -1,5 +1,5 @@
 // Unit tests for the TUI verb handlers (handleVerb), extracted from runTui so
-// they're testable with a stubbed rpc. Verbs never call loop.run.
+// they're testable with a stubbed rpc. Verbs never start a loop.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -130,9 +130,8 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         inject: async () => { throw new Error("the TUI injected after failed admission"); },
         resolve: async () => { throw new Error("the TUI resolved after failed admission"); },
         resolveInteraction: async () => { throw new Error("the TUI resolved an interaction after failed admission"); },
-        onClose: () => {},
         shutdown: () => {},
-        useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
+        useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
         threadId: () => "test-thread",
     };
@@ -157,9 +156,8 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
         inject: async () => { throw new Error("the TUI injected after failed admission"); },
         resolve: async () => { throw new Error("the TUI resolved after failed admission"); },
         resolveInteraction: async () => { throw new Error("the TUI resolved an interaction after failed admission"); },
-        onClose: () => {},
         shutdown: () => {},
-        useSession: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
+        useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
         threadId: () => "test-thread",
     };
@@ -847,7 +845,7 @@ test("[§cli-mcp-oauth-callback] the TUI passes its lifetime cancellation to cal
     assert.doesNotMatch(ctx.out.join(""), /authorized:/u);
 });
 
-// ─── seedPromptHistory (svc#238) ─────────────────────────────────────
+// ─── seedPromptHistory ───────────────────────────────────────────────
 
 test("seedPromptHistory delegates newest-first workspace prompts to the editor surface", async () => {
     const calls: Array<{ m: string; p?: unknown }> = [];

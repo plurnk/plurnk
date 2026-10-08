@@ -20,8 +20,7 @@ import {
     clientSubcommandWorkspaceNotFound,
 } from "./diagnostics.ts";
 
-// The minimal wire surface: any transport's verb caller satisfies it (AG-UI+
-// actions or — until deletion day — the legacy WS Rpc).
+// The minimal action surface a subcommand needs; the AG-UI action caller satisfies it.
 export interface Caller { call(method: string, params?: object): Promise<unknown> }
 
 // ─── Shared rendering helpers ─────────────────────────────────────────
@@ -146,8 +145,8 @@ export const runWorkspaceWorkers = async (
 // ─── plurnk workspace rename ────────────────────────────────────────────
 
 // workspace.rename mutates the ATTACHED workspace's name (a workspace is the world;
-// its name is a mutable handle — unlike a run, which is immutable history).
-// Resolve <name> by list, attach, rename. svc#248.
+// its name is a mutable handle — unlike a worker's, which is immutable).
+// Resolve <name> by list, attach, rename.
 export const runWorkspaceRename = async (
     rpc: Caller,
     workspaceName: string,
@@ -174,8 +173,8 @@ export const runWorkspaceRename = async (
 
 // ─── plurnk log read ──────────────────────────────────────────────────
 
-// Caller has already attached the workspace via attachOrCreateSession; we just
-// call log.read on the attached run. Filters thread through to the RPC.
+// The caller's thread selects the workspace; log.read reads its conversation worker
+// unless a workerId pins another. Filters pass through to the action.
 
 interface LogReadResult {
     status: number;
@@ -183,7 +182,7 @@ interface LogReadResult {
 }
 
 export interface LogReadFilters {
-    workerId?: number;   // pin a run by id (AG-UI+: no connection state — the pin rides params)
+    workerId?: number;   // pin a worker by id; the pin rides the action params
     loopId?: number;
     turnId?: number;
     sinceId?: number;
@@ -218,13 +217,12 @@ export const runLogRead = async (
 // ─── plurnk read <L/T/S> ──────────────────────────────────────────────
 
 // Drill into ONE log entry by its L/T/S coordinate — the address on every
-// waterfall line. The CLEAN contract (svc#271): hand the display coordinate to
-// log.read({loopSeq,turnSeq,sequence}); the daemon resolves it and returns the
-// SINGLE entry's full shape (tx + rx). No fetch-all, no client-side coordinate
-// match — the service owns resolution. The client renders the entry it's handed
-// (picking the meaningful content per op is display logic, the client's job).
-// Run-relative, so target the conversation's run with `--worker <model-run>`. Accepts
-// zero-padded display form (03/01/02) or bare (3/1/2) alike.
+// waterfall line. Hand the display coordinate to log.read({loopSeq,turnSeq,sequence});
+// the daemon resolves it and returns the SINGLE entry's full shape (tx + rx) — the
+// service owns resolution. The client renders the entry it's handed (picking the
+// meaningful content per op is display logic, the client's job). Worker-relative,
+// so select a worker with `--worker <name>`. Accepts zero-padded display form
+// (03/01/02) or bare (3/1/2) alike.
 export const parseCoord = (raw: string): [number, number, number] | null => {
     const parts = raw.split("/");
     if (parts.length !== 3) return null;
@@ -256,8 +254,8 @@ export const runRead = async (rpc: Caller, coord: string, opts: { json: boolean;
         throw new ProblemError(clientSubcommandCoordinateInvalid(coord), 64);
     }
     const [loop, turn, seq] = parsed;
-    // One clean call (svc#271): the daemon resolves the coordinate, returns the
-    // single full entry (tx + rx). No fetch-all, no client-side coordinate match.
+    // One call: the daemon resolves the coordinate and returns the single full
+    // entry (tx + rx).
     const { entries } = await rpc.call("log.read", { loopSeq: loop, turnSeq: turn, sequence: seq, ...(opts.workerId !== undefined ? { workerId: opts.workerId } : {}) }) as LogReadResult;
     const entry = entries[0];
     if (entry === undefined) {

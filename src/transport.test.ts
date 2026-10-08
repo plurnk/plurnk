@@ -1,5 +1,4 @@
-// Unit tests for the transport seam. WsTransport against a fake Rpc (persistent
-// forwarding + loopId-keyed done); BridgeTransport against a mock SSE bridge
+// Unit tests for the transport seam: AguiTransport against a mock AG-UI endpoint
 // (un-projection + done from plurnk.terminated). No live daemon.
 
 import { test } from "node:test";
@@ -9,10 +8,10 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BridgeTransport, type RunHandlers } from "./transport.ts";
+import { AguiTransport, type RunHandlers } from "./transport.ts";
 import { ProblemError } from "./diagnostics.ts";
 
-import { runViaBridge } from "./agui.ts";
+import { runViaAgui } from "./agui.ts";
 
 interface ConformanceKit {
     schemaVersion: number;
@@ -61,7 +60,7 @@ const collectingHandlers = () => {
     return { h, seen };
 };
 
-// ── BridgeTransport ──────────────────────────────────────────────────
+// ── AguiTransport ──────────────────────────────────────────────────
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; body: unknown }> = [];
@@ -100,8 +99,8 @@ test("{§cli-agui-conformance}: the official AG-UI transport consumes every shar
             try {
                 const events: unknown[] = [];
                 const consume = async (): Promise<void> => {
-                    for await (const event of runViaBridge(
-                        { bridgeUrl: mock.url },
+                    for await (const event of runViaAgui(
+                        { aguiUrl: mock.url },
                         { threadId: "fixture", messages: [] },
                     )) events.push(event);
                 };
@@ -118,7 +117,7 @@ test("{§cli-agui-conformance}: the official AG-UI transport consumes every shar
     }
 });
 
-test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle specimen", async (t) => {
+test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle specimen", async (t) => {
     const kit = await loadConformanceKit();
     const terminalContinuation = kit.lifecycles
         .find(({ name }) => name === "ordinary-run")!
@@ -135,7 +134,7 @@ test("{§cli-agui-conformance}: BridgeTransport consumes every shared lifecycle 
                 res.end();
             });
             try {
-                const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
+                const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
                 const { h, seen } = collectingHandlers();
                 transport.subscribe({
                     ...h,
@@ -203,7 +202,7 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
         res.end();
     });
     try {
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         const result = await transport.run("fixture", {}).done;
@@ -228,7 +227,7 @@ test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state
         res.end();
     });
     try {
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "fixture");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
         transport.subscribe(collectingHandlers().h);
         await assert.rejects(
             () => transport.run("fixture", {}).done,
@@ -259,7 +258,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
         response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "providers.list", ok: true, result: { aliases: [] } } }));
         response.end(frame({ type: "RUN_FINISHED" }));
     });
-    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "thread");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "thread");
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe({ ...h, onStatus: (status) => { seen.status.push(status); ready.resolve(); } });
@@ -277,7 +276,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
+test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TEXT_MESSAGE_CONTENT", messageId: "generic", delta: "generic-ignored" }));
@@ -296,7 +295,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { projectRoot: "/proj", settings: { questions: true } });
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th", { projectRoot: "/proj", settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", {}).done;
@@ -323,7 +322,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
     } finally { await mock.close(); }
 });
 
-test("{plurnk#108} BridgeTransport: a session that observes its delegation asks for descendants on every run and un-projects plurnk.descendant", async () => {
+test("{plurnk#108} AguiTransport: a session that observes its delegation asks for descendants on every run and un-projects plurnk.descendant", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
@@ -334,7 +333,7 @@ test("{plurnk#108} BridgeTransport: a session that observes its delegation asks 
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", { descendants: true });
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th", { descendants: true });
         const { h, seen } = collectingHandlers();
         const introduced: unknown[] = [];
         bt.subscribe({ ...h, onDescendant: (descendant) => introduced.push(descendant) });
@@ -345,7 +344,7 @@ test("{plurnk#108} BridgeTransport: a session that observes its delegation asks 
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: plurnk.problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
+test("AguiTransport: plurnk.problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/engine/rails/max-turns",
         title: "Max turns",
@@ -361,7 +360,7 @@ test("BridgeTransport: plurnk.problem supplies the exact terminal status instead
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -370,14 +369,14 @@ test("BridgeTransport: plurnk.problem supplies the exact terminal status instead
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: RUN_ERROR without the exact Problem returns a client contract Problem", async () => {
+test("AguiTransport: RUN_ERROR without the exact Problem returns a client contract Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_ERROR", message: "loop terminated 429", code: "429" }));
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -386,7 +385,7 @@ test("BridgeTransport: RUN_ERROR without the exact Problem returns a client cont
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth", async () => {
+test("AguiTransport: plurnk.terminated.result is the ordinary terminal truth", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled",
         title: "Loop cancelled",
@@ -411,7 +410,7 @@ test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth",
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -421,7 +420,7 @@ test("BridgeTransport: plurnk.terminated.result is the ordinary terminal truth",
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport.rpc: an action failure throws its exact Problem", async () => {
+test("AguiTransport.rpc: an action failure throws its exact Problem", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/agui/action/unknown-action",
         title: "Unknown action",
@@ -436,7 +435,7 @@ test("BridgeTransport.rpc: an action failure throws its exact Problem", async ()
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         await assert.rejects(
             () => bt.rpc("missing"),
             (error: unknown) => error instanceof ProblemError && error.problem.type === problem.type,
@@ -444,7 +443,7 @@ test("BridgeTransport.rpc: an action failure throws its exact Problem", async ()
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport.rpc: a proposal-gated action resumes and returns its result", async () => {
+test("AguiTransport.rpc: a proposal-gated action resumes and returns its result", async () => {
     let call = 0;
     const mock = await bootMock((_req, res) => {
         call += 1;
@@ -461,7 +460,7 @@ test("BridgeTransport.rpc: a proposal-gated action resumes and returns its resul
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe({
             ...h,
@@ -478,14 +477,14 @@ test("BridgeTransport.rpc: a proposal-gated action resumes and returns its resul
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport.rpc: an action stream without a result or interrupt fails explicitly", async () => {
+test("AguiTransport.rpc: an action stream without a result or interrupt fails explicitly", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         await assert.rejects(
             () => bt.rpc("op.exec", { command: "printf done" }),
             (error: unknown) => error instanceof ProblemError
@@ -523,7 +522,7 @@ for (const order of [[42, 99], [99, 42]]) {
             res.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: toolCallId, reason: "tool_call", toolCallId }] } }));
         });
         try {
-            const transport = new BridgeTransport({ bridgeUrl: mock.url }, "worker", { workspace: "world" });
+            const transport = new AguiTransport({ aguiUrl: mock.url }, "worker", { workspace: "world" });
             transport.subscribe({ ...collectingHandlers().h, onProposal: (proposal) => announced.get(proposal.logEntryId)!.resolve() });
             const model = transport.run("do the work", {}).done;
             await announced.get(42)!.promise;
@@ -544,7 +543,7 @@ for (const order of [[42, 99], [99, 42]]) {
     });
 }
 
-test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/rpc side-channel)", async () => {
+test("AguiTransport: inject + rpc ride §3 action runs", async () => {
     const mock = await bootMock((req, res) => {
         // An action run answers on its own SSE: result custom + RUN_FINISHED.
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -553,7 +552,7 @@ test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         assert.deepEqual(await bt.inject("steer mid-run"), { status: 100, action: "injected_next_turn", loopId: 7 });
         const providers = await bt.rpc<{ action: string }>("providers.list");
         assert.equal(providers.action, "injected_next_turn", "the action result returns verbatim");
@@ -562,7 +561,7 @@ test("BridgeTransport: inject + rpc ride §3 action runs (AG-UI+ — no /plurnk/
         assert.deepEqual((injectRun?.body as { forwardedProps: { plurnk: { action: unknown } } }).forwardedProps.plurnk.action, { kind: "loop.inject", prompt: "steer mid-run" });
         const rpcRun = mock.captured.find((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "providers.list");
         assert.ok(rpcRun !== undefined, "verbs ride action runs");
-        // A worker thread injects into ITS world: the bridge would otherwise fall back to the
+        // A worker thread injects into ITS world: the daemon would otherwise fall back to the
         // thread name and address a world named after the worker (the 2026-09-11 dogfood).
         bt.useWorker("designer", "plurnkpromo");
         await bt.inject("what are you waiting on?");
@@ -595,7 +594,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         }
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "alice", { workspace: "world" });
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "alice", { workspace: "world" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -638,7 +637,7 @@ test("{§cli-active-command-admission}: client operation rows do not advance the
         }
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -656,7 +655,7 @@ test("{§cli-active-command-admission}: injection refuses missing admission iden
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
     try {
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
         await assert.rejects(transport.inject("next"), (error: unknown) =>
             error instanceof ProblemError && error.problem.kind === "result-invalid"
                 && String(error.problem.reason).includes("admission disposition"));
@@ -673,7 +672,7 @@ for (const entries of [null, [{ id: null }], Array.from({ length: 1000 }, (_, in
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         });
         try {
-            const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+            const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
             const { h, seen } = collectingHandlers();
             transport.subscribe(h);
             await assert.rejects(transport.observe().done, (error: unknown) =>
@@ -691,7 +690,7 @@ test("{§cli-active-command-admission}: a dead sync stream retains its original 
         response.end(frame({ type: "RUN_STARTED" }));
     });
     try {
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
         const result = await transport.observe().done;
         assert.equal(result?.result.problem?.kind, "terminal-missing");
         assert.equal(mock.captured.length, 1);
@@ -725,7 +724,7 @@ for (const historyLimit of [0, 2]) {
                 response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
             });
         });
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
         try {
             const { h, seen } = collectingHandlers();
             const histories: unknown[] = [];
@@ -748,7 +747,7 @@ test("{§cli-conversation-history}: successful sync without a message snapshot i
         response.write(frame({ type: "RUN_STARTED" }));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
     try {
         await assert.rejects(transport.observe({ historyLimit: 10 }).done,
             (cause: unknown) => cause instanceof ProblemError && cause.problem.kind === "result-invalid"
@@ -782,7 +781,7 @@ test("{§cli-conversation-history}: a recreated conversation resets replay ident
         }
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new BridgeTransport({ bridgeUrl: mock.url }, "thread");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "thread");
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -793,7 +792,7 @@ test("{§cli-conversation-history}: a recreated conversation resets replay ident
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("[§cli-conformance] run preserves explicitly requested file paths without message-carried authority", async () => {
+test("[§cli-conformance] run preserves explicitly requested file paths", async () => {
     const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
     const mock = await bootMock((_request, response) => {
         response.writeHead(200, { "content-type": "text/event-stream" });
@@ -802,19 +801,18 @@ test("[§cli-conformance] run preserves explicitly requested file paths without 
     });
     try {
         const paths = ["src/main.ts", "docs/use.md"];
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
         await transport.run("inspect the referenced files", { openPaths: paths }).done;
         const input = mock.captured[0].body as { forwardedProps: { plurnk: { control: boolean; openPaths: unknown } } };
         assert.deepEqual(input.forwardedProps.plurnk.openPaths, paths);
         assert.equal(input.forwardedProps.plurnk.control, true);
-        assert.equal(Object.hasOwn(input.forwardedProps.plurnk, "policy"), false);
     } finally { await mock.close(); }
 });
 
-test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
+test("[§cli-cancellation] AguiTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "RUN_STARTED" })); });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
         const handle = bt.run("go", {});
         await new Promise((r) => setTimeout(r, 50));
@@ -823,11 +821,11 @@ test("[§cli-cancellation] BridgeTransport: cancel() aborts the SSE and done res
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport.useSession: re-maps the threadId — the next run addresses the new workspace", async () => {
+test("AguiTransport.useWorkspace: re-maps the threadId — the next run addresses the new workspace", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "old", { projectRoot: "/old", settings: { client: "plurnk-tui" } });
-        const s = await bt.useSession("new-thread", { projectRoot: "/chosen" });
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "old", { projectRoot: "/old", settings: { client: "plurnk-tui" } });
+        const s = await bt.useWorkspace("new-thread", { projectRoot: "/chosen" });
         assert.equal(s.name, "new-thread");
         bt.subscribe(collectingHandlers().h);
         await bt.run("go", {}).done;
@@ -835,13 +833,13 @@ test("BridgeTransport.useSession: re-maps the threadId — the next run addresse
         const properties = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
         assert.equal(properties.projectRoot, "/chosen", "{§cli-project-root}: a switch uses its selected root, not the previous binding's root");
         assert.deepEqual(properties.settings, { client: "plurnk-tui" });
-        await bt.useSession("headless", { projectRoot: null });
+        await bt.useWorkspace("headless", { projectRoot: null });
         await bt.run("go", {}).done;
         assert.equal((mock.captured[1].body as { forwardedProps: { plurnk: { projectRoot: unknown } } }).forwardedProps.plurnk.projectRoot, null);
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; resolve() resumes with the tool-result", async () => {
+test("AguiTransport: terminate-resume — a proposal tool-call pauses done; resolve() resumes with the tool-result", async () => {
     let call = 0;
     const mock = await bootMock((_req, res) => {
         call += 1;
@@ -858,7 +856,7 @@ test("BridgeTransport: terminate-resume — a proposal tool-call pauses done; re
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("edit it", {});
@@ -884,7 +882,7 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "prop:17", reason: "tool_call" }] } }));
     });
     try {
-        const transport = new BridgeTransport({ bridgeUrl: mock.url }, "worker");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "worker");
         transport.subscribe({ ...collectingHandlers().h, onProposal: () => ready.resolve() });
         const run = transport.run("review", {});
         await ready.promise;
@@ -896,7 +894,7 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: a client interaction uses interrupt guidance and resumes with the answer", async () => {
+test("AguiTransport: a client interaction uses interrupt guidance and resumes with the answer", async () => {
     let call = 0;
     const responseSchema = {
         type: "object",
@@ -930,7 +928,7 @@ test("BridgeTransport: a client interaction uses interrupt guidance and resumes 
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("choose", {});
@@ -955,7 +953,7 @@ test("BridgeTransport: a client interaction uses interrupt guidance and resumes 
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
+test("AguiTransport: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
@@ -964,7 +962,7 @@ test("BridgeTransport: a proposal without the matching interrupt outcome returns
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("edit it", {}).done;
@@ -974,7 +972,7 @@ test("BridgeTransport: a proposal without the matching interrupt outcome returns
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: malformed proposal arguments return an exact Problem", async () => {
+test("AguiTransport: malformed proposal arguments return an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
@@ -983,7 +981,7 @@ test("BridgeTransport: malformed proposal arguments return an exact Problem", as
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("edit it", {}).done;
@@ -992,7 +990,7 @@ test("BridgeTransport: malformed proposal arguments return an exact Problem", as
     } finally { await mock.close(); }
 });
 
-test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronously from onProposal", async () => {
+test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously from onProposal", async () => {
     let call = 0;
     const mock = await bootMock((_req, res) => {
         call += 1;
@@ -1009,7 +1007,7 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h } = collectingHandlers();
         bt.subscribe({
             ...h,
@@ -1023,12 +1021,12 @@ test("[§cli-yolo-plurnkyolo] BridgeTransport: proposal can resolve synchronousl
     } finally { await mock.close(); }
 });
 
-test("BridgeTransport: resolve without a delivered interrupt fails hard", async () => {
-    const bt = new BridgeTransport({ bridgeUrl: "http://127.0.0.1:1" }, "th");
+test("AguiTransport: resolve without a delivered interrupt fails hard", async () => {
+    const bt = new AguiTransport({ aguiUrl: "http://127.0.0.1:1" }, "th");
     await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /Proposal 1 has no pending AG-UI interrupt\./);
 });
 
-test("BridgeTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {
+test("AguiTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
@@ -1036,7 +1034,7 @@ test("BridgeTransport: a stream that dies without terminal truth is an ERROR, ne
         res.end();   // no plurnk.terminated, no RUN_ERROR — the stream just dies
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
         const t = await bt.run("go", {}).done;
         assert.equal(t.finalStatus, 502, "silent stream death surfaces as 502, not success");
@@ -1053,7 +1051,7 @@ test("[§cli-workspaces-and-workers] every request preserves rooted, headless, o
     try {
         for (const projectRoot of ["/home/user/repo", null, undefined]) {
             mock.captured.length = 0;
-            const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th", {
+            const bt = new AguiTransport({ aguiUrl: mock.url }, "th", {
                 projectRoot, settings: { capabilities: { deny: [{ runtime: "sh" }] } },
             });
             await bt.rpc("worker.model.get");
@@ -1079,7 +1077,7 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
         res.end();
     });
     try {
-        const bt = new BridgeTransport({ bridgeUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         bt.subscribe(collectingHandlers().h);
         await bt.run("first", {}).done;
         await bt.run("second", {}).done;
@@ -1087,8 +1085,8 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
         assert.equal(runs.length, 2, "two loops drove");
         for (const c of runs) {
             const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
-            for (const retired of ["alias", "model", "selector", "childAlias", "childModel", "childSelector", "policy"]) {
-                assert.equal(Object.hasOwn(fp, retired), false, `${retired} is worker policy, not a loop knob`);
+            for (const key of ["selector", "childSelector"]) {
+                assert.equal(Object.hasOwn(fp, key), false, `${key} is worker policy, not a loop knob`);
             }
         }
         for (const run of runs) {

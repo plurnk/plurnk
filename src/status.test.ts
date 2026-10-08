@@ -6,6 +6,12 @@ import TerminalStatusLine, { conversationLost, turnAccountingFromNotice, accrueT
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
+// A whole gauge as the daemon sends it; each test overrides the fields it is about.
+const GAUGE = {
+    lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null, waitUntil: null, preparation: [], children: 0,
+    descendants: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null },
+};
+
 const running: ClientStatus = {
     lifecycle: "running",
     model: "deepdumb",
@@ -16,7 +22,7 @@ const running: ClientStatus = {
 };
 
 test("[§cli-status-wait] the parked countdown uses the daemon deadline and clears on wake", () => {
-    const gauge = { lifecycle: "parked", model: null, loopId: 1, packetCount: 2, activity: null, waitUntil: 304_200 };
+    const gauge = { ...GAUGE, lifecycle: "parked", model: null, loopId: 1, packetCount: 2, activity: null, waitUntil: 304_200 };
     const status = projectStatusGauge(gauge);
     assert.match(renderStatusLine(status, CONTEXT), /updates in 5m00s/);
     assert.match(renderStatusLine(status, { ...CONTEXT, now: 5_200 }), /updates in 4m59s/);
@@ -31,7 +37,7 @@ test("[§cli-status-wait] the parked countdown uses the daemon deadline and clea
 });
 
 test("[§cli-status-preparation] preparation names the capability and advances its clock before inference", () => {
-    const base = { lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null };
+    const base = { ...GAUGE, lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null };
     const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1_000).toISOString() }];
     const status = projectStatusGauge({ ...base, preparation });
     assert.match(renderStatusLine(status, CONTEXT), /preparing mcp\/search 3\.2s/);
@@ -47,7 +53,7 @@ test("[§cli-status-preparation] preparation names the capability and advances i
 });
 
 test("[§cli-status-descendants] cumulative child snapshots replace their prior value and settle once", () => {
-    const gauge = { lifecycle: "parked", model: null, loopId: 2, packetCount: 1, activity: null, descendants: {
+    const gauge = { ...GAUGE, lifecycle: "parked", model: null, loopId: 2, packetCount: 1, activity: null, descendants: {
         requests: 1, usage: { inputTokens: 200, outputTokens: 20 }, knownUsage: { inputTokens: 200, outputTokens: 20 }, costUsd: "0.0200", knownCostUsd: "0.0200",
     } };
     const status = projectStatusGauge(gauge);
@@ -72,7 +78,7 @@ test("[§cli-status-descendants] cumulative child snapshots replace their prior 
 });
 
 test("[§cli-status-descendants] absent evidence is not zero and malformed evidence is rejected", () => {
-    const base = { lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null };
+    const base = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null };
     const unknown = projectStatusGauge({ ...base, descendants: { requests: 1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } });
     assert.deepEqual(unknown.descendants, { inputTokens: null, outputTokens: null, costUsd: null, knownCostUsd: null, knownInputTokens: null, knownOutputTokens: null });
     assert.equal(projectStatusGauge({ ...base, descendants: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } }).descendants, null);
@@ -116,7 +122,7 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
 });
 
 test("[§cli-status-project-root] status displays the bound workspace folder without inventing a local root", () => {
-    const gauge = { lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null };
+    const gauge = { ...GAUGE, lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null };
     const path = "/projects/client work/日本語";
     const status = projectStatusGauge(gauge, path);
     assert.equal(status.projectRoot, path);
@@ -156,9 +162,8 @@ test("[§cli-status-children] the ant counts children from the gauge and the wor
     assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2 dumbox");
     assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 dumbox", "no gauge, no count: the bare child model");
     assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 1", "the place is the prompt prefix's, not the status line's");
-    assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: 3 }).children, 3);
-    assert.equal(projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null }).children, null, "an older daemon states no count");
-    assert.throws(() => projectStatusGauge({ lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: -1 }), /Invalid runtime children count/u);
+    assert.equal(projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: 3 }).children, 3);
+    assert.throws(() => projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: -1 }), /Invalid runtime children count/u);
 });
 
 test("[§cli-status-children] the live child indicator disappears when the last child concludes", () => {
@@ -171,7 +176,7 @@ test("[§cli-status-children] the live child indicator disappears when the last 
 });
 
 test("the authoritative status gauge projects indexing phases without a Notice reducer", () => {
-    const gauge = { lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null as unknown };
+    const gauge = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null as unknown };
     for (const [phase, label] of [["preparing", "preparing"], ["indexing", "indexing"], ["failed", "indexing failed"]]) {
         assert.deepEqual(projectStatusGauge({ ...gauge, activity: { kind: "derivation", phase, percent: 30 } }).activity, { label, percent: 30 });
     }
@@ -179,7 +184,7 @@ test("the authoritative status gauge projects indexing phases without a Notice r
 });
 
 test("[§cli-worker-status] queued work retains its lifecycle while elapsed wall time accrues", () => {
-    const projected = projectStatusGauge({ lifecycle: "queued", model: null, loopId: 7, packetCount: 0, activity: null });
+    const projected = projectStatusGauge({ ...GAUGE, lifecycle: "queued", model: null, loopId: 7, packetCount: 0, activity: null });
     assert.equal(projected.lifecycle, "queued");
     assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳  · 3.2s");
 });
@@ -237,17 +242,16 @@ test("TerminalStatusLine clears and restores its row around stdout on a shared t
 });
 
 test("formatRouteIdentity renders effort with the identity and stays bare without it (plurnk#41)", () => {
-    assert.equal(formatRouteIdentity({ alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", effort: "low" }), "deepdumb[low]");
-    assert.equal(formatRouteIdentity({ provider: "cloudflare", model: "@cf/zai-org/glm-5.3-flash", effort: "low" }), "cloudflare/@cf/zai-org/glm-5.3-flash[low]");
-    assert.equal(formatRouteIdentity({ alias: "fireox", provider: "fireworks", model: "accounts/fireworks/models/glm-5p3-flash", effort: "off" }), "fireox[off]");
+    assert.equal(formatRouteIdentity({ alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", effort: "low", effortSource: "explicit" }), "deepdumb[low]");
+    assert.equal(formatRouteIdentity({ provider: "cloudflare", model: "@cf/zai-org/glm-5.3-flash", effort: "low", effortSource: "explicit" }), "cloudflare/@cf/zai-org/glm-5.3-flash[low]");
+    assert.equal(formatRouteIdentity({ alias: "fireox", provider: "fireworks", model: "accounts/fireworks/models/glm-5p3-flash", effort: "off", effortSource: "explicit" }), "fireox[off]");
     assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m" }), "plain", "no reasoning dimension - no brackets");
 });
 
-test("[§cli-identity-effort] brackets read as chosen, parentheses as given (plurnk#41 ask 2, service#528)", () => {
-    const route = { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", effort: "low" };
+test("[§cli-identity-effort] brackets read as chosen, parentheses as given (plurnk#41 ask 2)", () => {
+    const route = { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash", effort: "low" } as const;
     assert.equal(formatRouteIdentity({ ...route, effortSource: "explicit" }), "deepdumb[low]", "an /effort selection");
     assert.equal(formatRouteIdentity({ ...route, effortSource: "default" }), "deepdumb(low)", "the daemon seeded it from the alias");
-    assert.equal(formatRouteIdentity(route), "deepdumb[low]", "an older daemon that states no source renders as before");
     assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m", effortSource: "default" }), "plain", "no policy, no marker");
 });
 

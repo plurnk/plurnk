@@ -28,22 +28,6 @@ export const applyFloor = (defaults: Record<string, string>, env: Record<string,
     }
 };
 
-// A retired key never coexists silently with its successor: it fails hard, naming where the
-// choice lives now. The retired names appear only here.
-const RETIRED: Readonly<Record<string, string>> = Object.freeze({
-    PLURNK_AUTO: "PLURNK_CLIENT_AUTO",
-    PLURNK_CLIENT_LOOP_POLICY: "PLURNK_CLIENT_AUTO (attendance), PLURNK_CLIENT_YOLO (local approval) or PLURNK_SERVICE_PROPOSALS (server disposition)",
-    PLURNK_CLIENT_PROPOSALS: "PLURNK_CLIENT_YOLO (local approval) or PLURNK_SERVICE_PROPOSALS (server disposition)",
-    PLURNK_CLIENT_REASONING: "PLURNK_CLIENT_EFFORT",
-    PLURNK_CLIENT_WORKSPACE_CAPABILITIES: "PLURNK_CLIENT_CAPABILITIES",
-    PLURNK_STATUS_STREAM: "PLURNK_CLIENT_STATUS_STREAM",
-});
-
-export const retiredKey = (env: Record<string, string | undefined> = process.env): { name: string; successor: string } | null => {
-    const name = Object.keys(RETIRED).find((key) => (env[key] ?? "").length > 0);
-    return name === undefined ? null : { name, successor: RETIRED[name]! };
-};
-
 // Boot-time entry: read the shipped file (fail-hard — a package without its own
 // floor file is a broken install) and floor the process env.
 export const loadFloor = (): void => {

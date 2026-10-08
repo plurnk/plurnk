@@ -15,12 +15,12 @@ test("[§cli-daemon-autostart] only loopback destinations are eligible", () => {
 });
 
 test("[§cli-daemon-autostart] remote, portal and attach-only targets do not resolve or start a package", async () => {
-    for (const [bridgeUrl, overrides] of [
+    for (const [aguiUrl, overrides] of [
         ["https://example.invalid", {}],
         ["http://127.0.0.1:0", { PLURNK_AGUI_URL: "http://127.0.0.1:0" }],
         ["http://127.0.0.1:0", { PLURNK_CLIENT_AUTOSTART: "0" }],
     ] as const) {
-        const target = { bridgeUrl, token: "existing-token" };
+        const target = { aguiUrl, token: "existing-token" };
         await using backend = await Backend.open(target, { ...env, ...overrides });
         assert.deepEqual(backend.target, target);
         assert.equal(backend.database, null);
@@ -35,7 +35,7 @@ test("[§cli-daemon-autostart] a live listener is attached even when it is not a
     try {
         const address = server.address();
         assert.ok(address !== null && typeof address === "object");
-        const target = { bridgeUrl: `http://127.0.0.1:${address.port}` };
+        const target = { aguiUrl: `http://127.0.0.1:${address.port}` };
         await using backend = await Backend.open(target, env);
         assert.deepEqual(backend.target, target, "protocol/authentication remain the AG-UI caller's decision");
         assert.equal(backend.database, null);

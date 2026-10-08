@@ -26,7 +26,7 @@ test("[§cli-project-root] implicit home detection resolves symlinks, while expl
     const project = join(root, "project");
     await Promise.all([mkdir(home), mkdir(project)]);
     await symlink(home, link);
-    const target = { bridgeUrl: "http://unused.invalid" };
+    const target = { aguiUrl: "http://unused.invalid" };
     t.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => workspaceListResponse(init, []));
     for (const cwd of [home, link]) {
         const roots = new ProjectRoot(target, undefined, cwd, home);
@@ -48,13 +48,13 @@ test("[§cli-project-root] resumption reads the stored root without accepting it
     t.after(() => rm(home, { recursive: true, force: true }));
     let existing: Record<string, unknown>[] = [{ name: "saved" }];
     t.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => workspaceListResponse(init, existing));
-    const roots = new ProjectRoot({ bridgeUrl: "http://fixture.invalid" }, undefined, home, home);
+    const roots = new ProjectRoot({ aguiUrl: "http://fixture.invalid" }, undefined, home, home);
     await assert.rejects(roots.resolve("saved"), /workspace.list returned a workspace without its project_root/);
     for (const project_root of [null, "/saved-project"]) {
         existing = [{ name: "saved", project_root }];
         assert.equal(await roots.resolve("saved"), project_root);
         for (const raw of [undefined, "", "/creation-default"]) {
-            const selected = new ProjectRoot({ bridgeUrl: "http://fixture.invalid" }, raw, tmpdir(), home);
+            const selected = new ProjectRoot({ aguiUrl: "http://fixture.invalid" }, raw, tmpdir(), home);
             assert.equal(await selected.resolve("saved"), project_root, "saved roots outrank launch directories and creation defaults");
         }
         await assert.rejects(roots.resolve(undefined), ProblemError, "resumption never silently selects a folder for a new workspace");

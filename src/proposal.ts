@@ -1,12 +1,11 @@
-// Proposal review — receives loop/proposal notifications, presents the user
-// with an accept/edit/reject/cancel choice, and returns the resolution to send
-// back via loop.resolve. Shared between CLI (one-shot) and TUI modes; mode-
-// specific terminal handoff lives in the caller.
+// Proposal review — presents a client-owned proposal (an AG-UI request_approval
+// interrupt) with an accept/edit/reject/cancel choice and returns the resolution
+// the caller sends back as a standard AG-UI resume (proposalResume). Shared
+// between CLI (one-shot) and TUI modes; mode-specific terminal handoff lives in
+// the caller.
 //
-// Wire shape per plurnk-service Daemon.ts: loop/proposal carries an op kind,
-// a target {scheme, pathname}, a body string (udiff for EDIT, command summary
-// for an execution), and an opaque attrs object. loop.resolve takes {logEntryId,
-// decision, body?, outcome?}.
+// A proposal carries an op kind, a target {scheme, pathname}, a body string (udiff
+// for EDIT, command summary for an execution), and an opaque attrs object.
 
 import ModelText from "./model-text.ts";
 import { paint, withColorOutput } from "./color.ts";

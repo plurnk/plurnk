@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import type { RunAgentInput } from "@ag-ui/core";
 // AG-UI 1.0 ships its runtime validators on the schemas subpath; the root export is types only.
 import { RunAgentInputSchema } from "@ag-ui/core/schemas";
-import { actionViaBridge } from "../../src/agui.ts";
+import { actionViaAgui } from "../../src/agui.ts";
 import { CLIENT_ID_CLI } from "../../src/dispatcher.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
@@ -139,14 +139,14 @@ test("[§cli-script-binding] the built client mutates only its selected real wor
     ]);
     assert.equal(JSON.parse(result.stdout).exitCode, 0, result.stderr);
     assert.equal(await readFile(join(daemon.workspace, "witness.txt"), "utf8"), "script witness");
-    const target = { bridgeUrl: daemon.url };
-    const { workspaces } = await actionViaBridge<{ workspaces: Array<{ name: string; project_root: string }> }>(
+    const target = { aguiUrl: daemon.url };
+    const { workspaces } = await actionViaAgui<{ workspaces: Array<{ name: string; project_root: string }> }>(
         target, { threadId: "inspect", kind: "workspace.list" },
     );
     assert.deepEqual(workspaces.map(({ name, project_root }) => ({ name, project_root })), [
         { name: "script-world", project_root: daemon.workspace },
     ], "the worker name never becomes a second workspace");
-    const policy = await actionViaBridge<{ workspace: unknown }>(target, {
+    const policy = await actionViaAgui<{ workspace: unknown }>(target, {
         threadId: "script-actor", workspace: "script-world", kind: "workspace.capabilities.get",
     });
     assert.deepEqual(policy.workspace, { deny: [{ runtime: "sh" }] }, "creation policy is durable");

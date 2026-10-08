@@ -6,7 +6,7 @@
   discards compaction entirely in favor of ongoing, model-driven context
   curation.
 - **Reasoning Distillation.** Model-driven reasoning trace introspection,
-  note-taking, and recall let open models keep their thinking instead of
+  note-taking, and recall let open models keep their reasoning instead of
   buying it again every turn.
 - **Universal Patterns.** Your entire repo gets indexed on entry, letting the
   model explore and edit the project by regex, XPath, JSONPath, full text, and

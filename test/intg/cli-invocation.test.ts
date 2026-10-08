@@ -52,15 +52,10 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
             assert.equal(requests, 0, "empty input must not create a workspace or load the TUI");
         });
     }
-    await t.test("[§cli-worker-ownership] --auto is live; per-loop approval flags stay retired and name their successors", async () => {
+    await t.test("[§cli-worker-ownership] --auto is an accepted option that declares nobody is attending", async () => {
         const auto = await run(["--auto", "--help"]);
         assert.equal(auto.code, 0, auto.stderr);
         assert.match(auto.stdout, /--auto {2,}nobody is attending/u);
-        const before = requests;
-        const retired = await run(["--proposals", "accept", "hello"]);
-        assert.equal(retired.code, 64, retired.stderr);
-        assert.match(retired.stderr, /Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS/u);
-        assert.equal(requests, before, "a refused flag opens no conversation");
     });
     for (const name of ["models", "workspace", "log", "read", "script", "mcp", "skills", "a2a", "members", "env", "schedule", "effort", "capabilities", "completion"]) {
         await t.test(`${name} --help`, async () => {

@@ -194,6 +194,7 @@ test("[§cli-worker-ownership]: a headless owner advertises no clarification too
         readyTimeoutMs: 30_000,
         extraEnv: {
             PLURNK_MODEL: "inputfixture",
+            PLURNK_EXECS_QUESTION: "1",
             PLURNK_MODEL_inputfixture: "openai/interaction-fixture",
             PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
             OPENAI_API_KEY: "input-fixture",
@@ -231,7 +232,7 @@ test("{§cli-worker-ownership} retired approval flags and environment keys name 
     t.after(daemon.cleanup);
     const base = ["--json", "--workspace", "cli-worker-owner", "--worker", "policy-worker", "--project-root", "", "--timeout", "20"];
 
-    for (const flags of [["--auto"], ["--proposals", "review"], ["--proposals", "sometimes"], ["--policy", '{"proposals":"accept"}']]) {
+    for (const flags of [["--proposals", "review"], ["--proposals", "sometimes"], ["--policy", '{"proposals":"accept"}']]) {
         const result = await runClient(daemon.url, [...base, ...flags, "Do the thing."]);
         assert.equal(result.code, 64);
         assert.match(result.stderr + result.stdout, /Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS/u);
@@ -242,10 +243,9 @@ test("{§cli-worker-ownership} retired approval flags and environment keys name 
     assert.match(renamedFlag.stderr + renamedFlag.stdout, /--reasoning was renamed to --effort/u);
 
     for (const [name, successor] of [
-        ["PLURNK_AUTO", "PLURNK_CLIENT_YOLO"],
-        ["PLURNK_CLIENT_AUTO", "worker ownership"],
+        ["PLURNK_AUTO", "PLURNK_CLIENT_AUTO"],
         ["PLURNK_CLIENT_PROPOSALS", "PLURNK_CLIENT_YOLO"],
-        ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_YOLO"],
+        ["PLURNK_CLIENT_LOOP_POLICY", "PLURNK_CLIENT_AUTO"],
         ["PLURNK_CLIENT_REASONING", "PLURNK_CLIENT_EFFORT"],
         ["PLURNK_CLIENT_WORKSPACE_CAPABILITIES", "PLURNK_CLIENT_CAPABILITIES"],
         ["PLURNK_STATUS_STREAM", "PLURNK_CLIENT_STATUS_STREAM"],

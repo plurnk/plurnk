@@ -64,6 +64,7 @@ Options:
 | `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
+| `--auto` | flag | State that nobody is attending: the daemon asks nothing, and a loop that would wait for a person concludes instead. Approval stays local. Overrides `PLURNK_CLIENT_AUTO`. See §6.0. |
 | `--capabilities <json>` | string | CapabilityPolicy applied when creating the workspace. Overrides `PLURNK_CLIENT_CAPABILITIES`. |
 | `--max-turns <n>` | string | Model-call budget for the prompt's worker tree ({§turn-cap-counts-the-tree}): the loop's turns, its descendants' turns and every BARE call, one per call; omission leaves the daemon's ceiling in effect. Overrides `PLURNK_CLIENT_MAX_TURNS`. |
 | `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · /look <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
@@ -1154,12 +1155,19 @@ Run with the selected decision; the following sections describe its local review
 The conversation's workspace-scoped AG-UI identity owns approvals. Prompt submission,
 client operations, and explicit TUI attachment claim only runtime-owned conversations
 and their runtime-owned descendants; observing another owner never transfers authority.
-`RunAgentInput.tools` advertises implemented client tools, not permission grants:
+Every Run declares the client's capability set: `RunAgentInput.tools` advertises the
+client tools it implements, not permission grants, and `forwardedProps.plurnk.interactive`
+states whether a person attends it.
 
-| Client mode | Advertised tools |
-|---|---|
-| Every mode | `request_approval`, including fail-closed headless resolution |
-| Interactive terminal | Also `question` and `mcp_input_required` |
+| Client mode | `interactive` | Advertised tools |
+|---|---|---|
+| Interactive terminal | `true` | `request_approval`, `question`, `mcp_input_required` |
+| No terminal, or `--auto` | `false` | `request_approval`, including fail-closed headless resolution |
+
+`--auto` (`PLURNK_CLIENT_AUTO`) states that nobody is attending, even at a terminal: the
+daemon asks nothing, and a loop that would wait for a person concludes instead. It removes
+the person, not the approver: `--yolo`, configured acceptance, or fail-closed review still
+settle what the daemon routes to this client.
 
 The TUI maintains `/agui/connect` while idle and reconnects after a terminal or
 resolved interrupt. Inspection and direct operations do not detach that owner
@@ -1171,9 +1179,8 @@ open another review or submit another decision; its observer resumes after the s
 
 `--yolo`, configured acceptance, and `?` remain client-side decisions. Server
 `PLURNK_SERVICE_PROPOSALS` owns automatic server disposition. The retired `--policy`,
-`--proposals`, `--auto`, `PLURNK_AUTO`, `PLURNK_CLIENT_LOOP_POLICY`,
-`PLURNK_CLIENT_PROPOSALS`, and `PLURNK_CLIENT_AUTO` fail and name their replacement;
-no approval policy travels with a message or schedule.
+`--proposals`, `PLURNK_AUTO`, `PLURNK_CLIENT_LOOP_POLICY`, and `PLURNK_CLIENT_PROPOSALS`
+fail and name their replacement; no approval policy travels with a message or schedule.
 
 ### §6.1 Notification shape {§cli-notification-shape}
 
@@ -1431,7 +1438,7 @@ is absent, it exits 127 and names the exact installation command. `SIGINT` and
 - Hide state changes: workspace rename, reasoning and capability setters, MCP
   management, and scripts explicitly request mutations; inspection commands do not.
 - Honor flags that only matter to a conversation (`--model`, `--effort`,
-  `--yolo`) in state-command mode. Those parse without effect there;
+  `--yolo`, `--auto`) in state-command mode. Those parse without effect there;
   `web` is a client presentation mode and therefore does honor them. Reasoning
   mutation uses the positional policy above.
 

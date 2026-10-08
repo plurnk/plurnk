@@ -314,6 +314,7 @@ test("[§cli-conformance] BridgeTransport: run() un-projects plurnk.* to daemon 
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, {
             plurnk: {
                 workspace: "th",
+                interactive: true,
                 projectRoot: "/proj",
                 settings: { questions: true },
                 control: true,

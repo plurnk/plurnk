@@ -18,7 +18,7 @@ import {
     type ProblemDetails,
 } from "./diagnostics.ts";
 import type { ApplicationPort, OperationResult } from "@plurnk/plurnk-contracts";
-import { frontendTools } from "./frontend-tools.ts";
+import { clientCapabilities } from "./client-capabilities.ts";
 import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
 import { runViaBridge, actionOutcome, operationResult, problemDetails, type AguiEvent, type BridgeTarget } from "./agui.ts";
@@ -118,7 +118,7 @@ export interface Transport {
 // can finish without a loop terminal; it cannot manufacture accounting evidence.
 // Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
 // (§agui-forwarded-props) — the bridge applies them at workspace.create.
-export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object; descendants?: boolean }
+export interface BridgeSessionOpts { workspace?: string; projectRoot?: string | null; settings?: object; descendants?: boolean; auto?: boolean }
 
 export class BridgeTransport implements Transport {
     #target: BridgeTarget;
@@ -179,7 +179,7 @@ export class BridgeTransport implements Transport {
             for await (const e of runViaBridge(this.#target, {
                 ...binding,
                 ...next,
-                tools: frontendTools(true),
+                capabilities: clientCapabilities(this.#workspace.auto !== true),
             }, signal)) {
                 if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
                     const v = actionOutcome<T>((e as { value?: unknown }).value);
@@ -302,7 +302,7 @@ export class BridgeTransport implements Transport {
                 let interactionArguments: Record<string, unknown> | null = null;
                 try {
                     const events = runViaBridge(this.#target, {
-                        ...binding, ...next, forwardedProps: fp, tools: frontendTools(true),
+                        ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
                     const synchronized = fp?.mode === "sync"

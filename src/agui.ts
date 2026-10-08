@@ -10,6 +10,7 @@
 // rendering (waterfall, proposals, gauge) stays local. Plurnk fidelity rides
 // CUSTOM plurnk.* events (especially plurnk.row, the full wire row).
 
+import type { ClientCapabilities } from "./client-capabilities.ts";
 import { enforceEvents, HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
 import {
@@ -112,7 +113,7 @@ export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {
 // it does not cancel the worker. An authored run retains its cancellation scope.
 export async function* runViaBridge(
     target: BridgeTarget,
-    run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; tools?: RunAgentInput["tools"]; connect?: boolean; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },
+    run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; capabilities?: ClientCapabilities; connect?: boolean; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },
     signal?: AbortSignal,
 ): AsyncGenerator<AguiEvent> {
     const messages: RunAgentInput["messages"] = run.messages
@@ -129,12 +130,17 @@ export async function* runViaBridge(
         runId: run.runId ?? crypto.randomUUID(),
         state: {},
         messages,
-        tools: run.tools ?? [],
+        tools: run.capabilities?.tools ?? [],
         context: [],
         ...(run.resume !== undefined ? { resume: run.resume } : {}),
         // The workspace (world) is REQUIRED — a run has no existence without one. The
         // threadId names the CONVERSATION; it doubles as the workspace unless split.
-        forwardedProps: { plurnk: { workspace: run.workspace ?? run.threadId, ...(run.forwardedProps ?? {}) } },
+        // {§cli-worker-ownership} A Run that declares capabilities also states whether a person attends.
+        forwardedProps: { plurnk: {
+            workspace: run.workspace ?? run.threadId,
+            ...(run.capabilities === undefined ? {} : { interactive: run.capabilities.interactive }),
+            ...(run.forwardedProps ?? {}),
+        } },
     };
     type QueueItem =
         | { kind: "event"; event: AguiEvent }

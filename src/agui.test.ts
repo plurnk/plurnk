@@ -261,6 +261,36 @@ test("[§cli-workspaces-and-workers] runViaBridge: an explicit workspace rides w
     } finally { await mock.close(); }
 });
 
+test("{§cli-worker-ownership} runCliViaBridge: a terminal declares a person, and --auto declares nobody", async () => {
+    await using lifetime = new Lifetime();
+    const { runCliViaBridge } = await import("./agui_cli.ts");
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
+        res.write(frame({ type: "RUN_FINISHED" }));
+        res.end();
+    });
+    const tty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    try {
+        for (const auto of [false, true]) {
+            await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto, json: true, statusStream: false, projectRoot: null });
+        }
+        const declared = mock.captured.map(({ body }) => {
+            const run = body as { tools: { name: string }[]; forwardedProps: { plurnk: { interactive?: boolean } } };
+            return [run.forwardedProps.plurnk.interactive, run.tools.map(({ name }) => name)];
+        });
+        assert.deepEqual(declared, [
+            [true, ["request_approval", "question", "mcp_input_required"]],
+            [false, ["request_approval"]],
+        ], "--auto removes the person, not the approver");
+    } finally {
+        if (tty === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
+        else Object.defineProperty(process.stdin, "isTTY", tty);
+        await mock.close();
+    }
+});
+
 test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBridge: one-shot workspace options and owner capabilities reach the wire", async () => {
     await using lifetime = new Lifetime();
     const { runCliViaBridge } = await import("./agui_cli.ts");
@@ -278,6 +308,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
             maxTurns: 7,
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
+            auto: false,
             json: true,
             statusStream: false,
             projectRoot: "/repo",
@@ -294,7 +325,8 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaBri
         assert.equal(fp.childSelector, undefined);
         assert.equal(Object.hasOwn(fp, "policy"), false);
         const input = mock.captured[0].body as { tools: { name: string }[] };
-        assert.ok(input.tools.some(({ name }) => name === "request_approval"));
+        assert.deepEqual(input.tools.map(({ name }) => name), ["request_approval"], "with no terminal, approval is the only client tool");
+        assert.equal(fp.interactive, false, "with no terminal, nobody attends");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
         assert.deepEqual(fp.openPaths, ["README.md", "src/index.ts"], "prompt file references reach the wire");
     } finally { await mock.close(); }
@@ -331,6 +363,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
             threadId: "conversation",
             workspace: "world",
             yolo: true,
+            auto: false,
             json: true,
             statusStream: false,
             projectRoot: null,
@@ -379,7 +412,7 @@ test("[§cli-invocation] --timeout FIRES (svc#478): the deadline cancels the loo
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -408,7 +441,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaBridge({ bridgeUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

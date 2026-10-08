@@ -166,6 +166,9 @@ options:
       --yolo              auto-accept every proposal locally without prompting.
                           On by default; Shift-Tab toggles it for the session.
                           Overrides PLURNK_CLIENT_YOLO.
+      --auto              nobody is attending: the daemon asks nothing, and a loop
+                          that would wait for a person concludes instead. Approval
+                          stays local (--yolo). Overrides PLURNK_CLIENT_AUTO.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -806,13 +809,15 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
+    // {§cli-worker-ownership} Nobody is attending: the client declares itself not interactive.
+    const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
     const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
     const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
 
     let maxTurns: number | undefined;
     let timeoutSec: number | undefined;
     try {
-        for (const flag of ["policy", "auto", "proposals"] as const) {
+        for (const flag of ["policy", "proposals"] as const) {
             if (values[flag] !== undefined) throw new ProblemError(clientFlagInvalid(`--${flag}`, String(values[flag]), "Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS."));
         }
         if (values.reasoning !== undefined) {
@@ -1038,6 +1043,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 ...(openPaths.length === 0 ? {} : { openPaths }),
                 ...(timeoutSec !== undefined ? { timeoutSec } : {}),
                 yolo: yolo && !reviewRequested,
+                auto,
                 reviewRequested,
                 json,
                 statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
@@ -1092,6 +1098,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 projectRoot,
                 settings,
                 descendants: true,   // {plurnk#108} — the TUI observes its delegation
+                auto,
             });
             const { runTui } = await import("./tui.ts");
             await runTui(transport, { name: w }, {
@@ -1157,6 +1164,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 threadId: workerName ?? workspace,
                 workspace,
                 yolo,
+                auto,
                 json,
                 ...await workspaceOptions(),
             });

@@ -4,6 +4,15 @@
 
 - Connect to `/agui` by default and preserve the complete configured or advertised
   endpoint URL, including custom paths.
+- Follow durable worker approval ownership and declare the client's capability set on
+  every Run: the client tools it implements and whether a person attends it.
+  Reconnecting owners can resume pending approvals; observing work does not transfer
+  ownership.
+- `--auto` (`PLURNK_CLIENT_AUTO`) states that nobody is attending: the daemon asks
+  nothing and a loop that would wait for a person concludes instead, while approval
+  stays local.
+- Remove `--proposals` and `PLURNK_CLIENT_PROPOSALS`. Use `--yolo` for local automatic
+  acceptance or `PLURNK_SERVICE_PROPOSALS` for server-side disposition.
 
 ## 2.0.0
 

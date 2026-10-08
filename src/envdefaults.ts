@@ -31,9 +31,8 @@ export const applyFloor = (defaults: Record<string, string>, env: Record<string,
 // A retired key never coexists silently with its successor: it fails hard, naming where the
 // choice lives now. The retired names appear only here.
 const RETIRED: Readonly<Record<string, string>> = Object.freeze({
-    PLURNK_AUTO: "PLURNK_CLIENT_YOLO (local approval); workers retain their owners",
-    PLURNK_CLIENT_LOOP_POLICY: "PLURNK_CLIENT_YOLO (local approval) or PLURNK_SERVICE_PROPOSALS (server disposition)",
-    PLURNK_CLIENT_AUTO: "worker ownership and advertised frontend tools",
+    PLURNK_AUTO: "PLURNK_CLIENT_AUTO",
+    PLURNK_CLIENT_LOOP_POLICY: "PLURNK_CLIENT_AUTO (attendance), PLURNK_CLIENT_YOLO (local approval) or PLURNK_SERVICE_PROPOSALS (server disposition)",
     PLURNK_CLIENT_PROPOSALS: "PLURNK_CLIENT_YOLO (local approval) or PLURNK_SERVICE_PROPOSALS (server disposition)",
     PLURNK_CLIENT_REASONING: "PLURNK_CLIENT_EFFORT",
     PLURNK_CLIENT_WORKSPACE_CAPABILITIES: "PLURNK_CLIENT_CAPABILITIES",

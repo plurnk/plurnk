@@ -70,11 +70,9 @@ Options:
 | `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · /look <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
 | `--history-entries <n>` | string | Non-negative recent entry count restored on TUI attachment; zero disables history. Overrides `PLURNK_CLIENT_HISTORY_ENTRIES`. See {§cli-conversation-history}. |
 | `--color <when>` | string | `always`, `auto`, or `never`; overrides `PLURNK_CLIENT_COLOR`. See {§cli-color-policy}. |
-| `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`; web keeps the selected Worker and renders the resulting terminal state. Overrides `PLURNK_CLIENT_TIMEOUT`. |
+| `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`. Overrides `PLURNK_CLIENT_TIMEOUT`. |
 | `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
 | `--share <folder>` | string | When the one-shot prompt or the interactive session ends, ask the daemon for the workspace's share (`workspace.share`): written into `<folder>`, unredacted, refused rather than overwritten. A leading `~/` expands and a relative folder resolves against the working directory. Text mode prints the folder and the disclosure on stderr. `/share <folder>` writes one mid-session. Overrides `PLURNK_CLIENT_SHARE`. |
-| `--host <host>` | string | Web mode only: local browser portal host. An argument of `web`; its knob, `PLURNK_WEB_HOST`, is `@plurnk/plurnk-web`'s. |
-| `--port <n>` | string | Web mode only: local browser portal port. An argument of `web`; its knob, `PLURNK_WEB_PORT`, is `@plurnk/plurnk-web`'s. |
 | `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_FILES_ITEMS`. |
 | `--max-commands <n>` | string | Tighten the workspace operation ceiling. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_MAX_COMMANDS`. |
 | `--no-git` | flag | Deny git membership and working-tree status for the workspace. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_NO_GIT`. |
@@ -135,12 +133,12 @@ Help, version, completion and local rendering do not acquire a backend.
 
 Workspaces and workers are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the conversation by name, including after a fork.
 
-**The name IS the identity.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim, otherwise the launch working directory, as `forwardedProps.plurnk.workspace`. The derived name replaces the complete home-directory prefix with `~`; paths outside home remain absolute. Clients launched in the same directory against the same daemon/database therefore attach to the same workspace. AG-UI owns attach-or-create admission under {§agui-thread-binding}. Workspace identity and project root are independent: a derived name does not override a saved root or an explicit headless/different creation root. The workspace and conversation `threadId` remain separate wire fields. Web mode retains its unconstrained workspace selection when none is configured.
+**The name IS the identity.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim, otherwise the launch working directory, as `forwardedProps.plurnk.workspace`. The derived name replaces the complete home-directory prefix with `~`; paths outside home remain absolute. Clients launched in the same directory against the same daemon/database therefore attach to the same workspace. AG-UI owns attach-or-create admission under {§agui-thread-binding}. Workspace identity and project root are independent: a derived name does not override a saved root or an explicit headless/different creation root. The workspace and conversation `threadId` remain separate wire fields.
 
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
 - **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, selecting the daemon's durable default conversation worker. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
-- An explicit worker does not require an explicit workspace: it can attach within the directory-derived workspace. Web mode resolves its workspace before applying a worker constraint.
+- An explicit worker does not require an explicit workspace: it can attach within the directory-derived workspace.
 
 CLI flag takes precedence over env when both are set.
 
@@ -344,7 +342,7 @@ The prompt's first character has the same meaning in the CLI and TUI. `plurnk "?
 
 ### §2.0.1 Prompt file references {§cli-prompt-open-paths}
 
-A prompt token `@<path>` that starts the prompt or follows whitespace is a file reference when, at the moment the prompt is sent, `<path>` (trailing `.,;:!?)` trimmed) names an existing regular file under the bound workspace's project root (§1.3), not a creation default. The CLI, TUI, and web launcher project the distinct references, in prompt order, onto `openPaths`; the prompt text is sent unchanged and the daemon reads each path on the message's turn ({§methods-loop-run-open-paths}). Local absolute references under that root become workspace-relative paths on the wire.
+A prompt token `@<path>` that starts the prompt or follows whitespace is a file reference when, at the moment the prompt is sent, `<path>` (trailing `.,;:!?)` trimmed) names an existing regular file under the bound workspace's project root (§1.3), not a creation default. The CLI and TUI project the distinct references, in prompt order, onto `openPaths`; the prompt text is sent unchanged and the daemon reads each path on the message's turn ({§methods-loop-run-open-paths}). Local absolute references under that root become workspace-relative paths on the wire.
 
 | Token | Opens |
 |---|---|
@@ -874,7 +872,7 @@ failures remain causal errors, never a silent replacement rendering mode.
 
 | Path | Presentation initialization |
 |---|---|
-| Help/version, plain/JSON CLI, state commands, web dispatch | No pi-tui, Markdown, Mermaid, or diagram-layout initialization. |
+| Help/version, plain/JSON CLI, state commands | No pi-tui, Markdown, Mermaid, or diagram-layout initialization. |
 | TUI | Load the terminal implementation when selected; message rendering stays synchronous. |
 | `render --help` | Help only, without initializing the renderer. |
 | `render` | Load the Markdown/diagram renderer before producing output; no pi-tui or daemon. |
@@ -1333,8 +1331,7 @@ machine-readable output (stdout product per §2.1; trace and errors stay on
 stderr). `effort [policy]` reads or changes the durable effort.
 `capabilities [json]` projects every durable capability layer and its effective
 intersection, or replaces the workspace policy. Prompt runs carry no approval
-policy. Local `render` does not contact the daemon; `web` uses the same backend
-selection and lifetime as the terminal client ({§cli-daemon-autostart}).
+policy. Local `render` does not contact the daemon.
 
 When the first positional argument matches a known subcommand verb, the dispatcher
 routes there instead of assembling a prompt. Invalid forms of that command exit
@@ -1386,61 +1383,14 @@ level, calls `worker.effort.get`. With one level, calls
 `worker.effort.set`. Text mode prints the effective effort and supported
 choices; JSON mode emits the daemon result unchanged.
 
-### §7.6 `plurnk web [options...]` {§cli-web-launcher}
-
-Uses the canonical client invocation path to resolve the environment cascade,
-then loads the separately installed `@plurnk/plurnk-web` module in-process.
-There is one configuration owner and one interpretation of every shared knob:
-
-| Resolved client surface | Browser projection |
-|---|---|
-| daemon address and bearer | Portal-only AG-UI target; neither value enters browser bootstrap |
-| `--host`, `--port` | Loopback portal listener |
-| workspace and Worker | Optional URL-coordinate constraints |
-| project root, files preview, command ceiling, git policy, workspace capabilities | Create-time properties accompanying every selected workspace |
-| explicit model and reasoning | Durable Worker actions before that session's first prompt |
-| `?` prompt prefix | Per-prompt proposal review, using the same projector as CLI/TUI |
-| prompt `@path` references | Per-prompt `openPaths` projection ({§cli-prompt-open-paths}) |
-| `--max-turns` | Per-prompt model-call budget for the worker tree ({§turn-cap-counts-the-tree}) |
-| `--timeout` | Portal-owned deadline followed by `loop.cancel {reason:"client_timeout"}` for the exact workspace/Worker |
-| `--yolo` | Automatic acceptance of client-owned proposals; interactions remain user-owned |
-
-Terminal output controls (`--json`, `--width`) and state-subcommand filters do
-not project into browser behavior. The web package parses no second environment
-cascade and receives no provider credential or daemon environment.
-
-Every ready browser URL is `/<workspace>/<threadId>`. Without configured route
-constraints, browser tabs may create or select many workspaces and many Workers.
-A configured workspace fixes the first coordinate; a configured Worker fixes
-the second; missing unconstrained coordinates are generated before the page is
-served. Opening the same complete URL observes the same durable Worker.
-
-Create-time workspace options accompany every browser-selected world and every
-Run, preserving atomic creation. The client applies explicit model then
-reasoning selections once to each Worker first selected during this portal
-process; it does not turn them into per-loop policy. `--yolo` remains
-client-side proposal behavior: the browser auto-resolves proposal interrupts
-while interaction requests still require user input.
-
-The MCP manager is lazy: opening it lists the workspace's MCP servers through
-AG-UI, and discovering, adding, enabling, disabling, and removing one use the
-daemon-owned Functionality lifecycle ({§cli-workspace-mcp-controls}). The
-client holds no MCP configuration, so the portal receives none.
-
-The web module never downloads code or owns the daemon; the client supplies its
-selected backend ({§cli-daemon-autostart}). If the optional module
-is absent, it exits 127 and names the exact installation command. `SIGINT` and
-`SIGTERM` close the portal before the foreground process exits.
-
-### §7.7 What subcommands do NOT do
+### §7.6 What subcommands do NOT do
 
 - Send prompts. They never call `loop.run`.
 - Hide state changes: workspace rename, reasoning and capability setters, MCP
   management, and scripts explicitly request mutations; inspection commands do not.
 - Honor flags that only matter to a conversation (`--model`, `--effort`,
-  `--yolo`, `--auto`) in state-command mode. Those parse without effect there;
-  `web` is a client presentation mode and therefore does honor them. Reasoning
-  mutation uses the positional policy above.
+  `--yolo`, `--auto`) in state-command mode. Those parse without effect there.
+  Reasoning mutation uses the positional policy above.
 
 ### Script invocation and resume {§cli-script-binding}
 

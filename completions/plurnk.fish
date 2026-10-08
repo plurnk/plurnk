@@ -7,7 +7,6 @@ complete -c plurnk -n __fish_use_subcommand -a effort
 complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render
 complete -c plurnk -n __fish_use_subcommand -a completion
-complete -c plurnk -n __fish_use_subcommand -a web
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a skills
 complete -c plurnk -n __fish_use_subcommand -a a2a
@@ -53,5 +52,3 @@ complete -c plurnk -l provider
 complete -c plurnk -l all
 complete -c plurnk -l offset
 complete -c plurnk -l width
-complete -c plurnk -l host
-complete -c plurnk -l port

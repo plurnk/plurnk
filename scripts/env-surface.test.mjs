@@ -23,8 +23,6 @@ const FOREIGN = new Map([
     ["PLURNK_SERVICE_STATE_ROOT", "@plurnk/plurnk-core — the selected service's storage root, passed through its public launcher"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
     ["PLURNK_SERVICE_PROPOSALS", "@plurnk/plurnk-core — server proposal disposition, named by retired client-flag diagnostics"],
-    ["PLURNK_WEB_HOST", "@plurnk/plurnk-web — the portal's own knob, which usage names beside `--host`"],
-    ["PLURNK_WEB_PORT", "@plurnk/plurnk-web — the portal's own knob, which usage names beside `--port`"],
 ]);
 
 // `PLURNK_*` strings that are not knobs.
@@ -50,8 +48,6 @@ const ARGUMENTS = new Map([
     ["provider", "an argument of `models`"],
     ["all", "an argument of `models`"],
     ["width", "an argument of `render`"],
-    ["host", "an argument of `web`; its knob, PLURNK_WEB_HOST, is @plurnk/plurnk-web's"],
-    ["port", "an argument of `web`; its knob, PLURNK_WEB_PORT, is @plurnk/plurnk-web's"],
 ]);
 
 const tracked = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "src"], { cwd: ROOT, encoding: "utf8" })

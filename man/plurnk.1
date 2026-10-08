@@ -15,7 +15,6 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
        plurnk effort [level] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        plurnk script <file.plk> [options]
-       plurnk web [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [subcommand]
@@ -52,12 +51,12 @@ loop.
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Defaults to the launch
-                          directory, home-shortened with ~ (web: unconstrained).
+                          directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
                           Overrides PLURNK_CLIENT_WORKER. TUI defaults to
                           PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
-                          default conversation; web remains unconstrained.
+                          default conversation.
       --tui-worker <name> TUI-only default when no worker is selected; overrides
                           PLURNK_CLIENT_TUI_WORKER.
       --model <selector>  persistently select the conversation worker's model
@@ -91,7 +90,7 @@ loop.
       --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
                           descendants' turns and every BARE call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
-                          CLI exits 3 with "timedOut":true. Web retains the Worker.
+                          CLI exits 3 with "timedOut":true.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
       --preview-lines <n> lines of each operation body and execution output shown
@@ -121,8 +120,6 @@ loop.
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
-      --host <host>       (web) local browser portal host (otherwise PLURNK_WEB_HOST)
-      --port <n>          (web) local browser portal port (otherwise PLURNK_WEB_PORT)
 .fi
 .SH SUBCOMMANDS
 .nf
@@ -139,10 +136,6 @@ loop.
                           local only: no daemon, config cascade, or startup output
   completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
                           local only: writes stdout, never installs files
-  web [options]           serve the optional browser client using this invocation's
-                          resolved configuration and optional workspace/Worker
-                          constraints; each tab is URL-addressed as /workspace/threadId;
-                          performs no package install or daemon startup
   mcp ...                   List or manage this workspace's MCP servers.
   skills ...                List or manage this workspace's Agent Skills.
   a2a ...                   List or manage this workspace's outbound A2A agents.

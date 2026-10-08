@@ -62,7 +62,7 @@ test("[§cli-invocation] local CLI surfaces never open a daemon conversation", a
         assert.match(retired.stderr, /Per-loop approval flags are retired; use local --yolo or server PLURNK_SERVICE_PROPOSALS/u);
         assert.equal(requests, before, "a refused flag opens no conversation");
     });
-    for (const name of ["models", "workspace", "log", "read", "script", "mcp", "skills", "a2a", "members", "env", "schedule", "effort", "capabilities", "web", "completion"]) {
+    for (const name of ["models", "workspace", "log", "read", "script", "mcp", "skills", "a2a", "members", "env", "schedule", "effort", "capabilities", "completion"]) {
         await t.test(`${name} --help`, async () => {
             const result = await run([name, "--help"]);
             assert.equal(result.code, 0, result.stderr);

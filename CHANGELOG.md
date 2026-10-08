@@ -13,6 +13,8 @@
   stays local.
 - Remove `--proposals` and `PLURNK_CLIENT_PROPOSALS`. Use `--yolo` for local automatic
   acceptance or `PLURNK_SERVICE_PROPOSALS` for server-side disposition.
+- Remove `plurnk web`, its `--host` and `--port` options, and the `web/not-installed`
+  Problem. The optional browser client is retired.
 
 ## 2.0.0
 

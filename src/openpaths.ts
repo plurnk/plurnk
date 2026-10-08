@@ -7,7 +7,6 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 // Trailing sentence punctuation is trimmed ("see @a.ts." → "a.ts"); deduped.
 // A token opens only when it names an existing file under the project root at
 // send time; `@someone` stays prose (#853).
-// Synchronous stat: plurnk-web's projectPrompt hook is a synchronous contract.
 // ENOTDIR (`@file.ts/x`) means absent, exactly like ENOENT.
 const isFile = (path: string): boolean => {
     try { return statSync(path, { throwIfNoEntry: false })?.isFile() === true; }

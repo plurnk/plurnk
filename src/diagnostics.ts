@@ -288,13 +288,6 @@ export const clientFlagInvalid = (flag: string, value: string, reason: string): 
 export const clientFlagMissingDependency = (flag: string, requires: string): ProblemDetails =>
     clientProblem("flag", "missing-dependency", 400, `${flag} requires ${requires}`, { flag, requires });
 
-export const clientWebNotInstalled = (): ProblemDetails =>
-    clientProblem("web", "not-installed", 424, "The optional @plurnk/plurnk-web package is not installed.", {
-        package: "@plurnk/plurnk-web",
-        hints: ["Install it: npm install -g @plurnk/plurnk-web"],
-        retryable: false,
-    });
-
 export const clientSubcommandWorkspaceNotFound = (name: string): ProblemDetails =>
     clientProblem("subcommand", "workspace-not-found", 404, `no workspace named ${JSON.stringify(name)}`, { name });
 

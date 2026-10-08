@@ -42,7 +42,6 @@ import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
 import { homePath, userConfigFile } from "./paths.ts";
 import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
-import { launchWeb } from "./web.ts";
 import Backend from "./backend.ts";
 import Lifetime from "./lifetime.ts";
 import ProjectRoot, { resolveProjectRoot } from "./project-root.ts";
@@ -98,7 +97,6 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk effort [level] --workspace <name> [--worker <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
        plurnk script <file.plk> [options]
-       plurnk web [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
 ${COMMANDS.filter(({ group }) => group === "functionality").map(({ usage }) => `       plurnk ${usage.slice(1)}`).join("\n")}
@@ -137,12 +135,12 @@ options:
                           op's content with: plurnk read <coord> --json. CLI only.
       --workspace <name>    resume the named workspace, or create it under that name
                           if none exists (attach-or-create). Defaults to the launch
-                          directory, home-shortened with ~ (web: unconstrained).
+                          directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
                           Overrides PLURNK_CLIENT_WORKER. TUI defaults to
                           PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
-                          default conversation; web remains unconstrained.
+                          default conversation.
       --tui-worker <name> TUI-only default when no worker is selected; overrides
                           PLURNK_CLIENT_TUI_WORKER.
       --model <selector>  persistently select the conversation worker's model
@@ -176,7 +174,7 @@ options:
       --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
                           descendants' turns and every BARE call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
-                          CLI exits 3 with "timedOut":true. Web retains the Worker.
+                          CLI exits 3 with "timedOut":true.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
       --preview-lines <n> lines of each operation body and execution output shown
@@ -206,8 +204,6 @@ options:
       --offset <n>        (models) catalog page offset (default 0)
       --width <n>         (render) output width in terminal columns (default: stdout
                           width when available, otherwise 80)
-      --host <host>       (web) local browser portal host (otherwise PLURNK_WEB_HOST)
-      --port <n>          (web) local browser portal port (otherwise PLURNK_WEB_PORT)
 
 subcommands:
   models [search...]      list the bounded daemon model catalog (models.list)
@@ -223,10 +219,6 @@ subcommands:
                           local only: no daemon, config cascade, or startup output
   completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
                           local only: writes stdout, never installs files
-  web [options]           serve the optional browser client using this invocation's
-                          resolved configuration and optional workspace/Worker
-                          constraints; each tab is URL-addressed as /workspace/threadId;
-                          performs no package install or daemon startup
 ${COMMANDS.filter(({ group }) => group === "functionality").map(({ name, summary }) => `  ${name} ...${" ".repeat(22 - name.length)}${summary}`).join("\n")}
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
@@ -656,10 +648,6 @@ export const CLIENT_OPTIONS = {
     all: { type: "boolean" },
     offset: { type: "string" },
     width: { type: "string" },
-    // Browser-portal listener options. All session and loop options above
-    // retain this client's canonical interpretation in `plurnk web`.
-    host: { type: "string" },
-    port: { type: "string" },
 } as const;
 
 const parseInvocation = (args: string[]) => {
@@ -698,7 +686,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     if (values["daemon-stop-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS = values["daemon-stop-timeout-ms"];
     if (values["oauth-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS = values["oauth-timeout-ms"];
     if (values["service-bin"] !== undefined) process.env.PLURNK_CLIENT_SERVICE_BIN = values["service-bin"];
-    const web = positionals[0] === "web";
     if (values.help) {
         process.stdout.write(commandHelp(positionals[0]));
         return;
@@ -766,13 +753,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         if (json) dieJson(64, problem);
         dieWith(64, problem);
     }
-    if (!web && (values.host !== undefined || values.port !== undefined)) {
-        const flag = values.host !== undefined ? "--host" : "--port";
-        const problem = clientFlagMissingDependency(flag, "the web subcommand");
-        if (json) dieJson(64, problem);
-        dieWith(64, problem);
-    }
-    if (!json && !web) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
+    if (!json) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
 
     // State-command routing happens BEFORE prompt assembly, so inspection and
     // deliberate configuration never consume stdin or become model prompts.
@@ -804,7 +785,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const configuredWorkspace = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
     const workspaceName = configuredWorkspace ?? homePath(process.cwd());
     const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER
-        ?? (!web && !isSubcommand && prompt.length === 0
+        ?? (!isSubcommand && prompt.length === 0
             ? values["tui-worker"] ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER") : undefined);
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
@@ -876,7 +857,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
     const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
         workspaceOptionsPromise ??= (async () => {
-            const selected = await selectProjectRoot(web ? configuredWorkspace : workspaceName);
+            const selected = await selectProjectRoot(workspaceName);
             if (selected === undefined) return lifetime.exit(130);
             projectRoot = selected;
             return {
@@ -886,11 +867,9 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     "max-commands"?: string;
                     "no-git"?: boolean;
                     capabilities?: string;
-                }, process.env, web
-                    ? undefined
-                    : !isSubcommand && prompt.length === 0
-                        ? CLIENT_ID_TUI
-                        : CLIENT_ID_CLI),
+                }, process.env, !isSubcommand && prompt.length === 0
+                    ? CLIENT_ID_TUI
+                    : CLIENT_ID_CLI),
             };
         })();
         return workspaceOptionsPromise;
@@ -901,93 +880,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         await workspaceOptions();
         return workspaceName;
     };
-    if (web) {
-        try {
-            if (positionals.length > 1) {
-                throw new ProblemError(clientSubcommandUnknownVerb(`web ${positionals.slice(1).join(" ")}`));
-            }
-            const workspaceProperties = await workspaceOptions();
-            const target = { bridgeUrl, token };
-            const prepared = new Map<string, Promise<void>>();
-            const prepareSession = (
-                session: { workspace: string; threadId: string },
-                preparedWorkspaceProperties: Readonly<Record<string, unknown>>,
-            ): Promise<void> => {
-                const key = JSON.stringify([session.workspace, session.threadId]);
-                const existing = prepared.get(key);
-                if (existing !== undefined) return existing;
-                const pending = (async () => {
-                    // {§cli-effort} — a model and its effort are chosen together, so the daemon validates the pair once.
-                    if (modelSelector !== undefined) {
-                        await actionViaBridge(target, {
-                            threadId: session.threadId,
-                            workspace: session.workspace,
-                            workspaceOptions: preparedWorkspaceProperties,
-                            kind: "worker.model.set",
-                            params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
-                        });
-                    } else if (effort !== undefined) {
-                        await actionViaBridge(target, {
-                            threadId: session.threadId,
-                            workspace: session.workspace,
-                            workspaceOptions: preparedWorkspaceProperties,
-                            kind: "worker.effort.set",
-                            params: { effort },
-                        });
-                    }
-                })().catch((cause) => {
-                    prepared.delete(key);
-                    throw cause;
-                });
-                prepared.set(key, pending);
-                return pending;
-            };
-            process.exitCode = await launchWeb({
-                ...(typeof values.host === "string" ? { host: values.host } : {}),
-                ...(typeof values.port === "string" ? { port: values.port } : {}),
-                upstream: new URL(bridgeUrl),
-                ...(token === undefined ? {} : { token }),
-                constraints: {
-                    ...(configuredWorkspace === undefined ? {} : { workspace: configuredWorkspace }),
-                    ...(workerName === undefined ? {} : { threadId: workerName }),
-                },
-                workspaceProperties,
-                runProperties: {
-                    ...workspaceProperties,
-                    ...(maxTurns === undefined ? {} : { maxTurns }),
-                },
-                prepareSession,
-                projectPrompt: (value) => {
-                    const projected = parsePrompt(value);
-                    return {
-                        prompt: projected.prompt,
-                        runProperties: {
-                            openPaths: extractOpenPaths(projected.prompt, projectRoot),
-                        },
-                    };
-                },
-                ...(timeoutSec === undefined ? {} : { timeoutSec }),
-                autoAcceptProposals: yolo,
-            }, {
-                announce: (origin) => process.stderr.write(`plurnk web: ${origin}\n`),
-                wait: () => new Promise<void>((resolve) => {
-                    const release = lifetime.handleSignals(() => { release(); resolve(); });
-                }),
-            });
-        } catch (cause) {
-            if (cause instanceof ProblemError) {
-                report(cause.problem);
-                process.exitCode = cause.exitCode;
-            } else if (isUnreachable(cause)) {
-                report(clientConnectionRefused(bridgeUrl, cause));
-                process.exitCode = 1;
-            } else {
-                report(clientRuntimeError(cause));
-                process.exitCode = 1;
-            }
-        }
-        return;
-    }
     if (bridgeUrl !== undefined && bridgeUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the default conversation.

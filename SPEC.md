@@ -1163,7 +1163,8 @@ states whether a person attends it.
 | No terminal, or `--auto` | `false` | `request_approval`, including fail-closed headless resolution |
 
 `--auto` (`PLURNK_CLIENT_AUTO`) states that nobody is attending, even at a terminal: the
-daemon asks nothing, and a loop that would wait for a person concludes instead. It removes
+daemon asks nothing, because its workers are not offered `question`, and a loop that would
+wait for a person concludes instead. It removes
 the person, not the approver: `--yolo`, configured acceptance, or fail-closed review still
 settle what the daemon routes to this client.
 

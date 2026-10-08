@@ -129,7 +129,7 @@ test("{§cli-conversation-history}: reattachment presents a durable unanswered q
             : "````KILL\nRESTORED_QUESTION_FINISHED\n````";
     });
     t.after(() => provider.close());
-    const daemon = await historyDaemon(t, provider.url, { PLURNK_EXECS_QUESTION: "1", PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0" });
+    const daemon = await historyDaemon(t, provider.url, { PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0" });
     const owner = new BridgeTransport({ bridgeUrl: daemon.url }, "main", { workspace: "question-history", projectRoot: null });
     t.after(() => owner.shutdown());
     const question = Promise.withResolvers<void>();

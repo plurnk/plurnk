@@ -174,7 +174,7 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
     assert.equal(selectedModels.length, requestsBeforeEffort, "effort is a durable worker action, never an inference prompt");
 });
 
-test("[§cli-worker-ownership]: a headless owner advertises no clarification tool and the worker receives an unsupported result", { timeout: 120_000 }, async (t) => {
+test("[§cli-worker-ownership]: a headless owner advertises no clarification tool, so its worker's question is refused", { timeout: 120_000 }, async (t) => {
     const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
     const packets: string[] = [];
     const endpoint = createServer(async (request, response) => {
@@ -194,7 +194,6 @@ test("[§cli-worker-ownership]: a headless owner advertises no clarification too
         readyTimeoutMs: 30_000,
         extraEnv: {
             PLURNK_MODEL: "inputfixture",
-            PLURNK_EXECS_QUESTION: "1",
             PLURNK_MODEL_inputfixture: "openai/interaction-fixture",
             PLURNK_BASEURL_inputfixture: `http://127.0.0.1:${endpointPort}/v1`,
             OPENAI_API_KEY: "input-fixture",
@@ -210,9 +209,9 @@ test("[§cli-worker-ownership]: a headless owner advertises no clarification too
     ]);
     assert.equal(result.code, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).response, "No input channel; continuing without a fabricated answer.");
-    assert.equal(packets.length, 2, "the interaction resolves without losing or restarting the worker loop");
-    assert.match(packets[1]!, /interaction-unsupported/u, "the next model packet contains the actual unsupported-interaction result");
-    assert.doesNotMatch(packets[1]!, /capability-denied|interaction-denied/, "input topology is not a workspace permission change");
+    assert.equal(packets.length, 2, "the refusal neither loses nor restarts the worker loop");
+    assert.match(packets[1]!, /capability-denied/u, "the daemon refuses a tool the worker's owner does not receive");
+    assert.match(packets[1]!, /Nobody is present to answer/u, "and the refusal says what to do instead");
 });
 
 // The client states and the daemon composes: only this proves the refusals a user can meet arrive

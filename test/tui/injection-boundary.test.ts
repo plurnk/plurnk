@@ -57,12 +57,23 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
     const admitted = Promise.withResolvers<void>();
     const releaseTerminal = Promise.withResolvers<void>();
     let observers = 0;
+    // Observers counted when the original run's RUN_FINISHED is relayed: the client cannot
+    // reconnect before it receives that frame, so this count has no race with the reconnect.
+    let originalObservers: number | null = null;
+    const observerWaiters: Array<{ readonly count: number; readonly resolve: () => void }> = [];
+    const observerCount = (count: number): Promise<void> => new Promise((resolve) => {
+        if (observers >= count) resolve();
+        else observerWaiters.push({ count, resolve });
+    });
     const relay = async (request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> => {
         const body = await json(request);
         const properties = body.forwardedProps?.plurnk;
         const injecting = properties?.action?.kind === "loop.inject";
         const originating = !properties?.action && !properties?.mode && body.messages?.length > 0;
-        if (properties?.mode === "sync") observers += 1;
+        if (properties?.mode === "sync") {
+            observers += 1;
+            for (const waiter of observerWaiters) if (observers >= waiter.count) waiter.resolve();
+        }
         if (injecting && !active) {
             release.resolve();
             await originalClosed.promise;
@@ -93,7 +104,12 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         }
         response.writeHead(result.status, { "content-type": result.headers.get("content-type") ?? "application/json" });
         assert.ok(result.body);
-        if (originating && !active && !terminalFirst) {
+        if (originating) {
+            const holdTerminal = !active && !terminalFirst;
+            const relayFrame = (frame: string): void => {
+                if (JSON.parse(frame.slice(6)).type === "RUN_FINISHED") originalObservers = observers;
+                response.write(`${frame}\n\n`);
+            };
             const decoder = new TextDecoder();
             let buffered = "";
             const held: string[] = [];
@@ -103,18 +119,19 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
                 buffered = frames.pop()!;
                 for (const frame of frames) {
                     const event = JSON.parse(frame.slice(6));
-                    if (event.type === "RUN_FINISHED" || event.name === "plurnk.terminated") held.push(frame);
-                    else response.write(`${frame}\n\n`);
+                    if (holdTerminal && (event.type === "RUN_FINISHED" || event.name === "plurnk.terminated")) held.push(frame);
+                    else relayFrame(frame);
                 }
             }
             originalClosed.resolve();
-            await releaseTerminal.promise;
-            for (const frame of held) response.write(`${frame}\n\n`);
+            if (holdTerminal) {
+                await releaseTerminal.promise;
+                for (const frame of held) relayFrame(frame);
+            }
             response.end(buffered);
         } else {
             for await (const chunk of result.body) response.write(chunk);
             response.end();
-            if (originating) originalClosed.resolve();
         }
     };
     const proxy = createServer((request, response) => {
@@ -144,7 +161,8 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         releaseTerminal.resolve();
     }
     await tui.waitFor(/SUCCESSOR_VISIBLE/);
-    assert.equal(observers, active ? 1 : 2, "after startup, active injection keeps its observer; a successor gets one observer");
+    // The concluded run returns the conversation to one idle observer, which follows any successor.
+    await observerCount(2);
     assert.equal(inferenceCount, 2, "each admitted prompt generated exactly one model request");
     assert.doesNotMatch(tui.output(), /Terminal missing|State invalid/);
     assert.match(stripVTControlCharacters(tui.output()), /Continue with the new requirement/);
@@ -152,5 +170,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         "own input remains at the prompt, not duplicated as an inbound SEND block");
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
+    assert.equal(originalObservers, 1, "startup's binding alone observes the original run; active injection adds no observer");
+    assert.equal(observers, 2, "its conclusion returns the conversation to one idle observer, which a successor shares");
 });
 }

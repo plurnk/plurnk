@@ -15,6 +15,7 @@ import { proposalResume, reviewProposal, type Resolution, type ProposalParams } 
 import ToolAcceptance from "./tool-acceptance.ts";
 import {
     ProblemError,
+    clientAguiError,
     clientActionResultMissing,
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
@@ -459,13 +460,31 @@ export const runCliViaAgui = async (
         : undefined;
     statusTick?.unref();
     try {
-        result = mergeRunSegments(result, await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
-        activeSegment = null;
-        while (result.pendingResume !== null) {
-            next = { resume: [result.pendingResume] };
-            const seg = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
-            result = mergeRunSegments(result, seg);
+        try {
+            result = mergeRunSegments(result, await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
             activeSegment = null;
+            while (result.pendingResume !== null) {
+                next = { resume: [result.pendingResume] };
+                const seg = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
+                result = mergeRunSegments(result, seg);
+                activeSegment = null;
+            }
+        } catch (cause) {
+            // {§cli-partial-record} The invocation owns received evidence even when
+            // its event iterator throws. Neither a retry nor a fabricated terminal.
+            const problem = clientAguiError(target.aguiUrl, cause);
+            const partial = activeSegment === null ? result : mergeRunSegments(result, activeSegment);
+            result = {
+                ...partial,
+                pendingResume: null,
+                exitCode: cause instanceof ProblemError ? cause.exitCode : 1,
+                problem: partial.problem ?? problem,
+                notices: partial.terminated === null && partial.problem === null ? partial.notices : [
+                    ...partial.notices,
+                    { source: "client:agui", kind: "error", level: "error", message: problem.detail, problem },
+                ],
+            };
+            if (!opts.json && interruption === undefined) io.err(`${renderDiagnostic(problem)}\n`);
         }
         await emitRecord(result);
     } finally {

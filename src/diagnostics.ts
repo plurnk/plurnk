@@ -196,6 +196,11 @@ export const isUnreachable = (cause: unknown): boolean => {
 export const clientRuntimeError = (cause: unknown): ProblemDetails =>
     clientProblem("runtime", "error", 500, cause instanceof Error ? cause.message : String(cause));
 
+export const clientAguiError = (url: string, cause: unknown): ProblemDetails =>
+    cause instanceof ProblemError ? cause.problem
+        : isUnreachable(cause) ? clientConnectionRefused(url, cause)
+            : clientProblem("agui", "error", 502, cause instanceof Error ? cause.message : String(cause), { url });
+
 export const clientTransportCancelled = (): ProblemDetails =>
     clientProblem("transport", "cancelled", 499, "The client cancelled the active run.", {
         stage: "transport",

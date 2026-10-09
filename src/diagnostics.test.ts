@@ -24,9 +24,20 @@ const {
     clientSubcommandEntryNotFound,
     clientProposalEditsBlocked,
     clientRuntimeError,
+    clientAguiError,
     clientTransportTerminalMissing,
     clientModelUnselected,
 } = await import("./diagnostics.ts");
+
+test("[§cli-partial-record] AG-UI failures preserve exact Problems and distinguish connection refusal from a broken exchange", () => {
+    const url = "http://127.0.0.1:1066/agui";
+    const problem = clientTransportTerminalMissing();
+    assert.strictEqual(clientAguiError(url, new ProblemError(problem)), problem);
+    const refused = new TypeError("fetch failed", { cause: Object.assign(new Error("refused"), { code: "ECONNREFUSED" }) });
+    assert.deepEqual(clientAguiError(url, refused), clientConnectionRefused(url, refused));
+    assert.equal(clientAguiError(url, new TypeError("terminated")).type, "https://problems.plurnk.xyz/client/agui/error");
+    assert.equal(clientAguiError(url, new TypeError("terminated")).detail, "terminated");
+});
 
 test("{§cli-model-selection} missing-model guidance uses existing selection commands", () => {
     const notice = clientModelUnselected();

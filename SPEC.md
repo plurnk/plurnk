@@ -373,6 +373,16 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
+{§cli-partial-record} A connection or decoding failure during any one-shot Run
+segment retains the rows, response and notices already observed, including prior
+proposal-resume segments. JSON emits one record; text retains delivered output
+and reports the failure. The invocation exits with the client failure, without
+reconnecting or replaying the prompt. A received terminal result and accounting
+remain authoritative; absent those, an observed Problem or the client failure
+describes the incomplete outcome and usage remains unknown. A secondary client
+failure is retained as an error Notice with its Problem, not substituted for
+known daemon evidence. Failures before Run consumption use the problem-only form.
+
 {§cli-interrupted-record} During the initial request or any proposal-resume segment,
 `SIGINT` and `SIGTERM` explicitly request `loop.cancel` for the bound worker and
 flush one JSON document containing all rows, notices, and response text observed

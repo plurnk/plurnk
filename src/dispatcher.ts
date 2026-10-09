@@ -32,6 +32,7 @@ import {
     clientFlagInvalid,
     clientFlagMissingDependency,
     clientRuntimeError,
+    clientAguiError,
     clientSubcommandMissingArgument,
     clientSubcommandWorkspaceNotFound,
     clientSubcommandWorkspaceAmbiguous,
@@ -960,19 +961,10 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             // an endpoint that ANSWERED with an error surfaces its real cause — claiming
             // "no daemon running" over a 500 would lie. json mode still emits ONE
             // valid document on stdout either way.
-            if (cause instanceof ProblemError) {
-                if (json) dieJson(cause.exitCode, cause.problem);
-                dieWith(cause.exitCode, cause.problem);
-            }
-            const detail = cause instanceof Error ? cause.message : String(cause);
-            if (json) {
-                const problem = isUnreachable(cause)
-                    ? clientConnectionRefused(aguiUrl, cause)
-                    : clientProblem("agui", "error", 502, detail, { url: aguiUrl });
-                dieJson(1, problem);
-            }
-            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(aguiUrl, cause));
-            dieWith(1, clientRuntimeError(new Error(`AG-UI endpoint (${aguiUrl}) — ${detail}`)));
+            const problem = clientAguiError(aguiUrl, cause);
+            const code = cause instanceof ProblemError ? cause.exitCode : 1;
+            if (json) dieJson(code, problem);
+            dieWith(code, problem);
         }
     }
 

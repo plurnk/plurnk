@@ -127,7 +127,8 @@ plurnk --json "Explain the test layout" | jq -r .response
 
 One-shot commands put the answer on stdout and progress on stderr. `--json`
 returns one structured document containing the answer, operation trace,
-diagnostics, and usage.
+diagnostics, and usage. A lost connection exits with an error while preserving
+received evidence; missing final usage stays unknown. No prompt is replayed.
 
 Use `plurnk --help` for CLI options. `plurnk models` lists available model
 routes.

@@ -1,6 +1,6 @@
 # @plurnk/plurnk
 
-## Unreleased
+## 3.0.0
 
 - Connect to `/agui` by default and preserve the complete configured or advertised
   endpoint URL, including custom paths.

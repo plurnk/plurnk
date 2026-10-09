@@ -1045,7 +1045,18 @@ Input and output are the conventional aggregate fields from the daemon's account
 - Whole bodies. Every body but a NOTE's is a preview (§5.1); human inspection uses LOOK (§3.1.3), while `plurnk read` retrieves a complete log entry.
 - Raw SSE frames.
 - Emission rows. A `_plurnk` READ whose `attrs.kind` is `emission` is the daemon's announcement of the worker's own admitted emission, whose operations already render as their own rows. The TUI waterfall, history replay, LOOK cycler and CLI trace skip it; `--json` and `plurnk read` keep it.
-- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall, and the TUI previews a concluded execution's output under its row (§5.1). An execution appears once, when its outcome is known: the conclusion renders the launching fence's row (§5.1), green for exit 0 and red otherwise with the result's Problem title or the daemon's summary as its outcome. A stream whose launch is unknown renders as its scheme and address in the same grammar. Wake bookkeeping is never a row. Activity while a stream runs belongs to the status line. One bounded exception stays for the human's own command: a client-typed `!` execution makes one `entry.read` on conclusion and inlines a channel's content only when it is ≤160 chars and ≤2 lines (stderr marked `!`), because the human asked for that output. The one-shot CLI keeps the same exception for every tiny concluded output. See §8.4.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall. An admitted execution appears when its outcome is known: the conclusion renders the launching fence's row (§5.1), colored by result, with the Problem title or daemon summary on failure. A stream whose launch is unknown renders as its scheme and address. Activity belongs to the status line; wake bookkeeping is never a row.
+
+Concluded output is read through `entry.read` using the event's exact target and worker perspective:
+
+| Surface | Output |
+|---|---|
+| TUI, including human `!` | stdout/stderr previews under the operation row (§5.1) |
+| One-shot loop or script, text mode | stderr trace inlines only channels ≤160 characters and ≤2 lines; stderr content is marked `!` |
+| One-shot `!` | Complete verbatim stdout/stderr as the command's product ({§cli-prompt-prefixes}); no duplicate preview |
+| `--json` | No preview read or rendering |
+
+A failed preview read is diagnosed without replacing the execution or loop result.
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
@@ -1532,9 +1543,8 @@ python3 Run the focused tests — failed (exit 2); stdout=0 bytes, stderr=41 byt
 `wakeAction` is engine bookkeeping and never a row: a concluded stream does not
 claim that a loop resumed; ordinary loop events remain the execution evidence.
 A conclusion whose launch the client never saw renders as its scheme and address in
-the same grammar. The one-shot CLI writes its trace to stderr and keeps its bounded
-inline exception for tiny concluded outputs. **The TUI fetches no streamed content for a model's execution**; the human's own `!`
-command is the one bounded exception (§5.3). Consumers who want the body call `entry.read` themselves.
+the same grammar. Output presentation follows §5.3; consumers obtain content
+through `entry.read`, not stream telemetry.
 
 ### §8.5 Boundaries
 

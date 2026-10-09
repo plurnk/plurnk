@@ -24,7 +24,7 @@ import {
     report,
 } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
-import StreamTrace, { streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
+import StreamTrace, { inlineable, renderInline, streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./agui.ts";
 import { actionOutcome, entryReadResult, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
@@ -74,6 +74,7 @@ export interface CliRunSinks {
     onActionResult?: (v: ActionOutcome) => void;
     onRow?: (entry: LogEntryWire) => void;
     onStreamConcluded?: (concluded: StreamConcludedPayload) => void;
+    readStream?: (concluded: StreamConcludedPayload) => Promise<Readonly<Record<string, { content: string }>>>;
     onTurnAccounting?: (turn: TurnAccounting) => void;
     onStatus?: (status: ClientStatus) => void;
     onProgress?: (result: CliRunResult) => void;
@@ -101,6 +102,20 @@ const runOutcome = (result: CliRunResult): OperationResult => {
 const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<Resolution & { logEntryId: number }> => {
     const resolution = io.acceptance.resolve(p, io) ?? await io.review(p);
     return { logEntryId: p.logEntryId, ...resolution };
+};
+
+const readStream = async (
+    target: AguiTarget,
+    binding: { threadId: string; workspace?: string },
+    concluded: StreamConcludedPayload,
+    signal?: AbortSignal,
+): Promise<Readonly<Record<string, { content: string }>>> => {
+    const result = entryReadResult(await actionViaAgui(target, {
+        threadId: binding.threadId, workspace: binding.workspace,
+        kind: "entry.read", params: { target: concluded.target, workerId: concluded.workerId },
+    }, signal));
+    if (result.entry === null) throw new ProblemError(result.problem);
+    return result.entry.channels;
 };
 
 // Drive one AG-UI run's event stream. Text mode renders to the sinks
@@ -251,6 +266,19 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 if (!io.json) {
                     if (concluded) {
                         io.err(`${streams.concluded(value as StreamConcludedPayload, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
+                        if (io.readStream !== undefined) {
+                            try {
+                                const channels = await io.readStream(value as StreamConcludedPayload);
+                                for (const name of ["stdout", "stderr"]) {
+                                    const content = channels[name]?.content;
+                                    if (content !== undefined && inlineable(content)) io.err(`${renderInline(name, content, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
+                                }
+                            } catch (cause) {
+                                if (cause instanceof ProblemError) io.err(`${renderDiagnostic(cause.problem)}\n`);
+                                else io.notice({ source: "client:stream", kind: "preview_unavailable", level: "warn",
+                                    message: `Stream output unavailable: ${cause instanceof Error ? cause.message : String(cause)}` });
+                            }
+                        }
                     } else {
                         const line = streams.event(value as StreamEventPayload);
                         if (line !== null) io.err(`${line}\n`);
@@ -311,6 +339,7 @@ export const runCliViaAgui = async (
     };
     let activeSegment: CliRunResult | null = null;
     let accruedStream: TurnAccounting | null = null;
+    const ac = new AbortController();
     const statusLine = new TerminalStatusLine(
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
@@ -337,6 +366,7 @@ export const runCliViaAgui = async (
         },
         onStatus: (status: ClientStatus) => statusLine.update(status),
         onProgress: (progress: CliRunResult) => { activeSegment = progress; },
+        readStream: (concluded: StreamConcludedPayload) => readStream(target, opts, concluded, ac.signal),
         json: opts.json,
         yolo: opts.yolo,
         noReviewChannel,
@@ -349,7 +379,6 @@ export const runCliViaAgui = async (
     // SSE locally (hangup is the abort). Exit 3 with timedOut:true in the record,
     // per SPEC §1.
     let timedOut = false;
-    const ac = new AbortController();
     const cancellationGraceMs = 15_000;
     const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAgui(target, {
         threadId: opts.threadId,
@@ -486,6 +515,7 @@ export const runScriptViaAgui = async (
         err: (s) => process.stderr.write(s),
         notice: (notice) => report(notice),
         json: opts.json, yolo: opts.yolo, noReviewChannel, acceptance,
+        readStream: (concluded) => readStream(target, opts, concluded),
         review: reviewProposal,
         onActionResult: (v) => {
             if (v.kind !== "op.parse") return;

@@ -11,6 +11,7 @@ import type { AguiEvent } from "./agui.ts";
 import type { LogEntryWire } from "./render.ts";
 import type { Resolution } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", origin: "model", signal: null,
@@ -480,6 +481,47 @@ test("consumeCliRun: plurnk.stream routes start (state) and conclusion (result) 
     assert.match(trace, /python:\/\/\/0c0ffee1/, "stream lines traced to stderr");
     assert.doesNotMatch(trace, /(?:^|\s)200(?:\s|$)/, "a routine conclusion carries no code (plurnk#21)");
     assert.match(trace, /python \(python:\/\/\/0c0ffee1\)/, "the conclusion traces as the stream in the operation grammar");
+});
+
+test("[§cli-stream-event-and-stream-concluded] one-shot stream previews use the exact entry perspective and remain bounded trace", async () => {
+    for (const json of [false, true]) {
+        const conclusion = execConclusion("sh:///preview");
+        const reads: unknown[] = [];
+        const { io, out, err } = sink({ json, readStream: async (payload) => {
+            reads.push(payload);
+            return {
+                stdout: { content: "small output\n" }, stderr: { content: "small warning\n" },
+            };
+        } });
+        await consumeCliRun(stream([{ type: EventType.CUSTOM, name: "plurnk.stream", value: conclusion }, terminalSend("Answer."), terminated()]), io);
+        assert.deepEqual(reads, json ? [] : [conclusion]);
+        assert.equal(out.join(""), json ? "" : "Answer.\n");
+        if (json) assert.deepEqual(err, []);
+        else assert.match(err.join(""), /sh \(sh:\/\/\/preview\)\n    small output\n    ! small warning\n/);
+    }
+    for (const content of ["", "x".repeat(161), "first\nsecond\nthird\n"]) {
+        const { io, err } = sink({ readStream: async () => ({ stdout: { content } }) });
+        await consumeCliRun(stream([{ type: EventType.CUSTOM, name: "plurnk.stream", value: execConclusion("sh:///large") }, terminated()]), io);
+        assert.deepEqual(err, ["sh (sh:///large)\n"]);
+    }
+});
+
+test("[§cli-stream-event-and-stream-concluded] unavailable preview is diagnosed without replacing the loop's answer or outcome", async () => {
+    const notices: unknown[] = [];
+    const { io, out } = sink({ notice: (notice) => { notices.push(notice); }, readStream: async () => { throw new Error("fixture read failed"); } });
+    const result = await consumeCliRun(stream([{ type: EventType.CUSTOM, name: "plurnk.stream", value: execConclusion("sh:///unreadable") }, terminalSend("Answer."), terminated()]), io);
+    assert.equal(result.exitCode, 0);
+    assert.equal(out.join(""), "Answer.\n");
+    assert.deepEqual(notices, [{ source: "client:stream", kind: "preview_unavailable", level: "warn", message: "Stream output unavailable: fixture read failed" }]);
+});
+
+test("[§cli-stream-event-and-stream-concluded] a refused preview preserves the exact entry-read Problem", async () => {
+    const problem = { type: "https://problems.plurnk.xyz/fixture/read-denied", status: 403, title: "Read denied", detail: "Fixture entry cannot be inspected." };
+    const { io, err } = sink({ readStream: async () => { throw new ProblemError(problem); } });
+    const result = await consumeCliRun(stream([{ type: EventType.CUSTOM, name: "plurnk.stream", value: execConclusion("sh:///refused") }, terminated()]), io);
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.problem, null);
+    assert.match(err.join(""), /problem:Read denied — Fixture entry cannot be inspected\./);
 });
 
 test("runScript segments: a run with NO parse result must not report success", async () => {

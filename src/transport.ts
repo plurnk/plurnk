@@ -169,7 +169,7 @@ export class AguiTransport implements Transport {
         for (;;) {
             let pausedProp: number | null = null;
             let proposalResolution: Promise<ProposalResolution | undefined> | null = null;
-            let interrupted = false;
+            let interruptId: string | undefined;
             let toolId = "";
             let toolArgs = "";
             for await (const e of runViaAgui(this.#target, {
@@ -207,8 +207,9 @@ export class AguiTransport implements Transport {
                     continue;
                 }
                 if (e.type === "RUN_FINISHED") {
-                    interrupted = e.outcome?.type === "interrupt"
-                        && e.outcome.interrupts.some((interrupt) => interrupt.id === toolId || interrupt.toolCallId === toolId);
+                    interruptId = e.outcome?.type === "interrupt"
+                        ? e.outcome.interrupts.find((interrupt) => (interrupt.toolCallId ?? interrupt.id) === toolId)?.id
+                        : undefined;
                     continue;
                 }
                 this.#dispatch(e, projection);
@@ -216,12 +217,12 @@ export class AguiTransport implements Transport {
             if (problem !== undefined) throw new ProblemError(problem);
             if (sawResult) return result as T;
             if (pausedProp === null) throw new ProblemError(clientActionResultMissing(method));
-            if (!interrupted) throw new ProblemError(clientTransportInterruptMismatch(`prop:${pausedProp}`));
+            if (interruptId === undefined) throw new ProblemError(clientTransportInterruptMismatch(`prop:${pausedProp}`));
             if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
             const resolution = await proposalResolution;
             signal.throwIfAborted();
             if (resolution === undefined) throw new Error("proposal ended without a resolution");
-            next = { resume: [proposalResume(resolution.logEntryId, resolution)] };
+            next = { resume: [proposalResume(interruptId, resolution)] };
         }
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
@@ -290,7 +291,7 @@ export class AguiTransport implements Transport {
                 let proposalResolution: Promise<ProposalResolution | undefined> | null = null;
                 let interactionResolution: Promise<InteractionResolution | undefined> | null = null;
                 let joined: AbortSignal | undefined;
-                let interrupted = false;
+                let interruptId: string | undefined;
                 let observed = false;
                 let toolId = "";
                 let toolName = "";
@@ -312,9 +313,9 @@ export class AguiTransport implements Transport {
                             const outcome = e.outcome;
                             observed = outcome?.type === "success";
                             const interrupt = outcome?.type === "interrupt"
-                                ? outcome.interrupts.find((candidate) => candidate.id === toolId || candidate.toolCallId === toolId)
+                                ? outcome.interrupts.find((candidate) => (candidate.toolCallId ?? candidate.id) === toolId)
                                 : undefined;
-                            interrupted = interrupt !== undefined;
+                            interruptId = interrupt?.id;
                             if (pausedInteraction !== null && interrupt !== undefined && interactionArguments !== null) {
                                 const interactionId = pausedInteraction;
                                 joined = this.#pendingInteractions.get(interactionId)?.signal;
@@ -398,7 +399,7 @@ export class AguiTransport implements Transport {
                     };
                 }
                 if (terminated !== null) return terminated;
-                if ((pausedProp !== null || pausedInteraction !== null) && !interrupted) {
+                if ((pausedProp !== null || pausedInteraction !== null) && interruptId === undefined) {
                     const problem = clientTransportInterruptMismatch(pausedProp === null ? `int:${pausedInteraction}` : `prop:${pausedProp}`);
                     this.#h?.onProblem?.(problem);
                     return {
@@ -430,13 +431,14 @@ export class AguiTransport implements Transport {
                     continue;
                 }
                 if (proposalResolution === null && interactionResolution === null) throw new Error("paused run ended without a resolution channel");
+                if (interruptId === undefined) throw new Error("paused run ended without an interrupt identity");
                 if (interactionResolution !== null && pausedInteraction !== null) {
                     const a = await interactionResolution;
                     ac.signal.throwIfAborted();
                     if (a === undefined) throw new Error("interaction ended without a resolution");
                     next = a === "cancel"
-                        ? { resume: [{ interruptId: `int:${pausedInteraction}`, status: "cancelled" }] }
-                        : { resume: [{ interruptId: `int:${pausedInteraction}`, status: "resolved", payload: a }] };
+                        ? { resume: [{ interruptId, status: "cancelled" }] }
+                        : { resume: [{ interruptId, status: "resolved", payload: a }] };
                     fp = undefined;
                     continue;
                 }
@@ -445,7 +447,7 @@ export class AguiTransport implements Transport {
                 const r = await proposalResolution;
                 ac.signal.throwIfAborted();
                 if (r === undefined) throw new Error("proposal ended without a resolution");
-                next = { resume: [proposalResume(r.logEntryId, r)] };
+                next = { resume: [proposalResume(interruptId, r)] };
                 fp = undefined;
             }
         })().then((terminal) => {

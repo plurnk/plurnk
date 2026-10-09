@@ -176,6 +176,16 @@ test("[§cli-one-shot-flow] consumeCliRun: a proposal tool-call is reviewed; the
     assert.deepEqual(r.pendingResume, { interruptId: "prop:9", status: "resolved", payload: { decision: "accept", body: "edited" } }, "the resume tool-result carries the reviewed decision");
 });
 
+test("[§cli-proposal-review] CLI resumes the supplied interrupt identity, not its tool-call identity", async () => {
+    const { io } = sink({ review: async () => ({ decision: "accept" }) });
+    const events = proposalCall(9);
+    events[events.length - 1] = { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: {
+        type: "interrupt", interrupts: [{ id: "presentation-opaque", toolCallId: "prop:9", reason: "tool_call" }],
+    } };
+    const result = await consumeCliRun(stream(events), io);
+    assert.deepEqual(result.pendingResume, { interruptId: "presentation-opaque", status: "resolved", payload: { decision: "accept" } });
+});
+
 test("consumeCliRun: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
     const { io } = sink({ json: true });
     const events = proposalCall(9).slice(0, -1);

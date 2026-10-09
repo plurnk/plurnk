@@ -1175,7 +1175,9 @@ contents have not changed. Subsequent output uses the new palette.
 
 Client-owned proposals arrive through standard AG-UI tool-call interrupts under
 {§agui-proposal-disposition}. The client presents the proposal and resumes the
-Run with the selected decision; the following sections describe its local review projection.
+Run with the selected decision, echoing the supplied opaque `Interrupt.id`.
+`toolCallId` identifies the underlying tool call; the client never derives a resume
+identity from it or from a proposal number. The following sections describe its local review projection.
 
 ### §6.0 Worker ownership {§cli-worker-ownership}
 

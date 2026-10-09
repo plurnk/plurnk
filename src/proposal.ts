@@ -33,12 +33,12 @@ export interface ProposalParams {
 export type Resolution = ProposalResolution;
 
 // {§cli-proposal-review} Preserve the same resolution through every client run plane.
-export const proposalResume = (logEntryId: number, resolution: Resolution): ResumeEntry => {
+export const proposalResume = (interruptId: string, resolution: Resolution): ResumeEntry => {
     const { decision, body, outcome } = resolution;
     const reason = outcome === undefined ? {} : { outcome };
     return decision === "cancel"
-        ? { interruptId: `prop:${logEntryId}`, status: "cancelled", ...(outcome === undefined ? {} : { payload: reason }) }
-        : { interruptId: `prop:${logEntryId}`, status: "resolved", payload: { decision, ...(body === undefined ? {} : { body }), ...reason } };
+        ? { interruptId, status: "cancelled", ...(outcome === undefined ? {} : { payload: reason }) }
+        : { interruptId, status: "resolved", payload: { decision, ...(body === undefined ? {} : { body }), ...reason } };
 };
 
 // Color udiff lines for EDIT proposals. Anything else renders plain.

@@ -139,7 +139,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     let sawActionResult = false;
     let toolId = "";
     let toolArgs = "";
-    const interrupts = new Set<string>();
+    const interrupts = new Map<string, string>();
     const entries: LogEntryWire[] = [];
     const notices: Notice[] = [];
     const streams = new StreamTrace();
@@ -163,8 +163,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             }
             if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
                 for (const interrupt of e.outcome.interrupts) {
-                    interrupts.add(interrupt.id);
-                    if (interrupt.toolCallId !== undefined) interrupts.add(interrupt.toolCallId);
+                    interrupts.set(interrupt.toolCallId ?? interrupt.id, interrupt.id);
                 }
                 continue;
             }
@@ -181,7 +180,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                     continue;
                 }
                 const r = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
-                pendingResume = proposalResume(logEntryId, r);
+                pendingResume = proposalResume(toolId, r);
                 continue;
             }
             if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
@@ -290,10 +289,15 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             io.onProgress?.(snapshot());
         }
     }
-    if (pendingResume !== null && !interrupts.has(pendingResume.interruptId)) {
-        problem = clientTransportInterruptMismatch(pendingResume.interruptId);
-        pendingResume = null;
-        finalStatus = problem.status;
+    if (pendingResume !== null) {
+        const interruptId = interrupts.get(pendingResume.interruptId);
+        if (interruptId === undefined) {
+            problem = clientTransportInterruptMismatch(pendingResume.interruptId);
+            pendingResume = null;
+            finalStatus = problem.status;
+        } else {
+            pendingResume = { ...pendingResume, interruptId };
+        }
     }
     // A stream that ended with NO terminal truth (no terminated, no RUN_ERROR, no
     // pending resume) is a DEAD stream — 502, never the initialized 200.

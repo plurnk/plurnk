@@ -452,7 +452,7 @@ test("AguiTransport.rpc: a proposal-gated action resumes and returns its result"
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
             res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "sh", target: null, body: "printf done" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-            res.write(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "prop:42", reason: "tool_call", toolCallId: "prop:42" }] } }));
+            res.write(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "action-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
             res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "op.exec", ok: true, result: { status: 200 } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
@@ -473,7 +473,7 @@ test("AguiTransport.rpc: a proposal-gated action resumes and returns its result"
         assert.equal(seen.proposals.length, 1);
         assert.equal(call, 2);
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
+        assert.deepEqual(resume.resume, [{ interruptId: "action-presentation", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
     } finally { await mock.close(); }
 });
 
@@ -848,7 +848,7 @@ test("AguiTransport: terminate-resume — a proposal tool-call pauses done; reso
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
             res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EDIT", target: { scheme: "file", pathname: "a.ts" }, body: "diff" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:42", reason: "tool_call", toolCallId: "prop:42" }] } }));
+            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "conversation-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
             res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
@@ -868,7 +868,7 @@ test("AguiTransport: terminate-resume — a proposal tool-call pauses done; reso
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "prop:42", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
+        assert.deepEqual(resume.resume, [{ interruptId: "conversation-presentation", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
     } finally { await mock.close(); }
 });
 
@@ -913,7 +913,7 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
                 outcome: {
                     type: "interrupt",
                     interrupts: [{
-                        id: "int:8",
+                        id: "interaction-presentation",
                         reason: "tool_call",
                         toolCallId: "int:8",
                         message: "Choose one repository.",
@@ -946,7 +946,7 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
         assert.equal((await handle.done).finalStatus, 200);
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
         assert.deepEqual(resume.resume, [{
-            interruptId: "int:8",
+            interruptId: "interaction-presentation",
             status: "resolved",
             payload: { repository: "plurnk-service" },
         }]);

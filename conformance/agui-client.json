@@ -838,6 +838,7 @@
       "posture": "native",
       "evidence": [
         "src/mcp.test.ts — MCP management",
+        "test/tui/command-discovery.test.ts — bound daemon action availability",
         "test/tui/mcp.test.ts — built-client MCP dogfood"
       ],
       "dimensions": [

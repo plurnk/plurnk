@@ -165,6 +165,7 @@ export interface CompletionOptions {
     getProviderModels?: (provider: string) => Promise<string[]>;
     getFunctionalityAliases?: (family: FunctionalityFamily, scope?: "worker" | "workspace") => Promise<string[]>;
     getWorkerNames?: () => Promise<string[]>;
+    getActions?: () => Promise<ReadonlySet<string>>;
 }
 
 export interface InputCompletion {
@@ -179,9 +180,18 @@ export interface InputCompletion {
 // daemon catalog page ([§cli-plurnk-models]); the client never preloads or
 // owns the Models.dev snapshot.
 export const completeInput = async (line: string, options: CompletionOptions): Promise<InputCompletion> => {
-        const command = completeCommandSyntax(line);
+        const family = commandSpec(/^\/(\w+)\s/u.exec(line)?.[1] ?? "")?.group === "functionality";
+        let actions: ReadonlySet<string> | undefined;
+        if (family && options.getActions !== undefined) {
+            try { actions = await options.getActions(); }
+            catch { return { suggestions: [], prefix: line }; }
+        }
+        const command = completeCommandSyntax(line, actions);
         if (command?.kind === "syntax") return { suggestions: command.suggestions, prefix: command.prefix };
         if (command?.kind === "aliases") {
+            const prefix = command.family === "env" && command.scope !== undefined
+                ? `${command.scope}.env` : FAMILY_ACTIONS[command.family];
+            if (actions !== undefined && !actions.has(`${prefix}.list`)) return { suggestions: [], prefix: command.prefix };
             let aliases: string[] = [];
             try { aliases = await options.getFunctionalityAliases?.(command.family, command.scope) ?? []; }
             catch { /* completion failure is an empty result; the editor remains intact */ }
@@ -308,6 +318,7 @@ export const buildHeader = (opts: {
 export interface VerbContext {
     signal?: AbortSignal;
     rpc: VerbCaller;
+    getActions: () => Promise<ReadonlySet<string>>;
     opts: { modelSelector?: string; yolo: boolean; projectRoot?: string | null };
     // The worker's durable model truth ({§worker-model-selection}): the server's
     // resolved specs, updated by the set verbs. The display label AND the routing
@@ -405,7 +416,8 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
     }
     switch (verb) {
         case "help":
-            write(renderCommandHelp(rest));
+            write(renderCommandHelp(rest, commandSpec(rest.replace(/^\//u, ""))?.group === "functionality"
+                ? await ctx.getActions() : undefined));
             return;
         case "look": await ctx.look(rest); return;
         case "models": await runModels(rpc, {
@@ -800,7 +812,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     reprompt();
     void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
+    const getActions = async (): Promise<ReadonlySet<string>> =>
+        new Set(Object.keys(Validator.assertAguiDiscovery(await transport.rpc("discover")).actions));
     surface.setAutocompleteProvider(makeAutocompleteProvider({
+            getActions,
             getAliases: () => aliasCache,
             cwd: process.cwd(),
             getProjectRoot: () => boundProjectRoot,
@@ -1120,6 +1135,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const verbCtx: VerbContext = {
         signal: opts.lifetime.signal,
         rpc: verbRpc, opts,
+        getActions,
         get model(): ResolvedModelSpec | null { return workerModel; },
         get spawnModel(): ResolvedModelSpec | null { return workerSpawnModel; },
         get effort(): WorkerEffort { return workerEffort; },

@@ -92,7 +92,27 @@ test("help is a compact grouped index over commands and interaction grammar", ()
     assert.match(TUI_HELP, /\/help <verb>/);
 });
 
-test("handleVerb /help <verb> renders contextual registry usage without RPC", async () => {
+test("[§cli-interactive-command-discovery] live help and completion use the bound daemon's actions on demand", async () => {
+    const ctx = makeCtx();
+    let calls = 0;
+    const actions = new Set(["workspace.mcp.add"]);
+    const getActions = async () => { calls++; return actions; };
+    const options = { getAliases: () => [], getProjectRoot: () => null, cwd: "/tmp", getActions };
+    await completeInput("/mc", options);
+    assert.equal(calls, 0, "local root syntax needs no daemon request");
+    const completion = await completeInput("/mcp ", options);
+    assert.deepEqual(completion.suggestions.map(({ value }) => value), ["add"]);
+    assert.equal(calls, 1);
+    await handleVerb("/help mcp", { ...ctx, getActions });
+    assert.doesNotMatch(ctx.out.join(""), /\/mcp discover/);
+    actions.add("workspace.mcp.discover");
+    await handleVerb("/help mcp", { ...ctx, getActions });
+    assert.match(ctx.out.at(-1) ?? "", /\/mcp discover/);
+    const unavailable = await completeInput("/mcp ", { ...options, getActions: async () => { throw new Error("disconnected"); } });
+    assert.deepEqual(unavailable.suggestions, [], "a failed lookup cannot advertise an unknown action");
+});
+
+test("handleVerb /help <verb> renders contextual registry usage from the supplied action inventory", async () => {
     const ctx = makeCtx();
     await handleVerb("/help mcp", ctx);
     assert.deepEqual(ctx.calls, []);
@@ -340,6 +360,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
                 return typeof r === "function" ? (r as (p: unknown) => unknown)(params) : (r ?? {});
             },
         } as unknown as VerbContext["rpc"],
+        getActions: async () => new Set(["list", "discover", "add", "enable", "disable", "remove", "oauth.begin", "oauth.complete"].map((name) => `workspace.mcp.${name}`)),
         opts: { yolo: false, ...opts },
         get model() { return modelState.model; },
         get spawnModel() { return modelState.spawnModel; },

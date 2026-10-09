@@ -42,6 +42,29 @@ test("root, contextual help, and Functionality syntax share the registry", () =>
     }
 });
 
+test("[§cli-interactive-command-discovery] live family syntax projects advertised actions, including composed commands and env scope", () => {
+    const actions = new Set(["workspace.mcp.add", "workspace.mcp.disable", "workspace.mcp.oauth.begin",
+        "worker.env.add", "workspace.env.discover", "workspace.skills.discover"]);
+    const names = (line: string) => {
+        const result = completeCommandSyntax(line, actions);
+        assert.equal(result?.kind, "syntax");
+        return result?.kind === "syntax" ? result.suggestions.map(({ value }) => value) : [];
+    };
+    assert.deepEqual(names("/mcp "), ["add", "disable"]);
+    assert.doesNotMatch(renderCommandHelp("mcp", actions), /\/mcp (?:discover|enable|remove|oauth)\b/);
+    assert.deepEqual(names("/env "), ["add", "import"]);
+    assert.deepEqual(names("/env --scope workspace "), ["discover"]);
+    assert.deepEqual(names("/skills "), ["discover"]);
+    assert.equal(completeCommandSyntax("/mcp enable br", actions), null);
+    actions.add("workspace.mcp.discover");
+    actions.add("workspace.mcp.oauth.complete");
+    actions.add("workspace.mcp.list");
+    assert.deepEqual(names("/mcp "), ["discover", "add", "disable", "oauth"]);
+    assert.match(renderCommandHelp("mcp", actions), /\/mcp discover <query>/);
+    assert.deepEqual(names("/mcp d"), ["discover", "disable"]);
+    assert.match(renderCommandHelp("mcp"), /\/mcp discover/, "offline reference retains the full syntax");
+});
+
 test("{§cli-effort} /effort is the reasoning-selection command in help and completion", () => {
     assert.equal(isCommandName("effort"), true);
     assert.equal(isCommandName("reasoning"), false);

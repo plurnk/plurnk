@@ -470,11 +470,13 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 | Review | `/review /accept /reject /cancel /edit` |
 | Session | `/stop /quit` |
 
-Completion remains demand-driven. The client offers local syntax and known
-model aliases without I/O; provider-qualified models use one bounded provider
-page; MCP, Skill, and A2A aliases call only that Functionality family's list
-action after the cursor reaches an alias-taking position. A failed lazy lookup
-produces no completion and never changes the editor value.
+Completion remains demand-driven. Root syntax and known model aliases need no
+I/O. Live Functionality help and nested completion project the registry against
+the bound daemon's `discover.actions`; composed commands require each action
+they use. Offline references retain the complete syntax. Provider-qualified models
+use one bounded provider page; aliases call the advertised family's list action
+only at an alias-taking position. A failed lazy lookup produces no completion
+and never changes the editor value.
 
 #### §3.1.1.1 Filesystem completion {§cli-path-completion}
 

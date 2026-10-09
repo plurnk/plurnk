@@ -22,6 +22,7 @@ export interface CommandSubcommand {
     usage: string;
     summary: string;
     alias: boolean;
+    actions?: readonly string[];
 }
 
 export interface CommandSpec {
@@ -47,7 +48,7 @@ const MCP_SUBCOMMANDS = [
         { name: "discover", usage: "discover <query>", summary: "Search the MCP Registry for servers to add.", alias: false },
         { name: "add", usage: "add <alias> <command|url> [args...]", summary: "Add and enable an MCP server from a command or an http(s) URL.", alias: false },
     ),
-    { name: "oauth", usage: "oauth <alias> [callback-url]", summary: "Authorize an MCP server in the browser or submit its callback URL.", alias: true },
+    { name: "oauth", usage: "oauth <alias> [callback-url]", summary: "Authorize an MCP server in the browser or submit its callback URL.", alias: true, actions: ["oauth.begin", "oauth.complete", "list"] },
 ];
 
 const SKILL_SUBCOMMANDS = lifecycle(
@@ -74,7 +75,7 @@ const ENV_SUBCOMMANDS = [
         { name: "discover", usage: "discover [query]", summary: "List the names you may set, with their owning package; a query matches a name or its comment.", alias: false },
         { name: "add", usage: "add <NAME> <value>", summary: "Set a variable in the selected scope; the value is used verbatim.", alias: false },
     ),
-    { name: "import", usage: "import <path>", summary: "Add every variable in a dotenv file to the selected scope, each exactly as add would.", alias: false },
+    { name: "import", usage: "import <path>", summary: "Add every variable in a dotenv file to the selected scope, each exactly as add would.", alias: false, actions: ["add"] },
 ];
 
 const SCHEDULE_SUBCOMMANDS = lifecycle(
@@ -134,6 +135,13 @@ const BY_NAME = new Map<string, CommandSpec>(COMMANDS.map((command) => [command.
 
 export const commandSpec = (name: string): CommandSpec | undefined => BY_NAME.get(name);
 
+const availableSubcommands = (name: string, actions?: ReadonlySet<string>, scope?: "worker" | "workspace"): readonly CommandSubcommand[] => {
+    const subcommands = commandSpec(name)?.subcommands ?? [];
+    if (actions === undefined) return subcommands;
+    const prefix = name === "env" && scope !== undefined ? `${scope}.env` : FAMILY_ACTIONS[name as FunctionalityFamily];
+    return subcommands.filter((command) => (command.actions ?? [command.name]).every((action) => actions.has(`${prefix}.${action}`)));
+};
+
 export const isCommandName = (name: string): name is CommandName => BY_NAME.has(name);
 
 export const commandUsage = (name: CommandName, subcommand?: string): string => {
@@ -158,8 +166,9 @@ const matchingCommands = (prefix: string, slash: boolean): CommandSuggestion[] =
     .filter(({ name }) => name.startsWith(prefix))
     .map(({ name, summary }) => ({ value: `${slash ? "/" : ""}${name}`, description: summary }));
 
-export const completeCommandSyntax = (line: string): CommandCompletion => {
+export const completeCommandSyntax = (line: string, actions?: ReadonlySet<string>): CommandCompletion => {
     const scoped = /^\/env\s+--scope(?:=|\s+)(worker|workspace)(?:\s+(.*))?$/u.exec(line);
+    const scope = scoped?.[1] as "worker" | "workspace" | undefined;
     if (scoped !== null) line = `/env ${scoped[2] ?? ""}`;
     const root = /^\/(\w*)$/u.exec(line);
     if (root !== null) return { kind: "syntax", prefix: line, suggestions: matchingCommands(root[1], true) };
@@ -169,8 +178,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
 
     const nested = /^\/(mcp|skills|a2a|members|env|schedule)\s+(\w*)$/u.exec(line);
     if (nested !== null) {
-        const spec = commandSpec(nested[1]);
-        const suggestions = (spec?.subcommands ?? [])
+        const suggestions = availableSubcommands(nested[1], actions, scope)
             .filter(({ name }) => name.startsWith(nested[2]))
             .map(({ name, summary }) => ({ value: name, description: summary }));
         return { kind: "syntax", prefix: nested[2], suggestions };
@@ -178,7 +186,7 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
 
     const alias = /^\/(mcp|skills|a2a|members|env|schedule)\s+(\w+)\s+(\S*)$/u.exec(line);
     if (alias !== null) {
-        const subcommand = commandSpec(alias[1])?.subcommands?.find(({ name }) => name === alias[2]);
+        const subcommand = availableSubcommands(alias[1], actions, scope).find(({ name }) => name === alias[2]);
         if (subcommand?.alias === true) {
             return { kind: "aliases", family: alias[1] as FunctionalityFamily, prefix: alias[3], ...(scoped === null ? {} : { scope: scoped[1] as "worker" | "workspace" }) };
         }
@@ -186,11 +194,11 @@ export const completeCommandSyntax = (line: string): CommandCompletion => {
     return null;
 };
 
-export const renderCommandHelp = (name: string = ""): string => {
+export const renderCommandHelp = (name: string = "", actions?: ReadonlySet<string>): string => {
     if (name.length > 0) {
         const command = commandSpec(name.replace(/^\//u, ""));
         if (command === undefined) return `  unknown command ${JSON.stringify(name)}; use /help for the command index\n`;
-        const subcommands = (command.subcommands ?? [])
+        const subcommands = availableSubcommands(command.name, actions)
             .map(({ usage, summary }) => `  /${command.name} ${usage}\n      ${summary}`)
             .join("\n");
         return `  ${command.usage}\n      ${command.summary}${subcommands.length > 0 ? `\n${subcommands}` : ""}\n`;

@@ -23,7 +23,7 @@ test("[§cli-active-command-admission] stopping a model proposal preserves a con
             ? "````sh\nprintf model-result > model.txt\n````\n````WAIT\nAwait the command.\n````"
             : requests === 2
                 ? "````sh\nprintf child-result > child.txt\n````\n````WAIT\n````"
-                : "````KILL\nChild finished.\n````";
+                : "````SEND [200]\nChild finished.\n````";
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(`data: ${JSON.stringify({ id: "proposal-fixture", object: "chat.completion.chunk", choices: [
             { index: 0, delta: { role: "assistant", content }, finish_reason: null },

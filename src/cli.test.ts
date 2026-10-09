@@ -24,16 +24,16 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     fragment: null,
     lineMarker: null,
     status_rx: 200,
-    tx: null,
-    rx: overrides.op === "SEND" && overrides.scheme == null && overrides.pathname == null ? { answers: [] } : null,
+    tx: overrides.op === "SEND" ? { body: "Fixture reply." } : null,
+    rx: overrides.op === "SEND" && overrides.scheme == null && overrides.pathname == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
     tags: [],
     ...overrides,
 });
 
-test("successful own targetless SEND messages contribute to the response independently of lifecycle", () => {
+test("successful delivered SEND messages contribute to the response independently of lifecycle", () => {
     assert.equal(isResponseMessage(entry({ op: "SEND" })), true);
     for (const overrides of [
-        { op: "NOTE" }, { op: "SEND", origin: "_plurnk" }, { op: "SEND", status_rx: 400 },
+        { op: "NOTE" }, { op: "SEND", rx: { answers: [] } }, { op: "SEND", status_rx: 400 },
         { op: "SEND", source: "worker://peer" }, { op: "SEND", inherited_history: 1 },
         { op: "SEND", scheme: "worker", hostname: "child", pathname: "/" },
     ]) assert.equal(isResponseMessage(entry(overrides)), false, JSON.stringify(overrides));

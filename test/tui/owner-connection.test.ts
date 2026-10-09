@@ -19,7 +19,7 @@ test("[§cli-worker-ownership] an idle TUI reviews later child work after inspec
         for await (const _chunk of request) { /* drain the fixture request */ }
         const content = requests++ === 0
             ? "````sh\nprintf child-result > child.txt\n````\n````WAIT\n````"
-            : "````KILL\nChild work completed.\n````";
+            : "````SEND [200]\nChild work completed.\n````";
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(`data: ${JSON.stringify({ id: "owner-fixture", object: "chat.completion.chunk", choices: [
             { index: 0, delta: { role: "assistant", content }, finish_reason: null },

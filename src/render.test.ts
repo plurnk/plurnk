@@ -47,7 +47,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     lineMarker: null,
     status_rx: 200,
     tx: null,
-    rx: overrides.op === "SEND" && overrides.scheme == null ? { answers: [] } : null,
+    rx: overrides.op === "SEND" && overrides.scheme == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
     tags: [],
     loop_seq: 1,
     turn_seq: 1,
@@ -65,7 +65,7 @@ test("a model WAIT with a body renders as the model's message: Markdown at full 
     assert.match(plain, /12 of 30/u);
     assert.match(plain, /9 passes/u);
     assert.doesNotMatch(plain, /\*\*12 of 30\*\*/u, "the body went through the Markdown layout, not the literal preview");
-    assert.equal(spoken, renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: body }, aside: "park while the poll runs" }, rx: { answers: [] } })).replace(/^[^\n]*\n/u, spoken.split("\n")[0] + "\n"), "the body is painted exactly as a reply's body is");
+    assert.equal(spoken, renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: body }, aside: "park while the poll runs" }, rx: { answers: ["agui://anonymous/threads/t/messages/m1"] } })).replace(/^[^\n]*\n/u, spoken.split("\n")[0] + "\n"), "the body is painted exactly as a reply's body is");
     const silent = stripVTControlCharacters(renderLogEntry(entry({ op: "WAIT", origin: "model", signal: 202, status_rx: 202, lineMarker: { marks: [600] }, tx: { body: null, aside: "park while the poll runs" }, rx: { status: 202, attrs: { waiting: 600 } } })));
     assert.match(silent, /^WAIT/u, "a bodiless WAIT is still its operation row");
 });
@@ -399,7 +399,7 @@ test("[§cli-broadcast-send-rendering] a delivered message is its body under a b
     const block = renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
     assert.deepEqual(block.split("\n"), ["the answer", "line one", "line two"], "the aside takes the lead line; body lines stay at column zero");
     assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown\n    Undelivered.\n", "a failed message is an operation carrying its Problem title");
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "", "an empty message is the blank lead line alone");
+    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "SEND", "an empty reply retains its operation receipt without blank speech");
 });
 
 test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a message block", () => {

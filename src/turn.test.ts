@@ -8,7 +8,7 @@ import type { LogEntryWire } from "./render.ts";
 
 const row = (loop: number, turn: number, op = "READ"): LogEntryWire => ({
     id: 1, loop_seq: loop, turn_seq: turn, sequence: 1, op, origin: "model", signal: null, scheme: null, pathname: null,
-    hostname: null, fragment: null, lineMarker: null, tx: {}, rx: { status: 200, answers: [] }, status_rx: 200, tags: [],
+    hostname: null, fragment: null, lineMarker: null, tx: {}, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] }, status_rx: 200, tags: [],
 });
 
 test("[§cli-response-order] deliberate and addressed SEND responses retain delivery order", () => {

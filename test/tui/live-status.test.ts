@@ -13,7 +13,7 @@ test("[§cli-status-wait] built TUI counts down a bounded park and retains its d
     assert.ok(service, "the composed test requires the sibling service");
     let calls = 0;
     const endpoint = await completionsEndpoint(() => ++calls === 1
-        ? "```sh\nsleep 30\n```\n\n```WAIT <8>\nAwait the check.\n```"
+        ? "```sh\nsleep 30\n```\n\n```WAIT [8]\nAwait the check.\n```"
         : "```KILL (worker://user)\nEnd the fixture.\n```");
     t.after(() => endpoint.close());
     const daemon = await bootDaemon(service, { extraEnv: {
@@ -56,7 +56,7 @@ for (const mode of ["tui", "cli"] as const) {
         const service = await locateDaemon();
         assert.ok(service, "the composed test requires the sibling service");
         let calls = 0;
-        const endpoint = await completionsEndpoint(() => { calls++; return "```KILL\nREADY_FIXTURE\n```"; });
+        const endpoint = await completionsEndpoint(() => { calls++; return "```SEND [200]\nREADY_FIXTURE\n```"; });
         t.after(() => endpoint.close());
         const daemon = await bootDaemon(service, { mcp: {
             slow: {
@@ -134,7 +134,7 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
 test("[§cli-status-project-root] the built one-shot CLI status uses the resumed workspace folder", { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed test requires the sibling service");
-    const endpoint = await completionsEndpoint(() => "````KILL\nFolder confirmed.\n````");
+    const endpoint = await completionsEndpoint(() => "````SEND [200]\nFolder confirmed.\n````");
     t.after(() => endpoint.close());
     const daemon = await bootDaemon(service, { extraEnv: {
         PLURNK_MODEL: "rootfixture", PLURNK_MODEL_rootfixture: "openai/root-fixture",
@@ -225,7 +225,7 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
             await release[index].promise;
             const message = index === 0 ? "Continuing the work." : `FINAL_RESPONSE_${index + 1}`;
             const work = index === 0 ? "\n\n````FIND (worker:///*)\n````" : "";
-            frame({ content: `\`\`\`\`${index === 0 ? "SEND" : "KILL"}\n${message}\n\`\`\`\`${work}` });
+            frame({ content: `\`\`\`\`${index === 0 ? "SEND" : "SEND [200]"}\n${message}\n\`\`\`\`${work}` });
             frame({}, "stop");
             const factor = 2 ** index;
             response.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 }, knownUsage: { prompt_tokens: factor * 1000, completion_tokens: factor * 100, total_tokens: factor * 1100 } })}\n\n`);
@@ -330,7 +330,7 @@ test("[§cli-worker-status] the built TUI clock advances through parked and resu
             if (index === 2) { resumed.resolve(); await parentRelease.promise; }
             const content = index === 0
                 ? "````WORK (worker://timer_child)\nReturn CHILD_CLOCK_RESULT.\n````\n\n````WAIT\n````"
-                : `\`\`\`\`KILL\n${index === 1 ? "CHILD_CLOCK_RESULT" : "PARENT_CLOCK_RESULT"}\n\`\`\`\``;
+                : `\`\`\`\`SEND [200]\n${index === 1 ? "CHILD_CLOCK_RESULT" : "PARENT_CLOCK_RESULT"}\n\`\`\`\``;
             frame({ content });
             frame({}, "stop");
             response.end("data: [DONE]\n\n");

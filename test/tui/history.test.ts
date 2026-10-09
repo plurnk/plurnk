@@ -27,7 +27,7 @@ test("{§cli-conversation-history}: startup and attach restore the bound convers
     let requests = 0;
     const provider = await completionsEndpoint(() => {
         requests += 1;
-        return `\`\`\`\`KILL\nRESTORED_ANSWER_${requests}\n\`\`\`\``;
+        return `\`\`\`\`SEND [200]\nRESTORED_ANSWER_${requests}\n\`\`\`\``;
     });
     t.after(() => provider.close());
     const daemon = await historyDaemon(t, provider.url);
@@ -91,7 +91,7 @@ test("{§cli-conversation-history}: quitting an attached live observer leaves th
         frame({ role: "assistant", reasoning_content: "Reasoning before the observer attached." });
         waiting.resolve();
         await release.promise;
-        frame({ content: "````KILL\nINDEPENDENT_WORK_FINISHED\n````" });
+        frame({ content: "````SEND [200]\nINDEPENDENT_WORK_FINISHED\n````" });
         frame({}, "stop");
         response.end("data: [DONE]\n\n");
     });
@@ -126,7 +126,7 @@ test("{§cli-conversation-history}: reattachment presents a durable unanswered q
         requests += 1;
         return requests === 1
             ? '````question (question)\n{"message":"Choose the retained value.","requestedSchema":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}}\n````\n````WAIT\nWaiting for the retained value.\n````'
-            : "````KILL\nRESTORED_QUESTION_FINISHED\n````";
+            : "````SEND [200]\nRESTORED_QUESTION_FINISHED\n````";
     });
     t.after(() => provider.close());
     const daemon = await historyDaemon(t, provider.url, { PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0" });

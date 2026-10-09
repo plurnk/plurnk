@@ -1070,14 +1070,14 @@ A failed preview read is diagnosed without replacing the execution or loop resul
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
-A successful SEND or accepted parameterless KILL whose receipt addresses the current AG-UI conversation carries response content, including an exact-address reply or another actor's delivered reply observation. An unsolicited targetless model reply also qualifies. The interactive client renders full message bodies, not diagnostic previews; an unrelated worker or protocol recipient does not become conversation speech. A deferred KILL renders its continuation or parking detail as an operation, never its undelivered answer body. An empty KILL does not repeat a previous reply.
+A successful SEND whose receipt addresses the current AG-UI conversation carries response content, including an exact-address reply or another actor's delivered reply observation. A missing path does not establish delivery. The interactive client renders full message bodies, not diagnostic previews; an unrelated worker or protocol recipient does not become conversation speech. Completion metadata does not change delivery or rendering: message resolution and loop settlement belong to the daemon. An empty body creates no conversation message and neither repeats nor erases a previous reply.
 
 TUI mode contract:
 
-- Lead line: no keyword and no glyph. A final KILL answer's lead line stands blank, as a SEND's does where `SEND` was; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
+- Lead line: no keyword and no glyph; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
-- Empty SEND content is legal and renders as just the lead line.
+- Empty SEND content is legal; its receipt remains an operation row, not blank speech.
 
 A delivered conversation response is plain: its Markdown carries the only emphasis
 (headings, `**strong**`, table heads), and the human's own line — bold, in the human's

@@ -87,7 +87,7 @@ for (const [ending, status] of [["complete", 0], ["SIGINT", 130], ["SIGTERM", 14
             response.once("close", () => disconnected.resolve());
             entered.resolve();
             if (ending === "complete") {
-                frame({ content: "````KILL\nPrivate backend answered.\n````" });
+                frame({ content: "````SEND [200]\nPrivate backend answered.\n````" });
                 frame({}, "stop");
                 response.end("data: [DONE]\n\n");
             }

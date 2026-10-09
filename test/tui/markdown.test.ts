@@ -6,7 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-for (const op of ["KILL", "NOTE", "prose"]) test(`[§cli-markdown-projection] [§cli-note-rendering] built TUI renders ${op} Markdown with nested lists, long code, and Mermaid source fallback`, { timeout: 60_000 }, async (t) => {
+for (const op of ["SEND [200]", "NOTE", "prose"]) test(`[§cli-markdown-projection] [§cli-note-rendering] built TUI renders ${op} Markdown with nested lists, long code, and Mermaid source fallback`, { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed rendering test requires the sibling service");
     const responseBody = [
@@ -27,7 +27,7 @@ for (const op of ["KILL", "NOTE", "prose"]) test(`[§cli-markdown-projection] [�
         "",
         "RENDER_FINISHED",
     ].join("\n");
-    const answer = "````KILL\nANSWER_DELIVERED\n````";
+    const answer = "````SEND [200]\nANSWER_DELIVERED\n````";
     const emission = op === "prose" ? responseBody
         : `\`\`\`\`${op}\n${responseBody}\n\`\`\`\`` + (op === "NOTE" ? `\n\n${answer}` : "");
     let calls = 0;
@@ -72,7 +72,7 @@ for (const op of ["KILL", "NOTE", "prose"]) test(`[§cli-markdown-projection] [�
     await tui.waitFor(/plurnk.*\/help/s);
     tui.write("Describe the project.\r");
     await tui.waitFor(/RENDER_FINISHED/);
-    if (op !== "KILL") await tui.waitFor(/ANSWER_DELIVERED/);
+    if (op !== "SEND [200]") await tui.waitFor(/ANSWER_DELIVERED/);
     const output = stripVTControlCharacters(tui.output());
     assert.match(output, /Addressable Context/);
     assert.doesNotMatch(output, /\*\*Addressable Context\*\*/);

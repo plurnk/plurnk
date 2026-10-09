@@ -134,7 +134,7 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
 
 // A scripted OpenAI-compatible completions endpoint for a booted daemon: route an alias to it with
 // `PLURNK_BASEURL_<alias>` and every turn answers with `reply(request)` as one streamed chunk. A
-// KILL fence ends the loop, so a PTY test can drive a real loop with no model.
+// completion reply settles its message, so a PTY test can drive a real loop with no model.
 export interface CompletionsEndpoint { url: string; close: () => Promise<void> }
 
 const completionsBody = async (request: IncomingMessage): Promise<{ model?: unknown; messages?: unknown }> => {

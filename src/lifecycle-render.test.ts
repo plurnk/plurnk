@@ -9,7 +9,7 @@ const row = (op: string, body: string | null, status: number, delivered = false)
     id: 1, loop_seq: 1, turn_seq: 2, sequence: 1, op, origin: "model", signal: null,
     scheme: null, hostname: null, pathname: null, fragment: null, lineMarker: null,
     tx: { op, body, target: null, aside: null },
-    rx: { status, ...(delivered ? { answers: [] } : {}) }, status_rx: status, tags: [],
+    rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/conversation/messages/m1"] } : {}) }, status_rx: status, tags: [],
 });
 
 test("an addressed answer is rendered from successful delivery, not targetlessness or a terminal verb", () => {
@@ -33,7 +33,7 @@ test("[§cli-note-rendering] a model NOTE renders as full Markdown without becom
     const note = row("NOTE", "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(note), false, "it is not speech");
     assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "\nWorking memory, not a response.", "model text uses the conversation column");
-    const answer = row("KILL", "Working memory, not a response.", 200, true);
+    const answer = row("SEND", "Working memory, not a response.", 200, true);
     assert.equal(stripVTControlCharacters(renderLogEntry(answer, 80)), "\nWorking memory, not a response.", "the delivered answer keeps its blank lead and is whole");
     assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE\n    Working memory, not a response.\n", "a harness NOTE keeps its heading, its body whole beneath, a blank row under it");
 });
@@ -96,19 +96,24 @@ test("a WAIT body is the model's words to the user: rendered as model text, neve
     assert.match(stripVTControlCharacters(renderLogEntry(silent, 80)), /^WAIT/u, "a bodiless WAIT is still its operation row");
 });
 
-test("{§cli-broadcast-send-rendering} a final KILL is speech only when its answer was delivered", () => {
-    const delivered = row("KILL", "Verified answer.", 200, true);
-    assert.equal(isResponseMessage(delivered), true);
-    assert.equal(stripVTControlCharacters(renderLogEntry(delivered)), "\nVerified answer.");
-    for (const status of [102, 202]) {
-        const deferred = row("KILL", "Not delivered.", status);
-        deferred.rx = { status, detail: "Results await review before completion." };
-        assert.equal(isResponseMessage(deferred), false);
-        assert.equal(stripVTControlCharacters(renderLogEntry(deferred)), "KILL — Results await review before completion.\n    Not delivered.\n");
+test("{§cli-broadcast-send-rendering} delivered replies render independently of completion metadata", () => {
+    for (const completion of [undefined, 200, 499]) {
+        const delivered = row("SEND", "Verified answer.", 200, true);
+        delivered.rx = { ...delivered.rx as object, ...(completion === undefined ? {} : { completion }) };
+        assert.equal(isResponseMessage(delivered), true);
+        assert.equal(stripVTControlCharacters(renderLogEntry(delivered)), "\nVerified answer.");
     }
     // {plurnk#104} — the delivered answer is the one block that is never previewed.
-    const long = row("KILL", Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"), 200, true);
+    const long = row("SEND", Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"), 200, true);
     assert.equal(stripVTControlCharacters(renderLogEntry(long, 80)).split("\n").length, 41, "the delivered answer is whole");
+});
+
+test("{§cli-broadcast-send-rendering} a SEND without a delivered recipient is not conversation speech", () => {
+    const entry = row("SEND", "Unaddressed text.", 200);
+    entry.rx = { status: 200, answers: [] };
+    assert.equal(isResponseMessage(entry), false);
+    assert.equal(isResponseMessage(entry, "conversation"), false);
+    assert.match(stripVTControlCharacters(renderLogEntry(entry)), /^SEND\b/u);
 });
 
 test("an empty WAIT displays its actual continuation detail without manufacturing speech", () => {
@@ -129,5 +134,16 @@ test("{§cli-broadcast-send-rendering} an undelivered SEND renders as an operati
     for (const [name, entry] of Object.entries({ undelivered, failed, inherited, unrelated })) {
         assert.equal(isResponseMessage(entry), false, `${name} is not speech`);
         assert.match(heading(entry), /^SEND\b/, `${name} keeps its operation heading`);
+    }
+});
+
+test("{§cli-broadcast-send-rendering} empty reply bodies create no conversation speech", () => {
+    for (const body of [null, "", " \n\t"]) {
+        for (const completion of [undefined, 200, 499]) {
+            const entry = row("SEND", body, 200, true);
+            entry.rx = { ...entry.rx as object, ...(completion === undefined ? {} : { completion }) };
+            assert.equal(isResponseMessage(entry), false);
+            assert.match(stripVTControlCharacters(renderLogEntry(entry)), /^SEND/u);
+        }
     }
 });

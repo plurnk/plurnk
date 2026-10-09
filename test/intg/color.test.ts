@@ -13,7 +13,7 @@ const ANSI = /\x1b\[[\d;]*m/u;
 test("[§cli-color-policy] built client separates terminal presentation from raw product output", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
-    const endpoint = await completionsEndpoint(() => `\`\`\`\`KILL\n${ANSWER}\n\`\`\`\``);
+    const endpoint = await completionsEndpoint(() => `\`\`\`\`SEND [200]\n${ANSWER}\n\`\`\`\``);
     t.after(() => endpoint.close());
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,

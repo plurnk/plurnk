@@ -52,7 +52,7 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
                 id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1,
                 op: "SEND", origin: "model", signal: null, scheme: null, hostname: null,
                 pathname: null, fragment: null, lineMarker: null, status_rx: 200, tags: [],
-                tx: { body: { raw: `observed segment ${runs}` } }, rx: { answers: [] },
+                tx: { body: { raw: `observed segment ${runs}` } }, rx: { answers: ["agui://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
             } });
             if (resumed && runs === 1) {
                 frame({ type: "TOOL_CALL_START", toolCallId: "prop:9", toolCallName: "request_approval" });

@@ -92,7 +92,7 @@ export const renderLogEntry = (
     const lineage = lineageWorker(entry);
     if (lineage !== null) return renderDescendantBlock(entry, lineage, 1, override, columns);
     if (entry.op === "NOTE" && entry.origin === "model") return renderNoteText(entry, columns);
-    if (TurnDisposition.isOp(entry.op) || entry.op === "KILL" && objectOf(entry.tx)?.target === null) {
+    if (TurnDisposition.isOp(entry.op)) {
         const rx = objectOf(entry.rx);
         const detail = typeof rx?.detail === "string" ? rx.detail : null;
         return renderOperationBlock(entry, { failure: rx?.problem == null ? detail : outcomeTitle(entry) }, true, columns);

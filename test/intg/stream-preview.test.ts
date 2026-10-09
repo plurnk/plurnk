@@ -14,7 +14,7 @@ test("[§cli-stream-event-and-stream-concluded] built one-shot and script client
     assert.ok(service);
     let calls = 0;
     const program = "````sh\nprintf 'preview-stdout\\n'; printf 'preview-stderr\\n' >&2\n````";
-    const endpoint = await completionsEndpoint(() => ++calls === 1 ? program : "````KILL\nAnswer.\n````");
+    const endpoint = await completionsEndpoint(() => ++calls === 1 ? program : "````SEND [200]\nAnswer.\n````");
     t.after(endpoint.close);
     const daemon = await bootDaemon(service, { extraEnv: {
         PLURNK_MODEL: "previewfixture", PLURNK_MODEL_previewfixture: "openai/preview-fixture",

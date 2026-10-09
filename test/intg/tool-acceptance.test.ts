@@ -21,7 +21,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     const service = await locateDaemon();
     assert.ok(service);
     let calls = 0;
-    const endpoint = await completionsEndpoint(() => ++calls % 2 === 1 ? operations : "````KILL\nFinished.\n````");
+    const endpoint = await completionsEndpoint(() => ++calls % 2 === 1 ? operations : "````SEND [200]\nFinished.\n````");
     t.after(endpoint.close);
     const daemon = await bootDaemon(service, {
         mcp: { fixture: {

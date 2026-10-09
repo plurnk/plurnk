@@ -15,7 +15,7 @@ test("[§cli-conversation-history] snapshot speech and operation headings retain
     const blocks = renderHistory({ attachment: true, entries: [
         entry({ id: 1, op: "SEND", origin: "_plurnk", source, attrs: { kind: "message" }, tx: { body: "row prompt" } }),
         entry({ id: 2, op: "READ", pathname: "a.md", tx: { body: "OPERAND_BODY_NOT_REPLAYED" } }),
-        entry({ id: 3, op: "KILL", rx: { answers: [source] }, tx: { body: "row answer" } }),
+        entry({ id: 3, op: "SEND", rx: { answers: [source], completion: 200 }, tx: { body: "row answer" } }),
     ], messages: [
         { id: "prompt", role: "user", name: source, content: "snapshot prompt\nsecond line" },
         { id: "3/reasoning", role: "reasoning", content: "OLD_REASONING_NOT_REPLAYED" },
@@ -27,7 +27,7 @@ test("[§cli-conversation-history] snapshot speech and operation headings retain
 test("{§cli-conversation-history}: rows newer than the snapshot carry their own answer; another actor retains attribution", () => {
     assert.deepEqual(renderHistory({ attachment: false, messages: [], entries: [
         entry({ id: 1, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: "worker update" } }),
-        entry({ id: 2, op: "KILL", rx: { answers: [] }, tx: { body: "recent answer" } }),
+        entry({ id: 2, op: "SEND", rx: { answers: ["agui://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
         entry({ id: 3, op: "EDIT", origin: "_plurnk", attrs: { kind: "entry_materialized" } }),
     ] }, "alice", 80), ["worker://helper\nworker update", "recent answer"]);
 });

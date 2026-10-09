@@ -47,7 +47,7 @@ test("[§cli-color-scheme] a dark terminal's startup warning keeps the dark grou
 test("[§cli-color-scheme] the built TUI shares a readable muted foreground across prompt, status, summary and inline code", async (t) => {
     const service = await locateDaemon();
     assert.ok(service);
-    const endpoint = await completionsEndpoint(() => "````KILL\n## Sample\n\nPlain `inline` text.\n````");
+    const endpoint = await completionsEndpoint(() => "````SEND [200]\n## Sample\n\nPlain `inline` text.\n````");
     t.after(endpoint.close);
     const modelDaemon = await bootDaemon(service, { extraEnv: {
         PLURNK_MODEL: "colorfixture", PLURNK_MODEL_colorfixture: "openai/color-fixture",

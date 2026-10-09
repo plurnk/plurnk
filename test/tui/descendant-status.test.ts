@@ -35,8 +35,8 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
             await release[index].promise;
             const content = index === 0
                 ? "````WORK (worker://first_child)\nDo two turns.\n````\n\n````WORK (worker://second_child)\nDo two turns.\n````\n\n````WAIT\n````"
-                : index === 1 || index === 2 ? "````NOTE\nContinuing child work.\n````"
-                    : `\`\`\`\`KILL\nACCOUNTING_RESULT_${index}\n\`\`\`\``;
+                : index === 6 ? "" : index === 1 || index === 2 ? "````NOTE\nContinuing child work.\n````"
+                    : `\`\`\`\`SEND [200]\nACCOUNTING_RESULT_${index}\n\`\`\`\``;
             frame({ content });
             frame({}, "stop");
             const factor = 2 ** index;
@@ -109,7 +109,8 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
     // The second child settled after the parent's packet was assembled. The normal
     // completion guard requires that result to be observed in a subsequent turn.
     await arrived[6].promise;
-    assert.match(packets[6], /Results await review before completion/);
+    assert.match(packets[6], /READ → ops:\/\/second_child\/1/u, "the last child result is delivered before settlement");
+    assert.match(packets[6], /## Open Messages\s+\[\]/u, "the answer has already resolved the parent's message");
     await tui.waitFor(/⌛︎[^\r\n]*↓6k ↑630[^\r\n]*\$0\.6300/);
     release[6].resolve();
     await tui.waitFor(/⏹️[^\r\n]*↓13k ↑1k[^\r\n]*\$1\.2700/);

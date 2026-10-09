@@ -11,7 +11,7 @@ test("[§cli-tool-acceptance]: built TUI auto-accepts a configured runtime but e
     let calls = 0;
     const endpoint = await completionsEndpoint(() => ++calls % 2 === 1
         ? "````sh\nprintf permitted > witness.txt\n````"
-        : "````KILL\nApproval fixture finished.\n````");
+        : "````SEND [200]\nApproval fixture finished.\n````");
     t.after(endpoint.close);
     const daemon = await bootDaemon(service, { extraEnv: {
         PLURNK_MODEL: "approvalfixture", PLURNK_MODEL_approvalfixture: "openai/approval-fixture",

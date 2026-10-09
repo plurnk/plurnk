@@ -13,14 +13,14 @@ import { actionViaAgui } from "../../src/agui.ts";
 import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
-let endpoint: CompletionsEndpoint | null = null;   // a scripted model behind the `clientloop` alias: one KILL turn ends every loop
+let endpoint: CompletionsEndpoint | null = null;
 let members = false;   // the daemon serves the members Functionality family
 let env = false;       // the daemon serves the env Functionality family
 
 before(async () => {
     const bin = await locateDaemon();
     if (bin !== null) {
-        endpoint = await completionsEndpoint(() => "````KILL\nloop gauge\n````");
+        endpoint = await completionsEndpoint(() => "````SEND [200]\nloop gauge\n````");
         daemon = await bootDaemon(bin, {
             extraEnv: {
                 PLURNK_MODEL_clientfirst: "clientfixture/client-first",

@@ -18,7 +18,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     loop_seq: 1, turn_seq: 1, sequence: 1,
     scheme: null, pathname: null, hostname: null, fragment: null,
     lineMarker: null, status_rx: 200, tx: null,
-    rx: o.op === "SEND" && o.scheme == null ? { answers: [] } : null, tags: [], ...o,
+    rx: o.op === "SEND" && o.scheme == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null, tags: [], ...o,
 });
 
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
@@ -444,7 +444,7 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
         workerRow({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
         workerRow({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
         workerRow({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
-        workerRow({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: [] } }, 11),
+        workerRow({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } }, 11),
         terminated({ workerId: 11, result: { status: 499, problem: {
             type: "https://problems.plurnk.xyz/lifecycle/failed", title: "Task failed", status: 499, detail: "Verification failed.",
         } } }),

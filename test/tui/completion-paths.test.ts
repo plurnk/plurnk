@@ -12,7 +12,7 @@ test("[§cli-path-completion] the built editor completes and opens files from th
     const packets: string[] = [];
     const endpoint = await completionsEndpoint(({ messages }) => {
         packets.push(JSON.stringify(messages));
-        return "````KILL\nReference received.\n````";
+        return "````SEND [200]\nReference received.\n````";
     });
     t.after(() => endpoint.close());
     const daemon = await bootDaemon(service, { extraEnv: {

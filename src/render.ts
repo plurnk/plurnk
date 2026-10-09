@@ -149,19 +149,19 @@ export const markDescendant = (block: string, name: string, depth: number): stri
 
 export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
     if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
+    if (extractSendBody(entry.tx).trim().length === 0) return false;
     const reply = objectOf(entry.attrs)?.kind === "reply";
     if (!reply && entry.source != null) return false;
     const answers = objectOf(entry.rx)?.answers;
     if (!Array.isArray(answers)) return false;
     const prefix = threadId === undefined ? "agui://anonymous/threads/"
         : `agui://anonymous/threads/${encodeURIComponent(threadId)}/messages/`;
-    return !reply && entry.origin === "model" && answers.length === 0
-        || answers.some((address) => typeof address === "string" && address.startsWith(prefix));
+    return answers.some((address) => typeof address === "string" && address.startsWith(prefix));
 };
 
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
 // the bare pathname when scheme is null (the daemon's file:// shortcut). null
-// when the entry has no path at all (a broadcast SEND). One source for both the
+// when the entry has no path at all. One source for both the
 // waterfall render and the LOOK cycler — no synthesis, render what the daemon sent.
 export const entryTarget = (entry: LogEntryWire): string | null => {
     if (entry.pathname === null) return null;

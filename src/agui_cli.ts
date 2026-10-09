@@ -560,7 +560,7 @@ export const runExecViaAgui = async (
         onActionResult: (outcome) => { if (outcome.kind === "op.exec") seen.result = outcome; },
         // A started or queued receipt owns its stream; a refused one's proposed address opens nothing.
         onRow: (entry) => {
-            if (seen.stream === null && (entry.status_rx === 200 || entry.status_rx === 202)) seen.stream = streamAddress(entry);
+            if (seen.stream === null) seen.stream = streamAddress(entry);
         },
         onStreamConcluded: (concluded) => { seen.conclusions.set(concluded.target, { ...concluded, result: operationResult(concluded.result) }); },
     };

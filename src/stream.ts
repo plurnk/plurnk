@@ -38,10 +38,10 @@ export interface StreamConcludedPayload extends StreamCoord {
     wakeAction: string;     // wake-pending | no-op-active-loop | no-loop | skipped-aborted | skipped-cancelled
 }
 
-// A started execution's row carries its stream address: the daemon stamps `attrs.stream` on the
-// execution row it started (status 200, outcome `started`), and every stream/event and stream/concluded
-// for that execution names the same address as `target`. Opaque to the client, never composed.
+// {§cli-stream-event-and-stream-concluded} An address may precede admission.
+// Only a started or queued receipt promises a producer and its conclusion.
 export const streamAddress = (entry: LogEntryWire): string | null => {
+    if (entry.status_rx !== 200 && entry.status_rx !== 202) return null;
     const stream = objectOf(entry.attrs)?.stream;
     return typeof stream === "string" && stream.length > 0 ? stream : null;
 };

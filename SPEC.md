@@ -1520,7 +1520,7 @@ stream/event     { entryId, workerId, target, channel, state, contentLength }
 stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction }
 ```
 
-`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the started execution row as `attrs.stream` (`python3:///0c0ffee1`), opaque to the client and never composed. The TUI keeps the started row until that address concludes, then renders it once, per §5.1:
+`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the execution row as `attrs.stream` (`python3:///0c0ffee1`), opaque to the client and never composed. An address alone does not establish a producer. Only an admitted receipt (`200` started or `202` queued) waits for a conclusion; refusals render immediately. Approval may supply the receipt's outcome text; admission follows status, not that text. The TUI keeps the admitted row until that address concludes, then renders it once, per §5.1:
 
 ```
 python3 Run the focused tests

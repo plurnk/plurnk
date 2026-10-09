@@ -56,6 +56,23 @@ test("StreamTrace: launch records a started execution only; a client `!` with no
     assert.equal(t.concluded(concluded(), 80), "python\n    printf x", "no executor authored, no aside: the runtime the daemon resolved, the command beneath");
 });
 
+test("[§cli-stream-event-and-stream-concluded] a stream address alone never hides a refused or unadmitted operation", () => {
+    for (const status of [0, 201, 400, 403, 404, 499, 500]) {
+        const row = launch({ origin: "client", status_rx: status, rx: { status } });
+        const trace = new StreamTrace();
+        assert.equal(streamAddress(row), null, `status ${status} did not admit a producer`);
+        assert.equal(trace.launch(row), false);
+        assert.deepEqual(trace.staleBefore(1, 3), [], "no unfinished execution was manufactured");
+    }
+    assert.equal(streamAddress(launch({ rx: { status: 200, outcome: "auto: sh" } })), "python:///0c0ffee1", "approval outcome text is not admission state");
+    const queued = launch({ status_rx: 202, rx: { status: 202, outcome: "queued" } });
+    assert.equal(streamAddress(queued), "python:///0c0ffee1");
+    const trace = new StreamTrace();
+    assert.equal(trace.launch(queued), true, "queued work will also conclude");
+    assert.equal(trace.concluded(concluded(), 80), "python Run the focused tests\n    print(1)");
+    assert.equal(streamAddress(launch({ status_rx: 202, rx: { status: 202, outcome: "accepted" } })), "python:///0c0ffee1");
+});
+
 test("[§cli-stream-event-and-stream-concluded] [§cli-log-entry-line-format] an execution appears once, at its conclusion, as the fence that launched it", () => {
     const t = new StreamTrace();
     t.launch(launch());

@@ -15,6 +15,7 @@ import { enforceEvents, HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
 import {
     Validator,
+    type EntryReadResult,
     type OperationResult,
     type ProblemDetails,
 } from "@plurnk/plurnk-contracts";
@@ -45,6 +46,14 @@ export const problemDetails = (value: unknown): ProblemDetails => {
 export const operationResult = (value: unknown): OperationResult => {
     try {
         return Validator.assertOperationResult(value as OperationResult);
+    } catch (cause) {
+        throw new ProblemError(clientTransportResultInvalid(cause));
+    }
+};
+
+export const entryReadResult = (value: unknown): EntryReadResult => {
+    try {
+        return Validator.assertEntryReadResult(value as EntryReadResult);
     } catch (cause) {
         throw new ProblemError(clientTransportResultInvalid(cause));
     }

@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventType } from "@ag-ui/core";
-import { consumeCliRun, type CliRunSinks } from "./agui_cli.ts";
+import { consumeCliRun, exitCodeForExec, settleExec, type CliRunSinks } from "./agui_cli.ts";
 import type { AguiEvent } from "./agui.ts";
 import type { LogEntryWire } from "./render.ts";
 import type { Resolution } from "./proposal.ts";
@@ -492,4 +492,66 @@ test("runScript segments: a run with NO parse result must not report success", a
     const r = await consumeCliRun(stream([{ type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } }]), io);
     assert.equal(fired, false);
     assert.equal(r.pendingResume, null);
+});
+
+// A `! command`'s op.exec Run, as the daemon delivers it ({§agui-broadcast-fan}).
+const execConclusion = (target: string, status = 200) => ({
+    entryId: 52, workerId: 7, target, subscriptionId: 1, scheme: "sh", loop_seq: 1, turn_seq: 1, sequence: 1,
+    result: status === 200
+        ? { status, exitCode: 0 }
+        : { status, exitCode: 3, problem: { type: "https://problems.plurnk.xyz/executor/subprocess/nonzero-exit", title: "Nonzero exit", status, detail: "'sh' exited with code 3." } },
+    summary: `${target} completed`, wakeAction: "no-loop",
+});
+const execAdmitted = { kind: "op.exec", ok: true, result: { status: 200, outcome: "client_yolo" } } as const;
+
+test("[§cli-prompt-prefixes] consumeCliRun: rows and stream conclusions reach their hooks in either output mode", async () => {
+    for (const json of [false, true]) {
+        const rows: number[] = [];
+        const concluded: string[] = [];
+        const { io } = sink({ json, onRow: (e) => rows.push(e.id), onStreamConcluded: (c) => concluded.push(c.target) });
+        await consumeCliRun(stream([
+            row({ id: 58, op: "sh", origin: "client", attrs: { stream: "sh:///4d0f8d50" } }),
+            { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 52, workerId: 7, target: "sh:///4d0f8d50", channel: "stdout", state: "closed", contentLength: 3 } },
+            { type: EventType.CUSTOM, name: "plurnk.stream", value: execConclusion("sh:///4d0f8d50") },
+            { type: EventType.CUSTOM, name: "plurnk.action.result", value: execAdmitted },
+            { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+        ]), io);
+        assert.deepEqual(rows, [58], `json=${json}`);
+        assert.deepEqual(concluded, ["sh:///4d0f8d50"], `a channel event is not a conclusion (json=${json})`);
+    }
+});
+
+test("[§cli-prompt-prefixes] a `! command` exits by its execution's conclusion: 200 → 0, 499 → 3, anything else → 4", () => {
+    assert.deepEqual([200, 499, 500, 404, 202].map(exitCodeForExec), [0, 3, 4, 4, 4]);
+});
+
+test("[§cli-prompt-prefixes] settleExec: a refusal is the action's Problem; an admitted execution settles with its own stream's conclusion", () => {
+    const refusal = { type: "https://problems.plurnk.xyz/proposal/rejected", title: "Rejected", status: 400, detail: "The proposal was rejected (client_no_review_channel)." };
+    const mine = execConclusion("sh:///mine", 500);
+    const other = execConclusion("sh:///other");
+    const conclusions = new Map([[other.target, other], [mine.target, mine]]);
+    assert.deepEqual(
+        settleExec({ result: { kind: "op.exec", ok: false, problem: refusal }, stream: "sh:///mine", conclusions, problem: null }),
+        { problem: refusal },
+        "the daemon refused the execution; a conclusion cannot outrank that",
+    );
+    assert.deepEqual(
+        settleExec({ result: execAdmitted, stream: "sh:///mine", conclusions, problem: null }),
+        { conclusion: mine },
+        "the conclusion of the stream the started row announced, never another's",
+    );
+});
+
+test("[§cli-prompt-prefixes] settleExec: without its stream's conclusion the Run failed, with its own Problem when it reported one", () => {
+    const type = (settled: ReturnType<typeof settleExec>): string => "problem" in settled ? settled.problem.type : "concluded";
+    const other = execConclusion("sh:///other");
+    const conclusions = new Map([[other.target, other]]);
+    assert.equal(type(settleExec({ result: execAdmitted, stream: "sh:///mine", conclusions, problem: null })),
+        "https://problems.plurnk.xyz/client/transport/terminal-missing", "the Run finished before its stream concluded");
+    assert.equal(type(settleExec({ result: execAdmitted, stream: null, conclusions, problem: null })),
+        "https://problems.plurnk.xyz/client/transport/terminal-missing", "no started row announced a stream");
+    assert.equal(type(settleExec({ result: null, stream: null, conclusions: new Map(), problem: null })),
+        "https://problems.plurnk.xyz/client/action/result-missing");
+    const broken = { type: "https://problems.plurnk.xyz/client/transport/problem-missing", title: "Problem missing", status: 502, detail: "The AG-UI stream reported a failed run without its required Problem Details." };
+    assert.deepEqual(settleExec({ result: null, stream: null, conclusions: new Map(), problem: broken }), { problem: broken });
 });

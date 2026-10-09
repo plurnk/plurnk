@@ -197,7 +197,8 @@
     "entry.read": {
       "posture": "native",
       "evidence": [
-        "src/transport.test.ts — streamed entry reading"
+        "src/transport.test.ts — streamed entry reading",
+        "test/intg/exec.test.ts — one-shot ! command output"
       ],
       "dimensions": [
         "admission",
@@ -210,7 +211,8 @@
     "op.exec": {
       "posture": "native",
       "evidence": [
-        "src/tui.test.ts — shell dispatch"
+        "src/tui.test.ts — shell dispatch",
+        "test/intg/exec.test.ts — one-shot ! command"
       ],
       "dimensions": [
         "admission",
@@ -1165,7 +1167,8 @@
       "posture": "native",
       "evidence": [
         "src/stream.test.ts — concluded stream rendering",
-        "src/transport.test.ts — shared lifecycle corpus"
+        "src/transport.test.ts — shared lifecycle corpus",
+        "src/agui_cli.test.ts — one-shot ! command settlement"
       ],
       "dimensions": [
         "admission",

@@ -24,11 +24,11 @@ import {
     report,
 } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
-import StreamTrace, { type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
+import StreamTrace, { streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./agui.ts";
-import { actionOutcome, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
-import type { OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
+import { actionOutcome, entryReadResult, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
+import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
@@ -72,6 +72,8 @@ export interface CliRunSinks {
     reviewRequested?: boolean;
     review: (p: ProposalParams) => Promise<Resolution>;
     onActionResult?: (v: ActionOutcome) => void;
+    onRow?: (entry: LogEntryWire) => void;
+    onStreamConcluded?: (concluded: StreamConcludedPayload) => void;
     onTurnAccounting?: (turn: TurnAccounting) => void;
     onStatus?: (status: ClientStatus) => void;
     onProgress?: (result: CliRunResult) => void;
@@ -197,6 +199,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             const value = (e as { value?: unknown }).value;
             if (name === "plurnk.row") {
                 const entry = value as LogEntryWire;
+                io.onRow?.(entry);
                 const workerId = (entry as { worker_id?: number }).worker_id;
                 if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
                 const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
@@ -243,8 +246,10 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 // plurnk.stream carries the whole lifecycle: a concluded payload has
                 // its exact result; a start/event payload has state. (json: streams aren't in
                 // the record — content is fetched on demand via `read L/T/S`.)
+                const concluded = typeof (value as { result?: { status?: unknown } }).result?.status === "number";
+                if (concluded) io.onStreamConcluded?.(value as StreamConcludedPayload);
                 if (!io.json) {
-                    if (typeof (value as { result?: { status?: unknown } }).result?.status === "number") {
+                    if (concluded) {
                         io.err(`${streams.concluded(value as StreamConcludedPayload, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
                     } else {
                         const line = streams.event(value as StreamEventPayload);
@@ -512,4 +517,87 @@ export const runScriptViaAgui = async (
     }
     process.stderr.write(`\n${results.length} op${results.length === 1 ? "" : "s"}, ${Date.now() - started}ms${worst >= 400 ? `, worst status ${worst}` : ""}\n`);
     return exitCode;
+};
+
+// {§cli-prompt-prefixes} A `! command` exits by its execution's conclusion.
+export const exitCodeForExec = (status: number): number => status === 200 ? 0 : status === 499 ? 3 : 4;
+
+// What a `! command`'s op.exec Run chain settled. A failed action result is the daemon refusing the
+// execution. An admitted execution settles with the conclusion of the stream its started row
+// announced, which the Run carries before its result ({§agui-broadcast-fan}). Without that
+// conclusion the Run failed: with its own Problem when it reported one.
+export const settleExec = (run: {
+    result: ActionOutcome | null;
+    stream: string | null;
+    conclusions: ReadonlyMap<string, StreamConcludedPayload>;
+    problem: ProblemDetails | null;
+}): { conclusion: StreamConcludedPayload } | { problem: ProblemDetails } => {
+    if (run.result !== null && !run.result.ok) return { problem: run.result.problem };
+    const conclusion = run.result === null || run.stream === null ? undefined : run.conclusions.get(run.stream);
+    if (conclusion !== undefined) return { conclusion };
+    return { problem: run.problem ?? (run.result === null ? clientActionResultMissing("op.exec") : clientTransportTerminalMissing()) };
+};
+
+// One-shot `! command`. op.exec rides its own action Run: the daemon binds that Run before it
+// dispatches, delivers the execution's row and stream lifecycle on it, and holds the result until the
+// stream concludes ({§agui-broadcast-fan}), so a command cannot conclude unseen. A gated execution
+// resumes on the same thread without resubmitting the command, like a script.
+export const runExecViaAgui = async (
+    target: AguiTarget,
+    command: string,
+    opts: { threadId: string; workspace: string; yolo: boolean; auto: boolean; projectRoot?: string | null; settings?: object },
+): Promise<number> => {
+    // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
+    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
+    const seen = { result: null as ActionOutcome | null, stream: null as string | null, conclusions: new Map<string, StreamConcludedPayload>() };
+    const io: CliRunSinks = {
+        out: (s) => process.stdout.write(s),
+        err: (s) => process.stderr.write(s),
+        notice: (notice) => report(notice),
+        json: false, yolo: opts.yolo, noReviewChannel: !capabilities.interactive,
+        acceptance: new ToolAcceptance(report),
+        review: reviewProposal,
+        onActionResult: (outcome) => { if (outcome.kind === "op.exec") seen.result = outcome; },
+        // A started or queued receipt owns its stream; a refused one's proposed address opens nothing.
+        onRow: (entry) => {
+            if (seen.stream === null && (entry.status_rx === 200 || entry.status_rx === 202)) seen.stream = streamAddress(entry);
+        },
+        onStreamConcluded: (concluded) => { seen.conclusions.set(concluded.target, { ...concluded, result: operationResult(concluded.result) }); },
+    };
+    const binding = { threadId: opts.threadId, workspace: opts.workspace, capabilities };
+    let run = await consumeCliRun(runViaAgui(target, { ...binding, forwardedProps: {
+        action: { kind: "op.exec", command },
+        ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
+    } }), io);
+    while (run.pendingResume !== null) {
+        run = await consumeCliRun(runViaAgui(target, { ...binding, resume: [run.pendingResume] }), io);
+    }
+    const settled = settleExec({ ...seen, problem: run.problem });
+    if ("problem" in settled) {
+        // consumeCliRun has already rendered the Run's own failure.
+        if (settled.problem !== run.problem) report(settled.problem);
+        return 4;
+    }
+    const { conclusion } = settled;
+    // The channels are the command's product: written whole and verbatim, never previewed.
+    let read: EntryReadResult;
+    try {
+        read = entryReadResult(await actionViaAgui(target, {
+            threadId: opts.threadId, workspace: opts.workspace,
+            kind: "entry.read", params: { target: conclusion.target, workerId: conclusion.workerId },
+        }));
+    } catch (cause) {
+        if (!(cause instanceof ProblemError)) throw cause;
+        report(cause.problem);
+        return 1;
+    }
+    if (read.entry === null) {
+        report(read.problem);
+        return 1;
+    }
+    const { stdout, stderr } = read.entry.channels;
+    if (stdout !== undefined && stdout.content.length > 0) process.stdout.write(stdout.content);
+    if (stderr !== undefined && stderr.content.length > 0) process.stderr.write(stderr.content);
+    return exitCodeForExec(conclusion.result.status);
 };

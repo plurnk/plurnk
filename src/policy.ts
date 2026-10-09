@@ -27,3 +27,10 @@ export const parsePrompt = (prompt: string): { reviewRequested: boolean; prompt:
     reviewRequested: prompt.startsWith("?"),
     prompt: prompt.replace(/^(\.\.\.|[?:]+)\s*/, ""),
 });
+
+// {§cli-prompt-prefixes} A `!` prompt is a shell command for op.exec, never a message;
+// null for any other prompt. An empty string is a `!` with no command.
+export const execCommand = (prompt: string): string | null => {
+    const line = prompt.trimStart();
+    return line.startsWith("!") ? line.replace(/^!+\s*/u, "") : null;
+};

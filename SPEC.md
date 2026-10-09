@@ -336,7 +336,14 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §2.0 Prompt prefixes {§cli-prompt-prefixes}
 
-The prompt's first character has the same meaning in the CLI and TUI. `plurnk "? question"` states proposal `review` for that loop without changing workspace capabilities; `": text"` states nothing new. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by `result.status` (0/3/4). Core has no named ask/act mode.
+The prompt's first non-blank character has the same meaning in the CLI and TUI. `plurnk "? question"` states proposal `review` for that loop without changing workspace capabilities; `": text"` states nothing new. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by the conclusion's `result.status`; no model or loop takes part. Core has no named ask/act mode.
+
+| `! command` | Exit |
+|---|---|
+| Its execution concludes `200` | `0` |
+| Its execution concludes `499` | `3` |
+| Its execution concludes with any other status, or `op.exec` refuses it and its Problem is reported | `4` |
+| No command follows the leading `!`s | `64`, before contacting the daemon |
 
 ### §2.0.1 Prompt file references {§cli-prompt-open-paths}
 
@@ -856,6 +863,8 @@ worker — cross the existing diagnostic path without rewriting or retry.
 | `130` / `143` | SIGINT / SIGTERM interruption; see {§cli-interrupted-record} |
 
 TUI mode always exits `0` on clean shutdown; loop outcomes are surfaced in the summary line, not the exit code.
+
+A one-shot `! command` runs no loop; its execution, not a loop, selects `0`, `3` or `4` ({§cli-prompt-prefixes}).
 
 ---
 

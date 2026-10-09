@@ -23,6 +23,8 @@
   in `url`.
 - The status line reads the complete status gauge the daemon sends, including
   `children`, `waitUntil`, `preparation` and `descendants`.
+- A one-shot `plurnk "! command"` runs the command through `op.exec` again instead of
+  sending it to the model: its stdout and stderr are the client's, and it exits by its result.
 
 ## 2.0.0
 

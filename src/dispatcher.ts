@@ -10,7 +10,7 @@ import { buildJsonError } from "./cli.ts";
 import { loadFloor } from "./envdefaults.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 import { isColorMode } from "./color.ts";
-import { runCliViaAgui, runScriptViaAgui } from "./agui_cli.ts";
+import { runCliViaAgui, runExecViaAgui, runScriptViaAgui } from "./agui_cli.ts";
 import { AguiTransport } from "./transport.ts";
 import { actionViaAgui } from "./agui.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
@@ -54,6 +54,7 @@ import {
     type ModelRoute,
 } from "@plurnk/plurnk-contracts";
 import {
+    execCommand,
     formatCapabilityProjection,
     parseCapabilityPolicy,
     parsePrompt,
@@ -764,6 +765,13 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             dieWith(64, problem);
         }
     }
+    // {§cli-prompt-prefixes} — a `!` prompt is a shell command; one without a command never dials.
+    const command = isSubcommand ? null : execCommand(prompt);
+    if (command !== null && command.length === 0) {
+        const problem = clientProblem("usage", "command-required", 400, "The ! prompt names no command.", { recovery: "Use plurnk \"! <command>\"." });
+        if (json) dieJson(64, problem);
+        dieWith(64, problem);
+    }
 
     // Client flags select client behavior. Provider defaults remain daemon-owned.
     const configuredWorkspace = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
@@ -864,62 +872,75 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const w = await world();
             const controlWorkspaceOptions = await workspaceOptions();
             const { settings } = controlWorkspaceOptions;
-            // {§worker-model-selection} — an explicit --model is a durable selection:
-            // persist it onto the conversation worker before the run, then run WITHOUT
-            // a per-loop model selector (the worker owns the model).
-            let activeModel: ModelRoute | null;
-            if (values.model !== undefined && modelSelector !== undefined) {
-                activeModel = Validator.assertModelRoute(await actionViaAgui(
-                    { aguiUrl, token },
-                    {
-                        threadId: workerName ?? w,
-                        workspace: w,
-                        workspaceOptions: controlWorkspaceOptions,
-                        kind: "worker.model.set",
-                        params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
-                    },
-                ));
-            } else {
-                const projection = await actionViaAgui<{ model: unknown }>(
-                    { aguiUrl, token },
-                    {
-                        threadId: workerName ?? w,
-                        workspace: w,
-                        workspaceOptions: controlWorkspaceOptions,
-                        kind: "worker.model.get",
-                    },
-                );
-                activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
-            }
-            if (effort !== undefined && values.model === undefined) {
-                await actionViaAgui({ aguiUrl, token }, {
+            let code: number;
+            if (command !== null) {
+                // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
+                code = await runExecViaAgui({ aguiUrl, token }, command, {
                     threadId: workerName ?? w,
                     workspace: w,
-                    workspaceOptions: controlWorkspaceOptions,
-                    kind: "worker.effort.set",
-                    params: { effort },
+                    yolo,
+                    auto,
+                    projectRoot,
+                    settings,
+                });
+            } else {
+                // {§worker-model-selection} — an explicit --model is a durable selection:
+                // persist it onto the conversation worker before the run, then run WITHOUT
+                // a per-loop model selector (the worker owns the model).
+                let activeModel: ModelRoute | null;
+                if (values.model !== undefined && modelSelector !== undefined) {
+                    activeModel = Validator.assertModelRoute(await actionViaAgui(
+                        { aguiUrl, token },
+                        {
+                            threadId: workerName ?? w,
+                            workspace: w,
+                            workspaceOptions: controlWorkspaceOptions,
+                            kind: "worker.model.set",
+                            params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
+                        },
+                    ));
+                } else {
+                    const projection = await actionViaAgui<{ model: unknown }>(
+                        { aguiUrl, token },
+                        {
+                            threadId: workerName ?? w,
+                            workspace: w,
+                            workspaceOptions: controlWorkspaceOptions,
+                            kind: "worker.model.get",
+                        },
+                    );
+                    activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
+                }
+                if (effort !== undefined && values.model === undefined) {
+                    await actionViaAgui({ aguiUrl, token }, {
+                        threadId: workerName ?? w,
+                        workspace: w,
+                        workspaceOptions: controlWorkspaceOptions,
+                        kind: "worker.effort.set",
+                        params: { effort },
+                    });
+                }
+                const projected = parsePrompt(prompt);
+                const openPaths = extractOpenPaths(projected.prompt, projectRoot);
+                // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
+                const reviewRequested = /^\s*\?/u.test(prompt);
+                code = await runCliViaAgui({ aguiUrl, token }, projected.prompt, {
+                    lifetime,
+                    threadId: workerName ?? w,
+                    workspace: w,
+                    ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
+                    ...(maxTurns !== undefined ? { maxTurns } : {}),
+                    ...(openPaths.length === 0 ? {} : { openPaths }),
+                    ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+                    yolo: yolo && !reviewRequested,
+                    auto,
+                    reviewRequested,
+                    json,
+                    statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
+                    projectRoot,
+                    settings,
                 });
             }
-            const projected = parsePrompt(prompt);
-            const openPaths = extractOpenPaths(projected.prompt, projectRoot);
-            // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
-            const reviewRequested = /^\s*\?/u.test(prompt);
-            const code = await runCliViaAgui({ aguiUrl, token }, projected.prompt, {
-                lifetime,
-                threadId: workerName ?? w,
-                workspace: w,
-                ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
-                ...(maxTurns !== undefined ? { maxTurns } : {}),
-                ...(openPaths.length === 0 ? {} : { openPaths }),
-                ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-                yolo: yolo && !reviewRequested,
-                auto,
-                reviewRequested,
-                json,
-                statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
-                projectRoot,
-                settings,
-            });
             if (shareTarget !== undefined) {
                 const shared = await actionViaAgui<ShareResult>({ aguiUrl, token }, {
                     threadId: workerName ?? w,

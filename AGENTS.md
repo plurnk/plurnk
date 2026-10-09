@@ -16,6 +16,14 @@ tree: no code, spec, doc, test, comment or diagnostic refers to it, and nothing 
 or translate it. Any record of it invites its resurrection. History lives in git, issues and published
 changelogs.
 
+## Verification
+
+`npm test` runs lint, unit, integration, and TUI checks. Integration and TUI
+tiers use Node's `--test-concurrency=4`: each file can start real daemon and
+terminal fixtures, so their parallelism does not grow with the host's CPU count.
+This bounds concurrent test files, not their memory; use an external resource
+limit when investigating a runaway test. Unit tests retain Node's default.
+
 ## Releases
 
 The client owns its version and named dependency ranges; it does not share a

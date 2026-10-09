@@ -2,10 +2,13 @@
 // and completions/{plurnk.bash,_plurnk,plurnk.fish} from the ONE source of
 // truth — the exported USAGE text. Deterministic; run via npm run build:posix.
 import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { USAGE } from "../src/dispatcher.ts";
 import { renderCommandReference } from "../src/commands.ts";
 
 const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const date = execFileSync("git", ["log", "-1", "--format=%cs"], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim();
+if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw new Error("The source commit must supply the manual date.");
 
 // ── Section split on USAGE's own markers ──
 const envAt = USAGE.indexOf("\nenv (");
@@ -34,7 +37,7 @@ const roffEscape = (text) => text
     .join("\n");
 const nf = (text) => `.nf\n${roffEscape(text)}\n.fi`;
 const prose = (text) => roffEscape(text.replace(/(.{1,72})[ \t]+/gu, "$1\n"));
-const man = `.TH PLURNK 1 "" "plurnk ${pkg.version}" "User Commands"
+const man = `.TH PLURNK 1 "${date}" "plurnk ${pkg.version}" "User Commands"
 .SH NAME
 plurnk \\- terminal client for the plurnk\\-service agentic daemon
 .SH SYNOPSIS
@@ -71,10 +74,12 @@ The loop failed, or a script returned an unsuccessful operation.
 Invalid invocation or arguments.
 .TP
 .B 130
-Interrupted by SIGINT after requesting cancellation and emitting the partial record.
+Interrupted by SIGINT after requesting cancellation
+and emitting the partial record.
 .TP
 .B 143
-Terminated by SIGTERM after requesting cancellation and emitting the partial record.
+Terminated by SIGTERM after requesting cancellation
+and emitting the partial record.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/plurnk/.env

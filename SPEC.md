@@ -463,7 +463,7 @@ provides onboarding and examples, linking to this reference and pointing to
 derive from the command inventory. `plurnk completion <bash|zsh|fish>` writes the
 corresponding packaged script verbatim to stdout, without configuration loading,
 daemon contact or filesystem installation. The man page names the package version
-and omits the optional date, so rebuilding it does not introduce a timestamp.
+and source commit date; regeneration introduces no wall-clock timestamp.
 Bash filename candidates retain spaces,
 backslashes, and glob characters as single candidates; the shell owns quoting.
 Unit tests run the native syntax/format checkers when installed and name any

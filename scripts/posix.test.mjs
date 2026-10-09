@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkPosix } from "./check-posix.mjs";
@@ -9,6 +9,11 @@ import { checkPosix } from "./check-posix.mjs";
 const root = resolve(import.meta.dirname, "..");
 const bash = resolve(root, "completions/plurnk.bash");
 const checks = checkPosix();
+
+test("[§cli-posix-artifacts] the shipped manual has a dated section-one title", async () => {
+    const manual = await readFile(resolve(root, "man/plurnk.1"), "utf8");
+    assert.match(manual, /^\.TH PLURNK 1 "\d{4}-\d{2}-\d{2}" "plurnk [^"]+" "User Commands"\n/u);
+});
 
 for (const result of checks) {
     test(`[§cli-posix-artifacts] generated artifacts pass ${result.command}`, {

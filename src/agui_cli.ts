@@ -573,7 +573,8 @@ export const runScriptViaAgui = async (
 };
 
 // {§cli-prompt-prefixes} A `! command` exits by its execution's conclusion.
-export const exitCodeForExec = (status: number): number => status === 200 ? 0 : status === 499 ? 3 : 4;
+export const exitCodeForExec = (status: number, exitCode?: number): number =>
+    status === 200 ? (exitCode === undefined || exitCode === 0 ? 0 : 4) : status === 499 ? 3 : 4;
 
 // What a `! command`'s op.exec Run chain settled. A failed action result is the daemon refusing the
 // execution. An admitted execution settles with the conclusion of the stream its started row
@@ -652,5 +653,6 @@ export const runExecViaAgui = async (
     const { stdout, stderr } = read.entry.channels;
     if (stdout !== undefined && stdout.content.length > 0) process.stdout.write(stdout.content);
     if (stderr !== undefined && stderr.content.length > 0) process.stderr.write(stderr.content);
-    return exitCodeForExec(conclusion.result.status);
+    const { status, exitCode } = conclusion.result as { status: number; exitCode?: number };
+    return exitCodeForExec(status, exitCode);
 };

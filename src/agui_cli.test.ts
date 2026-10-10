@@ -573,8 +573,9 @@ test("[§cli-prompt-prefixes] consumeCliRun: rows and stream conclusions reach t
     }
 });
 
-test("[§cli-prompt-prefixes] a `! command` exits by its execution's conclusion: 200 → 0, 499 → 3, anything else → 4", () => {
-    assert.deepEqual([200, 499, 500, 404, 202].map(exitCodeForExec), [0, 3, 4, 4, 4]);
+test("[§cli-prompt-prefixes] a `! command` exits by its execution's conclusion: a clean 200 → 0, 499 → 3, anything else → 4", () => {
+    assert.deepEqual([200, 499, 500, 404, 202].map((status) => exitCodeForExec(status)), [0, 3, 4, 4, 4]);
+    assert.deepEqual([0, 1, 127].map((exitCode) => exitCodeForExec(200, exitCode)), [0, 4, 4], "a 200 that carries the command's nonzero exit is not clean");
 });
 
 test("[§cli-prompt-prefixes] settleExec: a refusal is the action's Problem; an admitted execution settles with its own stream's conclusion", () => {

@@ -24,6 +24,12 @@ terminal fixtures, so their parallelism does not grow with the host's CPU count.
 This bounds concurrent test files, not their memory; use an external resource
 limit when investigating a runaway test. Unit tests retain Node's default.
 
+The service's pre-push drill drives this checkout's installed CLI and TUI against
+a live daemon and waits for their exact output (`scripts/test-client-conformance.mjs`
+in `plurnk-service`). After a presentation change, run
+`npm run -s test:client-conformance` in the service checkout before landing; this
+repository's own suite cannot see that coupling.
+
 ## Releases
 
 The client owns its version and named dependency ranges; it does not share a

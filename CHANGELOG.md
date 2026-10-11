@@ -1,6 +1,6 @@
 # @plurnk/plurnk
 
-## Unreleased
+## 3.1.0
 
 - Web addresses (`http`, `https`) render as terminal hyperlinks wherever the client shows
   them, in markdown and in row targets, when colour is enabled; Plurnk addresses are never

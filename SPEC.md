@@ -123,7 +123,7 @@ enough client grace. A grace is a ceiling, not a delay after a clean exit.
 | Private backend boundary | Guarantee |
 |---|---|
 | Storage | Honor an explicit service state root/database. Otherwise allocate a unique root under `$XDG_DATA_HOME/plurnk/instances` (standard home fallback). Keep the service's existing database/workspace model and exclusive database lock. |
-| Normal, failed, or interrupted invocation | Stop and await the owned service before exit. CLI interruption flushes its partial record first; TUI restores the terminal before waiting. A signal during startup cannot admit a prompt after shutdown begins. |
+| Normal, failed, or interrupted invocation | Stop and await the owned service before exit. CLI interruption flushes its partial record first; TUI restores the terminal and closes its transport before waiting. A signal during startup cannot admit a prompt after shutdown begins. |
 | Retention | Exit never deletes private data. Text mode identifies the database; JSON stdout/stderr semantics stay unchanged. The TUI's resume command includes the exact storage binding and private port selection, not the temporary bearer. |
 | Multiple clients | No implicit rendezvous, shared background service, or reference counting. Sharing requires an explicitly running service. |
 

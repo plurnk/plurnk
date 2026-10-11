@@ -976,13 +976,13 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const threadId = workerName ?? w;
             const { settings } = await workspaceOptions();
             // Creation options are idempotent on an existing workspace.
-            transport = new AguiTransport({ aguiUrl, token }, threadId, {
+            transport = await lifetime.own(Promise.resolve(new AguiTransport({ aguiUrl, token }, threadId, {
                 workspace: w,
                 projectRoot,
                 settings,
                 descendants: true,   // {plurnk#108} — the TUI observes its delegation
                 auto,
-            });
+            })));
             const { runTui } = await import("./tui.ts");
             await runTui(transport, { name: w }, {
                 lifetime,

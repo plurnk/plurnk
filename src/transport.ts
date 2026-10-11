@@ -127,6 +127,7 @@ export class AguiTransport implements Transport {
     #pendingProposals = new Map<number, PendingInterrupt<ProposalResolution>>();
     #pendingInteractions = new Map<number, PendingInterrupt<InteractionResolution>>();
     #controllers = new Set<AbortController>();
+    #closed = false;
     #seenRows = new Map<number, string>();
     #lastConversationRowId = 0;
     #lastLoopId: number | null = null;
@@ -146,8 +147,7 @@ export class AguiTransport implements Transport {
     // persistent handlers a run uses (e.g. the Alt-p cycler harvests targets from
     // onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
-        const ac = new AbortController();
-        this.#controllers.add(ac);
+        const ac = this.#controller();
         try {
             return await this.#action<T>(method, params, ac.signal);
         } finally {
@@ -226,7 +226,18 @@ export class AguiTransport implements Transport {
         }
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
-    shutdown(): void { for (const ac of this.#controllers) ac.abort(); }
+    shutdown(): void {
+        this.#closed = true;
+        for (const ac of this.#controllers) ac.abort();
+    }
+    async [Symbol.asyncDispose](): Promise<void> { this.shutdown(); }
+
+    #controller(): AbortController {
+        if (this.#closed) throw new DOMException("The client transport is closed.", "AbortError");
+        const ac = new AbortController();
+        this.#controllers.add(ac);
+        return ac;
+    }
 
     // Workspace options on every request (#140): workspace creation and
     // its projectRoot are ATOMIC — the module creates from whichever request arrives
@@ -253,8 +264,7 @@ export class AguiTransport implements Transport {
     #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
         const binding = { threadId: this.#threadId, workspace: this.#world };
         const sinceId = this.#lastConversationRowId;
-        const ac = new AbortController();
-        this.#controllers.add(ac);
+        const ac = this.#controller();
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
         this.#modelProjection = projection;
         const ready = Promise.withResolvers<void>();

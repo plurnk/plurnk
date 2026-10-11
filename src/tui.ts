@@ -760,7 +760,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         yolo: opts.yolo,
     });
     const surface = new TuiSurface();
-    const releaseGuards = TerminalGuards.install(surface, opts.lifetime);
+    const releaseGuards = TerminalGuards.install({ stop: () => { shuttingDown = true; surface.stop(); } }, opts.lifetime);
     await surface.learnGround();
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));

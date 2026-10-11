@@ -821,6 +821,28 @@ test("[§cli-cancellation] AguiTransport: cancel() aborts the SSE and done resol
     } finally { await mock.close(); }
 });
 
+test("{§cli-daemon-autostart}: disposing the TUI transport releases its open observation", async () => {
+    const connected = Promise.withResolvers<void>();
+    const disconnected = Promise.withResolvers<void>();
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "RUN_STARTED" }));
+        res.once("close", disconnected.resolve);
+        connected.resolve();
+    });
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "th");
+    try {
+        const observation = transport.observe();
+        await connected.promise;
+        await transport[Symbol.asyncDispose]();
+        assert.equal((await observation.done)?.finalStatus, 499);
+        await disconnected.promise;
+        await assert.rejects(transport.rpc("workspace.workers"), { name: "AbortError" });
+        assert.throws(() => transport.observe(), { name: "AbortError" });
+        assert.equal(mock.captured.length, 1, "closed transport must not reopen the daemon connection");
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
 test("AguiTransport.useWorkspace: re-maps the threadId — the next run addresses the new workspace", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
     try {

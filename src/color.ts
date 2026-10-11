@@ -82,6 +82,12 @@ const SGR = Object.freeze({ dark: byRole(DARK), light: byRole(LIGHT) });
 
 export type Role = keyof typeof SGR.dark;
 
+// {§cli-hyperlinks}: an OSC 8 hyperlink around text whose destination is a real HTTP(S) URL, under the
+// same output policy as styling; any other destination, or a non-styled output, is the plain text.
+const LINKABLE = /^https?:\/\/[^\s\x00-\x1f\x7f]+$/u;
+export const hyperlink = (text: string, href: string): string =>
+    colorEnabled() && LINKABLE.test(href) ? `\x1b]8;;${href}\x1b\\${text}\x1b]8;;\x1b\\` : text;
+
 export const paint = (text: string, ...roles: Role[]): string => {
     if (!colorEnabled() || roles.length === 0) return text;
     const sgr = SGR[learned ?? colorFgBgScheme() ?? "dark"];

@@ -298,6 +298,10 @@ export const seedPromptHistory = async (
 // model-label resolution is unit-testable. modelLabel = the client's explicit
 // --model selector when set, else the daemon's active default
 // (providers.list `active`), else an honest fallback.
+// {§cli-terminal-title}: the window title names the binding, nothing more.
+export const windowTitle = (workspace: string, worker: string | null | undefined): string =>
+    worker ? `plurnk · ${workspace} · ${worker}` : `plurnk · ${workspace}`;
+
 export const buildHeader = (opts: {
     versionNotice?: string; workspaceName: string; workerName?: string; modelSelector?: string;
     activeAlias?: string; effort?: string | null; yolo?: boolean;
@@ -760,6 +764,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     await surface.learnGround();
     printAbove = (text) => surface.append(text);
     surface.append(paint(header, "dim"));
+    surface.setTitle(windowTitle(current.name, conversationWorker));
     if (workerModel === null) surface.append(renderDiagnostic(clientModelUnselected()));
     surface.append("");
 
@@ -1154,6 +1159,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             resetConversationView();
             conversationWorker = worker;
             current = workspace;
+            surface.setTitle(windowTitle(workspace.name, worker));
             observeBinding();
             await bindingReady;
             await refreshTopology();
@@ -1164,6 +1170,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.useWorker(name, current.name);
             resetConversationView();
             conversationWorker = name;
+            surface.setTitle(windowTitle(current.name, name));
             observeBinding();
             await bindingReady;
             await refreshTopology();

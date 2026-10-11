@@ -1174,6 +1174,24 @@ The TUI asks only while colour is enabled ({§cli-color-policy}). Archived text 
 live prompt borders, the footer and pending-review text repaint for the new ground even when their
 contents have not changed. Subsequent output uses the new palette.
 
+### §5.6 Terminal conveniences {§cli-terminal-conveniences}
+
+Native terminal features the client emits only where they cost nothing when unsupported:
+
+- {§cli-hyperlinks} **A web address links to itself.** Under the styling policy
+  ({§cli-color-policy}), text whose destination is an `http(s)://` URL is wrapped in an OSC 8
+  hyperlink: a row's web target (`READ (https://…)`), and a Markdown link's label in a delivered
+  message, whose visible `(href)` stays beside it. A `worker://`, `log:///`, file or any other
+  Plurnk address is never a hyperlink: OSC 8 can encode it, but nothing outside the client can open
+  it. The model's own text is sanitized of every escape before any link is added, so a link is
+  always the client's, never one the model wrote. Terminals without OSC 8 show the plain text.
+- {§cli-terminal-title} **The window title names the binding.** While the TUI runs, the title is
+  `plurnk · <workspace>` or `plurnk · <workspace> · <worker>`, set on attachment and on every
+  workspace or worker switch. Before the first title the client pushes the terminal's current title
+  (XTWINOPS 22) and on stop it pops it (XTWINOPS 23), so a shell or multiplexer gets its own title
+  back; a terminal without the title stack keeps the last title until its shell sets the next, as
+  with any program. The one-shot CLI sets no title.
+
 ---
 
 ## §6 Proposal review {§cli-proposal-review}

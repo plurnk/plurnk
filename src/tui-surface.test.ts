@@ -17,11 +17,12 @@ const fixture = (t: TestContext, color: "always" | "never", onWrite?: (text: str
     delete process.env.COLORFGBG;
     let input: (data: string) => void = () => {};
     const output: string[] = [];
+    const titles: string[] = [];
     const terminal: Terminal = {
         columns: 100, rows: 30, kittyProtocolActive: false,
         start: (handler) => { input = handler; }, stop() {}, drainInput: async () => {},
         write: (text) => { output.push(text); onWrite?.(text); }, moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {},
-        clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {},
+        clearFromCursor() {}, clearScreen() {}, setTitle: (title) => { titles.push(title); }, setProgress() {},
     };
     const surface = new TuiSurface(terminal);
     t.after(() => {
@@ -35,7 +36,7 @@ const fixture = (t: TestContext, color: "always" | "never", onWrite?: (text: str
         for (const sequence of data) input(sequence);
         await setImmediate();
     };
-    return { surface, output, reply };
+    return { surface, output, titles, reply };
 };
 
 for (const [scheme, index] of [["dark", 145], ["light", 60]] as const) for (const color of ["always", "never"] as const) {
@@ -119,4 +120,20 @@ test("[§cli-color-scheme] with colour off the TUI asks the terminal nothing", a
     await learning;
     on.surface.start();
     assert.deepEqual([asks(off.output), asks(on.output)], [[false, false], [true, true]]);
+});
+
+test("[§cli-terminal-title] the title names the binding, the terminal's own title is pushed first and popped on stop", (t) => {
+    const { surface, output, titles } = fixture(t, "never");
+    surface.setTitle("plurnk · ws");
+    surface.setTitle("plurnk · ws · alice");
+    assert.deepEqual(titles, ["plurnk · ws", "plurnk · ws · alice"]);
+    assert.equal(output.filter((text) => text === "\x1b[22;0t").length, 1, "the terminal's title is pushed once, before the first title");
+    assert.equal(output.filter((text) => text === "\x1b[23;0t").length, 0);
+    surface.start();
+    surface.stop();
+    assert.equal(output.filter((text) => text === "\x1b[23;0t").length, 1, "stopping pops the pushed title");
+    surface.stop();
+    assert.equal(output.filter((text) => text === "\x1b[23;0t").length, 1, "and only once");
+    surface.setTitle("plurnk · ws");
+    assert.equal(output.filter((text) => text === "\x1b[22;0t").length, 2, "a later title pushes again");
 });

@@ -167,6 +167,26 @@ export default class TuiSurface {
         if (!this.#started) return;
         this.#started = false;
         this.#tui.stop();
+        this.clearTitle();
+    }
+
+    // {§cli-terminal-title}: the title names the binding while the TUI runs. The terminal's own title is
+    // pushed before the first one and popped when the surface stops (XTWINOPS 22/23), so a shell or
+    // multiplexer gets its title back where the stack exists; elsewhere the sequences are ignored.
+    #titled = false;
+
+    setTitle(title: string): void {
+        if (!this.#titled) {
+            this.#terminal.write("\x1b[22;0t");
+            this.#titled = true;
+        }
+        this.#terminal.setTitle(title);
+    }
+
+    clearTitle(): void {
+        if (!this.#titled) return;
+        this.#titled = false;
+        this.#terminal.write("\x1b[23;0t");
     }
 
     append(text: string): void {

@@ -11,7 +11,7 @@ import { Marked, type RendererObject, type Tokens } from "marked";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 
-import { paint, type Role } from "./color.ts";
+import { hyperlink, paint, type Role } from "./color.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 
 export const displayWidth = (text: string): number => stringWidth(text);
@@ -225,10 +225,11 @@ const terminalRenderer = (viewport: number): Marked => {
             return styled("strike")(this.parser.parseInline(token.tokens));
         },
         link(token: Tokens.Link) {
-            const label = this.parser.parseInline(token.tokens);
+            // {§cli-hyperlinks}: the label links to its HTTP(S) destination; the destination stays visible.
+            const label = hyperlink(styled("reference")(this.parser.parseInline(token.tokens)), token.href);
             return token.href === token.text
-                ? styled("reference")(label)
-                : `${styled("reference")(label)} ${styled("dim")(`(${token.href})`)}`;
+                ? label
+                : `${label} ${styled("dim")(`(${token.href})`)}`;
         },
         image(token: Tokens.Image) {
             return `${token.text} ${styled("dim")(`(${token.href})`)}`;

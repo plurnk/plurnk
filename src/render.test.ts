@@ -286,6 +286,20 @@ test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, 
     })), "READ (belfry.md) /\\bbats?\\b/i only the lines matching \"bat\" or \"bats\" — Entry not found", "one line; the title is to the right of the aside");
 });
 
+test("[§cli-hyperlinks] a web READ row links its target to itself; a workspace address never links", () => {
+    const web = read({
+        scheme: "https", hostname: "example.com", pathname: "/guide", lineMarker: null,
+        tx: { op: "READ", target: { kind: "url", raw: "https://example.com/guide" }, matcher: null, aside: null },
+    });
+    assert.match(renderLogEntry(web), /^READ \(https:\/\/example\.com\/guide\)/u, "without styling, the address is text");
+    assert.match(colored(() => renderLogEntry(web)), /\(\x1b\]8;;https:\/\/example\.com\/guide\x1b\\https:\/\/example\.com\/guide\x1b\]8;;\x1b\\\)/u, "with styling, the target links to itself");
+    const local = read({
+        pathname: "notes.md", lineMarker: null,
+        tx: { op: "READ", target: { kind: "local", raw: "notes.md" }, matcher: null, aside: null },
+    });
+    assert.doesNotMatch(colored(() => renderLogEntry(local)), /\x1b\]8/u, "a file is not a destination anything outside the client can open");
+});
+
 test("[§cli-curation-notice] the daemon's over-budget row renders as a curation notice, never as a failure", () => {
     const overBudget = entry({
         op: "error", origin: "_plurnk", status_rx: 413, pathname: null, lineMarker: null,

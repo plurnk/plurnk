@@ -3,7 +3,7 @@
 // literal text with this module's own styling and never through Markdown; only message
 // bodies are Markdown ({§cli-broadcast-send-rendering}). Rows carry no bodies.
 
-import { paint } from "./color.ts";
+import { hyperlink, paint } from "./color.ts";
 import { stripVTControlCharacters } from "node:util";
 import stringWidth from "string-width";
 import ModelText from "./model-text.ts";
@@ -354,7 +354,8 @@ export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = 
         }
     } else {
         const target = override.target ?? authoredTarget(entry);
-        if (target !== null) parts.push(`(${ModelText.plain(target)})`);
+        // {§cli-hyperlinks}: a web target links to itself; every other address is text.
+        if (target !== null) parts.push(`(${hyperlink(ModelText.plain(target), entryTarget(entry) ?? "")})`);
         const scope = entryScope(entry);
         if (scope !== null) parts.push(scope);
         const pattern = authoredPattern(entry);

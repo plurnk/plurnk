@@ -4,12 +4,31 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { backgroundScheme, colorEnabled, colorFgBgScheme, learnScheme, paint, withColorOutput } from "./color.ts";
+import { backgroundScheme, colorEnabled, colorFgBgScheme, hyperlink, learnScheme, paint, withColorOutput } from "./color.ts";
 import { renderMarkdownDocument } from "./markdown.ts";
 import { renderSummary } from "./render.ts";
 
 // A developer's terminal may export COLORFGBG; the accents pinned here are the dark ground's.
 delete process.env.COLORFGBG;
+
+test("[§cli-terminal-conveniences] [§cli-hyperlinks] a web destination is an OSC 8 link under the styling policy; every other address is text", () => {
+    const saved = process.env.PLURNK_CLIENT_COLOR;
+    try {
+        process.env.PLURNK_CLIENT_COLOR = "always";
+        assert.equal(hyperlink("docs", "https://example.com/docs"), "\x1b]8;;https://example.com/docs\x1b\\docs\x1b]8;;\x1b\\");
+        assert.equal(hyperlink("site", "http://example.com"), "\x1b]8;;http://example.com\x1b\\site\x1b]8;;\x1b\\");
+        for (const address of ["worker:///notes.md", "log:///1/2/3/READ", "file:///tmp/x", "src/server.py", "javascript:alert(1)", "https://example.com/with space"]) {
+            assert.equal(hyperlink("x", address), "x", `${address} is never a hyperlink`);
+        }
+        assert.match(renderMarkdownDocument("See [the docs](https://example.com/docs)."), /\x1b\]8;;https:\/\/example\.com\/docs\x1b\\.*the docs.*\x1b\]8;;\x1b\\ .*\(https:\/\/example\.com\/docs\)/u,
+            "a Markdown link's label links to its destination and the destination stays visible");
+        process.env.PLURNK_CLIENT_COLOR = "never";
+        assert.equal(hyperlink("docs", "https://example.com/docs"), "docs", "with styling off, the text alone");
+        assert.doesNotMatch(renderMarkdownDocument("See [the docs](https://example.com/docs)."), /\x1b\]8/u);
+    } finally {
+        if (saved === undefined) delete process.env.PLURNK_CLIENT_COLOR; else process.env.PLURNK_CLIENT_COLOR = saved;
+    }
+});
 
 test("[§cli-color-policy] output destination and preferences determine whether styling is enabled", () => {
     const cases: [string, boolean, NodeJS.ProcessEnv, boolean][] = [

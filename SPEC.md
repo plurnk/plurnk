@@ -908,6 +908,11 @@ Markdown pass:
 
 - `OP` is the operation's name, bold: green when the outcome succeeded, red otherwise. An
   execution row is named by its runtime (`sh`, `python3`): the row's `op` is the fence name as written, never a generic keyword.
+- {§cli-curation-notice} **Over budget is a curation moment, not a failure.** The daemon's over-budget
+  row — an `error` row whose Problem is `engine/context/packet-exceeds-budget` ({§context-over-budget-row}
+  in the service SPEC) — is a mandate to the model to curate, and the model is about to. It renders as
+  `notice — curating context`, green and dim, with no title, status or detail; the Problem stays on the
+  wire and in the daemon's log untouched. Every other failed row keeps its red `OP` and its title.
 - `(target)` is the authored target text, in its parentheses; `<scope>` is the canonical
   `<mark,...>` form; `<pattern>` is the matcher as authored (`/regex/i`, `~query`, `&symbol`).
   COPY and MOVE render `(source) <scope> (destination) <scope>`, each scope beside its own path.

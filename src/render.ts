@@ -337,7 +337,14 @@ export const renderOperationBlock = (entry: LogEntryWire, override: RowOverride 
 };
 
 // `OP (target) <scope> /pattern/ {n} aside — problem title`, one line, literal text.
+// {§cli-curation-notice}: the daemon's over-budget row ({§context-over-budget-row} in the service SPEC) is a
+// mandate to the model, not a failure to the person: the model is about to curate. It renders as a notice.
+const PACKET_EXCEEDS_BUDGET = "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget";
+export const isCurationNotice = (entry: LogEntryWire): boolean =>
+    entry.op === "error" && objectOf(objectOf(entry.rx)?.problem)?.type === PACKET_EXCEEDS_BUDGET;
+
 export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
+    if (isCurationNotice(entry)) return `${paint("notice", "bold", "success")} ${styledOutcome("curating context", false)}`;
     const failed = override.failed ?? (override.failure !== undefined && override.failure !== null || entry.status_rx >= 400);
     const parts = [paint(ModelText.plain(operationIdentity(entry)), "bold", failed ? "failure" : "success")];
     const tx = objectOf(entry.tx);

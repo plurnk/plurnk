@@ -286,6 +286,21 @@ test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, 
     })), "READ (belfry.md) /\\bbats?\\b/i only the lines matching \"bat\" or \"bats\" — Entry not found", "one line; the title is to the right of the aside");
 });
 
+test("[§cli-curation-notice] the daemon's over-budget row renders as a curation notice, never as a failure", () => {
+    const overBudget = entry({
+        op: "error", origin: "_plurnk", status_rx: 413, pathname: null, lineMarker: null,
+        tx: null,
+        rx: { status: 413, problem: { type: "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget", title: "Packet exceeds budget", status: 413, detail: "Context exceeds budget. YOU MUST ONLY KILL, MOVE or NOTE this turn." } },
+    });
+    assert.equal(renderLogEntry(overBudget), "notice — curating context", "the person sees the curation moment, not the model's mandate");
+    assert.match(colored(() => renderLogEntry(overBudget)), /\u001B\[(?:1;)?32m/u, "the notice is painted as a success, not a failure");
+    const other = entry({
+        op: "error", origin: "_plurnk", status_rx: 422, pathname: null, lineMarker: null, tx: null,
+        rx: { status: 422, problem: { type: "https://problems.plurnk.xyz/engine/rail/no-operation", title: "No operation", status: 422, detail: "The turn performed no operation." } },
+    });
+    assert.equal(renderLogEntry(other), "error — No operation", "every other daemon error row keeps its title");
+});
+
 test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the daemon's detail, not a count", () => {
     assert.equal(renderLogEntry(read({
         pathname: "pets_*.md", status_rx: 204, lineMarker: null,

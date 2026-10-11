@@ -44,7 +44,7 @@ for (const columns of [24, 80]) test(`[§cli-note-rendering] model notes use the
     const rendered = renderLogEntry(note, columns);
     assert.equal(stripVTControlCharacters(rendered), `\n${stripVTControlCharacters(renderSendBody(note.tx, columns))}`, "the shared Markdown layout with its weight removed, no preview or NOTE keyword");
     const plain = stripVTControlCharacters(rendered);
-    assert.doesNotMatch(plain, /\*\*Important\*\*|```js|\/look/u);
+    assert.doesNotMatch(plain, /\*\*Important\*\*|\/look/u);
     assert.match(plain, /console\.log\(42\);/u);
     assert.match(plain, /End of note\./u);
     assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= columns), "the existing renderer respects the viewport");

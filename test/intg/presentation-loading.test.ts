@@ -60,7 +60,7 @@ for (const args of [["--help"], ["--version"], ["render", "--help"], ["models", 
     });
 }
 
-test("[§cli-presentation-loading] the selected render filter loads diagrams but not pi-tui", async () => {
+test("[§cli-presentation-loading] the selected render filter loads diagrams and markdown", async () => {
     const result = await trace("dispatcher", "main", ["render", "--width", "80"], "```mermaid\ngraph LR\nA[Start] --> B[Finish]\n```\n");
     assert.equal(result.code, 0, result.stderr);
     assert.equal(result.stderr, "");
@@ -68,7 +68,7 @@ test("[§cli-presentation-loading] the selected render filter loads diagrams but
     assert.match(result.stdout, /Finish/);
     assert.match(result.stdout, /┌/);
     assert.ok(result.urls.some((url) => url.includes("/beautiful-mermaid/")));
-    assert.equal(result.urls.some((url) => url.includes("/pi-tui/")), false);
+    assert.ok(result.urls.some((url) => url.includes("/pi-tui/")));
 });
 
 test("[§cli-presentation-loading] the TUI retains its complete presentation graph", async () => {

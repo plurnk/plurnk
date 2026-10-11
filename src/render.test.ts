@@ -103,7 +103,7 @@ test("extractSendBody prettify=true: markdown body → ANSI transform applied", 
     // the terminal list marker and indentation.
     const tx = { body: { raw: "- item one\n- item two", json: null } };
     const out = renderSendBody(tx);
-    assert.match(out, /\* item one/);
+    assert.match(out, /[-*] item one/);
 });
 
 test("extractSendBody prettify=true: plain text → raw verbatim", () => {
@@ -680,7 +680,7 @@ test("extractSendBody prettify: markdown header → bold, no leading #", () => {
 test("extractSendBody prettify: bold, inline code, and bullets transform", () => {
     assert.match(renderSendBody({ body: { raw: "**strong**", json: null } }), /strong/);
     assert.match(renderSendBody({ body: { raw: "`code`", json: null } }), /code/);
-    assert.match(renderSendBody({ body: { raw: "- one\n- two", json: null } }), /\* one/);
+    assert.match(renderSendBody({ body: { raw: "- one\n- two", json: null } }), /[-*] one/);
 });
 
 test("extractSendBody prettify: plain text (no markdown markers) passes through", () => {

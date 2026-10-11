@@ -82,9 +82,9 @@ test("[§cli-render-filter] installed command renders stdin without daemon or st
 
     assert.equal(result.code, 0);
     assert.equal(result.stderr, "", "local projection emits no daemon banner or connection failure");
-    assert.match(result.stdout, /^\* \[x\] One checkbox$/m);
+    assert.match(result.stdout, /^[-*] \[x\] One checkbox$/m);
     assert.doesNotMatch(result.stdout, /\[x\] \[x\]/);
-    assert.match(result.stdout, /^💻 json$/m);
+    assert.match(result.stdout, /```json/);
     assert.doesNotMatch(result.stdout, /\x1b\[/, "filter output is plain Unicode even when NO_COLOR is empty");
 });
 

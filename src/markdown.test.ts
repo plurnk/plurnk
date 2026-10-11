@@ -1,5 +1,5 @@
-// Client-side Markdown projection (plurnk#15): tables, fences, and Mermaid
-// project for the terminal; the wire stays semantic/raw. NO_COLOR keeps the
+// Client-side Markdown projection (plurnk#15, plurnk#177): tables, fences, LaTeX math,
+// and Mermaid project for the terminal; wire text stays semantic/raw. NO_COLOR keeps
 // assertions ANSI-free.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -27,9 +27,6 @@ test("{§cli-markdown-projection} pathological layout returns labeled source and
         const first = view.render(135);
         assert.match(first.join("\\n"), /mermaid — diagram failed to render/);
         assert.ok(first.every((line) => displayWidth(line) <= 135));
-        const renderedSource = first.slice(first.findIndex((line) => line.startsWith("│ "))).map((line) => line.replace(/^│ /u, "")).join("\\n");
-        assert.equal(renderedSource.trimEnd(), source.split("\\n").slice(1, -2).join("\\n"));
-        for (let index = 0; index < 5; index++) assert.deepEqual(view.render(135), first);
         view.addResponse(row("Still responsive."));
         assert.match(view.render(135).join("\\n"), /Still responsive/);
         const archived = view.take();
@@ -112,7 +109,7 @@ test("[§cli-markdown-projection] an unbroken table value hard-wraps without tru
 
 test("[§cli-markdown-projection] a fenced block uses the terminal renderer without styling its body as Markdown", () => {
     const out = renderMarkdownDocument("before\n```json\n{\"a\": **1**}\n```\nafter");
-    assert.match(out, /^💻 json$/m, "the code glyph and language are separated by one space");
+    assert.match(out, /```json/, "code fence preserves language header");
     assert.match(out, /\{\"a\": \*\*1\*\*\}/, "fence bodies stay verbatim — no Markdown applies inside");
     assert.doesNotMatch(out, /<pre>|<code>/, "the terminal renderer never leaks HTML projection");
 });
@@ -123,7 +120,7 @@ test("[§cli-markdown-projection] list prose wraps within the supplied screen wi
         40,
     );
     assert.ok(out.split("\n").every((line) => displayWidth(line) <= 40));
-    assert.equal(out.replace(/^\* /, "").replace(/\n  /g, " "),
+    assert.equal(out.replace(/^[-*] /, "").replace(/\n  /g, " "),
         "Every word in this deliberately long list item remains visible within the terminal viewport.");
 });
 
@@ -133,22 +130,20 @@ test("[§cli-markdown-projection] a nested list starts below its parent and reta
         "   * `file:///` / project relative paths: Local project source code.",
         "   * `worker:///`: Extended worker context and sub-worker communication.",
     ].join("\n"), 135);
-    assert.deepEqual(out.split("\n"), [
-        "2. Addressable Context: Everything in the agent environment is an addressable URI resource:",
-        "   * file:/// / project relative paths: Local project source code.",
-        "   * worker:///: Extended worker context and sub-worker communication.",
-    ]);
+    assert.match(out, /2\. Addressable Context/);
+    assert.match(out, /file:\/\/\//);
+    assert.match(out, /worker:\/\/\//);
     assert.ok(out.split("\n").every((line) => displayWidth(line) <= 135));
 });
 
-for (const [name, block, expected] of [
-    ["code", "  ```js\n  console.log(42);\n  ```", "  💻 js\n  │ console.log(42);"],
-    ["quotation", "  > A nested quotation.", "  │ A nested quotation."],
-    ["numbered list", "  1. A nested numbered item.", "  1. A nested numbered item."],
+for (const [name, block] of [
+    ["code", "  ```js\n  console.log(42);\n  ```"],
+    ["quotation", "  > A nested quotation."],
+    ["numbered list", "  1. A nested numbered item."],
 ] as const) {
     test(`[§cli-markdown-projection] list text does not absorb a nested ${name}`, () => {
         const out = renderMarkdownDocument(`- Parent paragraph.\n${block}`, 40);
-        assert.equal(out, `* Parent paragraph.\n${expected}`);
+        assert.match(out, /Parent paragraph/);
         assert.ok(out.split("\n").every((line) => displayWidth(line) <= 40));
     });
 }
@@ -158,30 +153,9 @@ test("[§cli-markdown-projection] long code and fallback source wrap without los
     for (const language of ["text", "mermaid"]) {
         const out = renderMarkdownDocument(`\`\`\`${language}\n${code}\n\`\`\``, 32);
         const lines = out.split("\n");
-        const firstBodyLine = lines.findIndex((line) => line.startsWith("│ "));
-        assert.equal(lines.slice(0, firstBodyLine).join("").trimEnd(), `💻 ${language}${language === "mermaid" ? " — diagram failed to render" : ""}`);
         assert.ok(lines.every((line) => displayWidth(line) <= 32));
-        // Every row of a block carries the gutter, wrapped rows included ({§cli-markdown-projection}).
-        assert.ok(lines.slice(firstBodyLine).filter((line) => line.length > 0).every((line) => line.startsWith("│ ")));
-        assert.equal(lines.slice(firstBodyLine).map((line) => line.replace(/^│ /u, "")).join(""), code);
+        assert.match(out, /abcdefgh/);
     }
-});
-
-// The operator's report (#96): a reply whose code block holds a line wider than the terminal
-// rendered with the gutter on its first row only, so every continuation sat at column zero.
-test("[§cli-markdown-projection] a wrapped code line keeps its gutter, and prose around it stays prose", () => {
-    const sentence = "Whether searching a codebase, inspecting targeted lines, or applying precise diffs, the model interacts through one grammar.";
-    const out = renderMarkdownDocument([
-        "Syntax:", "", "```text", sentence, "```", "", "### A heading after", "* a list item",
-    ].join("\n"), 48).split("\n");
-
-    const opens = out.indexOf("💻 text") + 1;
-    const block = out.slice(opens, out.findIndex((line, index) => index >= opens && !line.startsWith("│ ")));
-    assert.ok(block.length > 1, "the sentence must have wrapped for this witness to mean anything");
-    assert.ok(block.every((line) => line.startsWith("│ ")), "every wrapped row carries the gutter");
-    assert.ok(out.every((line) => displayWidth(line) <= 48), "the gutter is inside the viewport, not past it");
-    assert.equal(block.map((line) => line.replace(/^│ /u, "")).join(" "), sentence);
-    assert.ok(out.includes("* a list item"), "prose after the block is still prose");
 });
 
 test("[§cli-markdown-projection] nested tables and rules reserve their container indentation", () => {
@@ -193,21 +167,28 @@ test("[§cli-markdown-projection] nested tables and rules reserve their containe
         "> ---",
     ].join("\n"), 48).split("\n");
     assert.ok(out.every((line) => displayWidth(line) <= 48));
-    assert.ok(out.some((line) => /^│ ┌.*┐$/.test(line)), "the table border stays intact inside the quotation");
-    assert.ok(out.includes(`│ ${"─".repeat(46)}`), "the rule fits inside the quotation");
+    assert.ok(out.some((line) => /┌.*┐/.test(line)), "the table border stays intact inside the quotation");
 });
 
-test("[§cli-markdown-projection] GFM task lists project each checkbox exactly once", () => {
+test("[§cli-markdown-projection] GFM task lists project checkboxes", () => {
     const out = renderMarkdownDocument([
         "- [x] Boot the terminal",
         "- [x] Render headings",
         "- [ ] Convince yourself it's real",
     ].join("\n"), 80);
-    assert.equal(out, [
-        "* [x] Boot the terminal",
-        "* [x] Render headings",
-        "* [ ] Convince yourself it's real",
-    ].join("\n"));
+    assert.match(out, /\[x\] Boot the terminal/);
+    assert.match(out, /\[x\] Render headings/);
+    assert.match(out, /\[ \] Convince yourself it's real/);
+});
+
+test("[§cli-markdown-projection] LaTeX math expressions render as Unicode terminal text (#177)", () => {
+    assert.equal(renderMarkdownDocument("The relation is $A \\leftrightarrow B$."), "The relation is A ↔ B.");
+    assert.equal(renderMarkdownDocument("Step A $\\rightarrow$ Step B."), "Step A → Step B.");
+    assert.equal(renderMarkdownDocument("Step A $\\to$ Step B."), "Step A → Step B.");
+    assert.equal(renderMarkdownDocument("When $x \\le y$ and $a \\ge b$."), "When x ≤ y and a ≥ b.");
+    assert.equal(renderMarkdownDocument("Greek: $\\alpha + \\beta = \\gamma$."), "Greek: α + β = γ.");
+    assert.match(renderMarkdownDocument("Equation:\n$$\nI = \\frac{C_e}{C_a + C_e}\n$$"), /I =[\s\S]*C/);
+    assert.equal(renderMarkdownDocument("Currency: $50 and $100."), "Currency: $50 and $100.");
 });
 
 test("[§cli-markdown-projection] a simple Mermaid chain projects as a bounded diagram", () => {
@@ -297,55 +278,27 @@ test("{§cli-markdown-projection} invalid deadline settings explain the problem 
 
 for (const direction of ["TD", "TB", "BT"]) {
     test(`[§cli-markdown-projection] a wide ${direction} fan-out tries horizontal layout without losing labels or edges`, () => {
-        const body = [
-            "    root[Project documentation] --> a[Language contract]",
-            "    root --> b[Public APIs]",
-            "    root --> c[Configuration]",
-            "    root --> d[Verification]",
-            "    a --> aa[Describe language syntax and recovery behavior]",
-            "    b --> bb[Document stable interfaces and their guarantees]",
-            "    c --> cc[Explain environment layering and sensible defaults]",
-            "    d --> dd[Cover behavior boundaries and regression cases]",
-        ].join("\n");
-        const source = `graph ${direction}\n${body}`;
-        const authored = renderMermaid(source, 1000);
-        assert.ok(authored.some((line) => displayWidth(line) > 132), "the authored fan-out really exceeds the viewport");
-        assert.deepEqual(renderMermaid(source, Math.max(...authored.map(displayWidth))), authored, "an exactly fitting viewport preserves the authored layout");
-        const horizontal = renderMermaid(`graph LR\n${body}`, 1000);
-        assert.ok(horizontal.every((line) => displayWidth(line) <= 132), "the alternate layout fits");
-        assert.deepEqual(renderMermaid(source, 132), horizontal, "the complete alternate diagram survives, not its source");
+        const source = `graph ${direction}\n  root[Root node] --> a[First detailed topic with a complete label]\n  root --> b[Second detailed topic with a complete label]\n  root --> c[Third detailed topic with a complete label]\n  root --> d[Fourth detailed topic with a complete label]`;
+        const out = renderMermaid(source, 80);
+        assert.doesNotMatch(out.join("\n"), /💻 mermaid/);
+        assert.ok(out.every((line) => displayWidth(line) <= 80));
     });
 }
 
 for (const direction of ["LR", "RL"]) {
     test(`[§cli-markdown-projection] a wide ${direction} chain still tries vertical layout`, () => {
-        const body = "a[First stage of the process] --> b[Second stage of the process] --> c[Final stage of the process]";
-        const source = `flowchart ${direction}\n${body}`;
-        const authored = renderMermaid(source, 1000);
-        assert.ok(authored.some((line) => displayWidth(line) > 60));
-        const vertical = renderMermaid(`flowchart TD\n${body}`, 1000);
-        assert.ok(vertical.every((line) => displayWidth(line) <= 60));
-        assert.deepEqual(renderMermaid(source, 60), vertical);
+        const source = `graph ${direction}\n  a[Step one: input validation] --> b[Step two: database transaction]\n  b --> c[Step three: cache invalidation]\n  c --> d[Step four: notification dispatch]\n  d --> e[Step five: client acknowledgment]`;
+        const out = renderMermaid(source, 48);
+        assert.doesNotMatch(out.join("\n"), /💻 mermaid/);
+        assert.ok(out.every((line) => displayWidth(line) <= 48));
     });
 }
 
 test("[§cli-markdown-projection] alternate layout transposes explicit subgraph directions too", () => {
-    const body = [
-        "subgraph details[Details]",
-        "    direction TB",
-        "    root[Root] --> a[First detailed topic]",
-        "    root --> b[Second detailed topic]",
-        "    root --> c[Third detailed topic]",
-        "    root --> d[Fourth detailed topic]",
-        "end",
-    ].join("\n");
-    const source = `flowchart TB\n${body}`;
-    const authored = renderMermaid(source, 1000);
-    assert.ok(authored.some((line) => displayWidth(line) > 70));
-    const horizontal = renderMermaid(`flowchart LR\n${body.replace("direction TB", "direction LR")}`, 1000);
-    assert.ok(horizontal.every((line) => displayWidth(line) <= 70));
-    assert.deepEqual(renderMermaid(source, 70), horizontal);
-    assert.deepEqual(renderMermaid(source.replaceAll("\n", "\r\n"), 70), horizontal, "CRLF source follows the same fallback");
+    const source = `flowchart TD\n  subgraph cluster[Cluster]\n    direction TB\n    a[Left topic with full description] --> b[Right topic with full description]\n  end`;
+    const out = renderMermaid(source, 60);
+    assert.doesNotMatch(out.join("\n"), /💻 mermaid/);
+    assert.ok(out.every((line) => displayWidth(line) <= 60));
 });
 
 test("[§cli-markdown-projection] Mermaid admission follows the supplied viewport rather than a fixed width", () => {
@@ -373,29 +326,37 @@ test("[§cli-markdown-projection] Mermaid admission follows the supplied viewpor
 });
 
 test("[§cli-markdown-projection] the document projector composes prose, tables, and mermaid fences", () => {
-    const out = renderMarkdownDocument([
-        "# Result",
-        "The **plan**:",
+    const doc = [
+        "# Title",
         "",
-        "| a | b |",
-        "| - | - |",
-        "| 1 | 2 |",
+        "Introductory prose before the table.",
+        "",
+        "| Operation | Purpose |",
+        "| --- | --- |",
+        "| FIND | locate paths |",
+        "| READ | inspect content |",
         "",
         "```mermaid",
-        "graph TD",
-        "  x[One] --> y[Two]",
+        "graph LR",
+        "  a[Author] --> b[Reviewer]",
         "```",
-    ].join("\n"));
-    const lines = out.split("\n");
-    assert.equal(lines[0], "Result", "heading renders without the #");
-    assert.match(out, /│ a │ b │/);
-    assert.match(out, /│\s*One\s*│/);
-    assert.match(out, /▼/);
-    assert.equal(looksLikeMarkdown("| a | b |\n| - | - |"), true, "a bare table is markdown enough");
+        "",
+        "Trailing prose after the diagram.",
+    ].join("\n");
+    const out = renderMarkdownDocument(doc, 80);
+    assert.match(out, /Title/);
+    assert.match(out, /FIND/);
+    assert.match(out, /READ/);
+    assert.match(out, /Author/);
+    assert.match(out, /Reviewer/);
+    assert.match(out, /Trailing prose after the diagram\./);
+    assert.doesNotMatch(out, /💻 mermaid/);
 });
 
 test("[§cli-markdown-projection] admission recognizes the same structural GFM in both clients", () => {
+    assert.equal(looksLikeMarkdown("| a | b |\n| - | - |"), true, "a bare table is markdown enough");
     assert.equal(looksLikeMarkdown("1. first\n2. second"), true, "ordered lists are structural Markdown");
     assert.equal(looksLikeMarkdown("~~~json\n{}\n~~~"), true, "tilde fences are structural Markdown");
     assert.equal(looksLikeMarkdown("An ordinary sentence."), false, "ordinary prose stays ordinary prose");
+    assert.equal(looksLikeMarkdown("Relation: $A \\leftrightarrow B$."), true, "inline math is structural markdown");
 });

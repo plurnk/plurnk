@@ -1,40 +1,20 @@
-// Client-side GFM projection for the TUI (plurnk#15, under the #21
-// contract). The wire carries semantic Markdown and Mermaid source. Maintained
-// parser and layout packages own GFM, wrapping, width, and table mechanics;
-// this module composes them with the live viewport and Mermaid projection.
-// One-shot output stays raw.
+// Client-side GFM and LaTeX projection for the TUI (plurnk#15, plurnk#177).
+// The wire carries semantic Markdown and Mermaid source. Delegates GFM parsing,
+// tables, and LaTeX math rendering to @earendil-works/pi-tui; this module composes
+// them with the live viewport and Mermaid diagram projection.
+// One-shot CLI output stays raw verbatim.
 
 import { Script } from "node:vm";
+import { stripVTControlCharacters } from "node:util";
 import { renderMermaidASCII, type AsciiRenderOptions } from "beautiful-mermaid";
-import Table from "cli-table3";
-import { Marked, type RendererObject, type Tokens } from "marked";
+import { Markdown, type MarkdownTheme, type MarkdownOptions } from "@earendil-works/pi-tui";
 import stringWidth from "string-width";
-import wrapAnsi from "wrap-ansi";
 
-import { hyperlink, paint, type Role } from "./color.ts";
+import { colorEnabled, hyperlink, paint, type Role } from "./color.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 
 export const displayWidth = (text: string): number => stringWidth(text);
-
 const styled = (role: Role) => (text: string): string => paint(text, role);
-const fitTableWidths = (
-    rows: string[][],
-    viewport: number,
-): number[] => {
-    const columns = Math.max(...rows.map((row) => row.length));
-    const widths = Array.from({ length: columns }, (_value, index) =>
-        Math.max(3, ...rows.map((row) => displayWidth(row[index] ?? "") + 2)));
-    const contentBudget = Math.max(columns * 3, viewport - columns - 1);
-    while (widths.reduce((sum, width) => sum + width, 0) > contentBudget) {
-        const reducible = widths
-            .map((width, index) => ({ width, index }))
-            .filter(({ width }) => width > 3)
-            .sort((left, right) => right.width - left.width)[0];
-        if (reducible === undefined) break;
-        widths[reducible.index] -= 1;
-    }
-    return widths;
-};
 
 const MERMAID_OPTIONS = {
     useAscii: false,
@@ -70,17 +50,6 @@ const transposeFlowchart = (source: string): string => {
 const widestLine = (lines: string[]): number =>
     Math.max(0, ...lines.map(displayWidth));
 
-// A gutter is two columns the content does not get. Wrap to what is left and mark every row that
-// results, so the document-wide wrap has nothing over-wide left to break out of a gutter (#96).
-const GUTTER_COLUMNS = 2;
-const guttered = (text: string, width: number): string[] =>
-    text.split("\n").flatMap((line) =>
-        // trim:false keeps the line's own indentation, which is content; the leading space a
-        // continuation row inherits from the wrap point is not, so only those rows lose it.
-        wrapAnsi(line, Math.max(1, width - GUTTER_COLUMNS), { hard: true, trim: false, wordWrap: true })
-            .split("\n")
-            .map((row, index) => `${styled("dim")("│")} ${(index === 0 ? row : row.replace(/^ +/u, "")).trimEnd()}`));
-
 // Preserve the authored layout whenever it fits the current viewport. A
 // transposed projection is the one bounded alternative; invalid, unsupported,
 // or still-overwide diagrams remain inspectable as labeled source.
@@ -111,153 +80,84 @@ export const renderMermaid = (
     ];
 };
 
-const terminalRenderer = (viewport: number): Marked => {
-    let blockIndent = 0;
-    const availableWidth = (): number => Math.max(1, viewport - blockIndent);
-    const withBlockIndent = <T>(columns: number, project: () => T): T => {
-        blockIndent += columns;
-        try {
-            return project();
-        } finally {
-            blockIndent -= columns;
+// Intercept pi-tui code block and link rendering:
+// Mermaid diagrams project to ASCII topologies; links adhere to {§cli-hyperlinks}
+// showing OSC 8 label plus visible destination. All other code blocks, tables,
+// lists, LaTeX math, and typography are rendered natively by pi-tui.
+const originalRenderToken = (Markdown.prototype as any).renderToken;
+const originalRenderInlineTokens = (Markdown.prototype as any).renderInlineTokens;
+let patched = false;
+const ensurePatched = () => {
+    if (patched) return;
+    patched = true;
+    (Markdown.prototype as any).renderToken = function (
+        token: any,
+        width: number,
+        nextTokenType?: string,
+        styleContext?: any,
+    ): string[] {
+        if (token.type === "code" && token.lang?.trim().toLowerCase() === "mermaid") {
+            const drawn = renderMermaid(token.text, width);
+            return [
+                ...drawn,
+                ...(nextTokenType && nextTokenType !== "space" ? [""] : []),
+            ];
         }
+        return originalRenderToken.call(this, token, width, nextTokenType, styleContext);
     };
-    const wrap = (text: string): string => wrapAnsi(text, availableWidth(), {
-        hard: true,
-        trim: true,
-        wordWrap: true,
-    });
-    const renderer: RendererObject = {
-        space() {
-            return "";
-        },
-        code(token: Tokens.Code) {
-            if (token.lang?.trim().toLowerCase() === "mermaid") {
-                const drawn = renderMermaid(token.text, availableWidth());
-                // A drawn diagram is already sized; only the labeled-source fallback can overflow,
-                // and it wraps like any other block so its gutter survives the document wrap (#96).
-                if (widestLine(drawn) <= availableWidth()) return `${drawn.join("\n")}\n\n`;
-                return `${[drawn[0], ...guttered(token.text, availableWidth())].join("\n")}\n\n`;
+    (Markdown.prototype as any).renderInlineTokens = function (
+        tokens: any[],
+        styleContext: any,
+    ): string {
+        let result = "";
+        for (const token of tokens) {
+            if (token.type === "link") {
+                const linkText = originalRenderInlineTokens.call(this, token.tokens || [], styleContext);
+                const label = hyperlink(styled("reference")(linkText), token.href);
+                result += token.href === token.text ? label : `${label} ${styled("dim")(`(${token.href})`)}`;
+            } else {
+                result += originalRenderInlineTokens.call(this, [token], styleContext);
             }
-            const language = token.lang?.trim() ?? "";
-            const header = language.length === 0 ? "💻" : `💻 ${language}`;
-            return [styled("dim")(header), ...guttered(token.text, availableWidth()), "", ""].join("\n");
-        },
-        blockquote(token: Tokens.Blockquote) {
-            const body = withBlockIndent(GUTTER_COLUMNS, () => this.parser.parse(token.tokens).trimEnd());
-            return `${guttered(body, availableWidth() + GUTTER_COLUMNS).join("\n")}\n\n`;
-        },
-        html(token: Tokens.HTML | Tokens.Tag) {
-            return styled("dim")(token.text);
-        },
-        def() {
-            return "";
-        },
-        heading(token: Tokens.Heading) {
-            return `${wrap(styled("bold")(this.parser.parseInline(token.tokens)))}\n\n`;
-        },
-        hr() {
-            return `${styled("dim")("─".repeat(availableWidth()))}\n\n`;
-        },
-        list(token: Tokens.List) {
-            const start = typeof token.start === "number" ? token.start : 1;
-            const rows = token.items.map((item, index) => {
-                const marker = token.ordered ? `${start + index}. ` : "* ";
-                const prefix = marker;
-                const body = withBlockIndent(displayWidth(prefix), () => item.tokens.map((itemToken) => {
-                    const rendered = this.parser.parse([itemToken]);
-                    // List text is a block here; checkbox tokens remain inline.
-                    return itemToken.type === "text" ? `${wrap(rendered)}\n` : rendered;
-                }).join("").trim());
-                const lines = body.split("\n");
-                return [
-                    `${prefix}${lines[0] ?? ""}`,
-                    ...lines.slice(1).map((line) => `${" ".repeat(displayWidth(prefix))}${line}`),
-                ].join("\n");
-            });
-            return `${rows.join("\n")}\n\n`;
-        },
-        checkbox(token: Tokens.Checkbox) {
-            return `[${token.checked ? "x" : " "}] `;
-        },
-        paragraph(token: Tokens.Paragraph) {
-            return `${wrap(this.parser.parseInline(token.tokens))}\n\n`;
-        },
-        table(token: Tokens.Table) {
-            const header = token.header.map((cell) => this.parser.parseInline(cell.tokens));
-            const rows = token.rows.map((row) => row.map((cell) => this.parser.parseInline(cell.tokens)));
-            const colWidths = fitTableWidths([header, ...rows], availableWidth());
-            const wrapCell = (cell: string, index: number): string => wrapAnsi(
-                cell,
-                Math.max(1, (colWidths[index] ?? 3) - 2),
-                { hard: true, trim: true, wordWrap: true },
-            );
-            const table = new Table({
-                colAligns: token.align.map((align) => align ?? "left"),
-                colWidths,
-                head: header.map((cell, index) => wrapCell(styled("bold")(cell), index)),
-                wordWrap: true,
-                wrapOnWordBoundary: true,
-                style: {
-                    border: [],
-                    compact: false,
-                    head: [],
-                    "padding-left": 1,
-                    "padding-right": 1,
-                },
-            });
-            table.push(...rows.map((row) => row.map(wrapCell)));
-            return `${table.toString()}\n\n`;
-        },
-        strong(token: Tokens.Strong) {
-            return styled("bold")(this.parser.parseInline(token.tokens));
-        },
-        em(token: Tokens.Em) {
-            return styled("italic")(this.parser.parseInline(token.tokens));
-        },
-        codespan(token: Tokens.Codespan) {
-            return styled("dim")(token.text);
-        },
-        br() {
-            return "\n";
-        },
-        del(token: Tokens.Del) {
-            return styled("strike")(this.parser.parseInline(token.tokens));
-        },
-        link(token: Tokens.Link) {
-            // {§cli-hyperlinks}: the label links to its HTTP(S) destination; the destination stays visible.
-            const label = hyperlink(styled("reference")(this.parser.parseInline(token.tokens)), token.href);
-            return token.href === token.text
-                ? label
-                : `${label} ${styled("dim")(`(${token.href})`)}`;
-        },
-        image(token: Tokens.Image) {
-            return `${token.text} ${styled("dim")(`(${token.href})`)}`;
-        },
-        text(token: Tokens.Text | Tokens.Escape) {
-            return "tokens" in token && token.tokens !== undefined
-                ? this.parser.parseInline(token.tokens)
-                : token.text;
-        },
+        }
+        return result;
     };
-    return new Marked({ breaks: false, gfm: true, renderer });
 };
 
-// A common model-authored inline-math spelling with an exact terminal glyph.
-const normalizeProse = (text: string): string => text.replaceAll("$\\rightarrow$", "→");
+const theme: MarkdownTheme = {
+    heading: (t: string) => styled("bold")(t),
+    link: (t: string) => styled("reference")(t),
+    linkUrl: (t: string) => styled("dim")(t),
+    code: (t: string) => styled("dim")(t),
+    codeBlock: (t: string) => t,
+    codeBlockBorder: (t: string) => styled("dim")(t),
+    quote: (t: string) => styled("italic")(t),
+    quoteBorder: (t: string) => styled("dim")("│ "),
+    hr: () => styled("dim")("---"),
+    listBullet: (t: string) => t,
+    bold: (t: string) => styled("bold")(t),
+    italic: (t: string) => styled("italic")(t),
+    strikethrough: (t: string) => styled("strike")(t),
+    underline: (t: string) => t,
+};
+
+const MARKDOWN_OPTIONS: MarkdownOptions = {
+    preserveOrderedListMarkers: true,
+    renderLatex: true,
+};
 
 export const renderMarkdownDocument = (
     raw: string,
     viewport: number = process.stdout.columns ?? 80,
 ): string => {
+    ensurePatched();
     const width = Math.max(1, Math.trunc(viewport));
-    const rendered = terminalRenderer(width).parse(normalizeProse(raw));
-    if (typeof rendered !== "string") throw new TypeError("Terminal Markdown rendering became asynchronous.");
-    return wrapAnsi(rendered.trimEnd(), width, { hard: true, trim: false, wordWrap: true });
+    const md = new Markdown(raw, 0, 0, theme, undefined, MARKDOWN_OPTIONS);
+    const rendered = md.render(width).map((line) => line.trimEnd()).join("\n").trimEnd();
+    return colorEnabled() ? rendered : stripVTControlCharacters(rendered);
 };
 
 // Heuristic: ordinary speech remains ordinary speech; structurally marked GFM
-// enters the terminal renderer.
+// or LaTeX math enters the terminal renderer.
 export const looksLikeMarkdown = (text: string): boolean =>
     /(^|\n)#{1,6}\s/.test(text)
     || /\*\*[^*\n]+\*\*/.test(text)
@@ -265,4 +165,8 @@ export const looksLikeMarkdown = (text: string): boolean =>
     || /(^|\n)\s*\d+[.)]\s/.test(text)
     || /```|~~~/.test(text)
     || /(^|\n)\s*\|.*\|/.test(text)
-    || /\[[^\]]+\]\([^)]+\)/.test(text);
+    || /\[[^\]]+\]\([^)]+\)/.test(text)
+    || /(?:^|[^\\])\$[^$\n\s]+(?:[ \t]+[^$\n\s]+)*\$/.test(text)
+    || /(?:^|\n)[ \t]*(?:\$\$|\\\[)/.test(text)
+    || /(?:^|[^\\])`[^`\n]+`/.test(text)
+    || /(^|\n)[ \t]*>\s/.test(text);

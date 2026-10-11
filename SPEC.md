@@ -897,7 +897,7 @@ failures remain causal errors, never a silent replacement rendering mode.
 | Help/version, plain/JSON CLI, state commands | No pi-tui, Markdown, Mermaid, or diagram-layout initialization. |
 | TUI | Load the terminal implementation when selected; message rendering stays synchronous. |
 | `render --help` | Help only, without initializing the renderer. |
-| `render` | Load the Markdown/diagram renderer before producing output; no pi-tui or daemon. |
+| `render` | Load the Markdown/diagram renderer before producing output; no daemon. |
 
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
@@ -982,15 +982,14 @@ Width-tolerant; no fixed column widths. Every row begins at column zero.
 #### §5.1.0 Markdown projection {§cli-markdown-projection}
 
 A prettified message body (TUI only; the one-shot CLI keeps raw verbatim for
-pipes) delegates GFM parsing and terminal layout to maintained renderers at
+pipes) delegates GFM parsing, tables, and LaTeX math rendering to pi-tui at
 the current terminal width, less its container indentation. Nested blocks start
 on separate lines; prose, code, and source wrap without truncation. Tables use
 aligned box-drawn columns, wrap complete cell content, and separate every
 logical row; headings, inline markup, lists, and links retain conventional
-terminal presentation, while ordinary fenced code begins with a `💻 language`
-header. A block's gutter belongs to every row it produces, wrapped rows included,
-and the gutter's columns come out of that block's width rather than out of the
-viewport. A ```mermaid fence projects as
+terminal presentation; supported LaTeX math expressions (arrows, relations,
+Greek letters, fractions, and display blocks) project as Unicode terminal text.
+A ```mermaid fence projects as
 a topology- and label-preserving Unicode diagram when it fits the same live
 viewport. Preserve the authored layout when it fits; otherwise try one alternate
 flowchart layout exchanging horizontal and vertical directions, including explicit
@@ -1112,7 +1111,7 @@ single complete run record defined in §2.1, not a second body-only output forma
 **TUI mode** (no `--json`; the flag is CLI-only) renders qualifying responses as blocks, dispatching by content type:
 
 - **JSON** — `tx.body.json !== null`. Render `JSON.stringify(json, null, 2)`.
-- **Markdown** — structural Markdown markers select the maintained renderer described in §5.1.0. Rich-client prose also normalizes the common inline token `$\rightarrow$` to `→`; this is not general LaTeX support. CLI output remains verbatim.
+- **Markdown** — structural Markdown markers select the maintained renderer described in §5.1.0. Rich-client prose renders supported LaTeX math expressions (including arrows, relations, Greek letters, and display equations) as terminal Unicode text. CLI output remains verbatim.
 - **Plain (or anything else)** — emit the rich-client prose after the exact normalization above.
 
 If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is treated as empty (stdout receives nothing for that broadcast).

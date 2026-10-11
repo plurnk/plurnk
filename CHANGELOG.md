@@ -1,5 +1,23 @@
 # @plurnk/plurnk
 
+## Unreleased
+
+- Web addresses (`http`, `https`) render as terminal hyperlinks wherever the client shows
+  them, in markdown and in row targets, when colour is enabled; Plurnk addresses are never
+  made clickable. The terminal window title names the bound workspace and worker: pushed
+  once at start, updated on workspace switch and worker attach, restored at exit.
+- The daemon's over-budget row (`engine/context/packet-exceeds-budget`) renders as
+  `notice — curating context`, not as a failure.
+- A one-shot `plurnk "! command"` exits by its conclusion status and the command's own
+  exit code.
+- Resuming a run supplies the interrupt identity the daemon issued.
+- Explicit reply deliveries and message completion outcomes render as what they are.
+- A failure to reach the daemon keeps the evidence the client observed before it failed.
+- One-shot stream previews are bounded again.
+- Live subsystem discovery derives from the daemon's advertised actions.
+- A refused execution row renders immediately.
+- The manual's date derives from source history.
+
 ## 3.0.0
 
 - Connect to `/agui` by default and preserve the complete configured or advertised

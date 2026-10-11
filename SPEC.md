@@ -116,7 +116,9 @@ package, or its executable on `PATH`; `PLURNK_CLIENT_SERVICE_BIN` explicitly
 selects an installation. The executable and launcher must come from the same
 package. Missing installation is an actionable failure, never an automatic
 download. Readiness and shutdown use the positive millisecond limits in the
-client's `.env.defaults`.
+client's `.env.defaults`. The shipped shutdown grace exceeds the service's
+shipped teardown budget; an operator increasing that budget must also allow
+enough client grace. A grace is a ceiling, not a delay after a clean exit.
 
 | Private backend boundary | Guarantee |
 |---|---|
@@ -125,7 +127,9 @@ client's `.env.defaults`.
 | Retention | Exit never deletes private data. Text mode identifies the database; JSON stdout/stderr semantics stay unchanged. The TUI's resume command includes the exact storage binding and private port selection, not the temporary bearer. |
 | Multiple clients | No implicit rendezvous, shared background service, or reference counting. Sharing requires an explicitly running service. |
 
-The service launcher cleans failed acquisition. Shutdown errors remain visible.
+The service launcher cleans failed acquisition. Shutdown errors remain visible:
+an owned service's nonzero exit or signal termination rejects client cleanup,
+including a grace-expiry SIGKILL. Repeated cleanup retains the same outcome.
 Forced process death (`SIGKILL`, host failure) cannot run graceful cleanup.
 Help, version, completion and local rendering do not acquire a backend.
 

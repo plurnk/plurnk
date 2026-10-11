@@ -4,10 +4,13 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { parseEnv, promisify } from "node:util";
 import test from "node:test";
 import { bootDaemon, locateDaemon } from "./harness.ts";
+import Backend from "../../dist/backend.js";
+import { DEFAULTS_PATH, parseDefaults } from "../../dist/envdefaults.js";
 
 const run = promisify(execFile);
 const bin = resolve(import.meta.dirname, "../../bin/plurnk.js");
@@ -38,6 +41,45 @@ const fixture = async (t: { after(fn: () => Promise<void>): void }, service: str
     });
     return { directory, project, env, invoke, resources };
 };
+
+test("[§cli-daemon-autostart] the shipped outer shutdown grace exceeds the installed service teardown budget", async () => {
+    const client = parseDefaults(await readFile(DEFAULTS_PATH, "utf8"));
+    const serviceRoot = dirname(createRequire(import.meta.url).resolve("@plurnk/plurnk-service/package.json"));
+    const service = parseEnv(await readFile(join(serviceRoot, ".env.defaults"), "utf8"));
+    assert.ok(Number(client.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS) > Number(service.PLURNK_SERVICE_STOP_TIMEOUT_MS),
+        "the outer force-kill must leave time for the service to finish its own cleanup and exit");
+});
+
+for (const [ending, extra, expected] of [
+    ["graceful", { LAUNCH_STOP_DELAY_MS: "6000" }, null],
+    ["forced", { LAUNCH_STOP_DELAY_MS: "6000", PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS: "20" }, /signal SIGKILL/u],
+    ["failed", { LAUNCH_STOP_CODE: "17" }, /code 17/u],
+] as const) {
+    test(`[§cli-daemon-autostart] private backend ${ending} shutdown preserves its actual outcome`, { timeout: 20_000 }, async (t) => {
+        const service = resolve(import.meta.dirname, "fixtures/launch-daemon.mjs");
+        const { directory, env, resources } = await fixture(t, service);
+        const witness = join(directory, "shutdown.json");
+        const backend = await Backend.open({ aguiUrl: "http://127.0.0.1:0" }, {
+            ...env,
+            ...parseDefaults(await readFile(DEFAULTS_PATH, "utf8")),
+            PLURNK_SERVICE_STATE_ROOT: directory,
+            LAUNCH_WITNESS: witness,
+            ...extra,
+        });
+        const { pid } = JSON.parse(await readFile(witness, "utf8"));
+        resources.defer(async () => {
+            try { process.kill(pid, "SIGKILL"); }
+            catch (cause) { if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause; }
+        });
+        const stopped = backend.close();
+        assert.equal(backend.close(), stopped, "one shutdown result is retained for repeated close calls");
+        if (expected === null) await stopped;
+        else await assert.rejects(stopped, expected);
+        assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "owned process exit was awaited");
+        if (ending === "forced") await assert.rejects(readFile(`${witness}.stopped`), { code: "ENOENT" });
+        else assert.deepEqual(JSON.parse(await readFile(`${witness}.stopped`, "utf8")), { rootExists: true }, "cleanup finished before exit without deleting persistent state");
+    });
+}
 
 test("[§cli-daemon-autostart] the built client starts a private installed backend, retains its state and resumes it", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();

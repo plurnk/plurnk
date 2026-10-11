@@ -14,7 +14,7 @@ const SERVICE = "@plurnk/plurnk-service";
 interface Daemon {
     readonly url: string;
     readonly dbPath: string;
-    stop(): Promise<unknown>;
+    stop(): Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 }
 
 interface Launcher {
@@ -159,7 +159,11 @@ export default class Backend {
     }
 
     close(): Promise<void> {
-        return this.#closing ??= (async () => { await this.#daemon?.stop(); })();
+        return this.#closing ??= (async () => {
+            if (this.#daemon === null) return;
+            const { code, signal } = await this.#daemon.stop();
+            if (code !== 0 || signal !== null) throw new Error(`Private service shutdown failed (code ${code}, signal ${signal}).`);
+        })();
     }
 
     [Symbol.asyncDispose](): Promise<void> { return this.close(); }

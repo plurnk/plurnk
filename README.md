@@ -5,9 +5,9 @@
 - **Perpetual Context.** Like a "perpetual stew" for your tokens, Plurnk
   discards compaction entirely in favor of ongoing, model-driven context
   curation.
-- **Reasoning Distillation.** Model-driven reasoning trace introspection,
-  note-taking, and recall let open models keep their reasoning instead of
-  buying it again every turn.
+- **Addressable Memory.** Observations, programs and the model's own reasoning
+  keep addresses it can read back, curate or retire; its notes return every
+  turn in its own voice.
 - **Universal Patterns.** Your entire repo gets indexed on entry, letting the
   model explore and edit the project by regex, XPath, JSONPath, full text, and
   tree-sitter symbols.
@@ -20,6 +20,14 @@ Files, tools, and the agent's own context become an addressable environment.
 Composable operations let it search that environment, make precise changes,
 curate its memory, and build its own delegation topology. The runtime provides
 reliable machinery; the model supplies the strategy.
+
+Plurnk is an agentic virtual machine: each turn the model writes a short
+program, the machine runs it against one address space and journals the
+results, and the model reads the journal and writes the next. Files, tools,
+other workers and the model's own past all have addresses; one selection
+algebra reaches every one of them; the edges are the ecosystem's standards.
+The argument, and what it costs today:
+[PLURNK.md](https://github.com/plurnk/plurnk-service/blob/main/PLURNK.md).
 
 Use local or cloud models to build software, investigate a codebase, or automate
 work across tools. Interact from your terminal or editor, or compose Plurnk
@@ -178,6 +186,7 @@ plurnk-service config defaults
 ## Documentation
 
 - [Installation and configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
+- [Why it is built this way](https://github.com/plurnk/plurnk-service/blob/main/PLURNK.md)
 - [Architecture and extension points](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md)
 - [The model-facing language](https://github.com/plurnk/plurnk-service/blob/main/plurnk-contracts/plurnk.md)
 - [Client reference](SPEC.md) and [terminal design](TUI.md)

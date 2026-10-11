@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk",
-    "version": "3.1.0",
+    "version": "3.1.1",
     "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive AG-UI client.",
     "type": "module",
     "license": "MIT",

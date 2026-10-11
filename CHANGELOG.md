@@ -1,5 +1,14 @@
 # @plurnk/plurnk
 
+## 3.1.1
+
+- Delegate GFM markdown, tables, and LaTeX math rendering to `@earendil-works/pi-tui`,
+  rendering symbols, arrows (`\leftrightarrow` to ↔, `\to` to →), relations (`\le`, `\ge`),
+  Greek letters, and display equations natively in the terminal (#177).
+- Eject custom `Marked` tokenizers, ad-hoc regex normalizers, and `cli-table3` dependency (#177).
+- Close TUI transport before its private daemon shutdown, preserving graceful shutdown and
+  reporting failed exits (#176).
+
 ## 3.1.0
 
 - Web addresses (`http`, `https`) render as terminal hyperlinks wherever the client shows

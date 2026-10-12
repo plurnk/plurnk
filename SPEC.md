@@ -442,7 +442,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover`, `/members add <alias>` and `/members replace <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
@@ -500,7 +500,7 @@ Filesystem suggestions follow the address owner; completion never changes the pr
 |---|---|
 | `/import`, `/script`, `/env import` | Client launch directory; absolute paths remain host-absolute |
 | `@file` | Bound workspace root; only paths under it ({§cli-prompt-open-paths}) |
-| `/members discover`, `/members add <alias>`, `/members replace <alias>` | Bound workspace root; relative sibling paths retain membership semantics ({§cli-file-members}) |
+| `/members discover`, every `/members add` argument | Bound workspace root; relative sibling paths retain membership semantics ({§cli-file-members}) |
 | File OP target (bare or `file:///`) | Workspace filesystem namespace; `/` denotes the workspace root ({§fs-namei}) |
 | Other schemes or authorities | No local filesystem suggestions |
 
@@ -666,8 +666,8 @@ and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
-{§cli-functionality-replacement} Every Functionality family accepts `replace`
-with its `add` arguments. The client sends the complete definition to the
+{§cli-functionality-replacement} Every Functionality family but `members`, whose
+definition is its glob (§3.7), accepts `replace` with its `add` arguments. The client sends the complete definition to the
 corresponding `replace` action, without merging fields or enabling it separately.
 The service retains existing enabledness, creates an absent alias enabled, and
 preserves the preceding publication on refusal. Both forms use the same argument
@@ -797,10 +797,10 @@ cross the existing diagnostic path without rewriting or retry.
 ### §3.7 File members {§cli-file-members}
 
 File membership is a thin projection of the daemon's `members` Functionality
-family — the same common lifecycle as `/mcp`, `/skills`, and `/a2a`. The
-client composes one exact definition, `{glob}`, and renders the daemon's
-states; resolution, the model's ceiling, and enablement policy live in the
-service. Git-tracked files are members on their own. A definition is one
+family — the common lifecycle of `/mcp`, `/skills`, and `/a2a`, except that a
+definition is its glob: nothing is aliased and nothing is replaced. The client
+passes the globs through and renders the daemon's states; resolution, the
+model's ceiling, and enablement policy live in the service. Git-tracked files are members on their own. A definition is one
 gitignore-style glob relative to the project root: it includes matching
 untracked files or, with a leading `!`, excludes matching members — an
 exclusion wins over every inclusion. The glob is one argument, tokenized
@@ -808,14 +808,13 @@ exactly as the sibling families tokenize theirs (quote it to keep whitespace).
 
 | TUI input | AG-UI+ action |
 |---|---|
-| `/members` | `workspace.members.list {}` — one line per definition with what its glob resolved to: `docs  service  active  include docs/** → 12 files (3 ignored)`, `no-tokenizer  worker  active  exclude **/tokenizer.json → 4 members` |
+| `/members` | `workspace.members.list {}` — one line per definition, named by its glob, with what it resolved to: `docs/**  service  active → 12 files (3 ignored)`, `!**/tokenizer.json  worker  active → 4 members` |
 | `/members discover <path>` | `workspace.members.discover {query}` — one candidate explaining why the file is or is not a member |
 | `/members discover <glob>` | `workspace.members.discover {query}` — one candidate previewing what `add` would include or exclude |
-| `/members add <alias> <glob>` | `workspace.members.add {alias, definition: {glob}}` |
-| `/members replace <alias> <glob>` | `workspace.members.replace {alias, definition}` — {§cli-functionality-replacement} |
-| `/members enable <alias>` | `workspace.members.enable {alias}` |
-| `/members disable <alias>` | `workspace.members.disable {alias}` |
-| `/members remove <alias>` | `workspace.members.remove {alias}` |
+| `/members add <glob...>` | `workspace.members.add {files: [glob, ...]}` — each glob is one definition; the reply lists what was admitted |
+| `/members enable <glob>` | `workspace.members.enable {file}` |
+| `/members disable <glob>` | `workspace.members.disable {file}` |
+| `/members remove <glob>` | `workspace.members.remove {file}` |
 
 Daemon Problems — a headless workspace, an invalid pattern, a service-owned
 definition that cannot be removed — cross the existing diagnostic path without

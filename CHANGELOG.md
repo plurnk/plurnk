@@ -1,5 +1,12 @@
 # @plurnk/plurnk
 
+## Unreleased
+
+- Keep Mermaid and hyperlink customization local to Plurnk's Markdown instances,
+  with explicit compatibility coverage for the pinned pi-tui version (#177).
+- Render all rich text through native Markdown without changing literal code;
+  remove unused direct Markdown-parser and wrapping dependencies (#177).
+
 ## 3.1.1
 
 - Delegate GFM markdown, tables, and LaTeX math rendering to `@earendil-works/pi-tui`,

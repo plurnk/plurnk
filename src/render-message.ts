@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import { paint } from "./color.ts";
-import { looksLikeMarkdown, renderMarkdownDocument } from "./markdown.ts";
+import { renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
 import {
     entryAside, extractSendBody, isArrivalEntry, isResponseMessage,
@@ -18,8 +18,7 @@ export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.col
     const tx = txUnknown as { body?: string | { json?: unknown } | null } | null;
     const json = typeof tx?.body === "object" ? tx.body?.json : undefined;
     if (json !== null && json !== undefined) return JSON.stringify(json, null, 2);
-    const prose = ModelText.plain(extractSendBody(txUnknown)).replaceAll("$\\rightarrow$", "→");
-    return looksLikeMarkdown(prose) ? renderMarkdownDocument(prose, viewport) : prose;
+    return renderMarkdownDocument(ModelText.plain(extractSendBody(txUnknown)), viewport);
 };
 
 // The lead line of a block: no keyword and no glyph (plurnk#104); a final answer's, a NOTE's and

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { backgroundScheme, colorEnabled, colorFgBgScheme, hyperlink, learnScheme, paint, withColorOutput } from "./color.ts";
 import { renderMarkdownDocument } from "./markdown.ts";
 import { renderSummary } from "./render.ts";
@@ -73,6 +74,32 @@ const withColor = <T>(noColor: string | undefined, render: () => T): T => {
         else process.env.PLURNK_CLIENT_COLOR = mode;
     }
 };
+
+test("[§cli-markdown-adapter] styled links keep their labels, visible destinations, and web-only click targets", () => {
+    for (const address of ["https://example.com/docs", "http://example.com/docs", "worker:///notes.md", "log:///1/2/3/READ", "file:///tmp/x", "javascript:alert(1)"]) {
+        for (const noColor of [undefined, "1"]) {
+            const source = `Before [**bold** and *italic* \`code\`](${address}) after.`;
+            const out = withColor(noColor, () => renderMarkdownDocument(source, 160));
+            assert.equal(stripVTControlCharacters(out), `Before bold and italic code (${address}) after.`);
+            if (noColor === undefined && /^https?:/u.test(address)) {
+                assert.equal(out.split(`\x1b]8;;${address}\x1b\\`).length, 2, "only the label is a clickable web destination");
+            } else {
+                assert.doesNotMatch(out, /\x1b\]8/u, "non-web addresses and plain output are never clickable");
+            }
+            if (noColor === undefined) {
+                assert.match(out, /\x1b\[1m/);
+                assert.match(out, /\x1b\[3m/);
+            } else {
+                assert.doesNotMatch(out, /\x1b/u);
+            }
+        }
+    }
+    const autolink = withColor("1", () => renderMarkdownDocument("<https://example.com/docs>", 80));
+    assert.equal(autolink, "https://example.com/docs", "an autolink does not duplicate its destination");
+    const literal = withColor(undefined, () => renderMarkdownDocument("`[literal](https://example.com)`", 80));
+    assert.equal(stripVTControlCharacters(literal), "[literal](https://example.com)");
+    assert.doesNotMatch(literal, /\x1b\]8/u, "link-like text in code is not made clickable");
+});
 
 test("[§cli-palette] no module but the palette writes a colour or emphasis code", async () => {
     assert.match(await readFile(new URL("./color.ts", import.meta.url), "utf8"), SGR_WRITER, "the palette is the one writer");

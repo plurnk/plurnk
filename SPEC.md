@@ -997,7 +997,8 @@ Width-tolerant; no fixed column widths. Every row begins at column zero.
 
 A prettified message body (TUI only; the one-shot CLI keeps raw verbatim for
 pipes) delegates GFM parsing, tables, and LaTeX math rendering to pi-tui at
-the current terminal width, less its container indentation. Nested blocks start
+the current terminal width, less its container indentation. All text bodies use
+that parser; literal code is never normalized as prose. Nested blocks start
 on separate lines; prose, code, and source wrap without truncation. Tables use
 aligned box-drawn columns, wrap complete cell content, and separate every
 logical row; headings, inline markup, lists, and links retain conventional
@@ -1016,6 +1017,17 @@ fallback header without preventing the rest of the message from rendering.
 Decide the projection before appending it;
 there is no delayed replacement, recovery narration, or half-drawn diagram. The wire always
 carries semantic source; no pre-rendered channel exists at the protocol boundary.
+
+**Renderer customization {§cli-markdown-adapter}.** Customization is instance-local.
+The installed pi-tui public hooks lack a width-aware whole-code-block override
+and a link renderer receiving both label and destination. A narrow adapter of its
+private rendering hooks supplies only Mermaid projection at the actual nested
+block width and {§cli-hyperlinks}. Other tokens retain native rendering; the
+library prototype and unrelated Markdown instances remain unchanged. The dependency
+is pinned to the verified version; upgrades must verify that boundary, nested
+layout, literal-code preservation, complete source fallback, and link styling
+before landing. The adapter neither
+parses Markdown independently nor substitutes another renderer if its hooks fail.
 
 #### §5.1.0a Local rendering filter {§cli-render-filter}
 
@@ -1125,8 +1137,7 @@ single complete run record defined in §2.1, not a second body-only output forma
 **TUI mode** (no `--json`; the flag is CLI-only) renders qualifying responses as blocks, dispatching by content type:
 
 - **JSON** — `tx.body.json !== null`. Render `JSON.stringify(json, null, 2)`.
-- **Markdown** — structural Markdown markers select the maintained renderer described in §5.1.0. Rich-client prose renders supported LaTeX math expressions (including arrows, relations, Greek letters, and display equations) as terminal Unicode text. CLI output remains verbatim.
-- **Plain (or anything else)** — emit the rich-client prose after the exact normalization above.
+- **Text** — the native Markdown renderer described in §5.1.0 handles plain prose, inline markup, code, and supported LaTeX together. JSON retains its separate literal projection; CLI output remains verbatim.
 
 If `tx.body` is null, or `tx.body.raw` is absent or non-string, the body is treated as empty (stdout receives nothing for that broadcast).
 

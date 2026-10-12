@@ -693,6 +693,23 @@ test("extractSendBody prettify: conventional inline right arrow renders as its t
     assert.equal(extractSendBody({ body: { raw, json: null } }), raw, "CLI output remains verbatim");
 });
 
+test("{§cli-markdown-projection} a reply with only inline formatting still uses native Markdown", () => {
+    for (const [raw, expected] of [["*emphasis*", "emphasis"], ["_emphasis_", "emphasis"], ["~~removed~~", "removed"]]) {
+        assert.equal(renderSendBody({ body: { raw } }), expected);
+        assert.equal(extractSendBody({ body: { raw } }), raw, "CLI text remains untouched");
+    }
+});
+
+test("{§cli-markdown-projection} reply code retains literal math and Markdown rather than normalizing their contents", () => {
+    for (const raw of ["Use `$\\rightarrow$` verbatim.", "```text\n$\\rightarrow$ **not bold**\n```", "    $\\rightarrow$ **not bold**"]) {
+        const out = renderSendBody({ body: { raw } });
+        assert.ok(out.includes("$\\rightarrow$"), out);
+        assert.doesNotMatch(out, /→/);
+        if (raw.includes("**not bold**")) assert.ok(out.includes("**not bold**"));
+        assert.equal(extractSendBody({ body: { raw } }), raw);
+    }
+});
+
 // ─── renderSummary: usage token part ─────────────────────────────────
 
 test("renderSummary: usage renders input/output and exact cost", () => {

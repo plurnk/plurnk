@@ -80,47 +80,41 @@ export const renderMermaid = (
     ];
 };
 
-// Intercept pi-tui code block and link rendering:
-// Mermaid diagrams project to ASCII topologies; links adhere to {§cli-hyperlinks}
-// showing OSC 8 label plus visible destination. All other code blocks, tables,
-// lists, LaTeX math, and typography are rendered natively by pi-tui.
-const originalRenderToken = (Markdown.prototype as any).renderToken;
-const originalRenderInlineTokens = (Markdown.prototype as any).renderInlineTokens;
-let patched = false;
-const ensurePatched = () => {
-    if (patched) return;
-    patched = true;
-    (Markdown.prototype as any).renderToken = function (
-        token: any,
-        width: number,
-        nextTokenType?: string,
-        styleContext?: any,
-    ): string[] {
-        if (token.type === "code" && token.lang?.trim().toLowerCase() === "mermaid") {
-            const drawn = renderMermaid(token.text, width);
-            return [
-                ...drawn,
-                ...(nextTokenType && nextTokenType !== "space" ? [""] : []),
-            ];
-        }
-        return originalRenderToken.call(this, token, width, nextTokenType, styleContext);
-    };
-    (Markdown.prototype as any).renderInlineTokens = function (
-        tokens: any[],
-        styleContext: any,
-    ): string {
-        let result = "";
-        for (const token of tokens) {
-            if (token.type === "link") {
-                const linkText = originalRenderInlineTokens.call(this, token.tokens || [], styleContext);
-                const label = hyperlink(styled("reference")(linkText), token.href);
-                result += token.href === token.text ? label : `${label} ${styled("dim")(`(${token.href})`)}`;
-            } else {
-                result += originalRenderInlineTokens.call(this, [token], styleContext);
+type NativeToken = { type: string };
+type NativeCode = NativeToken & { type: "code"; lang?: string; text: string };
+type NativeLink = NativeToken & { type: "link"; text: string; href: string; tokens?: NativeToken[] };
+type NativeHooks = {
+    renderToken(token: NativeToken, width: number, nextTokenType?: string, styleContext?: unknown): string[];
+    renderInlineTokens(tokens: NativeToken[], styleContext?: unknown): string;
+};
+
+// {§cli-markdown-adapter}: private hooks are necessary for nested block widths and label+URL
+// rendering, neither exposed by highlightCode/theme. Patch only this instance, not the library;
+// keep the dependency boundary here and exercise it through the native-renderer matrix.
+const customize = (markdown: Markdown): Markdown => {
+    const hooks = markdown as unknown as NativeHooks;
+    if (typeof hooks.renderToken !== "function" || typeof hooks.renderInlineTokens !== "function") {
+        throw new TypeError("pi-tui Markdown rendering hooks are unavailable.");
+    }
+    const renderToken = hooks.renderToken.bind(markdown);
+    const renderInlineTokens = hooks.renderInlineTokens.bind(markdown);
+    hooks.renderToken = (token, width, nextTokenType, styleContext) => {
+        if (token.type === "code") {
+            const code = token as NativeCode;
+            if (code.lang?.trim().toLowerCase() === "mermaid") {
+                return [...renderMermaid(code.text, width), ...(nextTokenType && nextTokenType !== "space" ? [""] : [])];
             }
         }
-        return result;
+        return renderToken(token, width, nextTokenType, styleContext);
     };
+    hooks.renderInlineTokens = (tokens, styleContext) => renderInlineTokens(tokens.map((token) => {
+        if (token.type !== "link") return token;
+        const link = token as NativeLink;
+        const text = renderInlineTokens(link.tokens ?? [], styleContext);
+        const label = hyperlink(styled("reference")(text), link.href);
+        return { type: "text", text: link.href === link.text ? label : `${label} ${styled("dim")(`(${link.href})`)}` };
+    }), styleContext);
+    return markdown;
 };
 
 const theme: MarkdownTheme = {
@@ -149,24 +143,8 @@ export const renderMarkdownDocument = (
     raw: string,
     viewport: number = process.stdout.columns ?? 80,
 ): string => {
-    ensurePatched();
     const width = Math.max(1, Math.trunc(viewport));
-    const md = new Markdown(raw, 0, 0, theme, undefined, MARKDOWN_OPTIONS);
+    const md = customize(new Markdown(raw, 0, 0, theme, undefined, MARKDOWN_OPTIONS));
     const rendered = md.render(width).map((line) => line.trimEnd()).join("\n").trimEnd();
     return colorEnabled() ? rendered : stripVTControlCharacters(rendered);
 };
-
-// Heuristic: ordinary speech remains ordinary speech; structurally marked GFM
-// or LaTeX math enters the terminal renderer.
-export const looksLikeMarkdown = (text: string): boolean =>
-    /(^|\n)#{1,6}\s/.test(text)
-    || /\*\*[^*\n]+\*\*/.test(text)
-    || /(^|\n)[-*+]\s/.test(text)
-    || /(^|\n)\s*\d+[.)]\s/.test(text)
-    || /```|~~~/.test(text)
-    || /(^|\n)\s*\|.*\|/.test(text)
-    || /\[[^\]]+\]\([^)]+\)/.test(text)
-    || /(?:^|[^\\])\$[^$\n\s]+(?:[ \t]+[^$\n\s]+)*\$/.test(text)
-    || /(?:^|\n)[ \t]*(?:\$\$|\\\[)/.test(text)
-    || /(?:^|[^\\])`[^`\n]+`/.test(text)
-    || /(^|\n)[ \t]*>\s/.test(text);

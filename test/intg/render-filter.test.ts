@@ -62,6 +62,15 @@ test("{§cli-render-filter} the deadline flag overrides exported settings", asyn
 const runFilter = async (source: string, width: number) =>
     await runClient(["render", "--width", String(width)], source);
 
+test("{§cli-render-filter} the built renderer delegates inline markup and math without rewriting literal code", async () => {
+    const result = await runFilter([
+        "*Italic* and $\\rightarrow$.", "", "```text", "$\\rightarrow$ **not bold**", "```",
+    ].join("\n"), 48);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.equal(result.stdout.trimEnd(), "Italic and →.\n\n```text\n  $\\rightarrow$ **not bold**\n```");
+});
+
 test("[§cli-render-filter] filter help is an exact side-effect-free capability probe", async () => {
     const result = await runClient(["render", "--help"]);
     assert.equal(result.code, 0);

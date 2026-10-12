@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Replace a functionality definition whole from the client commands, through the
+  daemon's atomic publication (#178).
+- Preserve incomplete fan-out receipts in the TUI (#179).
 - Keep Mermaid and hyperlink customization local to Plurnk's Markdown instances,
   with explicit compatibility coverage for the pinned pi-tui version (#177).
 - Render all rich text through native Markdown without changing literal code;

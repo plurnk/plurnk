@@ -37,6 +37,7 @@ export interface CommandSpec {
 const lifecycle = (noun: string, discover: CommandSubcommand, add: CommandSubcommand): readonly CommandSubcommand[] => [
     discover,
     add,
+    { name: "replace", usage: add.usage.replace(/^add/u, "replace"), summary: "Replace a complete definition, retaining enabledness.", alias: true },
     { name: "enable", usage: `enable <${noun}>`, summary: `Enable a current ${noun}.`, alias: true },
     { name: "disable", usage: `disable <${noun}>`, summary: `Disable a current ${noun}.`, alias: true },
     { name: "remove", usage: `remove <${noun}>`, summary: `Remove a current ${noun}.`, alias: true },

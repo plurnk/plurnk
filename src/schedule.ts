@@ -1,5 +1,5 @@
 // Thin TUI projection of the daemon-owned schedule Functionality family: the
-// common lifecycle (list | discover | add | enable | disable | remove) over the
+// common lifecycle (list | discover | add | replace | enable | disable | remove) over the
 // workspace's `schedule` actions. The client composes one exact definition and
 // renders the daemon's states; the clock, the rule's canonical form, the timers
 // and the delivery live in the service.
@@ -95,7 +95,7 @@ const renderCandidate = (candidate: Candidate): string => {
     return `  ${alias}  candidate${summary}${rule}\n`;
 };
 
-const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
+const renderMutation = (result: MutationResult, verb: "added" | "replaced" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
     const alias = typeof result.alias === "string" ? result.alias : aliasHint;
     const state = typeof result.definition?.state === "string" ? ` (${result.definition.state})` : "";
     const next = typeof result.definition?.detail?.next === "string" ? `  next ${result.definition.detail.next}` : "";
@@ -137,14 +137,14 @@ export const handleSchedule = async (
         return result;
     }
 
-    if (command === "add") {
+    if (command === "add" || command === "replace") {
         const [alias, worker, rule, ...prompt] = args.slice(1);
         if (alias === undefined || alias.length === 0 || worker === undefined || worker.length === 0 || rule === undefined || rule.length === 0 || prompt.length === 0) {
-            usage(write, "add");
+            usage(write, command);
             return null;
         }
-        const result = await rpc.call("workspace.schedule.add", { alias, definition: composeDefinition(worker, rule, prompt.join(" ")) }) as MutationResult;
-        renderMutation(result, "added", alias, write);
+        const result = await rpc.call(`workspace.schedule.${command}`, { alias, definition: composeDefinition(worker, rule, prompt.join(" ")) }) as MutationResult;
+        renderMutation(result, command === "add" ? "added" : "replaced", alias, write);
         return result;
     }
 

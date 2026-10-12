@@ -414,6 +414,19 @@
         "durability"
       ]
     },
+    "workspace.skills.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "workspace.skills.enable": {
       "posture": "native",
       "evidence": [
@@ -506,6 +519,19 @@
         "failure",
         "presentation",
         "durability"
+      ]
+    },
+    "workspace.a2a.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
       ]
     },
     "workspace.a2a.enable": {
@@ -602,6 +628,19 @@
         "durability"
       ]
     },
+    "workspace.members.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "workspace.members.enable": {
       "posture": "native",
       "evidence": [
@@ -692,6 +731,19 @@
         "presentation"
       ]
     },
+    "workspace.env.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "workspace.env.enable": {
       "posture": "native",
       "evidence": [
@@ -767,6 +819,19 @@
       "evidence": [
         "src/env.test.ts — environment management",
         "test/tui/verbs.test.ts — built-client env dogfood"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "worker.env.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
       ],
       "dimensions": [
         "admission",
@@ -867,6 +932,21 @@
         "composition"
       ]
     },
+    "workspace.mcp.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals",
+        "test/tui/mcp.test.ts — built-client disabled replacement and refusal preserve the old server"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation",
+        "composition"
+      ]
+    },
     "workspace.mcp.enable": {
       "posture": "native",
       "evidence": [
@@ -944,6 +1024,19 @@
       "posture": "native",
       "evidence": [
         "src/schedule.test.ts — scheduled messages management"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
+    "workspace.schedule.replace": {
+      "posture": "native",
+      "evidence": [
+        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
       ],
       "dimensions": [
         "admission",

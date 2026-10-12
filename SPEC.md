@@ -442,7 +442,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` and `/members add <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /look <address> (§3.1.3) /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable). `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover`, `/members add <alias>` and `/members replace <alias>` positions, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`; a LOOK fence is inspection (§3.1.3), never a run. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; proposal-gated like any side effect.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
@@ -500,7 +500,7 @@ Filesystem suggestions follow the address owner; completion never changes the pr
 |---|---|
 | `/import`, `/script`, `/env import` | Client launch directory; absolute paths remain host-absolute |
 | `@file` | Bound workspace root; only paths under it ({§cli-prompt-open-paths}) |
-| `/members discover`, `/members add <alias>` | Bound workspace root; relative sibling paths retain membership semantics ({§cli-file-members}) |
+| `/members discover`, `/members add <alias>`, `/members replace <alias>` | Bound workspace root; relative sibling paths retain membership semantics ({§cli-file-members}) |
 | File OP target (bare or `file:///`) | Workspace filesystem namespace; `/` denotes the workspace root ({§fs-namei}) |
 | Other schemes or authorities | No local filesystem suggestions |
 
@@ -666,6 +666,13 @@ and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
+§cli-functionality-replacement Every Functionality family accepts `replace`
+with its `add` arguments. The client sends the complete definition to the
+corresponding `replace` action, without merging fields or enabling it separately.
+The service retains existing enabledness, creates an absent alias enabled, and
+preserves the preceding publication on refusal. Both forms use the same argument
+parsing, help, completion and exact failure presentation.
+
 {§cli-configuration-source} Subsystem listings (`mcp`, `skills`, `a2a`, `schedule`,
 `members`, `env`) append `source=<provenance.source>` when the daemon supplies
 that field. The client does not infer a source, open its path, or resolve a
@@ -679,7 +686,8 @@ composes one exact `McpServerDefinition` and renders the daemon's states; it
 reads no MCP configuration. The cascade, workspace persistence, registry search,
 connections, authorization and tool filtering belong to the daemon. `add`
 persists a workspace definition, not a plugin installation; `remove` restores
-any inherited definition and enabled state. An inherited server is disable-only.
+any inherited definition and enabled state. An inherited server cannot be removed;
+disable it or replace it with a workspace definition.
 
 The interactive and positional forms share one tokenizer-independent command
 handler. `plurnk mcp …` uses the workspace selected under §1.1;
@@ -691,6 +699,7 @@ result.
 | `/mcp` / `plurnk mcp` | `workspace.mcp.list {}` — one row per server: alias, state, `type`, command or URL, active tool count, and `(workspace)` for a locally added definition |
 | `/mcp discover <query>` | `workspace.mcp.discover {query}` — one row per MCP Registry candidate: alias, `type`, command or URL, and the daemon's summary of how it launches and what it needs |
 | `/mcp add <alias> <command\|url> [args...]` | `workspace.mcp.add {alias, definition}` — an absolute `http(s)://` target is `{name: alias, type: "streamable-http", url}`, anything else `{name: alias, type: "stdio", command, args}` without `args` when none follow |
+| `/mcp replace <alias> <command\|url> [args...]` | `workspace.mcp.replace {alias, definition}` — {§cli-functionality-replacement} |
 | `/mcp enable <alias>` | `workspace.mcp.enable {alias}` — publishes a dormant server or retries an unavailable one |
 | `/mcp disable <alias>` | `workspace.mcp.disable {alias}` |
 | `/mcp remove <alias>` | `workspace.mcp.remove {alias}` |
@@ -701,7 +710,7 @@ Every token after a command target reaches the server verbatim; a URL target
 takes none. The positional form uses `--` before server options so the client
 does not consume them: `plurnk --workspace w mcp -- add example npx -y @example/server`.
 
-An add or enable requiring authorization prints the alias (or authorization URL
+An add, replace or enable requiring authorization prints the alias (or authorization URL
 when already available) and exact `/mcp oauth …` command. It does not itself open
 a browser. Daemon Problems cross the
 existing diagnostic path without rewriting or retry.
@@ -753,6 +762,7 @@ preserves its source and restores any inherited definition and enabledness.
 | `/skills` | `workspace.skills.list {}` |
 | `/skills discover <source>` | `workspace.skills.discover {source}`; a source is a git remote as a full https or ssh URL, a folder, a lone `SKILL.md`, or a zip or tar archive |
 | `/skills add <name> <source> [--ref <ref>]` | `workspace.skills.add {alias, definition: {name, source, ref?}}`; names retain their standard digit-leading and Unicode forms |
+| `/skills replace <name> <source> [--ref <ref>]` | `workspace.skills.replace {alias, definition}` — {§cli-functionality-replacement} |
 | `/skills enable <name>` | `workspace.skills.enable {alias}` |
 | `/skills disable <name>` | `workspace.skills.disable {alias}` |
 | `/skills remove <name>` | `workspace.skills.remove {alias}` |
@@ -775,6 +785,7 @@ service, and the model addresses an enabled agent as `a2a://<alias>`.
 | `/a2a` | `workspace.a2a.list {}` |
 | `/a2a discover <url>` | `workspace.a2a.discover {source}` — one inert card-derived candidate |
 | `/a2a add <alias> <url> [options.json]` | `workspace.a2a.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
+| `/a2a replace <alias> <url> [options.json]` | `workspace.a2a.replace {alias, definition}` — {§cli-functionality-replacement} |
 | `/a2a enable <alias>` | `workspace.a2a.enable {alias}` |
 | `/a2a disable <alias>` | `workspace.a2a.disable {alias}` |
 | `/a2a remove <alias>` | `workspace.a2a.remove {alias}` |
@@ -801,6 +812,7 @@ exactly as the sibling families tokenize theirs (quote it to keep whitespace).
 | `/members discover <path>` | `workspace.members.discover {query}` — one candidate explaining why the file is or is not a member |
 | `/members discover <glob>` | `workspace.members.discover {query}` — one candidate previewing what `add` would include or exclude |
 | `/members add <alias> <glob>` | `workspace.members.add {alias, definition: {glob}}` |
+| `/members replace <alias> <glob>` | `workspace.members.replace {alias, definition}` — {§cli-functionality-replacement} |
 | `/members enable <alias>` | `workspace.members.enable {alias}` |
 | `/members disable <alias>` | `workspace.members.disable {alias}` |
 | `/members remove <alias>` | `workspace.members.remove {alias}` |
@@ -827,6 +839,7 @@ the daemon, so `add` hands over the rest of the line as typed, never tokenized.
 | `/env` | `worker.env.list {}` — one line per name with origin, state, value, and the worker it was inherited from: `PATH  service  active  /usr/bin:/bin`, `TOOLCHAIN  worker  active  stable  (from alice)` |
 | `/env discover [query]` | `worker.env.discover {query?}` — the names this worker may set, each with its owning package and the declaration's comment; an empty query is the whole catalog |
 | `/env add <NAME> <value>` | `worker.env.add {alias, definition: {value}}` |
+| `/env replace <NAME> <value>` | `worker.env.replace {alias, definition: {value}}` — {§cli-functionality-replacement}; workspace scope uses `workspace.env.replace` |
 | `/env enable <NAME>` | `worker.env.enable {alias}` |
 | `/env disable <NAME>` | `worker.env.disable {alias}` — an ambient name disabled here is withheld from this worker's commands alone |
 | `/env remove <NAME>` | `worker.env.remove {alias}` |
@@ -857,6 +870,7 @@ reaches its worker as an ordinary message from `schedule://<alias>`.
 | `/schedule` | `workspace.schedule.list {}` — each rule with its state, wording, next occurrence or `exhausted`, and target |
 | `/schedule discover <rule>` | `workspace.schedule.discover {source}` — one inert candidate whose summary opens with the current time in the effective zone |
 | `/schedule add <alias> <worker> <rule> <prompt...>` | `workspace.schedule.add {alias, definition: {rule, target: worker://<worker>, prompt}}`; the receiving worker retains its owner |
+| `/schedule replace <alias> <worker> <rule> <prompt...>` | `workspace.schedule.replace {alias, definition}` — {§cli-functionality-replacement} |
 | `/schedule enable <alias>` | `workspace.schedule.enable {alias}` |
 | `/schedule disable <alias>` | `workspace.schedule.disable {alias}` |
 | `/schedule remove <alias>` | `workspace.schedule.remove {alias}` |

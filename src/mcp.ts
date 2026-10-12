@@ -1,5 +1,5 @@
 // Thin TUI projection of the daemon-owned MCP Functionality family: the common
-// lifecycle (list | discover | add | enable | disable | remove) plus the MCP
+// lifecycle (list | discover | add | replace | enable | disable | remove) plus the MCP
 // OAuth continuation. The client composes exact definitions and renders the
 // daemon's states; configuration persistence, registry search and connections
 // belong to the service.
@@ -119,7 +119,7 @@ const renderCandidate = (candidate: Candidate): string => {
 
 const renderMutation = (
     result: MutationResult,
-    verb: "added" | "enabled" | "disabled" | "authorized",
+    verb: "added" | "replaced" | "enabled" | "disabled" | "authorized",
     aliasHint: string,
     write: (text: string) => void,
 ): void => {
@@ -169,16 +169,16 @@ export const handleMcp = async (
         return result;
     }
 
-    if (command === "add") {
+    if (command === "add" || command === "replace") {
         const [name, target, ...serverArgs] = args.slice(1);
         if (name === undefined || name.length === 0 || name.startsWith("--") || target === undefined || target.length === 0
             || (HTTP_TARGET.test(target) && serverArgs.length > 0)) {
-            usage(write, "add");
+            usage(write, command);
             return null;
         }
         const definition = composeDefinition(name, target, serverArgs);
-        const result = await rpc.call("workspace.mcp.add", { alias: name, definition }) as MutationResult;
-        renderMutation(result, "added", name, write);
+        const result = await rpc.call(`workspace.mcp.${command}`, { alias: name, definition }) as MutationResult;
+        renderMutation(result, command === "add" ? "added" : "replaced", name, write);
         return result;
     }
 

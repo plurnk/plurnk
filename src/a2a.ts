@@ -115,7 +115,7 @@ const renderCandidate = (candidate: Candidate): string => {
     return `  ${alias}  candidate${url}${summary}\n`;
 };
 
-const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
+const renderMutation = (result: MutationResult, verb: "added" | "replaced" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
     const alias = typeof result.alias === "string" ? result.alias : aliasHint;
     const state = typeof result.definition?.state === "string" ? ` (${result.definition.state})` : "";
     const problem = typeof result.definition?.problem?.detail === "string" ? `  — ${result.definition.problem.detail}` : "";
@@ -155,15 +155,15 @@ export const handleA2a = async (
         return result;
     }
 
-    if (command === "add") {
+    if (command === "add" || command === "replace") {
         if (args.length < 3 || args.length > 4 || alias.length === 0 || args[2].length === 0) {
-            usage(write, "add");
+            usage(write, command);
             return null;
         }
         const [, , url, path] = args;
         const options = path === undefined ? {} : await readOptions(path);
-        const result = await rpc.call("workspace.a2a.add", { alias, definition: composeDefinition(alias, url, options) }) as MutationResult;
-        renderMutation(result, "added", alias, write);
+        const result = await rpc.call(`workspace.a2a.${command}`, { alias, definition: composeDefinition(alias, url, options) }) as MutationResult;
+        renderMutation(result, command === "add" ? "added" : "replaced", alias, write);
         return result;
     }
 

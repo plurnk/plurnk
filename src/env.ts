@@ -44,7 +44,7 @@ const renderCandidate = (candidate: Candidate): string => {
     return `  ${alias}${source}${value}${summary}\n`;
 };
 
-const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
+const renderMutation = (result: MutationResult, verb: "added" | "replaced" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
     const alias = typeof result.alias === "string" ? result.alias : aliasHint;
     const state = typeof result.definition?.state === "string" ? ` (${result.definition.state})` : "";
     const problem = typeof result.definition?.problem?.detail === "string" ? `  — ${result.definition.problem.detail}` : "";
@@ -64,10 +64,10 @@ const list = async (rpc: ActionCaller, write: (text: string) => void, scope: str
 };
 
 // A value is used verbatim by the daemon, so the client hands it over verbatim
-// too: `add NAME <value>` takes the rest of the line as typed, never tokenized.
-const addArguments = (input: string | readonly string[]): { name: string; value: string } | null => {
+// too: `add/replace NAME <value>` takes the rest of the line as typed, never tokenized.
+const definitionArguments = (input: string | readonly string[]): { name: string; value: string } | null => {
     if (typeof input === "string") {
-        const match = /^\s*add\s+(\S+)\s+([\s\S]+?)\s*$/u.exec(input);
+        const match = /^\s*(?:add|replace)\s+(\S+)\s+([\s\S]+?)\s*$/u.exec(input);
         return match === null ? null : { name: match[1]!, value: match[2]! };
     }
     const [, name, ...rest] = input;
@@ -140,15 +140,15 @@ export const handleEnv = async (
         return result;
     }
 
-    if (command === "add") {
-        const parsed = addArguments(input);
+    if (command === "add" || command === "replace") {
+        const parsed = definitionArguments(input);
         if (parsed === null) {
-            usage(write, "add");
+            usage(write, command);
             return null;
         }
         const definition: EnvDefinition = { value: parsed.value };
-        const result = await rpc.call(`${scope}.env.add`, { alias: parsed.name, definition }) as MutationResult;
-        renderMutation(result, "added", parsed.name, write);
+        const result = await rpc.call(`${scope}.env.${command}`, { alias: parsed.name, definition }) as MutationResult;
+        renderMutation(result, command === "add" ? "added" : "replaced", parsed.name, write);
         return result;
     }
 

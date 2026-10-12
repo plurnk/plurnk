@@ -1,5 +1,5 @@
 // Thin TUI projection of the daemon-owned file members Functionality family:
-// the common lifecycle (list | discover | add | enable | disable | remove)
+// the common lifecycle (list | discover | add | replace | enable | disable | remove)
 // over the Worker's `members` actions. Git-tracked files are members on their
 // own; a definition is one gitignore-style glob that includes untracked files
 // or, with a leading `!`, excludes members. The client composes exact
@@ -107,7 +107,7 @@ const renderCandidate = (candidate: Candidate): string => {
     return `  ${alias}  ${kind}${glob}${summary}\n`;
 };
 
-const renderMutation = (result: MutationResult, verb: "added" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
+const renderMutation = (result: MutationResult, verb: "added" | "replaced" | "enabled" | "disabled", aliasHint: string, write: (text: string) => void): void => {
     const alias = typeof result.alias === "string" ? result.alias : aliasHint;
     const state = typeof result.definition?.state === "string" ? ` (${result.definition.state})` : "";
     const problem = typeof result.definition?.problem?.detail === "string" ? `  — ${result.definition.problem.detail}` : "";
@@ -150,15 +150,15 @@ export const handleMembers = async (
         return result;
     }
 
-    if (command === "add") {
+    if (command === "add" || command === "replace") {
         const glob = args.slice(2).join(" ");
         if (args.length < 3 || name.length === 0 || glob.length === 0) {
-            usage(write, "add");
+            usage(write, command);
             return null;
         }
         const definition: MembersDefinition = { glob };
-        const result = await rpc.call("workspace.members.add", { alias: name, definition }) as MutationResult;
-        renderMutation(result, "added", name, write);
+        const result = await rpc.call(`workspace.members.${command}`, { alias: name, definition }) as MutationResult;
+        renderMutation(result, command === "add" ? "added" : "replaced", name, write);
         return result;
     }
 

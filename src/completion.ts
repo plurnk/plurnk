@@ -18,7 +18,7 @@ export interface PathPartial {
 export const pathPartial = (line: string): PathPartial | null => {
     const verb = line.match(/^\/(?:import|script)\s+(\S*)$/);
     if (verb) return { kind: "local", partial: verb[1] };
-    const members = line.match(/^\/members\s+(?:discover|add\s+\S+)\s+(\S*)$/);
+    const members = line.match(/^\/members\s+(?:discover|(?:add|replace)\s+\S+)\s+(\S*)$/);
     if (members) return { kind: "member", partial: members[1] };
     const envImport = line.match(/^\/env\s+(?:--scope(?:=|\s+)(?:worker|workspace)\s+)?import\s+(\S*)$/);
     if (envImport) return { kind: "local", partial: envImport[1] };

@@ -127,10 +127,25 @@ describe("TUI workspace MCP dogfood", () => {
             await tui.waitFor(/disabled: current \(disabled\)/, 20_000);
 
             since = tui.output().length;
+            tui.write(`/mcp replace current node "${join(scratch, "absent-server.mjs")}"\r`);
+            await tui.waitFor(/replaced: current \(disabled\)/, 20_000, since);
+            since = tui.output().length;
+            tui.write(`/mcp replace current node "${currentFixture}"\r`);
+            await tui.waitFor(/replaced: current \(disabled\)/, 20_000, since);
+
+            since = tui.output().length;
             tui.write("/mcp enable cur\t");
             await tui.waitFor(/\/mcp enable current/, 20_000, since);
             tui.write("\r");
             await tui.waitFor(/enabled: current \(active\)/, 20_000, since);
+
+            since = tui.output().length;
+            tui.write(`/mcp replace current node "${join(scratch, "absent-server.mjs")}"\r`);
+            await tui.waitFor(/Server unavailable — Configured MCP server 'current' is unavailable\./, 20_000, since);
+            assert.doesNotMatch(tui.output().slice(since), /replaced: current/);
+            since = tui.output().length;
+            tui.write(`/script ${currentCall}\r`);
+            await tui.waitFor(/script: 1 op ok/, 20_000, since);
 
             // An inherited server is disable-only: the daemon's Problem crosses unrewritten.
             since = tui.output().length;
@@ -176,6 +191,12 @@ describe("TUI workspace MCP dogfood", () => {
         assert.deepEqual(added.definition.definition, {
             name: "flagged", type: "stdio", command: "node", args: [currentFixture, "--global"],
         }, "the flag after the target is the server's argument");
+        const replaced = await plurnk<Added>("--", "replace", "flagged", "node", currentFixture);
+        assert.equal(replaced.status, 200);
+        assert.equal(replaced.definition.state, "active");
+        assert.deepEqual(replaced.definition.definition, {
+            name: "flagged", type: "stdio", command: "node", args: [currentFixture],
+        }, "replacement does not inherit omitted server arguments");
         assert.equal((await plurnk<{ removed?: boolean }>("remove", "flagged")).removed, true);
     });
 });

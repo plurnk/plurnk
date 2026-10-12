@@ -12,6 +12,7 @@ import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 test("pathPartial: members and compose verbs retain their path owners", () => {
     assert.deepEqual(pathPartial("/members discover src/comp"), { kind: "member", partial: "src/comp" });
     assert.deepEqual(pathPartial("/members add docs docs/"), { kind: "member", partial: "docs/" });
+    assert.deepEqual(pathPartial("/members replace docs docs/"), { kind: "member", partial: "docs/" });
     assert.deepEqual(pathPartial("/members add vendor packages/ap"), { kind: "member", partial: "packages/ap" });
     assert.deepEqual(pathPartial("/import src/fo"), { kind: "local", partial: "src/fo" });
     assert.deepEqual(pathPartial("/script flows/build.pl"), { kind: "local", partial: "flows/build.pl" });

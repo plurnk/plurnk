@@ -39,6 +39,30 @@ const fixture = (t: TestContext, color: "always" | "never", onWrite?: (text: str
     return { surface, output, titles, reply };
 };
 
+test("{§cli-log-entry-line-format}: stop paints queued receipts before releasing the terminal", (t) => {
+    const { surface, output } = fixture(t, "never");
+    surface.start();
+    surface.append("EDIT (retained.txt) — Entry changed");
+    surface.stop();
+    assert.match(output.join(""), /EDIT \(retained\.txt\) — Entry changed/);
+    const stopped = output.join("");
+    surface.stop();
+    assert.equal(output.join(""), stopped, "repeated shutdown does not repaint receipts");
+});
+
+test("{§cli-log-entry-line-format}: a final render failure still releases the terminal title", (t) => {
+    const failure = new Error("terminal write failed");
+    const { surface, output } = fixture(t, "never", (text) => {
+        if (text.includes("retained receipt")) throw failure;
+    });
+    surface.setTitle("fanout");
+    surface.start();
+    surface.append("retained receipt");
+    assert.throws(() => surface.stop(), (cause) => cause === failure);
+    assert.ok(output.includes("\x1b[23;0t"), "cleanup runs even when the final render fails");
+    assert.doesNotThrow(() => surface.stop());
+});
+
 for (const [scheme, index] of [["dark", 145], ["light", 60]] as const) for (const color of ["always", "never"] as const) {
     test(`[§cli-status-project-root] the statusline and prompt borders are muted on ${scheme} with color ${color}`, { timeout: 3_000 }, async (t) => {
         const text = "[~/project/~user] idle";

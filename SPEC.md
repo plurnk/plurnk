@@ -937,8 +937,9 @@ Markdown pass:
   `*.md` is not emphasis, `<17,-1>` is not markup, `/^# /` is not a heading.
 - `{n}` is what the receipt returned, in the receipt's own unit, on every READ and FIND row:
   a FIND's returned items, an exact READ's returned lines (a pattern READ carries its matched
-  lines as `lineOrdinals`), a collapsed glob READ's paths. Pattern, scope, and metadata compose
-  into what is returned and are never operative for the count. No other operation carries a count.
+  lines as `lineOrdinals`). A collapsed fan-out counts its received resource receipts instead.
+  Pattern, scope, and metadata compose into what is returned and are never operative for the count.
+  Other individual operations carry no count.
 - The aside is the durable operation aside as sanitized literal text, italic and dim, never
   interpreted as Markdown or HTML.
 - A lineage row, a direct child's durable activity the daemon correlated into this
@@ -979,10 +980,23 @@ Markdown pass:
 - No body, preview, hit count beyond `{n}`, byte count, numeric status, glyph, or log coordinate
   reaches the row; coordinates and every exact status remain on the wire and in `--json`.
 
-A glob READ lands one receipt row per path, each stamped `attrs.fanout` by the service
-(`{target, matched, index, count}`). The waterfall shows the authored statement once, when
-the row with the last index arrives: the glob as the target and `count` as `{n}`; a failed
-path names the collapsed row. A started execution (status 200, outcome `started`) has no
+Fan-out READ, EDIT and resource KILL carry service-owned `attrs.fanout`
+(`{target, matched, index, count}`). The live waterfall may collapse a contiguous,
+complete successful group to its authored selector and received resource count `{n}`.
+`count` describes admitted work, not evidence that every target ran.
+
+| Receipt boundary | Presentation |
+|---|---|
+| Failure, pending result, missing index, or different worker/loop/turn/operation | Show the received rows with their concrete targets and original outcomes; never merge unrelated groups. |
+| New group with the same selector | Index zero starts a separate group. |
+| Other waterfall output, next turn, review, parking, run end, disconnect, rebind, or exit | Flush buffered receipts individually before leaving that presentation. |
+| History window or suffix arriving after a flush | Show known receipts individually; never infer a missing prefix or unexecuted targets. |
+
+Failures are visible on receipt, not delayed until later targets settle. Historical
+rows retain their existing per-resource headings ({§cli-conversation-history}).
+Collapsing never changes durable receipts, execution policy, or wire counts.
+
+A started execution (status 200, outcome `started`) has no
 outcome yet: the service stamps its stream address on the row (`attrs.stream`), and the row
 appears when that stream concludes, colored by the conclusion (§5.3). An execution still open
 when the following turn begins shows once in grey, with no outcome, and again when it concludes;

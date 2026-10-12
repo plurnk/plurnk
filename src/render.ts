@@ -381,28 +381,40 @@ const fanoutOf = (entry: LogEntryWire): Fanout | null => {
         : null;
 };
 
-export type FanoutVerdict =
-    | { kind: "row" }
-    | { kind: "suppressed" }
-    | { kind: "collapsed"; override: RowOverride };
+interface FanoutRow { entry: LogEntryWire; override?: RowOverride }
 
-// A glob READ lands one receipt row per path ({§read-fan-out} in the service SPEC), each
-// stamped with the authored glob. The waterfall shows the authored statement once, when its
-// last row has arrived, counting the paths it read; a failed path names the collapsed row.
+// {§cli-log-entry-line-format}: planned count is not completion evidence. Only
+// a contiguous successful prefix may become a summary; flush retains real rows.
 export class FanoutCollapse {
-    #failures = new Map<string, string>();
+    #pending: LogEntryWire[] = [];
 
-    admit(entry: LogEntryWire): FanoutVerdict {
+    admit(entry: LogEntryWire): FanoutRow[] {
         const fanout = fanoutOf(entry);
-        if (fanout === null) return { kind: "row" };
-        const key = `${entry.loop_seq}/${entry.turn_seq}/${fanout.target}`;
-        if (entry.status_rx >= 400 && !this.#failures.has(key)) {
-            this.#failures.set(key, outcomeTitle(entry) ?? String(entry.status_rx));
+        const first = this.#pending[0];
+        const previous = first === undefined ? null : fanoutOf(first);
+        const continues = first !== undefined && previous !== null && fanout !== null
+            && first.worker_id === entry.worker_id && first.loop_seq === entry.loop_seq
+            && first.turn_seq === entry.turn_seq && first.op === entry.op && first.origin === entry.origin
+            && first.source === entry.source
+            && previous.target === fanout.target && previous.count === fanout.count && previous.matched === fanout.matched
+            && fanout.index === this.#pending.length;
+        const rows = continues ? [] : this.flush();
+        if (fanout === null || entry.status_rx < 200 || entry.status_rx === 202 || entry.status_rx >= 300) {
+            return [...rows, ...this.flush(), { entry }];
         }
-        if (fanout.index < fanout.count - 1) return { kind: "suppressed" };
-        const failure = this.#failures.get(key) ?? null;
-        this.#failures.delete(key);
-        return { kind: "collapsed", override: { target: fanout.target, count: fanout.count, failed: failure !== null, failure } };
+        if (fanout.index !== 0 && !continues) return [...rows, { entry }];
+        this.#pending.push(entry);
+        if (this.#pending.length === fanout.count) {
+            rows.push({ entry, override: { target: fanout.target, count: this.#pending.length } });
+            this.#pending = [];
+        }
+        return rows;
+    }
+
+    flush(): FanoutRow[] {
+        const rows = this.#pending.map((entry) => ({ entry }));
+        this.#pending = [];
+        return rows;
     }
 }
 

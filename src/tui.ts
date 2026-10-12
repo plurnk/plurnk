@@ -760,9 +760,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         yolo: opts.yolo,
     });
     const surface = new TuiSurface();
-    const releaseGuards = TerminalGuards.install({ stop: () => { shuttingDown = true; surface.stop(); } }, opts.lifetime);
+    const flushFanout = (): void => {
+        for (const { entry } of fanout.flush()) surface.append(renderLogEntry(entry, surface.columns || 80));
+    };
+    const releaseGuards = TerminalGuards.install({ stop: () => { shuttingDown = true; flushFanout(); surface.stop(); } }, opts.lifetime);
     await surface.learnGround();
-    printAbove = (text) => surface.append(text);
+    // Other scrollback output ends a contiguous receipt group. Receipt rendering
+    // appends directly, so it cannot flush the next group's first row early.
+    printAbove = (text) => { flushFanout(); surface.append(text); };
     surface.append(paint(header, "dim"));
     surface.setTitle(windowTitle(current.name, conversationWorker));
     if (workerModel === null) surface.append(renderDiagnostic(clientModelUnselected()));
@@ -859,6 +864,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const presentReasoning = (update: ReasoningUpdate): void => {
         if (update.phase === "start") {
             if (liveReasoning !== null) throw new TypeError("A second reasoning message started before the first ended.");
+            flushFanout();
             surface.archiveResponses();
             liveReasoning = { messageId: update.messageId, rendered: "" };
             return;
@@ -963,6 +969,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // worker/second client did (multi-client observability).
     const handleNotice = (notice: Notice): void => {
         if (notice.source === "engine:turn") {
+            if (notice.kind === "turn_awaiting_model") flushFanout();
             if (inFlight && notice.kind === "turn_awaiting_model") {
                 doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
                 repromptPreserving();
@@ -993,6 +1000,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onReasoning: presentReasoning,
         onHistory: (history) => {
             if (shuttingDown) return;
+            flushFanout();
             surface.archiveResponses();
             for (const block of renderHistory(history, transport.threadId(), surface.columns || 80)) printAbove(block);
             for (const entry of history.entries) {
@@ -1020,6 +1028,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (lineage !== null && observedNames.has(lineage)) return;   // its own rows are observed; the parent's echo would repeat them
             const turn = `${entry.worker_id}/${entry.loop_seq}/${entry.turn_seq}`;
             if (entry.origin === "model" && turn !== presentedTurn) {
+                flushFanout();
                 surface.archiveResponses();
                 for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq, entry.worker_id)) printAbove(renderPendingRow(stale));
                 presentedTurn = turn;
@@ -1033,11 +1042,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
             // {§cli-what-is-not-rendered} — a started execution appears when its outcome is known.
             if (streams.launch(entry)) return;
-            // A glob READ's rows collapse to the authored statement once the last row is in.
-            const verdict = fanout.admit(entry);
-            if (verdict.kind === "suppressed") return;
-            if (isResponseMessage(entry, transport.threadId())) surface.addResponse(entry);
-            else printAbove(renderLogEntry(entry, surface.columns || 80, verdict.kind === "collapsed" ? verdict.override : undefined));
+            for (const row of fanout.admit(entry)) {
+                if (isResponseMessage(row.entry, transport.threadId())) surface.addResponse(row.entry);
+                else surface.append(renderLogEntry(row.entry, surface.columns || 80, row.override));
+            }
         },
         // {§cli-outside-text} — the turn's prose outside its fences, a NOTE's block in the waterfall.
         onOutside: (outside) => printAbove(renderOutsideText(outside, surface.columns || 80)),
@@ -1045,6 +1053,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace?.projectRoot);
+            if (authoritativeStatus.lifecycle !== "running") flushFanout();
             if (authoritativeStatus.projectRoot !== undefined) boundProjectRoot = authoritativeStatus.projectRoot;
             if (observingExisting && ["running", "queued", "parked"].includes(authoritativeStatus.lifecycle)) {
                 inFlight = true;
@@ -1091,12 +1100,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     .catch((cause) => printAbove(`  ${paint(`auto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}`, "failure")}`));
                 return;
             }
+            flushFanout();
             review.addProposal(p);
         },
         onInterruptEnd: (id) => { review.remove(id); },
-        onInteraction: (question) => { review.addQuestion(question); },
+        onInteraction: (question) => { flushFanout(); review.addQuestion(question); },
         // The summary is rendered from the run's own done below.
-        onTerminated: () => {},
+        onTerminated: flushFanout,
     });
 
     // The running loop's elapsed time ticks in the status row.
@@ -1120,6 +1130,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live workspace / opts / stdout / import glue.
     const resetConversationView = (): void => {
+        flushFanout();
         surface.archiveActivity();
         surface.setLive(null);
         authoritativeStatus = null;
@@ -1216,6 +1227,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             for (;;) {
                 const terminal = await activeRun.done;
+                flushFanout();
                 const detached = observing && terminal?.loopId === undefined && terminal?.finalStatus === 499;
                 reviewRequested = false;
                 if (terminal !== null && !shuttingDown && !detached) {
@@ -1260,6 +1272,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 printAlert(renderTuiFailure(cause));
             }
         } finally {
+            if (!shuttingDown) flushFanout();
             runningSince = null;
             inFlight = false;
             observingExisting = false;
@@ -1322,6 +1335,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (closed) return;
             closed = true;
             shuttingDown = true;
+            flushFanout();
             transport.shutdown();
             removeInputListener();
             surface.stop();

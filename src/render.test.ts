@@ -401,24 +401,21 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
         attrs: { fanout: { target: "pets_*.md", matched: 3, index, count: 3 } },
         ...over,
     });
-    assert.deepEqual(collapse.admit(row(0)), { kind: "suppressed" });
-    assert.deepEqual(collapse.admit(row(1)), { kind: "suppressed" });
+    assert.deepEqual(collapse.admit(row(0)), []);
+    assert.deepEqual(collapse.admit(row(1)), []);
     const last = collapse.admit(row(2));
-    assert.equal(last.kind, "collapsed");
-    if (last.kind !== "collapsed") return;
-    assert.equal(renderLogEntry(row(2), 80, last.override), "READ (pets_*.md) /dogs/i {3} every dog", "one line for the authored statement, counting the paths it read");
-    assert.deepEqual(collapse.admit(read()), { kind: "row" }, "an ordinary row is untouched");
-    collapse.admit(row(0, { status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not member", status: 404 } } }));
-    collapse.admit(row(1));
-    const failed = collapse.admit(row(2));
-    if (failed.kind !== "collapsed") { assert.fail("expected the collapsed row"); return; }
-    assert.equal(renderLogEntry(row(2), 80, failed.override), "READ (pets_*.md) /dogs/i {3} every dog — Entry not member", "a failed path names the collapsed row");
-    collapse.admit(row(0, { status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not member", status: 404, diagnostic: "Not indexed" } } }));
-    collapse.admit(row(1));
-    const explained = collapse.admit(row(2));
-    assert.equal(explained.kind, "collapsed");
-    if (explained.kind !== "collapsed") return;
-    assert.equal(renderLogEntry(row(2), 80, explained.override), "READ (pets_*.md) /dogs/i {3} every dog — Entry not member: Not indexed", "collapsing preserves the failed path's diagnostic");
+    assert.equal(last.length, 1);
+    assert.equal(renderLogEntry(last[0].entry, 80, last[0].override), "READ (pets_*.md) /dogs/i {3} every dog", "one line for the authored statement, counting the paths it read");
+    const ordinary = read();
+    assert.deepEqual(collapse.admit(ordinary), [{ entry: ordinary }], "an ordinary row is untouched");
+    for (const diagnostic of [undefined, "Not indexed"]) {
+        const failed = collapse.admit(row(0, { status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not member", status: 404, diagnostic } } }));
+        assert.equal(failed.length, 1, "a failed path is visible immediately");
+        assert.equal(renderLogEntry(failed[0].entry, 80, failed[0].override),
+            `READ (pets_0.md) /dogs/i every dog — Entry not member${diagnostic === undefined ? "" : `: ${diagnostic}`}`);
+        assert.deepEqual(collapse.admit(row(1)), [{ entry: row(1) }]);
+        assert.deepEqual(collapse.admit(row(2)), [{ entry: row(2) }], "later rows cannot hide the concrete failure in a summary");
+    }
 });
 
 // ─── SEND blocks ({§cli-broadcast-send-rendering}) ─────

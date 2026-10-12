@@ -166,8 +166,10 @@ export default class TuiSurface {
     stop(): void {
         if (!this.#started) return;
         this.#started = false;
-        this.#tui.stop();
-        this.clearTitle();
+        // {§cli-log-entry-line-format}: stop cancels pi-tui's queued repaint;
+        // commit received output first, and restore the terminal even if rendering fails.
+        try { this.#tui.renderNow(); }
+        finally { this.#tui.stop(); this.clearTitle(); }
     }
 
     // {§cli-terminal-title}: the title names the binding while the TUI runs. The terminal's own title is

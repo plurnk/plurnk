@@ -22,7 +22,7 @@ const fixture = (t: TestContext, color: "always" | "never", onWrite?: (text: str
         columns: 100, rows: 30, kittyProtocolActive: false,
         start: (handler) => { input = handler; }, stop() {}, drainInput: async () => {},
         write: (text) => { output.push(text); onWrite?.(text); }, moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {},
-        clearFromCursor() {}, clearScreen() {}, setTitle: (title) => { titles.push(title); }, setProgress() {},
+        clearFromCursor() {}, clearScreen() {}, setTitle: (title) => { titles.push(title); }, setProgress() {}, setProgramStatus() {},
     };
     const surface = new TuiSurface(terminal);
     t.after(() => {

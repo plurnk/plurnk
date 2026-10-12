@@ -11,9 +11,8 @@ import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
 
 test("pathPartial: members and compose verbs retain their path owners", () => {
     assert.deepEqual(pathPartial("/members discover src/comp"), { kind: "member", partial: "src/comp" });
-    assert.deepEqual(pathPartial("/members add docs docs/"), { kind: "member", partial: "docs/" });
-    assert.deepEqual(pathPartial("/members replace docs docs/"), { kind: "member", partial: "docs/" });
-    assert.deepEqual(pathPartial("/members add vendor packages/ap"), { kind: "member", partial: "packages/ap" });
+    assert.deepEqual(pathPartial("/members add docs/"), { kind: "member", partial: "docs/" });
+    assert.deepEqual(pathPartial("/members add docs/** packages/ap"), { kind: "member", partial: "packages/ap" }, "every add argument is a glob");
     assert.deepEqual(pathPartial("/import src/fo"), { kind: "local", partial: "src/fo" });
     assert.deepEqual(pathPartial("/script flows/build.pl"), { kind: "local", partial: "flows/build.pl" });
     assert.deepEqual(pathPartial("/env import ../.env.pl"), { kind: "local", partial: "../.env.pl" });
@@ -25,7 +24,7 @@ test("pathPartial: non-path contexts → null", () => {
     assert.equal(pathPartial("/model gemma"), null); // alias, not a path
     assert.equal(pathPartial("explain this"), null); // a prompt
     assert.equal(pathPartial("/members"), null);     // no space yet → still verb completion
-    assert.equal(pathPartial("/members enable docs"), null); // an alias, not a path
+    assert.equal(pathPartial("/members enable docs"), null); // a definition the daemon lists, not a path
 });
 
 const withTree = async (build: (dir: string) => Promise<void>, run: (dir: string) => Promise<void>) => {

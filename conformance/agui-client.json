@@ -628,19 +628,6 @@
         "durability"
       ]
     },
-    "workspace.members.replace": {
-      "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
-    },
     "workspace.members.enable": {
       "posture": "native",
       "evidence": [

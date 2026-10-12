@@ -7,7 +7,6 @@ const cases: Array<{ family: FunctionalityFamily; args: string[]; definition: ob
     { family: "mcp", args: ["node", "/tools/server.mjs"], definition: { name: "example", type: "stdio", command: "node", args: ["/tools/server.mjs"] } },
     { family: "skills", args: ["/skills/example", "--ref", "stable"], definition: { name: "example", source: "/skills/example", ref: "stable" } },
     { family: "a2a", args: ["https://agent.example"], definition: { name: "example", url: "https://agent.example" } },
-    { family: "members", args: ["src/**"], definition: { glob: "src/**" } },
     { family: "env", args: ["hello  world"], definition: { value: "hello  world" }, scope: "worker" },
     { family: "env", args: ["hello  world"], definition: { value: "hello  world" }, scope: "workspace" },
     { family: "schedule", args: ["bot", "FREQ=HOURLY;COUNT=2", "Check in."], definition: { rule: "FREQ=HOURLY;COUNT=2", target: "worker://bot", prompt: "Check in." } },
@@ -36,8 +35,10 @@ for (const { family, args, definition, scope = "workspace" } of cases) {
     }
 }
 
-test("[§cli-functionality-replacement] every family's help and live completion advertise replacement", () => {
+test("[§cli-functionality-replacement] every alias-named family's help and live completion advertise replacement; members, named by glob, has none", () => {
+    assert.equal(commandSpec("members")!.subcommands!.some(({ name }) => name === "replace"), false, "the daemon serves no members replace: a definition is its glob");
     for (const family of Object.keys(FAMILY_HANDLERS) as FunctionalityFamily[]) {
+        if (family === "members") continue;
         const commands = commandSpec(family)!.subcommands!;
         assert.equal(commands.find(({ name }) => name === "replace")?.usage,
             commands.find(({ name }) => name === "add")!.usage.replace(/^add/u, "replace"));

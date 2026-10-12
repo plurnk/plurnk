@@ -32,7 +32,7 @@ test("[§cli-path-completion] the built editor completes and opens files from th
     for (const [name, projectRoot] of [["first", first], ["second", second], ["headless", null]] as const) {
         await actionViaAgui({ aguiUrl: daemon.url }, { threadId: name, kind: "workspace.create", params: { name, projectRoot } });
         if (projectRoot !== null) await actionViaAgui({ aguiUrl: daemon.url }, {
-            threadId: name, workspace: name, kind: "workspace.members.add", params: { alias: "fixture", definition: { glob: "*.txt" } },
+            threadId: name, workspace: name, kind: "workspace.members.add", params: { files: ["*.txt"] },
         });
     }
     const tui = spawnTui(daemon.url, ["--workspace", "first", "--project-root", daemon.home, "--max-turns", "2"], {

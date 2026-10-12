@@ -162,20 +162,20 @@ test("[§cli-file-members] separate client connections observe the durable file 
     const members = async (): Promise<Definition[]> =>
         (await connectionB.rpc<{ definitions: Definition[] }>("workspace.members.list", {})).definitions;
 
-    const docs = (await members()).find(({ alias }) => alias === "docs");
+    const docs = (await members()).find(({ alias }) => alias === "docs/**");
     assert.equal(docs?.origin, "service");
     assert.equal(docs?.state, "dormant", "inspection does not activate a cold workspace");
     assert.equal(docs?.detail, undefined, "unprepared definitions do not claim a runtime outcome");
 
-    await connectionA.rpc("workspace.members.add", { alias: "note", definition: { glob: "note.md" } });
-    const prepared = (await members()).find(({ alias }) => alias === "docs");
+    await connectionA.rpc("workspace.members.add", { files: ["note.md"] });
+    const prepared = (await members()).find(({ alias }) => alias === "docs/**");
     assert.equal(prepared?.state, "active");
     assert.deepEqual(prepared?.detail, { effect: "include", pattern: "docs/**", matched: 1, files: ["docs/guide.md"], ignored: 0 });
-    assert.equal((await members()).find(({ alias }) => alias === "note")?.state, "active");
-    await connectionA.rpc("workspace.members.disable", { alias: "note" });
-    assert.equal((await members()).find(({ alias }) => alias === "note")?.state, "disabled");
-    await connectionA.rpc("workspace.members.enable", { alias: "note" });
-    assert.equal((await members()).find(({ alias }) => alias === "note")?.state, "active");
-    await connectionA.rpc("workspace.members.remove", { alias: "note" });
-    assert.equal((await members()).some(({ alias }) => alias === "note"), false);
+    assert.equal((await members()).find(({ alias }) => alias === "note.md")?.state, "active");
+    await connectionA.rpc("workspace.members.disable", { file: "note.md" });
+    assert.equal((await members()).find(({ alias }) => alias === "note.md")?.state, "disabled");
+    await connectionA.rpc("workspace.members.enable", { file: "note.md" });
+    assert.equal((await members()).find(({ alias }) => alias === "note.md")?.state, "active");
+    await connectionA.rpc("workspace.members.remove", { file: "note.md" });
+    assert.equal((await members()).some(({ alias }) => alias === "note.md"), false);
 });

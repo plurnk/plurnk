@@ -64,11 +64,14 @@ const AGENT_SUBCOMMANDS = lifecycle(
     { name: "add", usage: "add <alias> <url> [options.json]", summary: "Add and enable an outbound A2A agent.", alias: false },
 );
 
-const MEMBERS_SUBCOMMANDS = lifecycle(
-    "alias",
+// A members definition is its glob: add takes globs, the other verbs name one, and nothing is replaced.
+const MEMBERS_SUBCOMMANDS: readonly CommandSubcommand[] = [
     { name: "discover", usage: "discover <path|glob>", summary: "Explain a file's visibility, or preview what a glob would include or exclude.", alias: false },
-    { name: "add", usage: "add <alias> <glob>", summary: "Add and enable a members glob; a leading ! excludes.", alias: false },
-);
+    { name: "add", usage: "add <glob...>", summary: "Add and enable members globs, each one definition; a leading ! excludes.", alias: false },
+    { name: "enable", usage: "enable <glob>", summary: "Enable a current definition by its glob.", alias: true },
+    { name: "disable", usage: "disable <glob>", summary: "Disable a current definition by its glob.", alias: true },
+    { name: "remove", usage: "remove <glob>", summary: "Remove a current definition by its glob.", alias: true },
+];
 
 const ENV_SUBCOMMANDS = [
     ...lifecycle(

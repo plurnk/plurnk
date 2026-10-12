@@ -26,9 +26,11 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
         response.writeHead(200, { "content-type": "text/event-stream" });
         const frame = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
         frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
-        frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
-            kind: action.kind, ok: true, result: { status: 201, alias: action.alias, definition: { state: "active" } },
-        } });
+        // A members add names its definitions by their globs and is answered with the list it admitted.
+        const result = action.kind === "workspace.members.add"
+            ? { status: 201, family: "members", definitions: (action.files as string[]).map((glob) => ({ alias: glob, origin: "workspace", state: "active", definition: { glob } })) }
+            : { status: 201, alias: action.alias, definition: { state: "active" } };
+        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result } });
         frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
         response.end();
     });
@@ -53,8 +55,8 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
             action: { kind: "workspace.a2a.add", alias: "researcher", definition: { name: "researcher", url: "https://agent.example" } },
         },
         {
-            args: ["members", "add", "docs", "docs with spaces/**"],
-            action: { kind: "workspace.members.add", alias: "docs", definition: { glob: "docs with spaces/**" } },
+            args: ["members", "add", "docs with spaces/**", "!docs with spaces/draft.md"],
+            action: { kind: "workspace.members.add", files: ["docs with spaces/**", "!docs with spaces/draft.md"] },
         },
         {
             args: ["env", "--scope", "workspace", "add", "FLAGS", "--model=mcp  --port=8080"],

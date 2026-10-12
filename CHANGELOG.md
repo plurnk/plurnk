@@ -1,5 +1,12 @@
 # @plurnk/plurnk
 
+## Unreleased
+
+- A members definition is its glob: `/members add <glob...>` adds each glob as one
+  definition and lists what was admitted, `/members enable|disable|remove <glob>`
+  name one, and `/members` lists definitions by their glob; the family has no
+  `replace`, following the daemon's `workspace.members` actions (#0).
+
 ## 3.2.0
 
 - Replace a functionality definition whole from the client commands, through the

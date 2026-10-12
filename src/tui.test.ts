@@ -495,23 +495,23 @@ test("[§cli-file-members] handleVerb /members lists this workspace's file membe
     const ctx = makeCtx({
         "workspace.members.list": {
             definitions: [
-                { alias: "docs", origin: "service", state: "active", definition: { glob: "docs/**" }, detail: { effect: "include", pattern: "docs/**", matched: 12, files: [], ignored: 3 } },
-                { alias: "no-tokenizer", origin: "workspace", state: "disabled", definition: { glob: "!**/tokenizer.json" } },
+                { alias: "docs/**", origin: "service", state: "active", definition: { glob: "docs/**" }, detail: { effect: "include", pattern: "docs/**", matched: 12, files: [], ignored: 3 } },
+                { alias: "!**/tokenizer.json", origin: "workspace", state: "disabled", definition: { glob: "!**/tokenizer.json" } },
             ],
         },
     });
     await handleVerb("/members", ctx);
     await handleVerb("/members", ctx);
     assert.deepEqual(ctx.calls, [{ method: "workspace.members.list", params: {} }, { method: "workspace.members.list", params: {} }]);
-    assert.match(ctx.out.join(""), /docs\s+service\s+active\s+include docs\/\*\* → 12 files \(3 ignored\)/);
-    assert.match(ctx.out.join(""), /no-tokenizer\s+workspace\s+disabled\s+exclude \*\*\/tokenizer\.json/);
+    assert.match(ctx.out.join(""), /docs\/\*\*\s+service\s+active → 12 files \(3 ignored\)/);
+    assert.match(ctx.out.join(""), /!\*\*\/tokenizer\.json\s+workspace\s+disabled/);
 });
 
-test("[§cli-file-members] handleVerb /members add posts one exact { glob } definition", async () => {
-    const ctx = makeCtx({ "workspace.members.add": { status: 201, alias: "no-tokenizer", definition: { alias: "no-tokenizer", state: "active" } } });
-    await handleVerb("/members add no-tokenizer !**/tokenizer.json", ctx);
-    assert.deepEqual(ctx.calls, [{ method: "workspace.members.add", params: { alias: "no-tokenizer", definition: { glob: "!**/tokenizer.json" } } }]);
-    assert.match(ctx.out.join(""), /added: no-tokenizer \(active\)/);
+test("[§cli-file-members] handleVerb /members add posts each glob as one definition", async () => {
+    const ctx = makeCtx({ "workspace.members.add": { status: 201, family: "members", definitions: [{ alias: "!**/tokenizer.json", origin: "workspace", state: "active", definition: { glob: "!**/tokenizer.json" } }] } });
+    await handleVerb("/members add !**/tokenizer.json", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.members.add", params: { files: ["!**/tokenizer.json"] } }]);
+    assert.match(ctx.out.join(""), /added: !\*\*\/tokenizer\.json \(active\)/);
 });
 
 test("handleVerb /rename → workspace.rename, adopts the returned name", async () => {

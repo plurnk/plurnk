@@ -50,6 +50,7 @@ import { formatCapabilityProjection, parseCapabilityPolicy, parsePrompt } from "
 import ToolAcceptance from "./tool-acceptance.ts";
 import { FAMILY_HANDLERS } from "./functionality.ts";
 import { formatShare, shareFolder, type ShareResult } from "./share.ts";
+import { formatRollback, type RollbackReport } from "./rollback.ts";
 import {
     formatWorkerEffort,
     readWorkerEffort,
@@ -528,6 +529,17 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             try {
                 const shared = await rpc.call("workspace.share", { folder: shareFolder(rest) }) as ShareResult;
                 write(`${formatShare(shared).replace(/^/gm, "  ")}\n`);
+            } catch (cause) {
+                write(`${renderTuiFailure(cause)}\n`);
+            }
+            return;
+        case "rollback":
+            // workspace.rollback — the bound worker's settled file mutations after a log
+            // coordinate are reversed, latest first, as this client's own operations.
+            if (rest.length === 0) { write("  usage: /rollback <loop>/<turn>/<item>\n"); return; }
+            try {
+                const report = await rpc.call("workspace.rollback", { to: rest }) as RollbackReport;
+                write(`${formatRollback(report).replace(/^/gm, "  ")}\n`);
             } catch (cause) {
                 write(`${renderTuiFailure(cause)}\n`);
             }

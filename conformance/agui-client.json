@@ -194,6 +194,20 @@
         "durability"
       ]
     },
+    "workspace.rollback": {
+      "posture": "native",
+      "evidence": [
+        "src/tui.test.ts — workspace rollback",
+        "src/rollback.test.ts — rollback report output"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "entry.read": {
       "posture": "native",
       "evidence": [

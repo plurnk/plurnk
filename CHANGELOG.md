@@ -10,6 +10,11 @@
   name one, and `/members` lists definitions by their glob; the family has no
   `replace`, following the daemon's `workspace.members` actions (#0).
 
+- `/rollback <loop>/<turn>/<item>` reverses the bound worker's file mutations after
+  that log coordinate, latest first, as your own operations, and prints each
+  reversal, the rows skipped, and where drift stopped it, following the daemon's
+  `workspace.rollback` action (#0).
+
 ## 3.2.0
 
 - Replace a functionality definition whole from the client commands, through the

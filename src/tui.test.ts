@@ -536,6 +536,25 @@ test("handleVerb /share with no folder → usage, no rpc", async () => {
     assert.match(ctx.out.join(""), /usage: \/share <folder>/u);
 });
 
+test("handleVerb /rollback → workspace.rollback with the coordinate; prints each reversal, the skipped rows and the outcome", async () => {
+    const ctx = makeCtx({ "workspace.rollback": {
+        to: "1/1/2",
+        restored: [{ coordinate: "1/1/4", path: "new.md", action: "delete" }, { coordinate: "1/1/3", path: "a.md", action: "update" }],
+        skipped: [{ coordinate: "1/1/5", reason: "no-patch" }],
+        stopped: null,
+    } });
+    await handleVerb("/rollback 1/1/2", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.rollback", params: { to: "1/1/2" } }]);
+    assert.match(ctx.out.join(""), /rollback: to log:\/\/\/1\/1\/2\n {2}rollback: removed new\.md \(log:\/\/\/1\/1\/4\)\n {2}rollback: restored a\.md \(log:\/\/\/1\/1\/3\)\n {2}rollback: skipped log:\/\/\/1\/1\/5, kept no patch\n {2}rollback: 2 file mutations reversed/u);
+});
+
+test("handleVerb /rollback with no coordinate → usage, no rpc", async () => {
+    const ctx = makeCtx();
+    await handleVerb("/rollback", ctx);
+    assert.deepEqual(ctx.calls, []);
+    assert.match(ctx.out.join(""), /usage: \/rollback <loop>\/<turn>\/<item>/u);
+});
+
 test("handleVerb /rename with no name → usage, no rpc", async () => {
     const ctx = makeCtx();
     await handleVerb("/rename", ctx);

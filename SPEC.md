@@ -666,7 +666,7 @@ and large pastes become one expandable marker.
 
 ### §3.4 Workspace MCP controls {§cli-workspace-mcp-controls}
 
-§cli-functionality-replacement Every Functionality family accepts `replace`
+{§cli-functionality-replacement} Every Functionality family accepts `replace`
 with its `add` arguments. The client sends the complete definition to the
 corresponding `replace` action, without merging fields or enabling it separately.
 The service retains existing enabledness, creates an absent alias enabled, and

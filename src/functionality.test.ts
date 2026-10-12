@@ -15,7 +15,7 @@ const cases: Array<{ family: FunctionalityFamily; args: string[]; definition: ob
 
 for (const { family, args, definition, scope = "workspace" } of cases) {
     for (const form of ["cli", "tui"] as const) {
-        test(`{§cli-functionality-replacement} ${family} ${scope} ${form} sends a whole definition without enabling it`, async () => {
+        test(`[§cli-functionality-replacement] ${family} ${scope} ${form} sends a whole definition without enabling it`, async () => {
             const calls: unknown[] = [];
             const output: string[] = [];
             const result = { status: 200, alias: "example", definition: { state: "disabled", definition } };
@@ -36,7 +36,7 @@ for (const { family, args, definition, scope = "workspace" } of cases) {
     }
 }
 
-test("{§cli-functionality-replacement} every family's help and live completion advertise replacement", () => {
+test("[§cli-functionality-replacement] every family's help and live completion advertise replacement", () => {
     for (const family of Object.keys(FAMILY_HANDLERS) as FunctionalityFamily[]) {
         const commands = commandSpec(family)!.subcommands!;
         assert.equal(commands.find(({ name }) => name === "replace")?.usage,

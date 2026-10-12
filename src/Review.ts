@@ -66,7 +66,7 @@ export default class Review extends Container implements Focusable {
     addQuestion(question: Question): void {
         const request: Request = {
             id: `int:${question.interactionId}`, kind: "question", question,
-            form: new QuestionForm(question.responseSchema), control: this.#surface.createEditor(),
+            form: new QuestionForm(question.responseSchema, question.toolName), control: this.#surface.createEditor(),
             title: "question", details: ModelText.plain(question.message), error: "", busy: false,
         };
         this.#questionControl(request);
@@ -115,7 +115,10 @@ export default class Review extends Container implements Focusable {
     #questionControl(request: Request & { kind: "question" }): void {
         const choices = request.form.choices;
         if (choices.length > 0) {
-            const items = choices.map((label, index) => ({ value: String(index + 1), label: ModelText.plain(label) }));
+            const items = choices.map((label, index) => ({
+                value: String(index + 1),
+                label: label === request.form.freeResponseChoice ? "Free response" : ModelText.plain(label),
+            }));
             if (request.form.optional) items.push({ value: "", label: "Skip (optional)" });
             const control = new SelectList(items, Math.max(1, Math.floor(this.#surface.rows / 3)), editorTheme.selectList);
             control.onSelect = ({ value }) => { this.#answer(request, value); };

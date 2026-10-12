@@ -149,6 +149,85 @@ test("[§cli-question-forms] enum selection and optional skip preserve exact fie
     assert.deepEqual(h.calls, [["int:1", { branch: "2" }]]);
 });
 
+const choiceDetails = (required: string[] = ["disposition"]): Record<string, unknown> => ({
+    type: "object", properties: {
+        disposition: { type: "string", enum: ["defer_to_owner", "affirm_and_commit", "other"] },
+        detail: { type: "string" },
+    }, required,
+});
+
+for (const choice of ["defer_to_owner", "affirm_and_commit", "other"]) {
+    test(`[§cli-question-forms] ${choice} selects a fixed answer or enters free response`, async (t) => {
+        const h = fixture(t);
+        h.review.addQuestion(question(1, choiceDetails()));
+        assert.match(h.review.render(80).join("\n"), /Free response/);
+        const index = ["defer_to_owner", "affirm_and_commit", "other"].indexOf(choice);
+        for (let i = 0; i < index; i++) h.key("\x1b[B");
+        h.key("\r");
+        if (choice === "other") {
+            assert.deepEqual(h.calls, [], "free response waits for its text");
+            assert.match(h.review.render(80).join("\n"), /detail .*optional/);
+            h.key("Preserve the changes and proceed.");
+            h.key("\r");
+        }
+        await setImmediate();
+        assert.deepEqual(h.calls, [["int:1", {
+            disposition: choice, ...(choice === "other" ? { detail: "Preserve the changes and proceed." } : {}),
+        }]], "the wire preserves the enum value and omits skipped details");
+        assert.deepEqual(h.records, ["  question — answered"]);
+        assert.equal(h.surface.reviewing, false);
+    });
+}
+
+test("[§cli-question-forms] fixed choices still collect required details", async (t) => {
+    const h = fixture(t);
+    h.review.addQuestion(question(1, choiceDetails(["disposition", "detail"])));
+    h.key("\r");
+    assert.deepEqual(h.calls, []);
+    assert.match(h.review.render(80).join("\n"), /detail .*required/);
+    h.key("\r");
+    assert.match(h.review.render(80).join("\n"), /detail is required/);
+    h.key("Please coordinate first.");
+    h.key("\r");
+    await setImmediate();
+    assert.deepEqual(h.calls, [["int:1", { disposition: "defer_to_owner", detail: "Please coordinate first." }]]);
+});
+
+test("[§cli-question-forms] external forms retain optional details and original labels", async (t) => {
+    const h = fixture(t);
+    h.review.addQuestion({ ...question(1, choiceDetails()), toolName: "mcp_elicitation" });
+    assert.doesNotMatch(h.review.render(80).join("\n"), /Free response/);
+    assert.match(h.review.render(80).join("\n"), /other/);
+    h.key("\r");
+    assert.deepEqual(h.calls, []);
+    assert.match(h.review.render(80).join("\n"), /detail .*optional/);
+    h.key("\r");
+    await setImmediate();
+    assert.deepEqual(h.calls, [["int:1", { disposition: "defer_to_owner" }]]);
+});
+
+test("[§cli-question-forms] an immediately submitted choice remains selectable after failure", async (t) => {
+    const h = fixture(t);
+    const pending = Promise.withResolvers<void>();
+    const resolve = h.actions.resolveQuestion;
+    let attempts = 0;
+    h.actions.resolveQuestion = async (id, answer) => {
+        if (++attempts === 1) return pending.promise;
+        await resolve(id, answer);
+    };
+    h.review.addQuestion(question(1, choiceDetails()));
+    h.key("\r");
+    h.key("\r");
+    assert.equal(attempts, 1, "one resolution in flight");
+    pending.reject(new Error("Submission unavailable"));
+    await setImmediate();
+    assert.match(h.review.render(80).join("\n"), /Resolution failed/);
+    h.key("\x1b[B");
+    h.key("\r");
+    await setImmediate();
+    assert.deepEqual(h.calls, [["int:1", { disposition: "affirm_and_commit" }]]);
+});
+
 test("[§cli-question-forms] invalid JSON remains editable, then resumes the exact complex response", async (t) => {
     const h = fixture(t);
     h.review.addQuestion(question(1, { type: "object", properties: { profile: {

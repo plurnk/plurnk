@@ -4,12 +4,18 @@ import { createServer } from "node:http";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-for (const action of ["accept", "cancel", "stop"]) {
+for (const action of ["accept", "cancel", "stop", "fixed", "free"]) {
     test(`[§cli-question-forms]: ${action} resumes a question's WAIT through the TUI and AG-UI`, { timeout: 90_000 }, async (t) => {
         const service = await locateDaemon();
         if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
         const requests: string[] = [];
-        const question = JSON.stringify({ message: "Supply the branch details.", requestedSchema: {
+        const choiceQuestion = action === "fixed" || action === "free";
+        const question = JSON.stringify({ message: "Supply the branch details.", requestedSchema: choiceQuestion ? {
+            type: "object", properties: {
+                disposition: { type: "string", enum: ["defer_to_owner", "other"] },
+                detail: { type: "string" },
+            }, required: ["disposition"],
+        } : {
             type: "object", properties: {
                 branch: { type: "string" }, count: { type: "integer" }, notes: { type: "string" },
             }, required: ["count"],
@@ -65,42 +71,60 @@ for (const action of ["accept", "cancel", "stop"]) {
         try {
             await tui.waitFor(/plurnk.*\/help/s);
             tui.write("Ask for branch details.\r");
-            await tui.waitFor(/branch \(string; optional; Enter skips\)/, 30_000);
-            tui.write("/model");
-            tui.write("\x1b");
-            await tui.waitFor(/1 pending review.*\/review/, 3_000);
-            tui.write("/model\r");
-            await tui.waitFor(/model: questionfixture/);
-            tui.write("/look worker:///question-check.md\r");
-            await tui.waitFor(/LOOK \(worker:\/\/\/question-check\.md\) —/);
-            assert.equal(requests.length, 1, "inspection and commands do not answer the question");
-            if (action === "stop") {
-                tui.write("/stop\r");
-                await tui.waitFor(/cancelled|final 499/);
-                assert.equal(requests.length, 1, "stopping does not generate a continuation");
-                tui.write("/attach after-stop\r");
-                await tui.waitFor(/worker: after-stop \(new\)/);
-                tui.write("/quit\r");
-                assert.equal(await tui.exited, 0);
-                return;
-            }
-            if (action === "cancel") tui.write("/cancel\r");
-            else {
-                const reopened = tui.output().length;
-                tui.write("/review\r");
-                await tui.waitFor(/branch \(string; optional; Enter skips\)/, 10_000, reopened);
+            if (choiceQuestion) {
+                await tui.waitFor(/Free response/, 30_000);
+                if (action === "free") tui.write("\x1b[B");
                 tui.write("\r");
-                await tui.waitFor(/count \(integer; required\)/);
-                tui.write("wrong-type\r");
-                await tui.waitFor(/count requires a JSON integer value/);
-                tui.write("\x15" + "0\r");
-                await tui.waitFor(/notes \(string; optional; Enter skips\)/);
-                tui.write("typed-through-the-tui\r");
+                if (action === "free") {
+                    await tui.waitFor(/detail \(string; optional; Enter skips\)/);
+                    assert.equal(requests.length, 1, "free response awaits text before resuming");
+                    tui.write("Preserve the pending work.\r");
+                }
+            } else {
+                await tui.waitFor(/branch \(string; optional; Enter skips\)/, 30_000);
+                tui.write("/model");
+                tui.write("\x1b");
+                await tui.waitFor(/1 pending review.*\/review/, 3_000);
+                tui.write("/model\r");
+                await tui.waitFor(/model: questionfixture/);
+                tui.write("/look worker:///question-check.md\r");
+                await tui.waitFor(/LOOK \(worker:\/\/\/question-check\.md\) —/);
+                assert.equal(requests.length, 1, "inspection and commands do not answer the question");
+                if (action === "stop") {
+                    tui.write("/stop\r");
+                    await tui.waitFor(/cancelled|final 499/);
+                    assert.equal(requests.length, 1, "stopping does not generate a continuation");
+                    tui.write("/attach after-stop\r");
+                    await tui.waitFor(/worker: after-stop \(new\)/);
+                    tui.write("/quit\r");
+                    assert.equal(await tui.exited, 0);
+                    return;
+                }
+                if (action === "cancel") tui.write("/cancel\r");
+                else {
+                    const reopened = tui.output().length;
+                    tui.write("/review\r");
+                    await tui.waitFor(/branch \(string; optional; Enter skips\)/, 10_000, reopened);
+                    tui.write("\r");
+                    await tui.waitFor(/count \(integer; required\)/);
+                    tui.write("wrong-type\r");
+                    await tui.waitFor(/count requires a JSON integer value/);
+                    tui.write("\x15" + "0\r");
+                    await tui.waitFor(/notes \(string; optional; Enter skips\)/);
+                    tui.write("typed-through-the-tui\r");
+                }
             }
             await tui.waitFor(new RegExp(`Question ${action} continuation finished`), 30_000);
             assert.equal(requests.length, 2, "the answered WAIT resumes exactly once");
             const packet = JSON.parse(requests[1]!).messages.map((message: { content: unknown }) => JSON.stringify(message.content)).join("\n");
-            assert.match(packet, new RegExp(action), "the continuation receives the elicitation result");
+            assert.match(packet, new RegExp(choiceQuestion ? "accept" : action), "the continuation receives the elicitation result");
+            if (choiceQuestion) {
+                const text = JSON.parse(requests[1]!).messages.map((message: { content: unknown }) =>
+                    typeof message.content === "string" ? message.content : JSON.stringify(message.content)).join("\n");
+                assert.match(text, new RegExp(`"disposition"\\s*:\\s*"${action === "fixed" ? "defer_to_owner" : "other"}"`));
+                if (action === "free") assert.match(text, /Preserve the pending work\./);
+                else assert.doesNotMatch(text, /"detail"\s*:\s*"/, "fixed answer omits the optional detail value");
+            }
             if (action === "accept") {
                 assert.match(packet, /\/model/, "a slash-prefixed panel answer is literal data and survives returning to the composer");
                 assert.match(packet, /typed-through-the-tui/);

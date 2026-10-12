@@ -8,6 +8,7 @@ export type QuestionAnswer =
 
 export default class QuestionForm {
     readonly #schema: Record<string, unknown>;
+    readonly #toolName: string | undefined;
     readonly #fields: Array<[string, Record<string, unknown>]> | null;
     readonly #required: Set<string>;
     readonly #content: Record<string, unknown> = {};
@@ -22,8 +23,9 @@ export default class QuestionForm {
         "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
     ]);
 
-    constructor(schema: Record<string, unknown>) {
+    constructor(schema: Record<string, unknown>, toolName?: string) {
         this.#schema = schema;
+        this.#toolName = toolName;
         const properties = schema.properties ?? {};
         if (properties === null || typeof properties !== "object" || Array.isArray(properties)) {
             throw new Error("The question has no object-shaped properties.");
@@ -59,6 +61,17 @@ export default class QuestionForm {
     get optional(): boolean {
         const field = this.#fields?.[this.#index];
         return field !== undefined && !this.#required.has(field[0]);
+    }
+
+    get #details(): Array<[string, Record<string, unknown>]> {
+        const remaining = this.#fields?.slice(this.#index + 1) ?? [];
+        return this.#toolName === "question" && this.choices.length > 0
+            && remaining.every(([, schema]) => schema.type === "string" && schema.enum === undefined)
+            ? remaining : [];
+    }
+
+    get freeResponseChoice(): string | null {
+        return this.#details.length > 0 && this.choices.includes("other") ? "other" : null;
     }
 
     static #validation(schema: Record<string, unknown>, value: unknown, label: string): QuestionAnswer | null {
@@ -103,7 +116,10 @@ export default class QuestionForm {
             if (invalid !== null) return invalid;
             Object.defineProperty(this.#content, key, { value, enumerable: true, configurable: true });
         } else delete this.#content[key];
-        if (this.#index === this.#fields.length - 1) {
+        const details = this.#details;
+        const fixedChoice = text !== "" && this.#content[key] !== "other"
+            && details.length > 0 && details.every(([name]) => !this.#required.has(name));
+        if (fixedChoice || this.#index === this.#fields.length - 1) {
             return QuestionForm.#validation(this.#schema, this.#content, "Response")
                 ?? { kind: "complete", content: { ...this.#content } };
         }

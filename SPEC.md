@@ -1397,6 +1397,13 @@ shows its type, required/optional status, and description. String enums use
 pi-tui selection lists; optional enums include a Skip choice. Other fields use
 the multiline editor, with empty Enter skipping optional fields. Unrestricted
 strings accept free text; non-string values use JSON notation.
+For the native `question` tool, a string-enum choice followed only by text fields
+(strings without enums) treats the literal `other` option as **Free response** in
+the menu, without changing its wire value. A nonempty fixed choice submits
+immediately when all those remaining fields are optional, omitting them and
+validating the complete response. Free response continues through the text
+fields; required fields are never skipped. Other tool forms retain their exact
+field collection. No field name is reserved for these details.
 Complex schemas (including composed or referenced schemas and nested forms)
 are shown whole and accept one JSON response object, without detaching schema
 fragments from their reference or cross-field context. The contracts-owned JSON

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Submit fixed question choices without an extra optional-detail step; display
+  `other` as “Free response” when text fields follow (#180).
+
 - A members definition is its glob: `/members add <glob...>` adds each glob as one
   definition and lists what was admitted, `/members enable|disable|remove <glob>`
   name one, and `/members` lists definitions by their glob; the family has no

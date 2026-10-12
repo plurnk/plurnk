@@ -2,6 +2,54 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import QuestionForm from "./QuestionForm.ts";
 
+test("[§cli-question-forms] native fixed choices omit optional text fields regardless of their names", () => {
+    const form = new QuestionForm({ properties: {
+        choice: { type: "string", enum: ["yes", "no"] },
+        explanation: { type: "string", minLength: 10 }, additional: { type: "string" },
+    }, required: ["choice"] }, "question");
+    assert.equal(form.submit("invalid").kind, "invalid");
+    assert.deepEqual(form.submit("yes"), { kind: "complete", content: { choice: "yes" } });
+});
+
+test("[§cli-question-forms] skipping an optional choice still offers its text field", () => {
+    const form = new QuestionForm({ properties: {
+        choice: { type: "string", enum: ["yes", "other"] }, detail: { type: "string" },
+    } }, "question");
+    assert.deepEqual(form.submit(""), { kind: "next" });
+    assert.deepEqual(form.submit("An alternative"), { kind: "complete", content: { detail: "An alternative" } });
+});
+
+for (const tail of [{ type: "integer" }, { type: "string", enum: ["a", "b"] }]) {
+    test(`[§cli-question-forms] native choice preserves a following ${JSON.stringify(tail)} field`, () => {
+        const form = new QuestionForm({ properties: {
+            choice: { type: "string", enum: ["yes", "other"] }, detail: tail,
+        } }, "question");
+        assert.equal(form.freeResponseChoice, null);
+        assert.deepEqual(form.submit("yes"), { kind: "next" });
+        assert.deepEqual(form.submit(""), { kind: "complete", content: { choice: "yes" } });
+    });
+}
+
+test("[§cli-question-forms] other without a text field keeps its original label and value", () => {
+    const form = new QuestionForm({ properties: {
+        choice: { type: "string", enum: ["yes", "other"] },
+    } }, "question");
+    assert.equal(form.freeResponseChoice, null);
+    assert.deepEqual(form.submit("other"), { kind: "complete", content: { choice: "other" } });
+});
+
+test("[§cli-question-forms] native questions with cross-field rules retain whole-schema collection", () => {
+    const form = new QuestionForm({ properties: {
+        choice: { type: "string", enum: ["yes", "other"] }, detail: { type: "string" },
+    }, dependentRequired: { choice: ["detail"] } }, "question");
+    assert.equal(form.freeResponseChoice, null);
+    assert.match(form.prompt, /JSON object/);
+    assert.equal(form.submit('{"choice":"yes"}').kind, "invalid");
+    assert.deepEqual(form.submit('{"choice":"yes","detail":"Confirmed"}'), {
+        kind: "complete", content: { choice: "yes", detail: "Confirmed" },
+    });
+});
+
 test("multi-field questions collect plain answers without requiring an undisclosed JSON object", () => {
     const form = new QuestionForm({ type: "object", properties: {
         post: { type: "string" }, credential: { type: "string" }, notes: { type: "string" },

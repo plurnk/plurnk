@@ -1,6 +1,6 @@
 # @plurnk/plurnk
 
-## Unreleased
+## 3.2.0
 
 - Replace a functionality definition whole from the client commands, through the
   daemon's atomic publication (#178).

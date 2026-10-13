@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A row is red only when it failed: its status is 400 or above, or its execution concluded
+  unsuccessfully. A turn disposition's informational detail, such as a `WAIT` with nothing in
+  flight (`Nothing is in flight. Continuing.`), renders dim beside a green name instead of red
+  (#181).
 - `plurnk login` signs in to a daemon the client holds no secret for: the browser opens the
   daemon's authorization endpoint, a same-host operator answers its consent page once, the code
   comes back through the client's loopback callback (RFC 8252) and is exchanged with PKCE, and the

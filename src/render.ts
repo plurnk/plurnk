@@ -254,7 +254,9 @@ export const outcomeTitle = (entry: LogEntryWire): string | null => {
 };
 
 // A collapsed fan-out or a concluded execution renders the row with facts the wire settled
-// elsewhere than on this one entry.
+// elsewhere than on this one entry. `failed` is the verdict, for a caller that knows a conclusion
+// the entry's status does not carry; `failure` is only the text after the dash, and says nothing
+// about the verdict ({§cli-log-entry-line-format}).
 export interface RowOverride {
     target?: string;
     count?: number | null;
@@ -347,7 +349,7 @@ export const isCurationNotice = (entry: LogEntryWire): boolean =>
 
 export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
     if (isCurationNotice(entry)) return `${paint("notice", "bold", "success")} ${styledOutcome("curating context", false)}`;
-    const failed = override.failed ?? (override.failure !== undefined && override.failure !== null || entry.status_rx >= 400);
+    const failed = override.failed ?? entry.status_rx >= 400;
     const parts = [paint(ModelText.plain(operationIdentity(entry)), "bold", failed ? "failure" : "success")];
     const tx = objectOf(entry.tx);
     if (entry.op === "COPY" || entry.op === "MOVE") {

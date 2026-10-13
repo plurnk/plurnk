@@ -4,7 +4,7 @@
 
 import { renderDescendantBlock } from "./render-message.ts";
 import { paint } from "./color.ts";
-import { indentDescendant, markDescendant } from "./render.ts";
+import { indentDescendant, markDescendant, renderOperationRow } from "./render.ts";
 import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import assert from "node:assert/strict";
@@ -872,4 +872,41 @@ test("{plurnk#162} a previewed line is one row: a line wider than the terminal i
     assert.ok(rows[2]!.endsWith("…") && rows[2]!.length <= 4 + 38, "wide characters count two columns each");
     assert.equal(rows[3], "        indented", "a tab is four columns");
     for (const row of rows) assert.ok(row.length <= 80, `no preview row is wider than the terminal: ${row.length}`);
+});
+
+// ─── The row's verdict and its paint ({§cli-log-entry-line-format}, plurnk#181) ───
+// Paint is asserted as SGR, never stripped: green 32, red 31, dim 38;5;145 on the default dark ground.
+const GREEN_NAME = (name: string): string => `\x1b[1;32m${name}\x1b[0m`;
+const RED_NAME = (name: string): string => `\x1b[1;31m${name}\x1b[0m`;
+const DIM = (text: string): string => `\x1b[38;5;145m${text}\x1b[0m`;
+const RED = (text: string): string => `\x1b[31m${text}\x1b[0m`;
+
+test("{§cli-log-entry-line-format} the verdict is the row's status: a disposition's informational detail is dim beside a green name", () => {
+    for (const detail of ["Nothing is in flight. Continuing.", "This loop is already concluded.", "All Open Messages resolved. Review new results; emit no OPs if finished."]) {
+        const wait = entry({ op: "WAIT", status_rx: 102, tx: { op: "WAIT", body: null, target: null, aside: null }, rx: { status: 102, detail } });
+        assert.equal(colored(() => renderLogEntry(wait, 120)), `${GREEN_NAME("WAIT")} — ${DIM(detail)}`, detail);
+    }
+    const silent = entry({ op: "WAIT", status_rx: 102, tx: { op: "WAIT", body: null, target: null, aside: null }, rx: { status: 102 } });
+    assert.equal(colored(() => renderLogEntry(silent, 120)), GREEN_NAME("WAIT"), "no detail, no dash");
+});
+
+test("{§cli-log-entry-line-format} a row at 400 or above is red, name and outcome, with its Problem title or its detail", () => {
+    const refused = entry({
+        op: "WAIT", status_rx: 422, tx: { op: "WAIT", body: null, target: null, aside: null },
+        rx: { status: 422, problem: { type: "https://problems.plurnk.xyz/engine/turn/no-operation", title: "No operation", status: 422 } },
+    });
+    assert.equal(colored(() => renderLogEntry(refused, 120)), `${RED_NAME("WAIT")} — ${RED("No operation")}`);
+    const problemless = entry({ op: "WAIT", status_rx: 499, tx: { op: "WAIT", body: null, target: null, aside: null }, rx: { status: 499, detail: "Cancelled." } });
+    assert.equal(colored(() => renderLogEntry(problemless, 120)), `${RED_NAME("WAIT")} — ${RED("Cancelled.")}`, "a failing status reddens a Problem-less detail too");
+    const read = entry({ op: "READ", status_rx: 404, tx: { target: "missing.txt" }, rx: { status: 404, problem: { type: "https://problems.plurnk.xyz/engine/entry/not-found", title: "Entry not found", status: 404 } } });
+    assert.match(colored(() => renderLogEntry(read, 120)), /^\x1b\[1;31mREAD\x1b\[0m .*— \x1b\[31mEntry not found\x1b\[0m\n?$/u);
+});
+
+test("{§cli-log-entry-line-format} a caller's verdict overrides the status in both directions, and an outcome text alone never reddens", () => {
+    const launched = entry({ op: "sh", status_rx: 102, tx: { runtime: "sh", target: null, aside: null, body: null }, rx: { status: 102 } });
+    assert.equal(colored(() => renderOperationRow(launched, { failed: true, failure: "exit 2" })), `${RED_NAME("sh")} — ${RED("exit 2")}`, "an execution that concluded unsuccessfully");
+    assert.equal(colored(() => renderOperationRow(launched, { failed: false, failure: null })), GREEN_NAME("sh"), "an execution that concluded 200");
+    assert.equal(colored(() => renderOperationRow(launched, { failure: "a note" })), `${GREEN_NAME("sh")} — ${DIM("a note")}`, "text is not a verdict");
+    const refused = entry({ op: "sh", status_rx: 403, tx: { runtime: "sh", target: null, aside: null, body: null }, rx: { status: 403 } });
+    assert.equal(colored(() => renderOperationRow(refused, { failed: false, failure: null })), GREEN_NAME("sh"), "the caller's verdict stands over a failing status");
 });

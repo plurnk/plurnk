@@ -923,11 +923,17 @@ A row is the operation as written, literal text with the client's own styling an
 Markdown pass:
 
 ```
-<OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <problem title>[: <diagnostic>]]
+<OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <outcome>]
 ```
 
 - `OP` is the operation's name, bold: green when the outcome succeeded, red otherwise. An
   execution row is named by its runtime (`sh`, `python3`): the row's `op` is the fence name as written, never a generic keyword.
+- **The verdict is the row's status, never the presence of an outcome text.** A row failed when its
+  status is 400 or above, or when its execution concluded with any status but 200; nothing else
+  reddens it. The outcome after the dash takes the verdict's paint: a failed row's Problem title,
+  with its diagnostic, in red; any other row's outcome dim. A turn disposition (`WAIT`, and the
+  other loop-state rows) carries the daemon's `detail` there, so a `WAIT` with nothing in flight
+  renders its green name and `— Nothing is in flight. Continuing.` dim: a note about what happened.
 - {§cli-curation-notice} **Over budget is a curation moment, not a failure.** The daemon's over-budget
   row — an `error` row whose Problem is `engine/context/packet-exceeds-budget` ({§context-over-budget-row}
   in the service SPEC) — is a mandate to the model to curate, and the model is about to. It renders as

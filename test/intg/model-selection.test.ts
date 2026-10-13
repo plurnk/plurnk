@@ -1,3 +1,4 @@
+import { servicePath } from "../service-checkout.ts";
 import { spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { test } from "node:test";
@@ -173,7 +174,7 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
 });
 
 test("[§cli-worker-ownership]: a headless owner advertises no clarification tool, so its worker's question is refused", { timeout: 120_000 }, async (t) => {
-    const service = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-core/dist/service.js");
+    const service = servicePath("plurnk-core/dist/service.js");
     const packets: string[] = [];
     const endpoint = createServer(async (request, response) => {
         if (request.method !== "POST" || request.url !== "/v1/chat/completions") {

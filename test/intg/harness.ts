@@ -7,6 +7,7 @@
 // from locateDaemon(), and each test file's `before()` hook can skip the
 // whole suite cleanly. This keeps `npm test` from hard-failing downstream.
 
+import { servicePath } from "../service-checkout.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdtemp, mkdir, rm, access, realpath, constants as fsConstants } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -16,15 +17,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Where to look for plurnk-service. Env override wins; otherwise the sibling
-// checkout's service entrypoint. Returns absolute path or null.
+// The service entrypoint under the checkout PLURNK_SERVICE_CHECKOUT names (the sibling by default).
+// Returns its absolute path, or null when it is not readable there.
 export const locateDaemon = async (): Promise<string | null> => {
-    const envPath = process.env.PLURNK_SERVICE_BIN;
-    if (envPath !== undefined && envPath.length > 0) {
-        try { await access(envPath, fsConstants.R_OK); return envPath; } catch { /* fall through */ }
-    }
-    const sibling = resolve(__dirname, "../../../plurnk-service/plurnk-core/src/service.ts");
-    try { await access(sibling, fsConstants.R_OK); return sibling; } catch { return null; }
+    const entrypoint = servicePath("plurnk-core/src/service.ts");
+    try { await access(entrypoint, fsConstants.R_OK); return entrypoint; } catch { return null; }
 };
 
 // A source entrypoint still loads its workspace siblings through their `dist`, so an unbuilt

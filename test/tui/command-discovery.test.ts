@@ -1,3 +1,4 @@
+import { unreachableUrl } from "../ports.ts";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,7 +10,7 @@ for (const enabled of [false, true]) {
     test(`[§cli-interactive-command-discovery] built TUI projects MCP discovery ${enabled ? "present" : "absent"} in help and completion`, { timeout: 30_000 }, async (t) => {
         const service = await locateDaemon();
         assert.ok(service);
-        const daemon = await bootDaemon(service, { extraEnv: { PLURNK_MCP_REGISTRY_URL: enabled ? "http://127.0.0.1:9" : "" } });
+        const daemon = await bootDaemon(service, { extraEnv: { PLURNK_MCP_REGISTRY_URL: enabled ? await unreachableUrl() : "" } });
         t.after(daemon.cleanup);
         const advertised = await actionViaAgui<{ actions: Record<string, unknown> }>({ aguiUrl: daemon.url }, { threadId: "discovery", kind: "discover" });
         assert.equal(Object.hasOwn(advertised.actions, "workspace.mcp.discover"), enabled);

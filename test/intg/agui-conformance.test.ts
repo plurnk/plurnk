@@ -1,3 +1,4 @@
+import { servicePath } from "../service-checkout.ts";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -104,11 +105,9 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
     t.after(() => rm(temp, { recursive: true, force: true }));
     const discoveryPath = join(temp, "discovery.json");
     await writeFile(discoveryPath, JSON.stringify(discovery));
-    const serviceRoot = process.env.PLURNK_SERVICE_DIR
-        ?? resolve(import.meta.dirname, "../../../plurnk-service");
     const report = await run("node", [
         "--conditions=plurnk-dev",
-        resolve(serviceRoot, "plurnk-contracts/scriptify/agui-conformance-report.ts"),
+        servicePath("plurnk-contracts/scriptify/agui-conformance-report.ts"),
         discoveryPath,
         resolve(import.meta.dirname, "../../conformance/agui-client.json"),
         resolve(import.meta.dirname, "../.."),

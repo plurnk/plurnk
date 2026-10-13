@@ -9,6 +9,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { installSandbox, uninstallSandbox, sandbox } from "./install-sandbox.mjs";
+import { unreachableUrl } from "../test/ports.ts";
+
+// The no-daemon paths need an address nothing answers at: a port this process just released.
+const noDaemon = await unreachableUrl();
 
 let failures = 0;
 const ok = (cond, msg) => { process.stdout.write(`  ${cond ? "✓" : "✗"} ${msg}\n`); if (!cond) failures++; };
@@ -21,7 +25,7 @@ const runBin = (args, env = {}) => {
     try {
         const stdout = execFileSync(process.execPath, [bin, ...args], {
             cwd: sandbox, encoding: "utf8", input: "",
-            env: { ...process.env, PLURNK_AGUI_URL: "http://127.0.0.1:59999", ...env },
+            env: { ...process.env, PLURNK_AGUI_URL: noDaemon, ...env },
         });
         return { code: 0, stdout, stderr: "" };
     } catch (e) {

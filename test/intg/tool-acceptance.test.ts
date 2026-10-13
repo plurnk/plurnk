@@ -1,3 +1,4 @@
+import { servicePath } from "../service-checkout.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
@@ -26,7 +27,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     const daemon = await bootDaemon(service, {
         mcp: { fixture: {
             type: "stdio", command: process.execPath,
-            args: [resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs")],
+            args: [servicePath("plurnk-mcp/src/fixtures/echo-server.mjs")],
             env: { PLURNK_MCP_TEST_WHERE: "1" },
         } },
         extraEnv: {

@@ -3,6 +3,7 @@
 // host's negotiate-and-degrade admission contract
 // through the public client, beside MCP Registry discovery and the positional form.
 
+import { servicePath } from "../service-checkout.ts";
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -41,9 +42,8 @@ const REGISTRY_SERVER = {
 before(async () => {
     const bin = await locateDaemon();
     if (bin === null) return;
-    const serviceRoot = resolve(process.cwd(), "../plurnk-service");
-    currentFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/echo-server.mjs");
-    const legacyFixture = join(serviceRoot, "plurnk-mcp/src/fixtures/legacy-server.mjs");
+    currentFixture = servicePath("plurnk-mcp/src/fixtures/echo-server.mjs");
+    const legacyFixture = servicePath("plurnk-mcp/src/fixtures/legacy-server.mjs");
     try {
         await Promise.all([
             access(currentFixture),

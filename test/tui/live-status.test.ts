@@ -1,3 +1,4 @@
+import { servicePath } from "../service-checkout.ts";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
@@ -61,7 +62,7 @@ for (const mode of ["tui", "cli"] as const) {
         const daemon = await bootDaemon(service, { mcp: {
             slow: {
                 type: "stdio", command: "node",
-                args: [resolve("../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs")],
+                args: [servicePath("plurnk-mcp/src/fixtures/echo-server.mjs")],
                 env: { PLURNK_MCP_TEST_START_DELAY_MS: "3000" },
             },
         }, extraEnv: {

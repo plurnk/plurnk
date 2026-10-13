@@ -1,6 +1,7 @@
 // Unit tests for the transport seam: AguiTransport against a mock AG-UI endpoint
 // (un-projection + done from plurnk.terminated). No live daemon.
 
+import { servicePath } from "../test/service-checkout.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -35,7 +36,7 @@ interface ConformanceKit {
 }
 
 const loadConformanceKit = async (): Promise<ConformanceKit> => {
-    const sibling = resolve(import.meta.dirname, "../../plurnk-service/plurnk-contracts/conformance/agui-v1.json");
+    const sibling = servicePath("plurnk-contracts/conformance/agui-v1.json");
     const path = existsSync(sibling)
         ? sibling
         : fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/conformance/agui-v1.json"));

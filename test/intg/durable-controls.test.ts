@@ -6,14 +6,15 @@ import { tmpdir } from "node:os";
 import { actionViaAgui } from "../../src/agui.ts";
 import { AguiTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
-import { startDemoAgent } from "../../../plurnk-service/plurnk-a2a/test/fixtures/DemoAgent.ts";
+import { servicePath } from "../service-checkout.ts";
 
 test("{§cli-agui-conformance}: separate client connections observe every exposed durable control", { timeout: 120_000 }, async (t) => {
     const service = await locateDaemon();
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
+    const { startDemoAgent } = await import(servicePath("plurnk-a2a/test/fixtures/DemoAgent.ts")) as { startDemoAgent: () => Promise<{ baseUrl: string; close(): Promise<void> }> };
     const agent = await startDemoAgent();
     t.after(() => agent.close());
-    const fixture = resolve(import.meta.dirname, "../../../plurnk-service/plurnk-mcp/src/fixtures/echo-server.mjs");
+    const fixture = servicePath("plurnk-mcp/src/fixtures/echo-server.mjs");
     const daemon = await bootDaemon(service, {
         readyTimeoutMs: 30_000,
         mcp: { durable: { type: "stdio", command: "node", args: [fixture] } },

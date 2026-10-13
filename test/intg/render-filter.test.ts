@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
+import { unreachableUrl } from "../ports.ts";
+
+// Every run needs an address nothing answers at: a port this process just released.
+const noDaemon = await unreachableUrl();
 
 const runClient = async (args: string[], source: string = "", env: NodeJS.ProcessEnv = {}): Promise<{
     readonly code: number | null;
@@ -17,7 +21,7 @@ const runClient = async (args: string[], source: string = "", env: NodeJS.Proces
         env: {
             ...process.env,
             NO_COLOR: "",
-            PLURNK_AGUI_URL: "http://127.0.0.1:1",
+            PLURNK_AGUI_URL: noDaemon,
             PLURNK_CLIENT_MERMAID_TIMEOUT_MS: undefined,
             ...env,
         },

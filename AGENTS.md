@@ -18,7 +18,10 @@ changelogs.
 
 ## Verification
 
-`npm test` runs lint, unit, integration, and TUI checks. Integration and TUI
+`npm test` runs lint, unit, integration, and TUI checks. The integration and
+TUI tiers boot the service from the checkout `PLURNK_SERVICE_CHECKOUT` names
+(`../plurnk-service` by default) and borrow its MCP and A2A fixtures from there;
+`test/service-checkout.ts` is the one place that path is resolved. Integration and TUI
 tiers use Node's `--test-concurrency=4`: each file can start real daemon and
 terminal fixtures, so their parallelism does not grow with the host's CPU count.
 This bounds concurrent test files, not their memory; use an external resource

@@ -1,3 +1,4 @@
+import { servicePath } from "../service-checkout.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -5,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-const fixture = fileURLToPath(new URL("../../../plurnk-service/plurnk-mcp/src/fixtures/interaction-server.mjs", import.meta.url));
+const fixture = servicePath("plurnk-mcp/src/fixtures/interaction-server.mjs");
 const cases = [
     {
         name: "batch accept/decline with correction", tool: "batch",

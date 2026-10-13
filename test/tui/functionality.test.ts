@@ -3,6 +3,8 @@
 // and /a2a against an independent official-SDK A2A agent. One grammar, the
 // daemon's states, and one exact unavailable Problem per family.
 
+import { unreachableUrl } from "../ports.ts";
+import { servicePath } from "../service-checkout.ts";
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -19,8 +21,7 @@ let source = "";
 before(async () => {
     const bin = await locateDaemon();
     if (bin === null) return;
-    const serviceRoot = resolve(process.cwd(), "../plurnk-service");
-    const demoAgent = join(serviceRoot, "plurnk-a2a/test/fixtures/DemoAgent.ts");
+    const demoAgent = servicePath("plurnk-a2a/test/fixtures/DemoAgent.ts");
     try {
         await access(demoAgent);
     } catch {
@@ -90,7 +91,7 @@ describe("TUI Functionality dogfood", () => {
             await tui.waitFor(/added: peer \(active\)/, 20_000);
             tui.write("/a2a disable researcher\r");
             await tui.waitFor(/disabled: researcher \(disabled\)/, 20_000);
-            tui.write("/a2a add ghost http://127.0.0.1:9\r");
+            tui.write(`/a2a add ghost ${await unreachableUrl()}\r`);
             const agentProblem = await tui.waitFor(/ghost[\s\S]*(Agent Card|unreachable|card)/i, 20_000);
             assert.doesNotMatch(agentProblem, /added: ghost/);
             tui.write("/a2a remove peer\r");

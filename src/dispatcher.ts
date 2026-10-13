@@ -13,6 +13,7 @@ import { isColorMode } from "./color.ts";
 import { runCliViaAgui, runExecViaAgui, runScriptViaAgui } from "./agui_cli.ts";
 import { AguiTransport } from "./transport.ts";
 import { actionViaAgui } from "./agui.ts";
+import Credential from "./credential.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
@@ -121,7 +122,8 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
   PLURNK_HOST, PLURNK_PORT
                         the daemon's address, under the daemon's own key names.
   PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
-                        remote AG-UI portal. PLURNK_AGUI_TOKEN is its bearer.
+                        remote AG-UI portal. PLURNK_AGUI_SECRET is the operator's client
+                        secret, exchanged there for access tokens.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start a private installed backend on local
                         connection refusal. 0: attach only. Explicit AG-UI URLs
@@ -801,7 +803,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/agui`;
     let backend: Backend;
     try {
-        backend = await lifetime.own(Backend.open({ aguiUrl: configuredUrl, token: process.env.PLURNK_AGUI_TOKEN }));
+        backend = await lifetime.own(Backend.open({ aguiUrl: configuredUrl, credential: Credential.fromEnvironment() }));
     } catch (cause) {
         if (lifetime.interrupted) return;
         const flag = cause instanceof KnobError ? cause.knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-") : "";
@@ -812,7 +814,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         if (json) dieJson(code, problem);
         return dieWith(code, problem);
     }
-    const { aguiUrl, token } = backend.target;
+    const { aguiUrl, credential } = backend.target;
     const projectRoots = new ProjectRoot(backend.target, projectRootRaw);
     const chooser = (surface?: TuiSurface) => !json && process.stdin.isTTY === true && process.stdout.isTTY === true
         ? async (home: string) => {
@@ -864,7 +866,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         worldPromise ??= (async () => {
             if (configuredWorkspace !== undefined) return configuredWorkspace;
             const options = await workspaceOptions();
-            const bound = await actionViaAgui<{ name: string }>({ aguiUrl, token }, {
+            const bound = await actionViaAgui<{ name: string }>({ aguiUrl, credential }, {
                 threadId: "bootstrap",
                 kind: "workspace.create",
                 params: { projectRoot: options.projectRoot, settings: options.settings },
@@ -885,7 +887,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             let code: number;
             if (command !== null) {
                 // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
-                code = await runExecViaAgui({ aguiUrl, token }, command, {
+                code = await runExecViaAgui({ aguiUrl, credential }, command, {
                     threadId: workerName ?? w,
                     workspace: w,
                     yolo,
@@ -900,7 +902,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 let activeModel: ModelRoute | null;
                 if (values.model !== undefined && modelSelector !== undefined) {
                     activeModel = Validator.assertModelRoute(await actionViaAgui(
-                        { aguiUrl, token },
+                        { aguiUrl, credential },
                         {
                             threadId: workerName ?? w,
                             workspace: w,
@@ -911,7 +913,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     ));
                 } else {
                     const projection = await actionViaAgui<{ model: unknown }>(
-                        { aguiUrl, token },
+                        { aguiUrl, credential },
                         {
                             threadId: workerName ?? w,
                             workspace: w,
@@ -922,7 +924,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
                 }
                 if (effort !== undefined && values.model === undefined) {
-                    await actionViaAgui({ aguiUrl, token }, {
+                    await actionViaAgui({ aguiUrl, credential }, {
                         threadId: workerName ?? w,
                         workspace: w,
                         workspaceOptions: controlWorkspaceOptions,
@@ -934,7 +936,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 const openPaths = extractOpenPaths(projected.prompt, projectRoot);
                 // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
                 const reviewRequested = /^\s*\?/u.test(prompt);
-                code = await runCliViaAgui({ aguiUrl, token }, projected.prompt, {
+                code = await runCliViaAgui({ aguiUrl, credential }, projected.prompt, {
                     lifetime,
                     threadId: workerName ?? w,
                     workspace: w,
@@ -952,7 +954,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 });
             }
             if (shareTarget !== undefined) {
-                const shared = await actionViaAgui<ShareResult>({ aguiUrl, token }, {
+                const shared = await actionViaAgui<ShareResult>({ aguiUrl, credential }, {
                     threadId: workerName ?? w,
                     workspace: w,
                     kind: "workspace.share",
@@ -985,7 +987,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const threadId = workerName ?? w;
             const { settings } = await workspaceOptions();
             // Creation options are idempotent on an existing workspace.
-            transport = await lifetime.own(Promise.resolve(new AguiTransport({ aguiUrl, token }, threadId, {
+            transport = await lifetime.own(Promise.resolve(new AguiTransport({ aguiUrl, credential }, threadId, {
                 workspace: w,
                 projectRoot,
                 settings,
@@ -1007,7 +1009,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 workerName,
             });
             if (shareTarget !== undefined) {
-                const shared = await actionViaAgui<ShareResult>({ aguiUrl, token }, {
+                const shared = await actionViaAgui<ShareResult>({ aguiUrl, credential }, {
                     threadId,
                     workspace: w,
                     kind: "workspace.share",
@@ -1027,7 +1029,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
     // Subcommands + script speak the action surface through a structural Caller bound to the
     // world a verb addresses; a worldless verb binds nothing.
-    const target = { aguiUrl, token };
+    const target = { aguiUrl, credential };
     const callerFor = (workspace?: string): Caller => ({
         call: (method: string, params?: object) => actionViaAgui<unknown>(target, {
             threadId: workerName ?? workspace ?? "bootstrap",

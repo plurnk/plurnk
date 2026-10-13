@@ -31,15 +31,24 @@ const fixture = async (t: TestContext) => {
     const entries: LogEntryWire[] = [];
     const active = Promise.withResolvers<{ response: ServerResponse; threadId: string; runId: string }>();
     const frame = (event: object): string => `data: ${JSON.stringify(event)}\n\n`;
+    const authorization = (request: { headers: { authorization?: string } }): Record<string, string> =>
+        request.headers.authorization === undefined ? {} : { authorization: request.headers.authorization };
     const relay = createServer((request, response) => {
         void (async () => {
+            // {§cli-credential} — discovery and anything that is not a Run reach the daemon untouched.
+            if (request.method !== "POST") {
+                const result = await fetch(new URL(request.url ?? "/", daemon.url), { headers: authorization(request) });
+                response.writeHead(result.status, { "content-type": result.headers.get("content-type") ?? "application/json" });
+                response.end(await result.text());
+                return;
+            }
             let raw = "";
             for await (const chunk of request) raw += chunk;
             const input = JSON.parse(raw);
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined && action.kind !== "log.read") {
                 const result = await fetch(new URL(request.url ?? "/", daemon.url), {
-                    method: "POST", headers: { "content-type": "application/json" }, body: raw,
+                    method: "POST", headers: { "content-type": "application/json", ...authorization(request) }, body: raw,
                 });
                 response.writeHead(result.status, { "content-type": result.headers.get("content-type")! });
                 response.end(await result.text());

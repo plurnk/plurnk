@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AguiTarget } from "./agui.ts";
+import Credential from "./credential.ts";
 import { clientProblem, ProblemError } from "./diagnostics.ts";
 import Knobs, { KnobError } from "./knobs.ts";
 
@@ -140,9 +141,10 @@ export default class Backend {
             await mkdir(root, { recursive: true, mode: 0o700 });
             stateRoot = await mkdtemp(join(root, "client-"));
         }
-        const token = randomBytes(32).toString("hex");
+        // {§cli-credential} — a private backend gets the operator's secret this client minted for it.
+        const secret = randomBytes(32).toString("hex");
         const daemon = await launch.start({
-            command, env: { ...env, PLURNK_AGUI_TOKEN: token }, cwd: process.cwd(), stateRoot,
+            command, env: { ...env, PLURNK_AGUI_SECRET: secret }, cwd: process.cwd(), stateRoot,
             host: "127.0.0.1", port: 0, lifetime: "private", readyTimeoutMs: timeout, stopGraceMs: grace,
         }).catch((cause: unknown) => {
             if (!(cause instanceof Error) || !("stderr" in cause) || typeof cause.stderr !== "string" || !cause.stderr.trim()) throw cause;
@@ -155,7 +157,7 @@ export default class Backend {
             ...(stateRoot === undefined ? {} : { PLURNK_SERVICE_STATE_ROOT: stateRoot }),
             PLURNK_SERVICE_DB_PATH: daemon.dbPath,
         };
-        return new Backend({ aguiUrl: daemon.url, token }, daemon, resumeEnv, allocatedStorage);
+        return new Backend({ aguiUrl: daemon.url, credential: new Credential(secret) }, daemon, resumeEnv, allocatedStorage);
     }
 
     close(): Promise<void> {

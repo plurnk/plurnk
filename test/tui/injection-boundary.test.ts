@@ -65,7 +65,18 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         if (observers >= count) resolve();
         else observerWaiters.push({ count, resolve });
     });
+    const authorization = (): Record<string, string> => (bearer === undefined ? {} : { authorization: bearer });
+    let bearer: string | undefined;
     const relay = async (request: IncomingMessage, response: ServerResponse, signal: AbortSignal): Promise<void> => {
+        // {§cli-credential} — discovery and anything that is not a Run reach the daemon untouched; the
+        // client's bearer is remembered for the fixture's own observer request below.
+        bearer = request.headers.authorization ?? bearer;
+        if (request.method !== "POST") {
+            const result = await fetch(new URL(request.url ?? "/", daemon.url), { headers: authorization(), signal });
+            response.writeHead(result.status, { "content-type": result.headers.get("content-type") ?? "application/json" });
+            response.end(await result.text());
+            return;
+        }
         const body = await json(request);
         const properties = body.forwardedProps?.plurnk;
         const injecting = properties?.action?.kind === "loop.inject";
@@ -79,7 +90,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
             await originalClosed.promise;
         }
         const result = await fetch(new URL(request.url ?? "/", daemon.url), {
-            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal,
+            method: "POST", headers: { "content-type": "application/json", ...authorization() }, body: JSON.stringify(body), signal,
         });
         if (injecting) {
             const receipt = await result.text();
@@ -93,7 +104,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
             assert.match(receipt, /enqueued_new_loop/);
             // Finish the successor before the client receives admission. This independent
             // observer calls the real public sync path without adding a model request.
-            const observed = await fetch(daemon.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+            const observed = await fetch(daemon.url, { method: "POST", headers: { "content-type": "application/json", ...authorization() }, body: JSON.stringify({
                 ...body, runId: "fixture-observer", messages: [],
                 forwardedProps: { plurnk: { workspace: properties.workspace, mode: "sync" } },
             }) });

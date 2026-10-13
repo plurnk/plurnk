@@ -18,7 +18,7 @@ const OWNED = /^PLURNK_CLIENT_[A-Z0-9_]+$/u;
 const SHARED = ["PLURNK_HOST", "PLURNK_PORT", "PLURNK_AGUI_URL"];
 const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
-    ["PLURNK_AGUI_TOKEN", "@plurnk/plurnk-agui — the portal's bearer"],
+    ["PLURNK_AGUI_SECRET", "@plurnk/plurnk-agui — the operator's client secret, exchanged for access tokens"],
     ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, retained in a private resume command"],
     ["PLURNK_SERVICE_STATE_ROOT", "@plurnk/plurnk-core — the selected service's storage root, passed through its public launcher"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],

@@ -106,9 +106,12 @@ export const isArrivalEntry = (entry: LogEntryWire): boolean =>
 
 // The viewer's own messages: the typed line at the prompt is already their record, so the
 // arrivals the daemon sourced to this thread render nowhere else (#79).
+// {§agui-run-source} — the address names the principal the daemon admitted (operator, a declared
+// client, or anonymous) and then the thread; the thread is the viewer's, whoever they signed in as.
+const ownThread = (threadId: string): RegExp => new RegExp(`^agui://[^/]+/threads/${encodeURIComponent(threadId).replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/`, "u");
+
 export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
-    isArrivalEntry(entry) && typeof entry.source === "string"
-    && entry.source.startsWith(`agui://anonymous/threads/${encodeURIComponent(threadId)}/`);
+    isArrivalEntry(entry) && typeof entry.source === "string" && ownThread(threadId).test(entry.source);
 
 // {§cli-workers-topology} {plurnk#108} — a lineage row is a direct child's durable activity as the
 // daemon correlated it into this conversation's log: an operation sourced to `worker://<name>`. Its
@@ -154,9 +157,8 @@ export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boole
     if (!reply && entry.source != null) return false;
     const answers = objectOf(entry.rx)?.answers;
     if (!Array.isArray(answers)) return false;
-    const prefix = threadId === undefined ? "agui://anonymous/threads/"
-        : `agui://anonymous/threads/${encodeURIComponent(threadId)}/messages/`;
-    return answers.some((address) => typeof address === "string" && address.startsWith(prefix));
+    const addressed = threadId === undefined ? /^agui:\/\/[^/]+\/threads\//u : new RegExp(`${ownThread(threadId).source}messages/`, "u");
+    return answers.some((address) => typeof address === "string" && addressed.test(address));
 };
 
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or

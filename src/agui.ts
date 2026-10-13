@@ -11,6 +11,7 @@
 // CUSTOM plurnk.* events (especially plurnk.row, the full wire row).
 
 import type { ClientCapabilities } from "./client-capabilities.ts";
+import type Credential from "./credential.ts";
 import { enforceEvents, HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
 import {
@@ -29,7 +30,7 @@ import {
 
 export type AguiEvent = AGUIEvent;
 
-export interface AguiTarget { aguiUrl: string; token?: string }
+export interface AguiTarget { aguiUrl: string; credential?: Credential }
 
 export type ActionOutcome<T = unknown> =
     | { kind: string; ok: true; result?: T }
@@ -127,13 +128,7 @@ export async function* runViaAgui(
 ): AsyncGenerator<AguiEvent> {
     const messages: RunAgentInput["messages"] = run.messages
         ?? (run.prompt !== undefined ? [{ id: crypto.randomUUID(), role: "user", content: run.prompt }] : []);
-    const agent = new HttpAgent({
-        url: run.connect === true ? `${target.aguiUrl.replace(/\/$/, "")}/connect` : target.aguiUrl,
-        fetch: problemFetch,
-        headers: target.token !== undefined && target.token.length > 0
-            ? { authorization: `Bearer ${target.token}` }
-            : {},
-    });
+    const url = run.connect === true ? `${target.aguiUrl.replace(/\/$/, "")}/connect` : target.aguiUrl;
     const input: RunAgentInput = {
         threadId: run.threadId,
         runId: run.runId ?? crypto.randomUUID(),
@@ -151,6 +146,30 @@ export async function* runViaAgui(
             ...(run.forwardedProps ?? {}),
         } },
     };
+    for (let attempt = 0; ; attempt += 1) {
+        // {§cli-credential} — the credential presents an access token, acquired on first use.
+        const headers = target.credential === undefined ? {} : await target.credential.headers(target.aguiUrl);
+        const agent = new HttpAgent({ url, fetch: problemFetch, headers });
+        let yielded = false;
+        try {
+            for await (const event of consumeRun(agent, input, signal)) {
+                yielded = true;
+                yield event;
+            }
+            return;
+        } catch (error) {
+            // A lapsed or revoked token is renewed once, before any event was seen; anything else is the caller's.
+            if (attempt === 0 && !yielded && target.credential !== undefined
+                && error instanceof ProblemError && /\/bearer-token-invalid$/u.test(error.problem.type)) {
+                target.credential.invalidate();
+                continue;
+            }
+            throw error;
+        }
+    }
+}
+
+async function* consumeRun(agent: HttpAgent, input: RunAgentInput, signal?: AbortSignal): AsyncGenerator<AguiEvent> {
     type QueueItem =
         | { kind: "event"; event: AguiEvent }
         | { kind: "error"; error: unknown }

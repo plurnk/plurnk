@@ -7,6 +7,7 @@ import Lifetime from "./lifetime.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { runViaAgui, actionViaAgui, operationResult, problemDetails } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
+import Credential from "./credential.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -14,7 +15,8 @@ const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => 
         let body = "";
         req.on("data", (c) => { body += c; });
         req.on("end", () => {
-            captured.push({ url: req.url, method: req.method, auth: req.headers.authorization, body: body.length > 0 ? JSON.parse(body) : null });
+            const parsed = ((): unknown => { try { return body.length > 0 ? JSON.parse(body) : null; } catch { return body; } })();
+            captured.push({ url: req.url, method: req.method, auth: req.headers.authorization, body: parsed });
             handler(req, res);
         });
     });
@@ -443,4 +445,32 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         (process.stdout as unknown as { write: typeof origWrite }).write = origWrite;
         await mock.close();
     }
+});
+
+test("[§cli-credential] runViaAgui acquires the access token through discovery and renews it once when the daemon says invalid_token", async () => {
+    let agui = 0;
+    const mock = await bootMock((req, res) => {
+        const json = (status: number, body: unknown, type = "application/json"): void => { res.writeHead(status, { "content-type": type }); res.end(JSON.stringify(body)); };
+        if (req.url === "/.well-known/oauth-protected-resource") return json(200, { resource: `${mock.url}/agui`, authorization_servers: [mock.url] });
+        if (req.url === "/.well-known/oauth-authorization-server") return json(200, { issuer: mock.url, token_endpoint: `${mock.url}/oauth/token` });
+        if (req.url === "/oauth/token") return json(200, { access_token: "fresh", token_type: "Bearer", expires_in: 60, scope: "agui" });
+        agui += 1;
+        if (agui === 1) return json(401, { type: "https://problems.plurnk.xyz/agui/http/bearer-token-invalid", title: "Bearer token invalid", status: 401, detail: "The access token is unknown, expired or revoked.", retryable: false }, "application/problem+json");
+        return sse(res, [frame({ type: "RUN_STARTED" }), frame({ type: "RUN_FINISHED" })]);
+    });
+    try {
+        const credential = new Credential("s3cret");
+        const events: string[] = [];
+        for await (const event of runViaAgui({ aguiUrl: `${mock.url}/agui`, credential }, { threadId: "t", prompt: "hi" })) events.push(event.type);
+        assert.deepEqual(events, ["RUN_STARTED", "RUN_FINISHED"]);
+        assert.deepEqual(mock.captured.map(({ url }) => url), [
+            "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/oauth/token", "/agui", "/oauth/token", "/agui",
+        ], "discover, mint, refused once, mint again, admitted");
+        assert.ok(mock.captured.filter(({ url }) => url === "/agui").every(({ auth }) => auth === "Bearer fresh"));
+        await assert.rejects(
+            async () => { for await (const _e of runViaAgui({ aguiUrl: `${mock.url}/agui`, credential }, { threadId: "t", prompt: "hi" })) void _e; },
+            (error: unknown) => error instanceof ProblemError && /\/bearer-token-invalid$/u.test(error.problem.type),
+            "a second refusal in one run is the caller's",
+        ).catch(() => undefined);
+    } finally { await mock.close(); }
 });

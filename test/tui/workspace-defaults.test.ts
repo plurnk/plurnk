@@ -48,7 +48,6 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
     });
 
     for (const [name, args, extra, expectedWorkspace, worker, root] of [
-        ["existing directory workspace retains its root", ["--project-root="], {}, workspace, "user", folder],
         ["worker flag needs no workspace flag", ["--worker", "reviewer"], {}, workspace, "reviewer", folder],
         ["worker environment overrides TUI default", [], { PLURNK_CLIENT_WORKER: "envworker", PLURNK_CLIENT_TUI_WORKER: "fallback" }, workspace, "envworker", folder],
         ["TUI default follows the environment cascade", [], { PLURNK_CLIENT_TUI_WORKER: "fallback" }, workspace, "fallback", folder],
@@ -70,18 +69,31 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
         });
     }
 
-    for (const [suffix, root] of [["folderless", null], ["redirected", elsewhere]] as const) {
-        await t.test(`directory-derived identity with ${suffix} creation root`, async () => {
-            const cwd = join(folder, suffix);
-            await mkdir(cwd);
-            const name = `${workspace}/${suffix}`;
-            const tui = spawnTui(daemon.url, ["--project-root", root ?? ""], env, cwd);
-            try {
-                await tui.waitFor(new RegExp(`\\[${RegExp.escape(name)}/~user`));
-                assert.equal((await rows()).find((row) => row.name === name)?.project_root, root);
-                tui.write("/quit\r");
-                assert.equal(await tui.exited, 0, tui.output());
-            } finally { tui.kill(); }
-        });
-    }
+    // {§workspace-name} — the folder names the world: a redirected root names its own folder, not
+    // the launch directory, and a world without a folder has nothing to be named after.
+    await t.test("a redirected creation root names the world after that folder", async () => {
+        const cwd = join(folder, "redirected");
+        await mkdir(cwd);
+        const tui = spawnTui(daemon.url, ["--project-root", elsewhere], env, cwd);
+        try {
+            await tui.waitFor(/\[~\/other\/~user/);
+            const named = await rows();
+            assert.equal(named.find((row) => row.name === "~/other")?.project_root, elsewhere);
+            assert.ok(!named.some((row) => row.name === `${workspace}/redirected`), "the launch directory names nothing");
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0, tui.output());
+        } finally { tui.kill(); }
+    });
+
+    await t.test("a headless creation root without a name is refused before any binding", async () => {
+        const cwd = join(folder, "folderless");
+        await mkdir(cwd);
+        const before = (await rows()).length;
+        const tui = spawnTui(daemon.url, ["--project-root", ""], env, cwd);
+        try {
+            assert.equal(await tui.exited, 64, tui.output());
+            assert.match(stripVTControlCharacters(tui.output()), /--project-root= requires --workspace \(or PLURNK_CLIENT_WORKSPACE\)/);
+            assert.equal((await rows()).length, before, "no world was created");
+        } finally { tui.kill(); }
+    });
 });

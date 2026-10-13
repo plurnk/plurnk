@@ -122,6 +122,27 @@ test("[§cli-project-root] home launch requires a choice before workspace creati
         } finally { tui.kill(); }
     });
 
+    await t.test("[§cli-project-root] a launch from home selects the daemon's home world once it exists and asks for a folder until then", async () => {
+        // "home-choice" is rooted at home but is not the home world "~" ({§workspace-name}): the bare launch still asks.
+        const first = spawnTui(daemon.url, [], env, daemon.home);
+        try {
+            await first.waitFor(/Choose a project folder/);
+            first.write("\x1b[B\x1b[B\r");
+            await first.waitFor(/workspace: ~ · worker: user/);
+            assert.equal((await rows()).find(({ name }) => name === "~")?.project_root, daemon.home, "the daemon named the home-rooted world ~");
+            first.write("/quit\r");
+            assert.equal(await first.exited, 0, first.output());
+        } finally { first.kill(); }
+        const second = spawnTui(daemon.url, [], env, daemon.home);
+        try {
+            await second.waitFor(/workspace: ~ · worker: user/);
+            assert.doesNotMatch(second.output(), /Choose a project folder/);
+            assert.equal((await rows()).filter(({ name }) => name === "~").length, 1, "selected, not created again");
+            second.write("/quit\r");
+            assert.equal(await second.exited, 0, second.output());
+        } finally { second.kill(); }
+    });
+
     for (const [name, args, extra, cwd, expected] of [
         ["explicit-home", [`--project-root=${daemon.home}`], {}, daemon.home, daemon.home],
         ["explicit-headless", ["--project-root="], {}, daemon.home, null],

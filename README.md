@@ -58,14 +58,16 @@ plurnk --workspace="myProject"
 Run from your project directory. Or try it without a global install:
 `npx @plurnk/plurnk --workspace="myProject"`.
 
-Without `--workspace`, the directory names the workspace (for example,
-`~/projects/myProject`); the TUI opens worker `user`. Launches in the same folder
-share that workspace on the same daemon/database. Override either identity with
-`--workspace` or `--worker`; neither changes an existing workspace's folder.
+Without `--workspace`, the daemon names the workspace after its folder, the
+directory you launch from (for example, `~/projects/myProject`); the TUI opens
+worker `user`. Launches in the same folder share that workspace on the same
+daemon/database. Override either identity with `--workspace` or `--worker`;
+neither changes an existing workspace's folder.
 
 Starting a new workspace from your home directory asks for a project folder.
-For scripts, select one with `--project-root=/path/to/project`, or use
-`--project-root=` for no folder. Existing workspaces keep their saved folder.
+For scripts, select one with `--project-root=/path/to/project`; a redirected
+folder names the workspace after itself. No folder (`--project-root=`) needs
+`--workspace`. Existing workspaces keep their saved folder.
 
 Give it a task in ordinary language. The model uses the operation language;
 you do not need to learn it to use Plurnk. If no model is selected, follow the

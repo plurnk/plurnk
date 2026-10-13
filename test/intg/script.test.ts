@@ -111,19 +111,35 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             assert.equal(bound[1].forwardedProps?.plurnk?.action, undefined, "resume does not resubmit the program");
         });
     }
-    await t.test("unnamed invocations use the same directory identity independently of their root", async () => {
+    // {§workspace-name} — the daemon names an unnamed world after the folder the launch designates.
+    await t.test("an unnamed invocation designates its directory and binds the world the daemon names", async () => {
         for (let attempt = 0; attempt < 2; attempt += 1) {
             requests.length = 0;
-            await run(url, directory, ["--project-root=", ...flags]);
-            assert.equal(requests.length, 3);
-            assert.equal(requests[0].forwardedProps?.plurnk?.action?.kind, "workspace.list");
-            assert.equal(requests[1].forwardedProps?.plurnk?.projectRoot, null);
-            assert.deepEqual(requests[1].forwardedProps?.plurnk?.settings, settings);
-            for (const input of requests.slice(1)) {
-                assert.equal(input.threadId, directory);
-                assert.equal(input.forwardedProps?.plurnk?.workspace, directory);
+            const result = await run(url, directory, [...flags]);
+            assert.equal(JSON.parse(result.stdout).exitCode, 0, result.stderr);
+            assert.equal(requests.length, 4);
+            const [create, lookup, ...bound] = requests;
+            assert.deepEqual(create.forwardedProps?.plurnk?.action, { kind: "workspace.create", projectRoot: directory, settings });
+            assert.equal(lookup.forwardedProps?.plurnk?.action?.kind, "workspace.list", "the bound world's stored root is read back by name");
+            const name = `generated-${attempt + 1}`;
+            for (const input of bound) {
+                assert.equal(input.threadId, name);
+                assert.equal(input.forwardedProps?.plurnk?.workspace, name);
             }
+            assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, directory);
+            assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
+            assert.ok(requests.every((input) => input.forwardedProps?.plurnk?.workspace !== directory), "the client derives no name of its own");
         }
+    });
+
+    await t.test("a headless root without a name is refused before any request", async () => {
+        requests.length = 0;
+        await assert.rejects(run(url, directory, ["--project-root=", ...flags]), (error: unknown) => {
+            const { code, stdout } = error as { code: number; stdout: string };
+            const { problem } = JSON.parse(stdout) as { problem: { type: string; flag: string } };
+            return code === 64 && problem.type === "https://problems.plurnk.xyz/client/flag/missing-dependency" && problem.flag === "--project-root=";
+        });
+        assert.equal(requests.length, 0, "refused before the daemon is asked anything");
     });
 });
 

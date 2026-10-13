@@ -100,7 +100,7 @@ Await the MCP result.
             PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0",
         } });
         t.after(() => daemon.cleanup());
-        const tui = spawnTui(daemon.url, ["--project-root", "", "--max-turns", "3"], {
+        const tui = spawnTui(daemon.url, ["--workspace", "elicitation", "--project-root", "", "--max-turns", "3"], {
             HOME: daemon.home, PLURNK_MODEL: "", XDG_CONFIG_HOME: `${daemon.home}/.config`,
         }, daemon.workspace);
         try {

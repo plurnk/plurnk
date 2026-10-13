@@ -1,5 +1,14 @@
 # @plurnk/plurnk
 
+## Unreleased
+
+- Without `--workspace`, the daemon names the workspace after its folder and selects an
+  existing one of that name: the client sends the folder it launches from, or
+  `--project-root`, and binds the name the daemon answers. A redirected root names its own
+  folder, a launch from home selects the home workspace `~` when it exists and asks for a
+  folder otherwise, `--project-root=` requires `--workspace`, and state commands bind the
+  launch workspace only when they address one (#0).
+
 ## 3.3.0
 
 - Submit fixed question choices without an extra optional-detail step; display

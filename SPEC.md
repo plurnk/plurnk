@@ -137,12 +137,12 @@ Help, version, completion and local rendering do not acquire a backend.
 
 Workspaces and workers are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the conversation by name, including after a fork.
 
-**The name IS the identity.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim, otherwise the launch working directory, as `forwardedProps.plurnk.workspace`. The derived name replaces the complete home-directory prefix with `~`; paths outside home remain absolute. Clients launched in the same directory against the same daemon/database therefore attach to the same workspace. AG-UI owns attach-or-create admission under {§agui-thread-binding}. Workspace identity and project root are independent: a derived name does not override a saved root or an explicit headless/different creation root. The workspace and conversation `threadId` remain separate wire fields.
+**The name IS the identity.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim as `forwardedProps.plurnk.workspace`; AG-UI owns attach-or-create admission under {§agui-thread-binding}. Without one, the invocation designates a folder ({§cli-project-root}) and asks the daemon for its world with `workspace.create`: the daemon names a world after its folder and selects an existing world of that name ({§workspace-name}), and the invocation binds the name it answers. The client derives no name of its own, so launches designating the same folder against the same daemon/database share a workspace whichever directory they start in. Workspace identity and project root are independent: the folder sent selects a world and never rewrites a saved root. A world without a folder has nothing to be named after, so `--project-root=` without `--workspace` exits 64 with `client/flag/missing-dependency`. The workspace and conversation `threadId` remain separate wire fields.
 
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
 - **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, selecting the daemon's durable default conversation worker. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
-- An explicit worker does not require an explicit workspace: it can attach within the directory-derived workspace.
+- An explicit worker does not require an explicit workspace: it can attach within the folder's world.
 
 CLI flag takes precedence over env when both are set.
 
@@ -302,12 +302,15 @@ client-set policy.
 | Input | Resolved root |
 |---|---|
 | Existing named workspace, regardless of cwd or creation defaults | Stored root; no prompt or rewrite |
-| New workspace, `--project-root` or `PLURNK_CLIENT_PROJECT_ROOT` | Explicit absolute path; empty string means headless (`null`). The flag wins. |
-| New workspace, neither, cwd differs from home | cwd |
-| Neither, cwd resolves to home, new workspace, interactive stdin and stdout, not JSON mode | Inline choice: existing project folder with path completion, no folder, or explicit home |
+| `--project-root` or `PLURNK_CLIENT_PROJECT_ROOT` | Explicit absolute path; empty string means headless (`null`) and requires `--workspace`. The flag wins. |
+| Neither, cwd differs from home | cwd: a named workspace's creation root, otherwise the folder the daemon names and selects the world by ({§workspace-name}) |
+| Neither, cwd resolves to home, no `--workspace`, the daemon holds the home world `~` | Home: the launch selects that world; no prompt |
+| Neither, cwd resolves to home, otherwise a new workspace, interactive stdin and stdout, not JSON mode | Inline choice: existing project folder with path completion, no folder, or explicit home |
 | Same new workspace, noninteractive or JSON mode | Exit 64 with `client/project-root/required` and explicit-root guidance; no workspace creation or model run |
 
-The same selection precedes startup and `/workspace` creation. A folder choice
+The same selection precedes startup and `/workspace` creation. Without
+`--workspace`, binding reads the bound world's stored root back by name: a world
+the daemon selected by folder keeps the root it was created with. A folder choice
 accepts absolute, home-relative and `~/` paths and validates that the directory
 exists; it creates no directory. An explicit choice becomes this invocation's
 creation default. Merely resuming a workspace does not make its stored root a

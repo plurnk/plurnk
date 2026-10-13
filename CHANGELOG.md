@@ -1,6 +1,6 @@
 # @plurnk/plurnk
 
-## Unreleased
+## 3.3.0
 
 - Submit fixed question choices without an extra optional-detail step; display
   `other` as “Free response” when text fields follow (#180).

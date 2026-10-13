@@ -1,7 +1,11 @@
 // {§cli-credential} — the client's credential, driven against a scripted authorization server.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Credential from "./credential.ts";
 import { ProblemError } from "./diagnostics.ts";
 
@@ -110,8 +114,51 @@ test("[§cli-credential] a refused secret and unreadable metadata are exact clie
         await assert.rejects(new Credential("s3cret").headers(`${nameless.url}/agui`), (error: unknown) => error instanceof ProblemError
             && error.problem.type === "https://problems.plurnk.xyz/client/credential/discovery-failed");
     } finally { await nameless.close(); }
-    assert.equal(Credential.fromEnvironment({}), undefined);
-    assert.equal(Credential.fromEnvironment({ PLURNK_AGUI_SECRET: "" }), undefined);
-    assert.ok(Credential.fromEnvironment({ PLURNK_AGUI_SECRET: "s" }) instanceof Credential);
+    const empty = await mkdtemp(join(tmpdir(), "plurnk-no-secret-"));
+    try {
+        assert.equal(Credential.fromEnvironment({ XDG_DATA_HOME: empty }), undefined);
+        assert.equal(Credential.fromEnvironment({ PLURNK_SECRET: "", XDG_DATA_HOME: empty }), undefined);
+        assert.ok(Credential.fromEnvironment({ PLURNK_SECRET: "s", XDG_DATA_HOME: empty }) instanceof Credential);
+    } finally { await rm(empty, { recursive: true, force: true }); }
     assert.throws(() => new Credential(""), TypeError);
+});
+
+test("[§cli-credential] without PLURNK_SECRET the client reads the secret a daemon minted beside its database, and reads it again when the daemon refuses it", async () => {
+    const data = await mkdtemp(join(tmpdir(), "plurnk-data-"));
+    try {
+        const file = join(data, "plurnk", "secret");
+        assert.equal(Credential.secretFile({ XDG_DATA_HOME: data }), file, "beside the default database");
+        assert.equal(Credential.secretFile({ XDG_DATA_HOME: data, PLURNK_SERVICE_DB_PATH: join(data, "elsewhere", "x.db") }), join(data, "elsewhere", "secret"), "beside the database the environment names");
+        assert.equal(Credential.fromEnvironment({ XDG_DATA_HOME: data }), undefined, "no file, no credential");
+        await mkdir(join(data, "plurnk"));
+        await writeFile(file, "first\n", { mode: 0o600 });
+        const presented: string[] = [];
+        let restarted = false;
+        const served = await serve({ token: (res, body) => {
+            const secret = body.get("client_secret") ?? "";
+            presented.push(secret);
+            if (secret === "second") {
+                res.writeHead(200, { "content-type": "application/json" });
+                res.end(JSON.stringify({ access_token: "access-2", token_type: "Bearer", expires_in: 60, scope: "agui" }));
+                return;
+            }
+            // The daemon restarted since the file was read, and minted anew.
+            if (!restarted) { restarted = true; writeFileSync(file, "second\n"); }
+            res.writeHead(401, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: "invalid_client", error_description: "The client secret is wrong." }));
+        } });
+        try {
+            const credential = Credential.fromEnvironment({ XDG_DATA_HOME: data });
+            assert.ok(credential instanceof Credential, "the file's line is the secret");
+            assert.deepEqual(await credential.headers(`${served.url}/agui`, 0), { authorization: "Bearer access-2" });
+            assert.deepEqual(presented, ["first", "second"], "the file is read again once, after the refusal");
+            await writeFile(file, "wrong\n");
+            const wrong = Credential.fromEnvironment({ XDG_DATA_HOME: data });
+            assert.ok(wrong instanceof Credential);
+            await assert.rejects(wrong.headers(`${served.url}/agui`, 0), (error: unknown) => error instanceof ProblemError
+                && error.problem.type === "https://problems.plurnk.xyz/client/credential/refused"
+                && (error.problem as { recovery?: string }).recovery?.includes(file) === true,
+                "a file that still refuses names itself in the recovery");
+        } finally { await served.close(); }
+    } finally { await rm(data, { recursive: true, force: true }); }
 });

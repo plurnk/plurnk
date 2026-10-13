@@ -122,8 +122,10 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
   PLURNK_HOST, PLURNK_PORT
                         the daemon's address, under the daemon's own key names.
   PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
-                        remote AG-UI portal. PLURNK_AGUI_SECRET is the operator's client
-                        secret, exchanged there for access tokens.
+                        remote AG-UI portal.
+  PLURNK_SECRET         the operator's client secret, exchanged at the daemon for access
+                        tokens; unset, the client reads the secret a daemon running as
+                        you minted beside its database.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start a private installed backend on local
                         connection refusal. 0: attach only. Explicit AG-UI URLs

@@ -2,6 +2,7 @@
 // optional backend are installed into an empty consumer directory,
 // then exercised through the public CLI and AG-UI listener. A deterministic
 // local OpenAI-compatible endpoint supplies grammar-valid model turns.
+import { randomBytes } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { parseArgs, promisify } from "node:util";
@@ -169,6 +170,9 @@ try {
     };
     const serviceEnv = {
             ...isolatedEnv,
+            // {§cli-credential} — the installed daemon authenticates with a configured operator secret,
+            // and the installed client exchanges the same value for its access tokens.
+            PLURNK_SECRET: randomBytes(32).toString("base64url"),
             PLURNK_MODEL: "composition",
             PLURNK_MODEL_composition: "openai/composition",
             PLURNK_BASEURL_composition: `http://127.0.0.1:${modelPort}/v1`,

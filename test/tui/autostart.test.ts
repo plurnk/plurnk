@@ -46,7 +46,7 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
             assert.match(tui.output(), /resume this workspace:/);
             assert.match(tui.output(), /PLURNK_SERVICE_DB_PATH=/);
             assert.match(tui.output(), /PLURNK_PORT=0/);
-            assert.doesNotMatch(tui.output(), /PLURNK_AGUI_SECRET=/, "the private backend's secret is not a resume setting");
+            assert.doesNotMatch(tui.output(), /PLURNK_SECRET=/, "the private backend's secret is not a resume setting");
         }
     });
 }

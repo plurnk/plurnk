@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-- `PLURNK_AGUI_SECRET` replaces `PLURNK_AGUI_TOKEN`: the operator's client secret, which the
-  client exchanges at the daemon's authorization server for an access token (RFC 9728 discovery,
-  `client_credentials`) and renews when it lapses or is revoked; a private backend gets a secret
-  the client mints. A daemon that authenticates nothing is dialed with no credential (#0).
+- `PLURNK_SECRET` replaces `PLURNK_AGUI_TOKEN`: the operator's client secret, which the client
+  exchanges at the daemon's authorization server for an access token (RFC 9728 discovery,
+  `client_credentials`) and renews when it lapses or is revoked. Unset, the client reads the secret
+  a daemon running as you minted beside its database (`~/.local/share/plurnk/secret`, or beside
+  `PLURNK_SERVICE_DB_PATH`) and reads it again when a restarted daemon refuses the old one, so a
+  fresh install needs no line set; a private backend gets a secret the client mints. A daemon that
+  authenticates nothing is dialed with no credential (#0).
 - Without `--workspace`, the daemon names the workspace after its folder and selects an
   existing one of that name: the client sends the folder it launches from, or
   `--project-root`, and binds the name the daemon answers. A redirected root names its own

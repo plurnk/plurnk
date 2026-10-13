@@ -102,6 +102,12 @@ export const bootDaemon = async (binPath: string, opts: BootOptions = {}): Promi
             ...env,
             PLURNK_SERVICE_DB_PATH: "",
             PLURNK_MODEL: "",
+            // {§cli-credential} — a fixture daemon authenticates nothing, as the service's own test tiers
+            // boot theirs: these witnesses are about the client's behavior, and the credential exchange
+            // is witnessed by the credential unit tests, the composition probe and the service's
+            // conformance phase against an authenticating daemon. A test that wants the shipped
+            // posture says so in extraEnv.
+            PLURNK_AUTH: "0",
             ...Object.fromEntries(Object.entries(opts.mcp ?? {}).map(([name, definition]) => [
                 `PLURNK_MCP_${name.replaceAll("-", "_")}`, JSON.stringify({ name, ...definition }),
             ])),

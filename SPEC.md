@@ -87,7 +87,7 @@ The client also reads keys it does not own:
 |---|---|---|
 | `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's bind address and port; the client dials `http://$PLURNK_HOST:$PLURNK_PORT/agui`. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
 | `PLURNK_AGUI_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
-| `PLURNK_AGUI_SECRET` | `@plurnk/plurnk-agui` | The operator's client secret, exchanged for access tokens when set ({§cli-credential}). |
+| `PLURNK_SECRET` | `@plurnk/plurnk-contracts` | The operator's client secret, exchanged for access tokens ({§cli-credential}); unset, the client reads the secret a daemon running as the operator minted beside its database. |
 
 **Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. A project's variables reach its commands through the workspace environment (`/env import .env`). The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
@@ -1560,17 +1560,24 @@ bound; omitting `--workspace` must not turn the same failure into an uncaught ex
 
 ### §8.2 Credential {§cli-credential}
 
-`PLURNK_AGUI_SECRET` is the operator's client secret at the daemon's authorization server
-({§agui-oauth-clients}), never a bearer. On the first request of an invocation the client discovers
+The operator's secret is a client secret at the daemon's authorization server
+({§agui-oauth-clients}), never a bearer: the shared `PLURNK_SECRET` when set, else the one line of
+the file a daemon running as the operator minted beside its database ({§credential-authority}),
+`secret` beside `PLURNK_SERVICE_DB_PATH` when the environment names a database and otherwise
+`$XDG_DATA_HOME/plurnk/secret` (`~/.local/share/plurnk/secret`); with neither, the client presents
+nothing. On the first request of an invocation the client discovers
 that server from the resource it dials, `<origin>/.well-known/oauth-protected-resource` (RFC 9728)
 and the issuer's `/.well-known/oauth-authorization-server` (RFC 8414), and exchanges the secret for an
 access token with the `client_credentials` grant as the client `operator` with the scope `agui`; every
 request then presents `Authorization: Bearer <access token>`. A token is renewed when it lapses, and
-once more when the daemon answers `bearer-token-invalid` before any event of a run was seen. A daemon
-that publishes no resource metadata authenticates nothing, and the client presents nothing. A private
-backend the client starts receives a secret the client minted, under the same name, and is dialed the
-same way. The daemon refusing the secret is `client/credential/refused`; metadata that cannot be read
-is `client/credential/discovery-failed`; both end the invocation as any Problem does.
+once more when the daemon answers `bearer-token-invalid` before any event of a run was seen. A secret
+read from the file is read once more when the daemon answers `invalid_client`, since a restarted
+daemon mints anew, and the exchange is retried with the new line. A daemon that publishes no resource
+metadata authenticates nothing, and the client presents nothing. A private backend the client starts
+receives a secret the client minted, under the same name, and is dialed the same way. The daemon
+refusing the secret is `client/credential/refused`, whose recovery names the file when one was read;
+metadata that cannot be read is `client/credential/discovery-failed`; both end the invocation as any
+Problem does.
 
 ### §8.2 Notice shape and transport
 
@@ -1670,7 +1677,7 @@ remain an implicit client assumption.
 A conforming `plurnk` client:
 
 1. Speaks AG-UI+ (RunAgentInput over HTTP, AG-UI events + `CUSTOM plurnk.*` over SSE) per the plurnk-agui SPEC.
-2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT/agui` (or the exact `PLURNK_AGUI_URL`), presenting an access token acquired with `PLURNK_AGUI_SECRET` when set ({§cli-credential}).
+2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT/agui` (or the exact `PLURNK_AGUI_URL`), presenting an access token acquired with the operator's secret, `PLURNK_SECRET` or the daemon's minted file, when there is one ({§cli-credential}).
 3. Resolves the workspace and conversation separately under §1.1, retaining their binding for subsequent requests until an explicit navigation command changes it.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
 5. Consumes client-owned proposal interrupts and resolves each through standard AG-UI resume per §6; loop-owned dispositions are absent from that surface.

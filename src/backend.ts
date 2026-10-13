@@ -144,7 +144,7 @@ export default class Backend {
         // {§cli-credential} — a private backend gets the operator's secret this client minted for it.
         const secret = randomBytes(32).toString("hex");
         const daemon = await launch.start({
-            command, env: { ...env, PLURNK_AGUI_SECRET: secret }, cwd: process.cwd(), stateRoot,
+            command, env: { ...env, PLURNK_SECRET: secret }, cwd: process.cwd(), stateRoot,
             host: "127.0.0.1", port: 0, lifetime: "private", readyTimeoutMs: timeout, stopGraceMs: grace,
         }).catch((cause: unknown) => {
             if (!(cause instanceof Error) || !("stderr" in cause) || typeof cause.stderr !== "string" || !cause.stderr.trim()) throw cause;

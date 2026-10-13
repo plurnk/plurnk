@@ -13,7 +13,7 @@ import { isColorMode } from "./color.ts";
 import { runCliViaAgui, runExecViaAgui, runScriptViaAgui } from "./agui_cli.ts";
 import { AguiTransport } from "./transport.ts";
 import { actionViaAgui } from "./agui.ts";
-import Credential from "./credential.ts";
+import Credential, { SignInCredential } from "./credential.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
@@ -125,7 +125,7 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         remote AG-UI portal.
   PLURNK_SECRET         the operator's client secret, exchanged at the daemon for access
                         tokens; unset, the client reads the secret a daemon running as
-                        you minted beside its database.
+                        you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start a private installed backend on local
                         connection refusal. 0: attach only. Explicit AG-UI URLs
@@ -227,6 +227,9 @@ subcommands:
                           local only: no daemon, config cascade, or startup output
   completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
                           local only: writes stdout, never installs files
+  login                   sign in to the daemon through the browser and keep the grant
+                          under $XDG_STATE_HOME/plurnk; a kept grant renews itself
+  logout                  revoke the kept grant at the daemon and forget it
 ${COMMANDS.filter(({ group }) => group === "functionality").map(({ name, summary }) => `  ${name} ...${" ".repeat(22 - name.length)}${summary}`).join("\n")}
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
@@ -805,7 +808,13 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/agui`;
     let backend: Backend;
     try {
-        backend = await lifetime.own(Backend.open({ aguiUrl: configuredUrl, credential: Credential.fromEnvironment() }));
+        // {§cli-credential} {§cli-sign-in} — the operator's secret when one is at hand; otherwise the
+        // browser sign-in's grant, with a browser only when a person is at the terminal.
+        backend = await lifetime.own(Backend.open({ aguiUrl: configuredUrl, credential: Credential.fromEnvironment() ?? new SignInCredential({
+            write: (text) => { process.stderr.write(text); },
+            interactive: !json && process.stdin.isTTY === true && process.stderr.isTTY === true,
+            timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS"),
+        }) }));
     } catch (cause) {
         if (lifetime.interrupted) return;
         const flag = cause instanceof KnobError ? cause.knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-") : "";
@@ -1042,6 +1051,27 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     });
 
     try {
+        // {§cli-sign-in} — `plurnk login` signs in through the browser now and keeps the grant;
+        // `plurnk logout` revokes the kept grant at the daemon and forgets it.
+        if (subcommand === "login" || subcommand === "logout") {
+            if (positionals.length > 1) throw new ProblemError(clientSubcommandUnknownVerb(`${subcommand} ${positionals.slice(1).join(" ")}`));
+            if (!(credential instanceof SignInCredential)) {
+                process.stderr.write("The operator's secret is at hand (PLURNK_SECRET, or the daemon's minted file); there is nothing to sign in to.\n");
+                process.exitCode = 0;
+                return;
+            }
+            if (subcommand === "login") {
+                const signIn = new SignInCredential({ write: (text) => { process.stderr.write(text); }, interactive: true, timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS") });
+                const issuer = await signIn.login(aguiUrl);
+                process.stderr.write(issuer === null ? `The daemon at ${aguiUrl} authenticates nothing; no sign-in is needed.\n` : `Signed in to ${issuer}.\n`);
+            } else {
+                const issuer = await credential.logout(aguiUrl);
+                process.stderr.write(issuer === null ? `No grant is kept for ${aguiUrl}.\n` : `Signed out of ${issuer}.\n`);
+            }
+            process.exitCode = 0;
+            return;
+        }
+
         // `plurnk script foo.plk` — feed a .plk file to op.parse over the action
         // surface. The client never parses the file; the module owns the grammar.
         if (subcommand === "script") {

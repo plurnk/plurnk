@@ -11,7 +11,7 @@
 // CUSTOM plurnk.* events (especially plurnk.row, the full wire row).
 
 import type { ClientCapabilities } from "./client-capabilities.ts";
-import type Credential from "./credential.ts";
+import type { ClientCredential } from "./credential.ts";
 import { enforceEvents, HttpAgent } from "@ag-ui/client";
 import type { AGUIEvent, ResumeEntry, RunAgentInput } from "@ag-ui/core";
 import {
@@ -30,7 +30,7 @@ import {
 
 export type AguiEvent = AGUIEvent;
 
-export interface AguiTarget { aguiUrl: string; credential?: Credential }
+export interface AguiTarget { aguiUrl: string; credential?: ClientCredential }
 
 export type ActionOutcome<T = unknown> =
     | { kind: string; ok: true; result?: T }
@@ -158,9 +158,10 @@ export async function* runViaAgui(
             }
             return;
         } catch (error) {
-            // A lapsed or revoked token is renewed once, before any event was seen; anything else is the caller's.
+            // A lapsed or revoked token is renewed once, before any event was seen, and a daemon's first
+            // demand for a credential is answered once by the credential ({§cli-sign-in}); anything else is the caller's.
             if (attempt === 0 && !yielded && target.credential !== undefined
-                && error instanceof ProblemError && /\/bearer-token-invalid$/u.test(error.problem.type)) {
+                && error instanceof ProblemError && /\/bearer-token-(?:invalid|required)$/u.test(error.problem.type)) {
                 target.credential.invalidate();
                 continue;
             }

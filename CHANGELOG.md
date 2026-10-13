@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `plurnk login` signs in to a daemon the client holds no secret for: the browser opens the
+  daemon's authorization endpoint, a same-host operator answers its consent page once, the code
+  comes back through the client's loopback callback (RFC 8252) and is exchanged with PKCE, and the
+  refresh token is kept under `$XDG_STATE_HOME/plurnk/grants.json` (0600), renewed on every later
+  invocation. An interactive invocation with no secret and no grant signs in by itself; a headless
+  one is refused with `client/credential/sign-in-required` naming `plurnk login`. `plurnk logout`
+  revokes the kept grant at the daemon and forgets it (#0).
 - `PLURNK_SECRET` replaces `PLURNK_AGUI_TOKEN`: the operator's client secret, which the client
   exchanges at the daemon's authorization server for an access token (RFC 9728 discovery,
   `client_credentials`) and renews when it lapses or is revoked. Unset, the client reads the secret

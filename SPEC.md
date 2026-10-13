@@ -1577,7 +1577,29 @@ metadata authenticates nothing, and the client presents nothing. A private backe
 receives a secret the client minted, under the same name, and is dialed the same way. The daemon
 refusing the secret is `client/credential/refused`, whose recovery names the file when one was read;
 metadata that cannot be read is `client/credential/discovery-failed`; both end the invocation as any
-Problem does.
+Problem does. With no secret at hand, the client signs in ({§cli-sign-in}).
+
+#### Sign-in {§cli-sign-in}
+
+With neither `PLURNK_SECRET` nor a minted file, the client's credential at an authenticating daemon is
+the grant a browser sign-in left: on first use it registers itself as a public client (RFC 7591),
+opens the browser at the daemon's authorization endpoint with PKCE (`S256`), a fresh `state` and the
+`agui` scope, receives the code through the loopback callback it binds for MCP
+({§cli-mcp-oauth-callback}, the page then saying "Signed in to Plurnk"), exchanges the code itself,
+and keeps the refresh token with the client id, the issuer and its token and revocation endpoints
+under `$XDG_STATE_HOME/plurnk/grants.json` (`~/.local/state/plurnk/grants.json`, 0600, one entry per
+daemon address). Every later invocation renews through that grant with no browser and no discovery;
+a grant the daemon no longer knows (`invalid_grant` or `invalid_client`, as after a daemon restart)
+is forgotten and the sign-in runs again. With no grant, the client presents nothing and asks nothing
+until the daemon answers `bearer-token-required`, which the credential answers once. Only an
+interactive invocation, a terminal on both stdin and stderr and no `--json`, opens a browser by
+itself: a headless one with no grant is refused with `client/credential/sign-in-required`, whose
+recovery names `plurnk login` and `PLURNK_SECRET`. `plurnk login` signs in now, whatever grant stands,
+and keeps the new one; `plurnk logout` revokes the kept grant at the daemon's revocation endpoint and
+forgets it; either says so on stderr and exits 0, and both do nothing when a secret is at hand or the
+daemon authenticates nothing. A same-host operator answers the daemon's consent page once per
+sign-in, since the client's callback is not on the daemon's origin ({§agui-oauth-session}); the
+deadline is `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. Callback codes are neither printed nor kept.
 
 ### §8.2 Notice shape and transport
 

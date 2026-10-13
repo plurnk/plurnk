@@ -7,6 +7,8 @@ complete -c plurnk -n __fish_use_subcommand -a effort
 complete -c plurnk -n __fish_use_subcommand -a capabilities
 complete -c plurnk -n __fish_use_subcommand -a render
 complete -c plurnk -n __fish_use_subcommand -a completion
+complete -c plurnk -n __fish_use_subcommand -a login
+complete -c plurnk -n __fish_use_subcommand -a logout
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a skills
 complete -c plurnk -n __fish_use_subcommand -a a2a

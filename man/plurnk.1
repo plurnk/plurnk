@@ -138,6 +138,9 @@ loop.
                           local only: no daemon, config cascade, or startup output
   completion <shell>      print the packaged Bash, Zsh, or Fish completion script;
                           local only: writes stdout, never installs files
+  login                   sign in to the daemon through the browser and keep the grant
+                          under $XDG_STATE_HOME/plurnk; a kept grant renews itself
+  logout                  revoke the kept grant at the daemon and forget it
   mcp ...                   List or manage this workspace's MCP servers.
   skills ...                List or manage this workspace's Agent Skills.
   a2a ...                   List or manage this workspace's outbound A2A agents.
@@ -207,7 +210,7 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         remote AG-UI portal.
   PLURNK_SECRET         the operator's client secret, exchanged at the daemon for access
                         tokens; unset, the client reads the secret a daemon running as
-                        you minted beside its database.
+                        you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start a private installed backend on local
                         connection refusal. 0: attach only. Explicit AG-UI URLs

@@ -2,25 +2,31 @@ import type { ChildProcess } from "node:child_process";
 import { addAbortListener, once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { McpOAuthBeginResult, McpOAuthCompletionResult } from "@plurnk/plurnk-contracts";
 
-interface AuthorizationRequest {
+/** A begin result that opens a browser; any other shape is returned as the outcome. */
+interface Authorizing { readonly authorization: { readonly url: string } }
+
+interface AuthorizationRequest<B> {
     readonly redirectUrl?: string;
-    readonly begin: (redirectUrl: string) => Promise<McpOAuthBeginResult>;
+    readonly begin: (redirectUrl: string) => Promise<B>;
 }
 
 interface ReceptionOptions {
     readonly signal: AbortSignal;
     readonly write: (text: string) => void;
     readonly openBrowser?: (url: string) => Promise<ChildProcess | void>;
+    /** What the browser is told once the callback was accepted. */
+    readonly accepted?: string;
 }
 
-// {§cli-mcp-oauth-callback} Only reception belongs here; the daemon validates and exchanges the grant.
-export const receiveAuthorization = async (
-    request: AuthorizationRequest,
-    complete: (callbackUrl: string) => Promise<McpOAuthCompletionResult>,
-    { signal, write, openBrowser = async (url) => (await import("open")).default(url) }: ReceptionOptions,
-): Promise<McpOAuthBeginResult> => {
+// {§cli-mcp-oauth-callback} Only reception belongs here: whoever begins the authorization validates
+// and exchanges the grant, the daemon for an MCP server, the client itself for its own sign-in
+// ({§cli-sign-in}).
+export const receiveAuthorization = async <B extends object, C extends object>(
+    request: AuthorizationRequest<B>,
+    complete: (callbackUrl: string) => Promise<C>,
+    { signal, write, openBrowser = async (url) => (await import("open")).default(url), accepted = "Sign-in accepted; tools awaiting activation. You may close this window." }: ReceptionOptions,
+): Promise<Exclude<B, Authorizing> | C> => {
     signal.throwIfAborted();
     // RFC 8252 §7.3: bind an OS-assigned loopback port before requesting authorization.
     const redirect = new URL(request.redirectUrl ?? "http://127.0.0.1:0/callback");
@@ -29,7 +35,7 @@ export const receiveAuthorization = async (
         throw new Error("Automatic OAuth reception requires an HTTP loopback IP redirect with a usable port. Submit the callback URL directly for other redirects.");
     }
     let state: string | undefined;
-    const completed = Promise.withResolvers<McpOAuthCompletionResult>();
+    const completed = Promise.withResolvers<C>();
     let consumed = false;
     const browserObservers = new DisposableStack();
     const browserFailed = (cause: unknown): void => {
@@ -63,7 +69,7 @@ export const receiveAuthorization = async (
         if (consumed) { response.writeHead(409).end(); return; }
         consumed = true;
         void Promise.resolve().then(() => complete(callback.href)).then(
-            (result) => response.end("Sign-in accepted; tools awaiting activation. You may close this window.", () => completed.resolve(result)),
+            (result) => response.end(accepted, () => completed.resolve(result)),
             (cause: unknown) => response.writeHead(400).end("Authorization could not be completed. Return to the client for details.", () => completed.reject(cause)),
         );
     });
@@ -79,8 +85,8 @@ export const receiveAuthorization = async (
         const redirectUri = request.redirectUrl ?? redirect.href;
         const begun = await Promise.race([request.begin(redirectUri), completed.promise]);
         signal.throwIfAborted();
-        if (!("authorization" in begun)) return begun;
-        const { url } = begun.authorization;
+        if (!("authorization" in begun)) return begun as Exclude<B, Authorizing>;
+        const { url } = (begun as Authorizing).authorization;
         const authorization = new URL(url);
         const states = authorization.searchParams.getAll("state");
         const redirects = authorization.searchParams.getAll("redirect_uri");

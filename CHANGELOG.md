@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The status line's folder is the daemon's label for it (`projectLabel`), shown as given: a client
+  attached to a daemon on another host spells the folder from that daemon's home, and the client no
+  longer shortens paths with its own (plurnk/plurnk-service#1127).
 - A loop the client attached to, rather than started, runs its status-line clock from when the
   daemon first ran it (`status.claimedAt`), so reattaching no longer restarts the elapsed time
   (plurnk/plurnk-service#1126).

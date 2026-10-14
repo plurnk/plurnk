@@ -352,7 +352,7 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
             type: EventType.STATE_SNAPSHOT,
             snapshot: {
                 plurnk: {
-                    workspace: { id: 1, name: "work", projectRoot: "/projects/client" },
+                    workspace: { id: 1, name: "work", projectRoot: "/projects/client", projectLabel: "/projects/client" },
                     status: { ...STATUS, lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null },
                 },
                 budget: {},
@@ -363,8 +363,8 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client" },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client", projectLabel: "/projects/client" },
     ]);
 });
 

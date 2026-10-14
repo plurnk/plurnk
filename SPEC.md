@@ -203,12 +203,13 @@ abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is st
 hundredth of a cent with grouped thousands (`$3,333.3333`).
 
 {§cli-status-project-root} CLI and TUI status start with the bound workspace's project folder
-at column zero, before TUI place coordinates, glyphs, model and counters. It comes from
-`snapshot.plurnk.workspace.projectRoot`. The launch directory and
-create-time options cannot override it on reattachment. Switching workspaces replaces
-the folder; a headless or unknown root omits it. Home paths use `~`. The TUI omits
-the separate folder when its home-shortened form equals the workspace name's
-home-shortened form; the place already identifies it. Path text is terminal-safe.
+at column zero, before TUI place coordinates, glyphs, model and counters. It is the daemon's
+label for that folder, `snapshot.plurnk.workspace.projectLabel` ({§workspace-label}), shown as
+given: the client shortens no path with its own home, so a daemon on another host is spelled from
+its home. The launch directory and create-time options cannot override it on reattachment.
+Switching workspaces replaces the folder; a headless or unknown folder omits it. The TUI omits
+the separate folder when the label equals the workspace name; the place already identifies it.
+Path text is terminal-safe.
 The TUI footer uses the muted color role, subject to {§cli-color-policy}.
 
 {§cli-status-children} The ant is the daemon's count of the bound worker's alive

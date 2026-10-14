@@ -105,19 +105,20 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
     assert.equal(renderStatusLine(running, CONTEXT, { yolo: true }), "🔥 ⌛︎  · 🎲 deepdumb · 3.2s", "{plurnk#104} YOLO is a fireball at the left edge, and the model sits ahead of what ticks");
 });
 
-test("[§cli-status-project-root] status displays the bound workspace folder without inventing a local root", () => {
+test("[§cli-status-project-root] status shows the daemon's label for the bound folder, never a local root", () => {
     const gauge = { ...GAUGE, lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null };
     const path = "/projects/client work/日本語";
-    const status = projectStatusGauge(gauge, path);
+    const status = projectStatusGauge(gauge, { projectRoot: path, projectLabel: path });
     assert.equal(status.projectRoot, path);
     assert.equal(renderStatusLine(status, CONTEXT), `${path} idle`);
-    assert.equal(renderStatusLine(projectStatusGauge(gauge, null), CONTEXT), "idle", "headless is not the client cwd");
+    assert.equal(renderStatusLine(projectStatusGauge(gauge, { projectRoot: null, projectLabel: null }), CONTEXT), "idle", "headless is not the client cwd");
     assert.equal(renderStatusLine(projectStatusGauge(gauge), CONTEXT), "idle", "no workspace projection means no known root");
-    assert.throws(() => projectStatusGauge(gauge, 42 as never), /Invalid workspace project root/u);
-    assert.equal(renderStatusLine({ ...status, projectRoot: "/repo\n\t\x1b]2;not-a-title\x07name" }, CONTEXT), "/repo\\n\\tname idle",
+    assert.throws(() => projectStatusGauge(gauge, { projectRoot: 42 as never }), /Invalid workspace project root/u);
+    assert.throws(() => projectStatusGauge(gauge, { projectRoot: path, projectLabel: 42 as never }), /Invalid workspace project label/u);
+    assert.equal(renderStatusLine({ ...status, projectLabel: "/repo\n\t\x1b]2;not-a-title\x07name" }, CONTEXT), "/repo\\n\\tname idle",
         "path controls cannot change the terminal title or create status rows");
     for (const place of ["[work/1/9:main]", "[work/100/1000:main]"]) {
-        assert.equal(renderStatusLine({ ...running, projectRoot: path }, { ...CONTEXT, place }, { yolo: true }),
+        assert.equal(renderStatusLine({ ...running, projectRoot: path, projectLabel: path }, { ...CONTEXT, place }, { yolo: true }),
             `${path} ${place} 🔥 ⌛︎  · 🎲 deepdumb · 3.2s`,
             "the folder starts the complete footer, before even the changing turn coordinates");
     }
@@ -125,19 +126,19 @@ test("[§cli-status-project-root] status displays the bound workspace folder wit
 
 // {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the
 // child model rides beside it, and the worker segment carries the sibling position.
-test("[§cli-status-project-root] the TUI omits a redundant folder and shortens other home paths", () => {
-    const root = join(homedir(), "projects", "client");
-    const status = { ...running, projectRoot: root };
+test("[§cli-status-project-root] the folder is the daemon's label as given, omitted where it repeats the workspace name", () => {
+    // A daemon on another host spells the folder from its own home; the client shows that spelling.
+    const status = { ...running, projectRoot: "/srv/daemon-home/projects/client", projectLabel: "~/projects/client" };
     const activity = renderStatusLine(running, CONTEXT);
     const place = "[~/projects/client/~user]";
-    for (const workspace of ["~/projects/client", root]) {
-        assert.equal(renderStatusLine(status, { ...CONTEXT, workspace, place }), `${place} ${activity}`);
-    }
+    assert.equal(renderStatusLine(status, { ...CONTEXT, workspace: "~/projects/client", place }), `${place} ${activity}`, "a default name repeats its label");
     assert.equal(renderStatusLine(status, { ...CONTEXT, workspace: "named", place: "[named/~user]" }),
         `~/projects/client [named/~user] ${activity}`);
     assert.equal(renderStatusLine(status, { ...CONTEXT, workspace: "~/projects/client" }),
         `~/projects/client ${activity}`, "the CLI has no workspace label to replace the folder");
-    assert.equal(renderStatusLine({ ...status, projectRoot: null }, { ...CONTEXT, place }), `${place} ${activity}`);
+    assert.equal(renderStatusLine({ ...running, projectRoot: join(homedir(), "projects", "client") }, { ...CONTEXT, workspace: "named", place: "[named/~user]" }),
+        `[named/~user] ${activity}`, "without the daemon's label the client shortens nothing and shows nothing");
+    assert.equal(renderStatusLine({ ...status, projectRoot: null, projectLabel: null }, { ...CONTEXT, place }), `${place} ${activity}`);
 });
 
 test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {

@@ -4,7 +4,6 @@ import preparationSchema from "@plurnk/plurnk-contracts/schema/FunctionalityPrep
 import type { LoopUsage } from "./render.ts";
 import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 import ModelText from "./model-text.ts";
-import { homePath } from "./paths.ts";
 
 // The session's running total of time — every concluded loop adds its turns and wall time. Spend is
 // the daemon's ({§cli-status-spend}), never tallied here.
@@ -134,8 +133,10 @@ export interface ClientStatus {
     waitUntil?: number | null;
     lifecycle: StatusLifecycle;
     model: string | null;
-    // {§cli-status-project-root} — the daemon's bound folder, never create-time client options.
+    // {§cli-status-project-root} — the daemon's bound folder, never create-time client options, and
+    // its label for that folder, the only spelling shown.
     projectRoot?: string | null;
+    projectLabel?: string | null;
     // {plurnk#58} — the prompt prefix names the place as workspace/loop/turn; the gauge owns both numbers.
     loopId: number | null;
     packetCount: number | null;
@@ -199,7 +200,7 @@ const spendAccounting = (value: unknown): TurnAccounting | null => {
 };
 
 export interface StatusGaugeEnvelope {
-    plurnk: { status: RuntimeStatusGauge; workspace?: { projectRoot?: string | null } };
+    plurnk: { status: RuntimeStatusGauge; workspace?: WorkspaceFolder };
     budget: Record<string, unknown>;
 }
 
@@ -207,9 +208,20 @@ const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
     "idle", "queued", "running", "parked", "completed", "cancelled", "failed",
 ]);
 
-export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: string | null): ClientStatus => {
+// {§cli-status-project-root} — the bound workspace's folder, a path the client uses, and the daemon's label.
+export interface WorkspaceFolder {
+    readonly projectRoot?: string | null;
+    readonly projectLabel?: string | null;
+}
+
+export const projectStatusGauge = (value: RuntimeStatusGauge, workspace?: WorkspaceFolder): ClientStatus => {
+    const projectRoot = workspace?.projectRoot;
+    const projectLabel = workspace?.projectLabel;
     if (projectRoot !== undefined && projectRoot !== null && typeof projectRoot !== "string") {
         throw new TypeError("Invalid workspace project root.");
+    }
+    if (projectLabel !== undefined && projectLabel !== null && typeof projectLabel !== "string") {
+        throw new TypeError("Invalid workspace project label.");
     }
     if (!LIFECYCLES.has(value.lifecycle)) throw new TypeError(`Unknown runtime lifecycle '${value.lifecycle}'.`);
     if (!Number.isSafeInteger(value.packetCount) || value.packetCount < 0) {
@@ -255,6 +267,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         claimedAt: value.claimedAt as number | null,
         terminatedAt: value.terminatedAt as number | null,
         ...(projectRoot === undefined ? {} : { projectRoot }),
+        ...(projectLabel === undefined ? {} : { projectLabel }),
     };
 };
 
@@ -296,7 +309,7 @@ export const reduceStatusGauge = (
     if (next.plurnk?.status === undefined || next.budget === null || typeof next.budget !== "object") {
         throw new ProblemError(clientTransportStateInvalid("STATE is missing plurnk.status or budget"));
     }
-    projectStatusGauge(next.plurnk.status, next.plurnk.workspace?.projectRoot);
+    projectStatusGauge(next.plurnk.status, next.plurnk.workspace);
     return { handled: true, gauge: next };
 };
 
@@ -369,9 +382,9 @@ export const renderStatusLine = (
     }
     // A glyph is two columns wide: a second space keeps the first dot off its shoulder.
     const activity = parts.length === 0 ? head : `${head}${glyphs.length > 0 ? " " : ""} · ${parts.join(" · ")}`;
-    const path = value.projectRoot == null ? "" : homePath(value.projectRoot);
-    const redundant = context.place !== undefined && context.workspace !== null && homePath(context.workspace) === path;
-    const folder = redundant ? "" : ModelText.plain(path).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
+    const label = value.projectLabel ?? "";
+    const redundant = context.place !== undefined && context.workspace !== null && context.workspace === label;
+    const folder = redundant ? "" : ModelText.plain(label).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
     return [folder, context.place ?? "", activity].filter((part) => part.length > 0).join(" ");
 };
 

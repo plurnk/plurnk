@@ -1057,7 +1057,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onNotice: handleNotice,
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
         onStatus: (gauge) => {
-            authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace?.projectRoot);
+            authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace);
             if (authoritativeStatus.lifecycle !== "running") flushFanout();
             if (authoritativeStatus.projectRoot !== undefined) boundProjectRoot = authoritativeStatus.projectRoot;
             if (observingExisting && ["running", "queued", "parked"].includes(authoritativeStatus.lifecycle)) {

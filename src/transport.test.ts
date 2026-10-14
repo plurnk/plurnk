@@ -264,7 +264,8 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
         const { h, seen } = collectingHandlers();
         transport.subscribe({ ...h, onStatus: (status) => { seen.status.push(status); ready.resolve(); } });
         const run = transport.run("fixture", {});
-        await ready.promise;
+        // A run that settles before its first status fails here instead of waiting forever.
+        await Promise.race([ready.promise, run.done.then(() => assert.fail("the model run settled before its first status"))]);
         await transport.rpc("providers.list");
         assert.equal(seen.status.length, 1, "action status does not repaint the model's status");
         modelResponse!.write(frame({ type: "STATE_DELTA", delta: [{ op: "replace", path: "/plurnk/status/lifecycle", value: "running" }] }));

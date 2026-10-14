@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Tokens and cost on the status line are the daemon's spend for the bound worker: everything it
+  and its descendants have spent since the worker began, refreshed as each turn settles. A client
+  that attaches to a worker shows what the worker has cost so far, and the client adds nothing of
+  its own to that figure (plurnk/plurnk-service#1126).
 - A row is red only when it failed: its status is 400 or above, or its execution concluded
   unsuccessfully. A turn disposition's informational detail, such as a `WAIT` with nothing in
   flight (`Nothing is in flight. Continuing.`), renders dim beside a green name instead of red

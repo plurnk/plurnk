@@ -363,7 +363,6 @@ export const runCliViaAgui = async (
         // (#465) accrue running loop cost; --status-stream also prints a
         // greppable plain row per turn (stderr), the benchlet's live price feed.
         onTurnAccounting: (turn: TurnAccounting) => {
-            statusLine.accrue(turn);
             if (opts.statusStream) {
                 accruedStream = accrueTurnAccounting(accruedStream, turn);
                 process.stderr.write(`status-stream: turn \u2193${turn.inputTokens ?? "?"} \u2191${turn.outputTokens ?? "?"} $${turn.costUsd ?? "?"} \u00b7 loop \u2193${accruedStream.inputTokens ?? "?"} \u2191${accruedStream.outputTokens ?? "?"} $${accruedStream.costUsd ?? "?"}\n`);
@@ -509,7 +508,7 @@ export const runCliViaAgui = async (
             activity: null,
         });
         const terminated = result.terminated;
-        statusLine.settle({ turns: terminated?.turnIds.length ?? 0, wallMs: Date.now() - started, usage: terminated?.usage });
+        statusLine.settle({ turns: terminated?.turnIds.length ?? 0, wallMs: Date.now() - started });
         process.stderr.write(withColorOutput(process.stderr, () => `${renderSummary(
             terminated?.turnIds.length ?? 0,
             Date.now() - started,

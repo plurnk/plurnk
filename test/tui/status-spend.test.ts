@@ -6,7 +6,7 @@ import { AguiTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-test("[§cli-status-descendants] child settlements update the parked footer and enter the session total once", { timeout: 90_000 }, async (t) => {
+test("[§cli-status-spend] the footer shows the worker's spend with its children's since it began, and a reattached client shows the same", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed test requires the sibling service");
     const arrived = Array.from({ length: 8 }, () => Promise.withResolvers<void>());
@@ -126,4 +126,12 @@ test("[§cli-status-descendants] child settlements update the parked footer and 
     assert.equal(calls, 8);
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
+    const again = spawnTui(daemon.url, ["--workspace", "tree-status", "--worker", "main", "--project-root", ""], {
+        HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
+    }, daemon.workspace);
+    t.after(() => again.kill());
+    await again.waitFor(/↓26k ↑3k[^\r\n]*\$2\.5500/);
+    assert.equal(calls, 8, "attaching spends nothing");
+    again.write("/quit\r");
+    assert.equal(await again.exited, 0);
 });

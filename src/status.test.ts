@@ -9,7 +9,7 @@ const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: n
 // A whole gauge as the daemon sends it; each test overrides the fields it is about.
 const GAUGE = {
     lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null, waitUntil: null, preparation: [], children: 0,
-    descendants: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null },
+    spend: { requests: 0, usage: null, knownUsage: null, costUsd: "0", knownCostUsd: "0" },
 };
 
 const running: ClientStatus = {
@@ -52,70 +52,44 @@ test("[§cli-status-preparation] preparation names the capability and advances i
     }
 });
 
-test("[§cli-status-descendants] cumulative child snapshots replace their prior value and settle once", () => {
-    const gauge = { ...GAUGE, lifecycle: "parked", model: null, loopId: 2, packetCount: 1, activity: null, descendants: {
-        requests: 1, usage: { inputTokens: 200, outputTokens: 20 }, knownUsage: { inputTokens: 200, outputTokens: 20 }, costUsd: "0.0200", knownCostUsd: "0.0200",
-    } };
-    const status = projectStatusGauge(gauge);
-    const own = { inputTokens: 100, outputTokens: 10, costUsd: "0.0100", knownCostUsd: "0.0100", knownInputTokens: 100, knownOutputTokens: 10 };
-    const context = { ...CONTEXT, accrued: own };
-    const first = renderStatusLine(status, context);
+const spent = (requests: number, input: number, output: number, cost: string) => ({
+    requests, usage: { inputTokens: input, outputTokens: output }, knownUsage: { inputTokens: input, outputTokens: output }, costUsd: cost, knownCostUsd: cost,
+});
+
+test("[§cli-status-spend] the line shows the worker's spend since it began as the daemon projects it; nothing adds to it", () => {
+    const gauge = { ...GAUGE, lifecycle: "running", model: null, loopId: 2, packetCount: 1, activity: null, spend: spent(3, 300, 30, "0.0300") };
+    const first = renderStatusLine(projectStatusGauge(gauge), CONTEXT);
     assert.match(first, /↓300 ↑30 · \$0\.0300/);
-    assert.equal(renderStatusLine(projectStatusGauge(gauge), context), first, "a repeated snapshot adds no spend");
-    const updated = projectStatusGauge({ ...gauge, descendants: {
-        requests: 2, usage: { inputTokens: 600, outputTokens: 60 }, knownUsage: { inputTokens: 600, outputTokens: 60 }, costUsd: "0.0600", knownCostUsd: "0.0600",
-    } });
-    assert.match(renderStatusLine(updated, context), /↓700 ↑70 · \$0\.0700/);
-    const tally = tallyOutcome(EMPTY_TALLY, {
-        turns: 1, wallMs: 5000, usage: { accounting: { usage: { inputTokens: 100, outputTokens: 10 }, knownUsage: { inputTokens: 100, outputTokens: 10 }, costUsd: own.costUsd, knownCostUsd: own.costUsd } } as never,
-        descendants: updated.descendants,
-    });
-    assert.deepEqual(tally, { turns: 1, wallMs: 5000, accounting: { inputTokens: 700, outputTokens: 70, costUsd: "0.0700", knownCostUsd: "0.0700", knownInputTokens: 700, knownOutputTokens: 70 } });
-    assert.match(renderStatusLine({ ...updated, lifecycle: "completed" }, { ...context, tally, runningSince: null }), /↓700 ↑70 · \$0\.0700/);
-    assert.match(renderStatusLine({ ...updated, loopId: 3, lifecycle: "running", descendants: null }, {
-        ...context, tally, accrued: own,
-    }), /↓800 ↑80 · \$0\.0800/, "the following loop does not charge last loop's children again");
+    assert.equal(renderStatusLine(projectStatusGauge(gauge), CONTEXT), first, "a repeated snapshot adds no spend");
+    const later = projectStatusGauge({ ...gauge, spend: spent(7, 700, 70, "0.0700") });
+    assert.match(renderStatusLine(later, CONTEXT), /↓700 ↑70 · \$0\.0700/, "a later projection replaces the figure");
+    const tally = tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5000 });
+    assert.match(renderStatusLine({ ...later, lifecycle: "completed" }, { ...CONTEXT, tally, runningSince: null }), /↓700 ↑70 · \$0\.0700/,
+        "a settled loop charges nothing again");
+    assert.match(renderStatusLine(projectStatusGauge({ ...gauge, spend: spent(9, 1_234_567, 9_876, "1.2") }), CONTEXT), /↓1\.2M ↑10k/u,
+        "token counts are abbreviated: 582k, 1.2M");
 });
 
-test("[§cli-status-descendants] absent evidence is not zero and malformed evidence is rejected", () => {
+test("[§cli-status-spend] an unknown total shows the highest cost that is not incorrect; nothing spent shows nothing; malformed spend is refused", () => {
     const base = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null };
-    const unknown = projectStatusGauge({ ...base, descendants: { requests: 1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } });
-    assert.deepEqual(unknown.descendants, { inputTokens: null, outputTokens: null, costUsd: null, knownCostUsd: null, knownInputTokens: null, knownOutputTokens: null });
-    assert.equal(projectStatusGauge({ ...base, descendants: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } }).descendants, null);
-    for (const descendants of [null, {}, { requests: -1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null },
+    const partial = projectStatusGauge({ ...base, spend: { requests: 2, usage: null, knownUsage: { inputTokens: 100, outputTokens: 20 }, costUsd: null, knownCostUsd: "0.25" } });
+    assert.match(renderStatusLine(partial, CONTEXT), /↓100\+\? ↑20\+\? · \$0\.2500 \+ \?/);
+    assert.equal(projectStatusGauge(base).spend, null, "nothing spent is no figure");
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge(base), CONTEXT), /↓|\$/);
+    for (const spend of [null, {}, { requests: -1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null },
         { requests: 1, usage: { inputTokens: -1 }, knownUsage: { inputTokens: -1 }, costUsd: null, knownCostUsd: null }, { requests: 1, usage: null, knownUsage: null, costUsd: "NaN", knownCostUsd: "NaN" }]) {
-        assert.throws(() => projectStatusGauge({ ...base, descendants }), /Invalid runtime descendant accounting/);
+        assert.throws(() => projectStatusGauge({ ...base, spend }), /Invalid runtime spend/);
     }
-});
-
-test("[§cli-status-descendants] one-shot human status retains the child subtotal at settlement", () => {
-    const writes: string[] = [];
-    const line = new TerminalStatusLine((text) => writes.push(text), true, {
-        ...running, descendants: { inputTokens: 200, outputTokens: 20, costUsd: "0.02", knownCostUsd: "0.02", knownInputTokens: 200, knownOutputTokens: 20 },
-    }, CONTEXT);
-    line.accrue({ inputTokens: 100, outputTokens: 10, costUsd: "0.01", knownCostUsd: "0.01", knownInputTokens: 100, knownOutputTokens: 10 });
-    assert.match(writes.at(-1)!, /↓300 ↑30 · \$0\.0300/);
-    line.update({ lifecycle: "completed" });
-    line.settle({ turns: 1, wallMs: 3200, usage: {
-        accounting: { usage: { inputTokens: 100, outputTokens: 10 }, knownUsage: { inputTokens: 100, outputTokens: 10 }, costUsd: "0.01", knownCostUsd: "0.01" },
-    } as never });
-    assert.match(writes.at(-2)!, /⏹️[^\r\n]*↓300 ↑30 · \$0\.0300/);
 });
 
 test("[§cli-worker-status] status presentation uses only client-owned facts", () => {
     assert.equal(renderStatusLine(running, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
     assert.equal(renderStatusLine(running, { ...CONTEXT, child: "rtx5070" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 rtx5070", "a spawn override rides beside the model");
-    const concluded = tallyOutcome(tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5_000 }), {
-        turns: 2, wallMs: 60_000,
-        usage: { accounting: { usage: { inputTokens: 1200, outputTokens: 345 }, knownUsage: { inputTokens: 1200, outputTokens: 345 }, costUsd: "0.024", knownCostUsd: "0.024" } } as never,
-    });
-    assert.deepEqual(concluded, { turns: 3, wallMs: 65_000, accounting: { inputTokens: null, outputTokens: null, costUsd: null, knownCostUsd: "0.024", knownInputTokens: 1200, knownOutputTokens: 345 } });
-    const later = tallyOutcome(concluded, { turns: 1, wallMs: 1, usage: { accounting: { usage: { inputTokens: 10, outputTokens: 5 }, knownUsage: { inputTokens: 10, outputTokens: 5 }, costUsd: "0.0125", knownCostUsd: "0.0125" } } as never });
-    assert.equal(later.accounting?.costUsd, null);
-    assert.equal(later.accounting?.knownCostUsd, "0.0365");
+    const concluded = tallyOutcome(tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5_000 }), { turns: 2, wallMs: 60_000 });
+    assert.deepEqual(concluded, { turns: 3, wallMs: 65_000 });
     assert.equal(
         renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }, { ...CONTEXT, tally: concluded, runningSince: null }),
-        "⏹️  · 🎲 deepdumb · 1m05s · ↓1k+? ↑345+? · $0.0240 + ? · 🧮 55%",
+        "⏹️  · 🎲 deepdumb · 1m05s · 🧮 55%",
     );
     assert.equal(renderStatusLine({ lifecycle: "idle", model: null, loopId: null, packetCount: null, activity: null, children: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { yolo: true }), "🔥");
     assert.equal(renderStatusLine(running, CONTEXT, { yolo: true }), "🔥 ⌛︎  · 🎲 deepdumb · 3.2s", "{plurnk#104} YOLO is a fireball at the left edge, and the model sits ahead of what ticks");
@@ -255,32 +229,13 @@ test("[§cli-identity-effort] brackets read as chosen, parentheses as given (plu
     assert.equal(formatRouteIdentity({ alias: "plain", provider: "p", model: "m", effortSource: "default" }), "plain", "no policy, no marker");
 });
 
-test("#465: turn accounting parses, accrues decimal-exact, and rides the running status line", () => {
+test("#465: turn accounting parses and accrues decimal-exact for the status stream", () => {
     const turn = turnAccountingFromNotice({ source: "engine:turn", kind: "turn_generated", accounting: { costUsd: "0.01", knownCostUsd: "0.01", inputTokens: 100, outputTokens: 20, knownInputTokens: 100, knownOutputTokens: 20 } });
     assert.deepEqual(turn, { costUsd: "0.01", knownCostUsd: "0.01", inputTokens: 100, outputTokens: 20, knownInputTokens: 100, knownOutputTokens: 20 });
     assert.equal(turnAccountingFromNotice({ source: "engine:turn", kind: "turn_awaiting_model" }), null);
     assert.equal(turnAccountingFromNotice({ source: "engine:provider", kind: "turn_generated", accounting: {} }), null);
     const accrued = accrueTurnAccounting(turn!, { costUsd: "0.005", knownCostUsd: "0.005", inputTokens: 50, outputTokens: 5, knownInputTokens: 50, knownOutputTokens: 5 });
     assert.deepEqual(accrued, { costUsd: "0.015", knownCostUsd: "0.015", inputTokens: 150, outputTokens: 25, knownInputTokens: 150, knownOutputTokens: 25 });
-    const line = renderStatusLine(
-        { lifecycle: "running", model: null, loopId: null, packetCount: 2, activity: null, children: null },
-        { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: 1000, now: 3000 },
-    );
-    assert.match(line, /↓150 ↑25/);
-    assert.match(renderStatusLine(
-        { lifecycle: "running", model: null, loopId: null, packetCount: 2, activity: null, children: null },
-        { workspace: null, worker: null, child: null, tally: { ...EMPTY_TALLY, accounting: { ...accrued, inputTokens: 1234567, outputTokens: 9876 } }, runningSince: null },
-    ), /↓1\.2M ↑10k/u, "token counts are abbreviated: 582k, 1.2M");
-    assert.match(line, /\$0\.0150/, "spend to the hundredth of a cent");
-    const idle = renderStatusLine(
-        { lifecycle: "completed", model: null, loopId: null, packetCount: null, activity: null, children: null },
-        { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
-    );
-    assert.doesNotMatch(idle, /\$0\.0150/, "a concluded line shows only the concluded tally");
-    assert.match(renderStatusLine(
-        { lifecycle: "parked", model: null, loopId: 1, packetCount: 2, activity: null, children: null },
-        { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, accrued, runningSince: null },
-    ), /↓150 ↑25.*\$0\.0150/, "parking does not hide already-settled spend");
 });
 
 // {plurnk#91} — a busy turn must not look like a hang.

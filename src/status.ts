@@ -6,15 +6,14 @@ import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 import ModelText from "./model-text.ts";
 import { homePath } from "./paths.ts";
 
-// The session's running total in the summary line's shape — every concluded
-// loop adds its turns, wall time, and exact accounting.
+// The session's running total of time — every concluded loop adds its turns and wall time. Spend is
+// the daemon's ({§cli-status-spend}), never tallied here.
 export interface SessionTally {
     turns: number;
     wallMs: number;
-    accounting: TurnAccounting | null;
 }
 
-export const EMPTY_TALLY: SessionTally = Object.freeze({ turns: 0, wallMs: 0, accounting: null });
+export const EMPTY_TALLY: SessionTally = Object.freeze({ turns: 0, wallMs: 0 });
 
 // Exact decimal addition on the daemon's decimal strings — never a float.
 const addDecimal = (a: string, b: string): string => {
@@ -29,28 +28,12 @@ const addDecimal = (a: string, b: string): string => {
 const addNullable = (a: number | null, b: number | null | undefined): number | null =>
     b === null || b === undefined ? a : (a ?? 0) + b;
 
-export interface StatusOutcome { turns: number; wallMs: number; usage?: LoopUsage; descendants?: TurnAccounting | null }
+export interface StatusOutcome { turns: number; wallMs: number }
 
-export const tallyOutcome = (tally: SessionTally, outcome: StatusOutcome): SessionTally => {
-    const aggregate = outcome.usage?.accounting.usage;
-    const known = outcome.usage?.accounting.knownUsage;
-    const cost = outcome.usage?.accounting.costUsd ?? null;
-    const own: TurnAccounting = {
-        inputTokens: aggregate?.inputTokens ?? null,
-        outputTokens: aggregate?.outputTokens ?? null,
-        costUsd: cost,
-        knownInputTokens: known?.inputTokens ?? aggregate?.inputTokens ?? null,
-        knownOutputTokens: known?.outputTokens ?? aggregate?.outputTokens ?? null,
-        knownCostUsd: outcome.usage?.accounting.knownCostUsd ?? cost,
-    };
-    const accounting = accrueTurnAccounting(tally.accounting, own);
-    const concluded = {
-        accounting: outcome.descendants == null ? accounting : accrueTurnAccounting(accounting, outcome.descendants),
-        turns: tally.turns + outcome.turns,
-        wallMs: tally.wallMs + outcome.wallMs,
-    };
-    return concluded;
-};
+export const tallyOutcome = (tally: SessionTally, outcome: StatusOutcome): SessionTally => ({
+    turns: tally.turns + outcome.turns,
+    wallMs: tally.wallMs + outcome.wallMs,
+});
 
 // What the status line knows beyond the gauge: where it is, and the session so far.
 export interface StatusContext {
@@ -61,9 +44,6 @@ export interface StatusContext {
     position?: { index: number; count: number } | null;
     child: string | null;
     tally: SessionTally;
-    // Running-loop accrual from turn_generated notices (#465); concluded totals
-    // stay in tally, so the two never double-count.
-    accrued?: TurnAccounting | null;
     runningSince: number | null;
     now?: number;
     doing?: WorkerDoing | null;
@@ -163,7 +143,9 @@ export interface ClientStatus {
     // {§cli-status-children} — the daemon's count of the bound worker's alive direct children; null
     // when the transport carries no gauge.
     children: number | null;
-    descendants?: TurnAccounting | null;
+    // {§cli-status-spend} — the daemon's spend of the bound worker and its descendants since the
+    // worker began; null when nothing is spent or the transport carries no gauge.
+    spend?: TurnAccounting | null;
 }
 
 // {§cli-conversation-lost} — the gauge reports no loop where the previous gauge on the same binding
@@ -180,13 +162,13 @@ export interface RuntimeStatusGauge {
     packetCount: number;
     activity: unknown;
     children: unknown;
-    descendants: unknown;
+    spend: unknown;
 }
 
 // The service owns the tree and cumulative accounting. This is only its human
 // projection, sharing the published usage schema and exact decimal arithmetic.
-const descendantAccounting = (value: unknown): TurnAccounting | null => {
-    const fail = (): never => { throw new TypeError("Invalid runtime descendant accounting."); };
+const spendAccounting = (value: unknown): TurnAccounting | null => {
+    const fail = (): never => { throw new TypeError("Invalid runtime spend."); };
     if (value === null || typeof value !== "object" || Array.isArray(value)) return fail();
     const { requests, usage, knownUsage, costUsd, knownCostUsd } = value as {
         requests?: unknown; usage?: unknown; knownUsage?: unknown; costUsd?: unknown; knownCostUsd?: unknown;
@@ -257,7 +239,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         children: value.children as number,
         waitUntil: value.waitUntil as number | null,
         preparation: value.preparation as FunctionalityPreparationActivity[],
-        descendants: descendantAccounting(value.descendants),
+        spend: spendAccounting(value.spend),
         ...(projectRoot === undefined ? {} : { projectRoot }),
     };
 };
@@ -350,13 +332,12 @@ export const renderStatusLine = (
     const clockActive = unfinished && context.runningSince !== null;
     const elapsed = clockActive ? Math.max(0, (context.now ?? Date.now()) - context.runningSince!) : 0;
     if (context.tally.turns > 0 || running || clockActive) parts.push(formatDuration(context.tally.wallMs + elapsed));
-    const own = context.accrued ?? null;
-    const accrued = !unfinished ? null : value.descendants == null ? own : accrueTurnAccounting(own, value.descendants);
-    const combined = accrued === null ? context.tally.accounting : accrueTurnAccounting(context.tally.accounting, accrued);
-    if (combined !== null) {
-        const { inputTokens, outputTokens, costUsd } = combined;
-        parts.push(`↓${countWithSubtotal(inputTokens, combined.knownInputTokens)} ↑${countWithSubtotal(outputTokens, combined.knownOutputTokens)}`);
-        const cost = costWithSubtotal(costUsd, combined.knownCostUsd);
+    // {§cli-status-spend} — the gauge's own figure, the highest cost that is not incorrect: the total, or
+    // the known subtotal beside the unknown remainder.
+    const spend = value.spend ?? null;
+    if (spend !== null) {
+        parts.push(`↓${countWithSubtotal(spend.inputTokens, spend.knownInputTokens)} ↑${countWithSubtotal(spend.outputTokens, spend.knownOutputTokens)}`);
+        const cost = costWithSubtotal(spend.costUsd, spend.knownCostUsd);
         if (cost.length > 0) parts.push(cost);
     }
     if (running && context.doing) parts.push(doingText(context.doing, context.now ?? Date.now()));
@@ -430,12 +411,6 @@ export default class TerminalStatusLine {
         this.#paint();
     }
 
-    // (#465) Accrue one turn's settled wire accounting into the running figure.
-    accrue(turn: TurnAccounting): void {
-        this.#context = { ...this.#context, accrued: accrueTurnAccounting(this.#context.accrued ?? null, turn) };
-        this.update({});
-    }
-
     durable(value: string): void {
         if (this.#visible) this.#write("\r\x1b[2K");
         this.#visible = false;
@@ -454,12 +429,12 @@ export default class TerminalStatusLine {
         if (value.endsWith("\n")) this.#paint();
     }
 
-    settle(outcome?: Omit<StatusOutcome, "descendants">): void {
+    settle(outcome?: StatusOutcome): void {
         if (outcome !== undefined) {
             this.#context = {
                 ...this.#context,
-                tally: tallyOutcome(this.#context.tally, { ...outcome, descendants: this.#status.descendants }),
-                accrued: null, runningSince: null,
+                tally: tallyOutcome(this.#context.tally, outcome),
+                runningSince: null,
             };
             this.update({});
         }

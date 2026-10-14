@@ -677,7 +677,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let authoritativeStatus: ClientStatus | null = null;
     let boundProjectRoot: string | null = null;
     let tally: SessionTally = EMPTY_TALLY;
-    let accrued: TurnAccounting | null = null;
     let runningSince: number | null = null;
     let conversationWorkerId: number | null = null;
     // {plurnk#108} — the descendants the daemon introduced for this session's delegation observation.
@@ -795,7 +794,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         position: workerPosition,
         child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
         tally,
-        accrued,
         runningSince,
         now: Date.now(),
         doing,
@@ -987,11 +985,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 repromptPreserving();
             } else if (inFlight && notice.kind === "turn_generated" && doing?.phase === "awaiting") {
                 doing = { phase: "working", since: Date.now(), op: null, target: null };
-                repromptPreserving();
-            }
-            const accounting = turnAccountingFromNotice(notice);
-            if (inFlight && accounting !== null) {
-                accrued = accrueTurnAccounting(accrued, accounting);
                 repromptPreserving();
             }
             return;
@@ -1259,11 +1252,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const wallMs = Date.now() - start;
                     surface.archiveResponses();
                     printAbove(renderSummary(turnCount, wallMs, terminal.result, terminal.hitMaxTurns, terminal.usage));
-                    tally = tallyOutcome(tally, {
-                        turns: turnCount, wallMs, usage: terminal.usage,
-                        descendants: authoritativeStatus?.loopId === terminal.loopId ? authoritativeStatus?.descendants : null,
-                    });
-                    accrued = null;
+                    tally = tallyOutcome(tally, { turns: turnCount, wallMs });
                 }
                 while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
                 if (shuttingDown || detached || terminal !== null && terminal.loopId === undefined && terminal.finalStatus >= 400) break;
@@ -1429,7 +1418,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             inFlight = true;
             lifecycle = "running";
             authoritativeStatus = null;
-            accrued = null;
             doing = null;
             // Keep a live steer prompt for the duration of the loop so traces can
             // print above an editable injection row.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accrueTurnAccounting, EMPTY_TALLY, tallyOutcome, turnAccountingFromNotice } from "./status.ts";
+import { accrueTurnAccounting, turnAccountingFromNotice } from "./status.ts";
 import { renderSummary } from "./render.ts";
 
 process.env.NO_COLOR = "1";
@@ -26,25 +26,6 @@ test("incomplete request accounting survives notices and later complete turns", 
     assert.deepEqual(accrueTurnAccounting(first, complete), {
         costUsd: null, knownCostUsd: "0.35", inputTokens: null, knownInputTokens: 110, outputTokens: null, knownOutputTokens: 22,
     });
-});
-
-test("session accounting preserves unknowns from descendants and completed loops", () => {
-    const tally = tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 100, usage, descendants: complete });
-    assert.equal(tally.accounting?.costUsd, null);
-    assert.equal(tally.accounting?.knownCostUsd, "0.35");
-    assert.equal(tally.accounting?.inputTokens, null);
-    assert.equal(tally.accounting?.knownInputTokens, 110);
-});
-
-test("an attempt that fails before completing a turn still contributes to session accounting", () => {
-    const failed = tallyOutcome(EMPTY_TALLY, { turns: 0, wallMs: 100, usage });
-    const next = tallyOutcome(failed, { turns: 1, wallMs: 100, usage: {
-        ...usage, accounting: { requests: [{}], usage: { inputTokens: 10, outputTokens: 2 },
-            knownUsage: { inputTokens: 10, outputTokens: 2 }, costUsd: "0.1", knownCostUsd: "0.1" },
-    } });
-    assert.equal(next.accounting?.costUsd, null);
-    assert.equal(next.accounting?.knownCostUsd, "0.35");
-    assert.equal(next.accounting?.inputTokens, null);
 });
 
 test("final summary explicitly labels known subtotals, including zero", () => {

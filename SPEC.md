@@ -225,30 +225,23 @@ authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
 from the local clock, ticking once a second throughout an unfinished run, including
 queued and parked intervals. Waiting and resumption neither pause nor reset that clock;
 completion, cancellation or failure freezes it. A missing start time is not invented.
-Token and cost totals combine concluded
-loops with settled `engine:turn` accounting from the current observed run. Every
-completion beat refreshes them. The terminal loop aggregate replaces, rather than
-adds to, that run's accrual. Complete `usage`/`costUsd` and `knownUsage`/`knownCostUsd`
-subtotals remain distinct: any unknown contribution keeps the total unknown
-through later turns, descendants, and session accumulation. A known subtotal
-renders with `+ ?`; wholly unknown money renders `$?`. An explicit complete
-zero remains hidden. The turns/wall group appears once a loop has
-run, tokens once accounting exists, cost when nonzero or unknown, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
+The turns/wall group appears once a loop has
+run, tokens once the worker has spent, cost when nonzero or unknown, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
 worker once the conversation worker is known (the terminated outcome names it). The client does
 not infer provider packets from operation rows or turn coordinates.
 
-{§cli-status-descendants} Human status adds the daemon's cumulative
-`snapshot.plurnk.status.descendants` accounting to the parent's own settled
-evidence. Each snapshot replaces the prior descendant subtotal; snapshots and
-control-plane refreshes are not billable events. On conclusion, add the final
-descendant subtotal to the session tally once, beside—not inside—the parent's
-terminal aggregate. A later loop starts with its own descendant projection.
-Missing usage remains unknown; zero requests adds nothing. Known subtotals follow
-the daemon's accounting convention. Do not sum child durations, reconstruct a
-tree, reprice provider usage, or change own-loop JSON/summary accounting.
-Before the first state snapshot, durable worker policy and local derivation
-activity provide an honest startup fallback. Exact accounting remains in the
-loop summary.
+{§cli-status-spend} Tokens and cost are the daemon's spend for the bound worker,
+`snapshot.plurnk.status.spend`: every settled provider request of the worker and
+its descendants since the worker began ({§agui-status-spend}). Each snapshot or
+delta replaces the figure and the client adds nothing to it, so a reattached
+client shows the same spend and a concluded loop charges nothing again. Complete
+`usage`/`costUsd` and `knownUsage`/`knownCostUsd` stay distinct: an unknown total
+renders its known subtotal with `+ ?`, wholly unknown money renders `$?`, zero
+requests show nothing and an explicit complete zero cost is hidden. A malformed
+spend is refused. The client does not reconstruct the tree or reprice provider
+usage; exact per-loop accounting stays in the loop summary. Before the first state
+snapshot, durable worker policy and local derivation activity provide an honest
+startup fallback.
 
 ### §1.2.2 Child provider selection {§cli-child-provider-selection}
 

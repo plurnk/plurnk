@@ -1,6 +1,6 @@
 // Controlled browser navigation for the built CLI's loopback OAuth tests: opens the authorization
 // URL, signs in at the daemon's sign-in page as the operator would ({§agui-oauth-login}) with
-// OAUTH_BROWSER_USER and OAUTH_BROWSER_PASS, and follows the redirect to the client's loopback callback.
+// OAUTH_BROWSER_PASS, and follows the redirect to the client's loopback callback.
 if (process.env.OAUTH_BROWSER_FAIL === "1") process.exit(7);
 const url = process.argv.at(-1);
 const first = await fetch(url, { redirect: "manual" });
@@ -12,7 +12,6 @@ if (first.status === 200 && callback === null) {
     for (const [, name, value] of page.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/gu)) {
         fields.set(name, value.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", "\"").replaceAll("&#39;", "'"));
     }
-    fields.set("username", process.env.OAUTH_BROWSER_USER ?? "");
     fields.set("password", process.env.OAUTH_BROWSER_PASS ?? "");
     const signedIn = await fetch(new URL("/oauth/authorize", url), {
         method: "POST", redirect: "manual",

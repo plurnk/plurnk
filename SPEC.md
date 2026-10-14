@@ -1604,7 +1604,7 @@ recovery names `plurnk login` and `PLURNK_SECRET`. `plurnk login` signs in now, 
 and keeps the new one; `plurnk logout` revokes the kept grant at the daemon's revocation endpoint and
 forgets it; either says so on stderr and exits 0, and both do nothing when a secret is at hand or the
 daemon authenticates nothing. In that browser the operator signs in with the daemon's
-`PLURNK_USER` and `PLURNK_PASS` ({§agui-oauth-login}), or answers its consent page when the browser
+`PLURNK_PASS` ({§agui-oauth-login}), or answers its consent page when the browser
 already holds the daemon's session ({§agui-oauth-session}); the deadline is
 `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. Callback codes are neither printed nor kept.
 

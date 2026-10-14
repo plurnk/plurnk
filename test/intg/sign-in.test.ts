@@ -19,7 +19,7 @@ test("[§cli-sign-in] built CLI: refused headless, signed in through the browser
     assert.ok(service, "the service checkout beside this one");
     // {§credential-authority} — the daemon mints its secret beside its database under its own state root,
     // where this client's home cannot see it, so the client holds no secret for it.
-    const daemon = await bootDaemon(service, { extraEnv: { PLURNK_AUTH: "1", PLURNK_USER: "admin", PLURNK_PASS: "sign-in-witness" } });
+    const daemon = await bootDaemon(service, { extraEnv: { PLURNK_AUTH: "1", PLURNK_PASS: "sign-in-witness" } });
     t.after(() => daemon.cleanup());
     const env = {
         ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^PLURNK_/u.test(key))),
@@ -31,7 +31,6 @@ test("[§cli-sign-in] built CLI: refused headless, signed in through the browser
         PLURNK_CLIENT_AUTOSTART: "0",
         PLURNK_CLIENT_OAUTH_TIMEOUT_MS: "20000",
         BROWSER: `${process.execPath} ${resolve("test/fixtures/oauth-browser.mjs")}`,
-        OAUTH_BROWSER_USER: "admin",
         OAUTH_BROWSER_PASS: "sign-in-witness",
         NO_COLOR: "1",
     };

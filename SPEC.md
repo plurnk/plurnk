@@ -1603,9 +1603,10 @@ itself: a headless one with no grant is refused with `client/credential/sign-in-
 recovery names `plurnk login` and `PLURNK_SECRET`. `plurnk login` signs in now, whatever grant stands,
 and keeps the new one; `plurnk logout` revokes the kept grant at the daemon's revocation endpoint and
 forgets it; either says so on stderr and exits 0, and both do nothing when a secret is at hand or the
-daemon authenticates nothing. A same-host operator answers the daemon's consent page once per
-sign-in, since the client's callback is not on the daemon's origin ({§agui-oauth-session}); the
-deadline is `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. Callback codes are neither printed nor kept.
+daemon authenticates nothing. In that browser the operator signs in with the daemon's
+`PLURNK_USER` and `PLURNK_PASS` ({§agui-oauth-login}), or answers its consent page when the browser
+already holds the daemon's session ({§agui-oauth-session}); the deadline is
+`PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. Callback codes are neither printed nor kept.
 
 ### §8.2 Notice shape and transport
 

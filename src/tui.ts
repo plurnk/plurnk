@@ -57,7 +57,7 @@ import {
     setWorkerEffort,
     type WorkerEffort,
 } from "./effort.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, projectStatusGauge, conversationLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, conversationLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -1062,7 +1062,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (authoritativeStatus.projectRoot !== undefined) boundProjectRoot = authoritativeStatus.projectRoot;
             if (observingExisting && ["running", "queued", "parked"].includes(authoritativeStatus.lifecycle)) {
                 inFlight = true;
-                runningSince ??= Date.now();
+                runningSince ??= observedClockStart(authoritativeStatus, Date.now());
             }
             // {§cli-conversation-lost} — a bound name answered with no history is a new conversation.
             if (conversationLost(seenLoopId, authoritativeStatus.loopId)) {

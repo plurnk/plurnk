@@ -220,11 +220,13 @@ configured child model. A transport without the gauge shows only the bare
 the user hops to a child (§3.1.2) rather than watching it. `(<i>/<n>)` after the
 worker is its sibling position, newest first, present only with siblings.
 
-Turns and wall time include the running loop — its packet count from the
-authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time
-from the local clock, ticking once a second throughout an unfinished run, including
-queued and parked intervals. Waiting and resumption neither pause nor reset that clock;
-completion, cancellation or failure freezes it. A missing start time is not invented.
+{§cli-status-clock} Turns and wall time include the running loop — its packet count from the
+authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time, ticking once a
+second throughout an unfinished run, including queued and parked intervals. A loop this client
+started runs from when it sent the prompt; one it attached to runs from the daemon's
+`status.claimedAt`, when the loop first ran ({§agui-status-timing}), or from the attachment while
+the loop has not run yet. Waiting and resumption neither pause nor reset that clock; completion,
+cancellation or failure freezes it. A missing start time is not invented.
 The turns/wall group appears once a loop has
 run, tokens once the worker has spent, cost when nonzero or unknown, the child model while a spawn override is set and the child segment is visible (§1.2.2), the
 worker once the conversation worker is known (the terminated outcome names it). The client does

@@ -146,7 +146,14 @@ export interface ClientStatus {
     // {§cli-status-spend} — the daemon's spend of the bound worker and its descendants since the
     // worker began; null when nothing is spent or the transport carries no gauge.
     spend?: TurnAccounting | null;
+    // {§cli-status-clock} — when the latest loop first ran and when it concluded, Unix milliseconds.
+    claimedAt?: number | null;
+    terminatedAt?: number | null;
 }
+
+// {§cli-status-clock} — a loop this client did not start runs on the daemon's clock: from when it first
+// ran, else from when this client began observing it.
+export const observedClockStart = (status: ClientStatus, now: number): number => status.claimedAt ?? now;
 
 // {§cli-conversation-lost} — the gauge reports no loop where the previous gauge on the same binding
 // reported one: the daemon minted the conversation anew under its old name.
@@ -163,6 +170,8 @@ export interface RuntimeStatusGauge {
     activity: unknown;
     children: unknown;
     spend: unknown;
+    claimedAt: unknown;
+    terminatedAt: unknown;
 }
 
 // The service owns the tree and cumulative accounting. This is only its human
@@ -230,6 +239,9 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
     if (!Number.isSafeInteger(value.children) || (value.children as number) < 0) {
         throw new TypeError(`Invalid runtime children count '${String(value.children)}'.`);
     }
+    for (const stamp of [value.claimedAt, value.terminatedAt]) {
+        if (stamp !== null && (!Number.isSafeInteger(stamp) || (stamp as number) < 0)) throw new TypeError("Invalid runtime loop timing.");
+    }
     return {
         lifecycle: value.lifecycle as StatusLifecycle,
         model: model === null ? null : formatRouteIdentity(model),
@@ -240,6 +252,8 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, projectRoot?: stri
         waitUntil: value.waitUntil as number | null,
         preparation: value.preparation as FunctionalityPreparationActivity[],
         spend: spendAccounting(value.spend),
+        claimedAt: value.claimedAt as number | null,
+        terminatedAt: value.terminatedAt as number | null,
         ...(projectRoot === undefined ? {} : { projectRoot }),
     };
 };

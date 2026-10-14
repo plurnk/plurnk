@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import TerminalStatusLine, { conversationLost, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { conversationLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
 // A whole gauge as the daemon sends it; each test overrides the fields it is about.
 const GAUGE = {
     lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null, waitUntil: null, preparation: [], children: 0,
-    spend: { requests: 0, usage: null, knownUsage: null, costUsd: "0", knownCostUsd: "0" },
+    spend: { requests: 0, usage: null, knownUsage: null, costUsd: "0", knownCostUsd: "0" }, claimedAt: null, terminatedAt: null,
 };
 
 const running: ClientStatus = {
@@ -54,6 +54,16 @@ test("[§cli-status-preparation] preparation names the capability and advances i
 
 const spent = (requests: number, input: number, output: number, cost: string) => ({
     requests, usage: { inputTokens: input, outputTokens: output }, knownUsage: { inputTokens: input, outputTokens: output }, costUsd: cost, knownCostUsd: cost,
+});
+
+test("[§cli-status-clock] an attached loop runs from when the daemon first ran it, else from the attachment; malformed stamps are refused", () => {
+    const attached = projectStatusGauge({ ...GAUGE, lifecycle: "running", loopId: 4, packetCount: 2, claimedAt: 1_792_008_000_000, terminatedAt: null });
+    assert.equal(observedClockStart(attached, 1_792_008_090_000), 1_792_008_000_000, "ninety seconds in, the clock shows ninety seconds");
+    const queued = projectStatusGauge({ ...GAUGE, lifecycle: "queued", loopId: 5, claimedAt: null, terminatedAt: null });
+    assert.equal(observedClockStart(queued, 1_792_008_090_000), 1_792_008_090_000, "a loop that has not run starts at the attachment");
+    for (const stamps of [{ claimedAt: -1 }, { claimedAt: 1.5 }, { terminatedAt: "2026-10-14T20:00:00Z" }, { claimedAt: undefined }]) {
+        assert.throws(() => projectStatusGauge({ ...GAUGE, ...stamps }), /Invalid runtime loop timing/);
+    }
 });
 
 test("[§cli-status-spend] the line shows the worker's spend since it began as the daemon projects it; nothing adds to it", () => {

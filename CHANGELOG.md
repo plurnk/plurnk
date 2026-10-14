@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A loop the client attached to, rather than started, runs its status-line clock from when the
+  daemon first ran it (`status.claimedAt`), so reattaching no longer restarts the elapsed time
+  (plurnk/plurnk-service#1126).
 - Tokens and cost on the status line are the daemon's spend for the bound worker: everything it
   and its descendants have spent since the worker began, refreshed as each turn settles. A client
   that attaches to a worker shows what the worker has cost so far, and the client adds nothing of

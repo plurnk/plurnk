@@ -24,7 +24,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: workerId } });
 // A whole status gauge as the daemon sends it; each specimen overrides what it is about.
-const STATUS = { waitUntil: null, preparation: [], children: 0, spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
+const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, preparation: [], children: 0, spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
@@ -363,8 +363,8 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, projectRoot: "/projects/client" },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, projectRoot: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client" },
     ]);
 });
 

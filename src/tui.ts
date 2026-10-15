@@ -719,14 +719,22 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let aliasCache: string[] = [];
     const providerModelCache = new Map<string, string[]>();
     let activeAlias: string | undefined;
+    // plurnk-service {§agui-provider-routes} — the route a worker seeded from the active alias gets: what a worker no act
+    // has created yet will read back.
+    let defaultRoute: ModelRoute | null = null;
     // Alias list for completion + the header's active default. Both terminal gauges
     // ride the loop usage envelope; this client never reconstructs curation policy or
     // physical input capacity from ambient alias metadata.
     try {
-        const r = await transport.rpc("providers.list") as { aliases?: Array<{ alias: string; active?: boolean }> };
+        const r = await transport.rpc("providers.list") as { aliases?: Array<ModelRoute & { alias: string; active?: boolean; inputCapacity?: unknown }> };
         if (Array.isArray(r.aliases)) {
             aliasCache = r.aliases.map((a) => a.alias);
-            activeAlias = r.aliases.find((a) => a.active)?.alias;
+            const active = r.aliases.find((a) => a.active);
+            activeAlias = active?.alias;
+            if (active !== undefined) {
+                const { active: _active, inputCapacity: _capacity, ...route } = active;
+                defaultRoute = Validator.assertModelRoute(route);
+            }
         }
     } catch { /* completion stays empty; header falls back to (daemon default) */ }
 
@@ -761,8 +769,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
         versionNotice: opts.versionNotice, workspaceName: current.name, workerName: opts.workerName,
-        modelSelector: workerModel === null ? opts.modelSelector : resolvedModelLabel(workerModel), activeAlias,
-        effort: workerEffort.effort,
+        modelSelector: workerModel !== null ? resolvedModelLabel(workerModel)
+            : workerAbsent && defaultRoute !== null ? resolvedModelLabel(defaultRoute) : opts.modelSelector,
+        activeAlias,
+        effort: workerEffort.effort ?? (workerAbsent ? defaultRoute?.effort ?? null : null),
         yolo: opts.yolo,
     });
     const surface = new TuiSurface();
@@ -817,9 +827,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {§cli-identity-effort} — the identity is the client's last server-read route. A gauge is a
     // cache of lifecycle, place, activity and children; it never supplies the identity, so a gauge
     // carrying an older route cannot outrank a newer client-set policy.
-    const identity = (): string | null => workerModel === null
-        ? opts.modelSelector ?? activeAlias ?? null
-        : resolvedModelLabel(workerModel);
+    // {§cli-identity-effort} A worker no act has created yet presents the route its creation will give it.
+    const identity = (): string | null => workerModel !== null ? resolvedModelLabel(workerModel)
+        : workerAbsent && defaultRoute !== null ? resolvedModelLabel(defaultRoute)
+            : opts.modelSelector ?? activeAlias ?? null;
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
             return renderStatusLine({ ...authoritativeStatus, ...workspaceStatus, model: identity() }, statusContext(), { yolo: opts.yolo });

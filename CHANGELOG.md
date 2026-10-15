@@ -8,7 +8,8 @@
   (plurnk/plurnk-service#1134).
 - Launching creates no worker: a session binds its worker's name, and the worker comes into being
   with the first message or a model, child or effort setting. Until then the place shows no loop,
-  the model shows the daemon's standing selection without an effort, `/workers` lists the bound name
+  the model shows the route the daemon's standing selection will give it, effort included (the
+  daemon lists it for each alias), `/workers` lists the bound name
   as `● <name>  (new)`, and worker-scoped commands such as `/env` are refused by the daemon with its
   recovery; once the worker exists the session reads back its policy and observes it
   (plurnk/plurnk-service#1134).

@@ -282,7 +282,9 @@ provider default the daemon seeded from the alias; brackets read as chosen,
 parentheses as given. A route without an effort dimension renders bare. `/effort`
 says the same in words. The client never infers provenance (plurnk#41 ask 2).
 
-The identity is the client's last server-read route. Every durable-policy change
+The identity is the client's last server-read route. A worker no act has created yet has no
+route of its own: its identity is the route the daemon lists for the active alias, which that
+worker reads back once created (plurnk-service `{§agui-provider-routes}`). Every durable-policy change
 (`/model`, `/child` including `inherit`, `/effort`, a rebind or hop, and an explicit
 `--model` or `--effort` at admission) ends in one readback, `worker.effort.get` then
 `worker.model.get` for both routes, collected whole, applied together and repainted

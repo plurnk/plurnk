@@ -8,7 +8,7 @@ import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 import { AguiTransport } from "../../src/transport.ts";
 
-test("[§cli-active-command-admission] stopping a model proposal preserves a concurrent client proposal", { timeout: 90_000 }, async (t) => {
+test("[§cli-active-command-admission] stopping a model run leaves the person's running command alone", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service);
     let requests = 0;
@@ -59,22 +59,20 @@ test("[§cli-active-command-admission] stopping a model proposal preserves a con
     await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/);
     tui.write("\x1b");
     await tui.waitFor(/1 pending review.*\/review/);
+    const command = tui.output().length;
     tui.write("! printf client-result > client.txt && printf '\\141\\143\\164\\151\\157\\156\\055\\144\\157\\156\\145'; while [ ! -f release-client ]; do sleep 0.05; done; printf '\\143\\154\\151\\145\\156\\164\\055\\163\\145\\164\\164\\154\\145\\144'\r");
-    await tui.waitFor(/2 pending reviews.*\/review/);
+    // The person's own command runs at once, beside the model's pending review, and is never one of the reviews.
+    await t.waitFor(async () => assert.equal(await readFile(join(daemon.workspace, "client.txt"), "utf8"), "client-result"), { timeout: 10_000 });
+    assert.doesNotMatch(tui.output().slice(command), /2 pending reviews/u);
     tui.write("/model\r");
     await tui.waitFor(/model: proposalfixture/);
     tui.write("/stop\r");
     await tui.waitFor(/cancelled|final 499/);
     await assert.rejects(readFile(join(daemon.workspace, "model.txt")), { code: "ENOENT" });
-    await assert.rejects(readFile(join(daemon.workspace, "client.txt")), { code: "ENOENT" });
-    const since = tui.output().length;
+    assert.equal(requests, 1, "cancelling the model resumed nothing");
+    const stopped = tui.output().length;
     tui.write("/review\r");
-    await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/, 10_000, since);
-    tui.write("\r");
-    await t.waitFor(async () => assert.equal(await readFile(join(daemon.workspace, "client.txt"), "utf8"), "client-result"), { timeout: 10_000 });
-    assert.equal(await readFile(join(daemon.workspace, "client.txt"), "utf8"), "client-result");
-    await assert.rejects(readFile(join(daemon.workspace, "model.txt")), { code: "ENOENT" });
-    assert.equal(requests, 1, "only the human's operation is resumed after cancelling the model");
+    await tui.waitFor(/\(no pending review\)/, 10_000, stopped);
     const parent = new AguiTransport({ aguiUrl: daemon.url }, "main", { workspace: "proposal-controls" });
     const child = new AguiTransport({ aguiUrl: daemon.url }, "background", { workspace: "proposal-controls" });
     t.after(() => { parent.shutdown(); child.shutdown(); });
@@ -87,7 +85,7 @@ test("[§cli-active-command-admission] stopping a model proposal preserves a con
     tui.write("\r");
     assert.equal((await work.done).finalStatus, 200);
     assert.equal(await readFile(join(daemon.workspace, "child.txt"), "utf8"), "child-result",
-        "the owner can review new work while the already-approved client command is still running");
+        "the owner can review new work while the person's command is still running");
     await writeFile(join(daemon.workspace, "release-client"), "release");
     await tui.waitFor(/client-settled/);
     tui.write("/attach next\r");

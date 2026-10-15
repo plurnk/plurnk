@@ -48,7 +48,7 @@ export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
     onHistory?: (history: WorkerHistory) => void;
     onReasoning: (reasoning: ReasoningUpdate) => void;
-    onProposal: (p: ProposalParams, source?: "model" | "action") => void;
+    onProposal: (p: ProposalParams) => void;
     onInterruptEnd?: (id: string) => void;
     onInteraction?: (i: {
         interactionId: number;
@@ -163,74 +163,31 @@ export class AguiTransport implements Transport {
         }
     }
 
+    // An action answers on its own Run and presents no interrupt: a client operation is the person's own
+    // decision, never routed for review (plurnk/plurnk-service {§agui-client-operation}).
     async #action<T>(method: string, params: object | undefined, signal: AbortSignal,
         binding = { threadId: this.#threadId, workspace: this.#world }): Promise<T> {
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
         let sawResult = false;
-        let next: { messages?: []; forwardedProps?: Record<string, unknown>; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }> } = {
+        for await (const e of runViaAgui(this.#target, {
+            ...binding,
             messages: [],
             forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } },
-        };
-        for (;;) {
-            let pausedProp: number | null = null;
-            let proposalResolution: Promise<ProposalResolution | undefined> | null = null;
-            let interruptId: string | undefined;
-            let toolId = "";
-            let toolArgs = "";
-            for await (const e of runViaAgui(this.#target, {
-                ...binding,
-                ...next,
-                capabilities: clientCapabilities(this.#workspace.auto !== true),
-            }, signal)) {
-                if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
-                    const v = actionOutcome<T>((e as { value?: unknown }).value);
-                    sawResult = true;
-                    if (v.ok) result = v.result; else problem = v.problem;
-                    continue;
-                }
-                if (e.type === "TOOL_CALL_START") {
-                    toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
-                    toolArgs = "";
-                    continue;
-                }
-                if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) {
-                    toolArgs += String((e as { delta?: unknown }).delta ?? "");
-                    continue;
-                }
-                if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
-                    pausedProp = Number(toolId.slice(5));
-                    let args: Record<string, unknown>;
-                    try {
-                        args = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
-                    } catch (cause) {
-                        const invalid = clientTransportProposalInvalid(pausedProp, cause);
-                        this.#h?.onProblem?.(invalid);
-                        throw new ProblemError(invalid);
-                    }
-                    proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, signal, "Proposal");
-                    this.#h?.onProposal({ ...args, logEntryId: pausedProp } as unknown as ProposalParams, "action");
-                    continue;
-                }
-                if (e.type === "RUN_FINISHED") {
-                    interruptId = e.outcome?.type === "interrupt"
-                        ? e.outcome.interrupts.find((interrupt) => (interrupt.toolCallId ?? interrupt.id) === toolId)?.id
-                        : undefined;
-                    continue;
-                }
-                this.#dispatch(e, projection);
+            capabilities: clientCapabilities(this.#workspace.auto !== true),
+        }, signal)) {
+            if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
+                const v = actionOutcome<T>((e as { value?: unknown }).value);
+                sawResult = true;
+                if (v.ok) result = v.result; else problem = v.problem;
+                continue;
             }
-            if (problem !== undefined) throw new ProblemError(problem);
-            if (sawResult) return result as T;
-            if (pausedProp === null) throw new ProblemError(clientActionResultMissing(method));
-            if (interruptId === undefined) throw new ProblemError(clientTransportInterruptMismatch(`prop:${pausedProp}`));
-            if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
-            const resolution = await proposalResolution;
-            signal.throwIfAborted();
-            if (resolution === undefined) throw new Error("proposal ended without a resolution");
-            next = { resume: [proposalResume(interruptId, resolution)] };
+            this.#dispatch(e, projection);
         }
+        if (problem !== undefined) throw new ProblemError(problem);
+        if (!sawResult) throw new ProblemError(clientActionResultMissing(method));
+        return result as T;
     }
     subscribe(handlers: RunHandlers): void { this.#h = handlers; }
     shutdown(): void {
@@ -384,7 +341,7 @@ export class AguiTransport implements Transport {
                             joined = this.#pendingProposals.get(pausedProp)?.signal;
                             if (joined !== undefined) continue;
                             proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, ac.signal, "Proposal");
-                            this.#h?.onProposal({ ...a, logEntryId: pausedProp } as unknown as ProposalParams, "model");
+                            this.#h?.onProposal({ ...a, logEntryId: pausedProp } as unknown as ProposalParams);
                         } else {
                             const t = this.#dispatch(e, projection);
                             if (t !== null) terminated = t;

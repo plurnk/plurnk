@@ -521,7 +521,7 @@ export const runCliViaAgui = async (
     return timedOut ? 3 : result.exitCode;
 };
 
-// Script mode over AG-UI+ (one op.parse action; gated ops pause/resume like any run).
+// Script mode over AG-UI+: one op.parse action, the person's own operation, never paused for review.
 // Exit honesty: worst op status ≥400 → 4, else 0.
 export const runScriptViaAgui = async (
     target: AguiTarget,
@@ -552,12 +552,7 @@ export const runScriptViaAgui = async (
         ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     };
-    let next: { resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }>; forwardedProps?: Record<string, unknown> } = { forwardedProps };
-    let result = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, ...next }), io);
-    while (result.pendingResume !== null) {
-        next = { resume: [result.pendingResume] };
-        result = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, ...next }), io);
-    }
+    await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, forwardedProps }), io);
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.
     if (parse === null) throw new ProblemError(clientActionResultMissing("op.parse"));
@@ -592,10 +587,10 @@ export const settleExec = (run: {
     return { problem: run.problem ?? (run.result === null ? clientActionResultMissing("op.exec") : clientTransportTerminalMissing()) };
 };
 
-// One-shot `! command`. op.exec rides its own action Run: the daemon binds that Run before it
+// One-shot `! command`. op.exec rides its own action Run: the daemon binds that Run to the operation it
 // dispatches, delivers the execution's row and stream lifecycle on it, and holds the result until the
-// stream concludes ({§agui-broadcast-fan}), so a command cannot conclude unseen. A gated execution
-// resumes on the same thread without resubmitting the command, like a script.
+// stream concludes ({§agui-broadcast-fan}), so a command cannot conclude unseen. It is the person's own
+// operation, so nothing pauses it for review.
 export const runExecViaAgui = async (
     target: AguiTarget,
     command: string,
@@ -619,14 +614,11 @@ export const runExecViaAgui = async (
         onStreamConcluded: (concluded) => { seen.conclusions.set(concluded.target, { ...concluded, result: operationResult(concluded.result) }); },
     };
     const binding = { threadId: opts.threadId, workspace: opts.workspace, capabilities };
-    let run = await consumeCliRun(runViaAgui(target, { ...binding, forwardedProps: {
+    const run = await consumeCliRun(runViaAgui(target, { ...binding, forwardedProps: {
         action: { kind: "op.exec", command },
         ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     } }), io);
-    while (run.pendingResume !== null) {
-        run = await consumeCliRun(runViaAgui(target, { ...binding, resume: [run.pendingResume] }), io);
-    }
     const settled = settleExec({ ...seen, problem: run.problem });
     if ("problem" in settled) {
         // consumeCliRun has already rendered the Run's own failure.

@@ -68,12 +68,11 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     tui.write("\x1bh");
     await tui.waitFor(/(?:until its run and submitted commands settle[\s\S]*){2}/);
 
+    const command = tui.output().length;
     tui.write("! printf '\\141\\143\\164\\151\\157\\156\\055\\157\\153'\r");
-    // In review mode, even the operator's own `!` command is shown before it runs. Answering it is
-    // part of "the command remains available": the surface has to work, not just be bypassed.
-    await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/);
-    tui.write("\r");
-    await tui.waitFor(/action-ok/);
+    // The person's own `!` command runs at once, mid-run too: it is their decision, never one to review.
+    await tui.waitFor(/action-ok/, 10_000, command);
+    assert.doesNotMatch(tui.output().slice(command), /Enter: confirm/u, "the person's own command asks for no review");
     assert.equal(requests, 1, "commands did not request more inference");
     assert.doesNotMatch(tui.output(), /busy;|loop running —/, "no blanket busy path");
     tui.write("... added while streaming\r");

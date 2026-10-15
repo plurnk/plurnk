@@ -465,41 +465,7 @@ test("AguiTransport.rpc: an action failure throws its exact Problem", async () =
     } finally { await mock.close(); }
 });
 
-test("AguiTransport.rpc: a proposal-gated action resumes and returns its result", async () => {
-    let call = 0;
-    const mock = await bootMock((_req, res) => {
-        call += 1;
-        res.writeHead(200, { "content-type": "text/event-stream" });
-        if (call === 1) {
-            res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
-            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "sh", target: null, body: "printf done" }) }));
-            res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-            res.write(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "action-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
-        } else {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "op.exec", ok: true, result: { status: 200 } } }));
-            res.write(frame({ type: "RUN_FINISHED" }));
-        }
-        res.end();
-    });
-    try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
-        const { h, seen } = collectingHandlers();
-        bt.subscribe({
-            ...h,
-            onProposal: (proposal) => {
-                seen.proposals.push(proposal);
-                void bt.resolve({ logEntryId: proposal.logEntryId, decision: "accept", outcome: "client_yolo" });
-            },
-        });
-        assert.deepEqual(await bt.rpc("op.exec", { command: "printf done" }), { status: 200 });
-        assert.equal(seen.proposals.length, 1);
-        assert.equal(call, 2);
-        const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "action-presentation", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
-    } finally { await mock.close(); }
-});
-
-test("AguiTransport.rpc: an action stream without a result or interrupt fails explicitly", async () => {
+test("AguiTransport.rpc: an action stream without a result fails explicitly", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_FINISHED" }));
@@ -514,56 +480,6 @@ test("AguiTransport.rpc: an action stream without a result or interrupt fails ex
         );
     } finally { await mock.close(); }
 });
-
-for (const order of [[42, 99], [99, 42]]) {
-    test(`concurrent model and action proposals resume their own requests (${order.join(", ")})`, async () => {
-        const resumed: number[] = [];
-        const announced = new Map<number, ReturnType<typeof Promise.withResolvers<void>>>();
-        announced.set(42, Promise.withResolvers<void>());
-        announced.set(99, Promise.withResolvers<void>());
-        const mock = await bootMock((_req, res) => {
-            const input = mock.captured.at(-1)!.body as {
-                forwardedProps?: { plurnk?: { action?: unknown } };
-                resume?: Array<{ interruptId: string }>;
-            };
-            res.writeHead(200, { "content-type": "text/event-stream" });
-            if (input.resume !== undefined) {
-                const id = Number(input.resume[0]!.interruptId.slice(5));
-                resumed.push(id);
-                res.write(frame(id === 42
-                    ? { type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } }
-                    : { type: "CUSTOM", name: "plurnk.action.result", value: { kind: "op.exec", ok: true, result: { status: 201 } } }));
-                res.end(frame({ type: "RUN_FINISHED" }));
-                return;
-            }
-            const id = input.forwardedProps?.plurnk?.action === undefined ? 42 : 99;
-            const toolCallId = `prop:${id}`;
-            res.write(frame({ type: "TOOL_CALL_START", toolCallId, toolCallName: "request_approval" }));
-            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId, delta: JSON.stringify({ op: "sh", body: `echo ${id}` }) }));
-            res.write(frame({ type: "TOOL_CALL_END", toolCallId }));
-            res.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: toolCallId, reason: "tool_call", toolCallId }] } }));
-        });
-        try {
-            const transport = new AguiTransport({ aguiUrl: mock.url }, "worker", { workspace: "world" });
-            transport.subscribe({ ...collectingHandlers().h, onProposal: (proposal) => announced.get(proposal.logEntryId)!.resolve() });
-            const model = transport.run("do the work", {}).done;
-            await announced.get(42)!.promise;
-            const action = transport.rpc<{ status: number }>("op.exec", { command: "echo human" });
-            await announced.get(99)!.promise;
-            transport.useWorker("other-worker", "other-world");
-            await assert.rejects(transport.resolve({ logEntryId: 123, decision: "accept" }), /123/, "an unknown proposal cannot consume an existing continuation");
-            for (const id of order) await transport.resolve({ logEntryId: id, decision: "accept" });
-            assert.equal((await model).finalStatus, 200);
-            assert.equal((await action).status, 201);
-            assert.deepEqual(resumed.sort(), [42, 99]);
-            for (const request of mock.captured) {
-                const input = request.body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
-                assert.equal(input.threadId, "worker", "resumes retain the submitted thread");
-                assert.equal(input.forwardedProps.plurnk.workspace, "world", "resumes retain the submitted workspace");
-            }
-        } finally { await mock.close(); }
-    });
-}
 
 test("[§cli-tui-flow] AguiTransport: after a rename, later Runs name the new workspace and keep the bound worker", async () => {
     const mock = await bootMock((_req, res) => {

@@ -34,7 +34,7 @@ const run = async (url: string, directory: string, args: string[]) => {
     });
 };
 
-test("[§cli-script-binding] built scripts retain workspace, worker, and settings across proposal resumes", async (t) => {
+test("[§cli-script-binding] built scripts bind their workspace, worker, and settings", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-script-wire-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
     await writeFile(join(directory, "input.plk"), script);
@@ -57,20 +57,6 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
                 kind: "workspace.create", ok: true, result: { id: ++created, name: "generated-" + created },
             } });
-        } else if (input.resume === undefined) {
-            frame({ type: "TOOL_CALL_START", toolCallId: "prop:9", toolCallName: "request_approval" });
-            frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:9", delta: JSON.stringify({
-                logEntryId: 9, loopId: 1, turnId: 1, op: "EDIT",
-                target: { scheme: "file", pathname: "/witness.txt" }, body: "script witness", attrs: {},
-                owner: "agui://anonymous/threads/script",
-                disposition: { decision: "review" },
-            }) });
-            frame({ type: "TOOL_CALL_END", toolCallId: "prop:9" });
-            frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: {
-                type: "interrupt", interrupts: [{ id: "prop:9", reason: "tool_call", toolCallId: "prop:9" }],
-            } });
-            response.end();
-            return;
         } else {
             frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
                 kind: "op.parse", ok: true, result: { results: [{ status: 201 }] },
@@ -96,7 +82,7 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             const result = await run(url, directory, ["--workspace", "world", "--worker", "actor", "--project-root", root, ...flags]);
             assert.equal(result.stderr, "");
             assert.equal(JSON.parse(result.stdout).exitCode, 0);
-            assert.equal(requests.length, 3);
+            assert.equal(requests.length, 2);
             const [lookup, ...bound] = requests;
             assert.deepEqual(lookup.forwardedProps?.plurnk?.action, { kind: "workspace.list" });
             assert.equal(lookup.forwardedProps?.plurnk?.projectRoot, undefined, "root discovery imposes no creation default");
@@ -107,8 +93,6 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, root === "" ? null : root);
             assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
             assert.deepEqual(bound[0].forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
-            assert.deepEqual(bound[1].resume, [{ interruptId: "prop:9", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
-            assert.equal(bound[1].forwardedProps?.plurnk?.action, undefined, "resume does not resubmit the program");
         });
     }
     // {§workspace-name} — the daemon names an unnamed world after the folder the launch designates.
@@ -117,7 +101,7 @@ test("[§cli-script-binding] built scripts retain workspace, worker, and setting
             requests.length = 0;
             const result = await run(url, directory, [...flags]);
             assert.equal(JSON.parse(result.stdout).exitCode, 0, result.stderr);
-            assert.equal(requests.length, 4);
+            assert.equal(requests.length, 3);
             const [create, lookup, ...bound] = requests;
             assert.deepEqual(create.forwardedProps?.plurnk?.action, { kind: "workspace.create", projectRoot: directory, settings });
             assert.equal(lookup.forwardedProps?.plurnk?.action?.kind, "workspace.list", "the bound world's stored root is read back by name");

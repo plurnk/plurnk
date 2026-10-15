@@ -52,10 +52,10 @@ test("[§cli-worker-ownership] an idle TUI reviews later child work after inspec
     await tui.waitFor(/plurnk[\s\S]*\/help/);
     tui.write("/model\r");
     await tui.waitFor(/model: ownerfixture/);
+    const command = tui.output().length;
     tui.write("! printf local-result > local.txt && printf '\\141\\143\\164\\151\\157\\156\\055\\144\\157\\156\\145'\r");
-    await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/);
-    tui.write("\r");
-    await tui.waitFor(/action-done/);
+    await tui.waitFor(/action-done/, 10_000, command);
+    assert.doesNotMatch(tui.output().slice(command), /Enter: confirm/u, "the person's own command asks for no review");
     assert.equal(await readFile(join(daemon.workspace, "local.txt"), "utf8"), "local-result");
     assert.equal(requests, 0, "inspection and direct commands admit no model inference");
 

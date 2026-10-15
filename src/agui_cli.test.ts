@@ -556,7 +556,7 @@ const execConclusion = (target: string, status = 200) => ({
         : { status, exitCode: 3, problem: { type: "https://problems.plurnk.xyz/executor/subprocess/nonzero-exit", title: "Nonzero exit", status, detail: "'sh' exited with code 3." } },
     summary: `${target} completed`, wakeAction: "no-loop",
 });
-const execAdmitted = { kind: "op.exec", ok: true, result: { status: 200, outcome: "client_yolo" } } as const;
+const execAdmitted = { kind: "op.exec", ok: true, result: { status: 200, outcome: "client_operation" } } as const;
 
 test("[§cli-prompt-prefixes] consumeCliRun: rows and stream conclusions reach their hooks in either output mode", async () => {
     for (const json of [false, true]) {
@@ -581,7 +581,7 @@ test("[§cli-prompt-prefixes] a `! command` exits by its execution's conclusion:
 });
 
 test("[§cli-prompt-prefixes] settleExec: a refusal is the action's Problem; an admitted execution settles with its own stream's conclusion", () => {
-    const refusal = { type: "https://problems.plurnk.xyz/proposal/rejected", title: "Rejected", status: 400, detail: "The proposal was rejected (client_no_review_channel)." };
+    const refusal = { type: "https://problems.plurnk.xyz/proposal/rejected", title: "Rejected", status: 400, detail: "The proposal was rejected (policy_veto)." };
     const mine = execConclusion("sh:///mine", 500);
     const other = execConclusion("sh:///other");
     const conclusions = new Map([[other.target, other], [mine.target, mine]]);

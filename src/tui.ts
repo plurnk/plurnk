@@ -1085,8 +1085,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 if (line !== null) printAbove(line);
             }
         },
-        onProposal: (p, source = "model") => {
-            const resolution = acceptance.resolve(p, { yolo: opts.yolo, reviewRequested: source === "model" && reviewRequested });
+        onProposal: (p) => {
+            const resolution = acceptance.resolve(p, { yolo: opts.yolo, reviewRequested });
             if (resolution !== null) {
                 void transport.resolve({ logEntryId: p.logEntryId, ...resolution })
                     .catch((cause) => printAbove(`  ${paint(`auto-accept failed: ${cause instanceof Error ? cause.message : String(cause)}`, "failure")}`));

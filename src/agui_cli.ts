@@ -31,7 +31,7 @@ import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./ag
 import { actionOutcome, entryReadResult, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
-import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
+import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, isWorkerGauge, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 import { withColorOutput } from "./color.ts";
 import type Lifetime from "./lifetime.ts";
@@ -190,7 +190,8 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             const state = reduceStatusGauge(statusGauge, e);
             if (state.handled) {
                 statusGauge = state.gauge;
-                if (!io.json) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status, state.gauge.plurnk.workspace));
+                // A Run that binds no worker reports no gauge.
+                if (!io.json && isWorkerGauge(state.gauge)) io.onStatus?.(projectStatusGauge(state.gauge.plurnk.status, state.gauge.plurnk.workspace));
                 continue;
             }
             const reasoningEvent = reasoning.consume(e);

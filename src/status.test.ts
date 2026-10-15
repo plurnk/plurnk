@@ -2,15 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import TerminalStatusLine, { historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import { ProblemError } from "./diagnostics.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
 // A whole gauge as the daemon sends it; each test overrides the fields it is about.
 const GAUGE = {
-    lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null, waitUntil: null, preparation: [], children: 0,
+    lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, children: 0,
     spend: { requests: 0, usage: null, knownUsage: null, costUsd: "0", knownCostUsd: "0" }, claimedAt: null, terminatedAt: null,
 };
+// The bound workspace as the daemon sends it: no folder, nothing preparing or indexing.
+const PLACE = { preparation: [], activity: null };
 
 const running: ClientStatus = {
     lifecycle: "running",
@@ -22,33 +25,33 @@ const running: ClientStatus = {
 };
 
 test("[§cli-status-wait] the parked countdown uses the daemon deadline and clears on wake", () => {
-    const gauge = { ...GAUGE, lifecycle: "parked", model: null, loopId: 1, packetCount: 2, activity: null, waitUntil: 304_200 };
-    const status = projectStatusGauge(gauge);
+    const gauge = { ...GAUGE, lifecycle: "parked", model: null, loopId: 1, packetCount: 2, waitUntil: 304_200 };
+    const status = projectStatusGauge(gauge, PLACE);
     assert.match(renderStatusLine(status, CONTEXT), /updates in 5m00s/);
     assert.match(renderStatusLine(status, { ...CONTEXT, now: 5_200 }), /updates in 4m59s/);
     assert.match(renderStatusLine(status, { ...CONTEXT, now: 304_201 }), /updates due/);
-    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...gauge, lifecycle: "queued", waitUntil: null }), CONTEXT), /updates/);
-    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...gauge, waitUntil: null }), CONTEXT), /updates/,
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...gauge, lifecycle: "queued", waitUntil: null }, PLACE), CONTEXT), /updates/);
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...gauge, waitUntil: null }, PLACE), CONTEXT), /updates/,
         "provider recovery and review have no invented observation deadline");
     assert.doesNotMatch(renderStatusLine({ ...status, lifecycle: "completed" }, CONTEXT), /updates/);
     for (const waitUntil of [-1, Infinity, NaN, "soon"]) {
-        assert.throws(() => projectStatusGauge({ ...gauge, waitUntil }), /Invalid runtime wait deadline/);
+        assert.throws(() => projectStatusGauge({ ...gauge, waitUntil }, PLACE), /Invalid runtime wait deadline/);
     }
 });
 
 test("[§cli-status-preparation] preparation names the capability and advances its clock before inference", () => {
-    const base = { ...GAUGE, lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null };
+    const base = { ...GAUGE, lifecycle: "queued", model: null, loopId: 1, packetCount: 0 };
     const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1_000).toISOString() }];
-    const status = projectStatusGauge({ ...base, preparation });
+    const status = projectStatusGauge(base, { ...PLACE, preparation });
     assert.match(renderStatusLine(status, CONTEXT), /preparing mcp\/search 3\.2s/);
     assert.match(renderStatusLine(status, { ...CONTEXT, now: 11_000 }), /preparing mcp\/search 10\.0s/);
     assert.doesNotMatch(renderStatusLine(status, CONTEXT), /awaiting model|🧮/);
-    const idle = projectStatusGauge({ ...base, lifecycle: "idle", preparation });
+    const idle = projectStatusGauge({ ...base, lifecycle: "idle" }, { ...PLACE, preparation });
     assert.match(renderStatusLine(idle, CONTEXT), /preparing mcp\/search/);
-    const settled = projectStatusGauge({ ...base, preparation: [] });
+    const settled = projectStatusGauge(base, PLACE);
     assert.doesNotMatch(renderStatusLine(settled, CONTEXT), /preparing mcp/);
     for (const invalid of [null, {}, [{}], [{ ...preparation[0], since: "yesterday" }], [{ ...preparation[0], phase: "ready" }]]) {
-        assert.throws(() => projectStatusGauge({ ...base, preparation: invalid }), /Invalid runtime preparation/);
+        assert.throws(() => projectStatusGauge(base, { ...PLACE, preparation: invalid }), /Invalid workspace preparation/);
     }
 });
 
@@ -57,38 +60,38 @@ const spent = (requests: number, input: number, output: number, cost: string) =>
 });
 
 test("[§cli-status-clock] an attached loop runs from when the daemon first ran it, else from the attachment; malformed stamps are refused", () => {
-    const attached = projectStatusGauge({ ...GAUGE, lifecycle: "running", loopId: 4, packetCount: 2, claimedAt: 1_792_008_000_000, terminatedAt: null });
+    const attached = projectStatusGauge({ ...GAUGE, lifecycle: "running", loopId: 4, packetCount: 2, claimedAt: 1_792_008_000_000, terminatedAt: null }, PLACE);
     assert.equal(observedClockStart(attached, 1_792_008_090_000), 1_792_008_000_000, "ninety seconds in, the clock shows ninety seconds");
-    const queued = projectStatusGauge({ ...GAUGE, lifecycle: "queued", loopId: 5, claimedAt: null, terminatedAt: null });
+    const queued = projectStatusGauge({ ...GAUGE, lifecycle: "queued", loopId: 5, claimedAt: null, terminatedAt: null }, PLACE);
     assert.equal(observedClockStart(queued, 1_792_008_090_000), 1_792_008_090_000, "a loop that has not run starts at the attachment");
     for (const stamps of [{ claimedAt: -1 }, { claimedAt: 1.5 }, { terminatedAt: "2026-10-14T20:00:00Z" }, { claimedAt: undefined }]) {
-        assert.throws(() => projectStatusGauge({ ...GAUGE, ...stamps }), /Invalid runtime loop timing/);
+        assert.throws(() => projectStatusGauge({ ...GAUGE, ...stamps }, PLACE), /Invalid runtime loop timing/);
     }
 });
 
 test("[§cli-status-spend] the line shows the worker's spend since it began as the daemon projects it; nothing adds to it", () => {
-    const gauge = { ...GAUGE, lifecycle: "running", model: null, loopId: 2, packetCount: 1, activity: null, spend: spent(3, 300, 30, "0.0300") };
-    const first = renderStatusLine(projectStatusGauge(gauge), CONTEXT);
+    const gauge = { ...GAUGE, lifecycle: "running", model: null, loopId: 2, packetCount: 1, spend: spent(3, 300, 30, "0.0300") };
+    const first = renderStatusLine(projectStatusGauge(gauge, PLACE), CONTEXT);
     assert.match(first, /↓300 ↑30 · \$0\.0300/);
-    assert.equal(renderStatusLine(projectStatusGauge(gauge), CONTEXT), first, "a repeated snapshot adds no spend");
-    const later = projectStatusGauge({ ...gauge, spend: spent(7, 700, 70, "0.0700") });
+    assert.equal(renderStatusLine(projectStatusGauge(gauge, PLACE), CONTEXT), first, "a repeated snapshot adds no spend");
+    const later = projectStatusGauge({ ...gauge, spend: spent(7, 700, 70, "0.0700") }, PLACE);
     assert.match(renderStatusLine(later, CONTEXT), /↓700 ↑70 · \$0\.0700/, "a later projection replaces the figure");
     const tally = tallyOutcome(EMPTY_TALLY, { turns: 1, wallMs: 5000 });
     assert.match(renderStatusLine({ ...later, lifecycle: "completed" }, { ...CONTEXT, tally, runningSince: null }), /↓700 ↑70 · \$0\.0700/,
         "a settled loop charges nothing again");
-    assert.match(renderStatusLine(projectStatusGauge({ ...gauge, spend: spent(9, 1_234_567, 9_876, "1.2") }), CONTEXT), /↓1\.2M ↑10k/u,
+    assert.match(renderStatusLine(projectStatusGauge({ ...gauge, spend: spent(9, 1_234_567, 9_876, "1.2") }, PLACE), CONTEXT), /↓1\.2M ↑10k/u,
         "token counts are abbreviated: 582k, 1.2M");
 });
 
 test("[§cli-status-spend] an unknown total shows the highest cost that is not incorrect; nothing spent shows nothing; malformed spend is refused", () => {
-    const base = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null };
-    const partial = projectStatusGauge({ ...base, spend: { requests: 2, usage: null, knownUsage: { inputTokens: 100, outputTokens: 20 }, costUsd: null, knownCostUsd: "0.25" } });
+    const base = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0 };
+    const partial = projectStatusGauge({ ...base, spend: { requests: 2, usage: null, knownUsage: { inputTokens: 100, outputTokens: 20 }, costUsd: null, knownCostUsd: "0.25" } }, PLACE);
     assert.match(renderStatusLine(partial, CONTEXT), /↓100\+\? ↑20\+\? · \$0\.2500 \+ \?/);
-    assert.equal(projectStatusGauge(base).spend, null, "nothing spent is no figure");
-    assert.doesNotMatch(renderStatusLine(projectStatusGauge(base), CONTEXT), /↓|\$/);
+    assert.equal(projectStatusGauge(base, PLACE).spend, null, "nothing spent is no figure");
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge(base, PLACE), CONTEXT), /↓|\$/);
     for (const spend of [null, {}, { requests: -1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null },
         { requests: 1, usage: { inputTokens: -1 }, knownUsage: { inputTokens: -1 }, costUsd: null, knownCostUsd: null }, { requests: 1, usage: null, knownUsage: null, costUsd: "NaN", knownCostUsd: "NaN" }]) {
-        assert.throws(() => projectStatusGauge({ ...base, spend }), /Invalid runtime spend/);
+        assert.throws(() => projectStatusGauge({ ...base, spend }, PLACE), /Invalid runtime spend/);
     }
 });
 
@@ -106,15 +109,15 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
 });
 
 test("[§cli-status-project-root] status shows the daemon's label for the bound folder, never a local root", () => {
-    const gauge = { ...GAUGE, lifecycle: "idle", model: null, loopId: null, packetCount: 0, activity: null };
+    const gauge = { ...GAUGE, lifecycle: "idle", model: null, loopId: null, packetCount: 0 };
     const path = "/projects/client work/日本語";
-    const status = projectStatusGauge(gauge, { projectRoot: path, projectLabel: path });
+    const status = projectStatusGauge(gauge, { ...PLACE, projectRoot: path, projectLabel: path });
     assert.equal(status.projectRoot, path);
     assert.equal(renderStatusLine(status, CONTEXT), `${path} idle`);
-    assert.equal(renderStatusLine(projectStatusGauge(gauge, { projectRoot: null, projectLabel: null }), CONTEXT), "idle", "headless is not the client cwd");
-    assert.equal(renderStatusLine(projectStatusGauge(gauge), CONTEXT), "idle", "no workspace projection means no known root");
-    assert.throws(() => projectStatusGauge(gauge, { projectRoot: 42 as never }), /Invalid workspace project root/u);
-    assert.throws(() => projectStatusGauge(gauge, { projectRoot: path, projectLabel: 42 as never }), /Invalid workspace project label/u);
+    assert.equal(renderStatusLine(projectStatusGauge(gauge, { ...PLACE, projectRoot: null, projectLabel: null }), CONTEXT), "idle", "headless is not the client cwd");
+    assert.equal(renderStatusLine(projectStatusGauge(gauge, PLACE), CONTEXT), "idle", "no folder in the workspace projection means no known root");
+    assert.throws(() => projectStatusGauge(gauge, { ...PLACE, projectRoot: 42 as never }), /Invalid workspace project root/u);
+    assert.throws(() => projectStatusGauge(gauge, { ...PLACE, projectRoot: path, projectLabel: 42 as never }), /Invalid workspace project label/u);
     assert.equal(renderStatusLine({ ...status, projectLabel: "/repo\n\t\x1b]2;not-a-title\x07name" }, CONTEXT), "/repo\\n\\tname idle",
         "path controls cannot change the terminal title or create status rows");
     for (const place of ["[work/1/9:main]", "[work/100/1000:main]"]) {
@@ -147,8 +150,8 @@ test("[§cli-status-children] the ant counts children from the gauge and the wor
     assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2 dumbox");
     assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 dumbox", "no gauge, no count: the bare child model");
     assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 1", "the place is the prompt prefix's, not the status line's");
-    assert.equal(projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: 3 }).children, 3);
-    assert.throws(() => projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, activity: null, children: -1 }), /Invalid runtime children count/u);
+    assert.equal(projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, children: 3 }, PLACE).children, 3);
+    assert.throws(() => projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, children: -1 }, PLACE), /Invalid runtime children count/u);
 });
 
 test("[§cli-status-children] the live child indicator disappears when the last child concludes", () => {
@@ -160,16 +163,26 @@ test("[§cli-status-children] the live child indicator disappears when the last 
     assert.doesNotMatch(writes.at(-1)!, /🐜|dumbox/);
 });
 
-test("the authoritative status gauge projects indexing phases without a Notice reducer", () => {
-    const gauge = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0, activity: null as unknown };
-    for (const [phase, label] of [["preparing", "preparing"], ["indexing", "indexing"], ["failed", "indexing failed"]]) {
-        assert.deepEqual(projectStatusGauge({ ...gauge, activity: { kind: "derivation", phase, percent: 30 } }).activity, { label, percent: 30 });
+test("{§cli-agui-conformance} the worker's gauge is its status and budget together, or neither, beside an ever-present workspace", () => {
+    const workspace = { id: 1, name: "w", projectRoot: null, projectLabel: null, ...PLACE };
+    const snapshot = (plurnk: object, budget?: object) => ({ type: "STATE_SNAPSHOT", snapshot: { plurnk, ...(budget === undefined ? {} : { budget }) } });
+    assert.equal(reduceStatusGauge(null, snapshot({ workspace })).handled, true, "a Run that binds no worker");
+    assert.equal(reduceStatusGauge(null, snapshot({ workspace, status: GAUGE }, {})).handled, true, "a Run that binds one");
+    for (const invalid of [snapshot({ workspace, status: GAUGE }), snapshot({ workspace }, {}), snapshot({ status: GAUGE }, {})]) {
+        assert.throws(() => reduceStatusGauge(null, invalid), (error: unknown) => error instanceof ProblemError && error.problem.kind === "state-invalid");
     }
-    assert.equal(projectStatusGauge(gauge).activity, null);
+});
+
+test("the authoritative workspace state projects indexing phases without a Notice reducer", () => {
+    const gauge = { ...GAUGE, lifecycle: "running", model: null, loopId: 1, packetCount: 0 };
+    for (const [phase, label] of [["preparing", "preparing"], ["indexing", "indexing"], ["failed", "indexing failed"]]) {
+        assert.deepEqual(projectStatusGauge(gauge, { ...PLACE, activity: { kind: "derivation", phase, percent: 30 } }).activity, { label, percent: 30 });
+    }
+    assert.equal(projectStatusGauge(gauge, PLACE).activity, null);
 });
 
 test("[§cli-worker-status] queued work retains its lifecycle while elapsed wall time accrues", () => {
-    const projected = projectStatusGauge({ ...GAUGE, lifecycle: "queued", model: null, loopId: 7, packetCount: 0, activity: null });
+    const projected = projectStatusGauge({ ...GAUGE, lifecycle: "queued", model: null, loopId: 7, packetCount: 0 }, PLACE);
     assert.equal(projected.lifecycle, "queued");
     assert.equal(renderStatusLine(projected, { ...CONTEXT, workspace: null, worker: null }), "⏳  · 3.2s");
 });

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { actionViaAgui } from "../../src/agui.ts";
+import { ProblemError } from "../../src/diagnostics.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
 const bin = resolve(import.meta.dirname, "../../bin/plurnk.js");
@@ -39,10 +40,9 @@ test("[§cli-prompt-prefixes] the built one-shot `! command` runs through op.exe
         const result = await run(["--workspace", "exec", "! echo hi"]);
         assert.equal(result.code, 0, result.stderr);
         assert.equal(result.stdout, "hi\n");
-        const { prompts } = await actionViaAgui<{ prompts: string[] }>({ aguiUrl: daemon.url }, {
-            threadId: "exec", workspace: "exec", kind: "workspace.prompts",
-        });
-        assert.deepEqual(prompts, [], "the command never became a prompt");
+        await assert.rejects(actionViaAgui({ aguiUrl: daemon.url }, { threadId: "exec", workspace: "exec", kind: "workspace.prompts" }),
+            (error: unknown) => error instanceof ProblemError && error.problem.type.endsWith("/worker-not-found"),
+            "the command created no model worker, so nothing became a prompt");
     });
 
     await t.test("a failing command's stderr reaches stderr and the client exits 4", async () => {

@@ -39,6 +39,7 @@ import {
     clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
     clientWorkerNotFound,
+    isAbsentWorker,
 } from "./diagnostics.ts";
 import type { ProblemDetails } from "./diagnostics.ts";
 import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
@@ -145,8 +146,8 @@ options:
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
                           Overrides PLURNK_CLIENT_WORKER. TUI defaults to
-                          PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
-                          default worker.
+                          PLURNK_CLIENT_TUI_WORKER (user); CLI uses the worker
+                          named after the workspace.
       --tui-worker <name> TUI-only default when no worker is selected; overrides
                           PLURNK_CLIENT_TUI_WORKER.
       --model <selector>  persistently select the worker's model
@@ -891,7 +892,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     };
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the default worker.
+            // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the worker named after the workspace.
             const w = await world();
             const controlWorkspaceOptions = await workspaceOptions();
             const { settings } = controlWorkspaceOptions;
@@ -923,6 +924,8 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                         },
                     ));
                 } else {
+                    // A worker no act has created yet has no durable route: the message creates it with the
+                    // daemon's defaults (plurnk-service {§agui-action-binding}).
                     const projection = await actionViaAgui<{ model: unknown }>(
                         { aguiUrl, credential },
                         {
@@ -931,7 +934,10 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                             workspaceOptions: controlWorkspaceOptions,
                             kind: "worker.model.get",
                         },
-                    );
+                    ).catch((cause: unknown) => {
+                        if (isAbsentWorker(cause)) return { model: null };
+                        throw cause;
+                    });
                     activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
                 }
                 if (effort !== undefined && values.model === undefined) {

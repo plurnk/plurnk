@@ -69,14 +69,16 @@ test("[§cli-workers-topology] a bound descendant still puts its whole tree firs
     assert.equal(out.match(/●/gu)?.length, 1);
 });
 
-test("[§cli-workers-topology] an unknown parent makes the worker a root; an unknown bound name marks nothing", () => {
+test("[§cli-workers-topology] an unknown parent makes the worker a root; a bound name the directory lacks leads as new", () => {
     const orphan: WorkerRow[] = [{ id: 9, name: "stray", created_at: at(5), origin: "model", parentWorkerId: 404 }];
-    const out = renderWorkerTopology(orphan, "elsewhere");
-    assert.equal(out, `  ○ stray  model    ${at(5)}\n`);
+    assert.equal(renderWorkerTopology(orphan, null), `  ○ stray  model    ${at(5)}\n`);
+    assert.equal(renderWorkerTopology(orphan, "elsewhere"), `  ● elsewhere  (new)  ← bound\n  ○ stray  model    ${at(5)}\n`,
+        "no act has created the bound worker yet; its first message does");
 });
 
 test("[§cli-workers-topology] no workers renders one honest line", () => {
-    assert.equal(renderWorkerTopology([], "main"), "  (no workers)\n");
+    assert.equal(renderWorkerTopology([], null), "  (no workers)\n");
+    assert.equal(renderWorkerTopology([], "main"), "  ● main  (new)  ← bound\n");
 });
 
 // {plurnk#58} — the prompt prefix is the place: which world, which loop, which turn, which worker.

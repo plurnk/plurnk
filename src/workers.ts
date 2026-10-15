@@ -102,7 +102,9 @@ const siblingsOf = (workers: readonly WorkerRow[], current: WorkerRow): WorkerRo
 // Lifecycle glyphs for workers other than the bound one arrive with
 // plurnk-service#653; until then no glyph is inferred from row coordinates.
 export const renderWorkerTopology = (workers: readonly WorkerRow[], bound: string | null): string => {
-    if (workers.length === 0) return "  (no workers)\n";
+    // {§cli-workers-topology} A bound name the directory does not hold yet is where the next message goes.
+    const fresh = bound !== null && !workers.some(({ name }) => name === bound) ? `  ● ${bound}  (new)  ← bound\n` : "";
+    if (workers.length === 0) return fresh === "" ? "  (no workers)\n" : fresh;
     const byId = new Map(workers.map((worker) => [worker.id, worker]));
     const parentOf = (worker: WorkerRow): number | null =>
         worker.parentWorkerId !== undefined && worker.parentWorkerId !== null && byId.has(worker.parentWorkerId) ? worker.parentWorkerId : null;
@@ -132,7 +134,7 @@ export const renderWorkerTopology = (workers: readonly WorkerRow[], bound: strin
     };
     for (const root of roots) walk(root, "", "");
     const width = Math.max(...rows.map(({ tree }) => tree.length));
-    return `${rows.map(({ tree, worker }) =>
+    return `${fresh}${rows.map(({ tree, worker }) =>
         `  ${tree.padEnd(width)}  ${(worker.origin ?? "?").padEnd(7)}  ${worker.created_at}${worker.name === bound ? "  ← bound" : ""}`,
     ).join("\n")}\n`;
 };

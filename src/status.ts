@@ -162,13 +162,11 @@ export const historyLost = (previousLoopId: number | null, loopId: number | null
     previousLoopId !== null && loopId === null;
 
 export interface RuntimeStatusGauge {
-    preparation: unknown;
     waitUntil: unknown;
     lifecycle: string;
     model: ModelRoute | null;
     loopId: number | null;
     packetCount: number;
-    activity: unknown;
     children: unknown;
     spend: unknown;
     claimedAt: unknown;
@@ -199,30 +197,71 @@ const spendAccounting = (value: unknown): TurnAccounting | null => {
         knownInputTokens: known?.inputTokens ?? null, knownOutputTokens: known?.outputTokens ?? null, knownCostUsd };
 };
 
+// plurnk-service {§agui-action-binding}: `status` and `budget` are the bound worker's gauge, and a Run that
+// binds no worker carries neither; every Run carries its workspace.
 export interface StatusGaugeEnvelope {
-    plurnk: { status: RuntimeStatusGauge; workspace?: WorkspaceFolder };
+    plurnk: { status?: RuntimeStatusGauge; workspace: WorkspaceState };
+    budget?: Record<string, unknown>;
+}
+
+// A gauge from a Run that binds a worker.
+export interface WorkerGauge extends StatusGaugeEnvelope {
+    plurnk: { status: RuntimeStatusGauge; workspace: WorkspaceState };
     budget: Record<string, unknown>;
 }
+
+export const isWorkerGauge = (gauge: StatusGaugeEnvelope): gauge is WorkerGauge => gauge.plurnk.status !== undefined;
 
 const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
     "idle", "queued", "running", "parked", "completed", "cancelled", "failed",
 ]);
 
-// {§cli-status-project-root} — the bound workspace's folder, a path the client uses, and the daemon's label.
-export interface WorkspaceFolder {
+// {§cli-status-project-root} {§cli-status-preparation} — the bound workspace's folder, a path the client uses,
+// the daemon's label, and the activity that belongs to the workspace rather than to its worker.
+export interface WorkspaceState {
     readonly projectRoot?: string | null;
     readonly projectLabel?: string | null;
+    readonly preparation: unknown;
+    readonly activity: unknown;
 }
 
-export const projectStatusGauge = (value: RuntimeStatusGauge, workspace?: WorkspaceFolder): ClientStatus => {
-    const projectRoot = workspace?.projectRoot;
-    const projectLabel = workspace?.projectLabel;
+export type WorkspaceStatus = Pick<ClientStatus, "preparation" | "activity" | "projectRoot" | "projectLabel">;
+
+export const projectWorkspaceState = (workspace: WorkspaceState): WorkspaceStatus => {
+    const { projectRoot, projectLabel } = workspace;
     if (projectRoot !== undefined && projectRoot !== null && typeof projectRoot !== "string") {
         throw new TypeError("Invalid workspace project root.");
     }
     if (projectLabel !== undefined && projectLabel !== null && typeof projectLabel !== "string") {
         throw new TypeError("Invalid workspace project label.");
     }
+    if (!Array.isArray(workspace.preparation)
+        || workspace.preparation.some((item) => !Validator.validateJsonSchemaInstance(preparationSchema, item).valid)) {
+        throw new TypeError("Invalid workspace preparation.");
+    }
+    let activity: StatusActivity | null = null;
+    if (workspace.activity !== null) {
+        if (typeof workspace.activity !== "object") throw new TypeError("Invalid workspace activity.");
+        const raw = workspace.activity as { kind?: unknown; phase?: unknown; percent?: unknown };
+        if (raw.kind !== "derivation" || typeof raw.phase !== "string") {
+            throw new TypeError("Unsupported workspace activity.");
+        }
+        const percent = Number(raw.percent);
+        activity = {
+            label: raw.phase === "failed" ? "indexing failed" : raw.phase === "preparing" ? "preparing" : "indexing",
+            percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.floor(percent))) : null,
+        };
+    }
+    return {
+        activity,
+        preparation: workspace.preparation as FunctionalityPreparationActivity[],
+        ...(projectRoot === undefined ? {} : { projectRoot }),
+        ...(projectLabel === undefined ? {} : { projectLabel }),
+    };
+};
+
+export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: WorkspaceState): ClientStatus => {
+    const place = projectWorkspaceState(workspace);
     if (!LIFECYCLES.has(value.lifecycle)) throw new TypeError(`Unknown runtime lifecycle '${value.lifecycle}'.`);
     if (!Number.isSafeInteger(value.packetCount) || value.packetCount < 0) {
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
@@ -230,23 +269,6 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace?: Worksp
     const model = value.model === null ? null : Validator.assertModelRoute(value.model);
     if (value.waitUntil !== null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
         throw new TypeError("Invalid runtime wait deadline.");
-    }
-    if (!Array.isArray(value.preparation)
-        || value.preparation.some((item) => !Validator.validateJsonSchemaInstance(preparationSchema, item).valid)) {
-        throw new TypeError("Invalid runtime preparation.");
-    }
-    let activity: StatusActivity | null = null;
-    if (value.activity !== null) {
-        if (typeof value.activity !== "object") throw new TypeError("Invalid runtime activity.");
-        const raw = value.activity as { kind?: unknown; phase?: unknown; percent?: unknown };
-        if (raw.kind !== "derivation" || typeof raw.phase !== "string") {
-            throw new TypeError("Unsupported runtime activity.");
-        }
-        const percent = Number(raw.percent);
-        activity = {
-            label: raw.phase === "failed" ? "indexing failed" : raw.phase === "preparing" ? "preparing" : "indexing",
-            percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.floor(percent))) : null,
-        };
     }
     if (!Number.isSafeInteger(value.children) || (value.children as number) < 0) {
         throw new TypeError(`Invalid runtime children count '${String(value.children)}'.`);
@@ -259,15 +281,12 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace?: Worksp
         model: model === null ? null : formatRouteIdentity(model),
         loopId: value.loopId,
         packetCount: value.packetCount,
-        activity,
         children: value.children as number,
         waitUntil: value.waitUntil as number | null,
-        preparation: value.preparation as FunctionalityPreparationActivity[],
         spend: spendAccounting(value.spend),
         claimedAt: value.claimedAt as number | null,
         terminatedAt: value.terminatedAt as number | null,
-        ...(projectRoot === undefined ? {} : { projectRoot }),
-        ...(projectLabel === undefined ? {} : { projectLabel }),
+        ...place,
     };
 };
 
@@ -306,10 +325,16 @@ export const reduceStatusGauge = (
             (parent as Record<string, unknown>)[leaf] = op.value;
         }
     }
-    if (next.plurnk?.status === undefined || next.budget === null || typeof next.budget !== "object") {
-        throw new ProblemError(clientTransportStateInvalid("STATE is missing plurnk.status or budget"));
+    if (next.plurnk?.workspace === null || typeof next.plurnk?.workspace !== "object") {
+        throw new ProblemError(clientTransportStateInvalid("STATE is missing plurnk.workspace"));
     }
-    projectStatusGauge(next.plurnk.status, next.plurnk.workspace);
+    // plurnk-service {§agui-action-binding}: the worker's gauge is its status and budget together, or neither.
+    const worker = next.plurnk.status !== undefined;
+    if (worker !== (next.budget !== undefined) || (worker && (next.budget === null || typeof next.budget !== "object"))) {
+        throw new ProblemError(clientTransportStateInvalid("STATE carries plurnk.status without budget, or budget without plurnk.status"));
+    }
+    if (isWorkerGauge(next)) projectStatusGauge(next.plurnk.status, next.plurnk.workspace);
+    else projectWorkspaceState(next.plurnk.workspace);
     return { handled: true, gauge: next };
 };
 

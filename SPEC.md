@@ -53,7 +53,7 @@ Options:
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, structured errors; interactive OAuth instructions use stderr. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
-| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Overrides `PLURNK_CLIENT_WORKER`. TUI default: `PLURNK_CLIENT_TUI_WORKER`; CLI default: the workspace's default worker. See §1.1. |
+| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Overrides `PLURNK_CLIENT_WORKER`. TUI default: `PLURNK_CLIENT_TUI_WORKER`; CLI default: the worker named after the workspace. See §1.1. |
 | `--tui-worker <name>` | string | TUI-only default when no worker is selected. Overrides `PLURNK_CLIENT_TUI_WORKER`. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
 | `--effort <policy>` | string | Persist the daemon-validated effort on the worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_EFFORT`. |
@@ -141,7 +141,7 @@ Workspaces and workers are daemon-owned. The client only knows their **names** �
 
 **Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
 
-- **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, selecting the daemon's durable default worker. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
+- **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, so they address the worker named after the workspace, which a message creates. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
 - An explicit worker does not require an explicit workspace: it can attach within the folder's world.
 
 CLI flag takes precedence over env when both are set.
@@ -182,12 +182,15 @@ service's durable deadline, never a client timer inferred from a WAIT receipt;
 untimed recovery and review receive no invented deadline.
 
 {§cli-status-preparation} Workspace capability preparation is rendered from
-`STATE /plurnk/status/preparation`: family, current alias when present, phase,
+`STATE /plurnk/workspace/preparation`: family, current alias when present, phase,
 and elapsed time since the daemon's timestamp. The status clock advances while
 preparation is present, including before model inference and during inspection.
 An empty array clears the activity. Reattachment uses the same snapshot; the
 client neither starts capabilities nor polls for progress. This state adds no
-transcript rows and does not replace the loop lifecycle or indexing activity.
+transcript rows and does not replace the loop lifecycle or indexing activity
+(`STATE /plurnk/workspace/activity`). Both are the workspace's, carried by every Run bound to it;
+the gauge (`plurnk.status` and `budget`) is the bound worker's, and a Run that binds none, such as
+a workspace action, reports no gauge.
 
 Human status is the summary line's shape aggregated over the session:
 
@@ -524,7 +527,8 @@ policy, and the header and status line adopt the name.
 `parentWorkerId`: the bound worker's tree first with the bound worker marked `●`,
 other workers `○`, siblings newest first, each row carrying the worker's origin
 (`model`, `client`, `_plurnk`) and creation time, a worker whose parent is not in
-the directory standing as a root. The map carries no lifecycle: a worker's state
+the directory standing as a root. A bound name the directory does not hold yet leads as
+`● <name>  (new)`: no act has created that worker, and the next message does. The map carries no lifecycle: a worker's state
 is seen by being in it. `plurnk workspace workers <name>` (§7.3) keeps its flat
 table.
 
@@ -1251,8 +1255,10 @@ the person, not the approver: `--yolo`, configured acceptance, or fail-closed re
 settle what the daemon routes to this client.
 
 The TUI maintains `/agui/connect` while idle and reconnects after a terminal or
-resolved interrupt. Inspection and direct operations do not detach that owner
-connection. Future owned work, including independently active children, can request
+resolved interrupt. A worker no act has created yet has nothing to connect to: the daemon
+refuses that connection, and the TUI connects once its first message or a setting creates
+the worker (plurnk-service `{§agui-action-binding}`). Inspection and direct operations do not
+detach that owner connection. Future owned work, including independently active children, can request
 review without a new user prompt. Disconnect changes neither ownership nor pending gates.
 Concurrent Runs share one local resolver per interrupt. A resurfaced gate does not
 open another review or submit another decision; its observer resumes after the standard
@@ -1450,7 +1456,7 @@ Typical use: discover a worker name to pass as `--worker` on `plurnk log read`.
 
 Reads a worker's log through `log.read` in the workspace selected under §1.1.
 `--worker <name>` selects an existing worker;
-omission selects the workspace's durable default worker under §1.1.
+omission selects the worker named after the workspace under §1.1.
 
 Filter flags (all numeric, all optional):
 

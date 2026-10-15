@@ -224,6 +224,10 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
             await tui.waitFor(/plurnk.*\/help/s);
+            // A worker-scoped setting needs its worker, which only an act addressed to it creates: here, a
+            // model selection (plurnk-service {§agui-action-binding}).
+            tui.write("/model clienttest\r");
+            await tui.waitFor(/clienttest\[|clienttest\(/, 20_000);
             tui.write("/env add CARGO_TARGET_DIR /tmp/plurnk-verbs\r");
             await tui.waitFor(/added: CARGO_TARGET_DIR \(active\)/, 20_000);
             tui.write("/env\r");

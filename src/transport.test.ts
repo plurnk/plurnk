@@ -173,7 +173,7 @@ test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle sp
                 const families = new Set<string>();
                 if (seen.entries.length > 0) families.add("log/entry");
                 if (seen.status.length > 0) families.add("loop/packet");
-                if (seen.status.some((value) => ((value as { plurnk?: { status?: { preparation?: unknown[] } } }).plurnk?.status?.preparation?.length ?? 0) > 0)) families.add("workspace/preparation");
+                if (seen.status.some((value) => ((value as { plurnk?: { workspace?: { preparation?: unknown[] } } }).plurnk?.workspace?.preparation?.length ?? 0) > 0)) families.add("workspace/preparation");
                 if (seen.proposals.length > 0) families.add("loop/proposal");
                 if (seen.interactions.length > 0) families.add("loop/interaction");
                 if (seen.reasoning.length > 0) families.add("reasoning/event");
@@ -208,13 +208,33 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
         transport.subscribe(h);
         const result = await transport.run("fixture", {}).done;
         assert.equal(result.finalStatus, 200);
-        const gauges = seen.status as Array<{ plurnk: { status: { lifecycle: string; loopId: number | null; packetCount: number; preparation: unknown[] } } }>;
+        const gauges = seen.status as Array<{ plurnk: { status: { lifecycle: string; loopId: number | null; packetCount: number }; workspace: { preparation: unknown[] } } }>;
         assert.equal(gauges.length, 4, "one gauge per STATE_SNAPSHOT and STATE_DELTA");
         assert.deepEqual(gauges.map((g) => g.plurnk.status.lifecycle), ["idle", "idle", "running", "completed"]);
         assert.deepEqual(gauges.map((g) => g.plurnk.status.packetCount), [0, 0, 1, 1]);
-        assert.deepEqual(gauges[1]!.plurnk.status.preparation, [{ family: "mcp", alias: "search", phase: "preparing", since: "2026-09-29T00:00:00.000Z" }]);
-        assert.deepEqual(gauges[2]!.plurnk.status.preparation, [], "published capabilities clear preparation");
+        assert.deepEqual(gauges[1]!.plurnk.workspace.preparation, [{ family: "mcp", alias: "search", phase: "preparing", since: "2026-09-29T00:00:00.000Z" }]);
+        assert.deepEqual(gauges[2]!.plurnk.workspace.preparation, [], "published capabilities clear preparation");
         assert.equal(gauges[3]!.plurnk.status.loopId, 1);
+    } finally {
+        await mock.close();
+    }
+});
+
+test("{§cli-agui-conformance}: a Run that binds no worker carries its workspace and reports no gauge", async () => {
+    const specimen = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "action-problem")!;
+    assert.ok(specimen.events.some((event) => event.type === "STATE_SNAPSHOT"), "the specimen's Run binds a workspace");
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        for (const event of specimen.events) res.write(frame(event));
+        res.end();
+    });
+    try {
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        await assert.rejects(() => transport.rpc(specimen.expect.action!.kind),
+            (error: unknown) => error instanceof ProblemError && error.problem.status === specimen.expect.action!.status);
+        assert.deepEqual(seen.status, [], "no worker, no gauge");
     } finally {
         await mock.close();
     }
@@ -562,8 +582,8 @@ test("[§cli-tui-flow] AguiTransport: after a rename, later Runs name the new wo
             const input = body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
             return [input.threadId, input.forwardedProps.plurnk.workspace];
         });
-        assert.deepEqual(bindings, [["second", "renamed"], ["renamed", "renamed"]],
-            "a named worker keeps its thread; a thread named after its workspace follows the new name");
+        assert.deepEqual(bindings, [["second", "renamed"], ["fresh", "renamed"]],
+            "the thread keeps naming its worker; only the workspace's name moves");
     } finally { await mock.close(); }
 });
 

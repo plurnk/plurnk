@@ -24,7 +24,9 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
 const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: workerId } });
 // A whole status gauge as the daemon sends it; each specimen overrides what it is about.
-const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, preparation: [], children: 0, spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
+const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, children: 0, spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
+// The bound workspace as the daemon sends it beside the gauge: no folder, nothing preparing or indexing.
+const WORKSPACE = { id: 1, name: "work", projectRoot: null, projectLabel: null, preparation: [], activity: null };
 const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
@@ -309,10 +311,10 @@ test("consumeCliRun: indexing state is quiet and indexing failures remain diagno
     });
     await consumeCliRun(stream([
         { type: EventType.STATE_SNAPSHOT, snapshot: {
-            plurnk: { status: { ...STATUS, lifecycle: "running", model: null, loopId: 1, packetCount: 0,
-                activity: { kind: "derivation", phase: "indexing", completed: 3, total: 10, percent: 30 } } }, budget: {},
+            plurnk: { status: { ...STATUS, lifecycle: "running", model: null, loopId: 1, packetCount: 0 },
+                workspace: { ...WORKSPACE, activity: { kind: "derivation", phase: "indexing", completed: 3, total: 10, percent: 30 } } }, budget: {},
         } },
-        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/activity", value: null }] },
+        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/workspace/activity", value: null }] },
         { type: EventType.CUSTOM, name: "plurnk.notice", value: {
             source: "engine:derivation", kind: "search_progress", level: "error", phase: "failed",
             message: "Search indexing failed: SQLite database is locked",
@@ -333,9 +335,9 @@ test("[§cli-status-preparation] snapshots, progress, and clearing stay in statu
     const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1000).toISOString() }];
     await consumeCliRun(stream([
         { type: EventType.STATE_SNAPSHOT, snapshot: { plurnk: { status: {
-            ...STATUS, lifecycle: "queued", model: null, loopId: 1, packetCount: 0, activity: null, preparation,
-        } }, budget: {} } },
-        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/preparation", value: [] }] },
+            ...STATUS, lifecycle: "queued", model: null, loopId: 1, packetCount: 0,
+        }, workspace: { ...WORKSPACE, preparation } }, budget: {} } },
+        { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/workspace/preparation", value: [] }] },
         terminated(),
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
@@ -352,8 +354,8 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
             type: EventType.STATE_SNAPSHOT,
             snapshot: {
                 plurnk: {
-                    workspace: { id: 1, name: "work", projectRoot: "/projects/client", projectLabel: "/projects/client" },
-                    status: { ...STATUS, lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0, activity: null },
+                    workspace: { ...WORKSPACE, projectRoot: "/projects/client", projectLabel: "/projects/client" },
+                    status: { ...STATUS, lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0 },
                 },
                 budget: {},
             },

@@ -305,6 +305,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         setModel: (spec) => { modelState.model = spec; },
         setSpawnModel: (spec) => { modelState.spawnModel = spec; },
         setEffort: (effort) => { modelState.effort = effort; },
+        setAbsent: () => {},
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
         renameWorkspace: (s) => { workspace = s; },

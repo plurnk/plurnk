@@ -58,6 +58,8 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     );
     assert.ok(listed.workspaces.some(({ id, name }) => id === created.id && name === original));
 
+    // Only an act addressed to the worker creates it (plurnk-service {§agui-action-binding}).
+    await from("a", "worker.model.set", { selector: "controlfixture" });
     const child = await from<{ workerId: number }>("a", "run.fork", { name: "durable-child" });
     const workers = await from<{ workers: Array<{ id: number; name: string }> }>(
         "b",
@@ -66,7 +68,6 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     );
     assert.ok(workers.workers.some(({ id, name }) => id === child.workerId && name === "durable-child"));
 
-    await from("a", "worker.model.set", { selector: "controlfixture" });
     const model = await from<{ model: { alias: string; provider: string; model: string; effort?: string; effortSource?: string } }>("b", "worker.model.get");
     // The route carries the worker's durable effort with the identity (plurnk#41).
     assert.deepEqual(model.model, {

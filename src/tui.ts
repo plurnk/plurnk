@@ -32,7 +32,7 @@ import type { LogEntryWire } from "./render.ts";
 import { keyToResolution, editInEditor } from "./proposal.ts";
 import Review from "./Review.ts";
 import { AguiTransport, type ObservationHandle, type Transport } from "./transport.ts";
-import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
+import { ProblemError, isAbsentWorker, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -55,7 +55,7 @@ import {
     setWorkerEffort,
     type WorkerEffort,
 } from "./effort.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, historyLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -312,6 +312,8 @@ export interface VerbContext {
     setModel: (spec: ResolvedModelSpec | null) => void;
     setSpawnModel: (spec: ResolvedModelSpec | null) => void;
     setEffort: (effort: WorkerEffort) => void;
+    // Whether the bound worker is yet to be created by an act addressed to it ({§cli-identity-effort}).
+    setAbsent: (absent: boolean) => void;
     getWorkspace: () => WorkspaceResult;
     setWorkspace: (s: WorkspaceResult) => void;
     // The attached workspace was renamed: the session keeps its binding under the new name.
@@ -357,25 +359,36 @@ export interface WorkerPolicy {
     model: ResolvedModelSpec | null;
     spawnModel: ResolvedModelSpec | null;
     effort: WorkerEffort;
+    // No act has created the worker yet: it holds no durable policy, and these are the daemon's defaults.
+    absent: boolean;
 }
 
 // {§cli-identity-effort} — the one readback of the worker's durable policy: the effort first (a
 // modelless worker takes its default there), then the final route projection, collected whole
-// before any of it is applied. The daemon's routes are the identity, never a setter's echo.
+// before any of it is applied. The daemon's routes are the identity, never a setter's echo. A worker
+// that does not exist yet, in a world that may not exist yet either, has no durable policy: the daemon
+// answers `worker-not-found` or `workspace-not-found`, and the worker takes the daemon's defaults when
+// a message or a setting first creates it.
 export const readWorkerPolicy = async (rpc: VerbCaller): Promise<WorkerPolicy> => {
-    const effort = await readWorkerEffort(rpc);
-    const { model, spawnModel } = workerModelProjection(await rpc.call("worker.model.get"));
-    return { model, spawnModel, effort };
+    try {
+        const effort = await readWorkerEffort(rpc);
+        const { model, spawnModel } = workerModelProjection(await rpc.call("worker.model.get"));
+        return { model, spawnModel, effort, absent: false };
+    } catch (cause) {
+        if (!isAbsentWorker(cause)) throw cause;
+        return { model: null, spawnModel: null, effort: { effort: null, source: "default", supportedEfforts: [] }, absent: true };
+    }
 };
 
 export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit" | undefined> => {
     const { verb, rest } = parseSlash(line);
     const { rpc, opts, write } = ctx;
     const refreshWorkerPolicy = async (): Promise<void> => {
-        const { model, spawnModel, effort } = await readWorkerPolicy(rpc);
+        const { model, spawnModel, effort, absent } = await readWorkerPolicy(rpc);
         ctx.setModel(model);
         ctx.setSpawnModel(spawnModel);
         ctx.setEffort(effort);
+        ctx.setAbsent(absent);
     };
     // A persisted change is confirmed once its readback has been applied, so the confirmation is the
     // verb's completion. A readback that fails is neither a refusal nor rolled back: the daemon holds
@@ -652,6 +665,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // Ephemeral progress projected into the prompt while background work is active.
     let lifecycle: StatusLifecycle = "idle";
     let authoritativeStatus: ClientStatus | null = null;
+    // {§cli-status-preparation} The bound workspace's folder, preparation and indexing, from any Run bound to it.
+    let workspaceStatus: WorkspaceStatus | null = null;
     let boundProjectRoot: string | null = null;
     let tally: SessionTally = EMPTY_TALLY;
     let runningSince: number | null = null;
@@ -741,7 +756,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // know which durable worker policy it is presenting, so admission fails
     // instead of silently relabeling the worker as the daemon default.
     // {§cli-identity-effort} — the identity the TUI presents is read back after the explicit selection.
-    let { model: workerModel, spawnModel: workerSpawnModel, effort: workerEffort } = await readWorkerPolicy(admission);
+    let { model: workerModel, spawnModel: workerSpawnModel, effort: workerEffort, absent: workerAbsent } = await readWorkerPolicy(admission);
 
     // One header line: version · workspace [· worker] · model · help (see buildHeader).
     const header = buildHeader({
@@ -761,7 +776,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     printAbove = (text) => { flushFanout(); surface.append(text); };
     surface.append(paint(header, "dim"));
     surface.setTitle(windowTitle(current.name, boundWorker));
-    if (workerModel === null) surface.append(renderDiagnostic(clientModelUnselected()));
+    // A worker no act has created yet takes the daemon's standing selection with its first message.
+    if (workerModel === null && (opts.modelSelector ?? activeAlias ?? null) === null) surface.append(renderDiagnostic(clientModelUnselected()));
     surface.append("");
 
     const statusContext = () => ({
@@ -778,6 +794,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         now: Date.now(),
         doing,
     });
+    // {§cli-identity-effort} The session's first message created its worker: read back the policy the daemon
+    // gave it and its place among the workers.
+    const adoptCreatedWorker = async (): Promise<void> => {
+        const policy = await readWorkerPolicy(admission);
+        workerModel = policy.model;
+        workerSpawnModel = policy.spawnModel;
+        workerEffort = policy.effort;
+        workerAbsent = policy.absent;
+        await refreshTopology();
+    };
     const refreshTopology = async (): Promise<void> => {
         const threadId = transport.threadId();
         const workspaceName = current.name;
@@ -796,16 +822,16 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         : resolvedModelLabel(workerModel);
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
-            return renderStatusLine({ ...authoritativeStatus, model: identity() }, statusContext(), { yolo: opts.yolo });
+            return renderStatusLine({ ...authoritativeStatus, ...workspaceStatus, model: identity() }, statusContext(), { yolo: opts.yolo });
         }
-        const activity = searchFetching ? { label: "search", percent: searchPercent } : null;
         return renderStatusLine({
             lifecycle: inFlight ? "running" : lifecycle,
             model: identity(),
             loopId: placeLoop,
             packetCount: null,
-            activity,
             children: null,
+            ...workspaceStatus,
+            activity: searchFetching ? { label: "search", percent: searchPercent } : workspaceStatus?.activity ?? null,
         }, statusContext(), { yolo: opts.yolo });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
@@ -996,8 +1022,18 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onOutside: (outside) => printAbove(renderOutsideText(outside, surface.columns || 80)),
         onNotice: handleNotice,
         onProblem: (problem) => printAlert(renderDiagnostic(problem)),
+        onWorkspace: (workspace) => {
+            workspaceStatus = projectWorkspaceState(workspace);
+            if (workspaceStatus.projectRoot !== undefined) boundProjectRoot = workspaceStatus.projectRoot;
+            repromptPreserving();
+        },
         onStatus: (gauge) => {
             authoritativeStatus = projectStatusGauge(gauge.plurnk.status, gauge.plurnk.workspace);
+            // The session's first message created its worker: its durable policy and place are now the daemon's.
+            if (workerAbsent) {
+                workerAbsent = false;
+                void adoptCreatedWorker().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
+            }
             if (authoritativeStatus.lifecycle !== "running") flushFanout();
             if (authoritativeStatus.projectRoot !== undefined) boundProjectRoot = authoritativeStatus.projectRoot;
             if (observingExisting && ["running", "queued", "parked"].includes(authoritativeStatus.lifecycle)) {
@@ -1056,7 +1092,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // The running loop's elapsed time ticks in the status row.
     const statusTick = setInterval(() => {
-        if (inFlight || (authoritativeStatus?.preparation?.length ?? 0) > 0) reprompt();
+        if (inFlight || (workspaceStatus?.preparation?.length ?? 0) > 0) reprompt();
     }, 1_000);
     statusTick.unref();
 
@@ -1079,6 +1115,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         surface.archiveActivity();
         surface.setLive(null);
         authoritativeStatus = null;
+        workspaceStatus = null;
         boundProjectRoot = null;
         boundWorkerId = null;
         seenLoopId = null;
@@ -1102,6 +1139,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         setModel: (spec) => { workerModel = spec; },
         setSpawnModel: (spec) => { workerSpawnModel = spec; },
         setEffort: (effort) => { workerEffort = effort; },
+        setAbsent: (absent) => { workerAbsent = absent; },
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         renameWorkspace: (s) => {
@@ -1207,7 +1245,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reprompt();
             }
         } catch (cause) {
-            if (!shuttingDown) {
+            // plurnk-service {§agui-action-binding}: a worker no message has created yet has nothing to observe:
+            // the first message creates it, and the session observes it from then on.
+            if (!shuttingDown && !(observing && isAbsentWorker(cause))) {
                 lifecycle = "failed";
                 printAlert(renderTuiFailure(cause));
             }

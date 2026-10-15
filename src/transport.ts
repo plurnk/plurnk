@@ -8,6 +8,7 @@ import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { Notice } from "./diagnostics.ts";
 import {
     ProblemError,
+    isAbsentWorker,
     clientTransportCancelled,
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
@@ -23,7 +24,7 @@ import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
 import { runViaAgui, actionOutcome, operationResult, problemDetails, type AguiEvent, type AguiTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
-import { reduceStatusGauge, type StatusGaugeEnvelope } from "./status.ts";
+import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
 
 // The terminal outcome projected by plurnk.terminated.
 export interface TerminatedInfo {
@@ -61,7 +62,10 @@ export interface RunHandlers {
     onOutside: (outside: OutsideText) => void;   // {§cli-outside-text} — the turn's prose outside its fences
     onNotice: (notice: Notice) => void;
     onProblem?: (problem: ProblemDetails) => void;
-    onStatus?: (gauge: StatusGauge) => void;
+    // The bound worker's gauge; a Run that binds no worker reports none.
+    onStatus?: (gauge: WorkerGauge) => void;
+    // {§cli-status-preparation} The bound workspace's state, which every Run bound to it carries.
+    onWorkspace?: (workspace: WorkspaceState) => void;
     onTerminated: (t: TerminatedInfo) => void;
 }
 
@@ -106,8 +110,8 @@ export interface Transport {
     // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
     useWorker(name: string, world: string): void;
-    // The attached workspace now carries `name` (workspace.rename): later Runs name it and the bound
-    // worker is unchanged, so a thread named after its workspace follows the new name.
+    // The attached workspace now carries `name` (workspace.rename): later Runs name it, and the thread
+    // keeps naming its worker.
     renameWorkspace(name: string): void;
     // The thread this transport speaks for: the AG-UI threadId the daemon sources this
     // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
@@ -467,7 +471,10 @@ export class AguiTransport implements Transport {
             ready.resolve();
             return terminal;
         }).catch((cause: unknown): TerminatedInfo => {
-            ready.reject(cause);
+            // plurnk-service {§agui-action-binding}: the binding stands when its worker, or its world, does not
+            // exist yet; only the observation fails.
+            if (prompt === undefined && isAbsentWorker(cause)) ready.resolve();
+            else ready.reject(cause);
             if (!ac.signal.aborted) throw cause;
             const problem = clientTransportCancelled();
             return { finalStatus: problem.status, hitMaxTurns: false, result: operationResult({ status: problem.status, problem }) };
@@ -569,7 +576,7 @@ export class AguiTransport implements Transport {
     }
     async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<{ name: string }> {
         // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
-        // switch is a new world + its default worker; a split thread comes from
+        // switch is a new world, where the TUI then names its worker; a split thread comes from
         // --worker at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#workspace = {
@@ -584,8 +591,7 @@ export class AguiTransport implements Transport {
         return { name: threadId };
     }
     renameWorkspace(name: string): void {
-        if (this.#world === undefined || this.#world === this.#threadId) this.#threadId = name;
-        if (this.#world !== undefined) this.#world = name;
+        this.#world = name;
     }
     useWorker(name: string, world: string): void {
         this.#threadId = name;
@@ -627,16 +633,17 @@ export class AguiTransport implements Transport {
         }
         const state = reduceStatusGauge(projection.gauge, e);
         if (state.handled) {
-            projection.gauge = state.gauge;
-            if (this.#modelProjection === null || this.#modelProjection === projection) {
+            const gauge = projection.gauge = state.gauge;
+            this.#h?.onWorkspace?.(structuredClone(gauge.plurnk.workspace));
+            if (isWorkerGauge(gauge) && (this.#modelProjection === null || this.#modelProjection === projection)) {
                 // {§cli-history-lost}: a recreated worker cannot reuse
                 // the old database's row identities or replay cursor.
-                if (this.#lastLoopId !== null && projection.gauge.plurnk.status.loopId === null) {
+                if (this.#lastLoopId !== null && gauge.plurnk.status.loopId === null) {
                     this.#seenRows.clear();
                     this.#historyCursor = 0;
                 }
-                this.#lastLoopId = projection.gauge.plurnk.status.loopId;
-                this.#h?.onStatus?.(structuredClone(projection.gauge));
+                this.#lastLoopId = gauge.plurnk.status.loopId;
+                this.#h?.onStatus?.(structuredClone(gauge));
             }
             return null;
         }

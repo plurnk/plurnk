@@ -41,6 +41,12 @@ export interface Notice {
 
 export type Diagnostic = ProblemDetails | Notice;
 
+// plurnk-service {§agui-action-binding}: the daemon's answer for a thread whose worker no act has created
+// yet, in a world that may not exist yet either. Nothing durable is there to read or observe.
+export const isAbsentWorker = (cause: unknown): boolean =>
+    cause instanceof ProblemError && (cause.problem.type === "https://problems.plurnk.xyz/agui/http/worker-not-found"
+        || cause.problem.type === "https://problems.plurnk.xyz/agui/http/workspace-not-found");
+
 export class ProblemError extends Error {
     readonly problem: ProblemDetails;
     readonly exitCode: number;

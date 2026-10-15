@@ -30,7 +30,8 @@ test("[§cli-status-wait] built TUI counts down a bounded park and retains its d
     const env = { HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "" };
     const first = spawnTui(daemon.url, args, env, daemon.workspace);
     t.after(() => first.kill());
-    await first.waitFor(/\[wait-countdown\/~user\(0\)\]/);
+    // No act has created the worker yet, so the place has no loop.
+    await first.waitFor(/\[wait-countdown\/~user\]/);
     first.write("Start the check.\r");
     await first.waitFor(/updates in [78]\.0s/);
     await first.waitFor(/updates in [56]\.0s/);
@@ -80,7 +81,7 @@ for (const mode of ["tui", "cli"] as const) {
         }, daemon.workspace);
         t.after(() => terminal.kill());
         if (mode === "tui") {
-            await terminal.waitFor(/\[preparation-tui\/~main\(0\)\]/);
+            await terminal.waitFor(/\[preparation-tui\/~main\]/);
             terminal.write("Reply briefly.\r");
         }
         const first = await terminal.waitFor(/preparing mcp\/slow (\d+\.\d+s)/, 10_000);
@@ -122,7 +123,7 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
     await tui.waitFor(/workspace: project-second \(new\)/, 10_000, switched);
     const headless = tui.output().length;
     tui.write("/workspace project-headless\r");
-    const headlessStatus = /\[project-headless\/~user\(0\)\] [^\r\n]*/;
+    const headlessStatus = /\[project-headless\/~user\] [^\r\n]*/;
     await tui.waitFor(headlessStatus, 10_000, headless);
     const headlessLines = stripVTControlCharacters(tui.output().slice(headless)).split(/[\r\n]/).filter((line) => headlessStatus.test(line));
     assert.ok(headlessLines.length > 0);

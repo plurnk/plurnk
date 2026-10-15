@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- A worker that does not exist yet is shown with the daemon's defaults until a message or a
+  setting creates it, and a one-shot call without `--worker` addresses the worker named after its
+  workspace: the daemon keeps no workspace default and no longer creates a worker for a read
+  (plurnk/plurnk-service#1134).
+- Launching creates no worker: a session binds its worker's name, and the worker comes into being
+  with the first message or a model, child or effort setting. Until then the place shows no loop,
+  the model shows the daemon's standing selection without an effort, `/workers` lists the bound name
+  as `● <name>  (new)`, and worker-scoped commands such as `/env` are refused by the daemon with its
+  recovery; once the worker exists the session reads back its policy and observes it
+  (plurnk/plurnk-service#1134).
+- Capability preparation and indexing on the status line are read from the workspace's state
+  (`STATE /plurnk/workspace/preparation` and `/activity`), which every Run bound to the workspace
+  carries; a Run that binds no worker, such as a workspace action, reports no gauge, and a snapshot
+  that carries a worker's status without its budget, or the reverse, is refused as invalid state
+  (plurnk/plurnk-service#1134).
 - After `/rename` the session follows the new name: later commands keep the bound worker instead of
   reaching a new workspace under the old name (plurnk/plurnk-service#1128).
 - `/look`, typed LOOK fences and the Alt-p/Alt-n target cycler are gone with the daemon's

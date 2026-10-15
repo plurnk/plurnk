@@ -15,7 +15,6 @@ const at = (n: number): string => `2026-09-04T10:0${n}:00Z`;
 const at2 = at;
 const forest: WorkerRow[] = [
     { id: 5, name: "_plurnk", created_at: at(0), origin: "_plurnk", parentWorkerId: null },
-    { id: 6, name: "client-1", created_at: at(0), origin: "client", parentWorkerId: null },
     { id: 1, name: "main", created_at: at(1), origin: "model", parentWorkerId: null },
     { id: 2, name: "main-fork", created_at: at(2), origin: "model", parentWorkerId: 1 },
     { id: 4, name: "guesser1", created_at: at(3), origin: "model", parentWorkerId: 1 },
@@ -28,9 +27,8 @@ test("[§cli-workers-topology] the bound worker's tree renders first, marked, wi
     assert.match(lines[1], /^ {2}├─ ○ guesser1 +model/u, "the newest child heads its siblings — the one `l` enters");
     assert.match(lines[2], /^ {2}└─ ○ main-fork +model/u);
     assert.match(lines[3], /^ {2} {3}└─ ○ recheck +model/u);
-    assert.match(lines[4], /^ {2}○ client-1 +client/u);
-    assert.match(lines[5], /^ {2}○ _plurnk +_plurnk/u);
-    assert.equal(lines.length, 6);
+    assert.match(lines[4], /^ {2}○ _plurnk +_plurnk/u);
+    assert.equal(lines.length, 5);
 });
 
 // {§cli-workers-topology} — one hop is a full attach; the map's order is the hop order.

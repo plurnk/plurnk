@@ -545,6 +545,28 @@ for (const order of [[42, 99], [99, 42]]) {
     });
 }
 
+test("[§cli-tui-flow] AguiTransport: after a rename, later Runs name the new workspace and keep the bound worker", async () => {
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.env.list", ok: true, result: {} } }));
+        res.end(frame({ type: "RUN_FINISHED" }));
+    });
+    try {
+        const split = new AguiTransport({ aguiUrl: mock.url }, "second", { workspace: "fresh" });
+        split.renameWorkspace("renamed");
+        await split.rpc("worker.env.list");
+        const implicit = new AguiTransport({ aguiUrl: mock.url }, "fresh");
+        implicit.renameWorkspace("renamed");
+        await implicit.rpc("worker.env.list");
+        const bindings = mock.captured.map(({ body }) => {
+            const input = body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
+            return [input.threadId, input.forwardedProps.plurnk.workspace];
+        });
+        assert.deepEqual(bindings, [["second", "renamed"], ["renamed", "renamed"]],
+            "a named worker keeps its thread; a thread named after its workspace follows the new name");
+    } finally { await mock.close(); }
+});
+
 test("AguiTransport: inject + rpc ride §3 action runs", async () => {
     const mock = await bootMock((req, res) => {
         // An action run answers on its own SSE: result custom + RUN_FINISHED.

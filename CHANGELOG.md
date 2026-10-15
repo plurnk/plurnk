@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- After `/rename` the session follows the new name: later commands keep the bound worker instead of
+  reaching a new workspace under the old name (plurnk/plurnk-service#1128).
 - `/look`, typed LOOK fences and the Alt-p/Alt-n target cycler are gone with the daemon's
   `op.look`: `/look` is an unknown command, and a LOOK fence goes to `op.parse` like any other
   named fence. A cut preview names only where the rest lives (`… +N lines · log:///…`), and

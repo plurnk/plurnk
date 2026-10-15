@@ -153,6 +153,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         shutdown: () => {},
         useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
+        renameWorkspace: () => {},
         threadId: () => "test-thread",
     };
 
@@ -179,6 +180,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
         shutdown: () => {},
         useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
+        renameWorkspace: () => {},
         threadId: () => "test-thread",
     };
 
@@ -305,6 +307,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         setEffort: (effort) => { modelState.effort = effort; },
         getWorkspace: () => workspace,
         setWorkspace: (s) => { workspace = s; },
+        renameWorkspace: (s) => { workspace = s; },
         getWorker: () => worker,
         attachWorker: async (name) => { attached.push(name); worker = name; },
         switchWorkspace: async (name) => {

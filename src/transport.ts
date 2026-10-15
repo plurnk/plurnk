@@ -106,6 +106,9 @@ export interface Transport {
     // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
     useWorker(name: string, world: string): void;
+    // The attached workspace now carries `name` (workspace.rename): later Runs name it and the bound
+    // worker is unchanged, so a thread named after its workspace follows the new name.
+    renameWorkspace(name: string): void;
     // The thread this transport speaks for: the AG-UI threadId the daemon sources this
     // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
     threadId(): string;
@@ -579,6 +582,10 @@ export class AguiTransport implements Transport {
         this.#historyCursor = 0;
         this.#lastLoopId = null;
         return { name: threadId };
+    }
+    renameWorkspace(name: string): void {
+        if (this.#world === undefined || this.#world === this.#threadId) this.#threadId = name;
+        if (this.#world !== undefined) this.#world = name;
     }
     useWorker(name: string, world: string): void {
         this.#threadId = name;

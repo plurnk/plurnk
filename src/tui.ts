@@ -314,6 +314,8 @@ export interface VerbContext {
     setEffort: (effort: WorkerEffort) => void;
     getWorkspace: () => WorkspaceResult;
     setWorkspace: (s: WorkspaceResult) => void;
+    // The attached workspace was renamed: the session keeps its binding under the new name.
+    renameWorkspace: (s: WorkspaceResult) => void;
     // Switch to (or create) a named workspace by re-mapping the transport's thread.
     // Returns the new workspace handle.
     switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult | undefined>;
@@ -495,7 +497,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             // (a worker's is not). Mutates the attached workspace in place.
             if (rest.length === 0) { write("  usage: /rename <name>\n"); return; }
             const renamed = await rpc.call("workspace.rename", { name: rest }) as WorkspaceResult;
-            ctx.setWorkspace(renamed);
+            ctx.renameWorkspace(renamed);
             write(`  workspace: ${renamed.name}\n`);
             return;
         }
@@ -1102,6 +1104,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         setEffort: (effort) => { workerEffort = effort; },
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
+        renameWorkspace: (s) => {
+            transport.renameWorkspace(s.name);
+            current = s;
+            surface.setTitle(windowTitle(s.name, boundWorker));
+        },
         switchWorkspace: async (name) => {
             const projectRoot = opts.selectProjectRoot === undefined ? opts.projectRoot : await opts.selectProjectRoot(name, surface);
             if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;

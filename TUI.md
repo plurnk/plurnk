@@ -48,7 +48,7 @@ keyboard negotiation, cursor/IME behavior, resize, and scrollback rendering.
 Plurnk owns command and run semantics. `Ctrl-C` cancels an active run and
 remains the escape hatch from the interactive client when idle.
 
-Opening or switching conversations restores a bounded recent transcript and
+Opening or switching a workspace or worker restores a bounded recent transcript and
 observes any current loop, without resubmitting a prompt. Replies remain whole;
 historical operations are headings, and old reasoning is not replayed.
 `PLURNK_CLIENT_HISTORY_ENTRIES` sets the tail size; `/log` inspects further back.

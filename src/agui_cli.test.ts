@@ -465,14 +465,14 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
     assert.equal(out.join(""), json ? "" : "First.\n\nSecond.\n\nVerification failed.\n");
 });
 
-test("consumeCliRun: exact and foreign-worker replies reach stdout only for this conversation", async () => {
+test("consumeCliRun: exact and foreign-worker replies reach stdout only for this thread", async () => {
     const { io, out } = sink();
     const receipt = (thread: string) => ({ answers: [`agui://anonymous/threads/${thread}/messages/m1`] });
     const result = await consumeCliRun(stream([
         { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
         workerRow({ op: "SEND", scheme: "agui", pathname: "/threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
         workerRow({ op: "SEND", origin: "_plurnk", source: "worker://peer", attrs: { kind: "reply" }, tx: { body: { raw: "Peer answer." } }, rx: receipt("t") }, 11),
-        workerRow({ op: "SEND", tx: { body: { raw: "Other conversation." } }, rx: receipt("other") }, 11),
+        workerRow({ op: "SEND", tx: { body: { raw: "Other thread." } }, rx: receipt("other") }, 11),
         workerRow({ op: "SEND", tx: { body: { raw: "Peer work." } }, rx: { answers: ["worker://peer/?message=abcdef01"] } }, 11),
         terminated({ workerId: 11 }),
     ]), io);

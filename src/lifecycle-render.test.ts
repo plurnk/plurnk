@@ -9,15 +9,15 @@ const row = (op: string, body: string | null, status: number, delivered = false)
     id: 1, loop_seq: 1, turn_seq: 2, sequence: 1, op, origin: "model", signal: null,
     scheme: null, hostname: null, pathname: null, fragment: null, lineMarker: null,
     tx: { op, body, target: null, aside: null },
-    rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/conversation/messages/m1"] } : {}) }, status_rx: status, tags: [],
+    rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/user/messages/m1"] } : {}) }, status_rx: status, tags: [],
 });
 
 test("an addressed answer is rendered from successful delivery, not targetlessness or a terminal verb", () => {
     const entry = row("SEND", "**Authored response.**", 200, true);
     entry.scheme = "agui";
-    entry.pathname = "/threads/conversation/messages/m1";
-    entry.rx = { answers: ["agui://anonymous/threads/conversation/messages/m1"] };
-    assert.equal(isResponseMessage(entry, "conversation"), true);
+    entry.pathname = "/threads/user/messages/m1";
+    entry.rx = { answers: ["agui://anonymous/threads/user/messages/m1"] };
+    assert.equal(isResponseMessage(entry, "user"), true);
     assert.equal(isResponseMessage(entry, "other"), false);
     assert.equal(extractSendBody(entry.tx), "**Authored response.**");
     assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
@@ -32,7 +32,7 @@ test("an addressed answer is rendered from successful delivery, not targetlessne
 test("[§cli-note-rendering] a model NOTE renders as full Markdown without becoming a delivered message", () => {
     const note = row("NOTE", "Working memory, not a response.", 200);
     assert.equal(isResponseMessage(note), false, "it is not speech");
-    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "\nWorking memory, not a response.", "model text uses the conversation column");
+    assert.equal(stripVTControlCharacters(renderLogEntry(note, 80)), "\nWorking memory, not a response.", "model text takes a reply's layout: a blank lead, then column zero");
     const answer = row("SEND", "Working memory, not a response.", 200, true);
     assert.equal(stripVTControlCharacters(renderLogEntry(answer, 80)), "\nWorking memory, not a response.", "the delivered answer keeps its blank lead and is whole");
     assert.equal(stripVTControlCharacters(renderLogEntry({ ...note, origin: "_plurnk" }, 80)), "NOTE\n    Working memory, not a response.\n", "a harness NOTE keeps its heading, its body whole beneath, a blank row under it");
@@ -44,7 +44,7 @@ for (const columns of [24, 80]) test(`[§cli-note-rendering] model notes use the
     const rendered = renderLogEntry(note, columns);
     assert.equal(stripVTControlCharacters(rendered), `\n${stripVTControlCharacters(renderSendBody(note.tx, columns))}`, "the shared Markdown layout with its weight removed, no preview or NOTE keyword");
     const plain = stripVTControlCharacters(rendered);
-    assert.doesNotMatch(plain, /\*\*Important\*\*|\/look/u);
+    assert.doesNotMatch(plain, /\*\*Important\*\*|… \+\d+ lines/u);
     assert.match(plain, /console\.log\(42\);/u);
     assert.match(plain, /End of note\./u);
     assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= columns), "the existing renderer respects the viewport");
@@ -68,7 +68,7 @@ for (const columns of [24, 80]) test(`[§cli-outside-text] outside text renders 
     assert.equal(rendered, `\n${renderSendBody({ body: { raw: text } }, columns)}`, "one block with a reply's layout, its Markdown weight kept");
     const plain = stripVTControlCharacters(rendered);
     assert.match(plain, /^\nFindings/u, "blank lead line, body at column zero");
-    assert.doesNotMatch(plain, /\*\*Important\*\*|\/look|alice-1-2/u, "Markdown projected, no preview, no coordinate");
+    assert.doesNotMatch(plain, /\*\*Important\*\*|… \+\d+ lines|alice-1-2/u, "Markdown projected, no preview, no coordinate");
     assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= columns), "the renderer respects the viewport");
     assert.equal(isResponseMessage(row("NOTE", text, 200)), false, "the block it shares is not speech");
 });
@@ -108,11 +108,11 @@ test("{§cli-broadcast-send-rendering} delivered replies render independently of
     assert.equal(stripVTControlCharacters(renderLogEntry(long, 80)).split("\n").length, 41, "the delivered answer is whole");
 });
 
-test("{§cli-broadcast-send-rendering} a SEND without a delivered recipient is not conversation speech", () => {
+test("{§cli-broadcast-send-rendering} a SEND without a delivered recipient is not speech", () => {
     const entry = row("SEND", "Unaddressed text.", 200);
     entry.rx = { status: 200, answers: [] };
     assert.equal(isResponseMessage(entry), false);
-    assert.equal(isResponseMessage(entry, "conversation"), false);
+    assert.equal(isResponseMessage(entry, "user"), false);
     assert.match(stripVTControlCharacters(renderLogEntry(entry)), /^SEND\b/u);
 });
 
@@ -137,7 +137,7 @@ test("{§cli-broadcast-send-rendering} an undelivered SEND renders as an operati
     }
 });
 
-test("{§cli-broadcast-send-rendering} empty reply bodies create no conversation speech", () => {
+test("{§cli-broadcast-send-rendering} empty reply bodies create no speech", () => {
     for (const body of [null, "", " \n\t"]) {
         for (const completion of [undefined, 200, 499]) {
             const entry = row("SEND", body, 200, true);

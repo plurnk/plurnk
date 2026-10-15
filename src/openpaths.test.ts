@@ -35,7 +35,7 @@ test("[§cli-prompt-open-paths] an email-like a@b.com opens nothing", () => {
 });
 
 test("[§cli-prompt-open-paths] a directory opens nothing", () => {
-    assert.deepEqual(extractOpenPaths("look in @src", root), []);
+    assert.deepEqual(extractOpenPaths("summarize @src", root), []);
 });
 
 test("[§cli-prompt-open-paths] a path through a file opens nothing", () => {

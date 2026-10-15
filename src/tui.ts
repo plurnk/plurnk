@@ -3,7 +3,6 @@
 // Line language:
 //   /verb [args]   command verbs (see VERBS); never start a loop
 //   named executable fences through op.parse
-//   LOOK fences via op.look — inspect a uri's content for ME, not the model
 //   ! cmd          op.exec via the daemon
 //   ... msg         loop.inject — speak into the running model loop
 //   ? text         select proposal review for this loop
@@ -28,13 +27,12 @@ import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSubmitt
 import { renderHistory } from "./render-history.ts";
 export { renderSubmittedInput } from "./render-message.ts";
 import { LINEAGE_OFFSET, indentDescendant, lineageWorker, markDescendant, type Descendant } from "./render.ts";
-import { lookFence, renderLook, type LookResult } from "./look.ts";
 import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
 import { keyToResolution, editInEditor } from "./proposal.ts";
 import Review from "./Review.ts";
 import { AguiTransport, type ObservationHandle, type Transport } from "./transport.ts";
-import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientConversationLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
+import { ProblemError, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -57,7 +55,7 @@ import {
     setWorkerEffort,
     type WorkerEffort,
 } from "./effort.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, conversationLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, historyLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -113,11 +111,6 @@ export const altShortcut = (forward: string): string | null => {
 export const backTabShortcut = (forward: string): string | null =>
     forward === "\x1b[Z" ? "/yolo" : null;
 
-// Recognize the client-only LOOK surface so it can be routed to `op.look`.
-// The AG-UI observation action owns validation and the single LOOK→READ rewrite.
-export const lookStatement = (line: string): string | null =>
-    /^`{3,}LOOK(?![A-Za-z0-9_.+-])/.test(line) ? line : null;
-
 export { parsePrompt } from "./policy.ts";
 
 // {§cli-log-entry-line-format} — the human's line in scrollback: bold, in the human's own colour, so
@@ -137,21 +130,6 @@ export const resumeCommand = (workspace: string, worker: string, env: Readonly<R
     }).join("");
     return `${bindings}plurnk --workspace ${quote(workspace)} --worker ${quote(worker)}`;
 };
-
-// Alt-p / Alt-n cycle the LOOK target through prior operations (prev/next op).
-// null = not a cycle key.
-export const cycleKey = (forward: string): "up" | "down" | null =>
-    forward === "\x1bp" ? "up" : forward === "\x1bn" ? "down" : null;
-
-// Pure cursor math for the LOOK coordinate cycler over `count` seen coordinates
-// (oldest→newest). Up walks toward older (start at newest), down toward newer.
-// Returns the next index, or null when there's nothing to cycle.
-export const cycleCoord = (count: number, cursor: number | null, dir: "up" | "down"): number | null => {
-    if (count === 0) return null;
-    if (cursor === null) return dir === "up" ? count - 1 : null;
-    return dir === "up" ? Math.max(0, cursor - 1) : Math.min(count - 1, cursor + 1);
-};
-
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
     const m = line.match(/^\/(\S*)\s*(.*)$/);
@@ -339,7 +317,7 @@ export interface VerbContext {
     // Switch to (or create) a named workspace by re-mapping the transport's thread.
     // Returns the new workspace handle.
     switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult | undefined>;
-    // The bound conversation worker's name (null until a loop or /attach names it).
+    // The bound worker's name (null until a loop or /attach names it).
     getWorker: () => string | null;
     // Rebind the session's thread to a worker by name, world unchanged
     // ({§cli-workers-topology}); the daemon binds or mints on the next run.
@@ -350,8 +328,6 @@ export interface VerbContext {
     // Compose the prompt line in $EDITOR (plurnk#26) — places the result back
     // on the line (zsh edit-command-line convention); Enter submits.
     composeInEditor: () => Promise<void>;
-    // /look <address> [<scope>] [pattern] — inspect a resource for the human ({§cli-inspection}).
-    look: (rest: string) => Promise<void>;
 }
 
 export type ResolvedModelSpec = ModelRoute;
@@ -424,7 +400,6 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(renderCommandHelp(rest, commandSpec(rest.replace(/^\//u, ""))?.group === "functionality"
                 ? await ctx.getActions() : undefined));
             return;
-        case "look": await ctx.look(rest); return;
         case "models": await runModels(rpc, {
             json: false,
             query: rest.length === 0 ? {} : { search: rest },
@@ -445,7 +420,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "model": {
             if (rest.length === 0) { write(`  model: ${ctx.model === null ? "(daemon default)" : resolvedModelLabel(ctx.model)}\n`); return; }
             // {§worker-model-selection} — /model is a server-backed durable selection:
-            // the daemon resolves and persists onto the conversation worker; nothing
+            // the daemon resolves and persists onto the bound worker; nothing
             // client-local rides the next loop.
             // {§cli-effort} — `/model <selector> <effort>` chooses both, and the daemon validates the pair once.
             const [selector, effort] = rest.split(/\s+/u);
@@ -545,7 +520,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             }
             return;
         case "worker": {
-            // New worker — run.fork branches this conversation, optionally
+            // New worker — run.fork branches the bound worker, optionally
             // named at instantiation (immutable after). Bind to the fork so the
             // next prompt speaks there. The workspace (the world) is unchanged.
             const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
@@ -556,7 +531,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "attach": {
             // {§cli-workers-topology} — an existing worker is bound, a new name mints a
-            // fresh conversation on the next run (the `--worker` path); the world stays.
+            // new worker on the next run (the `--worker` path); the world stays.
             if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
             const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             const known = workers.some((worker) => worker.name === rest);
@@ -678,7 +653,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let boundProjectRoot: string | null = null;
     let tally: SessionTally = EMPTY_TALLY;
     let runningSince: number | null = null;
-    let conversationWorkerId: number | null = null;
+    let boundWorkerId: number | null = null;
     // {plurnk#108} — the descendants the daemon introduced for this session's delegation observation.
     const descendants = new Map<number, Descendant>();
     const observedNames = new Set<string>();
@@ -691,16 +666,19 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let placeTurn: number | null = null;
     let seenLoopId: number | null = null;
     let placeWorkers: readonly WorkerRow[] = [];
-    let conversationWorker: string | null = opts.workerName ?? null;
+    let boundWorker: string | null = opts.workerName ?? null;
     let searchFetching = false;
     let searchPercent: number | null = null;
     // A `?` prompt asks for review of that run; the request outranks the standing yolo setting.
     let reviewRequested = false;
-    // Inspection: the REAL target URIs of prior operations the waterfall has shown
-    // (oldest→newest, e.g. worker:///plan.md) feed the Alt-p/Alt-n cycler. The binding
-    // scopes both model and client-authored operations; resetConversationView clears it on attach.
-    const priorTargets: string[] = [];
-    let lookCursor: number | null = null;
+    // {§cli-workers-topology} — the `worker://<name>` references the waterfall has shown, from model
+    // and client-authored operations alike, complete /attach beside the directory. The binding scopes
+    // them; resetBindingView clears them on attach.
+    const seenWorkerNames = new Set<string>();
+    const harvestWorkerName = (target: string | null): void => {
+        const name = target === null ? null : workerNameFromTarget(target);
+        if (name !== null) seenWorkerNames.add(name);
+    };
     let liveReasoning: { messageId: string; rendered: string } | null = null;
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
@@ -780,15 +758,15 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // appends directly, so it cannot flush the next group's first row early.
     printAbove = (text) => { flushFanout(); surface.append(text); };
     surface.append(paint(header, "dim"));
-    surface.setTitle(windowTitle(current.name, conversationWorker));
+    surface.setTitle(windowTitle(current.name, boundWorker));
     if (workerModel === null) surface.append(renderDiagnostic(clientModelUnselected()));
     surface.append("");
 
     const statusContext = () => ({
         workspace: current.name,
-        worker: conversationWorker,
+        worker: boundWorker,
         place: promptPrefix(
-            workerPath(placeWorkers, conversationWorker),
+            workerPath(placeWorkers, boundWorker),
             { workspace: current.name, loopId: placeLoop, turn: placeTurn },
         ),
         position: workerPosition,
@@ -803,8 +781,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const workspaceName = current.name;
         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
         if (threadId !== transport.threadId() || workspaceName !== current.name) return;
-        conversationWorkerId = workers.find((worker) => worker.name === threadId)?.id ?? null;
-        workerPosition = siblingPosition(workers, conversationWorker);
+        boundWorkerId = workers.find((worker) => worker.name === threadId)?.id ?? null;
+        workerPosition = siblingPosition(workers, boundWorker);
         placeWorkers = workers;
         reprompt();
     };
@@ -840,11 +818,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             cwd: process.cwd(),
             getProjectRoot: () => boundProjectRoot,
             // {§cli-workers-topology} — the directory plus the worker:// references
-            // the waterfall has shown (the same harvest the LOOK cycler keeps).
+            // the waterfall has shown.
             getWorkerNames: async () => {
                 const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
-                const seen = priorTargets.map(workerNameFromTarget).filter((name): name is string => name !== null);
-                return [...new Set([...workers.map((worker) => worker.name), ...seen])];
+                return [...new Set([...workers.map((worker) => worker.name), ...seenWorkerNames])];
             },
             getEfforts: () => workerEffort.supportedEfforts,
             getProviderModels: async (provider) => {
@@ -895,40 +872,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         liveReasoning = null;
     };
 
-    const setLine = (text: string): void => surface.setInput(text);
-
-    // Alt-p/Alt-n: walk the REAL target URIs of the bound conversation's prior operations and
-    // put `/look <target>` into an EMPTY composer — an editable starting point (hand-edit
-    // before Enter). A composer holding anything else is the user's; leave it alone.
-    const cycleLook = (dir: "up" | "down"): void => {
-        const current = surface.editor.getText();
-        if (current.length > 0 && !current.startsWith("/look ")) return;
-        lookCursor = cycleCoord(priorTargets.length, lookCursor, dir);
-        if (lookCursor === null) return;
-        setLine(`/look ${priorTargets[lookCursor]}`);
-    };
-
-    // Inspection is the human's, never the loop's ({§cli-inspection}): op.look validates and
-    // rewrites the LOOK, resolves the READ as the bound conversation, and writes no log entry;
-    // the readout prints above the composer. No lifecycle, summary, or tally, and no wait on
-    // a running model.
-    const runLook = async (lookText: string): Promise<void> => {
-        try {
-            const r = await transport.rpc("op.look", { text: lookText }) as LookResult;
-            printAbove(renderLook(lookText, r));
-        } catch (cause) {
-            // An unsuccessful READ reaches the client as its exact Problem: that is the look's outcome.
-            if (!(cause instanceof ProblemError)) throw cause;
-            printAbove(renderLook(lookText, { status: cause.problem.status, problem: cause.problem }));
-        }
-    };
-    const inspect = (lookText: string): void => {
-        pendingCommands += 1;
-        void runLook(lookText)
-            .catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); })
-            .finally(() => { pendingCommands -= 1; });
-    };
-
     // pi-tui owns multiline input, paste normalization, modern keyboard
     // negotiation, history navigation, wrapping, cursor placement, and IME.
     // Plurnk's listener consumes only product-level gestures before the editor.
@@ -955,8 +898,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             return { consume: true };
         }
         if (surface.reviewing) return undefined;
-        const dir = cycleKey(text);
-        if (dir !== null) { cycleLook(dir); return { consume: true }; }
         const verb = altShortcut(text) ?? backTabShortcut(text);
         if (verb !== null) { dispatchShortcut(verb); return { consume: true }; }
         return undefined;
@@ -1009,9 +950,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             surface.archiveResponses();
             for (const block of renderHistory(history, transport.threadId(), surface.columns || 80)) printAbove(block);
             for (const entry of history.entries) {
-                if (isEmission(entry)) continue;
-                const target = entryTarget(entry);
-                if (target !== null) priorTargets.push(target);
+                if (!isEmission(entry)) harvestWorkerName(entryTarget(entry));
             }
         },
         onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
@@ -1038,9 +977,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq, entry.worker_id)) printAbove(renderPendingRow(stale));
                 presentedTurn = turn;
             }
-            // Record this op's REAL target URI for the Alt-p/Alt-n LOOK cycler.
             const target = entryTarget(entry);
-            if (target !== null) priorTargets.push(target);
+            harvestWorkerName(target);
             if (inFlight && entry.origin === "model" && typeof entry.op === "string") {
                 doing = { phase: "working", since: Date.now(), op: entry.op, target };
                 repromptPreserving();
@@ -1064,9 +1002,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 inFlight = true;
                 runningSince ??= observedClockStart(authoritativeStatus, Date.now());
             }
-            // {§cli-conversation-lost} — a bound name answered with no history is a new conversation.
-            if (conversationLost(seenLoopId, authoritativeStatus.loopId)) {
-                printAlert(renderDiagnostic(clientConversationLost(current.name, conversationWorker ?? current.name)));
+            // {§cli-history-lost} — a bound name answered with no history is a new worker.
+            if (historyLost(seenLoopId, authoritativeStatus.loopId)) {
+                printAlert(renderDiagnostic(clientHistoryLost(current.name, boundWorker ?? current.name)));
             }
             seenLoopId = authoritativeStatus.loopId;
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
@@ -1134,20 +1072,19 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
 
     // Verb dispatch runs through the testable module-level handleVerb; this
     // context injects the live workspace / opts / stdout / import glue.
-    const resetConversationView = (): void => {
+    const resetBindingView = (): void => {
         flushFanout();
         surface.archiveActivity();
         surface.setLive(null);
         authoritativeStatus = null;
         boundProjectRoot = null;
-        conversationWorkerId = null;
+        boundWorkerId = null;
         seenLoopId = null;
         placeLoop = null;
         placeTurn = null;
         presentedTurn = null;
         liveReasoning = null;
-        priorTargets.length = 0;
-        lookCursor = null;
+        seenWorkerNames.clear();
         descendants.clear();
         observedNames.clear();
         streams = new StreamTrace();
@@ -1172,8 +1109,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const worker = opts.workerName ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
             transport.useWorker(worker, workspace.name);
             opts.projectRoot = projectRoot;
-            resetConversationView();
-            conversationWorker = worker;
+            resetBindingView();
+            boundWorker = worker;
             current = workspace;
             surface.setTitle(windowTitle(workspace.name, worker));
             observeBinding();
@@ -1181,11 +1118,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             await refreshTopology();
             return workspace;
         },
-        getWorker: () => conversationWorker,
+        getWorker: () => boundWorker,
         attachWorker: async (name) => {
             transport.useWorker(name, current.name);
-            resetConversationView();
-            conversationWorker = name;
+            resetBindingView();
+            boundWorker = name;
             surface.setTitle(windowTitle(current.name, name));
             observeBinding();
             await bindingReady;
@@ -1205,11 +1142,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
             await review.decide(action);
-        },
-        look: async (rest) => {
-            const fence = lookFence(rest);
-            if (fence === null) { printAbove("  /look <address> [<scope>] [pattern]"); return; }
-            await runLook(fence);
         },
         // /editor · Alt-e: place the edited multiline value back in the composer;
         // Enter remains the only submit gesture.
@@ -1237,13 +1169,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reviewRequested = false;
                 if (terminal !== null && !shuttingDown && !detached) {
                     const turnCount = terminal.turnIds?.length ?? 0;
-                    if (terminal.workerId !== undefined && terminal.workerId !== conversationWorkerId) {
-                        conversationWorkerId = terminal.workerId;
+                    if (terminal.workerId !== undefined && terminal.workerId !== boundWorkerId) {
+                        boundWorkerId = terminal.workerId;
                         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
-                        const hit = workers.find((worker) => worker.id === conversationWorkerId);
-                        if (hit === undefined) throw new Error(`worker ${conversationWorkerId} concluded a loop but workspace.workers does not list it`);
-                        conversationWorker = hit.name;
-                        workerPosition = siblingPosition(workers, conversationWorker);
+                        const hit = workers.find((worker) => worker.id === boundWorkerId);
+                        if (hit === undefined) throw new Error(`worker ${boundWorkerId} concluded a loop but workspace.workers does not list it`);
+                        boundWorker = hit.name;
+                        workerPosition = siblingPosition(workers, boundWorker);
                         placeWorkers = workers;
                     }
                     lifecycle = terminal.result.status === 202 ? "parked"
@@ -1307,11 +1239,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (!["help", "quit", "stop"].includes(verb)) await bindingReady;
         const rebinds = commandSpec(verb)?.rebinds === true;
         if (rebinds && (inFlight || pendingCommands > 0)) {
-            printAbove("  The conversation stays attached until its run and submitted commands settle; /stop cancels the run.");
+            printAbove("  The worker stays bound until its run and submitted commands settle; /stop cancels the run.");
             return;
         }
         if (rebinding && !["help", "quit", "stop", ""].includes(verb)) {
-            printAbove("  Changing conversation; retry this command after the new binding is confirmed.");
+            printAbove("  Rebinding; retry this command after the new binding is confirmed.");
             return;
         }
         pendingCommands += 1;
@@ -1340,7 +1272,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, conversationWorker ?? workspace.name, opts.resumeEnv)}`, "dim")}\n`);
+            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, boundWorker ?? workspace.name, opts.resumeEnv)}`, "dim")}\n`);
             resolve();
         };
         requestClose = close;
@@ -1363,14 +1295,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             await bindingReady;
 
             if (rebinding) {
-                printAbove("  Changing conversation; submit after the new binding is confirmed.");
+                printAbove("  Rebinding; submit after the new binding is confirmed.");
                 return;
             }
-            // A typed LOOK fence is inspection, not a run ({§cli-inspection}).
             const statementText = dslStatement(trimmed);
-            const typedLook = statementText !== null ? lookStatement(statementText) : null;
-            if (typedLook !== null) { inspect(typedLook); reprompt(); return; }
-
             if (statementText !== null || trimmed.startsWith("!")) {
                 pendingCommands += 1;
                 const start = Date.now();

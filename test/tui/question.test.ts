@@ -87,8 +87,9 @@ for (const action of ["accept", "cancel", "stop", "fixed", "free"]) {
                 await tui.waitFor(/1 pending review.*\/review/, 3_000);
                 tui.write("/model\r");
                 await tui.waitFor(/model: questionfixture/);
-                tui.write("/look worker:///question-check.md\r");
-                await tui.waitFor(/LOOK \(worker:\/\/\/question-check\.md\) —/);
+                const listed = tui.output().length;
+                tui.write("/workers\r");
+                await tui.waitFor(/← bound/, 10_000, listed);
                 assert.equal(requests.length, 1, "inspection and commands do not answer the question");
                 if (action === "stop") {
                     tui.write("/stop\r");

@@ -16,7 +16,7 @@ export const workerNameFromTarget = (target: string): string | null =>
 const byRecency = (a: WorkerRow, b: WorkerRow): number =>
     a.created_at > b.created_at ? -1 : a.created_at < b.created_at ? 1 : b.id - a.id;
 
-// The places a session can be: conversations and their descendants. The daemon's own
+// The places a session can be: root workers and their descendants. The daemon's own
 // maintenance worker and a connection's scratch worker are not places.
 const isPlace = (worker: WorkerRow): boolean => worker.origin === "model";
 

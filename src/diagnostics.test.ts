@@ -10,7 +10,7 @@ process.env.NO_COLOR = "1";
 
 const {
     renderDiagnostic,
-    clientConversationLost,
+    clientHistoryLost,
     ProblemError,
     clientConnectionRefused,
     isUnreachable,
@@ -240,10 +240,12 @@ test("a missing terminal cannot recommend replaying a possibly completed run", (
     assert.equal(problem.retryable, false);
 });
 
-test("[§cli-conversation-lost] a lost conversation renders as a warning naming the workspace and the worker", () => {
-    const out = renderDiagnostic(clientConversationLost("dogfood", "plurnk"));
-    assert.deepEqual(out.split("\n"), [
-        "│ ⚠️  Warning client:conversation:conversation_lost — the daemon holds no history for conversation plurnk in workspace dogfood; this message starts a new one, and the turns above are this terminal's memory, not the model's",
-        "│ The daemon restarted on a fresh database, or the worker was deleted.",
-    ]);
+test("[§cli-history-lost] a lost history renders as a warning naming the workspace and the worker", () => {
+    const notice = clientHistoryLost("dogfood", "plurnk");
+    assert.equal(notice.kind, "history_lost");
+    assert.equal(notice.level, "warn");
+    const [title] = renderDiagnostic(notice).split("\n");
+    assert.match(title!, /^│ ⚠️ {2}Warning /u);
+    assert.match(title!, /\bdogfood\b/u, "the workspace is named");
+    assert.match(title!, /\bplurnk\b/u, "the worker is named");
 });

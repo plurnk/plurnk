@@ -170,10 +170,10 @@ test("buildVersionNotice: service absent → client line only", () => {
 
 // ─── resolveWorkerId: a worker is addressable by NAME within its workspace's world ───
 // Plurnk's machine model (service SPEC §machine-processes): a workspace holds many
-// workers (conversations over one world); --worker selects one by name. Fail-hard: an
-// unknown name is a contract violation, never a fabricated fallback to the conversation worker.
+// workers over one world; --worker selects one by name. Fail-hard: an unknown name is a
+// contract violation, never a fabricated fallback to the default worker.
 
-test("resolveWorkerId: undefined name → undefined, and NEVER queries workspace.workers (the conversation-worker default)", async () => {
+test("resolveWorkerId: undefined name → undefined, and NEVER queries workspace.workers (the default worker)", async () => {
     let called = 0;
     const rpc = { call: async () => { called++; return { workers: [] }; } };
     const id = await resolveWorkerId(rpc, undefined);
@@ -186,7 +186,7 @@ test("[§cli-workspaces-and-workers] resolveWorkerId: a named worker resolves to
     assert.equal(await resolveWorkerId(rpc, "spike"), 42);
 });
 
-test("[§cli-workspaces-and-workers] resolveWorkerId: an unknown worker name THROWS — no silent fallback to the conversation worker", async () => {
+test("[§cli-workspaces-and-workers] resolveWorkerId: an unknown worker name THROWS — no silent fallback to the default worker", async () => {
     const rpc = { call: async () => ({ workers: [{ id: 10, name: "client-1" }] }) };
     await assert.rejects(
         () => resolveWorkerId(rpc, "ghost"),

@@ -64,9 +64,9 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     await tui.waitFor(/● main/);
 
     tui.write("/attach elsewhere\r");
-    await tui.waitFor(/conversation.*attached/);
+    await tui.waitFor(/until its run and submitted commands settle/);
     tui.write("\x1bh");
-    await tui.waitFor(/(?:conversation.*attached[\s\S]*){2}/);
+    await tui.waitFor(/(?:until its run and submitted commands settle[\s\S]*){2}/);
 
     tui.write("! printf '\\141\\143\\164\\151\\157\\156\\055\\157\\153'\r");
     // In review mode, even the operator's own `!` command is shown before it runs. Answering it is
@@ -74,8 +74,6 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/);
     tui.write("\r");
     await tui.waitFor(/action-ok/);
-    tui.write("/look worker:///missing.md\r");
-    await tui.waitFor(/LOOK \(worker:\/\/\/missing\.md\) —/);
     assert.equal(requests, 1, "commands did not request more inference");
     assert.doesNotMatch(tui.output(), /busy;|loop running —/, "no blanket busy path");
     tui.write("... added while streaming\r");

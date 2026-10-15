@@ -79,7 +79,7 @@ export const buildJsonRecord = (input: {
         hitMaxTurns: input.result.hitMaxTurns,
         timedOut: input.timedOut,
         loopId: input.result.loopId,
-        workerId: input.result.modelWorkerId ?? null,   // the conversation's worker, for correlation / `read --worker`
+        workerId: input.result.modelWorkerId ?? null,   // the bound worker, for correlation / `read --worker`
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,
         usage: input.result.usage ?? null,

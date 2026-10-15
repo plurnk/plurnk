@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `/look`, typed LOOK fences and the Alt-p/Alt-n target cycler are gone with the daemon's
+  `op.look`: `/look` is an unknown command, and a LOOK fence goes to `op.parse` like any other
+  named fence. A cut preview names only where the rest lives (`… +N lines · log:///…`), and
+  `plurnk read` prints a whole log entry (plurnk/plurnk-service#1133).
+- The client no longer says "conversation": help, usage, the manual and the specification say
+  worker, thread, message Run or sync Run instead, and the warning for a bound name the daemon
+  answers with no history is `client:worker:history_lost` (was `client:conversation:conversation_lost`)
+  (plurnk/plurnk-service#1133).
 - The status line's folder is the daemon's label for it (`projectLabel`), shown as given: a client
   attached to a daemon on another host spells the folder from that daemon's home, and the client no
   longer shortens paths with its own (plurnk/plurnk-service#1127).

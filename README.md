@@ -36,7 +36,7 @@ with ordinary shell pipelines.
 This repository provides the CLI and interactive terminal client for
 [plurnk-service](https://github.com/plurnk/plurnk-service), its backend.
 
-Workspaces and worker conversations live in the daemon, independently of the
+Workspaces, workers and their history live in the daemon, independently of the
 client session. Choose your model, context limits, tools, and capability
 policies without replacing the environment. No Plurnk account is required.
 
@@ -124,7 +124,7 @@ plurnk --workspace="myProject"
 A scrollback-native TUI with multiline prompts, streaming reasoning when the
 provider supplies it, Markdown and Mermaid rendering, and slash commands for
 managing models, workers, and tools. Run `/help` to explore; `/model` and
-`/child` select the conversation and delegated models.
+`/child` select the worker's model and its delegated model.
 
 ### CLI and pipelines
 

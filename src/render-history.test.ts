@@ -10,7 +10,7 @@ const entry = (overrides: Partial<LogEntryWire>): LogEntryWire => ({
     rx: null, tags: [], loop_seq: 1, turn_seq: 1, sequence: 1, ...overrides,
 });
 
-test("[§cli-conversation-history] snapshot speech and operation headings retain their chronological row order", () => {
+test("[§cli-worker-history] snapshot speech and operation headings retain their chronological row order", () => {
     const source = "agui://anonymous/threads/alice/messages/prompt";
     const blocks = renderHistory({ attachment: true, entries: [
         entry({ id: 1, op: "SEND", origin: "_plurnk", source, attrs: { kind: "message" }, tx: { body: "row prompt" } }),
@@ -24,7 +24,7 @@ test("[§cli-conversation-history] snapshot speech and operation headings retain
     assert.deepEqual(blocks, ["› snapshot prompt\n  second line", "READ (a.md)", "snapshot answer", "— 3 earlier entries · /log for more —"]);
 });
 
-test("{§cli-conversation-history}: rows newer than the snapshot carry their own answer; another actor retains attribution", () => {
+test("{§cli-worker-history}: rows newer than the snapshot carry their own answer; another actor retains attribution", () => {
     assert.deepEqual(renderHistory({ attachment: false, messages: [], entries: [
         entry({ id: 1, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: "worker update" } }),
         entry({ id: 2, op: "SEND", rx: { answers: ["agui://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
@@ -32,7 +32,7 @@ test("{§cli-conversation-history}: rows newer than the snapshot carry their own
     ] }, "alice", 80), ["worker://helper\nworker update", "recent answer"]);
 });
 
-test("{§cli-conversation-history}: an empty history emits no decorative seam or old reasoning", () => {
+test("{§cli-worker-history}: an empty history emits no decorative seam or old reasoning", () => {
     assert.deepEqual(renderHistory({ attachment: true, entries: [], messages: [
         { id: "reasoning", role: "reasoning", content: "private thought" },
     ] }, "alice", 80), []);

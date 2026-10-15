@@ -114,7 +114,7 @@ export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     isArrivalEntry(entry) && typeof entry.source === "string" && ownThread(threadId).test(entry.source);
 
 // {§cli-workers-topology} {plurnk#108} — a lineage row is a direct child's durable activity as the
-// daemon correlated it into this conversation's log: an operation sourced to `worker://<name>`. Its
+// daemon correlated it into the bound worker's log: an operation sourced to `worker://<name>`. Its
 // outcome is the row's own; the child's streams conclude in the child's Run, never here. The child's
 // conclusion, the parent's own READ of `ops://<name>/<loop>`, is an ordinary row: it carries the
 // child's terminal status and needs no mark, and the harness reads `ops://` for itself too.
@@ -163,8 +163,7 @@ export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boole
 
 // The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
 // the bare pathname when scheme is null (the daemon's file:// shortcut). null
-// when the entry has no path at all. One source for both the
-// waterfall render and the LOOK cycler — no synthesis, render what the daemon sent.
+// when the entry has no path at all. No synthesis: render what the daemon sent.
 export const entryTarget = (entry: LogEntryWire): string | null => {
     if (entry.pathname === null) return null;
     return entry.scheme !== null
@@ -274,7 +273,7 @@ export const renderPendingRow = (entry: LogEntryWire): string =>
 
 // {plurnk#107} — every body in the waterfall is a preview of a fixed number of lines, the knob's
 // (PLURNK_CLIENT_PREVIEW_LINES; --preview-lines spells it for one invocation), never the
-// terminal's height; the rest is named with the address LOOK reads it at. This is scrollback; the
+// terminal's height; the rest is named by the address it lives at. This is scrollback; the
 // reasoning lane ({§cli-provider-reasoning}) is a separate, live window. A renderer reached before
 // the panel is loaded is a programming error, not a default.
 export const previewLimit = (): number => {
@@ -295,14 +294,14 @@ export const entryAddress = (entry: LogEntryWire): string =>
     `log:///${entry.loop_seq}/${entry.turn_seq}/${entry.sequence}/${entry.op ?? "error"}`;
 
 export const previewMore = (entry: LogEntryWire, remaining: number): string =>
-    `… +${remaining} lines · /look ${entryAddress(entry)}`;
+    `… +${remaining} lines · ${entryAddress(entry)}`;
 
 // A preview line: four columns in and dim, the reasoning lane's fade without its italic, so
 // it competes with neither the operations nor the delivered answer.
 export const PREVIEW_OFFSET = "    ";
 
 // {plurnk#162} — a preview line is one row. A line wider than its row (minified code, a JSON
-// blob) would wrap without bound, so it is cut at the width and the cut marked; /look has it
+// blob) would wrap without bound, so it is cut at the width and the cut marked; the log has it
 // whole. Tabs count as four columns; an unbounded width cuts nothing.
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 export const fitRow = (line: string, width: number): string => {

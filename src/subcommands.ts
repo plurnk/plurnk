@@ -173,7 +173,7 @@ export const runWorkspaceRename = async (
 
 // ─── plurnk log read ──────────────────────────────────────────────────
 
-// The caller's thread selects the workspace; log.read reads its conversation worker
+// The caller's thread selects the workspace; log.read reads the thread's bound worker
 // unless a workerId pins another. Filters pass through to the action.
 
 interface LogReadResult {

@@ -251,23 +251,10 @@
         "lifecycle"
       ]
     },
-    "op.look": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — LOOK observation"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
-    },
     "run.fork": {
       "posture": "native",
       "evidence": [
-        "src/tui.test.ts — conversation fork",
+        "src/tui.test.ts — worker fork",
         "test/intg/durable-controls.test.ts — separate-connection durable controls"
       ],
       "dimensions": [

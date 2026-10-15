@@ -42,7 +42,7 @@ test("[§cli-prompt-prefixes] the built one-shot `! command` runs through op.exe
         const { prompts } = await actionViaAgui<{ prompts: string[] }>({ aguiUrl: daemon.url }, {
             threadId: "exec", workspace: "exec", kind: "workspace.prompts",
         });
-        assert.deepEqual(prompts, [], "the command never became a conversation prompt");
+        assert.deepEqual(prompts, [], "the command never became a prompt");
     });
 
     await t.test("a failing command's stderr reaches stderr and the client exits 4", async () => {

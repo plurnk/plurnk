@@ -103,11 +103,7 @@ test("completeOps: completes native names and widens a narrow opening fence", ()
     assert.deepEqual(completeOps({ fence: "````", typed: "re" }), [["````READ"], "````re"], "a fence at least the taught width is kept as typed");
     assert.deepEqual(completeOps({ fence: "`````", typed: "re" }), [["`````READ"], "`````re"], "a deliberately wider fence is kept");
     assert.deepEqual(completeOps({ fence: "```", typed: "ba" })[0], [`${F}BARE`]);
-    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT", "LOOK"].map((op) => `${F}${op}`));
-});
-
-test("completeOps: LOOK completes alongside daemon operations", () => {
-    assert.deepEqual(completeOps({ fence: "```", typed: "lo" })[0], [`${PLURNK_FENCE}LOOK`]);
+    assert.deepEqual(completeOps({ fence: "```", typed: "" })[0], ["FIND", "READ", "EDIT", "COPY", "MOVE", "SEND", "BARE", "WORK", "FORK", "KILL", "NOTE", "WAIT"].map((op) => `${F}${op}`));
 });
 
 test("pathPartial: native and executor fence targets preserve their URI", () => {
@@ -118,7 +114,7 @@ test("pathPartial: native and executor fence targets preserve their URI", () => 
 });
 
 test("dslStatement: sends named fences verbatim; the daemon owns registration and syntax validation", () => {
-    for (const text of ["```NOTE\n```", "```EDIT (a.md)\nbody\n```", "```BARE\nWhat is the capital of Germany?\n```", "````LOOK (a.md)````", "```sh\necho hi\n```", "```gitea (issue_list)\n{}\n```", "```unregistered (bad"])
+    for (const text of ["```NOTE\n```", "```EDIT (a.md)\nbody\n```", "```BARE\nWhat is the capital of Germany?\n```", "```sh\necho hi\n```", "```gitea (issue_list)\n{}\n```", "```unregistered (bad"])
         assert.equal(dslStatement(text), text);
     for (const text of ["## PLAN_", "### Results", "plain prompt", "```\nquoted code\n```", ": ```sh\necho hi\n```", "``READ (a)"])
         assert.equal(dslStatement(text), null);

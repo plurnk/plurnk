@@ -158,13 +158,13 @@ export const clientProblem = (
     },
 );
 
-// {§cli-conversation-lost} — the daemon answered a bound name with no history at all: the worker
+// {§cli-history-lost} — the daemon answered a bound name with no history at all: the worker
 // behind it is new (a fresh database, a deleted worker), and the transcript above is this terminal's.
-export const clientConversationLost = (workspace: string, worker: string): Notice => ({
-    source: "client:conversation",
-    kind: "conversation_lost",
+export const clientHistoryLost = (workspace: string, worker: string): Notice => ({
+    source: "client:worker",
+    kind: "history_lost",
     level: "warn",
-    message: `the daemon holds no history for conversation ${worker} in workspace ${workspace}; this message starts a new one, and the turns above are this terminal's memory, not the model's`,
+    message: `the daemon holds no history for worker ${worker} in workspace ${workspace}; this message starts a new one, and the turns above are this terminal's memory, not the model's`,
     workspace,
     worker,
     hints: ["The daemon restarted on a fresh database, or the worker was deleted."],
@@ -329,7 +329,7 @@ export const clientSubcommandEntryNotFound = (coordinate: string, workerId?: num
         {
             coordinate,
             ...(workerId === undefined ? {} : { workerId }),
-            recovery: "Select the worker that owns the conversation or use an existing coordinate.",
+            recovery: "Select the worker that owns the entry or use an existing coordinate.",
             retryable: false,
         },
     );

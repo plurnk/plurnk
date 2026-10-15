@@ -183,7 +183,7 @@ test("[§cli-log-entry-line-format] entryTarget preserves literal resource addre
     assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
 });
 
-// ─── Conversation reply emphasis (colour enabled) ─────────────────────
+// ─── Delivered reply emphasis (colour enabled) ────────────────────────
 // A delivered reply is plain: its Markdown carries the only emphasis, and the
 // human's line is what sets the two voices apart ({§cli-broadcast-send-rendering}).
 const colored = <T>(render: () => T): T => {
@@ -775,7 +775,7 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
     const rows = renderLogEntry(sh, 80).split("\n");
     assert.equal(rows[0], "sh");
     assert.deepEqual(rows.slice(1, 4), lines.slice(0, 3).map((line) => `    ${line}`), "three of forty lines, the shipped PLURNK_CLIENT_PREVIEW_LINES, four columns in");
-    assert.equal(rows[4], "    … +37 lines · /look log:///1/2/3/sh", "the rest is named with the address LOOK reads");
+    assert.equal(rows[4], "    … +37 lines · log:///1/2/3/sh", "the rest is named with the address it lives at");
     assert.deepEqual(rows.slice(5), [""], "a blank row closes the block");
     const short = entry({ ...sh, tx: { runtime: "sh", target: null, aside: null, body: "one\ntwo" } });
     assert.equal(renderLogEntry(short, 80), "sh\n    one\n    two\n", "a short body is shown whole");
@@ -787,7 +787,7 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
     assert.deepEqual([noteRows[0], noteRows.at(-1)], ["", "line 40"], "a model NOTE uses the message layout");
     assert.equal(noteRows.length, 41, "the blank lead and all forty lines");
     assert.deepEqual(noteRows.slice(1, 3), ["line 1", "line 2"], "a model NOTE uses the full column width");
-    assert.ok(!noteRows.some((row) => row.includes("/look")), "a NOTE is never cut");
+    assert.ok(!noteRows.some((row) => /… \+\d+ lines/u.test(row)), "a NOTE is never cut");
 });
 
 test("{§cli-note-rendering} a model NOTE renders plain and dim, the status line's weight, never as a reply", () => {
@@ -850,7 +850,7 @@ test("{plurnk#107} the preview count is the knob's, never the terminal's height,
         process.env.PLURNK_CLIENT_PREVIEW_LINES = "8";
         assert.equal(renderLogEntry(sh, 80).split("\n").length, 11, "eight lines, the marker, a blank row");
         process.env.PLURNK_CLIENT_PREVIEW_LINES = "0";
-        assert.equal(renderLogEntry(sh, 80), "sh\n    … +12 lines · /look log:///1/2/3/sh\n", "zero shows only where the body lives");
+        assert.equal(renderLogEntry(sh, 80), "sh\n    … +12 lines · log:///1/2/3/sh\n", "zero shows only where the body lives");
         process.env.PLURNK_CLIENT_PREVIEW_LINES = "a third";
         assert.throws(() => renderLogEntry(sh, 80), /PLURNK_CLIENT_PREVIEW_LINES must be a non-negative integer/u);
     } finally {

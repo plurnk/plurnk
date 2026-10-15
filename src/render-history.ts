@@ -1,13 +1,13 @@
-import type { ConversationHistory } from "./transport.ts";
+import type { WorkerHistory } from "./transport.ts";
 import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import { extractSendBody, isArrivalEntry, isEmission, isEntryMaterialization, isOwnArrival, isResponseMessage, renderOperationRow } from "./render.ts";
 import { renderSendBody, renderSubmittedInput } from "./render-message.ts";
 
-// {§cli-conversation-history}: rows supply order and operation outcomes; the
+// {§cli-worker-history}: rows supply order and operation outcomes; the
 // standard snapshot supplies speech. A row committed after the snapshot still
 // carries its own complete body. Neither source's reasoning is replayed.
-export const renderHistory = (history: ConversationHistory, threadId: string, columns: number): string[] => {
+export const renderHistory = (history: WorkerHistory, threadId: string, columns: number): string[] => {
     const speech = new Map(history.messages.filter((message) => message.role === "assistant").map((message) => [message.id, message]));
     const arrivals = new Map(history.messages.filter((message) => message.role === "user").map((message) => [message.name, message]));
     const blocks: string[] = [];

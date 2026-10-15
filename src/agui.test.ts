@@ -174,7 +174,7 @@ test("actionViaAgui: a verb rides its own run and returns its result verbatim", 
         const out = await actionViaAgui<{ workspaces: Array<{ id: number }> }>({ aguiUrl: mock.url }, { threadId: "t", workspace: "world", kind: "workspace.list" });
         assert.equal(out.workspaces[0].id, 1);
         const sent = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string; action: { kind: string } } } };
-        assert.equal(sent.threadId, "t", "the thread continues to name the worker conversation");
+        assert.equal(sent.threadId, "t", "the thread continues to name the worker");
         assert.equal(sent.forwardedProps.plurnk.workspace, "world", "a split worker action retains its workspace world");
         assert.equal(sent.forwardedProps.plurnk.action.kind, "workspace.list", "the action rides forwardedProps.plurnk.action");
     } finally { await mock.close(); }
@@ -257,7 +257,7 @@ test("[§cli-workspaces-and-workers] runViaAgui: an explicit workspace rides wit
     try {
         for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
         const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
-        assert.equal(body.threadId, "chat-2", "the thread names the conversation");
+        assert.equal(body.threadId, "chat-2", "the thread names the worker");
         assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the world — independently");
     } finally { await mock.close(); }
 });
@@ -356,7 +356,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
     try {
         await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
             lifetime,
-            threadId: "conversation",
+            threadId: "user",
             workspace: "world",
             yolo: true,
             auto: false,
@@ -387,11 +387,11 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
             res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "loop.cancel", ok: true, result: { cancelled: true } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
             res.end();
-            // The daemon aborts the drain → the held conversation stream terminates 499.
+            // The daemon aborts the drain → the held message Run's stream terminates 499.
             if (holdOpen !== null) holdOpen();
             return;
         }
-        // The conversation run: one row, then HELD OPEN (a loop that never ends on its own).
+        // The message Run: one row, then HELD OPEN (a loop that never ends on its own).
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "NOTE" } }));
         holdOpen = () => {

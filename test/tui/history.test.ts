@@ -23,7 +23,7 @@ const historyDaemon = async (t: TestContext, url: string, extraEnv: Record<strin
     return daemon;
 };
 
-test("{§cli-conversation-history}: startup and attach restore the bound conversation without inference", { timeout: 90_000 }, async (t) => {
+test("{§cli-worker-history}: startup and attach restore the bound worker's history without inference", { timeout: 90_000 }, async (t) => {
     let requests = 0;
     const provider = await completionsEndpoint(() => {
         requests += 1;
@@ -76,7 +76,7 @@ test("{§cli-conversation-history}: startup and attach restore the bound convers
     assert.equal(requests, 2, "disabling backfill does not start work");
 });
 
-test("{§cli-conversation-history}: quitting an attached live observer leaves the originating loop alive", { timeout: 90_000 }, async (t) => {
+test("{§cli-worker-history}: quitting an attached live observer leaves the originating loop alive", { timeout: 90_000 }, async (t) => {
     const waiting = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     let requests = 0;
@@ -120,7 +120,7 @@ test("{§cli-conversation-history}: quitting an attached live observer leaves th
     assert.equal(requests, 1, "attaching and detaching requested no inference");
 });
 
-test("{§cli-conversation-history}: reattachment presents a durable unanswered question and resumes it once", { timeout: 90_000 }, async (t) => {
+test("{§cli-worker-history}: reattachment presents a durable unanswered question and resumes it once", { timeout: 90_000 }, async (t) => {
     let requests = 0;
     const provider = await completionsEndpoint(() => {
         requests += 1;

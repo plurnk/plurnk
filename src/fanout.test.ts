@@ -49,7 +49,7 @@ for (const op of ["READ", "EDIT", "KILL"]) {
         assert.deepEqual(collapse.admit(last), [{ entry: last }]);
     });
 
-    test(`{§cli-conversation-history}: partial ${op} history retains targets and original failures`, () => {
+    test(`{§cli-worker-history}: partial ${op} history retains targets and original failures`, () => {
         const entries = [row(op, 0), row(op, 1, { status_rx: 409, rx: { status: 409, problem: {
             type: "https://example.test/conflict", title: "Entry changed", status: 409,
         } } })];

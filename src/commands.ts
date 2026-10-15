@@ -94,7 +94,6 @@ export const COMMANDS = [
     { name: "workspaces", usage: "/workspaces", summary: "List daemon workspaces.", group: "inspect" },
     { name: "workers", usage: "/workers", summary: "List this workspace's workers as a topology rooted at the bound worker.", group: "inspect" },
     { name: "log", usage: "/log [limit]", summary: "Read recent log entries.", group: "inspect" },
-    { name: "look", usage: "/look <address> [scope] [pattern]", summary: "Inspect a resource for yourself: no loop, no log entry, no wait on the model.", group: "inspect" },
 
     { name: "model", usage: "/model [selector] [effort]", summary: "Inspect or select this worker's durable model, and its effort with it.", group: "policy" },
     { name: "child", usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model.", group: "policy" },
@@ -107,7 +106,7 @@ export const COMMANDS = [
     { name: "share", usage: "/share <folder>", summary: "Write this workspace's share into <folder> for a bug report.", group: "workspace" },
     { name: "rollback", usage: "/rollback <loop>/<turn>/<item>", summary: "Reverse the bound worker's file mutations after a log coordinate, latest first, as your own operations.", group: "workspace" },
     { name: "worker", usage: "/worker [name]", summary: "Fork and enter a new worker.", group: "workspace", rebinds: true },
-    { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a fresh conversation.", group: "workspace", rebinds: true },
+    { name: "attach", usage: "/attach <name>", summary: "Bind this session to a worker by name; a new name mints a new worker.", group: "workspace", rebinds: true },
     { name: "parent", usage: "/parent", summary: "Hop to the bound worker's parent (Alt-h).", group: "workspace", rebinds: true },
     { name: "enter", usage: "/enter", summary: "Hop into the bound worker's newest child (Alt-l).", group: "workspace", rebinds: true },
     { name: "older", usage: "/older", summary: "Hop to the next older sibling worker, wrapping (Alt-j).", group: "workspace", rebinds: true },
@@ -215,7 +214,7 @@ export const renderCommandHelp = (name: string = "", actions?: ReadonlySet<strin
     });
     return [
         ...groups,
-        `  language     ${PLURNK_FENCE}OP · ${PLURNK_FENCE}NOTE · ${PLURNK_FENCE}WAIT · ${PLURNK_FENCE}SEND · ${PLURNK_FENCE}LOOK · ! command · ? ask · ... steer`,
+        `  language     ${PLURNK_FENCE}OP · ${PLURNK_FENCE}NOTE · ${PLURNK_FENCE}WAIT · ${PLURNK_FENCE}SEND · ! command · ? ask · ... steer`,
         "  keys         Shift-Enter/Ctrl-J newline · Enter submit · Esc back/cancel/clear · Alt-? help",
         "  tree         Alt-h parent · Alt-l newest child · Alt-j/Alt-k next/prev sibling — the prompt then speaks to that worker",
         "  /help <verb> for exact usage",

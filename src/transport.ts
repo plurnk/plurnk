@@ -45,7 +45,7 @@ export type StatusGauge = StatusGaugeEnvelope;
 // Run-plane events projected into the client's presentation shapes.
 export interface RunHandlers {
     onEntry: (entry: LogEntryWire) => void;
-    onHistory?: (history: ConversationHistory) => void;
+    onHistory?: (history: WorkerHistory) => void;
     onReasoning: (reasoning: ReasoningUpdate) => void;
     onProposal: (p: ProposalParams, source?: "model" | "action") => void;
     onInterruptEnd?: (id: string) => void;
@@ -67,7 +67,7 @@ export interface RunHandlers {
 
 export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void }
 export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void }
-export interface ConversationHistory {
+export interface WorkerHistory {
     entries: LogEntryWire[];
     messages: Message[];
     attachment: boolean;
@@ -102,11 +102,11 @@ export interface Transport {
     // Switch to (or create) a named workspace by re-mapping the threadId; the daemon
     // creates the workspace on the next run. Returns the workspace handle for the header.
     useWorkspace(name: string | undefined, params: { projectRoot?: string | null }): Promise<{ name: string }>;
-    // Rebind this session's conversation to a worker by name, keeping the world:
-    // the daemon binds an existing conversation or mints a fresh one on the next
+    // Rebind this session's thread to a worker by name, keeping the world:
+    // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
     useWorker(name: string, world: string): void;
-    // The conversation this transport speaks for: the AG-UI threadId the daemon sources this
+    // The thread this transport speaks for: the AG-UI threadId the daemon sources this
     // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
     threadId(): string;
 }
@@ -129,7 +129,7 @@ export class AguiTransport implements Transport {
     #controllers = new Set<AbortController>();
     #closed = false;
     #seenRows = new Map<number, string>();
-    #lastConversationRowId = 0;
+    #historyCursor = 0;
     #lastLoopId: number | null = null;
 
     constructor(target: AguiTarget, threadId: string, workspace: AguiTransportOpts = {}) {
@@ -144,8 +144,8 @@ export class AguiTransport implements Transport {
     // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
     // emitted (a raw-DSL op's rows, notices, streams). Feed those through the same
-    // persistent handlers a run uses (e.g. the Alt-p cycler harvests targets from
-    // onEntry).
+    // persistent handlers a run uses (e.g. /attach completion harvests worker
+    // references from onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
         const ac = this.#controller();
         try {
@@ -263,7 +263,7 @@ export class AguiTransport implements Transport {
 
     #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
         const binding = { threadId: this.#threadId, workspace: this.#world };
-        const sinceId = this.#lastConversationRowId;
+        const sinceId = this.#historyCursor;
         const ac = this.#controller();
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
         this.#modelProjection = projection;
@@ -275,7 +275,7 @@ export class AguiTransport implements Transport {
         // run forwards per-run knobs.
         const fwd: Record<string, unknown> = {
             ...this.#workspaceOpts(),
-            // {plurnk#108} — a session that observes its delegation asks on every conversation run.
+            // {plurnk#108} — a session that observes its delegation asks on every message and sync Run.
             ...(this.#workspace.descendants === true ? { descendants: true } : {}),
             control: true,
             ...(opts === undefined ? { mode: "sync" } : {
@@ -476,7 +476,7 @@ export class AguiTransport implements Transport {
         return { done, ready: ready.promise, cancel: () => ac.abort() };
     }
 
-    // {§cli-conversation-history}: establish the historical prefix before releasing
+    // {§cli-worker-history}: establish the historical prefix before releasing
     // live events. Neither replay nor its action run owns lifecycle/accounting.
     async *#synchronize(events: AsyncIterable<AguiEvent>, binding: { threadId: string; workspace: string | undefined },
         signal: AbortSignal, sinceId: number, opts: ObserveOpts | undefined, ready: () => void): AsyncGenerator<AguiEvent> {
@@ -492,7 +492,7 @@ export class AguiTransport implements Transport {
                 continue;
             }
             const limit = Math.max(1, opts?.historyLimit ?? 1000);
-            const afterId = Math.min(sinceId, this.#lastConversationRowId);
+            const afterId = Math.min(sinceId, this.#historyCursor);
             const history = await this.#action<{ entries: LogEntryWire[] }>("log.read", {
                 ...(opts === undefined ? { sinceId: afterId } : {}), limit,
             }, signal, binding);
@@ -505,7 +505,7 @@ export class AguiTransport implements Transport {
                 .filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
             for (const entry of entries) {
                 this.#seenRows.set(entry.id, this.#rowVersion(entry));
-                this.#lastConversationRowId = Math.max(this.#lastConversationRowId, entry.id);
+                this.#historyCursor = Math.max(this.#historyCursor, entry.id);
             }
             this.#h?.onHistory?.({ entries: opts?.historyLimit === 0 ? [] : entries, messages: event.messages, attachment: opts !== undefined });
             restored = true;
@@ -516,7 +516,7 @@ export class AguiTransport implements Transport {
         if (!restored) {
             yield* pending;
             if (pending.some((event) => event.type === "RUN_FINISHED" && event.outcome?.type === "success")) {
-                throw new ProblemError(clientTransportResultInvalid("Conversation synchronization omitted MESSAGES_SNAPSHOT."));
+                throw new ProblemError(clientTransportResultInvalid("The sync Run omitted MESSAGES_SNAPSHOT."));
             }
         }
     }
@@ -566,7 +566,7 @@ export class AguiTransport implements Transport {
     }
     async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<{ name: string }> {
         // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
-        // switch is a new world + its default conversation; a split thread comes from
+        // switch is a new world + its default worker; a split thread comes from
         // --worker at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#workspace = {
@@ -576,7 +576,7 @@ export class AguiTransport implements Transport {
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
         this.#seenRows.clear();
-        this.#lastConversationRowId = 0;
+        this.#historyCursor = 0;
         this.#lastLoopId = null;
         return { name: threadId };
     }
@@ -584,15 +584,15 @@ export class AguiTransport implements Transport {
         this.#threadId = name;
         this.#world = world;
         this.#seenRows.clear();
-        this.#lastConversationRowId = 0;
+        this.#historyCursor = 0;
         this.#lastLoopId = null;
     }
 
-    #row(entry: LogEntryWire, conversation: boolean): void {
+    #row(entry: LogEntryWire, bound: boolean): void {
         const version = this.#rowVersion(entry);
         if (this.#seenRows.get(entry.id) === version) return;
         this.#seenRows.set(entry.id, version);
-        if (conversation) this.#lastConversationRowId = Math.max(this.#lastConversationRowId, entry.id);
+        if (bound) this.#historyCursor = Math.max(this.#historyCursor, entry.id);
         this.#h?.onEntry(entry);
     }
 
@@ -622,11 +622,11 @@ export class AguiTransport implements Transport {
         if (state.handled) {
             projection.gauge = state.gauge;
             if (this.#modelProjection === null || this.#modelProjection === projection) {
-                // {§cli-conversation-lost}: a recreated conversation cannot reuse
+                // {§cli-history-lost}: a recreated worker cannot reuse
                 // the old database's row identities or replay cursor.
                 if (this.#lastLoopId !== null && projection.gauge.plurnk.status.loopId === null) {
                     this.#seenRows.clear();
-                    this.#lastConversationRowId = 0;
+                    this.#historyCursor = 0;
                 }
                 this.#lastLoopId = projection.gauge.plurnk.status.loopId;
                 this.#h?.onStatus?.(structuredClone(projection.gauge));

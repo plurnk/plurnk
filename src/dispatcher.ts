@@ -146,15 +146,15 @@ options:
       --worker <name>        resume (or create) the named worker within the workspace.
                           Overrides PLURNK_CLIENT_WORKER. TUI defaults to
                           PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
-                          default conversation.
+                          default worker.
       --tui-worker <name> TUI-only default when no worker is selected; overrides
                           PLURNK_CLIENT_TUI_WORKER.
-      --model <selector>  persistently select the conversation worker's model
+      --model <selector>  persistently select the worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
                           this, the worker's durable model or the daemon's
                           boot-time default runs.
-      --effort <level>    persistently select the conversation worker's effort before
+      --effort <level>    persistently select the worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
       --autostart <0|1>   start a private installed backend if the local listener is
@@ -186,10 +186,10 @@ options:
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
       --preview-lines <n> lines of each operation body and execution output shown
-                          beneath its row; the rest is named for /look. Overrides
+                          beneath its row; the rest is named by its address. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
-      --history-entries <n> recent entries restored when opening or switching TUI
-                          conversations; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
+      --history-entries <n> recent entries restored when the TUI opens or switches a
+                          workspace or worker; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
                           Overrides PLURNK_CLIENT_MERMAID_TIMEOUT_MS.
       --color <when>      style terminal output: always, auto, or never. Overrides
@@ -538,7 +538,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
             throw new ProblemError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
         }
         // The caller's world scopes the action; the module defaults reads to the
-        // conversation (model worker); --worker pins by name.
+        // thread's bound worker; --worker pins by name.
         const rpc = callerFor(await opts.world());
         const workerId = await resolveWorkerId(rpc, opts.workerName);
         const filters: LogReadFilters = { ...(workerId === undefined ? {} : { workerId }) };
@@ -561,8 +561,8 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         if (positionals.length > 2) {
             throw new ProblemError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
         }
-        // The coordinate is worker-relative; the module defaults to the conversation
-        // (model worker) — --worker pins by name via params, no connection state.
+        // The coordinate is worker-relative; the module defaults to the thread's bound
+        // worker — --worker pins by name via params, no connection state.
         const rpc = callerFor(await opts.world());
         return await runRead(rpc, coord, { json: opts.json, workerId: await resolveWorkerId(rpc, opts.workerName) });
     }
@@ -891,7 +891,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     };
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the default conversation.
+            // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the default worker.
             const w = await world();
             const controlWorkspaceOptions = await workspaceOptions();
             const { settings } = controlWorkspaceOptions;
@@ -908,7 +908,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 });
             } else {
                 // {§worker-model-selection} — an explicit --model is a durable selection:
-                // persist it onto the conversation worker before the run, then run WITHOUT
+                // persist it onto the worker before the run, then run WITHOUT
                 // a per-loop model selector (the worker owns the model).
                 let activeModel: ModelRoute | null;
                 if (values.model !== undefined && modelSelector !== undefined) {

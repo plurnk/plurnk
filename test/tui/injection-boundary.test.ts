@@ -164,7 +164,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
     await tui.waitFor(/injectionfixture\(off\)/);
     tui.write("Start the first requirement.\r");
     await tui.waitFor(/Awaiting the controlled injection/);
-    assert.equal(observers, 1, "startup synchronizes the bound conversation once");
+    assert.equal(observers, 1, "startup synchronizes the bound worker once");
     tui.write("... Continue with the new requirement.\r");
     await admitted.promise;
     if (!active && !terminalFirst) {
@@ -172,7 +172,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         releaseTerminal.resolve();
     }
     await tui.waitFor(/SUCCESSOR_VISIBLE/);
-    // The concluded run returns the conversation to one idle observer, which follows any successor.
+    // The concluded run returns the bound worker to one idle observer, which follows any successor.
     await observerCount(2);
     assert.equal(inferenceCount, 2, "each admitted prompt generated exactly one model request");
     assert.doesNotMatch(tui.output(), /Terminal missing|State invalid/);
@@ -182,6 +182,6 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
     assert.equal(originalObservers, 1, "startup's binding alone observes the original run; active injection adds no observer");
-    assert.equal(observers, 2, "its conclusion returns the conversation to one idle observer, which a successor shares");
+    assert.equal(observers, 2, "its conclusion returns the bound worker to one idle observer, which a successor shares");
 });
 }

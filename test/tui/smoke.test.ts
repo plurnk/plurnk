@@ -76,7 +76,7 @@ describe("TUI pty harness", () => {
         }
     });
 
-    test("[§cli-tui-flow] resume follows a worker switch and reconnects to that conversation", async (t) => {
+    test("[§cli-tui-flow] resume follows a worker switch and reconnects to that worker", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const args = ["--workspace", "resume-workers", "--worker", "second"];
         const tui = spawnTui(daemon.url, ["--workspace", "resume-workers", "--worker", "first"]);

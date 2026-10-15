@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-test("[§cli-invocation] local CLI surfaces never open a daemon conversation", async (t) => {
+test("[§cli-invocation] local CLI surfaces never contact the daemon", async (t) => {
     const home = await mkdtemp(join(tmpdir(), "plurnk-cli-invocation-"));
     t.after(() => rm(home, { recursive: true, force: true }));
     let requests = 0;

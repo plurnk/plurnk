@@ -156,9 +156,9 @@ export interface ClientStatus {
 // ran, else from when this client began observing it.
 export const observedClockStart = (status: ClientStatus, now: number): number => status.claimedAt ?? now;
 
-// {§cli-conversation-lost} — the gauge reports no loop where the previous gauge on the same binding
-// reported one: the daemon minted the conversation anew under its old name.
-export const conversationLost = (previousLoopId: number | null, loopId: number | null): boolean =>
+// {§cli-history-lost} — the gauge reports no loop where the previous gauge on the same binding
+// reported one: the daemon minted the worker anew under its old name.
+export const historyLost = (previousLoopId: number | null, loopId: number | null): boolean =>
     previousLoopId !== null && loopId === null;
 
 export interface RuntimeStatusGauge {

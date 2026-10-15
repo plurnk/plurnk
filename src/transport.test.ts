@@ -538,7 +538,7 @@ for (const order of [[42, 99], [99, 42]]) {
             assert.deepEqual(resumed.sort(), [42, 99]);
             for (const request of mock.captured) {
                 const input = request.body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
-                assert.equal(input.threadId, "worker", "resumes retain the submitted conversation");
+                assert.equal(input.threadId, "worker", "resumes retain the submitted thread");
                 assert.equal(input.forwardedProps.plurnk.workspace, "world", "resumes retain the submitted workspace");
             }
         } finally { await mock.close(); }
@@ -608,7 +608,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("{§cli-active-command-admission}: client operation rows do not advance the conversation history cursor", async () => {
+test("{§cli-active-command-admission}: client operation rows do not advance the history cursor", async () => {
     const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
     const previous = { id: 7, op: "SEND", origin: "model", tx: { body: "previous loop" } };
     const unseen = { id: 8, op: "SEND", origin: "model", tx: { body: "successor finished before attachment" } };
@@ -700,7 +700,7 @@ test("{§cli-active-command-admission}: a dead sync stream retains its original 
 });
 
 for (const historyLimit of [0, 2]) {
-    test(`{§cli-conversation-history}: bounded attachment restores before live rows (${historyLimit})`, async () => {
+    test(`{§cli-worker-history}: bounded attachment restores before live rows (${historyLimit})`, async () => {
         const release = Promise.withResolvers<void>();
         const older = { id: 8, op: "READ", origin: "model", tx: { body: "old output" } };
         const overlap = { id: 9, op: "SEND", origin: "model", tx: { body: "old answer" } };
@@ -743,7 +743,7 @@ for (const historyLimit of [0, 2]) {
     });
 }
 
-test("{§cli-conversation-history}: successful sync without a message snapshot is a protocol error", async () => {
+test("{§cli-worker-history}: successful sync without a message snapshot is a protocol error", async () => {
     const mock = await bootMock((_request, response) => {
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(frame({ type: "RUN_STARTED" }));
@@ -757,7 +757,7 @@ test("{§cli-conversation-history}: successful sync without a message snapshot i
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("{§cli-conversation-history}: a recreated conversation resets replay identities and cursor", async () => {
+test("{§cli-worker-history}: a recreated worker resets replay identities and cursor", async () => {
     const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
     const snapshot = structuredClone(events.find((event) => event.type === "STATE_SNAPSHOT")!) as {
         type: string; snapshot: { plurnk: { status: { loopId: number | null } } };
@@ -872,7 +872,7 @@ test("AguiTransport: terminate-resume — a proposal tool-call pauses done; reso
             res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
             res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EDIT", target: { scheme: "file", pathname: "a.ts" }, body: "diff" }) }));
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "conversation-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
+            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "proposal-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
             res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
             res.write(frame({ type: "RUN_FINISHED" }));
@@ -892,7 +892,7 @@ test("AguiTransport: terminate-resume — a proposal tool-call pauses done; reso
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "conversation-presentation", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
+        assert.deepEqual(resume.resume, [{ interruptId: "proposal-presentation", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
     } finally { await mock.close(); }
 });
 

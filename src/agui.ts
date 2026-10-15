@@ -138,7 +138,7 @@ export async function* runViaAgui(
         context: [],
         ...(run.resume !== undefined ? { resume: run.resume } : {}),
         // The workspace (world) is REQUIRED — a run has no existence without one. The
-        // threadId names the CONVERSATION; it doubles as the workspace unless split.
+        // threadId names the WORKER; it doubles as the workspace unless split.
         // {§cli-worker-ownership} A Run that declares capabilities also states whether a person attends.
         forwardedProps: { plurnk: {
             workspace: run.workspace ?? run.threadId,

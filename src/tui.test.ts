@@ -7,7 +7,7 @@ import { writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { handleVerb, completeInput, makeAutocompleteProvider, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, lookStatement, cycleKey, cycleCoord, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
+import { handleVerb, completeInput, makeAutocompleteProvider, seedPromptHistory, buildHeader, altShortcut, backTabShortcut, renderSubmittedInput, printSubmittedInput, renderTuiFailure, resolvedModelLabel, resumeCommand, runTui, TUI_HELP, type VerbContext, type ResolvedModelSpec } from "./tui.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
@@ -227,70 +227,6 @@ test("altShortcut: a plain letter or an arrow-key sequence is NOT a shortcut", (
     assert.equal(altShortcut("\x1b"), null);    // bare ESC
 });
 
-// ─── lookStatement (recognition for op.look routing) ─────────────────────
-
-test("lookStatement: preserves the exact fence", () => {
-    assert.equal(lookStatement("```LOOK (worker:///plan.md)```"), "```LOOK (worker:///plan.md)```");
-    assert.equal(lookStatement("```LOOK (log:///1/2/3)```"), "```LOOK (log:///1/2/3)```");
-});
-
-test("lookStatement: preserves target, scope, and body", () => {
-    assert.equal(lookStatement("```LOOK (a.ts) <1,40>```"), "```LOOK (a.ts) <1,40>```");
-    assert.equal(lookStatement("```LOOK (users.json)\n$.name\n```"), "```LOOK (users.json)\n$.name\n```");
-});
-
-test("lookStatement: keeps longer fence widths without a second case grammar", () => {
-    assert.equal(lookStatement("````LOOK (a.md)````"), "````LOOK (a.md)````");
-    assert.equal(lookStatement("```look (a.md)```"), null);
-});
-
-test("lookStatement: rejects names other than the reserved LOOK operation", () => {
-    assert.equal(lookStatement("```READ (a.md)```"), null);
-    assert.equal(lookStatement("```EDIT (a.md)\nx\n```"), null);
-    assert.equal(lookStatement("```LOOKUP (a.md)```"), null);
-    assert.equal(lookStatement("plain prompt"), null);
-});
-
-// ─── cycleKey (Alt-p/Alt-n → LOOK prior-op cycler) ───────────────────────
-// pi-tui's terminal buffer delivers each normalized key sequence intact.
-
-test("cycleKey: Alt-p cycles prev/older (up), Alt-n next/newer (down)", () => {
-    assert.equal(cycleKey("\x1bp"), "up");
-    assert.equal(cycleKey("\x1bn"), "down");
-});
-
-test("cycleKey: a plain arrow or bare letter is NOT a cycle key", () => {
-    assert.equal(cycleKey("\x1b[A"), null);     // plain up → editor navigation/history
-    assert.equal(cycleKey("\x1b[1;2A"), null);  // Shift-Up CSI belongs to the editor
-    assert.equal(cycleKey("p"), null);          // plain typing
-    assert.equal(cycleKey("\x1bm"), null);      // an Alt verb shortcut, not a cycle key
-});
-
-// ─── cycleCoord (pure cursor math for the LOOK cycler) ───────────────────
-
-test("cycleCoord: first 'up' starts at the newest coordinate", () => {
-    assert.equal(cycleCoord(3, null, "up"), 2);
-});
-
-test("cycleCoord: 'up' walks toward older and clamps at the oldest", () => {
-    assert.equal(cycleCoord(3, 2, "up"), 1);
-    assert.equal(cycleCoord(3, 1, "up"), 0);
-    assert.equal(cycleCoord(3, 0, "up"), 0);   // clamp
-});
-
-test("cycleCoord: 'down' walks toward newer and clamps at the newest", () => {
-    assert.equal(cycleCoord(3, 0, "down"), 1);
-    assert.equal(cycleCoord(3, 2, "down"), 2);   // clamp
-});
-
-test("cycleCoord: 'down' with no prior cycle is a no-op (null)", () => {
-    assert.equal(cycleCoord(3, null, "down"), null);
-});
-
-test("cycleCoord: nothing seen yet → null (nothing to cycle)", () => {
-    assert.equal(cycleCoord(0, null, "up"), null);
-});
-
 // ─── buildHeader (startup banner: version · workspace · model · help) ──────
 
 test("buildHeader: shows the client's explicit --model selector", () => {
@@ -331,7 +267,7 @@ test("buildHeader: effort is a distinct durable label", () => {
     assert.doesNotMatch(buildHeader({ workspaceName: "plurnk", activeAlias: "grok" }), /effort:/);
 });
 
-interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[]; looks: string[]; attached: string[] }
+interface Stub extends VerbContext { calls: Array<{ method: string; params?: unknown }>; out: string[]; imports: string[]; resolved: string[]; composed: boolean[]; attached: string[] }
 
 const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContext["opts"]> = {}): Stub => {
     const calls: Array<{ method: string; params?: unknown }> = [];
@@ -339,7 +275,6 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const imports: string[] = [];
     const resolved: string[] = [];
     const composed: boolean[] = [];
-    const looks: string[] = [];
     let workspace = { name: "sess" };
     let worker: string | null = "sess";
     const attached: string[] = [];
@@ -382,28 +317,19 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         importFile: async (p) => { imports.push(p); },
         review: async (action) => { resolved.push(action); },
         composeInEditor: async () => { composed.push(true); },
-        look: async (rest) => { looks.push(rest); },
-        calls, out, imports, resolved, composed, attached, looks,
+        calls, out, imports, resolved, composed, attached,
     };
 };
 
-// ─── /look (the human's inspection) ────────────────────────────────────
-test("[§cli-inspection] handleVerb /look hands the address to the session's inspector, no rpc of its own", async () => {
-    const ctx = makeCtx();
-    await handleVerb("/look worker:///plan.md <1,20>", ctx);
-    assert.deepEqual(ctx.looks, ["worker:///plan.md <1,20>"]);
-    assert.deepEqual(ctx.calls, []);
-});
-
-test("{§cli-active-command-admission} only commands that change the conversation binding require it to settle", () => {
+test("{§cli-active-command-admission} only commands that change the thread binding require it to settle", () => {
     assert.deepEqual(COMMANDS.filter(({ name }) => commandSpec(name)?.rebinds).map(({ name }) => name),
         ["workspace", "rename", "worker", "attach", "parent", "enter", "older", "newer"]);
-    for (const name of ["look", "model", "effort", "mcp", "script", "stop", "quit"]) {
-        assert.notEqual(commandSpec(name)?.rebinds, true, `${name} does not rebind the conversation`);
+    for (const name of ["model", "effort", "mcp", "script", "stop", "quit"]) {
+        assert.notEqual(commandSpec(name)?.rebinds, true, `${name} does not rebind the thread`);
     }
 });
 
-// ─── /attach (bind or mint a conversation worker by name) ─────────────
+// ─── /attach (bind or mint a worker by name) ──────────────────────────
 test("[§cli-workers-topology] handleVerb /attach <known> rebinds the thread and reports the bound worker", async () => {
     const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }, { id: 2, name: "sess-fork" }] } });
     await handleVerb("/attach sess-fork", ctx);
@@ -413,7 +339,7 @@ test("[§cli-workers-topology] handleVerb /attach <known> rebinds the thread and
     assert.equal(ctx.out.join(""), "  worker: sess-fork (bound)\n");
 });
 
-test("[§cli-workers-topology] handleVerb /attach <new> rebinds and reports a fresh conversation", async () => {
+test("[§cli-workers-topology] handleVerb /attach <new> rebinds and reports a new worker", async () => {
     const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }] } });
     await handleVerb("/attach recheck", ctx);
     assert.deepEqual(ctx.attached, ["recheck"]);
@@ -568,7 +494,7 @@ test("handleVerb /worker [name] → run.fork (new worker) then binds to it", asy
     });
     await handleVerb("/worker branch-a", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: { name: "branch-a" } });
-    assert.deepEqual(ctx.attached, ["main-fork"], "the fork uses the same conversation binding as /attach");
+    assert.deepEqual(ctx.attached, ["main-fork"], "the fork uses the same thread binding as /attach");
     assert.ok(ctx.calls.every(({ method }) => method !== "workspace.attach"));
     assert.match(ctx.out.join(""), /worker: main-fork \(new\)/);
 });

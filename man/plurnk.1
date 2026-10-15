@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-13" "plurnk 3.3.0" "User Commands"
+.TH PLURNK 1 "2026-10-14" "plurnk 3.3.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -56,15 +56,15 @@ loop.
       --worker <name>        resume (or create) the named worker within the workspace.
                           Overrides PLURNK_CLIENT_WORKER. TUI defaults to
                           PLURNK_CLIENT_TUI_WORKER (user); CLI uses the workspace's
-                          default conversation.
+                          default worker.
       --tui-worker <name> TUI-only default when no worker is selected; overrides
                           PLURNK_CLIENT_TUI_WORKER.
-      --model <selector>  persistently select the conversation worker's model
+      --model <selector>  persistently select the worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
                           this, the worker's durable model or the daemon's
                           boot-time default runs.
-      --effort <level>    persistently select the conversation worker's effort before
+      --effort <level>    persistently select the worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
       --autostart <0|1>   start a private installed backend if the local listener is
@@ -96,10 +96,10 @@ loop.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.
       --preview-lines <n> lines of each operation body and execution output shown
-                          beneath its row; the rest is named for /look. Overrides
+                          beneath its row; the rest is named by its address. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
-      --history-entries <n> recent entries restored when opening or switching TUI
-                          conversations; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
+      --history-entries <n> recent entries restored when the TUI opens or switches a
+                          workspace or worker; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
                           Overrides PLURNK_CLIENT_MERMAID_TIMEOUT_MS.
       --color <when>      style terminal output: always, auto, or never. Overrides
@@ -162,7 +162,6 @@ The no-argument interactive terminal accepts these slash commands:
 /workspaces                    List daemon workspaces.
 /workers                       List this workspace's workers as a topology rooted at the bound worker.
 /log [limit]                   Read recent log entries.
-/look <address> [scope] [pattern] Inspect a resource for yourself: no loop, no log entry, no wait on the model.
 /model [selector] [effort]     Inspect or select this worker's durable model, and its effort with it.
 /child [selector|inherit]      Inspect or select the inherited child model.
 /effort [policy]               Inspect or select reasoning effort.
@@ -173,7 +172,7 @@ The no-argument interactive terminal accepts these slash commands:
 /share <folder>                Write this workspace's share into <folder> for a bug report.
 /rollback <loop>/<turn>/<item> Reverse the bound worker's file mutations after a log coordinate, latest first, as your own operations.
 /worker [name]                 Fork and enter a new worker.
-/attach <name>                 Bind this session to a worker by name; a new name mints a fresh conversation.
+/attach <name>                 Bind this session to a worker by name; a new name mints a new worker.
 /parent                        Hop to the bound worker's parent (Alt-h).
 /enter                         Hop into the bound worker's newest child (Alt-l).
 /older                         Hop to the next older sibling worker, wrapping (Alt-j).

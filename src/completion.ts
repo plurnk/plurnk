@@ -32,7 +32,6 @@ export const pathPartial = (line: string): PathPartial | null => {
     return null;
 };
 
-const OPS: readonly string[] = [...PLURNK_OPS, "LOOK"];
 const DSL_TARGET_PARTIAL = /^`{3,}[A-Za-z0-9_.+-]+[ \t]*\(([^)\n]*)$/;
 
 // Coarse dispatch classification only. The daemon remains the grammar owner
@@ -56,7 +55,7 @@ export const completeOps = ({ fence, typed }: DslOpPartial): [string[], string] 
     const up = typed.toUpperCase();
     const opener = fence.length >= PLURNK_FENCE.length ? fence : PLURNK_FENCE;
     return [
-        OPS.filter((operation) => operation.startsWith(up)).map((operation) => `${opener}${operation}`),
+        PLURNK_OPS.filter((operation) => operation.startsWith(up)).map((operation) => `${opener}${operation}`),
         `${opener}${typed}`,
     ];
 };

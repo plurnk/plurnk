@@ -329,7 +329,7 @@ try {
     const resumed = await runClient(clientBin, ["log", "read", "--json", "--workspace", "private-composition", "--worker", "primary"], {
         cwd: install, env: { ...privateEnv, PLURNK_SERVICE_STATE_ROOT: stateRoot, PLURNK_SERVICE_DB_PATH: database }, timeout: 30_000,
     });
-    if (!resumed.stdout.includes("composition ok: composition")) throw new Error("private conversation was not retained across daemon lifetimes");
+    if (!resumed.stdout.includes("composition ok: composition")) throw new Error("private worker history was not retained across daemon lifetimes");
 
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));

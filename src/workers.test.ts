@@ -45,10 +45,10 @@ test("[§cli-workers-topology] traversal: h climbs, l enters the newest child, j
     assert.deepEqual(at("recheck", "enter"), { target: null, notice: "no children" });
     assert.deepEqual(at("recheck", "older"), { target: null, notice: "no siblings" });
     assert.deepEqual(at("main", "parent"), { target: null, notice: "at the root: no parent" });
-    assert.deepEqual(at("main", "older"), { target: null, notice: "no siblings" }, "scratch workers are not places: a lone conversation has no siblings");
+    assert.deepEqual(at("main", "older"), { target: null, notice: "no siblings" }, "scratch workers are not places: a lone root has no siblings");
     assert.equal(traverse(forest, null, "enter").target, null, "nothing bound, nowhere to hop");
     const two = [...forest, { id: 7, name: "second", created_at: at2(6), origin: "model" as const, parentWorkerId: null }];
-    assert.equal(traverse(two, "main", "older").target?.name, "second", "root conversations are siblings of each other");
+    assert.equal(traverse(two, "main", "older").target?.name, "second", "root workers are siblings of each other");
     assert.deepEqual(siblingPosition(two, "second"), { index: 1, count: 2 }, "newest first");
     assert.deepEqual(siblingPosition(two, "main"), { index: 2, count: 2 });
     assert.equal(siblingPosition(forest, "recheck"), null, "an only child has no position");

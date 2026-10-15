@@ -6,13 +6,10 @@
   setting creates it, and a one-shot call without `--worker` addresses the worker named after its
   workspace: the daemon keeps no workspace default and no longer creates a worker for a read
   (plurnk/plurnk-service#1134).
-- Launching creates no worker: a session binds its worker's name, and the worker comes into being
-  with the first message or a model, child or effort setting. Until then the place shows no loop,
-  the model shows the route the daemon's standing selection will give it, effort included (the
-  daemon lists it for each alias), `/workers` lists the bound name
-  as `● <name>  (new)`, and worker-scoped commands such as `/env` are refused by the daemon with its
-  recovery; once the worker exists the session reads back its policy and observes it
-  (plurnk/plurnk-service#1134).
+- A session creates its worker by attaching to it as owner, and verbs wait for that attachment.
+  Until it attaches, the model shows the route the daemon lists for its standing selection, effort
+  included; once attached, the session reads back the worker's policy. A one-shot call creates its
+  worker with its message (plurnk/plurnk-service#1134).
 - Capability preparation and indexing on the status line are read from the workspace's state
   (`STATE /plurnk/workspace/preparation` and `/activity`), which every Run bound to the workspace
   carries; a Run that binds no worker, such as a workspace action, reports no gauge, and a snapshot

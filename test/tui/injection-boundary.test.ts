@@ -161,7 +161,6 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    // {§cli-identity-effort} No act has created the worker yet: the route the daemon lists for its standing selection.
     await tui.waitFor(/injectionfixture\(off\)/);
     tui.write("Start the first requirement.\r");
     await tui.waitFor(/Awaiting the controlled injection/);

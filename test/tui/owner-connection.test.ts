@@ -50,9 +50,7 @@ test("[§cli-worker-ownership] an idle TUI reviews later child work after inspec
     }, daemon.workspace);
     t.after(() => tui.kill());
     await tui.waitFor(/plurnk[\s\S]*\/help/);
-    // Selecting its model is an act addressed to the worker, so it creates it; the session then observes and
-    // owns it (plurnk-service {§agui-action-binding}).
-    tui.write("/model ownerfixture\r");
+    tui.write("/model\r");
     await tui.waitFor(/model: ownerfixture/);
     tui.write("! printf local-result > local.txt && printf '\\141\\143\\164\\151\\157\\156\\055\\144\\157\\156\\145'\r");
     await tui.waitFor(/↑\/↓: choose.*Enter: confirm.*Esc: composer/);

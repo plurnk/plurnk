@@ -521,8 +521,8 @@ plurnk-service `{§agui-delegation-observation}`): every descendant's own rows a
 arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
 steps and terminal never do. Navigation between workers is explicit.
 `/attach <name>` rebinds the session's thread to that name with the world
-unchanged: an existing worker is bound, a new name mints a new worker on
-the next run, exactly as `--worker <name>` at invocation. The verb reports
+unchanged: an existing worker is bound, and a new name's worker is created as
+the session attaches to it, exactly as with `--worker <name>` at invocation. The verb reports
 `(bound)` or `(new)` from the workspace directory, re-reads the worker's durable
 policy, and the header and status line adopt the name.
 `/workers` renders `workspace.workers` as a forest of parent/child trees from
@@ -530,7 +530,7 @@ policy, and the header and status line adopt the name.
 other workers `○`, siblings newest first, each row carrying the worker's origin
 (`model`, `client`, `_plurnk`) and creation time, a worker whose parent is not in
 the directory standing as a root. A bound name the directory does not hold yet leads as
-`● <name>  (new)`: no act has created that worker, and the next message does. The map carries no lifecycle: a worker's state
+`● <name>  (new)`. The map carries no lifecycle: a worker's state
 is seen by being in it. `plurnk workspace workers <name>` (§7.3) keeps its flat
 table.
 
@@ -1257,9 +1257,8 @@ the person, not the approver: `--yolo`, configured acceptance, or fail-closed re
 settle what the daemon routes to this client.
 
 The TUI maintains `/agui/connect` while idle and reconnects after a terminal or
-resolved interrupt. A worker no act has created yet has nothing to connect to: the daemon
-refuses that connection, and the TUI connects once its first message or a setting creates
-the worker (plurnk-service `{§agui-action-binding}`). Inspection and direct operations do not
+resolved interrupt. That owner connection creates the session's worker when there is none
+(plurnk-service `{§agui-action-binding}`); verbs wait for it. Inspection and direct operations do not
 detach that owner connection. Future owned work, including independently active children, can request
 review without a new user prompt. Disconnect changes neither ownership nor pending gates.
 Concurrent Runs share one local resolver per interrupt. A resurfaced gate does not

@@ -28,21 +28,21 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
         target, { threadId: worker, workspace: name, kind: "workspace.workers" },
     )).workers;
 
-    await t.test("simultaneous launches reuse the workspace and bind the user worker without creating it", async () => {
+    await t.test("simultaneous launches reuse both the workspace and user worker", async () => {
         const first = spawnTui(daemon.url, [], env, folder);
         const second = spawnTui(daemon.url, [], env, folder);
         try {
             for (const tui of [first, second]) {
                 await tui.waitFor(/workspace: ~\/projects\/example · worker: user/);
-                await tui.waitFor(/\[~\/projects\/example\/~user/);
+                // The owner's session creates its worker as it attaches: the place reports its first loop count.
+                await tui.waitFor(/\[~\/projects\/example\/~user\(0\)/);
                 const status = stripVTControlCharacters(tui.output()).split(/[\r\n]/).filter((line) => line.includes("[~/projects/example/~user"));
                 assert.ok(status.length > 0);
                 assert.ok(status.every((line) => line.startsWith("[~/projects/example/")), "no duplicate folder before the place");
             }
             assert.deepEqual((await rows()).map(({ name, project_root }) => ({ name, project_root })),
                 [{ name: workspace, project_root: folder }]);
-            // Binding creates no worker: its first message does (plurnk-service {§agui-action-binding}).
-            assert.equal((await workers(workspace)).filter(({ name }) => name === "user").length, 0);
+            assert.equal((await workers(workspace)).filter(({ name }) => name === "user").length, 1);
             for (const tui of [first, second]) tui.write("/quit\r");
             assert.deepEqual(await Promise.all([first.exited, second.exited]), [0, 0]);
         } finally { first.kill(); second.kill(); }
@@ -60,9 +60,9 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
             const tui = spawnTui(daemon.url, [...args], { ...env, ...extra }, folder);
             try {
                 await tui.waitFor(new RegExp(`workspace: ${RegExp.escape(expectedWorkspace)} · worker: ${worker}`));
-                await tui.waitFor(new RegExp(`\\[${RegExp.escape(expectedWorkspace)}/~${worker}`));
+                await tui.waitFor(new RegExp(`\\[${RegExp.escape(expectedWorkspace)}/~${worker}\\(0\\)`));
                 assert.equal((await rows()).find(({ name }) => name === expectedWorkspace)?.project_root, root);
-                assert.ok(!(await workers(expectedWorkspace, worker)).some(({ name }) => name === worker), "binding creates no worker");
+                assert.ok((await workers(expectedWorkspace, worker)).some(({ name }) => name === worker));
                 if (root === elsewhere) await tui.waitFor(/~\/other \[chosen\//);
                 tui.write("/quit\r");
                 assert.equal(await tui.exited, 0, tui.output());

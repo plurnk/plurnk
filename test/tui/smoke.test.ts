@@ -95,10 +95,6 @@ describe("TUI pty harness", () => {
             await resumed.waitFor(/● second[^\n]*← bound/);
             resumed.write("/workspace fresh-resume\r");
             await resumed.waitFor(/workspace: fresh-resume \(new\)/);
-            // A worker-scoped setting needs its worker; a message creates it even where no model can answer
-            // (plurnk-service {§agui-action-binding}).
-            resumed.write("Begin.\r");
-            await resumed.waitFor(/No provider is configured for this worker\./);
             resumed.write("/env add RESUME_WITNESS before-rename\r");
             await resumed.waitFor(/added: RESUME_WITNESS \(active\)/);
             resumed.write("/rename renamed-resume\r");

@@ -1,7 +1,7 @@
 // CLI one-shot through the daemon's AG-UI endpoint: we POST the run and render the
-// AG-UI SSE projection. A FAMILY client renders operations from CUSTOM
-// plurnk.row for full fidelity and provider reasoning from AG-UI's standard
-// reasoning lifecycle. Generic TEXT_MESSAGE events remain third-party speech.
+// AG-UI SSE projection. Operations render from the standard parts their rows build,
+// with the rows' facts as metadata ({§cli-row-sources}), and provider reasoning from
+// AG-UI's standard reasoning lifecycle.
 // Text mode: stdout = delivered response messages, stderr = the per-row trace.
 //
 // JSON mode uses the terminal projection's complete loop identity and usage.
@@ -31,6 +31,7 @@ import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./ag
 import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, type ActionOutcome } from "./agui.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
+import RowAssembler, { wholeRow } from "./rows.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, isWorkerGauge, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 import { withColorOutput } from "./color.ts";
@@ -152,6 +153,20 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     const notices: Notice[] = [];
     const streams = new StreamTrace();
     const reasoning = new ReasoningEvents();
+    const rows = new RowAssembler();
+    const presentRow = (entry: LogEntryWire): void => {
+        io.onRow?.(entry);
+        const workerId = entry.worker_id;
+        if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
+        const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
+        const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx) : "";
+        const separator = response.length > 0 ? "\n\n" : "";
+        if (message.length > 0) response += separator + message;
+        if (io.json) { entries.push(entry); return; }
+        if (isEmission(entry)) return;
+        io.err(`${formatPlain(entry)}\n`);
+        if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
+    };
     const visibleReasoning = new Map<string, { atLineStart: boolean }>();
     let statusGauge: StatusGaugeEnvelope | null = null;
     const snapshot = (): CliRunResult => ({
@@ -193,6 +208,8 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 }
                 continue;
             }
+            // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
+            for (const entry of rows.consume(e)) presentRow(entry);
             if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
             if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) { toolArgs += String((e as { delta?: unknown }).delta ?? ""); continue; }
             if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
@@ -239,19 +256,9 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             if (e.type !== "CUSTOM") continue;   // generic vocab is for third-party frontends
             const name = (e as { name?: string }).name;
             const value = (e as { value?: unknown }).value;
-            if (name === "plurnk.row") {
-                const entry = value as LogEntryWire;
-                io.onRow?.(entry);
-                const workerId = (entry as { worker_id?: number }).worker_id;
-                if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
-                const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
-                const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx) : "";
-                const separator = response.length > 0 ? "\n\n" : "";
-                if (message.length > 0) response += separator + message;
-                if (io.json) { entries.push(entry); continue; }
-                if (isEmission(entry)) continue;
-                io.err(`${formatPlain(entry)}\n`);
-                if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
+            if (name === "plurnk.ambient") {
+                const entry = wholeRow(value);
+                if (entry !== null) presentRow(entry);
             } else if (name === "plurnk.problem") {
                 // A Problem that ends no Run, such as an unavailable provider catalog, stays its own event.
                 reportProblem(problemDetails(value));

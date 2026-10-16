@@ -8,6 +8,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { runViaAgui, actionViaAgui, operationResult, problemDetails } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
 import Credential from "./credential.ts";
+import { callOf } from "../test/agui-parts.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -381,7 +382,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
         }
         // The message Run: one row, then HELD OPEN (a loop that never ends on its own).
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "NOTE" } }));
+        for (const event of callOf({ id: 1, op: "NOTE", tx: { body: "Work." }, rx: { status: 200 } })) res.write(frame(event));
         holdOpen = () => {
             res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } } } }));
             res.end();
@@ -413,7 +414,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     // The stream dies without terminal truth: no terminated, no RUN_FINISHED.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "NOTE" } }));
+        for (const event of callOf({ id: 1, op: "NOTE", tx: { body: "Work." }, rx: { status: 200 } })) res.write(frame(event));
         res.end();   // abrupt end — no terminal event
     });
     const outs: string[] = [];

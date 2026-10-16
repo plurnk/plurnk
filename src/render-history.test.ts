@@ -5,21 +5,22 @@ import type { LogEntryWire } from "./render.ts";
 
 process.env.NO_COLOR = "1";
 const entry = (overrides: Partial<LogEntryWire>): LogEntryWire => ({
-    id: 1, origin: "model", op: "READ", signal: null, scheme: null, hostname: null,
-    pathname: null, fragment: null, lineMarker: null, status_rx: 200, tx: null,
-    rx: null, tags: [], loop_seq: 1, turn_seq: 1, sequence: 1, ...overrides,
+    id: 1, origin: "model", op: "READ", signal: null,
+    target: null, lineMarker: null, status_rx: 200, tx: null,
+    rx: null, loop_seq: 1, turn_seq: 1, sequence: 1, ...overrides,
 });
 
 test("[§cli-worker-history] snapshot speech and operation headings retain their chronological row order", () => {
     const source = "agui://anonymous/threads/alice/messages/prompt";
     const blocks = renderHistory({ attachment: true, entries: [
-        entry({ id: 1, op: "SEND", origin: "_plurnk", source, attrs: { kind: "message" }, tx: { body: "row prompt" } }),
-        entry({ id: 2, op: "READ", pathname: "a.md", tx: { body: "OPERAND_BODY_NOT_REPLAYED" } }),
-        entry({ id: 3, op: "SEND", rx: { answers: [source], completion: 200 }, tx: { body: "row answer" } }),
+        entry({ id: 1, sequence: 1, op: "SEND", origin: "_plurnk", source, attrs: { kind: "message" }, tx: { body: "row prompt" } }),
+        entry({ id: 2, sequence: 2, op: "READ", target: "a.md", tx: { body: "OPERAND_BODY_NOT_REPLAYED" } }),
+        entry({ id: 3, sequence: 3, op: "SEND", rx: { answers: [source], completion: 200 }, tx: { body: "row answer" } }),
     ], messages: [
         { id: "prompt", role: "user", name: source, content: "snapshot prompt\nsecond line" },
-        { id: "3/reasoning", role: "reasoning", content: "OLD_REASONING_NOT_REPLAYED" },
-        { id: "3", role: "assistant", content: "snapshot answer" },
+        { id: "1/1/3/reasoning", role: "reasoning", content: "OLD_REASONING_NOT_REPLAYED" },
+        // plurnk-service `{§agui-snapshot}`: speech is identified by its row's coordinate.
+        { id: "1/1/3", role: "assistant", content: "snapshot answer" },
     ] }, "alice", 80);
     assert.deepEqual(blocks, ["› snapshot prompt\n  second line", "READ (a.md)", "snapshot answer", "— 3 earlier entries · /log for more —"]);
 });

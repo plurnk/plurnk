@@ -7,21 +7,19 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 const row = (op: string, body: string | null, status: number, delivered = false): LogEntryWire => ({
     id: 1, loop_seq: 1, turn_seq: 2, sequence: 1, op, origin: "model", signal: null,
-    scheme: null, hostname: null, pathname: null, fragment: null, lineMarker: null,
+    target: null, lineMarker: null,
     tx: { op, body, target: null, aside: null },
-    rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/user/messages/m1"] } : {}) }, status_rx: status, tags: [],
+    rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/user/messages/m1"] } : {}) }, status_rx: status,
 });
 
 test("an addressed answer is rendered from successful delivery, not targetlessness or a terminal verb", () => {
     const entry = row("SEND", "**Authored response.**", 200, true);
-    entry.scheme = "agui";
-    entry.pathname = "/threads/user/messages/m1";
+    entry.target = "agui:///threads/user/messages/m1";
     entry.rx = { answers: ["agui://anonymous/threads/user/messages/m1"] };
     assert.equal(isResponseMessage(entry, "user"), true);
     assert.equal(isResponseMessage(entry, "other"), false);
     assert.equal(extractSendBody(entry.tx), "**Authored response.**");
     assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
-    assert.equal(isResponseMessage({ ...entry, inherited_history: 1 }), false);
     assert.equal(isResponseMessage({ ...entry, status_rx: 409 }), false);
     assert.equal(isResponseMessage({ ...entry, rx: { answers: ["worker://child/?message=01234567"] } }), false);
     assert.equal(isResponseMessage({ ...entry, source: "worker://another" }), false);
@@ -129,9 +127,8 @@ test("{§cli-broadcast-send-rendering} an undelivered SEND renders as an operati
     assert.equal(stripVTControlCharacters(renderLogEntry(delivered, 80)), "\nDelivered.", "a delivered targetless reply is a message block");
     const undelivered = row("SEND", "Not delivered.", 200);
     const failed = { ...row("SEND", "Refused.", 409), rx: { status: 409, problem: { title: "Refused" } } };
-    const inherited = { ...delivered, inherited_history: 1 };
-    const unrelated = { ...delivered, scheme: "worker", pathname: "/child", rx: { answers: ["worker://child/?message=01234567"] } };
-    for (const [name, entry] of Object.entries({ undelivered, failed, inherited, unrelated })) {
+    const unrelated = { ...delivered, target: "worker:///child", rx: { answers: ["worker://child/?message=01234567"] } };
+    for (const [name, entry] of Object.entries({ undelivered, failed, unrelated })) {
         assert.equal(isResponseMessage(entry), false, `${name} is not speech`);
         assert.match(heading(entry), /^SEND\b/, `${name} keeps its operation heading`);
     }

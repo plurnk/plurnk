@@ -10,28 +10,23 @@ import ModelText from "./model-text.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 
+// A row as the waterfall draws it: rebuilt from the standard part it built or carried whole ({§cli-row-sources}).
 export interface LogEntryWire {
     id: number;
-    coordinate?: string;
     worker_id?: number;
     // {§message-causal-source} — the causal actor's address; null is the worker's own doing.
     source?: string | null;
-    inherited_history?: number;
     op: string;
     origin: string;
     signal: unknown;
-    scheme: string | null;
-    pathname: string | null;
-    hostname: string | null;
-    fragment: string | null;
+    // The address the row recorded ({§cli-row-sources}); the heading shows the target as authored when the statement has one.
+    target: string | null;
     lineMarker: { marks: Array<number | string> } | null;
     status_rx: number;
     tx: unknown;
     rx: unknown;
     attrs?: unknown;
-    tags: string[];
-    // Logical coordinate (the model's log://L/T/S address) — every wire
-    // log entry carries it (loops⋈turns JOIN, plurnk-service #208).
+    // The row's log coordinate L/T/S (plurnk-service `{§methods-log-coordinate}`).
     loop_seq: number;
     turn_seq: number;
     sequence: number;
@@ -151,7 +146,7 @@ export const markDescendant = (block: string, name: string, depth: number): stri
     indentDescendant(`${paint(`🐜 ${ModelText.plain(name)}`, "dim")} ${block}`, depth);
 
 export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
-    if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300 || entry.inherited_history === 1) return false;
+    if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300) return false;
     if (extractSendBody(entry.tx).trim().length === 0) return false;
     const reply = objectOf(entry.attrs)?.kind === "reply";
     if (!reply && entry.source != null) return false;
@@ -161,16 +156,6 @@ export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boole
     return answers.some((address) => typeof address === "string" && addressed.test(address));
 };
 
-// The target URI a log entry addressed — `scheme://host/pathname#fragment`, or
-// the bare pathname when scheme is null (the daemon's file:// shortcut). null
-// when the entry has no path at all. No synthesis: render what the daemon sent.
-export const entryTarget = (entry: LogEntryWire): string | null => {
-    if (entry.pathname === null) return null;
-    return entry.scheme !== null
-        ? `${entry.scheme}://${entry.hostname ?? ""}${entry.pathname}${entry.fragment !== null ? `#${entry.fragment}` : ""}`
-        : entry.pathname;
-};
-
 export const entryScope = (entry: LogEntryWire): string | null =>
     entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;
 
@@ -178,10 +163,10 @@ export const entryScope = (entry: LogEntryWire): string | null =>
 // operation keyword or an execution's runtime tag (plurnk-service #659).
 export const operationIdentity = (entry: LogEntryWire): string => entry.op;
 
-// The authored target text when the wire carries it; the daemon's address otherwise.
+// The authored target text when the statement carries it; the row's address otherwise.
 export const authoredTarget = (entry: LogEntryWire): string | null => {
     const raw = (objectOf(entry.tx)?.target as { raw?: unknown } | null | undefined)?.raw;
-    return typeof raw === "string" ? raw : entryTarget(entry);
+    return typeof raw === "string" ? raw : entry.target;
 };
 
 // The matcher as authored on the heading (`/regex/i`, `~query`, `&symbol`, a bare glob).
@@ -358,7 +343,7 @@ export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = 
     } else {
         const target = override.target ?? authoredTarget(entry);
         // {§cli-hyperlinks}: a web target links to itself; every other address is text.
-        if (target !== null) parts.push(`(${hyperlink(ModelText.plain(target), entryTarget(entry) ?? "")})`);
+        if (target !== null) parts.push(`(${hyperlink(ModelText.plain(target), entry.target ?? "")})`);
         const scope = entryScope(entry);
         if (scope !== null) parts.push(scope);
         const pattern = authoredPattern(entry);

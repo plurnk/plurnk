@@ -5,6 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 import type { LogEntryWire } from "../../src/render.ts";
+import { partsOf } from "../agui-parts.ts";
 
 let daemon: Daemon;
 before(async () => {
@@ -16,12 +17,12 @@ after(async () => { await daemon?.cleanup(); });
 
 const receipt = (op: string, index: number, status = 200): LogEntryWire => ({
     id: index + 1, worker_id: 1, op, origin: "model", signal: null,
-    scheme: "file", pathname: `receipt-${index}.txt`, hostname: null, fragment: null,
+    target: `file://receipt-${index}.txt`,
     lineMarker: null, status_rx: status, tx: { op, target: { kind: "local", raw: `receipt-${index}.txt` } },
     rx: status >= 400 ? { status, problem: {
         type: "https://example.test/conflict", title: "Entry changed", status, diagnostic: "Retained conflict detail",
     } } : { status },
-    tags: [], loop_seq: 1, turn_seq: 1, sequence: index + 1,
+    loop_seq: 1, turn_seq: 1, sequence: index + 1,
     attrs: { fanout: { target: "receipt-*.txt", matched: 3, index, count: 3 } },
 });
 
@@ -84,7 +85,7 @@ const fixture = async (t: TestContext) => {
         emit: (event: object) => { response.write(frame(event)); },
         row: (entry: LogEntryWire) => {
             entries.push(entry);
-            response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: entry }));
+            for (const event of partsOf(entry)) response.write(frame(event));
         },
         terminal: (status = 499) => {
             response.end(frame({ type: "RUN_FINISHED", threadId, runId, outcome: { type: "success" }, metadata: { plurnk: { terminal: {

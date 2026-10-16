@@ -7,9 +7,9 @@ process.env.NO_COLOR = "1";
 
 const row = (op: string, index: number, overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: index + 1, worker_id: 1, op, origin: "model", signal: null,
-    scheme: "file", pathname: `part-${index}.txt`, hostname: null, fragment: null,
+    target: `file://part-${index}.txt`,
     lineMarker: null, status_rx: 200, tx: { op, target: { kind: "local", raw: `part-${index}.txt` } },
-    rx: { status: 200, lineOrdinals: [1] }, tags: [], loop_seq: 1, turn_seq: 1, sequence: index + 1,
+    rx: { status: 200, lineOrdinals: [1] }, loop_seq: 1, turn_seq: 1, sequence: index + 1,
     attrs: { fanout: { target: "part-*.txt", matched: 3, index, count: 3 } },
     ...overrides,
 });

@@ -18,7 +18,7 @@ what it guarantees, what its exit codes mean, and what it renders.
 | **worker** | An actor within a workspace, with its own log. `--worker` selects the worker the thread binds; client operations have their own actor. |
 | **AG-UI Run** | One protocol exchange on a thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
 | **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; the Run's end carries the authoritative terminal record as `metadata.plurnk.terminal` (plurnk-service `{§agui-plurnk-metadata}`). |
-| **log/entry notification** | A durable operation row or its update, projected through `CUSTOM plurnk.row`. Rendering follows §5. |
+| **log/entry notification** | A durable operation row or its update; the client draws it from the standard part it builds, or whole when it builds none ({§cli-row-sources}). Rendering follows §5. |
 | **one-shot mode** | `plurnk "prompt"` — one prompt's loop, rendered, then exit. Unix-tool posture. |
 | **TUI mode** | `plurnk` (no args) — interactive REPL; many prompts per workspace. |
 
@@ -377,7 +377,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
   history. It still receives durable trace, diagnostics, and the summary.
 
 **json mode (`--json` / `PLURNK_CLIENT_JSON`):**
-- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from the terminal record: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. The terminal record supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal}]}]`, `notices`, `usage`, exit metadata. Each op's `target` is the address its row recorded, and its `scope` the daemon's line marker as its ordered coordinate array. `usage` is preserved verbatim from the terminal record: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. The terminal record supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -415,7 +415,7 @@ Consequence:
 ### §2.2 Flow {§cli-one-shot-flow}
 
 1. Read the worker's durable model, then `POST /agui` (RunAgentInput) with the workspace and thread selected under §1.1, the prompt as a user message, and per-loop options on `forwardedProps.plurnk`.
-2. Consume the SSE: `CUSTOM plurnk.row` events advance observed turn status and
+2. Consume the SSE: rows ({§cli-row-sources}) advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
    Delivered responses go to stdout ({§cli-broadcast-send-rendering}).
@@ -577,7 +577,7 @@ disconnecting that observer does not cancel independently-owned work.
 | Prompts and replies | Full text, in chronological order, with actor attribution. Rows committed after the snapshot retain their own authoritative body. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
-| Past/live boundary | A quiet count of earlier displayed entries and `/log` for more. Unchanged overlapping receipts are shown once by durable identity; updates to the same receipt remain visible. Identical text at different identities is not deduplicated. |
+| Past/live boundary | A quiet count of earlier displayed entries and `/log` for more. Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
 | State/accounting | Replayed entries are not live activity, turns, terminal events, or fresh usage. Only the current gauge and subsequently observed events update status. Elapsed session time does not include time before attachment. |
 | Return visits | Each explicit binding restores its current bounded tail. Existing terminal scrollback stays intact. Input recall is separate. |
 
@@ -900,6 +900,25 @@ failures remain causal errors, never a silent replacement rendering mode.
 | `render --help` | Help only, without initializing the renderer. |
 | `render` | Load the Markdown/diagram renderer before producing output; no daemon. |
 
+### §5.0.1 Row sources {§cli-row-sources}
+
+The client draws each row from the standard AG-UI part the row builds, every part carrying the row's facts
+as `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `id`, log `coordinate`,
+`worker`, `origin`, `op`, `source`, the `address` it recorded, `signal`, `status` and `attrs`.
+
+| The row | Arrives as | Drawn |
+|---|---|---|
+| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
+| A delivered reply, or a WAIT that carries a body | `TEXT_MESSAGE_START/CONTENT/END`, the metadata adding its heading's `aside` and its `receipt` | When the message ends |
+| An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
+| A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate | On arrival: a reply's words as its body, any other answer as its receipt |
+| A row that builds no part | `CUSTOM plurnk.ambient`, the whole row | On arrival; an actionless row draws nothing |
+| History | `log.read`, whole rows | {§cli-worker-history} |
+
+A row's `target` is the address it recorded; its heading shows the target as authored when its statement
+has one (§5.1). A call ended without its receipt, a result that is not text, or row facts that are present
+but unreadable are a broken wire (`result-invalid`), never a row skipped.
+
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
 Received operation rows render as below, except delivered message blocks (§5.4)
@@ -1123,7 +1142,7 @@ TUI mode contract:
 A delivered response is plain: its Markdown carries the only emphasis
 (headings, `**strong**`, table heads), and the human's own line — bold, in the human's
 colour, spaced (§5.1) — is what sets the two voices apart. Delivery alone makes a message
-block: a failed, unrelated, inherited or undelivered SEND, targetless or not, is an Other
+block: a failed, unrelated or undelivered SEND, targetless or not, is an Other
 SEND (§5.1.2). {§cli-color-policy} controls colour and emphasis without changing
 layout. CLI delivered answers remain verbatim per §2.
 
@@ -1132,8 +1151,8 @@ CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messag
 The message body source is `entry.tx.body`, carrying `{ raw, json }`.
 
 Successful (`200 ≤ status_rx < 300`) SEND rows contribute through their recorded
-`answers` message addresses, independently of loop completion. Inherited rows and ordinary source
-observations cannot deliver the same message again; a source-attributed `reply`
+`answers` message addresses, independently of loop completion. An ordinary source
+observation cannot deliver the same message again; a source-attributed `reply`
 observation is a genuine delivery to this thread.
 Bodies accumulate in delivery order, separated by a blank line. NOTE and WAIT are not speech.
 

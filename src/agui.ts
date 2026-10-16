@@ -8,8 +8,8 @@
 // malformed event fails the stream here instead of rendering as if it were real.
 // This adapter otherwise only preserves the client's async-iterator surface;
 // rendering (waterfall, proposals, gauge) stays local. Plurnk fidelity rides standard metadata where AG-UI holds
-// the fact (a Run's end, plurnk-service {§agui-plurnk-metadata}) and CUSTOM plurnk.* events elsewhere (especially
-// plurnk.row, the full wire row).
+// the fact (a Run's end, the parts a row builds: plurnk-service {§agui-plurnk-metadata}) and CUSTOM plurnk.* events
+// for what has no standard subject (a row outside the conversation rides plurnk.ambient whole).
 
 import type { ClientCapabilities } from "./client-capabilities.ts";
 import type { ClientCredential } from "./credential.ts";

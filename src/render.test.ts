@@ -26,7 +26,6 @@ const {
     isEmission,
     isArrivalEntry,
     isOwnArrival,
-    entryTarget,
     receiptCount,
     outcomeTitle,
     FanoutCollapse,
@@ -40,15 +39,11 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     op: "READ",
     origin: "model",
     signal: null,
-    scheme: null,
-    pathname: null,
-    hostname: null,
-    fragment: null,
+    target: null,
     lineMarker: null,
     status_rx: 200,
     tx: null,
-    rx: overrides.op === "SEND" && overrides.scheme == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
-    tags: [],
+    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
     loop_seq: 1,
     turn_seq: 1,
     sequence: 1,
@@ -140,8 +135,7 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
     ].join("\n");
     const value = entry({
         op: "SEND",
-        scheme: null,
-        pathname: null,
+        target: null,
         signal: 200,
         status_rx: 200,
         tx: { body: { raw: body, json: null } },
@@ -176,13 +170,6 @@ test("[§cli-what-is-not-rendered] an arrival is the daemon's inbound SEND row; 
     assert.match(rendered, /done/, "the body follows");
 });
 
-test("[§cli-log-entry-line-format] entryTarget preserves literal resource addresses without caller-relative synthesis", () => {
-    assert.equal(entryTarget(entry({ scheme: "worker", hostname: null, pathname: "/plan.md" })), "worker:///plan.md", "empty authority = commons, verbatim");
-    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "extract-host", pathname: "/plan.md" })), "worker://extract-host/plan.md", "named worker verbatim");
-    assert.equal(entryTarget(entry({ scheme: "worker", hostname: "plurnk", pathname: "/docs/x.md" })), "worker://plurnk/docs/x.md", "plurnk = kernel, bare");
-    assert.equal(entryTarget(entry({ scheme: "reasoning", hostname: "extract-host", pathname: "/1/2/1" })), "reasoning://extract-host/1/2/1");
-});
-
 // ─── Delivered reply emphasis (colour enabled) ────────────────────────
 // A delivered reply is plain: its Markdown carries the only emphasis, and the
 // human's line is what sets the two voices apart ({§cli-broadcast-send-rendering}).
@@ -195,7 +182,7 @@ const colored = <T>(render: () => T): T => {
     }
 };
 
-const sendEntry = { op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
+const sendEntry = { op: "SEND", target: null, signal: 200, status_rx: 200, tx: { body: { raw: "Paris.", json: null } } };
 
 test("{§cli-broadcast-send-rendering} the model's delivered reply is plain: no bold of its own, no background band", () => {
     const out = colored(() => renderLogEntry(entry(sendEntry)));
@@ -215,7 +202,7 @@ test("{§cli-broadcast-send-rendering} a failed SEND is not presented as a deliv
 
 test("{§cli-broadcast-send-rendering} a client-origin broadcast is the same plain block", () => {
     const out = colored(() => renderLogEntry(entry({
-        op: "SEND", origin: "client", scheme: null, pathname: null,
+        op: "SEND", origin: "client", target: null,
         signal: 200, status_rx: 200, tx: { body: { raw: "hi", json: null } },
     })));
     assert.doesNotMatch(out, /\x1b\[1m/u);
@@ -223,7 +210,7 @@ test("{§cli-broadcast-send-rendering} a client-origin broadcast is the same pla
 
 test("{§cli-broadcast-send-rendering} NO_COLOR build emits no bold (or background) codes", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "SEND", target: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
     assert.doesNotMatch(out, /\x1b\[1m/);  // no bold
@@ -234,7 +221,7 @@ test("{§cli-broadcast-send-rendering} NO_COLOR build emits no bold (or backgrou
 // ─── the literal row grammar ({§cli-log-entry-line-format}) ─────────────────
 
 const read = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => entry({
-    op: "READ", scheme: null, pathname: "AGENTS.md", tx: { op: "READ", target: { kind: "local", raw: "AGENTS.md" }, matcher: null, aside: null },
+    op: "READ", target: "AGENTS.md", tx: { op: "READ", target: { kind: "local", raw: "AGENTS.md" }, matcher: null, aside: null },
     rx: { status: 200, content: "…", range: { unit: "line", total: 256, requested: [17, -1], returned: [17, 256] } },
     lineMarker: { marks: [17, -1] },
     ...overrides,
@@ -246,7 +233,7 @@ test("[§cli-log-entry-line-format] a READ row is the authored heading with the 
 
 test("[§cli-log-entry-line-format] a pattern READ keeps the pattern literal and counts its matched lines", () => {
     const line = renderLogEntry(read({
-        pathname: "plurnk-core/SPEC.md",
+        target: "plurnk-core/SPEC.md",
         tx: { op: "READ", target: { kind: "local", raw: "plurnk-core/SPEC.md" }, matcher: { dialect: "regex", raw: "/^#{1,2} /", pattern: "^#{1,2} ", flags: "" }, aside: null },
         rx: { status: 200, content: "…", lineOrdinals: [1, 5, 35], range: { unit: "line", total: 5244, requested: [1, 35], returned: [1, 35] } },
         lineMarker: null,
@@ -256,7 +243,7 @@ test("[§cli-log-entry-line-format] a pattern READ keeps the pattern literal and
 
 test("[§cli-log-entry-line-format] a FIND counts the items it returned and carries its aside last", () => {
     const line = renderLogEntry(entry({
-        op: "FIND", pathname: "plurnk-parser/**",
+        op: "FIND", target: "plurnk-parser/**",
         tx: { op: "FIND", target: { kind: "local", raw: "plurnk-parser/**" }, matcher: null, aside: "what the new package contains" },
         rx: { status: 200, results: [], range: { unit: "resource", total: 28, requested: [1, 16], returned: [1, 16] }, matchingPathCount: 28, matchLocationCount: 0 },
     }));
@@ -265,7 +252,7 @@ test("[§cli-log-entry-line-format] a FIND counts the items it returned and carr
 
 test("[§cli-log-entry-line-format] a 204 FIND counts zero and is not a failure", () => {
     const line = renderLogEntry(entry({
-        op: "FIND", pathname: "src/**/*.ts", status_rx: 204,
+        op: "FIND", target: "src/**/*.ts", status_rx: 204,
         tx: { op: "FIND", target: { kind: "local", raw: "src/**/*.ts" }, matcher: null, aside: null },
         rx: { status: 204, content: null, results: [], range: { unit: "resource", total: 0, requested: [1, 16] } },
     }));
@@ -274,13 +261,13 @@ test("[§cli-log-entry-line-format] a 204 FIND counts zero and is not a failure"
 
 test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, and aside, then the Problem title at the right", () => {
     assert.equal(renderLogEntry(read({
-        pathname: "plurnk-parser/README.md", status_rx: 404,
+        target: "plurnk-parser/README.md", status_rx: 404,
         tx: { op: "READ", target: { kind: "local", raw: "plurnk-parser/README.md" }, matcher: null, aside: null },
         rx: { status: 404, content: null, problem: { type: "https://problems.plurnk.xyz/scheme/file/entry-not-member", title: "Entry not member", status: 404, detail: "'plurnk-parser/README.md' exists on disk but is not a member of this workspace." } },
         lineMarker: { marks: [1, -1] },
     })), "READ (plurnk-parser/README.md) <1,-1> — Entry not member");
     assert.equal(renderLogEntry(read({
-        pathname: "belfry.md", status_rx: 404, lineMarker: null,
+        target: "belfry.md", status_rx: 404, lineMarker: null,
         tx: { op: "READ", target: { kind: "local", raw: "belfry.md" }, matcher: { dialect: "regex", raw: "/\\bbats?\\b/i", pattern: "\\bbats?\\b", flags: "i" }, aside: "only the lines matching \"bat\" or \"bats\"" },
         rx: { status: 404, content: null, problem: { type: "https://problems.plurnk.xyz/scheme/file/entry-not-found", title: "Entry not found", status: 404, detail: "No entry exists at belfry.md." } },
     })), "READ (belfry.md) /\\bbats?\\b/i only the lines matching \"bat\" or \"bats\" — Entry not found", "one line; the title is to the right of the aside");
@@ -288,13 +275,13 @@ test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, 
 
 test("[§cli-hyperlinks] a web READ row links its target to itself; a workspace address never links", () => {
     const web = read({
-        scheme: "https", hostname: "example.com", pathname: "/guide", lineMarker: null,
+        target: "https://example.com/guide", lineMarker: null,
         tx: { op: "READ", target: { kind: "url", raw: "https://example.com/guide" }, matcher: null, aside: null },
     });
     assert.match(renderLogEntry(web), /^READ \(https:\/\/example\.com\/guide\)/u, "without styling, the address is text");
     assert.match(colored(() => renderLogEntry(web)), /\(\x1b\]8;;https:\/\/example\.com\/guide\x1b\\https:\/\/example\.com\/guide\x1b\]8;;\x1b\\\)/u, "with styling, the target links to itself");
     const local = read({
-        pathname: "notes.md", lineMarker: null,
+        target: "notes.md", lineMarker: null,
         tx: { op: "READ", target: { kind: "local", raw: "notes.md" }, matcher: null, aside: null },
     });
     assert.doesNotMatch(colored(() => renderLogEntry(local)), /\x1b\]8/u, "a file is not a destination anything outside the client can open");
@@ -302,14 +289,14 @@ test("[§cli-hyperlinks] a web READ row links its target to itself; a workspace 
 
 test("[§cli-curation-notice] the daemon's over-budget row renders as a curation notice, never as a failure", () => {
     const overBudget = entry({
-        op: "error", origin: "_plurnk", status_rx: 413, pathname: null, lineMarker: null,
+        op: "error", origin: "_plurnk", status_rx: 413, target: null, lineMarker: null,
         tx: null,
         rx: { status: 413, problem: { type: "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget", title: "Packet exceeds budget", status: 413, detail: "Context exceeds budget. YOU MUST ONLY KILL, MOVE or NOTE this turn." } },
     });
     assert.equal(renderLogEntry(overBudget), "notice — curating context", "the person sees the curation moment, not the model's mandate");
     assert.match(colored(() => renderLogEntry(overBudget)), /\u001B\[(?:1;)?32m/u, "the notice is painted as a success, not a failure");
     const other = entry({
-        op: "error", origin: "_plurnk", status_rx: 422, pathname: null, lineMarker: null, tx: null,
+        op: "error", origin: "_plurnk", status_rx: 422, target: null, lineMarker: null, tx: null,
         rx: { status: 422, problem: { type: "https://problems.plurnk.xyz/engine/rail/no-operation", title: "No operation", status: 422, detail: "The turn performed no operation." } },
     });
     assert.equal(renderLogEntry(other), "error — No operation", "every other daemon error row keeps its title");
@@ -317,7 +304,7 @@ test("[§cli-curation-notice] the daemon's over-budget row renders as a curation
 
 test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the daemon's detail, not a count", () => {
     assert.equal(renderLogEntry(read({
-        pathname: "pets_*.md", status_rx: 204, lineMarker: null,
+        target: "pets_*.md", status_rx: 204, lineMarker: null,
         tx: { op: "READ", target: { kind: "local", raw: "pets_*.md" }, matcher: null, aside: null },
         rx: { status: 204, detail: "No path matched pets_*.md." },
     })), "READ (pets_*.md) — No path matched pets_*.md.");
@@ -344,7 +331,7 @@ test("[§cli-log-entry-line-format] failed rows show structured diagnostics as l
 
 test("[§cli-log-entry-line-format] an execution row is named by its runtime and previews its body beneath", () => {
     const line = renderLogEntry(entry({
-        op: "sh", scheme: null, pathname: null,
+        op: "sh", target: null,
         tx: { runtime: "sh", target: null, aside: "Run the focused tests", body: "npm test -- --grep focused" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     }));
@@ -353,13 +340,13 @@ test("[§cli-log-entry-line-format] an execution row is named by its runtime and
 
 test("[§cli-log-entry-line-format] a client `!` row is named by its op, the daemon's default runtime", () => {
     const started = entry({
-        op: "sh", origin: "client", scheme: null, pathname: null, status_rx: 200,
+        op: "sh", origin: "client", target: null, status_rx: 200,
         tx: { runtime: "sh", target: null, aside: null, body: "printf x" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
     assert.equal(renderLogEntry(started), "sh\n    printf x\n", "the human's `!` command runs in the default shell; its row says so, its command beneath");
     const refused = entry({
-        op: "cobol", scheme: null, pathname: null, status_rx: 404,
+        op: "cobol", target: null, status_rx: 404,
         tx: { runtime: "cobol", target: null, aside: null, body: "x" },
         rx: { status: 404, problem: { type: "x", title: "Unknown executor", status: 404 } },
     });
@@ -368,7 +355,7 @@ test("[§cli-log-entry-line-format] a client `!` row is named by its op, the dae
 
 test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own path", () => {
     const line = renderLogEntry(entry({
-        op: "COPY", pathname: "notes.md",
+        op: "COPY", target: "notes.md",
         tx: { op: "COPY", aside: null, source: { target: { kind: "local", raw: "notes.md" }, lineMarker: { marks: [1, 3] }, matcher: null, metadata: null }, destination: { target: { kind: "url", raw: "worker:///archive/notes.md" }, lineMarker: { marks: [-1] }, matcher: null, metadata: null } },
         rx: { status: 201 },
     }));
@@ -376,9 +363,9 @@ test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own
 });
 
 test("[§cli-log-entry-line-format] the row is literal text: no Markdown, no glyphs, the op name at column zero", () => {
-    const line = renderLogEntry(entry({ op: "FIND", pathname: "*.md", tx: { op: "FIND", target: { kind: "local", raw: "*.md" }, matcher: null, aside: null }, rx: { status: 200, results: [], range: { unit: "resource", total: 7, requested: [1, 16], returned: [1, 7] } } }));
+    const line = renderLogEntry(entry({ op: "FIND", target: "*.md", tx: { op: "FIND", target: { kind: "local", raw: "*.md" }, matcher: null, aside: null }, rx: { status: 200, results: [], range: { unit: "resource", total: 7, requested: [1, 16], returned: [1, 7] } } }));
     assert.equal(line, "FIND (*.md) {7}");
-    assert.match(renderLogEntry(entry({ op: "WHATEVER", pathname: "/x", tx: { op: "WHATEVER", target: { raw: "/x" } } })), /^WHATEVER \(\/x\)/, "an unknown op still renders as itself");
+    assert.match(renderLogEntry(entry({ op: "WHATEVER", target: "/x", tx: { op: "WHATEVER", target: { raw: "/x" } } })), /^WHATEVER \(\/x\)/, "an unknown op still renders as itself");
     assert.match(renderLogEntry(entry({ op: "BARE", tx: { op: "BARE", target: null, aside: "ask the model" } })), /^BARE ask the model$/);
 });
 
@@ -395,7 +382,7 @@ test("receiptCount and outcomeTitle read only the receipt", () => {
 test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored glob once its last row is in", () => {
     const collapse = new FanoutCollapse();
     const row = (index: number, over: Partial<LogEntryWire> = {}) => read({
-        id: 100 + index, sequence: 5 + index, pathname: `pets_${index}.md`, lineMarker: null,
+        id: 100 + index, sequence: 5 + index, target: `pets_${index}.md`, lineMarker: null,
         tx: { op: "READ", target: { kind: "local", raw: `pets_${index}.md` }, matcher: { dialect: "regex", raw: "/dogs/i", pattern: "dogs", flags: "i" }, aside: "every dog" },
         rx: { status: 200, content: "…", lineOrdinals: [2], range: { unit: "line", total: 9, requested: [1, -1], returned: [1, 9] } },
         attrs: { fanout: { target: "pets_*.md", matched: 3, index, count: 3 } },
@@ -421,15 +408,15 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
 // ─── SEND blocks ({§cli-broadcast-send-rendering}) ─────
 
 test("[§cli-broadcast-send-rendering] a delivered message is its body under a blank lead line; a failed one is an operation", () => {
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "\nParis.", "no keyword: a blank line, then the body at column zero");
-    const block = renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "\nParis.", "no keyword: a blank line, then the body at column zero");
+    const block = renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
     assert.deepEqual(block.split("\n"), ["the answer", "line one", "line two"], "the aside takes the lead line; body lines stay at column zero");
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown\n    Undelivered.\n", "a failed message is an operation carrying its Problem title");
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: null, pathname: null, tx: { op: "SEND", aside: null, body: null } })), "SEND", "an empty reply retains its operation receipt without blank speech");
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown\n    Undelivered.\n", "a failed message is an operation carrying its Problem title");
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: null, body: null } })), "SEND", "an empty reply retains its operation receipt without blank speech");
 });
 
 test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a message block", () => {
-    assert.equal(renderLogEntry(entry({ op: "SEND", scheme: "worker", pathname: "/gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone\n    hi\n");
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: "worker:///gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone\n    hi\n");
 });
 
 
@@ -584,7 +571,7 @@ test("renderSummary: pluralizes turns", () => {
 
 test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines after the header", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "SEND", target: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
     const inner = out.replace(/^\n|\n$/g, "");
@@ -594,7 +581,7 @@ test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines
 
 test("broadcast: a multi-line body follows the blank lead line at column zero", () => {
     const out = renderLogEntry(entry({
-        op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200,
+        op: "SEND", target: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "line one\nline two", json: null } },
     }));
     assert.deepEqual(out.split("\n"), ["", "line one", "line two"]);
@@ -604,7 +591,7 @@ test("broadcast: a multi-line body follows the blank lead line at column zero", 
 
 test("[§cli-log-entry-line-format] the human waterfall carries no log coordinates", () => {
     const out = renderLogEntry(entry({
-        op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
+        op: "READ", target: "worker:///x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
     }));
     assert.doesNotMatch(out, /01\/02\/03/, "a human row carries no log coordinate");
@@ -642,7 +629,7 @@ test("{§cli-what-is-not-rendered} an emission row is recognized from hydrated o
 
 test("coordinates never leak into rows, from ordinals or DB ids", () => {
     const out = renderLogEntry(entry({
-        op: "READ", scheme: "worker", pathname: "/x", status_rx: 200,
+        op: "READ", target: "worker:///x", status_rx: 200,
         loop_seq: 1, turn_seq: 2, sequence: 3, rx: {}, tx: {},
         // @ts-expect-error — DB ids are not part of LogEntryWire.
         loop_id: 38, turn_id: 412,
@@ -657,11 +644,11 @@ test("coordinates never leak into rows, from ordinals or DB ids", () => {
 
 test("renderLogEntry: only errors carry a code on non-SEND rows (color branches render without throwing)", () => {
     for (const status of [404, 500]) {
-        const out = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x", status_rx: status, rx: {} }));
+        const out = renderLogEntry(entry({ op: "READ", target: "worker:///x", status_rx: status, rx: {} }));
         assert.match(out, new RegExp(String(status)), `error ${status} keeps its code`);
     }
     for (const status of [102, 202, 301]) {
-        const out = renderLogEntry(entry({ op: "READ", scheme: "worker", pathname: "/x", status_rx: status, rx: {} }));
+        const out = renderLogEntry(entry({ op: "READ", target: "worker:///x", status_rx: status, rx: {} }));
         assert.doesNotMatch(out, new RegExp(`(?:^|\\s)${status}(?:\\s|$)`), `routine ${status} shows no code`);
     }
 });
@@ -760,7 +747,7 @@ test("[§cli-summary-line-per-loop] renderSummary takes both gauge denominators 
 });
 
 test("[§cli-what-is-not-rendered] a pending execution's grey row is the plain row with no outcome", () => {
-    const row = renderPendingRow(entry({ op: "sh", scheme: null, pathname: null, tx: { runtime: "sh", target: null, aside: "Run the suite", body: "npm test" }, rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
+    const row = renderPendingRow(entry({ op: "sh", target: null, tx: { runtime: "sh", target: null, aside: "Run the suite", body: "npm test" }, rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
     assert.equal(row, "sh Run the suite");
     assert.doesNotMatch(row, /npm test|started/);
 });
@@ -768,7 +755,7 @@ test("[§cli-what-is-not-rendered] a pending execution's grey row is the plain r
 test("{plurnk#107} a body previews at the knob's line count and names the address the rest lives at; a NOTE renders whole", () => {
     const lines = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
     const sh = entry({
-        op: "sh", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 3,
+        op: "sh", target: null, loop_seq: 1, turn_seq: 2, sequence: 3,
         tx: { runtime: "sh", target: null, aside: null, body: lines.join("\n") },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
@@ -780,7 +767,7 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
     const short = entry({ ...sh, tx: { runtime: "sh", target: null, aside: null, body: "one\ntwo" } });
     assert.equal(renderLogEntry(short, 80), "sh\n    one\n    two\n", "a short body is shown whole");
     const note = entry({
-        op: "NOTE", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 4,
+        op: "NOTE", target: null, loop_seq: 1, turn_seq: 2, sequence: 4,
         tx: { op: "NOTE", target: null, aside: null, body: { raw: lines.join("\n"), json: null } },
     });
     const noteRows = renderLogEntry(note, 80).split("\n");
@@ -792,7 +779,7 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
 
 test("{§cli-note-rendering} a model NOTE renders plain and dim, the status line's weight, never as a reply", () => {
     const note = entry({
-        op: "NOTE", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 4,
+        op: "NOTE", target: null, loop_seq: 1, turn_seq: 2, sequence: 4,
         tx: { op: "NOTE", target: null, aside: null, body: { raw: "bearings kept\nnext: read the test", json: null } },
     });
     process.env.PLURNK_CLIENT_COLOR = "always";
@@ -809,7 +796,7 @@ test("{§cli-note-rendering} a model NOTE renders plain and dim, the status line
 
 test("{plurnk#108} a lineage row renders two columns in with the child's name, its body previewed, and a child's conclusion names its outcome", () => {
     const launch = entry({
-        op: "brave", origin: "_plurnk", source: "worker://identity", scheme: null, pathname: "brave_web_search",
+        op: "brave", origin: "_plurnk", source: "worker://identity", target: "brave_web_search",
         tx: { runtime: "brave", target: { kind: "local", raw: "brave_web_search" }, aside: null, body: "{\"query\":\"space bunny\"}" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "brave", stream: "brave:///5623708a" },
     });
@@ -818,7 +805,7 @@ test("{plurnk#108} a lineage row renders two columns in with the child's name, i
     assert.equal(rows[1], "      {\"query\":\"space bunny\"}", "the body previews beneath, one step deeper");
     assert.deepEqual(rows.slice(2), [""], "the blank row closes the block");
     const struck = entry({
-        op: "READ", origin: "_plurnk", scheme: "ops", hostname: "identity", pathname: "/14", status_rx: 500,
+        op: "READ", origin: "_plurnk", target: "ops://identity/14", status_rx: 500,
         tx: { op: "READ", target: { kind: "url", raw: "ops://identity/14" }, matcher: null, aside: null },
         rx: { status: 500, problem: { type: "x", title: "Struck out", status: 500 } },
     });
@@ -841,7 +828,7 @@ test("{plurnk#108} an observed descendant's row steps in one step per generation
 
 test("{plurnk#107} the preview count is the knob's, never the terminal's height, and an unreadable knob is an error", () => {
     const sh = entry({
-        op: "sh", scheme: null, pathname: null, loop_seq: 1, turn_seq: 2, sequence: 3,
+        op: "sh", target: null, loop_seq: 1, turn_seq: 2, sequence: 3,
         tx: { runtime: "sh", target: null, aside: null, body: Array.from({ length: 12 }, (_, index) => `l${index + 1}`).join("\n") },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
@@ -862,7 +849,7 @@ test("{plurnk#107} the preview count is the knob's, never the terminal's height,
 test("{plurnk#162} a previewed line is one row: a line wider than the terminal is cut at its width and marked", () => {
     const minified = "x".repeat(43_761);
     const sh = entry({
-        op: "sh", scheme: null, pathname: null, loop_seq: 8, turn_seq: 1, sequence: 5,
+        op: "sh", target: null, loop_seq: 8, turn_seq: 1, sequence: 5,
         tx: { runtime: "sh", target: null, aside: null, body: `${minified}\n${"漢".repeat(200)}\n\tindented` },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///92689a95" },
     });

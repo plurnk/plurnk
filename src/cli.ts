@@ -4,7 +4,7 @@
 // piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { contextGauge, entryAside, entryScope, entryTarget, lineageWorker } from "./render.ts";
+import { contextGauge, entryAside, entryScope, lineageWorker } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -47,10 +47,9 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
         const aside = entryAside(e);
         ops.push({
             coord: entryCoord(e), op: e.op, origin: e.origin,
-            target: entryTarget(e), status: e.status_rx,
+            target: e.target, status: e.status_rx,
             scope: e.lineMarker?.marks ?? null,
             signal: typeof e.signal === "number" ? e.signal : null,
-            tags: e.tags,
             ...(aside === null ? {} : { aside }),
         });
         byTurn.set(e.turn_seq, ops);
@@ -99,9 +98,8 @@ export const buildJsonError = (problem: ProblemDetails): Record<string, unknown>
 });
 
 export const formatPlain = (entry: LogEntryWire): string => {
-    // Render what the wire says — no synthesis. Bare pathname when scheme
-    // is null; full URI when scheme is present.
-    const path = entryTarget(entry) ?? "";
+    // Render what the wire says — no synthesis: the row's target as authored, else as the daemon recorded it.
+    const path = entry.target ?? "";
     const scope = entryScope(entry);
     const address = [path, scope].filter((part) => part !== null && part.length > 0).join(" ");
     const lineage = lineageWorker(entry);

@@ -13,22 +13,22 @@ const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
     id: 1, loop_seq: 1, turn_seq: 1, sequence: 5, op: "READ", origin: "model",
-    signal: null, scheme: "file", pathname: "/x", hostname: null, fragment: null,
-    lineMarker: null, tx: { target: { raw: "/x" } }, rx: { status: 200 }, status_rx: 200, tags: [],
+    signal: null, target: "file:///x",
+    lineMarker: null, tx: { target: { raw: "/x" } }, rx: { status: 200 }, status_rx: 200,
     ...over,
 });
 
 test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares the left edge and reads as the operation written", () => {
     const streams = new StreamTrace();
-    streams.launch(entry({ op: "sh", scheme: null, pathname: null, sequence: 8, status_rx: 200, rx: { status: 200, outcome: "started" }, tx: { runtime: "sh", aside: "list the files" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
+    streams.launch(entry({ op: "sh", target: null, sequence: 8, status_rx: 200, rx: { status: 200, outcome: "started" }, tx: { runtime: "sh", aside: "list the files" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
     const rows: Array<[string, string]> = [
         ["operation", renderLogEntry(entry({}))],
         ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not found", status: 404 } } }))],
-        ["NOTE", renderLogEntry(entry({ op: "NOTE", scheme: null, pathname: null, signal: 102, status_rx: 102, tx: { body: "Inspect." } }))],
+        ["NOTE", renderLogEntry(entry({ op: "NOTE", target: null, signal: 102, status_rx: 102, tx: { body: "Inspect." } }))],
         ["reasoning", renderReasoning("Inspect the contract.")],
-        ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } }, rx: { answers: ["agui://anonymous/threads/t/messages/m1"] } }))],
-        ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", scheme: null, pathname: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
-        ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", scheme: "worker", pathname: "/gone", signal: 410, status_rx: 410, tx: { target: { raw: "worker:///gone" } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } }))],
+        ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", target: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } }, rx: { answers: ["agui://anonymous/threads/t/messages/m1"] } }))],
+        ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", target: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
+        ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", target: "worker:///gone", signal: 410, status_rx: 410, tx: { target: { raw: "worker:///gone" } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } }))],
         ["execution", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "sh:///1a2b3c4d completed (exit 0)", wakeAction: "no-op-active-loop" }, 80)],
     ];
 

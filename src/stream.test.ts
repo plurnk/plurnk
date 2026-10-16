@@ -27,10 +27,10 @@ const concluded = (over: Partial<{ status: number; summary: string; wakeAction: 
 // A started execution's row as the daemon journals it: scheme and pathname null, the stream
 // address and the resolved runtime stamped on `attrs`, status 200 with outcome `started`.
 const launch = (over: Partial<LogEntryWire> = {}): LogEntryWire => ({
-    id: 8, op: "python", origin: "model", signal: null, scheme: null, pathname: null, hostname: null, fragment: null,
+    id: 8, op: "python", origin: "model", signal: null, target: null,
     lineMarker: null, status_rx: 200, tx: { runtime: "python", aside: "Run the focused tests", body: "print(1)" },
     rx: { status: 200, outcome: "started" }, attrs: { runtime: "python", stream: "python:///0c0ffee1", coordinate: { loop_seq: 1, turn_seq: 2, sequence: 1 } },
-    tags: [], loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
+    loop_seq: 1, turn_seq: 2, sequence: 1, ...over,
 });
 const unstarted = (): LogEntryWire => launch({ attrs: undefined, status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Unknown executor", status: 404 } } });
 

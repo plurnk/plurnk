@@ -24,6 +24,7 @@ import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
 import { runViaAgui, actionOutcome, operationResult, problemDetails, runEnd, type AguiEvent, type AguiTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
+import RowAssembler, { wholeRow } from "./rows.ts";
 import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
 
 // The terminal outcome a Run's end carries (plurnk-service {§agui-plurnk-metadata}).
@@ -86,7 +87,7 @@ export type LoopAdmission = OperationResult & {
 
 type ProposalResolution = Resolution & { logEntryId: number };
 type InteractionResolution = Record<string, unknown> | "cancel";
-type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents };
+type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents; rows: RowAssembler };
 interface PendingInterrupt<T> {
     readonly signal: AbortSignal;
     readonly settle: (value: T | undefined) => void;
@@ -172,7 +173,7 @@ export class AguiTransport implements Transport {
     // decision, never routed for review (plurnk/plurnk-service {§agui-client-operation}).
     async #action<T>(method: string, params: object | undefined, signal: AbortSignal,
         binding = { threadId: this.#threadId, workspace: this.#world }): Promise<T> {
-        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
+        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
         let sawResult = false;
@@ -235,7 +236,7 @@ export class AguiTransport implements Transport {
         const binding = { threadId: this.#threadId, workspace: this.#world };
         const sinceId = this.#historyCursor;
         const ac = this.#controller();
-        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents() };
+        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
         this.#modelProjection = projection;
         const ready = Promise.withResolvers<void>();
         // Both promises report the same failed run. Consumers that only await done
@@ -318,6 +319,7 @@ export class AguiTransport implements Transport {
                             toolId = String((e as { toolCallId?: unknown }).toolCallId ?? "");
                             toolName = String((e as { toolCallName?: unknown }).toolCallName ?? "");
                             toolArgs = "";
+                            this.#dispatch(e, projection);
                         } else if (e.type === "TOOL_CALL_ARGS" && (toolId.startsWith("prop:") || toolId.startsWith("int:"))) {
                             toolArgs += String((e as { delta?: unknown }).delta ?? "");
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("int:")) {
@@ -465,7 +467,7 @@ export class AguiTransport implements Transport {
             }
             const limit = Math.max(1, opts?.historyLimit ?? 1000);
             const afterId = Math.min(sinceId, this.#historyCursor);
-            const history = await this.#action<{ entries: LogEntryWire[] }>("log.read", {
+            const history = await this.#action<{ entries: Array<{ id: number }> }>("log.read", {
                 ...(opts === undefined ? { sinceId: afterId } : {}), limit,
             }, signal, binding);
             if (history === null || !Array.isArray(history.entries) || history.entries.length > limit
@@ -474,11 +476,10 @@ export class AguiTransport implements Transport {
                 throw new ProblemError(clientTransportResultInvalid("log.read did not supply a complete bounded history window."));
             }
             const entries = history.entries.toSorted((a, b) => a.id - b.id)
+                .flatMap((whole) => wholeRow(whole) ?? [])
                 .filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
-            for (const entry of entries) {
-                this.#seenRows.set(entry.id, this.#rowVersion(entry));
-                this.#historyCursor = Math.max(this.#historyCursor, entry.id);
-            }
+            for (const entry of entries) this.#seenRows.set(entry.id, this.#rowVersion(entry));
+            for (const { id } of history.entries) this.#historyCursor = Math.max(this.#historyCursor, id);
             this.#h?.onHistory?.({ entries: opts?.historyLimit === 0 ? [] : entries, messages: event.messages, attachment: opts !== undefined });
             restored = true;
             ready();
@@ -572,11 +573,9 @@ export class AguiTransport implements Transport {
     }
 
     #rowVersion(entry: LogEntryWire): string {
-        // A durable receipt can settle after attachment. Compare its full wire
-        // value, excluding the projection-only coordinate, without retaining bodies.
-        const fields = Object.entries(entry).filter(([key]) => key !== "coordinate")
-            .sort(([a], [b]) => a.localeCompare(b));
-        return createHash("sha256").update(JSON.stringify(fields)).digest("hex");
+        // {§cli-worker-history} A durable receipt can settle after attachment: its status, signal and attributes are
+        // the version a row's part and its whole row both carry, without retaining bodies.
+        return createHash("sha256").update(JSON.stringify([entry.op, entry.status_rx, entry.signal, entry.attrs ?? null])).digest("hex");
     }
 
     // A Run's end: the bound loop's terminal record, or the exact Problem of a Run that failed without one
@@ -599,7 +598,8 @@ export class AguiTransport implements Transport {
         return { terminated: null, problem: null };
     }
 
-    // Project one standard reasoning or state event, or un-project one CUSTOM plurnk.* event, into the family handlers.
+    // Project one standard reasoning, state or conversation event, or un-project one CUSTOM plurnk.* event, into the
+    // family handlers.
     #dispatch(e: AguiEvent, projection: StreamProjection): void {
         if (e.type === "TOOL_CALL_RESULT") {
             const proposal = /^prop:(\d+)$/u.exec(e.toolCallId);
@@ -631,11 +631,15 @@ export class AguiTransport implements Transport {
             }
             return;
         }
+        // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
+        for (const row of projection.rows.consume(e)) this.#row(row, projection === this.#modelProjection);
         if (e.type !== "CUSTOM") return;
         const name = (e as { name?: string }).name;
         const value = (e as { value?: unknown }).value;
-        if (name === "plurnk.row") this.#row(value as LogEntryWire, projection === this.#modelProjection);
-        else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
+        if (name === "plurnk.ambient") {
+            const row = wholeRow(value);
+            if (row !== null) this.#row(row, projection === this.#modelProjection);
+        } else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);
         else if (name === "plurnk.outside") this.#h?.onOutside(value as OutsideText);

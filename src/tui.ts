@@ -22,7 +22,7 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completeAddressPath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
-import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, entryTarget, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow } from "./render.ts";
+import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow } from "./render.ts";
 import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSubmittedInput } from "./render-message.ts";
 import { renderHistory } from "./render-history.ts";
 export { renderSubmittedInput } from "./render-message.ts";
@@ -989,7 +989,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             surface.archiveResponses();
             for (const block of renderHistory(history, transport.threadId(), surface.columns || 80)) printAbove(block);
             for (const entry of history.entries) {
-                if (!isEmission(entry)) harvestWorkerName(entryTarget(entry));
+                if (!isEmission(entry)) harvestWorkerName(entry.target);
             }
         },
         onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
@@ -1016,7 +1016,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 for (const stale of streams.staleBefore(entry.loop_seq, entry.turn_seq, entry.worker_id)) printAbove(renderPendingRow(stale));
                 presentedTurn = turn;
             }
-            const target = entryTarget(entry);
+            const target = entry.target;
             harvestWorkerName(target);
             if (inFlight && entry.origin === "model" && typeof entry.op === "string") {
                 doing = { phase: "working", since: Date.now(), op: entry.op, target };

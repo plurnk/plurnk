@@ -262,7 +262,8 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     const url = await statusRelay(t, daemon.url, { afterFrame: async (frame) => {
         if (!frame.startsWith("data: ")) return;
         const event = JSON.parse(frame.slice(6));
-        if (event.name === "plurnk.row" && event.value?.origin === "model" && event.value.op === "FIND") {
+        // {§cli-row-sources} The model's FIND is drawn when its receipt arrives.
+        if (event.type === "TOOL_CALL_RESULT" && event.metadata?.plurnk?.origin === "model" && event.metadata.plurnk.op === "FIND") {
             await findRendered.promise;
         }
     } });

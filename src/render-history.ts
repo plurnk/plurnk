@@ -20,7 +20,7 @@ export const renderHistory = (history: WorkerHistory, threadId: string, columns:
             if (isOwnArrival(entry, threadId)) blocks.push(renderSubmittedInput(ModelText.plain(content)));
             else blocks.push(`${paint(ModelText.plain(entry.source ?? "SEND"), "dim")}\n${ModelText.plain(content)}`);
         } else if (isResponseMessage(entry, threadId)) {
-            const message = speech.get(entry.coordinate ?? String(entry.id));
+            const message = speech.get(`${entry.loop_seq}/${entry.turn_seq}/${entry.sequence}`);
             blocks.push(renderSendBody(typeof message?.content === "string" ? { body: { raw: message.content } } : entry.tx, columns));
         } else {
             blocks.push(paint(renderOperationRow(entry), "dim"));

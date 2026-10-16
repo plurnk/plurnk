@@ -18,15 +18,11 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     loop_seq: 1,
     turn_seq: 1,
     sequence: 1,
-    scheme: null,
-    pathname: null,
-    hostname: null,
-    fragment: null,
+    target: null,
     lineMarker: null,
     status_rx: 200,
     tx: overrides.op === "SEND" ? { body: "Fixture reply." } : null,
-    rx: overrides.op === "SEND" && overrides.scheme == null && overrides.pathname == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
-    tags: [],
+    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
     ...overrides,
 });
 
@@ -34,30 +30,30 @@ test("successful delivered SEND messages contribute to the response independentl
     assert.equal(isResponseMessage(entry({ op: "SEND" })), true);
     for (const overrides of [
         { op: "NOTE" }, { op: "SEND", rx: { answers: [] } }, { op: "SEND", status_rx: 400 },
-        { op: "SEND", source: "worker://peer" }, { op: "SEND", inherited_history: 1 },
-        { op: "SEND", scheme: "worker", hostname: "child", pathname: "/" },
+        { op: "SEND", source: "worker://peer" },
+        { op: "SEND", target: "worker://child/" },
     ]) assert.equal(isResponseMessage(entry(overrides)), false, JSON.stringify(overrides));
 });
 
 // ─── formatPlain ──────────────────────────────────────────────────────
 
 test("formatPlain: directed op with scheme → 'scheme://...'", () => {
-    const s = formatPlain(entry({ op: "EDIT", scheme: "worker", pathname: "/x/y", status_rx: 201 }));
+    const s = formatPlain(entry({ op: "EDIT", target: "worker:///x/y", status_rx: 201 }));
     assert.equal(s, "[201] model EDIT worker:///x/y");
 });
 
 test("formatPlain: file:// (scheme=null, pathname set) → bare pathname", () => {
-    const s = formatPlain(entry({ op: "EDIT", scheme: null, pathname: "/tmp/foo.txt", status_rx: 202 }));
+    const s = formatPlain(entry({ op: "EDIT", target: "/tmp/foo.txt", status_rx: 202 }));
     assert.equal(s, "[202] model EDIT /tmp/foo.txt");
 });
 
 test("formatPlain: {plurnk#108} a lineage row names the child after the origin", () => {
-    const s = formatPlain(entry({ op: "brave", origin: "_plurnk", source: "worker://identity", scheme: null, pathname: "brave_web_search", status_rx: 200 }));
+    const s = formatPlain(entry({ op: "brave", origin: "_plurnk", source: "worker://identity", target: "brave_web_search", status_rx: 200 }));
     assert.equal(s, "[200] _plurnk 🐜 identity brave brave_web_search");
 });
 
 test("formatPlain: no target at all → no trailing path", () => {
-    const s = formatPlain(entry({ op: "SHOW", scheme: null, pathname: null, status_rx: 200 }));
+    const s = formatPlain(entry({ op: "SHOW", target: null, status_rx: 200 }));
     assert.equal(s, "[200] model SHOW");
 });
 
@@ -67,32 +63,32 @@ test("formatPlain: a durable aside labels the operation without its comment deli
 });
 
 test("formatPlain: SEND with numeric signal → '[N]' sub", () => {
-    const s = formatPlain(entry({ op: "SEND", signal: 200, scheme: null, pathname: null, status_rx: 200 }));
+    const s = formatPlain(entry({ op: "SEND", signal: 200, target: null, status_rx: 200 }));
     assert.equal(s, "[200] model SEND");
 });
 
 test("formatPlain: SEND without numeric signal → no sub", () => {
-    const s = formatPlain(entry({ op: "SEND", signal: null, scheme: "slack", pathname: "/x", status_rx: 200 }));
+    const s = formatPlain(entry({ op: "SEND", signal: null, target: "slack:///x", status_rx: 200 }));
     assert.equal(s, "[200] model SEND slack:///x");
 });
 
 test("formatPlain: hostname + pathname assemble correctly", () => {
-    const s = formatPlain(entry({ op: "READ", scheme: "https", hostname: "example.com", pathname: "/p", status_rx: 200 }));
+    const s = formatPlain(entry({ op: "READ", target: "https://example.com/p", status_rx: 200 }));
     assert.equal(s, "[200] model READ https://example.com/p");
 });
 
 test("formatPlain: fragment appended when present", () => {
-    const s = formatPlain(entry({ op: "READ", scheme: "worker", pathname: "/d", fragment: "sect", status_rx: 200 }));
+    const s = formatPlain(entry({ op: "READ", target: "worker:///d#sect", status_rx: 200 }));
     assert.equal(s, "[200] model READ worker:///d#sect");
 });
 
 test("formatPlain: preserves numeric and hash scopes after the target", () => {
     assert.equal(
-        formatPlain(entry({ pathname: "evaluator/functions.go", lineMarker: { marks: [480, 530] } })),
+        formatPlain(entry({ target: "evaluator/functions.go", lineMarker: { marks: [480, 530] } })),
         "[200] model READ evaluator/functions.go <480,530>",
     );
     assert.equal(
-        formatPlain(entry({ op: "EDIT", pathname: "evaluator/functions.go", lineMarker: { marks: ["@Xb59M", "@KPohD"] } })),
+        formatPlain(entry({ op: "EDIT", target: "evaluator/functions.go", lineMarker: { marks: ["@Xb59M", "@KPohD"] } })),
         "[200] model EDIT evaluator/functions.go <@Xb59M,@KPohD>",
     );
 });
@@ -109,31 +105,31 @@ test("formatPlain: NOTE preserves the trace heading without dumping working memo
 // ─── isResponseMessage ──────────────────────────────────────────────
 
 test("isResponseMessage: SEND, no path, signal 200 → true", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: null, signal: 200 })), true);
+    assert.equal(isResponseMessage(entry({ op: "SEND", target: null, signal: 200 })), true);
 });
 
 test("isResponseMessage: a failed SEND contributes no delivered message", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 499 })), false);
+    assert.equal(isResponseMessage(entry({ op: "SEND", target: null, status_rx: 499 })), false);
 });
 
 test("isResponseMessage: SEND, no path, signal 102 → false (intermediate)", () => {
-    assert.equal(isResponseMessage(entry({ op: "NOTE", scheme: null, pathname: null, signal: 102 })), false);
+    assert.equal(isResponseMessage(entry({ op: "NOTE", target: null, signal: 102 })), false);
 });
 
 test("isResponseMessage: SEND, no path, status 400 → false", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: null, status_rx: 400 })), false);
+    assert.equal(isResponseMessage(entry({ op: "SEND", target: null, status_rx: 400 })), false);
 });
 
 test("isResponseMessage: SEND directed at file:// (pathname set) → false", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: null, pathname: "/tmp/x", signal: 200 })), false);
+    assert.equal(isResponseMessage(entry({ op: "SEND", target: "/tmp/x", signal: 200 })), false);
 });
 
 test("isResponseMessage: SEND directed via scheme → false", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", scheme: "slack", pathname: "/x", signal: 200 })), false);
+    assert.equal(isResponseMessage(entry({ op: "SEND", target: "slack:///x", signal: 200 })), false);
 });
 
 test("isResponseMessage: non-SEND op → false even with matching signal", () => {
-    assert.equal(isResponseMessage(entry({ op: "EDIT", scheme: null, pathname: null, signal: 200 })), false);
+    assert.equal(isResponseMessage(entry({ op: "EDIT", target: null, signal: 200 })), false);
 });
 
 test("isResponseMessage: delivered status is authoritative, not signal", () => {
@@ -171,8 +167,8 @@ const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}):
     prompt: "what is the capital of France?",
     response: "Paris",
     entries: [
-        entry({ op: "READ", origin: "model", scheme: "file", pathname: "/atlas.md", lineMarker: { marks: [4, 12] }, status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1, tags: ["init", "research"] }),
-        entry({ op: "SEND", origin: "model", scheme: null, pathname: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
+        entry({ op: "READ", origin: "model", target: "file:///atlas.md", lineMarker: { marks: [4, 12] }, status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1 }),
+        entry({ op: "SEND", origin: "model", target: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
     ],
     notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
     result: {
@@ -239,7 +235,7 @@ test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate +
     assert.equal(doc.turns.length, 2);
     assert.equal(doc.turns[0].turn, 1);
     assert.deepEqual(doc.turns[0].ops[0], {
-        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, scope: [4, 12], signal: null, tags: ["init", "research"],
+        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, scope: [4, 12], signal: null,
     });
     // the terminal SEND keeps its numeric signal
     assert.equal(doc.turns[1].ops[0].signal, 200);

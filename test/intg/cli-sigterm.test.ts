@@ -10,6 +10,7 @@ import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import { Validator } from "@plurnk/plurnk-contracts";
 import { clientTransportTerminalMissing } from "../../src/diagnostics.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
+import { speechOf } from "../agui-parts.ts";
 
 for (const [interrupt, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
 for (const [resumed, reportedFailure, cancelMode] of [
@@ -64,12 +65,10 @@ for (const [resumed, reportedFailure, cancelMode] of [
                 return;
             }
             runs++;
-            frame({ type: "CUSTOM", name: "plurnk.row", value: {
-                id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1,
-                op: "SEND", origin: "model", signal: null, scheme: null, hostname: null,
-                pathname: null, fragment: null, lineMarker: null, status_rx: 200, tags: [],
+            for (const event of speechOf({
+                id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1, op: "SEND", origin: "model", status_rx: 200,
                 tx: { body: { raw: resumed && runs === 1 ? "before proposal" : body } }, rx: { answers: ["agui://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
-            } });
+            })) frame(event);
             if (resumed && runs === 1) {
                 frame({ type: "TOOL_CALL_START", toolCallId: "prop:9", toolCallName: "request_approval" });
                 frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:9", delta: JSON.stringify({ logEntryId: 9, op: "EDIT", target: {}, body: "diff", attrs: {} }) });

@@ -1,5 +1,5 @@
 // Unit tests for the CLI's AG-UI consumer. Scripted AG-UI events + capturing
-// sinks — no daemon. Asserts the family-client rendering (plurnk.row →
+// sinks — no daemon. Asserts the rendering of the parts rows build ({§cli-row-sources} →
 // trace/answer), proposal settlement through AG-UI resumes, and the exit code
 // from RUN_FINISHED/RUN_ERROR.
 
@@ -12,22 +12,24 @@ import type { LogEntryWire } from "./render.ts";
 import type { Resolution } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
 import { ProblemError } from "./diagnostics.ts";
+import { partsOf } from "../test/agui-parts.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", origin: "model", signal: null,
     loop_seq: 1, turn_seq: 1, sequence: 1,
-    scheme: null, pathname: null, hostname: null, fragment: null,
+    target: null,
     lineMarker: null, status_rx: 200, tx: null,
-    rx: o.op === "SEND" && o.scheme == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null, tags: [], ...o,
+    rx: o.op === "SEND" && o.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null, ...o,
 });
 
-const row = (e: Partial<LogEntryWire>): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: entry(e) });
-const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.row", value: { ...entry(e), worker_id: workerId } });
+// What the daemon sends for a row: the part it builds, or the row whole (plurnk-service `{§agui-projection}`).
+const row = (e: Partial<LogEntryWire>): AguiEvent[] => partsOf(entry(e));
+const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent[] => partsOf({ ...entry(e), worker_id: workerId });
 // A whole status gauge as the daemon sends it; each specimen overrides what it is about.
 const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, children: 0, spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
 // The bound workspace as the daemon sends it beside the gauge: no folder, nothing preparing or indexing.
 const WORKSPACE = { id: 1, name: "work", projectRoot: null, projectLabel: null, preparation: [], activity: null };
-const terminalSend = (text: string): AguiEvent => row({ op: "SEND", scheme: null, pathname: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
+const terminalSend = (text: string): AguiEvent[] => row({ op: "SEND", target: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
         requests: [{
@@ -56,7 +58,7 @@ const loopUsage = (costUsd: string | null = "0.0042") => ({
 const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" },
     metadata: { plurnk: { terminal: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: loopUsage(), result: { status: 200 }, ...over } } } });
 
-async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
+async function* stream(events: Array<AguiEvent | AguiEvent[]>): AsyncGenerator<AguiEvent> { for (const e of events.flat()) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
 const proposalCall = (logEntryId: number, args: Record<string, unknown> = {}): AguiEvent[] => [
     { type: EventType.TOOL_CALL_START, toolCallId: `prop:${logEntryId}`, toolCallName: "request_approval" },
@@ -80,7 +82,7 @@ const sink = (over: Partial<CliRunSinks> = {}) => {
 test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broadcast body → stdout (answer), rows → stderr (trace), exit 0", async () => {
     const { io, out, err } = sink();
     const { exitCode } = await consumeCliRun(stream([
-        row({ op: "FIND", scheme: "file", pathname: "/x" }),
+        row({ op: "FIND", target: "file:///x" }),
         terminalSend("Jupiter is the largest planet."),
         // The real wire ALWAYS emits terminated before RUN_FINISHED; a stream without
         // it is a dead stream (502) — the fixture matches the protocol.
@@ -365,8 +367,8 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
     const { io, out, err } = sink({ json: true });
     const res = await consumeCliRun(stream([
         workerRow({ op: "NOTE", origin: "model", tx: { body: "Find evidence" } }, 42),
-        workerRow({ op: "FIND", scheme: "file", pathname: "/x", origin: "model" }, 42),
-        terminalSend("Jupiter."),
+        workerRow({ op: "FIND", target: "file:///x", origin: "model" }, 42),
+        workerRow({ op: "SEND", signal: 200, status_rx: 200, tx: { body: { raw: "Jupiter." } } }, 42),
         terminated({
             workspaceId: 512,
             loopId: 9,
@@ -443,7 +445,7 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
     const { io, out } = sink({ json });
     const result = await consumeCliRun(stream([
         workerRow({ id: 10, op: "SEND", tx: { body: { raw: "First." } } }, 11),
-        workerRow({ id: 11, op: "SEND", scheme: "worker", pathname: "/", hostname: "child", tx: { body: { raw: "Instructions." } } }, 11),
+        workerRow({ id: 11, op: "SEND", target: "worker://child/", tx: { body: { raw: "Instructions." } } }, 11),
         workerRow({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
         workerRow({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
         workerRow({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } }, 11),
@@ -462,7 +464,7 @@ test("consumeCliRun: exact and foreign-worker replies reach stdout only for this
     const receipt = (thread: string) => ({ answers: [`agui://anonymous/threads/${thread}/messages/m1`] });
     const result = await consumeCliRun(stream([
         { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
-        workerRow({ op: "SEND", scheme: "agui", pathname: "/threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
+        workerRow({ op: "SEND", target: "agui:///threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
         workerRow({ op: "SEND", origin: "_plurnk", source: "worker://peer", attrs: { kind: "reply" }, tx: { body: { raw: "Peer answer." } }, rx: receipt("t") }, 11),
         workerRow({ op: "SEND", tx: { body: { raw: "Other thread." } }, rx: receipt("other") }, 11),
         workerRow({ op: "SEND", tx: { body: { raw: "Peer work." } }, rx: { answers: ["worker://peer/?message=abcdef01"] } }, 11),

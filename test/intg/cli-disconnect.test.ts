@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import type { LoopUsage } from "../../src/render.ts";
+import { speechOf } from "../agui-parts.ts";
 
 const usage: LoopUsage = {
     accounting: {
@@ -47,12 +48,10 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
                 return;
             }
             runs += 1;
-            frame({ type: "CUSTOM", name: "plurnk.row", value: {
-                id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1,
-                op: "SEND", origin: "model", signal: null, scheme: null, hostname: null,
-                pathname: null, fragment: null, lineMarker: null, status_rx: 200, tags: [],
+            for (const event of speechOf({
+                id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1, op: "SEND", origin: "model", status_rx: 200,
                 tx: { body: { raw: `observed segment ${runs}` } }, rx: { answers: ["agui://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
-            } });
+            })) frame(event);
             if (resumed && runs === 1) {
                 frame({ type: "TOOL_CALL_START", toolCallId: "prop:9", toolCallName: "request_approval" });
                 frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:9", delta: JSON.stringify({ logEntryId: 9, op: "EDIT", target: {}, body: "diff", attrs: {} }) });

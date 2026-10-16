@@ -11,7 +11,8 @@ import {
 } from "@plurnk/plurnk-contracts";
 export type { ModelCatalogPage, ModelCatalogQuery } from "@plurnk/plurnk-contracts";
 import { formatPlain, JSON_SCHEMA_VERSION } from "./cli.ts";
-import type { LogEntryWire } from "./render.ts";
+import { objectOf } from "./render.ts";
+import { wholeRow } from "./rows.ts";
 import {
     ProblemError,
     clientSubcommandCoordinateInvalid,
@@ -176,9 +177,10 @@ export const runWorkspaceRename = async (
 // The caller's thread selects the workspace; log.read reads the thread's bound worker
 // unless a workerId pins another. Filters pass through to the action.
 
+// Whole rows, as the daemon records them ({§cli-row-sources}).
 interface LogReadResult {
     status: number;
-    entries: LogEntryWire[];
+    entries: Array<Record<string, unknown>>;
 }
 
 export interface LogReadFilters {
@@ -209,7 +211,9 @@ export const runLogRead = async (
         return 0;
     }
     for (const entry of entries) {
-        process.stdout.write(`${formatPlain(entry)}\n`);
+        // An actionless row (a rejected emission) is named by its kind where an operation would stand.
+        const row = wholeRow(entry);
+        process.stdout.write(`${row === null ? `[${String(entry.status_rx)}] ${String(entry.origin)} ${String(objectOf(entry.attrs)?.kind ?? "")}`.trim() : formatPlain(row)}\n`);
     }
     return 0;
 };
@@ -234,7 +238,7 @@ export const parseCoord = (raw: string): [number, number, number] | null => {
 // The human-readable body of an entry: a READ's result content, else the op's
 // own body (SEND/NOTE/EDIT carry it on tx.body). Pure DISPLAY logic — the
 // service already resolved the coordinate; this just picks what to show.
-const extractEntryContent = (entry: LogEntryWire): string | null => {
+const extractEntryContent = (entry: Record<string, unknown>): string | null => {
     const rx = entry.rx as { content?: unknown } | null;
     const tx = entry.tx as { body?: unknown } | null;
     if (typeof rx?.content === "string" && rx.content.length > 0) return rx.content;

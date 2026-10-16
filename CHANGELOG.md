@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The waterfall, the one-shot trace and the `--json` record draw each row from the standard AG-UI part
+  it builds: a tool call and its receipt, speech, an arrival, or a result that answers another row's
+  call, each carrying the row's facts as `metadata.plurnk`; a row that builds no part arrives whole as
+  `plurnk.ambient`. The client no longer reads `plurnk.row` and needs a daemon that sends those facts.
+  The `--json` record's ops no longer name `tags`, which the daemon never sent (plurnk/plurnk-service#1141).
+
 - The client reads a loop's terminal record, a failed Run's Problem and an action's outcome from the Run's
   end, where the daemon now sends them as standard AG-UI metadata and result, instead of `plurnk.terminated`,
   `plurnk.problem` and `plurnk.action.result`. It needs a daemon that sends them; a Problem that ends no Run

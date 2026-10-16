@@ -160,8 +160,12 @@ export const entryScope = (entry: LogEntryWire): string | null =>
     entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;
 
 // The row names the operation as the model wrote it: the row's `op` is the heading token, an
-// operation keyword or an execution's runtime tag (plurnk-service #659).
-export const operationIdentity = (entry: LogEntryWire): string => entry.op;
+// operation keyword or an execution's runtime tag (plurnk-service #659); a parse refusal names the
+// verb of the statement it refused (plurnk-service `{§parse-attempt}`).
+export const operationIdentity = (entry: LogEntryWire): string => {
+    const verb = objectOf(objectOf(entry.attrs)?.attempt)?.verb;
+    return entry.op === "error" && typeof verb === "string" ? verb : entry.op;
+};
 
 // The authored target text when the statement carries it; the row's address otherwise.
 export const authoredTarget = (entry: LogEntryWire): string | null => {

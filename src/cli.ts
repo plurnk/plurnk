@@ -4,7 +4,7 @@
 // piping to grep / awk / head / jq.
 
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { contextGauge, entryAside, entryScope, lineageWorker } from "./render.ts";
+import { contextGauge, entryAside, entryScope, lineageWorker, operationIdentity } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
 import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
@@ -103,7 +103,7 @@ export const formatPlain = (entry: LogEntryWire): string => {
     const scope = entryScope(entry);
     const address = [path, scope].filter((part) => part !== null && part.length > 0).join(" ");
     const lineage = lineageWorker(entry);
-    let line = `[${entry.status_rx}] ${entry.origin}${lineage === null ? "" : ` 🐜 ${lineage}`} ${entry.op} ${address}`.trim();
+    let line = `[${entry.status_rx}] ${entry.origin}${lineage === null ? "" : ` 🐜 ${lineage}`} ${operationIdentity(entry)} ${address}`.trim();
     const aside = entryAside(entry);
     if (aside !== null) line += ` — ${aside}`;
     return line;

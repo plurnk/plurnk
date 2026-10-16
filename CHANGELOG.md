@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A statement the daemon's parser refused is named by its verb in the waterfall and the one-shot trace
+  (`READ — Invalid operation syntax: …`), from the attempt the refusal row records, live and in history
+  (plurnk/plurnk-service#1140).
 - The TUI learns a subagent's worker, its name and generation, from the subagent's `SUBAGENT_STARTED`
   metadata, and a descendant outside any subagent from `plurnk.descendant` (plurnk/plurnk-service#1141).
 - The waterfall, the one-shot trace and the `--json` record draw each row from the standard AG-UI part

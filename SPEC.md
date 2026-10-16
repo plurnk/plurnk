@@ -932,6 +932,8 @@ Markdown pass:
 
 - `OP` is the operation's name, bold: green when the outcome succeeded, red otherwise. An
   execution row is named by its runtime (`sh`, `python3`): the row's `op` is the fence name as written, never a generic keyword.
+  A parse refusal is named by the verb of the statement it refused (plurnk-service `{§parse-attempt}`); one that
+  names no attempt keeps the row's own name, `error`.
 - **The verdict is the row's status, never the presence of an outcome text.** A row failed when its
   status is 400 or above, or when its execution concluded with any status but 200; nothing else
   reddens it. The outcome after the dash takes the verdict's paint: a failed row's Problem title,

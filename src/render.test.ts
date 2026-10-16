@@ -897,3 +897,11 @@ test("{§cli-log-entry-line-format} a caller's verdict overrides the status in b
     const refused = entry({ op: "sh", status_rx: 403, tx: { runtime: "sh", target: null, aside: null, body: null }, rx: { status: 403 } });
     assert.equal(colored(() => renderOperationRow(refused, { failed: false, failure: null })), GREEN_NAME("sh"), "the caller's verdict stands over a failing status");
 });
+
+test("[§cli-log-entry-line-format] a parse refusal is named by the verb of the statement it refused, live as in history", () => {
+    const problem = { type: "https://problems.plurnk.xyz/grammar/parser/invalid-operation-syntax", title: "Invalid operation syntax", status: 400, diagnostic: "invalid READ scope" };
+    const refusal = entry({ op: "error", status_rx: 400, rx: { status: 400, problem }, attrs: { attempt: { verb: "READ", text: "````READ (a.md) <1,\n````" } } });
+    assert.equal(stripVTControlCharacters(renderLogEntry(refusal, 80)).split("\n")[0], "READ — Invalid operation syntax: invalid READ scope");
+    assert.equal(stripVTControlCharacters(renderLogEntry({ ...refusal, attrs: {} }, 80)).split("\n")[0], "error — Invalid operation syntax: invalid READ scope",
+        "a refusal that names no attempt keeps the row's own name");
+});

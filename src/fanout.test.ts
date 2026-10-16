@@ -53,9 +53,9 @@ for (const op of ["READ", "EDIT", "KILL"]) {
         const entries = [row(op, 0), row(op, 1, { status_rx: 409, rx: { status: 409, problem: {
             type: "https://example.test/conflict", title: "Entry changed", status: 409,
         } } })];
-        assert.deepEqual(renderHistory({ attachment: false, entries, messages: [] }, "main", 80),
+        assert.deepEqual(renderHistory({ attachment: false, entries }, "main", 80),
             entries.map((entry) => renderOperationRow(entry)));
-        assert.deepEqual(renderHistory({ attachment: false, entries: [row(op, 2)], messages: [] }, "main", 80),
+        assert.deepEqual(renderHistory({ attachment: false, entries: [row(op, 2)] }, "main", 80),
             [renderOperationRow(row(op, 2))], "a bounded history suffix remains one known receipt");
     });
 }

@@ -1,7 +1,8 @@
 // {§cli-row-sources} The rows the waterfall draws, rebuilt from the standard parts a row builds: a tool call and its
 // receipt, a result that answers another row's call, speech, or an arrival, each carrying the row's facts as its
-// metadata (plurnk-service `{§agui-plurnk-metadata}`). A row that builds nothing in the conversation arrives whole as
-// `CUSTOM plurnk.ambient`, and history whole from `log.read`; both become the same row.
+// metadata (plurnk-service `{§agui-plurnk-metadata}`). A sync Run's `MESSAGES_SNAPSHOT` holds the same parts as messages.
+// A row that builds nothing in the conversation arrives whole as `CUSTOM plurnk.ambient`, as `log.read` returns every
+// row; each becomes the same row.
 
 import type { AguiEvent } from "./agui.ts";
 import { clientTransportResultInvalid, ProblemError } from "./diagnostics.ts";
@@ -182,3 +183,40 @@ export default class RowAssembler {
         }
     }
 }
+
+// {§cli-worker-history} A snapshot message as the events that build it live: the same parts, with the same facts.
+const eventsOf = (value: unknown): AguiEvent[] => {
+    const message = objectOf(value);
+    // The bound worker's own conversation: a subagent's parts belong to its own run.
+    if (message === null || message.subagentRunId !== undefined) return [];
+    const id = message.id as string;
+    const text = typeof message.content === "string" ? message.content : "";
+    if (message.role === "tool") {
+        return [{ type: "TOOL_CALL_RESULT", toolCallId: message.toolCallId, messageId: id, content: message.content, metadata: message.metadata } as AguiEvent];
+    }
+    if (message.role === "assistant" && Array.isArray(message.toolCalls)) {
+        return message.toolCalls.flatMap((value) => {
+            const call = objectOf(value);
+            const fn = objectOf(call?.function);
+            if (call === null || fn === null) return [];
+            return [
+                { type: "TOOL_CALL_START", toolCallId: call.id, toolCallName: fn.name, metadata: call.metadata },
+                { type: "TOOL_CALL_ARGS", toolCallId: call.id, delta: fn.arguments },
+                { type: "TOOL_CALL_END", toolCallId: call.id },
+            ] as AguiEvent[];
+        });
+    }
+    if (message.role !== "assistant" && message.role !== "user") return [];
+    return [
+        { type: "TEXT_MESSAGE_START", messageId: id, role: message.role, ...(typeof message.name === "string" ? { name: message.name } : {}), metadata: message.metadata },
+        ...(text.length === 0 ? [] : [{ type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: text }]),
+        { type: "TEXT_MESSAGE_END", messageId: id },
+    ] as AguiEvent[];
+};
+
+// {§cli-worker-history} The rows a MESSAGES_SNAPSHOT holds, in log order: every part carries its row's facts, so the
+// snapshot rebuilds each row as the live stream built it.
+export const snapshotRows = (messages: readonly unknown[]): LogEntryWire[] => {
+    const rows = new RowAssembler();
+    return messages.flatMap(eventsOf).flatMap((event) => rows.consume(event)).toSorted((left, right) => left.id - right.id);
+};

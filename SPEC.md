@@ -573,8 +573,8 @@ disconnecting that observer does not cancel independently-owned work.
 
 | Surface | History behavior |
 |---|---|
-| Bound recent tail | `log.read` supplies durable order and operation outcomes; `MESSAGES_SNAPSHOT` supplies speech. `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. The service's read ceiling still applies. |
-| Prompts and replies | Full text, in chronological order, with actor attribution. Rows committed after the snapshot retain their own authoritative body. |
+| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the bound worker's whole conversation, supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. |
+| Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
 | Past/live boundary | A quiet count of earlier displayed entries and `/log` for more. Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
@@ -583,8 +583,8 @@ disconnecting that observer does not cancel independently-owned work.
 
 Historical restoration completes before buffered live rows are released. Binding
 transitions retain the draft and keep control commands reachable; no historical
-prompt is resubmitted. A malformed snapshot or failed history read is reported,
-not presented as an empty history.
+prompt is resubmitted. A malformed or missing snapshot is reported, not presented
+as an empty history.
 
 ### §cli-active-command-admission Commands during an active run
 
@@ -616,11 +616,10 @@ local waits, including when its SSE has already ended at a question or proposal.
 Pending injection acknowledgements keep the worker bound through terminal
 observation. `injected_next_turn` stays on the existing stream;
 `enqueued_new_loop` requests one successor observer, not a replayed prompt. Sync
-uses {§agui-sync} and restores unseen durable rows before releasing live
-rows, with bounded `log.read` and the standard message snapshot, retaining its pre-attachment history cursor; independent
-client-operation rows cannot advance that cursor. A successful observation without a
-new terminal record adds no synthetic loop summary, usage, or tally.
-Malformed or incomplete history fails visibly rather than claiming lossless recovery.
+uses {§agui-sync} and restores the snapshot's unseen durable rows before releasing
+live rows. Rows are seen by durable identity, so a row drawn out of order, such as an
+independent client operation's, hides no row the snapshot holds. A successful
+observation without a new terminal record adds no synthetic loop summary, usage, or tally.
 
 Questions use their own inline controls under {§cli-inline-review}. Input there
 is answer data, including slash-prefixed text. In the composer, all input keeps
@@ -913,7 +912,7 @@ as `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `i
 | An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
 | A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate | On arrival: a reply's words as its body, any other answer as its receipt |
 | A row that builds no part | `CUSTOM plurnk.ambient`, the whole row | On arrival; an actionless row draws nothing |
-| History | `log.read`, whole rows | {§cli-worker-history} |
+| History | A sync Run's `MESSAGES_SNAPSHOT`: the same parts, as messages | {§cli-worker-history} |
 
 A row's `target` is the address it recorded; its heading shows the target as authored when its statement
 has one (§5.1). A call ended without its receipt, a result that is not text, or row facts that are present

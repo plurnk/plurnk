@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 import type { LogEntryWire } from "../../src/render.ts";
-import { partsOf } from "../agui-parts.ts";
+import { messagesOf, partsOf } from "../agui-parts.ts";
 
 let daemon: Daemon;
 before(async () => {
@@ -47,7 +47,7 @@ const fixture = async (t: TestContext) => {
             for await (const chunk of request) raw += chunk;
             const input = JSON.parse(raw);
             const action = input.forwardedProps?.plurnk?.action;
-            if (action !== undefined && action.kind !== "log.read") {
+            if (action !== undefined) {
                 const result = await fetch(new URL(request.url ?? "/", daemon.url), {
                     method: "POST", headers: { "content-type": "application/json", ...authorization(request) }, body: raw,
                 });
@@ -57,12 +57,8 @@ const fixture = async (t: TestContext) => {
             }
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId }));
-            if (action?.kind === "log.read") {
-                response.end(frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: {
-                    kind: "log.read", ok: true, result: { entries: entries.filter(({ id }) => id > (action.sinceId ?? 0)) },
-                } }));
-            } else if (input.forwardedProps?.plurnk?.mode === "sync") {
-                response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
+            if (input.forwardedProps?.plurnk?.mode === "sync") {
+                response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: entries.flatMap((entry) => messagesOf(entry)) }));
             } else {
                 active.resolve({ response, threadId: input.threadId, runId: input.runId });
             }

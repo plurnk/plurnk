@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import type { AguiEvent } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
 import type { LogEntryWire } from "./render.ts";
-import RowAssembler, { wholeRow } from "./rows.ts";
-import { arrivalOf, callOf, dischargeOf, speechOf } from "../test/agui-parts.ts";
+import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
+import { arrivalOf, callOf, dischargeOf, messagesOf, partsOf, speechOf } from "../test/agui-parts.ts";
 
 // Every row an event completes, in the order the events arrive.
 const drawn = (events: readonly AguiEvent[], rows = new RowAssembler()): LogEntryWire[] => events.flatMap((event) => rows.consume(event));
@@ -84,4 +84,21 @@ test("[§cli-row-sources] a whole row draws as its parts do: the address it reco
     const fromWhole = whole({ origin: "model", scheme: "worker", pathname: "/plan.md", tx: { target: { kind: "url", raw: "worker:///plan.md" } } });
     assert.deepEqual([part?.id, part?.op, part?.target, part?.status_rx], [fromWhole?.id, fromWhole?.op, fromWhole?.target, fromWhole?.status_rx],
         "the same row draws the same whichever way it arrived");
+});
+
+test("[§cli-worker-history] a snapshot rebuilds every row its live parts built, in log order; a subagent's messages and reasoning build none", () => {
+    const exec = { id: 5, op: "sh", sequence: 1, attrs: { stream: "sh:///ab3d5678" }, tx: { runtime: "sh", body: "ls" }, rx: { status: 200, outcome: "started" } };
+    const look = { id: 6, op: "READ", sequence: 2, target: "notes.md", tx: { target: { kind: "local", raw: "notes.md" } }, rx: { status: 200 } };
+    const reply = { id: 7, op: "SEND", sequence: 3, tx: { aside: "the answer", body: { raw: "Done." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } };
+    const concluded = { id: 8, op: "READ", origin: "_plurnk", source: "sh:///ab3d5678", sequence: 4, target: "sh:///ab3d5678", invocation: "log:///1/1/1/sh", rx: { status: 200, content: "a.ts" } };
+    const arrival = { id: 9, op: "SEND", origin: "_plurnk", source: "worker://helper", sequence: 5, attrs: { kind: "message" }, tx: { body: { raw: "Thanks." } } };
+    const again = { ...arrival, id: 10, sequence: 6, tx: { body: { raw: "One more thing." } } };
+    const live = drawn([exec, look, reply, concluded, arrival, again].flatMap((row) => partsOf(row)));
+    assert.deepEqual(live.map(({ id }) => id), [5, 6, 7, 8, 9, 10], "every part kind builds its row; two messages from one source are two rows");
+    // plurnk-service `{§agui-snapshot}`: a discharge follows the call it answers, ahead of the rows between them.
+    const messages = [exec, concluded, look, reply, arrival, again].flatMap((row) => messagesOf(row));
+    assert.deepEqual(snapshotRows(messages), live, "the snapshot draws what the live stream drew, in log order");
+    const subagent = messagesOf({ ...look, id: 11, sequence: 7 }).map((message) => ({ ...message, subagentRunId: "child" }));
+    const reasoning = { id: "1/1/8/reasoning", role: "reasoning", content: "thinking" };
+    assert.deepEqual(snapshotRows([...messages, ...subagent, reasoning]), live, "a subagent's messages belong to its run, and reasoning is never backfilled");
 });

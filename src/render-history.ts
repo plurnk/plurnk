@@ -4,24 +4,19 @@ import { paint } from "./color.ts";
 import { extractSendBody, isArrivalEntry, isEmission, isEntryMaterialization, isOwnArrival, isResponseMessage, renderOperationRow } from "./render.ts";
 import { renderSendBody, renderSubmittedInput } from "./render-message.ts";
 
-// {§cli-worker-history}: rows supply order and operation outcomes; the
-// standard snapshot supplies speech. A row committed after the snapshot still
-// carries its own complete body. Neither source's reasoning is replayed.
+// {§cli-worker-history}: the snapshot's rows in log order, each carrying its own words, drawn quietly. Reasoning
+// is never replayed.
 export const renderHistory = (history: WorkerHistory, threadId: string, columns: number): string[] => {
-    const speech = new Map(history.messages.filter((message) => message.role === "assistant").map((message) => [message.id, message]));
-    const arrivals = new Map(history.messages.filter((message) => message.role === "user").map((message) => [message.name, message]));
     const blocks: string[] = [];
     for (const entry of history.entries) {
-        if (typeof entry.op !== "string" || isEntryMaterialization(entry) || isEmission(entry)) continue;
+        if (isEntryMaterialization(entry) || isEmission(entry)) continue;
         if (isArrivalEntry(entry)) {
             if (!history.attachment && isOwnArrival(entry, threadId)) continue;
-            const message = typeof entry.source === "string" ? arrivals.get(entry.source) : undefined;
-            const content = typeof message?.content === "string" ? message.content : extractSendBody(entry.tx);
-            if (isOwnArrival(entry, threadId)) blocks.push(renderSubmittedInput(ModelText.plain(content)));
-            else blocks.push(`${paint(ModelText.plain(entry.source ?? "SEND"), "dim")}\n${ModelText.plain(content)}`);
+            const content = ModelText.plain(extractSendBody(entry.tx));
+            if (isOwnArrival(entry, threadId)) blocks.push(renderSubmittedInput(content));
+            else blocks.push(`${paint(ModelText.plain(entry.source ?? "SEND"), "dim")}\n${content}`);
         } else if (isResponseMessage(entry, threadId)) {
-            const message = speech.get(`${entry.loop_seq}/${entry.turn_seq}/${entry.sequence}`);
-            blocks.push(renderSendBody(typeof message?.content === "string" ? { body: { raw: message.content } } : entry.tx, columns));
+            blocks.push(renderSendBody(entry.tx, columns));
         } else {
             blocks.push(paint(renderOperationRow(entry), "dim"));
         }

@@ -20,11 +20,10 @@ import {
 } from "./diagnostics.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { clientCapabilities } from "./client-capabilities.ts";
-import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
 import { runViaAgui, actionOutcome, operationResult, problemDetails, runEnd, type AguiEvent, type AguiTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
-import RowAssembler, { wholeRow } from "./rows.ts";
+import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
 import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
 
 // The terminal outcome a Run's end carries (plurnk-service {§agui-plurnk-metadata}).
@@ -83,9 +82,9 @@ const descendantOf = (metadata: unknown): Descendant | null => {
     return { workerId: workerId!, name, parentWorkerId: parentWorkerId!, depth: depth! };
 };
 export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void }
+// {§cli-worker-history} The rows a sync Run's snapshot held that this session had not drawn, in log order.
 export interface WorkerHistory {
     entries: LogEntryWire[];
-    messages: Message[];
     attachment: boolean;
 }
 export interface ObserveOpts { historyLimit: number }
@@ -153,7 +152,6 @@ export class AguiTransport implements Transport {
     #controllers = new Set<AbortController>();
     #closed = false;
     #seenRows = new Map<number, string>();
-    #historyCursor = 0;
     #lastLoopId: number | null = null;
 
     constructor(target: AguiTarget, threadId: string, workspace: AguiTransportOpts = {}) {
@@ -182,14 +180,14 @@ export class AguiTransport implements Transport {
 
     // An action answers on its own Run and presents no interrupt: a client operation is the person's own
     // decision, never routed for review (plurnk/plurnk-service {§agui-client-operation}).
-    async #action<T>(method: string, params: object | undefined, signal: AbortSignal,
-        binding = { threadId: this.#threadId, workspace: this.#world }): Promise<T> {
+    async #action<T>(method: string, params: object | undefined, signal: AbortSignal): Promise<T> {
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
         let sawResult = false;
         for await (const e of runViaAgui(this.#target, {
-            ...binding,
+            threadId: this.#threadId,
+            workspace: this.#world,
             messages: [],
             forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } },
             capabilities: clientCapabilities(this.#workspace.auto !== true),
@@ -245,7 +243,6 @@ export class AguiTransport implements Transport {
 
     #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
         const binding = { threadId: this.#threadId, workspace: this.#world };
-        const sinceId = this.#historyCursor;
         const ac = this.#controller();
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
         this.#modelProjection = projection;
@@ -295,7 +292,7 @@ export class AguiTransport implements Transport {
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
                     const synchronized = fp?.mode === "sync"
-                        ? this.#synchronize(events, binding, ac.signal, sinceId, observation, ready.resolve)
+                        ? this.#synchronize(events, observation, ready.resolve)
                         : events;
                     for await (const e of synchronized) {
                         if (fp?.mode !== "sync") ready.resolve();
@@ -462,9 +459,8 @@ export class AguiTransport implements Transport {
     }
 
     // {§cli-worker-history}: establish the historical prefix before releasing
-    // live events. Neither replay nor its action run owns lifecycle/accounting.
-    async *#synchronize(events: AsyncIterable<AguiEvent>, binding: { threadId: string; workspace: string | undefined },
-        signal: AbortSignal, sinceId: number, opts: ObserveOpts | undefined, ready: () => void): AsyncGenerator<AguiEvent> {
+    // live events. The snapshot owns no lifecycle or accounting.
+    async *#synchronize(events: AsyncIterable<AguiEvent>, opts: ObserveOpts | undefined, ready: () => void): AsyncGenerator<AguiEvent> {
         let restored = false;
         const pending: AguiEvent[] = [];
         for await (const event of events) {
@@ -476,22 +472,11 @@ export class AguiTransport implements Transport {
                 pending.push(event);
                 continue;
             }
-            const limit = Math.max(1, opts?.historyLimit ?? 1000);
-            const afterId = Math.min(sinceId, this.#historyCursor);
-            const history = await this.#action<{ entries: Array<{ id: number }> }>("log.read", {
-                ...(opts === undefined ? { sinceId: afterId } : {}), limit,
-            }, signal, binding);
-            if (history === null || !Array.isArray(history.entries) || history.entries.length > limit
-                || opts === undefined && history.entries.length === limit
-                || history.entries.some((entry) => !Number.isSafeInteger(entry?.id) || entry.id <= (opts === undefined ? afterId : 0))) {
-                throw new ProblemError(clientTransportResultInvalid("log.read did not supply a complete bounded history window."));
-            }
-            const entries = history.entries.toSorted((a, b) => a.id - b.id)
-                .flatMap((whole) => wholeRow(whole) ?? [])
-                .filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
+            // The snapshot is the worker's whole conversation; an attachment draws its newest rows.
+            const entries = snapshotRows(event.messages).filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
             for (const entry of entries) this.#seenRows.set(entry.id, this.#rowVersion(entry));
-            for (const { id } of history.entries) this.#historyCursor = Math.max(this.#historyCursor, id);
-            this.#h?.onHistory?.({ entries: opts?.historyLimit === 0 ? [] : entries, messages: event.messages, attachment: opts !== undefined });
+            const limit = opts?.historyLimit;
+            this.#h?.onHistory?.({ entries: limit === undefined ? entries : entries.slice(Math.max(0, entries.length - limit)), attachment: opts !== undefined });
             restored = true;
             ready();
             yield* pending;
@@ -560,7 +545,6 @@ export class AguiTransport implements Transport {
         this.#threadId = threadId;
         this.#world = undefined;   // thread == world again
         this.#seenRows.clear();
-        this.#historyCursor = 0;
         this.#lastLoopId = null;
         return { name: threadId };
     }
@@ -571,15 +555,13 @@ export class AguiTransport implements Transport {
         this.#threadId = name;
         this.#world = world;
         this.#seenRows.clear();
-        this.#historyCursor = 0;
         this.#lastLoopId = null;
     }
 
-    #row(entry: LogEntryWire, bound: boolean): void {
+    #row(entry: LogEntryWire): void {
         const version = this.#rowVersion(entry);
         if (this.#seenRows.get(entry.id) === version) return;
         this.#seenRows.set(entry.id, version);
-        if (bound) this.#historyCursor = Math.max(this.#historyCursor, entry.id);
         this.#h?.onEntry(entry);
     }
 
@@ -631,19 +613,15 @@ export class AguiTransport implements Transport {
             const gauge = projection.gauge = state.gauge;
             this.#h?.onWorkspace?.(structuredClone(gauge.plurnk.workspace));
             if (isWorkerGauge(gauge) && (this.#modelProjection === null || this.#modelProjection === projection)) {
-                // {§cli-history-lost}: a recreated worker cannot reuse
-                // the old database's row identities or replay cursor.
-                if (this.#lastLoopId !== null && gauge.plurnk.status.loopId === null) {
-                    this.#seenRows.clear();
-                    this.#historyCursor = 0;
-                }
+                // {§cli-history-lost}: a recreated worker cannot reuse the old database's row identities.
+                if (this.#lastLoopId !== null && gauge.plurnk.status.loopId === null) this.#seenRows.clear();
                 this.#lastLoopId = gauge.plurnk.status.loopId;
                 this.#h?.onStatus?.(structuredClone(gauge));
             }
             return;
         }
         // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
-        for (const row of projection.rows.consume(e)) this.#row(row, projection === this.#modelProjection);
+        for (const row of projection.rows.consume(e)) this.#row(row);
         // {§cli-workers-topology} A subagent's start introduces its worker (plurnk-service `{§agui-delegation-observation}`).
         if (e.type === "SUBAGENT_STARTED") {
             const descendant = descendantOf(e.metadata);
@@ -655,7 +633,7 @@ export class AguiTransport implements Transport {
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.ambient") {
             const row = wholeRow(value);
-            if (row !== null) this.#row(row, projection === this.#modelProjection);
+            if (row !== null) this.#row(row);
         } else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);

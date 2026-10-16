@@ -55,10 +55,21 @@ export const arrivalOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
     ] as AguiEvent[];
 };
 
+// What a row that answers another row's call delivered: a reply's words, or what it received.
+const answer = (row: PartRow): string => row.op === "SEND" ? body(row.tx) : JSON.stringify(row.rx ?? null);
+
 // A row that answers another row's call: what it delivered, under its own coordinate.
 export const dischargeOf = (row: PartRow, call: string): AguiEvent[] => [
-    { type: "TOOL_CALL_RESULT", toolCallId: call, messageId: coordinate(row), content: row.op === "SEND" ? body(row.tx) : JSON.stringify(row.rx ?? null), metadata: { plurnk: factsOf(row) } },
+    { type: "TOOL_CALL_RESULT", toolCallId: call, messageId: coordinate(row), content: answer(row), metadata: { plurnk: factsOf(row) } },
 ] as AguiEvent[];
+
+// The call a row answers: the coordinate its invocation, an operation's log address, names; null when it answers none.
+const answered = (row: PartRow): string | null => {
+    if (typeof row.invocation !== "string") return null;
+    const call = /^log:\/\/\/(\d+)\/(\d+)\/(\d+)\//u.exec(row.invocation);
+    if (call === null) throw new TypeError(`An invocation is an operation's log address: ${row.invocation}`);
+    return `${call[1]}/${call[2]}/${call[3]}`;
+};
 
 // A row that builds nothing in the conversation, whole: its target is the path the daemon's row records.
 export const ambientOf = (row: PartRow): AguiEvent => ({
@@ -93,10 +104,32 @@ export const partsOf = (row: PartRow, thread = "t"): AguiEvent[] => {
     const origin = row.origin ?? "model";
     if (origin === "model") return callOf(row);
     if (row.op === "SEND" && objectOf(row.attrs)?.kind === "message") return arrivalOf(row);
-    if (typeof row.invocation === "string") {
-        const call = /^log:\/\/\/(\d+)\/(\d+)\/(\d+)\//u.exec(row.invocation);
-        if (call === null) throw new TypeError(`An invocation is an operation's log address: ${row.invocation}`);
-        return dischargeOf(row, `${call[1]}/${call[2]}/${call[3]}`);
+    const call = answered(row);
+    return call === null ? [ambientOf(row)] : dischargeOf(row, call);
+};
+
+// The snapshot messages the daemon sends for one row (plurnk-service `{§agui-snapshot}`): the same parts, each with
+// the row's facts; a row that builds none has no message.
+export const messagesOf = (row: PartRow, thread = "t"): Array<Record<string, unknown>> => {
+    const id = coordinate(row);
+    const metadata = { plurnk: factsOf(row) };
+    if (speaks(row, thread)) {
+        const aside = objectOf(row.tx)?.aside;
+        return [{ id, role: "assistant", content: body(row.tx),
+            metadata: { plurnk: { ...factsOf(row), aside: typeof aside === "string" ? aside : null, receipt: row.rx ?? null } } }];
     }
-    return [ambientOf(row)];
+    if ((row.origin ?? "model") === "model") {
+        const { op: _op, position: _position, ...operands } = objectOf(row.tx) ?? {};
+        const attrs = objectOf(row.attrs);
+        const opens = (typeof attrs?.stream === "string" || typeof attrs?.message === "string") && (row.status_rx ?? 200) < 400;
+        return [
+            { id, role: "assistant", toolCalls: [{ id, type: "function", function: { name: row.op, arguments: JSON.stringify(operands) }, metadata }] },
+            ...(opens ? [] : [{ id: `${id}/result`, role: "tool", toolCallId: id, content: JSON.stringify(row.rx ?? null), metadata }]),
+        ];
+    }
+    if (row.op === "SEND" && objectOf(row.attrs)?.kind === "message") {
+        return [{ id, role: "user", content: body(row.tx), ...(typeof row.source === "string" ? { name: row.source } : {}), metadata }];
+    }
+    const call = answered(row);
+    return call === null ? [] : [{ id, role: "tool", toolCallId: call, content: answer(row), metadata }];
 };

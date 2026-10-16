@@ -15,7 +15,7 @@ import { ProblemError } from "./diagnostics.ts";
 import { runViaAgui } from "./agui.ts";
 import { wholeRow } from "./rows.ts";
 import type { LogEntryWire } from "./render.ts";
-import { ambientOf, partsOf } from "../test/agui-parts.ts";
+import { ambientOf, messagesOf, partsOf } from "../test/agui-parts.ts";
 
 interface ConformanceKit {
     schemaVersion: number;
@@ -74,6 +74,8 @@ const wire = (over: WireRow): WireRow => ({
     scheme: null, hostname: null, pathname: null, fragment: null, lineMarker: null, tx: null, rx: { status: 200 }, status_rx: 200, attrs: {}, ...over,
 });
 const live = (row: WireRow): Array<Record<string, unknown>> => partsOf(wholeRow(row)!) as unknown as Array<Record<string, unknown>>;
+// The snapshot a sync Run sends for those rows: the same parts, as messages (plurnk-service `{§agui-snapshot}`).
+const snapshotOf = (...rows: WireRow[]): Record<string, unknown> => ({ type: "MESSAGES_SNAPSHOT", messages: rows.flatMap((row) => messagesOf(wholeRow(row)!)) });
 // The rows a handler observed, by durable identity and operation.
 const drawn = (entries: readonly unknown[]): string[] => (entries as LogEntryWire[]).map(({ id, op }) => `${id} ${op}`);
 
@@ -561,14 +563,10 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(frame({ type: "RUN_STARTED" }));
         response.write(frame(snapshot));
-        if (mock.captured.length === 1) {
-            assert.equal(input.forwardedProps.plurnk.mode, "sync");
-            for (const event of live(late)) response.write(frame(event));
-            response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
-        } else {
-            assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
-        }
-        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "log.read", ok: true, result: { entries: [late, early] } } }));
+        assert.equal(input.forwardedProps.plurnk.mode, "sync");
+        for (const event of live(late)) response.write(frame(event));
+        response.write(frame(snapshotOf(early, late)));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
     const transport = new AguiTransport({ aguiUrl: mock.url }, "alice", { workspace: "world" });
     try {
@@ -578,17 +576,17 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         assert.deepEqual(drawn(seen.entries), ["8 SEND", "9 NOTE"], "history precedes overlapping live rows without skipping or duplicating either");
         assert.deepEqual(seen.terminated, [], "no model terminal or usage was synthesized");
         assert.deepEqual(seen.problems, []);
-        assert.equal(mock.captured.length, 2, "one sync and one bounded history read");
+        assert.equal(mock.captured.length, 1, "the snapshot is the history: no second read");
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("{§cli-active-command-admission}: client operation rows do not advance the history cursor", async () => {
+test("{§cli-active-command-admission}: a client operation's row hides nothing the next observation brings", async () => {
     const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
     const previous = wire({ id: 7, op: "SEND", tx: { body: { raw: "previous loop", json: null } } });
     const unseen = wire({ id: 8, op: "SEND", tx: { body: { raw: "successor finished before attachment", json: null } } });
     const human = wire({ id: 10, op: "sh", origin: "client", tx: { body: "independent client operation" } });
     const mock = await bootMock((_request, response) => {
-        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string; action?: { kind: string; sinceId?: number } } } };
+        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string; action?: { kind: string } } } };
         const action = input.forwardedProps.plurnk.action;
         response.writeHead(200, { "content-type": "text/event-stream" });
         if (action === undefined && input.forwardedProps.plurnk.mode === undefined) {
@@ -601,13 +599,10 @@ test("{§cli-active-command-admission}: client operation rows do not advance the
             return;
         }
         response.write(frame({ type: "RUN_STARTED" }));
-        if (input.forwardedProps.plurnk.mode === "sync") response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
+        if (input.forwardedProps.plurnk.mode === "sync") response.write(frame(snapshotOf(previous, unseen)));
         if (action?.kind === "op.exec") {
             response.write(frame(ambientOf(wholeRow(human)!) as unknown as Record<string, unknown>));
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: { status: 200 } } }));
-        } else if (action?.kind === "log.read") {
-            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: action.kind, ok: true,
-                result: { entries: [previous, unseen].filter((entry) => entry.id > action.sinceId!) } } }));
         } else {
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         }
@@ -636,22 +631,23 @@ test("{§cli-active-command-admission}: injection refuses missing admission iden
     } finally { await mock.close(); }
 });
 
-for (const entries of [null, [{ id: null }], Array.from({ length: 1000 }, (_, index) => ({ id: index + 1 }))]) {
-    test(`{§cli-active-command-admission}: incomplete sync history is not presented (${entries?.length ?? "missing"})`, async () => {
+for (const [snapshot, events] of [
+    ["malformed", [{ type: "MESSAGES_SNAPSHOT", messages: [{ id: "1/1/1", role: "assistant", content: "Done.", metadata: { plurnk: { id: 1, op: "SEND" } } }] }]],
+    ["missing", []],
+] as const) {
+    test(`{§cli-worker-history}: a ${snapshot} snapshot is reported, never presented as an empty history`, async () => {
         const mock = await bootMock((_request, response) => {
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED" }));
-            if (mock.captured.length === 1) response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
-            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "log.read", ok: true, result: { entries } } }));
+            for (const event of events) response.write(frame(event));
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         });
         try {
             const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
             const { h, seen } = collectingHandlers();
             transport.subscribe(h);
-            await assert.rejects(transport.observe().done, (error: unknown) =>
-                error instanceof ProblemError && error.problem.kind === "result-invalid"
-                    && String(error.problem.reason).includes("complete bounded history window"));
-            assert.deepEqual(seen.entries, [], "a partial or malformed history is not silently admitted");
+            await assert.rejects(transport.observe().done, (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
+            assert.deepEqual(seen.entries, [], "no history is admitted without its snapshot");
             assert.deepEqual(seen.terminated, []);
         } finally { await mock.close(); }
     });
@@ -670,25 +666,17 @@ test("{§cli-active-command-admission}: a dead sync stream retains its original 
     } finally { await mock.close(); }
 });
 
-for (const historyLimit of [0, 2]) {
+for (const historyLimit of [0, 1, 2]) {
     test(`{§cli-worker-history}: bounded attachment restores before live rows (${historyLimit})`, async () => {
         const release = Promise.withResolvers<void>();
         const older = wire({ id: 8, op: "READ", tx: { body: "old output" } });
         const overlap = wire({ id: 9, op: "SEND", status_rx: 202, rx: { status: 202 }, tx: { body: { raw: "old answer", json: null } } });
         const fresh = wire({ id: 10, op: "SEND", tx: { body: { raw: "new answer", json: null } } });
         const updated = { ...overlap, status_rx: 200, rx: { status: 200 } };
-        const messages = [{ id: "9", role: "assistant", content: "old answer" }];
         const mock = await bootMock((_request, response) => {
-            const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { action?: object } } };
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED" }));
-            if (input.forwardedProps.plurnk.action !== undefined) {
-                assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", limit: Math.max(1, historyLimit) });
-                response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "log.read", ok: true,
-                    result: { entries: historyLimit === 0 ? [overlap] : [overlap, older] } } }));
-                return;
-            }
-            response.write(frame({ type: "MESSAGES_SNAPSHOT", messages }));
+            response.write(frame(snapshotOf(older, overlap)));
             for (const event of live(overlap)) response.write(frame(event));
             void release.promise.then(() => {
                 for (const event of [...live(updated), ...live(fresh)]) response.write(frame(event));
@@ -698,11 +686,13 @@ for (const historyLimit of [0, 2]) {
         const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
         try {
             const { h, seen } = collectingHandlers();
-            const histories: unknown[] = [];
+            const histories: Array<{ entries: unknown[]; attachment: boolean }> = [];
             transport.subscribe({ ...h, onHistory: (history) => { histories.push(history); } });
             const run = transport.observe({ historyLimit });
             await run.ready;
-            assert.deepEqual(histories, [{ entries: historyLimit === 0 ? [] : [wholeRow(older), wholeRow(overlap)], messages, attachment: true }]);
+            assert.deepEqual(histories.map(({ entries, attachment }) => ({ entries: drawn(entries), attachment })),
+                [{ entries: ["8 READ", "9 SEND"].slice(2 - historyLimit), attachment: true }], "the attachment draws the snapshot's newest rows, up to its bound");
+            assert.equal(mock.captured.length, 1, "the snapshot is the history: no second read");
             assert.deepEqual(seen.entries, [], "replayed rows are historical, not new operation events");
             release.resolve();
             assert.equal(await run.done, null);
@@ -726,7 +716,7 @@ test("{§cli-worker-history}: successful sync without a message snapshot is a pr
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("{§cli-worker-history}: a recreated worker resets replay identities and cursor", async () => {
+test("{§cli-worker-history}: a recreated worker resets replay identities", async () => {
     const events = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "ordinary-run")!.events;
     const snapshot = structuredClone(events.find((event) => event.type === "STATE_SNAPSHOT")!) as {
         type: string; snapshot: { plurnk: { status: { loopId: number | null } } };
@@ -734,18 +724,11 @@ test("{§cli-worker-history}: a recreated worker resets replay identities and cu
     snapshot.snapshot.plurnk.status.loopId = null;
     const row = wire({ id: 9, op: "NOTE", tx: { body: "retained body" } });
     const mock = await bootMock((_request, response) => {
-        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string; action?: object } } };
+        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string } } };
         response.writeHead(200, { "content-type": "text/event-stream" });
-        if (input.forwardedProps.plurnk.action !== undefined) {
-            assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
-            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: {
-                kind: "log.read", ok: true, result: { entries: [row] },
-            } }));
-            return;
-        }
         if (input.forwardedProps.plurnk.mode === "sync") {
             response.write(frame(snapshot));
-            response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
+            response.write(frame(snapshotOf(row)));
         } else {
             for (const event of events) {
                 response.write(frame(event));

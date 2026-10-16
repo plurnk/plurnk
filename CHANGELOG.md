@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The TUI restores a worker's history from the sync Run's standard `MESSAGES_SNAPSHOT`, the worker's
+  whole conversation, rebuilding every row from the parts that build it live, and no longer reads it
+  with `log.read`. `--history-entries` still bounds what an attachment draws (plurnk/plurnk-service#1141).
 - A statement the daemon's parser refused is named by its verb in the waterfall and the one-shot trace
   (`READ — Invalid operation syntax: …`), from the attempt the refusal row records, live and in history
   (plurnk/plurnk-service#1140).

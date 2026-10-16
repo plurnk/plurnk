@@ -18,7 +18,7 @@ import {
     clientTransportResultInvalid,
     type ProblemDetails,
 } from "./diagnostics.ts";
-import type { ApplicationPort, OperationResult } from "@plurnk/plurnk-contracts";
+import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
@@ -77,7 +77,12 @@ export interface WorkerHistory {
     attachment: boolean;
 }
 export interface ObserveOpts { historyLimit: number }
-export type LoopAdmission = Awaited<ReturnType<ApplicationPort["runLoop"]>>;
+// What loop.inject answers: the admission of the prompt and the loop it landed on.
+export type LoopAdmission = OperationResult & {
+    readonly action: "injected_next_turn" | "enqueued_new_loop";
+    readonly loopId: number;
+    readonly turnSeq?: number;
+};
 
 type ProposalResolution = Resolution & { logEntryId: number };
 type InteractionResolution = Record<string, unknown> | "cancel";

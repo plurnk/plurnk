@@ -419,7 +419,7 @@ Consequence:
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
    Delivered responses go to stdout ({§cli-broadcast-send-rendering}).
-3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. The terminal record its Run ends with is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
+3. A proposal arrives as a standard AG-UI interrupt carrying the daemon's proposal projection, naming the operation's own call when the run holds it, and terminates run A (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. The terminal record its Run ends with is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the complete record document on stdout (§2.1); stderr stays silent.
 5. Exit with the appropriate code (§4).
 
@@ -1252,11 +1252,14 @@ Native terminal features the client emits only where they cost nothing when unsu
 
 ## §6 Proposal review {§cli-proposal-review}
 
-Client-owned proposals arrive through standard AG-UI tool-call interrupts under
-{§agui-proposal-disposition}. The client presents the proposal and resumes the
-Run with the selected decision, echoing the supplied opaque `Interrupt.id`.
-`toolCallId` identifies the underlying tool call; the client never derives a resume
-identity from it or from a proposal number. The following sections describe its local review projection.
+Client-owned proposals arrive as standard AG-UI interrupts under plurnk-service
+`{§agui-proposal-resolve}`: each carries the daemon's proposal projection as
+`metadata.plurnk.proposal`, and names the operation's own call as `toolCallId` when the
+Run holds that worker's conversation. The client presents the proposal and resumes the
+Run with the selected decision, echoing the supplied opaque `Interrupt.id`; it never
+derives a resume identity from the call or from a proposal number. The gated call awaits
+its decision without a row; its settlement folds the settled facts onto the call and draws
+the operation once ({§cli-row-sources}). The following sections describe its local review projection.
 
 ### §6.0 Worker ownership {§cli-worker-ownership}
 
@@ -1269,8 +1272,11 @@ states whether a person attends it.
 
 | Client mode | `interactive` | Advertised tools |
 |---|---|---|
-| Interactive terminal | `true` | `request_approval`, `question`, `mcp_input_required` |
-| No terminal, or `--auto` | `false` | `request_approval`, including fail-closed headless resolution |
+| Interactive terminal | `true` | `question`, `mcp_input_required` |
+| No terminal, or `--auto` | `false` | none |
+
+Review needs no declared tool: every AG-UI owner reviews (plurnk-service `{§agui-worker-owner}`), and
+this client always resolves it, by a person, `--yolo`, configured acceptance, or fail-closed headless review.
 
 `--auto` (`PLURNK_CLIENT_AUTO`) states that nobody is attending, even at a terminal: the
 daemon asks nothing, because its workers are not offered `question`, and a loop that would
@@ -1284,16 +1290,19 @@ resolved interrupt. That owner connection creates the session's worker when ther
 detach that owner connection. Future owned work, including independently active children, can request
 review without a new user prompt. Disconnect changes neither ownership nor pending gates.
 Concurrent Runs share one local resolver per interrupt. A resurfaced gate does not
-open another review or submit another decision; its observer resumes after the standard
-`TOOL_CALL_RESULT` acknowledges settlement, without waiting for the approved work to finish.
+open another review or submit another decision; its observer resumes once the gated row
+arrives settled, without waiting for the approved work to finish.
 
 `--yolo`, configured acceptance, and `?` remain client-side decisions. Server
 `PLURNK_SERVICE_PROPOSALS` owns automatic server disposition.
 
 ### §6.1 Notification shape {§cli-notification-shape}
 
+The interrupt's `metadata.plurnk.proposal`, as plurnk-service `{§proposal-projection}` defines it; the
+client reads these fields:
+
 ```ts
-loop/proposal {
+proposal {
     logEntryId: number,           // pending log_entries row
     loopId, turnId: number,
     op: "EDIT" | <runtime tag> | ...,

@@ -11,6 +11,7 @@ const coordinate = (row: PartRow): string => `${row.loop_seq ?? 1}/${row.turn_se
 export const factsOf = (row: PartRow): Record<string, unknown> => ({
     id: row.id ?? 1, coordinate: coordinate(row), worker: row.worker_id ?? 1, origin: row.origin ?? "model", op: row.op,
     source: row.source ?? null, address: row.target ?? null, signal: row.signal ?? null, status: row.status_rx ?? 200, attrs: row.attrs ?? {},
+    ...(row.state === undefined ? {} : { state: row.state }),
 });
 
 const body = (tx: unknown): string => {
@@ -20,17 +21,35 @@ const body = (tx: unknown): string => {
     return typeof raw === "string" ? raw : "";
 };
 
-// A tool call and its receipt; a call that opened an obligation ends without one.
+// A call answered later: one that opened an obligation, by what discharges it, and one awaiting its decision, by its settlement.
+const answeredLater = (row: PartRow): boolean => {
+    const attrs = objectOf(row.attrs);
+    return row.state === "proposed" || ((typeof attrs?.stream === "string" || typeof attrs?.message === "string") && (row.status_rx ?? 200) < 400);
+};
+
+const receiptOf = (row: PartRow, id: string, metadata: unknown): AguiEvent =>
+    ({ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}/result`, content: row.rx === undefined || row.rx === null ? "" : JSON.stringify(row.rx), metadata }) as AguiEvent;
+
+// A tool call and its receipt; a call answered later ends without one.
 export const callOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
     const metadata = { plurnk: factsOf(row) };
     const { op: _op, position: _position, ...operands } = objectOf(row.tx) ?? {};
-    const attrs = objectOf(row.attrs);
-    const opens = (typeof attrs?.stream === "string" || typeof attrs?.message === "string") && (row.status_rx ?? 200) < 400;
     return [
         { type: "TOOL_CALL_START", toolCallId: id, toolCallName: row.op, metadata },
         { type: "TOOL_CALL_ARGS", toolCallId: id, delta: JSON.stringify(operands) },
         { type: "TOOL_CALL_END", toolCallId: id },
-        ...(opens ? [] : [{ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}/result`, content: row.rx === undefined || row.rx === null ? "" : JSON.stringify(row.rx), metadata }]),
+        ...(answeredLater(row) ? [] : [receiptOf(row, id, metadata)]),
+    ] as AguiEvent[];
+};
+
+// plurnk-service {§agui-proposal-resolve}: a gated call's settlement, on the Run whose client holds the call: its start
+// repeated with the settled facts and no arguments, then its receipt unless something later answers it.
+export const settlementOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
+    const metadata = { plurnk: factsOf(row) };
+    return [
+        { type: "TOOL_CALL_START", toolCallId: id, toolCallName: row.op, metadata },
+        { type: "TOOL_CALL_END", toolCallId: id },
+        ...(answeredLater(row) ? [] : [receiptOf(row, id, metadata)]),
     ] as AguiEvent[];
 };
 
@@ -120,11 +139,9 @@ export const messagesOf = (row: PartRow, thread = "t"): Array<Record<string, unk
     }
     if ((row.origin ?? "model") === "model") {
         const { op: _op, position: _position, ...operands } = objectOf(row.tx) ?? {};
-        const attrs = objectOf(row.attrs);
-        const opens = (typeof attrs?.stream === "string" || typeof attrs?.message === "string") && (row.status_rx ?? 200) < 400;
         return [
             { id, role: "assistant", toolCalls: [{ id, type: "function", function: { name: row.op, arguments: JSON.stringify(operands) }, metadata }] },
-            ...(opens ? [] : [{ id: `${id}/result`, role: "tool", toolCallId: id, content: JSON.stringify(row.rx ?? null), metadata }]),
+            ...(answeredLater(row) ? [] : [{ id: `${id}/result`, role: "tool", toolCallId: id, content: JSON.stringify(row.rx ?? null), metadata }]),
         ];
     }
     if (row.op === "SEND" && objectOf(row.attrs)?.kind === "message") {

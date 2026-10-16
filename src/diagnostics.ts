@@ -253,11 +253,19 @@ export const clientTransportInterruptMismatch = (interruptId: string): ProblemDe
         retryable: false,
     });
 
-export const clientTransportProposalInvalid = (logEntryId: number, cause: unknown): ProblemDetails =>
-    clientProblem("transport", "proposal-invalid", 502, `Proposal ${logEntryId} contained invalid JSON arguments.`, {
-        stage: "proposal-resolution",
-        logEntryId,
+export const clientTransportInteractionInvalid = (interactionId: number, cause: unknown): ProblemDetails =>
+    clientProblem("transport", "interaction-invalid", 502, `Interaction ${interactionId} contained invalid JSON arguments.`, {
+        stage: "interaction-resolution",
+        interactionId,
         reason: cause instanceof Error ? cause.message : String(cause),
+        retryable: false,
+    });
+
+export const clientTransportProposalInvalid = (interruptId: string, reason: string): ProblemDetails =>
+    clientProblem("transport", "proposal-invalid", 502, `Interrupt '${interruptId}' carried a proposal that is not a proposal projection.`, {
+        stage: "proposal-resolution",
+        interruptId,
+        reason,
         retryable: false,
     });
 

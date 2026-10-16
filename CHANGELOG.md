@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A proposal is the standard AG-UI interrupt the daemon ends a Run with, carrying its proposal
+  projection as `metadata.plurnk.proposal` and naming the operation's own call when the Run holds it;
+  the client reviews from the interrupt and resumes it by its id. The gated call draws nothing while it
+  awaits its decision, and its settlement draws the operation once. The client no longer declares a
+  `request_approval` tool and no longer reads `prop:` calls. It needs a daemon that presents gates this
+  way (plurnk/plurnk-service#1141).
 - The client's observations carry nothing new and no longer send `forwardedProps.plurnk.mode`, which the
   daemon has retired: a Run that carries no new message, action or resume synchronizes. It needs a daemon
   that synchronizes such a Run (plurnk/plurnk-service#1141).

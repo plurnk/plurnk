@@ -11,7 +11,7 @@ import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody, isEmission, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage, OutsideText } from "./render.ts";
-import { proposalResume, reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
+import { proposalOf, proposalResume, reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
 import {
     ProblemError,
@@ -19,7 +19,6 @@ import {
     clientActionResultMissing,
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
-    clientTransportProposalInvalid,
     clientTransportTerminalMissing,
     renderDiagnostic,
     report,
@@ -97,10 +96,9 @@ const runOutcome = (result: CliRunResult): OperationResult => {
     return { status: problem.status, problem };
 };
 
-// Decide a stopped-world proposal: the AG-UI run ended
-// on the tool-call; the decision returns as the next run's resume payload. A
-// A projected proposal tool-call is client-owned; loop-owned dispositions settle
-// before the AG-UI boundary.
+// Decide a stopped-world proposal: the AG-UI run ended on its interrupt; the decision
+// returns as the next run's resume payload. A proposal that reaches the client is
+// client-owned; loop-owned dispositions settle before the AG-UI boundary.
 const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<Resolution & { logEntryId: number }> => {
     const resolution = io.acceptance.resolve(p, io) ?? await io.review(p);
     return { logEntryId: p.logEntryId, ...resolution };
@@ -147,7 +145,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     let sawRunError = false;
     let sawActionResult = false;
     let toolId = "";
-    let toolArgs = "";
+    // Each interrupt by its own id and by the call it names.
     const interrupts = new Map<string, string>();
     const entries: LogEntryWire[] = [];
     const notices: Notice[] = [];
@@ -187,7 +185,19 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 if (e.type === "RUN_ERROR") sawRunError = true;
                 if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
                     for (const interrupt of e.outcome.interrupts) {
-                        interrupts.set(interrupt.toolCallId ?? interrupt.id, interrupt.id);
+                        interrupts.set(interrupt.id, interrupt.id);
+                        if (interrupt.toolCallId !== undefined) interrupts.set(interrupt.toolCallId, interrupt.id);
+                        // plurnk-service {§agui-proposal-resolve}: a proposal is its interrupt, carrying the daemon's projection.
+                        let proposal: ProposalParams | null;
+                        try {
+                            proposal = proposalOf(interrupt);
+                        } catch (cause) {
+                            if (!(cause instanceof ProblemError)) throw cause;
+                            problem = cause.problem;
+                            finalStatus = problem.status;
+                            continue;
+                        }
+                        if (proposal !== null) pendingResume = proposalResume(interrupt.id, await decideProposal(proposal, io));
                     }
                 }
                 if (end.terminal !== undefined) {
@@ -210,22 +220,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             }
             // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
             for (const entry of rows.consume(e)) presentRow(entry);
-            if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); toolArgs = ""; continue; }
-            if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("prop:")) { toolArgs += String((e as { delta?: unknown }).delta ?? ""); continue; }
-            if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
-                const logEntryId = Number(toolId.slice(5));
-                let a: Record<string, unknown>;
-                try {
-                    a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
-                } catch (cause) {
-                    problem = clientTransportProposalInvalid(logEntryId, cause);
-                    finalStatus = problem.status;
-                    continue;
-                }
-                const r = await decideProposal({ logEntryId, ...a } as unknown as ProposalParams, io);
-                pendingResume = proposalResume(toolId, r);
-                continue;
-            }
+            if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); continue; }
             if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
                 pendingResume = { interruptId: toolId, status: "cancelled" };
                 continue;

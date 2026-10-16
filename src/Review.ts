@@ -55,7 +55,7 @@ export default class Review extends Container implements Focusable {
             { value: "cancel", label: "Cancel" },
         ], 4, editorTheme.selectList);
         const request: Request = {
-            id: `prop:${proposal.logEntryId}`, kind: "proposal", proposal, control,
+            id: `proposal:${proposal.logEntryId}`, kind: "proposal", proposal, control,
             title: `proposal ${proposal.op} ${formatTarget(proposal.target, proposal.op)}`,
             details: renderBody(proposal.op, ModelText.plain(proposal.body)), error: "", busy: false,
         };

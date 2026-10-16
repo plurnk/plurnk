@@ -4,7 +4,7 @@ import type { AguiEvent } from "./agui.ts";
 import { ProblemError } from "./diagnostics.ts";
 import type { LogEntryWire } from "./render.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
-import { arrivalOf, callOf, dischargeOf, messagesOf, partsOf, speechOf } from "../test/agui-parts.ts";
+import { arrivalOf, callOf, dischargeOf, messagesOf, partsOf, settlementOf, speechOf } from "../test/agui-parts.ts";
 
 // Every row an event completes, in the order the events arrive.
 const drawn = (events: readonly AguiEvent[], rows = new RowAssembler()): LogEntryWire[] => events.flatMap((event) => rows.consume(event));
@@ -64,10 +64,33 @@ test("[§cli-row-sources] a call ended without its receipt, a result that is not
     const [, , , result] = callOf(read);
     broken([start!, args!, end!, { ...result!, content: [{ type: "text", text: "receipt" }] } as unknown as AguiEvent]);
     assert.deepEqual(drawn([
-        { type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" },
-        { type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: "{}" },
-        { type: "TOOL_CALL_END", toolCallId: "prop:42" },
-    ] as AguiEvent[]), [], "a client-owned interrupt builds no row");
+        { type: "TOOL_CALL_START", toolCallId: "int:43", toolCallName: "request_user_input" },
+        { type: "TOOL_CALL_ARGS", toolCallId: "int:43", delta: "{}" },
+        { type: "TOOL_CALL_END", toolCallId: "int:43" },
+    ] as AguiEvent[]), [], "a client interaction's call builds no row");
+});
+
+// plurnk-service {§agui-proposal-resolve}: the gated call awaits its decision, then settles with a receipt or opening an obligation.
+test("[§cli-row-sources] a gated call awaiting its decision is no broken wire and draws nothing; its settlement draws it once, with its statement", () => {
+    const gated = { ...read, state: "proposed", status_rx: 202, rx: { status: 202 } };
+    const settlements = [
+        ["answered by its receipt", { ...read, state: "resolved" }, read.rx],
+        ["opening an obligation", { ...read, state: "resolved", attrs: { stream: "sh:///ab3d5678" }, rx: { status: 200, outcome: "started" } }, null],
+        ["refused", { ...read, state: "failed", status_rx: 403, rx: { status: 403 } }, { status: 403 }],
+    ] as const;
+    for (const [how, settled, rx] of settlements) {
+        for (const [vantage, rows] of [["live", new RowAssembler()], ["held by a snapshot", (() => {
+            const assembler = new RowAssembler();
+            assert.deepEqual(snapshotRows(messagesOf(gated), assembler), [], "a snapshot holds the pending call without a row");
+            return assembler;
+        })()]] as const) {
+            const before = vantage === "live" ? drawn([...callOf(gated), ...callOf({ ...read, id: 5, sequence: 2 })], rows) : [];
+            assert.deepEqual(before.map(({ id }) => id), vantage === "live" ? [5] : [], `${how}, ${vantage}: the pending call draws nothing and breaks nothing`);
+            const after = drawn(settlementOf(settled), rows);
+            assert.deepEqual(after.map(({ id, status_rx, state }) => [id, status_rx, state]), [[4, settled.status_rx, settled.state]], `${how}, ${vantage}: its settlement draws it once`);
+            assert.deepEqual([after[0]?.tx, after[0]?.rx], [read.tx, rx], `${how}, ${vantage}: with the statement its call was built with`);
+        }
+    }
 });
 
 test("[§cli-row-sources] a whole row draws as its parts do: the address it recorded, and nothing for an actionless row", () => {

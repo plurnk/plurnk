@@ -30,8 +30,8 @@ const fixture = (t: TestContext) => {
     const errors: unknown[] = [];
     const actions = {
         resolveProposal: async (p: ProposalParams, resolution: Resolution) => {
-            calls.push([`prop:${p.logEntryId}`, resolution]);
-            review.remove(`prop:${p.logEntryId}`);
+            calls.push([`proposal:${p.logEntryId}`, resolution]);
+            review.remove(`proposal:${p.logEntryId}`);
         },
         editProposal: async (_p: ProposalParams): Promise<Resolution> => ({ decision: "accept", body: "edited" }),
         resolveQuestion: async (id: number, answer: Record<string, unknown> | "cancel") => {
@@ -57,7 +57,7 @@ test("[§cli-inline-review] native selection resolves once; no raw-letter approv
     h.key("\x1b[B");
     h.key("\r");
     await setImmediate();
-    assert.deepEqual(h.calls, [["prop:1", { decision: "reject" }]]);
+    assert.deepEqual(h.calls, [["proposal:1", { decision: "reject" }]]);
     assert.equal(h.surface.reviewing, false);
     assert.equal(h.surface.editor.focused, true);
     assert.match(h.records.join("\n"), /proposal sh sh — rejected/);
@@ -110,7 +110,7 @@ test("[§cli-inline-review] questions and proposals queue by identity, with canc
     assert.equal(h.surface.reviewing, false);
     assert.match(h.review.render(80).join("\n"), /proposal sh/);
     await h.review.decide("cancel");
-    assert.deepEqual(h.calls, [["prop:7", { decision: "cancel" }]]);
+    assert.deepEqual(h.calls, [["proposal:7", { decision: "cancel" }]]);
     assert.equal(h.surface.editor.getText(), "ordinary draft");
     assert.equal(h.surface.openReview(), false);
 });
@@ -256,7 +256,7 @@ test("[§cli-inline-review] a withdrawn proposal's external editor cannot resolv
     h.review.addProposal(proposal(1));
     h.review.addQuestion(question(2));
     const pending = h.review.decide("edit");
-    h.review.remove("prop:1");
+    h.review.remove("proposal:1");
     edit.resolve({ decision: "accept", body: "stale" });
     await pending;
     assert.deepEqual(h.calls, []);
@@ -277,7 +277,7 @@ test("[§cli-inline-review] editor failure is visible and leaves the original pr
     assert.deepEqual(h.calls, [], "an editor failure is not an implicit cancellation");
     assert.equal(h.surface.reviewing, true);
     await h.review.decide("accept");
-    assert.deepEqual(h.calls, [["prop:1", { decision: "accept" }]]);
+    assert.deepEqual(h.calls, [["proposal:1", { decision: "accept" }]]);
 });
 
 test("[§cli-inline-review] an external editor cannot restart a closed terminal surface", async (t) => {

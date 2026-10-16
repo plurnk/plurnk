@@ -1,5 +1,5 @@
-// Proposal review — presents a client-owned proposal (an AG-UI request_approval
-// interrupt) with an accept/edit/reject/cancel choice and returns the resolution
+// Proposal review — presents a client-owned proposal (an AG-UI interrupt carrying the daemon's
+// proposal projection) with an accept/edit/reject/cancel choice and returns the resolution
 // the caller sends back as a standard AG-UI resume (proposalResume). Shared
 // between CLI (one-shot) and TUI modes; mode-specific terminal handoff lives in
 // the caller.
@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProposalResolution } from "@plurnk/plurnk-contracts";
 import type { ResumeEntry } from "@ag-ui/core";
+import { clientTransportProposalInvalid, ProblemError } from "./diagnostics.ts";
+import { objectOf } from "./render.ts";
 
 // An execution's op is its lowercase runtime tag; operation keywords are uppercase (plurnk-service #659).
 const isRuntimeOp = (op: string): boolean => /^[a-z]/.test(op);
@@ -31,6 +33,21 @@ export interface ProposalParams {
 }
 
 export type Resolution = ProposalResolution;
+
+// plurnk-service `{§agui-proposal-resolve}`: a proposal is an interrupt carrying the daemon's projection as
+// metadata.plurnk.proposal, whether or not it names the operation's call; any other interrupt carries none.
+export const proposalOf = (interrupt: { readonly id: string; readonly metadata?: unknown }): ProposalParams | null => {
+    const plurnk = objectOf(objectOf(interrupt.metadata)?.plurnk);
+    if (plurnk === null || plurnk.proposal === undefined) return null;
+    const proposal = objectOf(plurnk.proposal);
+    const target = objectOf(proposal?.target);
+    if (proposal === null || !Number.isSafeInteger(proposal.logEntryId) || typeof proposal.op !== "string" || typeof proposal.body !== "string"
+        || target === null || !(target.scheme === null || typeof target.scheme === "string")
+        || !(target.pathname === null || typeof target.pathname === "string")) {
+        throw new ProblemError(clientTransportProposalInvalid(interrupt.id, "metadata.plurnk.proposal lacks logEntryId, op, body or target."));
+    }
+    return proposal as unknown as ProposalParams;
+};
 
 // {§cli-proposal-review} Preserve the same resolution through every client run plane.
 export const proposalResume = (interruptId: string, resolution: Resolution): ResumeEntry => {

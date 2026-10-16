@@ -26,6 +26,8 @@ export interface LogEntryWire {
     tx: unknown;
     rx: unknown;
     attrs?: unknown;
+    // The row's lifecycle state: `proposed` while it awaits its decision (plurnk-service `{§methods-log-entry-wire}`).
+    state?: string;
     // The row's log coordinate L/T/S (plurnk-service `{§methods-log-coordinate}`).
     loop_seq: number;
     turn_seq: number;

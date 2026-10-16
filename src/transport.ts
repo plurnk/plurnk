@@ -3,7 +3,7 @@
 
 import type { Descendant, OutsideText } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { proposalResume, type ProposalParams, type Resolution } from "./proposal.ts";
+import { proposalOf, proposalResume, type ProposalParams, type Resolution } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { Notice } from "./diagnostics.ts";
 import {
@@ -12,7 +12,7 @@ import {
     clientTransportCancelled,
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
-    clientTransportProposalInvalid,
+    clientTransportInteractionInvalid,
     clientTransportTerminalMissing,
     clientActionResultMissing,
     clientTransportResultInvalid,
@@ -261,11 +261,11 @@ export class AguiTransport implements Transport {
             ...(opts?.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
-        // AG-UI interrupt/resume: a stopped-world ends the run as a
-        // request_approval/request_user_input TOOL_CALL (the loop stays paused
-        // in-engine). resolve() supplies the decision; we POST a standard resume as the
-        // resume run and keep consuming — done spans the whole pause/resume chain, so
-        // the TUI's seam contract never changes.
+        // AG-UI interrupt/resume: a stopped-world ends the run with an interrupt, a proposal's
+        // carrying the daemon's projection, an interaction's naming its request_user_input
+        // TOOL_CALL (the loop stays paused in-engine). resolve() supplies the decision; we POST a
+        // standard resume as the resume run and keep consuming — done spans the whole pause/resume
+        // chain, so the TUI's seam contract never changes.
         const done = (async (): Promise<TerminatedInfo | null> => {
             let terminated: TerminatedInfo | null = null;
             let sawRunError = false;
@@ -291,7 +291,7 @@ export class AguiTransport implements Transport {
                         ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
-                    const synchronized = observing ? this.#synchronize(events, observation, ready.resolve) : events;
+                    const synchronized = observing ? this.#synchronize(events, observation, ready.resolve, projection.rows) : events;
                     for await (const e of synchronized) {
                         if (!observing) ready.resolve();
                         const ended = this.#ended(e);
@@ -302,9 +302,29 @@ export class AguiTransport implements Transport {
                         } else if (e.type === "RUN_FINISHED") {
                             const outcome = e.outcome;
                             observed = outcome?.type === "success";
-                            const interrupt = outcome?.type === "interrupt"
-                                ? outcome.interrupts.find((candidate) => (candidate.toolCallId ?? candidate.id) === toolId)
-                                : undefined;
+                            const interrupts = outcome?.type === "interrupt" ? outcome.interrupts : [];
+                            // plurnk-service {§agui-proposal-resolve}: a proposal is its interrupt, carrying the daemon's projection.
+                            let gate: { readonly interrupt: (typeof interrupts)[number]; readonly proposal: ProposalParams } | undefined;
+                            try {
+                                for (const candidate of interrupts) {
+                                    const proposal = proposalOf(candidate);
+                                    if (proposal !== null) { gate = { interrupt: candidate, proposal }; break; }
+                                }
+                            } catch (cause) {
+                                if (!(cause instanceof ProblemError)) throw cause;
+                                this.#h?.onProblem?.(cause.problem);
+                                return { finalStatus: cause.problem.status, hitMaxTurns: false, result: operationResult({ status: cause.problem.status, problem: cause.problem }) };
+                            }
+                            if (gate !== undefined) {
+                                pausedProp = gate.proposal.logEntryId;
+                                interruptId = gate.interrupt.id;
+                                joined = this.#pendingProposals.get(pausedProp)?.signal;
+                                if (joined !== undefined) continue;
+                                proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, ac.signal, "Proposal");
+                                this.#h?.onProposal(gate.proposal);
+                                continue;
+                            }
+                            const interrupt = interrupts.find((candidate) => (candidate.toolCallId ?? candidate.id) === toolId);
                             interruptId = interrupt?.id;
                             if (pausedInteraction !== null && interrupt !== undefined && interactionArguments !== null) {
                                 const interactionId = pausedInteraction;
@@ -326,14 +346,14 @@ export class AguiTransport implements Transport {
                             toolName = String((e as { toolCallName?: unknown }).toolCallName ?? "");
                             toolArgs = "";
                             this.#dispatch(e, projection);
-                        } else if (e.type === "TOOL_CALL_ARGS" && (toolId.startsWith("prop:") || toolId.startsWith("int:"))) {
+                        } else if (e.type === "TOOL_CALL_ARGS" && toolId.startsWith("int:")) {
                             toolArgs += String((e as { delta?: unknown }).delta ?? "");
                         } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("int:")) {
                             pausedInteraction = Number(toolId.slice(4));
                             try {
                                 interactionArguments = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
                             } catch (cause) {
-                                const problem = clientTransportProposalInvalid(pausedInteraction, cause);
+                                const problem = clientTransportInteractionInvalid(pausedInteraction, cause);
                                 this.#h?.onProblem?.(problem);
                                 return {
                                     finalStatus: problem.status,
@@ -341,24 +361,6 @@ export class AguiTransport implements Transport {
                                     result: operationResult({ status: problem.status, problem }),
                                 };
                             }
-                        } else if (e.type === "TOOL_CALL_END" && toolId.startsWith("prop:")) {
-                            pausedProp = Number(toolId.slice(5));
-                            let a: Record<string, unknown>;
-                            try {
-                                a = JSON.parse(toolArgs.length > 0 ? toolArgs : "{}") as Record<string, unknown>;
-                            } catch (cause) {
-                                const problem = clientTransportProposalInvalid(pausedProp, cause);
-                                this.#h?.onProblem?.(problem);
-                                return {
-                                    finalStatus: problem.status,
-                                    hitMaxTurns: false,
-                                    result: operationResult({ status: problem.status, problem }),
-                                };
-                            }
-                            joined = this.#pendingProposals.get(pausedProp)?.signal;
-                            if (joined !== undefined) continue;
-                            proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, ac.signal, "Proposal");
-                            this.#h?.onProposal({ ...a, logEntryId: pausedProp } as unknown as ProposalParams);
                         } else {
                             this.#dispatch(e, projection);
                         }
@@ -386,8 +388,8 @@ export class AguiTransport implements Transport {
                     };
                 }
                 if (terminated !== null) return terminated;
-                if ((pausedProp !== null || pausedInteraction !== null) && interruptId === undefined) {
-                    const problem = clientTransportInterruptMismatch(pausedProp === null ? `int:${pausedInteraction}` : `prop:${pausedProp}`);
+                if (pausedInteraction !== null && interruptId === undefined) {
+                    const problem = clientTransportInterruptMismatch(`int:${pausedInteraction}`);
                     this.#h?.onProblem?.(problem);
                     return {
                         finalStatus: problem.status,
@@ -461,7 +463,7 @@ export class AguiTransport implements Transport {
 
     // {§cli-worker-history}: establish the historical prefix before releasing
     // live events. The snapshot owns no lifecycle or accounting.
-    async *#synchronize(events: AsyncIterable<AguiEvent>, opts: ObserveOpts | undefined, ready: () => void): AsyncGenerator<AguiEvent> {
+    async *#synchronize(events: AsyncIterable<AguiEvent>, opts: ObserveOpts | undefined, ready: () => void, rows: RowAssembler): AsyncGenerator<AguiEvent> {
         let restored = false;
         const pending: AguiEvent[] = [];
         for await (const event of events) {
@@ -474,7 +476,7 @@ export class AguiTransport implements Transport {
                 continue;
             }
             // The snapshot is the worker's whole conversation; an attachment draws its newest rows.
-            const entries = snapshotRows(event.messages).filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
+            const entries = snapshotRows(event.messages, rows).filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
             for (const entry of entries) this.#seenRows.set(entry.id, this.#rowVersion(entry));
             const limit = opts?.historyLimit;
             this.#h?.onHistory?.({ entries: limit === undefined ? entries : entries.slice(Math.max(0, entries.length - limit)), attachment: opts !== undefined });
@@ -515,7 +517,7 @@ export class AguiTransport implements Transport {
                 if (entry.decided) return;
                 entry.decided = true;
                 resolve(value);
-                this.#h?.onInterruptEnd?.(`${kind === "Proposal" ? "prop" : "int"}:${id}`);
+                this.#h?.onInterruptEnd?.(`${kind === "Proposal" ? "proposal" : "int"}:${id}`);
             };
             const release = (): void => {
                 pending.delete(id);
@@ -560,6 +562,8 @@ export class AguiTransport implements Transport {
     }
 
     #row(entry: LogEntryWire): void {
+        // plurnk-service {§agui-proposal-resolve}: a proposal is settled when its row is.
+        if (entry.state !== "proposed") this.#pendingProposals.get(entry.id)?.release();
         const version = this.#rowVersion(entry);
         if (this.#seenRows.get(entry.id) === version) return;
         this.#seenRows.set(entry.id, version);
@@ -596,9 +600,7 @@ export class AguiTransport implements Transport {
     // family handlers.
     #dispatch(e: AguiEvent, projection: StreamProjection): void {
         if (e.type === "TOOL_CALL_RESULT") {
-            const proposal = /^prop:(\d+)$/u.exec(e.toolCallId);
             const interaction = /^int:(\d+)$/u.exec(e.toolCallId);
-            if (proposal !== null) this.#pendingProposals.get(Number(proposal[1]))?.release();
             if (interaction !== null) this.#pendingInteractions.get(Number(interaction[1]))?.release();
         }
         // {§cli-workers-topology} The session renders its delegation from the descendants' rows: a subagent's reasoning is

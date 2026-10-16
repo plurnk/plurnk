@@ -278,9 +278,9 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
             return [run.forwardedProps.plurnk.interactive, run.tools.map(({ name }) => name)];
         });
         assert.deepEqual(declared, [
-            [true, ["request_approval", "question", "mcp_input_required"]],
-            [false, ["request_approval"]],
-        ], "--auto removes the person, not the approver");
+            [true, ["question", "mcp_input_required"]],
+            [false, []],
+        ], "--auto removes the person, and the client tools a person answers");
     } finally {
         if (tty === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
         else Object.defineProperty(process.stdin, "isTTY", tty);
@@ -316,7 +316,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgu
         assert.equal(fp.selector, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
         assert.equal(fp.childSelector, undefined);
         const input = mock.captured[0].body as { tools: { name: string }[] };
-        assert.deepEqual(input.tools.map(({ name }) => name), ["request_approval"], "with no terminal, approval is the only client tool");
+        assert.deepEqual(input.tools.map(({ name }) => name), [], "with no terminal, no client tool a person answers is declared");
         assert.equal(fp.interactive, false, "with no terminal, nobody attends");
         assert.equal(fp.maxTurns, 7, "the turn ceiling reaches the wire");
         assert.deepEqual(fp.openPaths, ["README.md", "src/index.ts"], "prompt file references reach the wire");

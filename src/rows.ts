@@ -20,6 +20,7 @@ interface Facts {
     readonly signal: unknown;
     readonly status: number;
     readonly attrs: unknown;
+    readonly state?: string;
     readonly aside?: unknown;
     readonly receipt?: unknown;
 }
@@ -61,11 +62,14 @@ const rowOf = (facts: Facts, tx: unknown, rx: unknown): LogEntryWire => {
     const [, loop, turn, sequence] = COORDINATE.exec(facts.coordinate)!;
     return {
         id: facts.id, worker_id: facts.worker, origin: facts.origin, op: facts.op, source: facts.source,
-        signal: facts.signal, status_rx: facts.status, attrs: facts.attrs, tx, rx,
+        signal: facts.signal, status_rx: facts.status, attrs: facts.attrs, ...(facts.state === undefined ? {} : { state: facts.state }), tx, rx,
         target: facts.address, lineMarker: lineMarkerOf(tx),
         loop_seq: Number(loop), turn_seq: Number(turn), sequence: Number(sequence),
     };
 };
+
+// plurnk-service `{§agui-proposal-resolve}`: a gated call awaiting its decision has no row yet; its settlement builds it.
+const awaitsDecision = (facts: Facts): boolean => facts.state === "proposed";
 
 // plurnk-service `{§agui-call-result}`: a call that opened an obligation is answered by what discharges it, never its receipt.
 const opensObligation = (facts: Facts): boolean => {
@@ -95,7 +99,7 @@ export const wholeRow = (value: unknown): LogEntryWire | null => {
     return {
         id: row.id as number, worker_id: row.worker_id as number, origin: row.origin as string, op: row.op,
         source: (row.source ?? null) as string | null, signal: row.signal, status_rx: row.status_rx as number,
-        attrs: row.attrs, tx: row.tx, rx: row.rx,
+        attrs: row.attrs, ...(typeof row.state === "string" ? { state: row.state } : {}), tx: row.tx, rx: row.rx,
         target: addressOf(row), lineMarker: (row.lineMarker ?? null) as LogEntryWire["lineMarker"],
         loop_seq: row.loop_seq as number, turn_seq: row.turn_seq as number, sequence: row.sequence as number,
     };
@@ -112,7 +116,9 @@ export default class RowAssembler {
             case "TOOL_CALL_START": {
                 this.#unanswered();
                 const facts = factsOf(e.metadata);
-                if (facts !== null) this.#calls.set(e.toolCallId, { facts, args: "", ended: false });
+                // plurnk-service `{§agui-proposal-resolve}`: a gated call's settlement repeats its start with the settled facts,
+                // which fold onto the call as it was built.
+                if (facts !== null) this.#calls.set(e.toolCallId, { facts, args: this.#calls.get(e.toolCallId)?.args ?? "", ended: false });
                 return [];
             }
             case "TOOL_CALL_ARGS": {
@@ -124,7 +130,7 @@ export default class RowAssembler {
                 const call = this.#calls.get(e.toolCallId);
                 if (call === undefined) return [];
                 call.ended = true;
-                if (!opensObligation(call.facts)) return [];
+                if (awaitsDecision(call.facts) || !opensObligation(call.facts)) return [];
                 this.#calls.delete(e.toolCallId);
                 return [rowOf(call.facts, this.#statement(call.args), null)];
             }
@@ -176,10 +182,11 @@ export default class RowAssembler {
         }
     }
 
-    // plurnk-service `{§agui-call-result}`: a call that opened no obligation is answered by its receipt before anything else is built.
+    // plurnk-service `{§agui-call-result}`: a call that opened no obligation is answered by its receipt before anything else is
+    // built; a gated one by its settlement.
     #unanswered(): void {
         for (const [id, call] of this.#calls) {
-            if (call.ended) throw new ProblemError(clientTransportResultInvalid(`The call ${id} ended without its receipt.`));
+            if (call.ended && !awaitsDecision(call.facts)) throw new ProblemError(clientTransportResultInvalid(`The call ${id} ended without its receipt.`));
         }
     }
 }
@@ -216,7 +223,7 @@ const eventsOf = (value: unknown): AguiEvent[] => {
 
 // {§cli-worker-history} The rows a MESSAGES_SNAPSHOT holds, in log order: every part carries its row's facts, so the
 // snapshot rebuilds each row as the live stream built it.
-export const snapshotRows = (messages: readonly unknown[]): LogEntryWire[] => {
-    const rows = new RowAssembler();
+// A gated call the snapshot holds stays in the assembler that builds the live stream, so its settlement finds it.
+export const snapshotRows = (messages: readonly unknown[], rows = new RowAssembler()): LogEntryWire[] => {
     return messages.flatMap(eventsOf).flatMap((event) => rows.consume(event)).toSorted((left, right) => left.id - right.id);
 };

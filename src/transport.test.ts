@@ -15,7 +15,8 @@ import { ProblemError } from "./diagnostics.ts";
 import { runViaAgui } from "./agui.ts";
 import { wholeRow } from "./rows.ts";
 import type { LogEntryWire } from "./render.ts";
-import { ambientOf, messagesOf, partsOf } from "../test/agui-parts.ts";
+import { ambientOf, messagesOf, partsOf, settlementOf } from "../test/agui-parts.ts";
+import { clientCapabilities } from "./client-capabilities.ts";
 
 interface ConformanceKit {
     schemaVersion: number;
@@ -81,6 +82,18 @@ type RunInput = { threadId: string; messages: unknown[]; resume?: unknown; forwa
 const observes = (input: RunInput): boolean => input.messages.length === 0 && input.forwardedProps.plurnk.action === undefined && input.resume === undefined;
 // The rows a handler observed, by durable identity and operation.
 const drawn = (entries: readonly unknown[]): string[] => (entries as LogEntryWire[]).map(({ id, op }) => `${id} ${op}`);
+// plurnk-service `{§agui-proposal-resolve}`: Core's projection of a proposal, which its interrupt carries.
+const projection = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    logEntryId: 42, workerId: 1, worker: "th", loopId: 3, turnId: 5, coordinate: "1/1/42", op: "EDIT",
+    target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {}, owner: "agui://anonymous/threads/th",
+    disposition: { decision: "review" }, ...over,
+});
+// A gate: the operation's own call awaiting its decision, unanswered, then the interrupt naming it.
+const gate = (row: WireRow, interruptId: string, over: Record<string, unknown> = {}): string[] => [
+    ...live({ ...row, state: "proposed", status_rx: 202, rx: { status: 202 } }).map(frame),
+    frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: interruptId, reason: "tool_call", toolCallId: `1/1/${row.id}`,
+        metadata: { plurnk: { proposal: projection({ logEntryId: row.id, coordinate: `1/1/${row.id}`, op: row.op, ...over }) } } }] } }),
+];
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; body: unknown }> = [];
@@ -820,17 +833,15 @@ test("AguiTransport.useWorkspace: re-maps the threadId — the next run addresse
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: terminate-resume — a proposal tool-call pauses done; resolve() resumes with the tool-result", async () => {
+test("AguiTransport: terminate-resume — a gate pauses done on the operation's call; resolve() resumes and its settlement draws it once", async () => {
+    const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     let call = 0;
     const mock = await bootMock((_req, res) => {
         call += 1;
         res.writeHead(200, { "content-type": "text/event-stream" });
-        if (call === 1) {
-            res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
-            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EDIT", target: { scheme: "file", pathname: "a.ts" }, body: "diff" }) }));
-            res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "proposal-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
-        } else {
+        if (call === 1) for (const part of gate(edit, "proposal-presentation")) res.write(part);
+        else {
+            for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
             res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         }
         res.end();
@@ -840,15 +851,17 @@ test("AguiTransport: terminate-resume — a proposal tool-call pauses done; reso
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("edit it", {});
-        // the proposal surfaces mid-run as an unprojected tool-call
         while (seen.proposals.length === 0) await new Promise((r) => setTimeout(r, 10));
-        assert.equal((seen.proposals[0] as { logEntryId: number; op: string }).logEntryId, 42);
-        assert.equal((seen.proposals[0] as { op: string }).op, "EDIT");
+        const [proposal] = seen.proposals as Array<{ logEntryId: number; op: string; body: string }>;
+        assert.deepEqual([proposal!.logEntryId, proposal!.op, proposal!.body], [42, "EDIT", "diff"], "the proposal is the projection its interrupt carries");
+        assert.deepEqual(drawn(seen.entries), [], "a call awaiting its decision draws nothing yet");
         await bt.resolve({ logEntryId: 42, decision: "accept", body: "edited", outcome: "reviewed" });
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
         assert.deepEqual(resume.resume, [{ interruptId: "proposal-presentation", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
+        assert.deepEqual(drawn(seen.entries), ["42 EDIT"], "the settlement draws the operation once");
+        assert.deepEqual((seen.entries[0] as LogEntryWire).tx, { target: { raw: "a.ts" }, body: "after" }, "with the statement its call was built with");
     } finally { await mock.close(); }
 });
 
@@ -856,10 +869,9 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
     const ready = Promise.withResolvers<void>();
     const mock = await bootMock((_req, response) => {
         response.writeHead(200, { "content-type": "text/event-stream" });
-        response.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:17", toolCallName: "request_approval" }));
-        response.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:17", delta: '{"op":"sh"}' }));
-        response.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:17" }));
-        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "prop:17", reason: "tool_call" }] } }));
+        const parts = gate(wire({ id: 17, op: "sh", tx: { body: "printf ok" } }), "gate-17", { target: { scheme: "sh", authority: null, pathname: "" }, body: "printf ok" });
+        for (const part of parts.slice(0, -1)) response.write(part);
+        response.end(parts.at(-1));
     });
     try {
         const transport = new AguiTransport({ aguiUrl: mock.url }, "worker");
@@ -932,32 +944,29 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: a proposal without the matching interrupt outcome returns an exact Problem", async () => {
+test("AguiTransport: an interaction's call without its matching interrupt outcome returns an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
-        res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: JSON.stringify({ op: "EDIT", target: {}, body: "diff" }) }));
-        res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
+        res.write(frame({ type: "TOOL_CALL_START", toolCallId: "int:43", toolCallName: "request_user_input" }));
+        res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "int:43", delta: JSON.stringify({ question: "Proceed?" }) }));
+        res.write(frame({ type: "TOOL_CALL_END", toolCallId: "int:43" }));
         res.end();
     });
     try {
         const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
-        const result = await bt.run("edit it", {}).done;
+        const result = await bt.run("ask", {}).done;
         assert.equal(result.finalStatus, 502);
         assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/interrupt-mismatch");
         assert.deepEqual(seen.problems, [result.result.problem]);
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: malformed proposal arguments return an exact Problem", async () => {
+test("AguiTransport: a proposal interrupt whose projection is malformed returns an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:42", toolCallName: "request_approval" }));
-        res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:42", delta: "{" }));
-        res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
-        res.end();
+        res.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "gate", reason: "tool_call", metadata: { plurnk: { proposal: { op: "EDIT" } } } }] } }));
     });
     try {
         const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
@@ -966,6 +975,7 @@ test("AguiTransport: malformed proposal arguments return an exact Problem", asyn
         const result = await bt.run("edit it", {}).done;
         assert.equal(result.result.problem?.type, "https://problems.plurnk.xyz/client/transport/proposal-invalid");
         assert.deepEqual(seen.problems, [result.result.problem]);
+        assert.deepEqual(seen.proposals, [], "nothing unreadable is presented for review");
     } finally { await mock.close(); }
 });
 
@@ -975,10 +985,8 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
         call += 1;
         res.writeHead(200, { "content-type": "text/event-stream" });
         if (call === 1) {
-            res.write(frame({ type: "TOOL_CALL_START", toolCallId: "prop:575", toolCallName: "request_approval" }));
-            res.write(frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:575", delta: JSON.stringify({ op: "sh", target: null, body: "gh issue view 573" }) }));
-            res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:575" }));
-            res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:575", reason: "tool_call", toolCallId: "prop:575" }] } }));
+            for (const part of gate(wire({ id: 575, op: "sh", tx: { body: "gh issue view 573" } }), "gate-575",
+                { target: { scheme: "sh", authority: null, pathname: "" }, body: "gh issue view 573" })) res.write(part);
         } else {
             res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } } } }));
         }
@@ -995,7 +1003,7 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
         assert.equal(t.finalStatus, 200, "immediate yolo resolution resumes and finishes the loop");
         assert.equal(call, 2, "the proposal segment is followed by one resume segment");
         const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
-        assert.deepEqual(resume.resume, [{ interruptId: "prop:575", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
+        assert.deepEqual(resume.resume, [{ interruptId: "gate-575", status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } }]);
     } finally { await mock.close(); }
 });
 
@@ -1066,8 +1074,8 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
             }
         }
         for (const run of runs) {
-            const input = run.body as { tools: { name: string }[] };
-            assert.ok(input.tools.some(({ name }) => name === "request_approval"));
+            const input = run.body as { tools: unknown };
+            assert.deepEqual(input.tools, clientCapabilities(true).tools, "every loop declares the client's capability set");
         }
     } finally { await mock.close(); }
 });

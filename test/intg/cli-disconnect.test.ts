@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { RunAgentInputSchema } from "@ag-ui/core/schemas";
 import type { LoopUsage } from "../../src/render.ts";
-import { speechOf } from "../agui-parts.ts";
+import { callOf, speechOf } from "../agui-parts.ts";
 
 const usage: LoopUsage = {
     accounting: {
@@ -53,16 +53,21 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
                 tx: { body: { raw: `observed segment ${runs}` } }, rx: { answers: ["agui://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
             })) frame(event);
             if (resumed && runs === 1) {
-                frame({ type: "TOOL_CALL_START", toolCallId: "prop:9", toolCallName: "request_approval" });
-                frame({ type: "TOOL_CALL_ARGS", toolCallId: "prop:9", delta: JSON.stringify({ logEntryId: 9, op: "EDIT", target: {}, body: "diff", attrs: {} }) });
-                frame({ type: "TOOL_CALL_END", toolCallId: "prop:9" });
+                // plurnk-service {§agui-proposal-resolve}: the operation's own call awaiting its decision, and an interrupt naming
+                // it that carries Core's projection.
+                for (const event of callOf({ id: 9, worker_id: 11, loop_seq: 1, turn_seq: 1, sequence: 9, op: "EDIT", origin: "model",
+                    state: "proposed", status_rx: 202, rx: { status: 202 }, tx: { body: "after" } })) frame(event);
                 frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: {
-                    type: "interrupt", interrupts: [{ id: "prop:9", reason: "tool_call", toolCallId: "prop:9" }],
+                    type: "interrupt", interrupts: [{ id: "gate-9", reason: "tool_call", toolCallId: "1/1/9", metadata: { plurnk: { proposal: {
+                        logEntryId: 9, workerId: 11, worker: input.threadId, loopId: 1, turnId: 1, coordinate: "1/1/9", op: "EDIT",
+                        target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {},
+                        owner: `agui://anonymous/threads/${encodeURIComponent(input.threadId)}`, disposition: { decision: "review" },
+                    } } } }],
                 } });
                 response.end();
                 return;
             }
-            if (resumed) assert.equal(input.resume?.[0]?.interruptId, "prop:9");
+            if (resumed) assert.equal(input.resume?.[0]?.interruptId, "gate-9");
             active = response;
             if (failure === "reported-problem") frame({ type: "CUSTOM", name: "plurnk.problem", value: reportedProblem });
             frame({ type: "CUSTOM", name: "plurnk.notice", value: {

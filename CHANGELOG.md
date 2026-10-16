@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The client's observations carry nothing new and no longer send `forwardedProps.plurnk.mode`, which the
+  daemon has retired: a Run that carries no new message, action or resume synchronizes. It needs a daemon
+  that synchronizes such a Run (plurnk/plurnk-service#1141).
 - The TUI restores a worker's history from the sync Run's standard `MESSAGES_SNAPSHOT`, the worker's
   whole conversation, rebuilding every row from the parts that build it live, and no longer reads it
   with `log.read`. `--history-entries` still bounds what an attachment draws (plurnk/plurnk-service#1141).

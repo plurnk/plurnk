@@ -257,10 +257,8 @@ export class AguiTransport implements Transport {
             // {plurnk#108} — a session that observes its delegation asks on every message and sync Run.
             ...(this.#workspace.descendants === true ? { descendants: true } : {}),
             control: true,
-            ...(opts === undefined ? { mode: "sync" } : {
-                ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
-                ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
-            }),
+            ...(opts?.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
+            ...(opts?.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
         // AG-UI interrupt/resume: a stopped-world ends the run as a
@@ -274,6 +272,8 @@ export class AguiTransport implements Transport {
             let runProblem: ProblemDetails | null = null;
             let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }> } = { prompt };
             let fp = forwardedProps;
+            // plurnk-service {§agui-run-input}: a Run that carries nothing new synchronizes.
+            let observing = prompt === undefined;
             for (;;) {
                 let pausedProp: number | null = null;
                 let pausedInteraction: number | null = null;
@@ -291,11 +291,9 @@ export class AguiTransport implements Transport {
                         ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
-                    const synchronized = fp?.mode === "sync"
-                        ? this.#synchronize(events, observation, ready.resolve)
-                        : events;
+                    const synchronized = observing ? this.#synchronize(events, observation, ready.resolve) : events;
                     for await (const e of synchronized) {
-                        if (fp?.mode !== "sync") ready.resolve();
+                        if (!observing) ready.resolve();
                         const ended = this.#ended(e);
                         if (ended.terminated !== null) terminated = ended.terminated;
                         if (ended.problem !== null) runProblem = ended.problem;
@@ -416,7 +414,8 @@ export class AguiTransport implements Transport {
                     if (!completed.aborted) await new Promise<void>((resolve) => completed.addEventListener("abort", () => resolve(), { once: true }));
                     ac.signal.throwIfAborted();
                     next = {};
-                    fp = { ...forwardedProps, mode: "sync" };
+                    fp = forwardedProps;
+                    observing = true;
                     continue;
                 }
                 if (proposalResolution === null && interactionResolution === null) throw new Error("paused run ended without a resolution channel");
@@ -429,6 +428,7 @@ export class AguiTransport implements Transport {
                         ? { resume: [{ interruptId, status: "cancelled" }] }
                         : { resume: [{ interruptId, status: "resolved", payload: a }] };
                     fp = undefined;
+                    observing = false;
                     continue;
                 }
                 if (proposalResolution === null) throw new Error("proposal ended without a resolution channel");
@@ -438,6 +438,7 @@ export class AguiTransport implements Transport {
                 if (r === undefined) throw new Error("proposal ended without a resolution");
                 next = { resume: [proposalResume(interruptId, r)] };
                 fp = undefined;
+                observing = false;
             }
         })().then((terminal) => {
             ready.resolve();

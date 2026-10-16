@@ -57,7 +57,8 @@ const fixture = async (t: TestContext) => {
             }
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId }));
-            if (input.forwardedProps?.plurnk?.mode === "sync") {
+            // plurnk-service {§agui-run-input}: a Run that carries nothing new observes.
+            if (input.messages.length === 0 && input.resume === undefined) {
                 response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: entries.flatMap((entry) => messagesOf(entry)) }));
             } else {
                 active.resolve({ response, threadId: input.threadId, runId: input.runId });

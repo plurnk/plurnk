@@ -76,6 +76,9 @@ const wire = (over: WireRow): WireRow => ({
 const live = (row: WireRow): Array<Record<string, unknown>> => partsOf(wholeRow(row)!) as unknown as Array<Record<string, unknown>>;
 // The snapshot a sync Run sends for those rows: the same parts, as messages (plurnk-service `{§agui-snapshot}`).
 const snapshotOf = (...rows: WireRow[]): Record<string, unknown> => ({ type: "MESSAGES_SNAPSHOT", messages: rows.flatMap((row) => messagesOf(wholeRow(row)!)) });
+type RunInput = { threadId: string; messages: unknown[]; resume?: unknown; forwardedProps: { plurnk: { workspace?: string; action?: { kind: string } } } };
+// plurnk-service `{§agui-run-input}`: a Run that carries no new message, action or resume observes.
+const observes = (input: RunInput): boolean => input.messages.length === 0 && input.forwardedProps.plurnk.action === undefined && input.resume === undefined;
 // The rows a handler observed, by durable identity and operation.
 const drawn = (entries: readonly unknown[]): string[] => (entries as LogEntryWire[]).map(({ id, op }) => `${id} ${op}`);
 
@@ -556,14 +559,14 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
     const early = wire({ id: 8, op: "SEND", tx: { body: { raw: "committed before attachment", json: null } } });
     const late = wire({ id: 9, op: "NOTE", tx: { body: null } });
     const mock = await bootMock((_request, response) => {
-        const input = mock.captured.at(-1)!.body as { messages: unknown[]; threadId: string; forwardedProps: { plurnk: { workspace: string; mode?: string; action?: object } } };
+        const input = mock.captured.at(-1)!.body as RunInput;
         assert.equal(input.threadId, "alice");
         assert.equal(input.forwardedProps.plurnk.workspace, "world");
         assert.deepEqual(input.messages, [], "observation does not resubmit a prompt");
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(frame({ type: "RUN_STARTED" }));
         response.write(frame(snapshot));
-        assert.equal(input.forwardedProps.plurnk.mode, "sync");
+        assert.deepEqual([input.messages, input.forwardedProps.plurnk.action, input.resume], [[], undefined, undefined], "an observation carries nothing new");
         for (const event of live(late)) response.write(frame(event));
         response.write(frame(snapshotOf(early, late)));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
@@ -586,10 +589,10 @@ test("{§cli-active-command-admission}: a client operation's row hides nothing t
     const unseen = wire({ id: 8, op: "SEND", tx: { body: { raw: "successor finished before attachment", json: null } } });
     const human = wire({ id: 10, op: "sh", origin: "client", tx: { body: "independent client operation" } });
     const mock = await bootMock((_request, response) => {
-        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string; action?: { kind: string } } } };
+        const input = mock.captured.at(-1)!.body as RunInput;
         const action = input.forwardedProps.plurnk.action;
         response.writeHead(200, { "content-type": "text/event-stream" });
-        if (action === undefined && input.forwardedProps.plurnk.mode === undefined) {
+        if (action === undefined && !observes(input)) {
             for (const event of events) {
                 if (String(event.type).startsWith("TOOL_CALL")) continue;
                 if (event.type === "RUN_FINISHED") for (const part of live(previous)) response.write(frame(part));
@@ -599,7 +602,7 @@ test("{§cli-active-command-admission}: a client operation's row hides nothing t
             return;
         }
         response.write(frame({ type: "RUN_STARTED" }));
-        if (input.forwardedProps.plurnk.mode === "sync") response.write(frame(snapshotOf(previous, unseen)));
+        if (observes(input)) response.write(frame(snapshotOf(previous, unseen)));
         if (action?.kind === "op.exec") {
             response.write(frame(ambientOf(wholeRow(human)!) as unknown as Record<string, unknown>));
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: { status: 200 } } }));
@@ -724,9 +727,9 @@ test("{§cli-worker-history}: a recreated worker resets replay identities", asyn
     snapshot.snapshot.plurnk.status.loopId = null;
     const row = wire({ id: 9, op: "NOTE", tx: { body: "retained body" } });
     const mock = await bootMock((_request, response) => {
-        const input = mock.captured.at(-1)!.body as { forwardedProps: { plurnk: { mode?: string } } };
+        const input = mock.captured.at(-1)!.body as RunInput;
         response.writeHead(200, { "content-type": "text/event-stream" });
-        if (input.forwardedProps.plurnk.mode === "sync") {
+        if (observes(input)) {
             response.write(frame(snapshot));
             response.write(frame(snapshotOf(row)));
         } else {

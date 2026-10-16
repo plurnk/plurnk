@@ -80,8 +80,9 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         const body = await json(request);
         const properties = body.forwardedProps?.plurnk;
         const injecting = properties?.action?.kind === "loop.inject";
-        const originating = !properties?.action && !properties?.mode && body.messages?.length > 0;
-        if (properties?.mode === "sync") {
+        const originating = !properties?.action && body.messages?.length > 0;
+        // plurnk-service {§agui-run-input}: a Run that carries nothing new observes.
+        if (!properties?.action && body.resume === undefined && !(body.messages?.length > 0)) {
             observers += 1;
             for (const waiter of observerWaiters) if (observers >= waiter.count) waiter.resolve();
         }
@@ -106,7 +107,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
             // observer calls the real public sync path without adding a model request.
             const observed = await fetch(daemon.url, { method: "POST", headers: { "content-type": "application/json", ...authorization() }, body: JSON.stringify({
                 ...body, runId: "fixture-observer", messages: [],
-                forwardedProps: { plurnk: { workspace: properties.workspace, mode: "sync" } },
+                forwardedProps: { plurnk: { workspace: properties.workspace } },
             }) });
             assert.match(await observed.text(), /RUN_FINISHED/);
             admitted.resolve();

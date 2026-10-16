@@ -84,19 +84,17 @@ test("runViaAgui: yields AG-UI events in order, reassembling frames split across
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: forwardedProps.plurnk ALWAYS carries the workspace (world) + any options", async () => {
+test("runViaAgui: forwardedProps.plurnk carries the selected workspace and its options", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         const seen: string[] = [];
         for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
         assert.deepEqual(seen, ["RUN_FINISHED"]);
-        // The workspace is REQUIRED and rides verbatim — the client sends its world, never
-        // relying on the module to forge one from the threadId.
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "t", projectRoot: "/x" } });
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: even with NO options, the workspace (world) still rides — it is not optional", async () => {
+test("runViaAgui: the current client defaults its workspace selection to the thread name", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "solo", prompt: "hi" })) void _e;
@@ -171,11 +169,11 @@ test("actionViaAgui: a verb rides its own run and returns its result verbatim", 
         res.end();
     });
     try {
-        const out = await actionViaAgui<{ workspaces: Array<{ id: number }> }>({ aguiUrl: mock.url }, { threadId: "t", workspace: "world", kind: "workspace.list" });
+        const out = await actionViaAgui<{ workspaces: Array<{ id: number }> }>({ aguiUrl: mock.url }, { threadId: "t", workspace: "workspace", kind: "workspace.list" });
         assert.equal(out.workspaces[0].id, 1);
         const sent = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string; action: { kind: string } } } };
         assert.equal(sent.threadId, "t", "the thread continues to name the worker");
-        assert.equal(sent.forwardedProps.plurnk.workspace, "world", "a split worker action retains its workspace world");
+        assert.equal(sent.forwardedProps.plurnk.workspace, "workspace", "a worker action retains its workspace selection");
         assert.equal(sent.forwardedProps.plurnk.action.kind, "workspace.list", "the action rides forwardedProps.plurnk.action");
     } finally { await mock.close(); }
 });
@@ -189,7 +187,7 @@ test("[§cli-workspaces-and-workers] actionViaAgui carries workspace options bes
     try {
         await actionViaAgui({ aguiUrl: mock.url }, {
             threadId: "worker",
-            workspace: "world",
+            workspace: "workspace",
             workspaceOptions: { projectRoot: "/repo", settings: { filesItems: 16 } },
             kind: "worker.model.get",
         });
@@ -255,7 +253,7 @@ test("[§cli-workspaces-and-workers] runViaAgui: an explicit workspace rides wit
         for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
         const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
         assert.equal(body.threadId, "chat-2", "the thread names the worker");
-        assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the world — independently");
+        assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the workspace — independently");
     } finally { await mock.close(); }
 });
 
@@ -323,7 +321,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgu
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] a split worker's JSON record retains the workspace world", async () => {
+test("[§cli-workspaces-and-workers] a worker's JSON record retains its workspace identity", async () => {
     await using lifetime = new Lifetime();
     const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => sse(res, [
@@ -347,7 +345,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
         await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
             lifetime,
             threadId: "user",
-            workspace: "world",
+            workspace: "workspace",
             yolo: true,
             auto: false,
             json: true,
@@ -357,7 +355,7 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
         const doc = JSON.parse(outs.map(String).find((value) => value.startsWith('{"schemaVersion"')) ?? "{}") as {
             workspace?: { id?: number; name?: string };
         };
-        assert.deepEqual(doc.workspace, { id: 7, name: "world" });
+        assert.deepEqual(doc.workspace, { id: 7, name: "workspace" });
     } finally {
         (process.stdout as unknown as { write: typeof origWrite }).write = origWrite;
         await mock.close();

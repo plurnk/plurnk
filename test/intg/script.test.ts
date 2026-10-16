@@ -71,7 +71,7 @@ test("[§cli-script-binding] built scripts bind their workspace, worker, and set
     for (const root of [directory, ""]) {
         await t.test(root === "" ? "explicit headless workspace" : "explicit project workspace", async () => {
             requests.length = 0;
-            const result = await run(url, directory, ["--workspace", "world", "--worker", "actor", "--project-root", root, ...flags]);
+            const result = await run(url, directory, ["--workspace", "workspace", "--worker", "actor", "--project-root", root, ...flags]);
             assert.equal(result.stderr, "");
             assert.equal(JSON.parse(result.stdout).exitCode, 0);
             assert.equal(requests.length, 2);
@@ -80,15 +80,15 @@ test("[§cli-script-binding] built scripts bind their workspace, worker, and set
             assert.equal(lookup.forwardedProps?.plurnk?.projectRoot, undefined, "root discovery imposes no creation default");
             for (const input of bound) {
                 assert.equal(input.threadId, "actor");
-                assert.equal(input.forwardedProps?.plurnk?.workspace, "world");
+                assert.equal(input.forwardedProps?.plurnk?.workspace, "workspace");
             }
             assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, root === "" ? null : root);
             assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
             assert.deepEqual(bound[0].forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
         });
     }
-    // {§workspace-name} — the daemon names an unnamed world after the folder the launch designates.
-    await t.test("an unnamed invocation designates its directory and binds the world the daemon names", async () => {
+    // {§workspace-name} — the daemon names an unnamed workspace after the folder the launch designates.
+    await t.test("an unnamed invocation designates its directory and binds the workspace the daemon names", async () => {
         for (let attempt = 0; attempt < 2; attempt += 1) {
             requests.length = 0;
             const result = await run(url, directory, [...flags]);
@@ -96,7 +96,7 @@ test("[§cli-script-binding] built scripts bind their workspace, worker, and set
             assert.equal(requests.length, 3);
             const [create, lookup, ...bound] = requests;
             assert.deepEqual(create.forwardedProps?.plurnk?.action, { kind: "workspace.create", projectRoot: directory, settings });
-            assert.equal(lookup.forwardedProps?.plurnk?.action?.kind, "workspace.list", "the bound world's stored root is read back by name");
+            assert.equal(lookup.forwardedProps?.plurnk?.action?.kind, "workspace.list", "the bound workspace's stored root is read back by name");
             const name = `generated-${attempt + 1}`;
             for (const input of bound) {
                 assert.equal(input.threadId, name);
@@ -126,7 +126,7 @@ test("[§cli-script-binding] the built client mutates only its selected real wor
     t.after(daemon.cleanup);
     await writeFile(join(daemon.workspace, "input.plk"), script);
     const result = await run(daemon.url, daemon.workspace, [
-        "--workspace", "script-world", "--worker", "script-actor", "--no-git",
+        "--workspace", "script-workspace", "--worker", "script-actor", "--no-git",
         "--capabilities", '{"deny":[{"runtime":"sh"}]}',
     ]);
     assert.equal(JSON.parse(result.stdout).exitCode, 0, result.stderr);
@@ -136,10 +136,10 @@ test("[§cli-script-binding] the built client mutates only its selected real wor
         target, { threadId: "inspect", kind: "workspace.list" },
     );
     assert.deepEqual(workspaces.map(({ name, project_root }) => ({ name, project_root })), [
-        { name: "script-world", project_root: daemon.workspace },
+        { name: "script-workspace", project_root: daemon.workspace },
     ], "the worker name never becomes a second workspace");
     const policy = await actionViaAgui<{ workspace: unknown }>(target, {
-        threadId: "script-actor", workspace: "script-world", kind: "workspace.capabilities.get",
+        threadId: "script-actor", workspace: "script-workspace", kind: "workspace.capabilities.get",
     });
     assert.deepEqual(policy.workspace, { deny: [{ runtime: "sh" }] }, "creation policy is durable");
 });

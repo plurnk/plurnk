@@ -323,7 +323,7 @@ export interface VerbContext {
     switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult | undefined>;
     // The bound worker's name (null until a loop or /attach names it).
     getWorker: () => string | null;
-    // Rebind the session's thread to a worker by name, world unchanged
+    // Rebind the session's thread to a worker by name, workspace unchanged
     // ({§cli-workers-topology}); the daemon binds or mints on the next run.
     attachWorker: (name: string) => Promise<void>;
     write: (s: string) => void;
@@ -366,7 +366,7 @@ export interface WorkerPolicy {
 // {§cli-identity-effort} — the one readback of the worker's durable policy: the effort first (a
 // modelless worker takes its default there), then the final route projection, collected whole
 // before any of it is applied. The daemon's routes are the identity, never a setter's echo. A worker
-// that does not exist yet, in a world that may not exist yet either, has no durable policy: the daemon
+// that does not exist yet, in a workspace that may not exist yet either, has no durable policy: the daemon
 // answers `worker-not-found` or `workspace-not-found`, and the worker takes the daemon's defaults when
 // a message or a setting first creates it.
 export const readWorkerPolicy = async (rpc: VerbCaller): Promise<WorkerPolicy> => {
@@ -495,7 +495,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
             return;
         case "workspace": {
-            // New workspace — a fresh world: the transport re-maps its threadId. The
+            // Switch workspace: the transport re-maps its threadId. The
             // name is optional (generated when omitted) and is a mutable handle
             // (/rename retargets it).
             const selected = await ctx.switchWorkspace(rest.length > 0 ? rest : undefined);
@@ -506,8 +506,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             return;
         }
         case "rename": {
-            // workspace.rename — a workspace's name is a mutable handle on the world
-            // (a worker's is not). Mutates the attached workspace in place.
+            // Rename the attached workspace without changing its identity or workers.
             if (rest.length === 0) { write("  usage: /rename <name>\n"); return; }
             const renamed = await rpc.call("workspace.rename", { name: rest }) as WorkspaceResult;
             ctx.renameWorkspace(renamed);
@@ -537,7 +536,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "worker": {
             // New worker — run.fork branches the bound worker, optionally
             // named at instantiation (immutable after). Bind to the fork so the
-            // next prompt speaks there. The workspace (the world) is unchanged.
+            // next prompt speaks there. The workspace is unchanged.
             const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
             await ctx.attachWorker(forked.workerName);
             await refreshWorkerPolicy();
@@ -546,7 +545,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         }
         case "attach": {
             // {§cli-workers-topology} — an existing worker is bound, a new name mints a
-            // new worker on the next run (the `--worker` path); the world stays.
+            // new worker on the next run (the `--worker` path); the workspace stays.
             if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
             const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
             const known = workers.some((worker) => worker.name === rest);

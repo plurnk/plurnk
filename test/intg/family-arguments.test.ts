@@ -20,7 +20,7 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
         const input = RunAgentInputSchema.parse(JSON.parse(body));
         const action = input.forwardedProps?.plurnk?.action;
         assert.ok(action);
-        assert.equal(input.forwardedProps?.plurnk?.workspace, "world");
+        assert.equal(input.forwardedProps?.plurnk?.workspace, "workspace");
         assert.equal(input.threadId, "actor");
         actions.push(action);
         response.writeHead(200, { "content-type": "text/event-stream" });
@@ -72,7 +72,7 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
         await t.test(args.join(" "), async () => {
             actions.length = 0;
             const result = await exec(resolve(import.meta.dirname, "../../bin/plurnk.js"), [
-                "--workspace", "world", "--worker", "actor", "--json", ...args,
+                "--workspace", "workspace", "--worker", "actor", "--json", ...args,
             ], {
                 cwd: directory, timeout: 10_000,
                 env: {

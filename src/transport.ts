@@ -122,10 +122,10 @@ export interface Transport {
     // Switch to (or create) a named workspace by re-mapping the threadId; the daemon
     // creates the workspace on the next run. Returns the workspace handle for the header.
     useWorkspace(name: string | undefined, params: { projectRoot?: string | null }): Promise<{ name: string }>;
-    // Rebind this session's thread to a worker by name, keeping the world:
+    // Rebind this session's thread to a worker by name, keeping the workspace:
     // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
-    useWorker(name: string, world: string): void;
+    useWorker(name: string, workspaceName: string): void;
     // The attached workspace now carries `name` (workspace.rename): later Runs name it, and the thread
     // keeps naming its worker.
     renameWorkspace(name: string): void;
@@ -143,7 +143,7 @@ export interface AguiTransportOpts { workspace?: string; projectRoot?: string | 
 export class AguiTransport implements Transport {
     #target: AguiTarget;
     #threadId: string;
-    #world: string | undefined;   // the workspace name when it differs from the thread (--worker)
+    #workspaceName: string | undefined;   // the workspace name when it differs from the thread (--worker)
     #workspace: AguiTransportOpts;
     #h: RunHandlers | null = null;
     #modelProjection: StreamProjection | null = null;
@@ -157,7 +157,7 @@ export class AguiTransport implements Transport {
     constructor(target: AguiTarget, threadId: string, workspace: AguiTransportOpts = {}) {
         this.#target = target;
         this.#threadId = threadId;
-        this.#world = workspace.workspace;
+        this.#workspaceName = workspace.workspace;
         this.#workspace = workspace;
     }
 
@@ -187,7 +187,7 @@ export class AguiTransport implements Transport {
         let sawResult = false;
         for await (const e of runViaAgui(this.#target, {
             threadId: this.#threadId,
-            workspace: this.#world,
+            workspace: this.#workspaceName,
             messages: [],
             forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } },
             capabilities: clientCapabilities(this.#workspace.auto !== true),
@@ -242,7 +242,7 @@ export class AguiTransport implements Transport {
     observe(opts?: ObserveOpts): ObservationHandle { return this.#run(undefined, undefined, opts); }
 
     #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
-        const binding = { threadId: this.#threadId, workspace: this.#world };
+        const binding = { threadId: this.#threadId, workspace: this.#workspaceName };
         const ac = this.#controller();
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
         this.#modelProjection = projection;
@@ -446,7 +446,7 @@ export class AguiTransport implements Transport {
             ready.resolve();
             return terminal;
         }).catch((cause: unknown): TerminatedInfo => {
-            // plurnk-service {§agui-action-binding}: the binding stands when its worker, or its world, does not
+            // plurnk-service {§agui-action-binding}: the binding stands when its worker, or its workspace, does not
             // exist yet; only the observation fails.
             if (prompt === undefined && isAbsentWorker(cause)) ready.resolve();
             else ready.reject(cause);
@@ -537,8 +537,8 @@ export class AguiTransport implements Transport {
         pending.settle(payload);
     }
     async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<{ name: string }> {
-        // Re-map to a fresh WORLD: the thread and the workspace move together (a /workspace
-        // switch is a new world, where the TUI then names its worker; a split thread comes from
+        // Re-map to a fresh WORKSPACE: the thread and the workspace move together (a /workspace
+        // switch is a new workspace, where the TUI then names its worker; a split thread comes from
         // --worker at invocation, not from this verb). Lazy-created on the next run.
         const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
         this.#workspace = {
@@ -546,17 +546,17 @@ export class AguiTransport implements Transport {
             ...(params.projectRoot === undefined ? {} : { projectRoot: params.projectRoot }),
         };
         this.#threadId = threadId;
-        this.#world = undefined;   // thread == world again
+        this.#workspaceName = undefined;   // thread == workspaceName again
         this.#seenRows.clear();
         this.#lastLoopId = null;
         return { name: threadId };
     }
     renameWorkspace(name: string): void {
-        this.#world = name;
+        this.#workspaceName = name;
     }
-    useWorker(name: string, world: string): void {
+    useWorker(name: string, workspaceName: string): void {
         this.#threadId = name;
-        this.#world = world;
+        this.#workspaceName = workspaceName;
         this.#seenRows.clear();
         this.#lastLoopId = null;
     }

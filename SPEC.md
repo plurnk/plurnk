@@ -962,8 +962,9 @@ Markdown pass:
   an ordinary row carrying the child's terminal status and Problem title; it takes no mark
   ({§cli-workers-topology}).
 - An observed descendant's own row (the TUI asks the daemon to observe its delegation,
-  `forwardedProps.plurnk.descendants`; each descendant arrives introduced once by
-  `plurnk.descendant` with its name and generation) renders one step in per generation, two
+  `forwardedProps.plurnk.descendants`; each descendant arrives introduced with its name and
+  generation, by its subagent's `SUBAGENT_STARTED` or, outside any subagent, by
+  `plurnk.descendant`) renders one step in per generation, two
   columns each, led by `🐜 <name>` in dim, its body previewed beneath, and its execution's
   conclusion and output peeks stepped in the same way. It never drives the turn presentation,
   the status line's activity, or the response area, and an observed

@@ -71,6 +71,17 @@ export interface RunHandlers {
 }
 
 export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void }
+
+// A subagent's worker as its start names it, or null for a start that names none.
+const descendantOf = (metadata: unknown): Descendant | null => {
+    const plurnk = (metadata as { plurnk?: unknown } | undefined)?.plurnk;
+    if (plurnk === undefined) return null;
+    const { workerId, name, parentWorkerId, depth } = (plurnk ?? {}) as Partial<Descendant>;
+    if (!Number.isSafeInteger(workerId) || typeof name !== "string" || !Number.isSafeInteger(parentWorkerId) || !Number.isSafeInteger(depth)) {
+        throw new ProblemError(clientTransportResultInvalid("A subagent's start does not name its worker as { workerId, name, parentWorkerId, depth }."));
+    }
+    return { workerId: workerId!, name, parentWorkerId: parentWorkerId!, depth: depth! };
+};
 export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void }
 export interface WorkerHistory {
     entries: LogEntryWire[];
@@ -633,6 +644,12 @@ export class AguiTransport implements Transport {
         }
         // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
         for (const row of projection.rows.consume(e)) this.#row(row, projection === this.#modelProjection);
+        // {§cli-workers-topology} A subagent's start introduces its worker (plurnk-service `{§agui-delegation-observation}`).
+        if (e.type === "SUBAGENT_STARTED") {
+            const descendant = descendantOf(e.metadata);
+            if (descendant !== null) this.#h?.onDescendant?.(descendant);
+            return;
+        }
         if (e.type !== "CUSTOM") return;
         const name = (e as { name?: string }).name;
         const value = (e as { value?: unknown }).value;

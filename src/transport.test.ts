@@ -356,14 +356,14 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
     } finally { await mock.close(); }
 });
 
-test("{plurnk#108} AguiTransport: a session that observes its delegation asks for descendants on every run and un-projects plurnk.descendant", async () => {
+test("{plurnk#108} AguiTransport: a session that observes its delegation asks for descendants on every run and learns each one's worker", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.descendant", value: { workerId: 20, name: "child", parentWorkerId: 10, depth: 1 } }));
-        // The daemon presents a delegation a call opened as a subagent run of that call.
+        // The daemon presents a delegation a call opened as a subagent run of that call; its start names the worker.
         const subagentRunId = "ops://child/1";
-        res.write(frame({ type: "SUBAGENT_STARTED", subagentRunId, name: "child", parentToolCallId: "1/1/1" }));
+        res.write(frame({ type: "SUBAGENT_STARTED", subagentRunId, name: "child", parentToolCallId: "1/1/1",
+            metadata: { plurnk: { workerId: 20, name: "child", parentWorkerId: 10, depth: 1 } } }));
         res.write(frame({ type: "STEP_STARTED", stepName: "turn-9", subagentRunId }));
         for (const type of ["REASONING_START", "REASONING_MESSAGE_START", "REASONING_MESSAGE_CONTENT", "REASONING_MESSAGE_END", "REASONING_END"]) {
             res.write(frame({ type, messageId: "model-call-4/request-1/reasoning", subagentRunId,
@@ -372,6 +372,9 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         for (const event of live(wire({ id: 7, op: "READ", worker_id: 20 }))) res.write(frame({ ...event, subagentRunId }));
         res.write(frame({ type: "STEP_FINISHED", stepName: "turn-9", subagentRunId }));
         res.write(frame({ type: "SUBAGENT_FINISHED", subagentRunId, outcome: { type: "success" }, result: { status: 200 } }));
+        // A descendant whose work belongs to no subagent is introduced before its first event.
+        res.write(frame({ type: "CUSTOM", name: "plurnk.descendant", value: { workerId: 30, name: "stray", parentWorkerId: 20, depth: 2 } }));
+        res.write(frame(ambientOf(wholeRow(wire({ id: 8, op: "READ", worker_id: 30 }))!) as unknown as Record<string, unknown>));
         res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
@@ -381,8 +384,9 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         const introduced: unknown[] = [];
         bt.subscribe({ ...h, onDescendant: (descendant) => introduced.push(descendant) });
         await bt.run("delegate", {}).done;
-        assert.deepEqual(introduced, [{ workerId: 20, name: "child", parentWorkerId: 10, depth: 1 }], "the introduction reaches its handler");
-        assert.deepEqual((seen.entries as LogEntryWire[]).map(({ id, op, worker_id }) => [id, op, worker_id]), [[7, "READ", 20]], "the descendant's row still reaches onEntry");
+        assert.deepEqual(introduced, [{ workerId: 20, name: "child", parentWorkerId: 10, depth: 1 }, { workerId: 30, name: "stray", parentWorkerId: 20, depth: 2 }],
+            "a subagent's start and a stray descendant's introduction both reach the handler");
+        assert.deepEqual((seen.entries as LogEntryWire[]).map(({ id, op, worker_id }) => [id, op, worker_id]), [[7, "READ", 20], [8, "READ", 30]], "each descendant's row reaches onEntry");
         assert.deepEqual(seen.reasoning, [], "{§cli-workers-topology} a subagent's reasoning is not the session worker's");
         assert.equal((mock.captured[0].body as { forwardedProps: { plurnk: { descendants?: boolean } } }).forwardedProps.plurnk.descendants, true, "the run asks for its delegation");
     } finally { await mock.close(); }

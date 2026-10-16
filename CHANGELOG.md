@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The TUI learns a subagent's worker, its name and generation, from the subagent's `SUBAGENT_STARTED`
+  metadata, and a descendant outside any subagent from `plurnk.descendant` (plurnk/plurnk-service#1141).
 - The waterfall, the one-shot trace and the `--json` record draw each row from the standard AG-UI part
   it builds: a tool call and its receipt, speech, an arrival, or a result that answers another row's
   call, each carrying the row's facts as `metadata.plurnk`; a row that builds no part arrives whole as

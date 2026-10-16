@@ -66,7 +66,7 @@ const rowOf = (facts: Facts, tx: unknown, rx: unknown): LogEntryWire => {
     };
 };
 
-// {§agui-call-result} A call that opened an obligation is answered by what discharges it, never by its receipt.
+// plurnk-service `{§agui-call-result}`: a call that opened an obligation is answered by what discharges it, never its receipt.
 const opensObligation = (facts: Facts): boolean => {
     const attrs = objectOf(facts.attrs);
     return (typeof attrs?.stream === "string" || typeof attrs?.message === "string") && facts.status < 400;
@@ -138,7 +138,7 @@ export default class RowAssembler {
                     return [rowOf(facts, this.#statement(call.args), valueOf(e.content))];
                 }
                 this.#unanswered();
-                // {§agui-call-result} What another row delivered for the call: a reply's words, or what was observed.
+                // plurnk-service `{§agui-call-result}`: what another row delivered for the call, a reply's words or what was observed.
                 return [facts.op === "SEND" ? rowOf(facts, { body: bodyOf("SEND", e.content) }, null) : rowOf(facts, null, valueOf(e.content))];
             }
             case "TEXT_MESSAGE_START": {
@@ -175,7 +175,7 @@ export default class RowAssembler {
         }
     }
 
-    // {§agui-call-result} A call that opened no obligation is answered by its receipt before anything else is built.
+    // plurnk-service `{§agui-call-result}`: a call that opened no obligation is answered by its receipt before anything else is built.
     #unanswered(): void {
         for (const [id, call] of this.#calls) {
             if (call.ended) throw new ProblemError(clientTransportResultInvalid(`The call ${id} ended without its receipt.`));

@@ -349,7 +349,17 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.descendant", value: { workerId: 20, name: "child", parentWorkerId: 10, depth: 1 } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 7, op: "READ", worker_id: 20 } }));
+        // The daemon presents a delegation a call opened as a subagent run of that call.
+        const subagentRunId = "ops://child/1";
+        res.write(frame({ type: "SUBAGENT_STARTED", subagentRunId, name: "child", parentToolCallId: "1/1/1" }));
+        res.write(frame({ type: "STEP_STARTED", stepName: "turn-9", subagentRunId }));
+        for (const type of ["REASONING_START", "REASONING_MESSAGE_START", "REASONING_MESSAGE_CONTENT", "REASONING_MESSAGE_END", "REASONING_END"]) {
+            res.write(frame({ type, messageId: "model-call-4/request-1/reasoning", subagentRunId,
+                ...(type === "REASONING_MESSAGE_START" ? { role: "reasoning" } : {}), ...(type === "REASONING_MESSAGE_CONTENT" ? { delta: "the child's thought" } : {}) }));
+        }
+        res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 7, op: "READ", worker_id: 20 }, subagentRunId }));
+        res.write(frame({ type: "STEP_FINISHED", stepName: "turn-9", subagentRunId }));
+        res.write(frame({ type: "SUBAGENT_FINISHED", subagentRunId, outcome: { type: "success" }, result: { status: 200 } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
@@ -362,6 +372,7 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         await bt.run("delegate", {}).done;
         assert.deepEqual(introduced, [{ workerId: 20, name: "child", parentWorkerId: 10, depth: 1 }], "the introduction reaches its handler");
         assert.deepEqual(seen.entries, [{ id: 7, op: "READ", worker_id: 20 }], "the descendant's row still reaches onEntry");
+        assert.deepEqual(seen.reasoning, [], "{§cli-workers-topology} a subagent's reasoning is not the session worker's");
         assert.equal((mock.captured[0].body as { forwardedProps: { plurnk: { descendants?: boolean } } }).forwardedProps.plurnk.descendants, true, "the run asks for its delegation");
     } finally { await mock.close(); }
 });

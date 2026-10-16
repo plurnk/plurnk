@@ -519,7 +519,8 @@ executions, launches and conclusion) renders in the session as lineage rows (§5
 TUI also asks the daemon to observe its delegation (`forwardedProps.plurnk.descendants`,
 plurnk-service `{§agui-delegation-observation}`): every descendant's own rows and executions
 arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
-steps and terminal never do. Navigation between workers is explicit.
+steps and terminal never do, including those the daemon attributes to a subagent run
+(plurnk-service `{§agui-subagents}`). Navigation between workers is explicit.
 `/attach <name>` rebinds the session's thread to that name with the world
 unchanged: an existing worker is bound, and a new name's worker is created as
 the session attaches to it, exactly as with `--worker <name>` at invocation. The verb reports

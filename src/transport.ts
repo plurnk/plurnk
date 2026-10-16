@@ -588,6 +588,9 @@ export class AguiTransport implements Transport {
             if (proposal !== null) this.#pendingProposals.get(Number(proposal[1]))?.release();
             if (interaction !== null) this.#pendingInteractions.get(Number(interaction[1]))?.release();
         }
+        // {§cli-workers-topology} The session renders its delegation from the descendants' rows: a subagent's reasoning is
+        // not this worker's.
+        if (e.type.startsWith("REASONING") && (e as { subagentRunId?: unknown }).subagentRunId !== undefined) return null;
         const reasoning = projection.reasoning.consume(e);
         if (reasoning.handled) {
             if (reasoning.update !== undefined) this.#h?.onReasoning(reasoning.update);

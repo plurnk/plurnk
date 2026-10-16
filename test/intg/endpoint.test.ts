@@ -24,8 +24,7 @@ test("[§cli-invocation] host/port selects /agui; an explicit endpoint remains e
         response.writeHead(200, { "content-type": "text/event-stream" });
         for (const event of [
             { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
-            { type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: { workspaces: [] } } },
-            { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } },
+            { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: { workspaces: [] } } },
         ]) response.write(`data: ${JSON.stringify(event)}\n\n`);
         response.end();
     });

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The client reads a loop's terminal record, a failed Run's Problem and an action's outcome from the Run's
+  end, where the daemon now sends them as standard AG-UI metadata and result, instead of `plurnk.terminated`,
+  `plurnk.problem` and `plurnk.action.result`. It needs a daemon that sends them; a Problem that ends no Run
+  still arrives as `plurnk.problem` (plurnk/plurnk-service#1141).
 - A worker that does not exist yet is shown with the daemon's defaults until a message or a
   setting creates it, and a one-shot call without `--worker` addresses the worker named after its
   workspace: the daemon keeps no workspace default and no longer creates a worker for a read

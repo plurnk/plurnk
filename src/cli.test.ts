@@ -293,7 +293,7 @@ test("buildJsonError embeds the exact RFC 9457 Problem", () => {
         type: "https://problems.plurnk.xyz/client/action/result-missing",
         title: "Result missing",
         status: 502,
-        detail: "Action 'workspace.list' ended without a plurnk.action.result event.",
+        detail: "Action 'workspace.list' ended without its outcome as the Run's result.",
         action: "workspace.list",
     };
     const e = buildJsonError(problem) as { schemaVersion: number; problem: Record<string, unknown> };

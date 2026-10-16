@@ -7,8 +7,9 @@
 // opt-in, so the run is piped through the SDK's own enforceEvents operator — a
 // malformed event fails the stream here instead of rendering as if it were real.
 // This adapter otherwise only preserves the client's async-iterator surface;
-// rendering (waterfall, proposals, gauge) stays local. Plurnk fidelity rides
-// CUSTOM plurnk.* events (especially plurnk.row, the full wire row).
+// rendering (waterfall, proposals, gauge) stays local. Plurnk fidelity rides standard metadata where AG-UI holds
+// the fact (a Run's end, plurnk-service {§agui-plurnk-metadata}) and CUSTOM plurnk.* events elsewhere (especially
+// plurnk.row, the full wire row).
 
 import type { ClientCapabilities } from "./client-capabilities.ts";
 import type { ClientCredential } from "./credential.ts";
@@ -101,11 +102,11 @@ const problemFetch = async (url: string, requestInit: RequestInit): Promise<Resp
 
 export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {
     if (value === null || typeof value !== "object") {
-        throw new ProblemError(clientActionResultInvalid("The event value is not an object."));
+        throw new ProblemError(clientActionResultInvalid("The outcome is not an object."));
     }
     const outcome = value as { kind?: unknown; ok?: unknown; result?: T; problem?: unknown };
     if (typeof outcome.kind !== "string" || outcome.kind.length === 0) {
-        throw new ProblemError(clientActionResultInvalid("The event does not contain a non-empty kind."));
+        throw new ProblemError(clientActionResultInvalid("The outcome does not contain a non-empty kind."));
     }
     if (outcome.ok === true) return { kind: outcome.kind, ok: true, result: outcome.result };
     if (outcome.ok === false) {
@@ -115,7 +116,20 @@ export const actionOutcome = <T>(value: unknown): ActionOutcome<T> => {
             problem: problemDetails(outcome.problem),
         };
     }
-    throw new ProblemError(clientActionResultInvalid("The event does not contain a boolean ok."));
+    throw new ProblemError(clientActionResultInvalid("The outcome does not contain a boolean ok."));
+};
+
+// What a Run's end carries beyond its outcome (plurnk-service {§agui-plurnk-metadata}): the bound loop's terminal record,
+// the exact Problem of a Run that failed without one, and an action Run's outcome as its result. Null for any other event.
+export interface RunEnd { readonly terminal?: unknown; readonly problem?: unknown; readonly result?: unknown }
+export const runEnd = (e: AguiEvent): RunEnd | null => {
+    if (e.type !== "RUN_FINISHED" && e.type !== "RUN_ERROR") return null;
+    const plurnk = (e.metadata as { plurnk?: { terminal?: unknown; problem?: unknown } } | undefined)?.plurnk;
+    return {
+        ...(plurnk?.terminal === undefined ? {} : { terminal: plurnk.terminal }),
+        ...(plurnk?.problem === undefined ? {} : { problem: plurnk.problem }),
+        ...(e.type === "RUN_FINISHED" && e.result !== undefined ? { result: e.result } : {}),
+    };
 };
 
 // Run one turn through the AG-UI endpoint, async-yielding each AG-UI event until
@@ -213,7 +227,7 @@ async function* consumeRun(agent: HttpAgent, input: RunAgentInput, signal?: Abor
 }
 
 // AG-UI+ verb surface (§3): a management action rides its own run —
-// forwardedProps.plurnk.action in, CUSTOM plurnk.action.result out, RUN_FINISHED.
+// forwardedProps.plurnk.action in, its outcome out as RUN_FINISHED's result.
 // The run envelope is the interface.
 export const actionViaAgui = async <T = unknown>(
     target: AguiTarget,
@@ -235,8 +249,10 @@ export const actionViaAgui = async <T = unknown>(
             action: { kind: req.kind, ...(req.params ?? {}) },
         },
     }, signal)) {
-        if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
-            const v = actionOutcome<T>((e as { value?: unknown }).value);
+        const end = runEnd(e);
+        if (end?.problem !== undefined) throw new ProblemError(problemDetails(end.problem));
+        if (end?.result !== undefined) {
+            const v = actionOutcome<T>(end.result);
             if (!v.ok) throw new ProblemError(v.problem);
             return v.result as T;
         }

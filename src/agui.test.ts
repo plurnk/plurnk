@@ -166,8 +166,7 @@ test("runViaAgui: malformed AG-UI events fail at the standard client boundary", 
 test("actionViaAgui: a verb rides its own run and returns its result verbatim", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list", ok: true, result: { workspaces: [{ id: 1, name: "s" }] } } }) + "\n\n");
-        res.write("data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n");
+        res.write("data: " + JSON.stringify({ type: "RUN_FINISHED", threadId: "t", runId: "r", result: { kind: "workspace.list", ok: true, result: { workspaces: [{ id: 1, name: "s" }] } } }) + "\n\n");
         res.end();
     });
     try {
@@ -183,8 +182,7 @@ test("actionViaAgui: a verb rides its own run and returns its result verbatim", 
 test("[§cli-workspaces-and-workers] actionViaAgui carries workspace options beside the action", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write("data: " + JSON.stringify({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.model.get", ok: true, result: { model: null } } }) + "\n\n");
-        res.write("data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n");
+        res.write("data: " + JSON.stringify({ type: "RUN_FINISHED", threadId: "t", runId: "r", result: { kind: "worker.model.get", ok: true, result: { model: null } } }) + "\n\n");
         res.end();
     });
     try {
@@ -213,8 +211,7 @@ test("actionViaAgui: an action failure throws the exact validated Problem", asyn
         retryable: false,
     };
     const mock = await bootMock((_req, res) => sse(res, [
-        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "missing", ok: false, problem } }),
-        frame({ type: "RUN_FINISHED" }),
+        frame({ type: "RUN_FINISHED", result: { kind: "missing", ok: false, problem } }),
     ]));
     try {
         await assert.rejects(
@@ -240,8 +237,7 @@ test("actionViaAgui: a missing action result throws an exact client Problem", as
 
 test("actionViaAgui: a malformed action result throws an exact client Problem", async () => {
     const mock = await bootMock((_req, res) => sse(res, [
-        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "workspace.list" } }),
-        frame({ type: "RUN_FINISHED" }),
+        frame({ type: "RUN_FINISHED", result: { kind: "workspace.list" } }),
     ]));
     try {
         await assert.rejects(
@@ -267,8 +263,7 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
     const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
     const tty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
@@ -297,8 +292,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgu
     const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
     try {
@@ -332,19 +326,14 @@ test("[§cli-workspaces-and-workers] a split worker's JSON record retains the wo
     await using lifetime = new Lifetime();
     const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => sse(res, [
-        frame({
-            type: "CUSTOM",
-            name: "plurnk.terminated",
-            value: {
+        frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: {
                 workspaceId: 7,
                 workerId: 11,
                 loopId: 3,
                 hitMaxTurns: false,
                 turnIds: [1],
                 result: { status: 200 },
-            },
-        }),
-        frame({ type: "RUN_FINISHED" }),
+            } } } }),
     ]));
     const outs: string[] = [];
     const origWrite = process.stdout.write.bind(process.stdout);
@@ -384,8 +373,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
         if (body.forwardedProps?.plurnk?.action?.kind === "loop.cancel") {
             cancelSeen = true;
             res.writeHead(200, { "content-type": "text/event-stream" });
-            res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "loop.cancel", ok: true, result: { cancelled: true } } }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", result: { kind: "loop.cancel", ok: true, result: { cancelled: true } } }));
             res.end();
             // The daemon aborts the drain → the held message Run's stream terminates 499.
             if (holdOpen !== null) holdOpen();
@@ -395,8 +383,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "NOTE" } }));
         holdOpen = () => {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 499, problem: { type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled", title: "Loop cancelled", status: 499, detail: "The loop was cancelled." } } } } } }));
             res.end();
         };
     });

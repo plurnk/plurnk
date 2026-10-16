@@ -30,8 +30,7 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
         const result = action.kind === "workspace.members.add"
             ? { status: 201, family: "members", definitions: (action.files as string[]).map((glob) => ({ alias: glob, origin: "workspace", state: "active", definition: { glob } })) }
             : { status: 201, alias: action.alias, definition: { state: "active" } };
-        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result } });
-        frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
+        frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result } });
         response.end();
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

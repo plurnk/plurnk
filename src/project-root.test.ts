@@ -11,10 +11,9 @@ const workspaceListResponse = (init: RequestInit, workspaces: Record<string, unk
     assert.equal(forwardedProps.plurnk.action.kind, "workspace.list");
     return new Response([
         { type: "RUN_STARTED", threadId, runId },
-        { type: "CUSTOM", name: "plurnk.action.result", value: {
+        { type: "RUN_FINISHED", threadId, runId, result: {
             kind: "workspace.list", ok: true, result: { workspaces },
         } },
-        { type: "RUN_FINISHED", threadId, runId },
     ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
 };
 

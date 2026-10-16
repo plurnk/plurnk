@@ -49,20 +49,12 @@ test("[§cli-script-binding] built scripts bind their workspace, worker, and set
         response.writeHead(200, { "content-type": "text/event-stream" });
         const frame = (value: unknown) => response.write("data: " + JSON.stringify(value) + "\n\n");
         frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
-        if (props?.action?.kind === "workspace.list") {
-            frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
-                kind: "workspace.list", ok: true, result: { workspaces: [] },
-            } });
-        } else if (props?.action?.kind === "workspace.create") {
-            frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
-                kind: "workspace.create", ok: true, result: { id: ++created, name: "generated-" + created },
-            } });
-        } else {
-            frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
-                kind: "op.parse", ok: true, result: { results: [{ status: 201 }] },
-            } });
-        }
-        frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
+        const result = props?.action?.kind === "workspace.list"
+            ? { kind: "workspace.list", ok: true, result: { workspaces: [] } }
+            : props?.action?.kind === "workspace.create"
+                ? { kind: "workspace.create", ok: true, result: { id: ++created, name: "generated-" + created } }
+                : { kind: "op.parse", ok: true, result: { results: [{ status: 201 }] } };
+        frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result });
         response.end();
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

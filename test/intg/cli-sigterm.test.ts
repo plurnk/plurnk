@@ -38,10 +38,9 @@ for (const [resumed, reportedFailure, cancelMode] of [
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined) {
                 if (action.kind === "workspace.list") {
-                    frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: {
+                    frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: {
                         workspaces: [{ name: "world", project_root: directory }],
                     } } });
-                    frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
                     response.end();
                     return;
                 }
@@ -52,17 +51,15 @@ for (const [resumed, reportedFailure, cancelMode] of [
                     cancellations += 1;
                     if (cancelMode === "interrupted") { child.kill(interrupt); return; }
                     if (cancelMode === "refused") {
-                        frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: false, problem: {
+                        frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: false, problem: {
                             type: "https://problems.example.test/cancel-refused", title: "Cancellation refused", status: 409,
                             detail: "Cancellation was refused by the fixture.",
                         } } });
-                        frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
                         response.end();
                         return;
                     }
                 } else assert.equal(action.kind, "worker.model.get");
-                frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: { model: null } } });
-                frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } });
+                frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: { model: null } } });
                 response.end();
                 return;
             }

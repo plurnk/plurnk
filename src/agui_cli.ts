@@ -28,7 +28,7 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./agui.ts";
-import { actionOutcome, entryReadResult, operationResult, problemDetails, type ActionOutcome } from "./agui.ts";
+import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, type ActionOutcome } from "./agui.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, isWorkerGauge, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
@@ -37,8 +37,8 @@ import { withColorOutput } from "./color.ts";
 import type Lifetime from "./lifetime.ts";
 import { signalExitCode } from "./lifetime.ts";
 
-// The plurnk.terminated custom payload: the loop/terminated notification plus the
-// daemon workspaceId.
+// The terminal record a Run's end carries (plurnk-service {§agui-plurnk-metadata}): the loop/terminated
+// notification plus the daemon workspaceId.
 interface TerminatedValue {
     workspaceId: number | null;
     workerId: number;
@@ -122,7 +122,7 @@ const readStream = async (
 // Drive one AG-UI run's event stream. Text mode renders to the sinks
 // (stdout = answer, stderr = trace); json mode stays silent and accumulates the
 // full record (entries/notices/response/terminated/modelWorkerId) for the caller
-// to emit as ONE document. plurnk.terminated is the authoritative outcome (its
+// to emit as ONE document. The Run end's terminal record is the authoritative outcome (its
 // result.status/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live daemon.
 export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
@@ -135,6 +135,14 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     let pendingResume: CliRunResult["pendingResume"] = null;
     let problem: ProblemDetails | null = null;
     let problemReported = false;
+    const reportProblem = (reported: ProblemDetails): void => {
+        problem = reported;
+        finalStatus = reported.status;
+        if (!io.json) {
+            io.err(`${renderDiagnostic(reported)}\n`);
+            problemReported = true;
+        }
+    };
     let sawRunError = false;
     let sawActionResult = false;
     let toolId = "";
@@ -157,13 +165,31 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 threadId = e.threadId;
                 continue;
             }
-            if (e.type === "RUN_ERROR") {
-                sawRunError = true;
-                continue;
-            }
-            if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
-                for (const interrupt of e.outcome.interrupts) {
-                    interrupts.set(interrupt.toolCallId ?? interrupt.id, interrupt.id);
+            // A Run's end carries the bound loop's terminal record, the Problem of a Run that failed without one, or an
+            // action's outcome (plurnk-service {§agui-plurnk-metadata}).
+            const end = runEnd(e);
+            if (end !== null) {
+                if (e.type === "RUN_ERROR") sawRunError = true;
+                if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
+                    for (const interrupt of e.outcome.interrupts) {
+                        interrupts.set(interrupt.toolCallId ?? interrupt.id, interrupt.id);
+                    }
+                }
+                if (end.terminal !== undefined) {
+                    const raw = end.terminal as TerminatedValue;
+                    terminated = { ...raw, result: operationResult(raw.result) };
+                    finalStatus = terminated.result.status;
+                    hitMaxTurns = terminated.hitMaxTurns;
+                    problem = terminated.result.problem ?? problem;
+                    if (!io.json && terminated.result.problem !== undefined && !problemReported) {
+                        io.err(`${renderDiagnostic(terminated.result.problem)}\n`);
+                        problemReported = true;
+                    }
+                }
+                if (end.problem !== undefined) reportProblem(problemDetails(end.problem));
+                if (end.result !== undefined) {
+                    sawActionResult = true;
+                    io.onActionResult?.(actionOutcome(end.result));
                 }
                 continue;
             }
@@ -226,26 +252,9 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 if (isEmission(entry)) continue;
                 io.err(`${formatPlain(entry)}\n`);
                 if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
-            } else if (name === "plurnk.terminated") {
-                const raw = value as TerminatedValue;
-                terminated = { ...raw, result: operationResult(raw.result) };
-                finalStatus = terminated.result.status;
-                hitMaxTurns = terminated.hitMaxTurns;
-                problem = terminated.result.problem ?? problem;
-                if (!io.json && terminated.result.problem !== undefined && !problemReported) {
-                    io.err(`${renderDiagnostic(terminated.result.problem)}\n`);
-                    problemReported = true;
-                }
-            } else if (name === "plurnk.action.result") {
-                sawActionResult = true;
-                io.onActionResult?.(actionOutcome(value));
             } else if (name === "plurnk.problem") {
-                problem = problemDetails(value);
-                finalStatus = problem.status;
-                if (!io.json) {
-                    io.err(`${renderDiagnostic(problem)}\n`);
-                    problemReported = true;
-                }
+                // A Problem that ends no Run, such as an unavailable provider catalog, stays its own event.
+                reportProblem(problemDetails(value));
             } else if (name === "plurnk.notice") {
                 const notice = value as Notice;
                 // (#465) turn_generated carries the turn's settled wire accounting in
@@ -314,7 +323,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
 
 // Wire the live AG-UI endpoint + terminal for one CLI prompt. text: stdout=answer,
 // stderr=trace. json: silent, then ONE buildJsonRecord document on stdout —
-// identical schema in both CLI modes (plurnk.terminated carries workspaceId/loopId/
+// identical schema in both CLI modes (the terminal record carries workspaceId/loopId/
 // turnIds/cost; modelWorkerId derived from the rows).
 export const runCliViaAgui = async (
     target: AguiTarget,

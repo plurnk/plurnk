@@ -52,7 +52,9 @@ const loopUsage = (costUsd: string | null = "0.0042") => ({
     contextCapacity: 65536,
     meta: {},
 });
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: loopUsage(), result: { status: 200 }, ...over } });
+// A Run's end as the daemon sends it: the bound loop's terminal record rides its metadata.
+const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" },
+    metadata: { plurnk: { terminal: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: loopUsage(), result: { status: 200 }, ...over } } } });
 
 async function* stream(events: AguiEvent[]): AsyncGenerator<AguiEvent> { for (const e of events) yield e; }
 // AG-UI+ dialect: a client-owned proposal is a request_approval tool-call triple.
@@ -82,8 +84,7 @@ test("[§cli-one-shot-mode][§cli-output-channels] consumeCliRun: terminal broad
         terminalSend("Jupiter is the largest planet."),
         // The real wire ALWAYS emits terminated before RUN_FINISHED; a stream without
         // it is a dead stream (502) — the fixture matches the protocol.
-        { type: EventType.CUSTOM, name: "plurnk.terminated", value: { workspaceId: 1, loopId: 1, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } },
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" },
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", metadata: { plurnk: { terminal: { workspaceId: 1, loopId: 1, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } },
     ]), io);
     assert.equal(exitCode, 0);
     assert.equal(out.join(""), "Jupiter is the largest planet.\n", "only the answer on stdout");
@@ -101,7 +102,6 @@ test("[§cli-provider-reasoning] consumeCliRun: standard readable reasoning rend
         { type: EventType.REASONING_END, messageId: "1/1/2/SEND/reasoning" },
         terminalSend("Jupiter."),
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "Jupiter.\n");
     assert.deepEqual(err.slice(0, 3), ["💭 compare ", "the evidence", "\n"], "reasoning deltas reach stderr before completion");
@@ -118,7 +118,6 @@ test("[§cli-provider-reasoning] multiline reasoning preserves indentation acros
         { type: EventType.REASONING_MESSAGE_CONTENT, messageId: "reasoning-2", delta: "second\nthird\n" },
         { type: EventType.REASONING_MESSAGE_END, messageId: "reasoning-2" },
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(err.slice(0, 2).join(""), "💭 first\n   second\n   third\n");
 });
@@ -146,14 +145,13 @@ test("[§cli-log-entry-line-format] the AG-UI CLI trace displays a server's tool
             summary: "", wakeAction: "no-op-active-loop",
         } },
         terminalSend("The search returned no results."), terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" },
     ]), io);
     assert.match(err.join(""), /brave \(brave:\/\/\/0c0ffee1\) — Tool reported error: No web results found/);
     assert.equal(out.join(""), "The search returned no results.\n", "diagnostics stay out of the answer channel");
     assert.equal(result.exitCode, 0, "a recovered tool failure does not rewrite the loop's result");
 });
 
-test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERROR cannot encode", async () => {
+test("consumeCliRun: the Run error's Problem preserves the terminal failure that its code and message cannot encode", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/engine/rails/strike-threshold",
         title: "Strike threshold",
@@ -165,8 +163,7 @@ test("consumeCliRun: plurnk.problem preserves the terminal failure that RUN_ERRO
     };
     const { io } = sink({ json: true });
     const result = await consumeCliRun(stream([
-        { type: EventType.CUSTOM, name: "plurnk.problem", value: problem },
-        { type: EventType.RUN_ERROR, message: problem.detail, code: problem.type },
+        { type: EventType.RUN_ERROR, message: problem.detail, code: problem.type, metadata: { plurnk: { problem: problem } } },
     ]), io);
     assert.equal(result.exitCode, 4);
     assert.deepEqual(result.problem, problem);
@@ -241,7 +238,7 @@ test("[§cli-fail-closed-no-review-channel] consumeCliRun: no review channel rej
 
 test("consumeCliRun: no tool-call → no pendingResume (server-owned proposals never reach the wire)", async () => {
     const { io } = sink();
-    const r = await consumeCliRun(stream([terminated(), { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } }]), io);
+    const r = await consumeCliRun(stream([terminated()]), io);
     assert.equal(r.pendingResume, null, "a clean run carries no resume");
 });
 
@@ -267,7 +264,6 @@ test("[§cli-outside-text] consumeCliRun: plurnk.outside is trace on stderr, nev
         outside("Thinking aloud **outside** the fences."),
         terminalSend("Jupiter is the largest planet."),
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "Jupiter is the largest planet.\n", "stdout carries only the delivered answer");
     assert.equal(err.join(""), "Thinking aloud **outside** the fences.\n[200] model SEND\n", "stderr traces the outside text verbatim, then the rows");
@@ -280,7 +276,6 @@ test("[§cli-outside-text] consumeCliRun --json: plurnk.outside is silent and ab
         outside("Thinking aloud outside the fences."),
         terminalSend("Jupiter is the largest planet."),
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(out.join(""), "", "json mode writes nothing during the run");
     assert.equal(err.join(""), "", "json mode traces nothing");
@@ -295,7 +290,6 @@ test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice 
         { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "1", delta: "ignored-generic" },
         { type: EventType.CUSTOM, name: "plurnk.notice", value: { source: "engine", kind: "note", level: "info" } },
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(notices.length, 1, "Notice captured");
     assert.equal(out.join(""), "", "generic TEXT_MESSAGE not rendered by the family client");
@@ -320,7 +314,6 @@ test("consumeCliRun: indexing state is quiet and indexing failures remain diagno
             message: "Search indexing failed: SQLite database is locked",
         } },
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(progress, [{ label: "indexing", percent: 30 }, null]);
     assert.deepEqual(notices, [{
@@ -339,7 +332,6 @@ test("[§cli-status-preparation] snapshots, progress, and clearing stay in statu
         }, workspace: { ...WORKSPACE, preparation } }, budget: {} } },
         { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/workspace/preparation", value: [] }] },
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(preparations, [preparation, []]);
     assert.equal(out.join(""), "");
@@ -362,7 +354,6 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         },
         { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/status/packetCount", value: 3 }] },
         terminated(),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.deepEqual(statuses, [
         { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client", projectLabel: "/projects/client" },
@@ -407,7 +398,7 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
     assert.equal(res.entries.length, 3, "all rows accumulated");
     assert.equal(res.response, "Jupiter.", "terminal broadcast captured");
     assert.equal(res.modelWorkerId, 42, "modelWorkerId derived from the first model row's worker_id");
-    assert.equal(res.terminated?.workspaceId, 512, "workspaceId from plurnk.terminated");
+    assert.equal(res.terminated?.workspaceId, 512, "workspaceId from the terminal record");
     assert.equal(res.terminated?.usage.accounting.costUsd, null, "unknown money stays unknown");
     assert.deepEqual(res.terminated?.usage.accounting.requests[0], {
         provider: "provider:test",
@@ -418,7 +409,7 @@ test("consumeCliRun: json mode stays silent + accumulates the full record", asyn
     }, "the physical request evidence remains intact");
 });
 
-test("consumeCliRun: plurnk.terminated is authoritative for the exit code", async () => {
+test("consumeCliRun: the terminal record is authoritative for the exit code", async () => {
     const { io } = sink();
     const { exitCode } = await consumeCliRun(stream([
         terminated({
@@ -443,7 +434,6 @@ test("consumeCliRun: a child worker's SEND cannot duplicate or replace the run r
         workerRow({ op: "SEND", signal: 200, tx: { body: { raw: "parent answer" } } }, 11),
         workerRow({ op: "SEND", signal: null, tx: { body: { raw: "child cancelled" } } }, 12),
         terminated({ workerId: 11 }),
-        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io);
     assert.equal(result.response, "parent answer");
     assert.equal(out.join(""), "parent answer\n", "a foreign message must not repeat the parent's output");
@@ -537,7 +527,7 @@ test("[§cli-stream-event-and-stream-concluded] a refused preview preserves the 
 });
 
 test("runScript segments: a run with NO parse result must not report success", async () => {
-    // consumeCliRun sees a stream that ends without plurnk.action.result — the
+    // consumeCliRun sees a stream that ends without an action outcome — the
     // caller (runScriptViaAgui) must treat a missing parse as failure, so the
     // sink-level contract here: no onActionResult fired, pendingResume null,
     // and the CALLER-visible marker (parse missing) is testable via the sink.
@@ -567,8 +557,7 @@ test("[§cli-prompt-prefixes] consumeCliRun: rows and stream conclusions reach t
             row({ id: 58, op: "sh", origin: "client", attrs: { stream: "sh:///4d0f8d50" } }),
             { type: EventType.CUSTOM, name: "plurnk.stream", value: { entryId: 52, workerId: 7, target: "sh:///4d0f8d50", channel: "stdout", state: "closed", contentLength: 3 } },
             { type: EventType.CUSTOM, name: "plurnk.stream", value: execConclusion("sh:///4d0f8d50") },
-            { type: EventType.CUSTOM, name: "plurnk.action.result", value: execAdmitted },
-            { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+            { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" }, result: execAdmitted },
         ]), io);
         assert.deepEqual(rows, [58], `json=${json}`);
         assert.deepEqual(concluded, ["sh:///4d0f8d50"], `a channel event is not a conclusion (json=${json})`);

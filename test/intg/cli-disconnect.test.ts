@@ -33,18 +33,17 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             const input = RunAgentInputSchema.parse(JSON.parse(raw));
             response.writeHead(200, { "content-type": "text/event-stream" });
             const frame = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
-            const finish = () => {
-                frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId });
+            const finish = (result?: unknown) => {
+                frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, ...(result === undefined ? {} : { result }) });
                 response.end();
             };
             frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined) {
                 assert.ok(["workspace.list", "worker.model.get"].includes(action.kind), "no cancellation, replay or reconnect is needed to retain received evidence");
-                frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result:
+                finish({ kind: action.kind, ok: true, result:
                     action.kind === "workspace.list" ? { workspaces: [{ name: "world", project_root: directory }] } : { model: null },
-                } });
-                finish();
+                });
                 return;
             }
             runs += 1;
@@ -67,14 +66,15 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             if (resumed) assert.equal(input.resume?.[0]?.interruptId, "prop:9");
             active = response;
             if (failure === "reported-problem") frame({ type: "CUSTOM", name: "plurnk.problem", value: reportedProblem });
-            if (failure === "terminal") frame({ type: "CUSTOM", name: "plurnk.terminated", value: {
-                workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false,
-                turnIds: resumed ? [1, 2] : [1], usage, result: { status: 200 },
-            } });
             frame({ type: "CUSTOM", name: "plurnk.notice", value: {
                 source: "engine:turn", kind: "turn_generated", message: "turn observed",
                 accounting: { inputTokens: 10, outputTokens: 5, costUsd: "0.01" },
             } });
+            if (failure === "terminal") frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" },
+                result: { status: 200 }, metadata: { plurnk: { terminal: {
+                    workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false,
+                    turnIds: resumed ? [1, 2] : [1], usage, result: { status: 200 },
+                } } } });
         });
         server.listen(0, "127.0.0.1");
         await once(server, "listening");

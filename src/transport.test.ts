@@ -1,5 +1,5 @@
 // Unit tests for the transport seam: AguiTransport against a mock AG-UI endpoint
-// (un-projection + done from plurnk.terminated). No live daemon.
+// (un-projection + done from the Run's end). No live daemon.
 
 import { servicePath } from "../test/service-checkout.ts";
 import { test } from "node:test";
@@ -122,7 +122,7 @@ test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle sp
     const kit = await loadConformanceKit();
     const terminalContinuation = kit.lifecycles
         .find(({ name }) => name === "ordinary-run")!
-        .events.filter((event) => event.type === "RUN_FINISHED" || (event.type === "CUSTOM" && (event as { name?: string }).name === "plurnk.terminated"));
+        .events.filter((event) => event.type === "RUN_FINISHED");
 
     for (const specimen of kit.lifecycles) {
         await t.test(specimen.name, async () => {
@@ -263,7 +263,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
     const kit = await loadConformanceKit();
     const ordinary = kit.lifecycles.find(({ name }) => name === "ordinary-run")!.events;
     const snapshot = ordinary.find((event) => event.type === "STATE_SNAPSHOT")!;
-    const terminal = ordinary.filter((event) => event.type === "RUN_FINISHED" || event.name === "plurnk.terminated");
+    const terminal = ordinary.filter((event) => event.type === "RUN_FINISHED");
     const ready = Promise.withResolvers<void>();
     let modelResponse: ServerResponse;
     const mock = await bootMock((_request, response) => {
@@ -276,8 +276,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
         const ownSnapshot = structuredClone(snapshot) as { snapshot: { plurnk: { status: { packetCount: number } } } };
         ownSnapshot.snapshot.plurnk.status.packetCount = 99;
         response.write(frame(ownSnapshot));
-        response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "providers.list", ok: true, result: { aliases: [] } } }));
-        response.end(frame({ type: "RUN_FINISHED" }));
+        response.end(frame({ type: "RUN_FINISHED", result: { kind: "providers.list", ok: true, result: { aliases: [] } } }));
     });
     const transport = new AguiTransport({ aguiUrl: mock.url }, "thread");
     try {
@@ -298,7 +297,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon shapes; done resolves from plurnk.terminated", async () => {
+test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon shapes; done resolves from the Run's end", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TEXT_MESSAGE_CONTENT", messageId: "generic", delta: "generic-ignored" }));
@@ -312,8 +311,7 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
         res.write(frame({ type: "CUSTOM", name: "plurnk.outside", value: { coordinate: "alice-1-2", text: "Prose outside the fences.", tokens: 5 } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.stream", value: { entryId: 2, state: "active" } }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.notice", value: { source: "grammar", kind: "parse_advisory", level: "warn" } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
     try {
@@ -360,8 +358,7 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 7, op: "READ", worker_id: 20 }, subagentRunId }));
         res.write(frame({ type: "STEP_FINISHED", stepName: "turn-9", subagentRunId }));
         res.write(frame({ type: "SUBAGENT_FINISHED", subagentRunId, outcome: { type: "success" }, result: { status: 200 } }));
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { workspaceId: 7, loopId: 3, hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
     try {
@@ -377,7 +374,7 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: plurnk.problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
+test("AguiTransport: the Run error's Problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/engine/rails/max-turns",
         title: "Max turns",
@@ -388,8 +385,7 @@ test("AguiTransport: plurnk.problem supplies the exact terminal status instead o
     };
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.problem", value: problem }));
-        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type }));
+        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type, metadata: { plurnk: { problem: problem } } }));
         res.end();
     });
     try {
@@ -418,7 +414,7 @@ test("AguiTransport: RUN_ERROR without the exact Problem returns a client contra
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: plurnk.terminated.result is the ordinary terminal truth", async () => {
+test("AguiTransport: the terminal record's result is the ordinary terminal truth", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled",
         title: "Loop cancelled",
@@ -428,18 +424,13 @@ test("AguiTransport: plurnk.terminated.result is the ordinary terminal truth", a
     };
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({
-            type: "CUSTOM",
-            name: "plurnk.terminated",
-            value: {
+        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type, metadata: { plurnk: { terminal: {
                 workspaceId: 7,
                 loopId: 3,
                 hitMaxTurns: false,
                 turnIds: [1],
                 result: { status: problem.status, problem },
-            },
-        }));
-        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type }));
+            } } } }));
         res.end();
     });
     try {
@@ -463,8 +454,7 @@ test("AguiTransport.rpc: an action failure throws its exact Problem", async () =
     };
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "missing", ok: false, problem } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", result: { kind: "missing", ok: false, problem } }));
         res.end();
     });
     try {
@@ -495,8 +485,7 @@ test("AguiTransport.rpc: an action stream without a result fails explicitly", as
 test("[§cli-tui-flow] AguiTransport: after a rename, later Runs name the new workspace and keep the bound worker", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.env.list", ok: true, result: {} } }));
-        res.end(frame({ type: "RUN_FINISHED" }));
+        res.end(frame({ type: "RUN_FINISHED", result: { kind: "worker.env.list", ok: true, result: {} } }));
     });
     try {
         const split = new AguiTransport({ aguiUrl: mock.url }, "second", { workspace: "fresh" });
@@ -518,8 +507,7 @@ test("AguiTransport: inject + rpc ride §3 action runs", async () => {
     const mock = await bootMock((req, res) => {
         // An action run answers on its own SSE: result custom + RUN_FINISHED.
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "x", ok: true, result: { status: 100, action: "injected_next_turn", loopId: 7 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", result: { kind: "x", ok: true, result: { status: 100, action: "injected_next_turn", loopId: 7 } } }));
         res.end();
     });
     try {
@@ -561,9 +549,8 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
             response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
         } else {
             assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
-            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true, result: { entries: [late, early] } } }));
         }
-        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "log.read", ok: true, result: { entries: [late, early] } } }));
     });
     const transport = new AguiTransport({ aguiUrl: mock.url }, "alice", { workspace: "world" });
     try {
@@ -589,7 +576,7 @@ test("{§cli-active-command-admission}: client operation rows do not advance the
         if (action === undefined && input.forwardedProps.plurnk.mode === undefined) {
             for (const event of events) {
                 if (event.type === "CUSTOM" && event.name === "plurnk.row") continue;
-                if (event.type === "CUSTOM" && event.name === "plurnk.terminated") {
+                if (event.type === "RUN_FINISHED") {
                     response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: previous }));
                 }
                 response.write(frame(event));
@@ -601,12 +588,13 @@ test("{§cli-active-command-admission}: client operation rows do not advance the
         if (input.forwardedProps.plurnk.mode === "sync") response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
         if (action?.kind === "op.exec") {
             response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: human }));
-            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true, result: { status: 200 } } }));
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: { status: 200 } } }));
         } else if (action?.kind === "log.read") {
-            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: action.kind, ok: true,
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: action.kind, ok: true,
                 result: { entries: [previous, unseen].filter((entry) => entry.id > action.sinceId!) } } }));
+        } else {
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         }
-        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
     const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
     try {
@@ -622,8 +610,7 @@ test("{§cli-active-command-admission}: client operation rows do not advance the
 test("{§cli-active-command-admission}: injection refuses missing admission identity", async () => {
     const mock = await bootMock((_request, response) => {
         response.writeHead(200, { "content-type": "text/event-stream" });
-        response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "loop.inject", ok: true, result: { status: 100 } } }));
-        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "loop.inject", ok: true, result: { status: 100 } } }));
     });
     try {
         const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
@@ -639,8 +626,7 @@ for (const entries of [null, [{ id: null }], Array.from({ length: 1000 }, (_, in
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED" }));
             if (mock.captured.length === 1) response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
-            if (mock.captured.length > 1) response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true, result: { entries } } }));
-            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "log.read", ok: true, result: { entries } } }));
         });
         try {
             const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
@@ -682,9 +668,8 @@ for (const historyLimit of [0, 2]) {
             response.write(frame({ type: "RUN_STARTED" }));
             if (input.forwardedProps.plurnk.action !== undefined) {
                 assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", limit: Math.max(1, historyLimit) });
-                response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "log.read", ok: true,
+                response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "log.read", ok: true,
                     result: { entries: historyLimit === 0 ? [overlap] : [overlap, older] } } }));
-                response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
                 return;
             }
             response.write(frame({ type: "MESSAGES_SNAPSHOT", messages }));
@@ -738,10 +723,12 @@ test("{§cli-worker-history}: a recreated worker resets replay identities and cu
         response.writeHead(200, { "content-type": "text/event-stream" });
         if (input.forwardedProps.plurnk.action !== undefined) {
             assert.deepEqual(input.forwardedProps.plurnk.action, { kind: "log.read", sinceId: 0, limit: 1000 });
-            response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
+            response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: {
                 kind: "log.read", ok: true, result: { entries: [row] },
             } }));
-        } else if (input.forwardedProps.plurnk.mode === "sync") {
+            return;
+        }
+        if (input.forwardedProps.plurnk.mode === "sync") {
             response.write(frame(snapshot));
             response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
         } else {
@@ -815,7 +802,7 @@ test("{§cli-daemon-autostart}: disposing the TUI transport releases its open ob
 });
 
 test("AguiTransport.useWorkspace: re-maps the threadId — the next run addresses the new workspace", async () => {
-    const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, result: { status: 200 } } })); res.write(frame({ type: "RUN_FINISHED" })); res.end(); });
+    const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, result: { status: 200 } } } } })); res.end(); });
     try {
         const bt = new AguiTransport({ aguiUrl: mock.url }, "old", { projectRoot: "/old", settings: { client: "plurnk-tui" } });
         const s = await bt.useWorkspace("new-thread", { projectRoot: "/chosen" });
@@ -843,8 +830,7 @@ test("AguiTransport: terminate-resume — a proposal tool-call pauses done; reso
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:42" }));
             res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "proposal-presentation", reason: "tool_call", toolCallId: "prop:42" }] } }));
         } else {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         }
         res.end();
     });
@@ -915,8 +901,7 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
                 },
             }));
         } else {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } } } }));
         }
         res.end();
     });
@@ -994,8 +979,7 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
             res.write(frame({ type: "TOOL_CALL_END", toolCallId: "prop:575" }));
             res.write(frame({ type: "RUN_FINISHED", threadId: "th", runId: "r1", outcome: { type: "interrupt", interrupts: [{ id: "prop:575", reason: "tool_call", toolCallId: "prop:575" }] } }));
         } else {
-            res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } }));
-            res.write(frame({ type: "RUN_FINISHED" }));
+            res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [2], result: { status: 200 } } } } }));
         }
         res.end();
     });
@@ -1024,7 +1008,7 @@ test("AguiTransport: a stream that dies without terminal truth is an ERROR, neve
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
         res.write(frame({ type: "CUSTOM", name: "plurnk.row", value: { id: 1, op: "READ" } }));
-        res.end();   // no plurnk.terminated, no RUN_ERROR — the stream just dies
+        res.end();   // no Run end, no RUN_ERROR — the stream just dies
     });
     try {
         const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
@@ -1037,8 +1021,7 @@ test("AguiTransport: a stream that dies without terminal truth is an ERROR, neve
 test("[§cli-workspaces-and-workers] every request preserves rooted, headless, or unspecified creation options", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: { kind: "worker.model.get", ok: true, result: { model: null } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", result: { kind: "worker.model.get", ok: true, result: { model: null } } }));
         res.end();
     });
     try {
@@ -1065,8 +1048,7 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
     // them structurally absent from RunOpts prevents a second per-loop authority.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } }));
-        res.write(frame({ type: "RUN_FINISHED" }));
+        res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
     try {

@@ -269,7 +269,7 @@ export const clientActionResultInvalid = (reason: string): ProblemDetails =>
     });
 
 export const clientActionResultMissing = (kind: string): ProblemDetails =>
-    clientProblem("action", "result-missing", 502, `Action '${kind}' ended without a plurnk.action.result event.`, {
+    clientProblem("action", "result-missing", 502, `Action '${kind}' ended without its outcome as the Run's result.`, {
         stage: "action-result",
         action: kind,
         retryable: false,

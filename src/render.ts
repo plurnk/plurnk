@@ -425,7 +425,7 @@ export interface LoopUsage {
     // A deliberately narrow projection of the contracts-owned accounting schema.
     // This client renders aggregate input/output and exact USD without becoming a
     // second schema or accounting implementation; JSON output preserves the whole
-    // envelope received from plurnk.terminated.
+    // envelope the Run end's terminal record carries.
     accounting: {
         requests: readonly unknown[];
         usage: {

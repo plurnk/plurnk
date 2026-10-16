@@ -130,7 +130,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
                 buffered = frames.pop()!;
                 for (const frame of frames) {
                     const event = JSON.parse(frame.slice(6));
-                    if (holdTerminal && (event.type === "RUN_FINISHED" || event.name === "plurnk.terminated")) held.push(frame);
+                    if (holdTerminal && event.type === "RUN_FINISHED") held.push(frame);
                     else relayFrame(frame);
                 }
             }

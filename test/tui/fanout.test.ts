@@ -57,10 +57,9 @@ const fixture = async (t: TestContext) => {
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId }));
             if (action?.kind === "log.read") {
-                response.write(frame({ type: "CUSTOM", name: "plurnk.action.result", value: {
+                response.end(frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: {
                     kind: "log.read", ok: true, result: { entries: entries.filter(({ id }) => id > (action.sinceId ?? 0)) },
                 } }));
-                response.end(frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } }));
             } else if (input.forwardedProps?.plurnk?.mode === "sync") {
                 response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
             } else {
@@ -88,13 +87,12 @@ const fixture = async (t: TestContext) => {
             response.write(frame({ type: "CUSTOM", name: "plurnk.row", value: entry }));
         },
         terminal: (status = 499) => {
-            response.write(frame({ type: "CUSTOM", name: "plurnk.terminated", value: {
+            response.end(frame({ type: "RUN_FINISHED", threadId, runId, outcome: { type: "success" }, metadata: { plurnk: { terminal: {
                 loopId: 1, turnIds: [1], hitMaxTurns: false, result: { status, ...(status === 499 ? { problem: {
                     type: "https://example.test/cancelled", title: "Cancelled", status: 499,
                     detail: "The fixture loop was cancelled.", retryable: false,
                 } } : {}) },
-            } }));
-            response.end(frame({ type: "RUN_FINISHED", threadId, runId, outcome: { type: "success" } }));
+            } } } }));
         },
         disconnect: () => { response.end(); },
     };

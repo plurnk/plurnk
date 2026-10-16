@@ -17,7 +17,7 @@ what it guarantees, what its exit codes mean, and what it renders.
 | **workspace** | Daemon-owned shared environment, selected by name through `forwardedProps.plurnk.workspace`; see {§agui-thread-binding}. |
 | **worker** | An actor within a workspace, with its own log. `--worker` selects the worker the thread binds; client operations have their own actor. |
 | **AG-UI Run** | One protocol exchange on a thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
-| **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; `CUSTOM plurnk.terminated` carries the authoritative terminal result. |
+| **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; the Run's end carries the authoritative terminal record as `metadata.plurnk.terminal` (plurnk-service `{§agui-plurnk-metadata}`). |
 | **log/entry notification** | A durable operation row or its update, projected through `CUSTOM plurnk.row`. Rendering follows §5. |
 | **one-shot mode** | `plurnk "prompt"` — one prompt's loop, rendered, then exit. Unix-tool posture. |
 | **TUI mode** | `plurnk` (no args) — interactive REPL; many prompts per workspace. |
@@ -377,7 +377,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
   history. It still receives durable trace, diagnostics, and the summary.
 
 **json mode (`--json` / `PLURNK_CLIENT_JSON`):**
-- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from `CUSTOM plurnk.terminated`: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. `CUSTOM plurnk.terminated` supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal, tags}]}]`, `notices`, `usage`, exit metadata. Each op preserves the daemon's line-marker `scope` as its ordered coordinate array and complete sorted durable log classifications in `tags`. `usage` is preserved verbatim from the terminal record: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. The terminal record supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -419,7 +419,7 @@ Consequence:
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
    Delivered responses go to stdout ({§cli-broadcast-send-rendering}).
-3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. `CUSTOM plurnk.terminated` is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
+3. A proposal arrives as a `prop:*` tool call and terminates run A with a standard AG-UI interrupt outcome (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. The terminal record its Run ends with is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the complete record document on stdout (§2.1); stderr stays silent.
 5. Exit with the appropriate code (§4).
 
@@ -619,7 +619,7 @@ observation. `injected_next_turn` stays on the existing stream;
 uses {§agui-sync} and restores unseen durable rows before releasing live
 rows, with bounded `log.read` and the standard message snapshot, retaining its pre-attachment history cursor; independent
 client-operation rows cannot advance that cursor. A successful observation without a
-new `plurnk.terminated` event adds no synthetic loop summary, usage, or tally.
+new terminal record adds no synthetic loop summary, usage, or tally.
 Malformed or incomplete history fails visibly rather than claiming lossless recovery.
 
 Questions use their own inline controls under {§cli-inline-review}. Input there
@@ -1508,11 +1508,12 @@ envelope:
   useful extensions. Daemon operation failures remain durable log results; the
   client does not recreate them as push events.
 - Incoming Problems remain exact. The client accepts them from
-  `application/problem+json`, `CUSTOM plurnk.problem`, failed
-  `plurnk.action.result` events, and `plurnk.terminated.result.problem`.
-  `plurnk.terminated.result` is the terminal wire truth; the client's
+  `application/problem+json`, a Run end's metadata (the terminal record's `result.problem`, or `problem` for a Run
+  that failed without its loop's end), a failed action outcome in `RUN_FINISHED.result`, and `CUSTOM plurnk.problem`
+  for a Problem that ends no Run (plurnk-service `{§agui-plurnk-metadata}`). The terminal record's `result` is the
+  terminal wire truth; the client's
   `finalStatus` JSON field is its projection of `result.status`, not a daemon
-  field. `RUN_ERROR` is the standard terminal signal, not a source from which
+  field. `RUN_ERROR`'s `code` and `message` are the standard terminal signal, not a source from which
   to reconstruct a Problem.
 - A Notice is a transient, nonterminal observation. It may describe progress or
   a non-fatal degradation, but it cannot determine success, failure, scheduling,

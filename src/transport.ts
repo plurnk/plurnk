@@ -22,11 +22,11 @@ import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import type { Message } from "@ag-ui/core";
 import { createHash } from "node:crypto";
-import { runViaAgui, actionOutcome, operationResult, problemDetails, type AguiEvent, type AguiTarget } from "./agui.ts";
+import { runViaAgui, actionOutcome, operationResult, problemDetails, runEnd, type AguiEvent, type AguiTarget } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
 
-// The terminal outcome projected by plurnk.terminated.
+// The terminal outcome a Run's end carries (plurnk-service {§agui-plurnk-metadata}).
 export interface TerminatedInfo {
     loopId?: number;
     workerId?: number;
@@ -182,11 +182,12 @@ export class AguiTransport implements Transport {
             forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } },
             capabilities: clientCapabilities(this.#workspace.auto !== true),
         }, signal)) {
-            if (e.type === "CUSTOM" && (e as { name?: unknown }).name === "plurnk.action.result") {
-                const v = actionOutcome<T>((e as { value?: unknown }).value);
+            const end = runEnd(e);
+            if (end?.problem !== undefined) problem = problemDetails(end.problem);
+            if (end?.result !== undefined) {
+                const v = actionOutcome<T>(end.result);
                 sawResult = true;
                 if (v.ok) result = v.result; else problem = v.problem;
-                continue;
             }
             this.#dispatch(e, projection);
         }
@@ -286,6 +287,9 @@ export class AguiTransport implements Transport {
                         : events;
                     for await (const e of synchronized) {
                         if (fp?.mode !== "sync") ready.resolve();
+                        const ended = this.#ended(e);
+                        if (ended.terminated !== null) terminated = ended.terminated;
+                        if (ended.problem !== null) runProblem = ended.problem;
                         if (e.type === "RUN_ERROR") {
                             sawRunError = true;
                         } else if (e.type === "RUN_FINISHED") {
@@ -348,11 +352,7 @@ export class AguiTransport implements Transport {
                             proposalResolution = this.#interrupt(this.#pendingProposals, pausedProp, ac.signal, "Proposal");
                             this.#h?.onProposal({ ...a, logEntryId: pausedProp } as unknown as ProposalParams);
                         } else {
-                            const t = this.#dispatch(e, projection);
-                            if (t !== null) terminated = t;
-                            if ((e as { name?: unknown }).name === "plurnk.problem") {
-                                runProblem = problemDetails((e as { value?: unknown }).value);
-                            }
+                            this.#dispatch(e, projection);
                         }
                     }
                 } catch (err) {
@@ -579,9 +579,28 @@ export class AguiTransport implements Transport {
         return createHash("sha256").update(JSON.stringify(fields)).digest("hex");
     }
 
-    // Project one standard reasoning event or un-project one CUSTOM plurnk.*
-    // event into the family handlers; returns terminal truth when present.
-    #dispatch(e: AguiEvent, projection: StreamProjection): TerminatedInfo | null {
+    // A Run's end: the bound loop's terminal record, or the exact Problem of a Run that failed without one
+    // (plurnk-service {§agui-plurnk-metadata}).
+    #ended(e: AguiEvent): { terminated: TerminatedInfo | null; problem: ProblemDetails | null } {
+        const end = runEnd(e);
+        if (end?.terminal !== undefined) {
+            const raw = end.terminal as Omit<TerminatedInfo, "finalStatus"> & { finalStatus?: unknown };
+            const result = operationResult(raw.result);
+            const t: TerminatedInfo = { ...raw, result, finalStatus: result.status };
+            if (t.result.problem !== undefined) this.#h?.onProblem?.(t.result.problem);
+            this.#h?.onTerminated(t);
+            return { terminated: t, problem: null };
+        }
+        if (end?.problem !== undefined) {
+            const problem = problemDetails(end.problem);
+            this.#h?.onProblem?.(problem);
+            return { terminated: null, problem };
+        }
+        return { terminated: null, problem: null };
+    }
+
+    // Project one standard reasoning or state event, or un-project one CUSTOM plurnk.* event, into the family handlers.
+    #dispatch(e: AguiEvent, projection: StreamProjection): void {
         if (e.type === "TOOL_CALL_RESULT") {
             const proposal = /^prop:(\d+)$/u.exec(e.toolCallId);
             const interaction = /^int:(\d+)$/u.exec(e.toolCallId);
@@ -590,11 +609,11 @@ export class AguiTransport implements Transport {
         }
         // {§cli-workers-topology} The session renders its delegation from the descendants' rows: a subagent's reasoning is
         // not this worker's.
-        if (e.type.startsWith("REASONING") && (e as { subagentRunId?: unknown }).subagentRunId !== undefined) return null;
+        if (e.type.startsWith("REASONING") && (e as { subagentRunId?: unknown }).subagentRunId !== undefined) return;
         const reasoning = projection.reasoning.consume(e);
         if (reasoning.handled) {
             if (reasoning.update !== undefined) this.#h?.onReasoning(reasoning.update);
-            return null;
+            return;
         }
         const state = reduceStatusGauge(projection.gauge, e);
         if (state.handled) {
@@ -610,9 +629,9 @@ export class AguiTransport implements Transport {
                 this.#lastLoopId = gauge.plurnk.status.loopId;
                 this.#h?.onStatus?.(structuredClone(gauge));
             }
-            return null;
+            return;
         }
-        if (e.type !== "CUSTOM") return null;
+        if (e.type !== "CUSTOM") return;
         const name = (e as { name?: string }).name;
         const value = (e as { value?: unknown }).value;
         if (name === "plurnk.row") this.#row(value as LogEntryWire, projection === this.#modelProjection);
@@ -620,15 +639,7 @@ export class AguiTransport implements Transport {
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);
         else if (name === "plurnk.outside") this.#h?.onOutside(value as OutsideText);
+        // A Problem that ends no Run, such as an unavailable provider catalog, stays its own event.
         else if (name === "plurnk.problem") this.#h?.onProblem?.(problemDetails(value));
-        else if (name === "plurnk.terminated") {
-            const raw = value as Omit<TerminatedInfo, "finalStatus"> & { finalStatus?: unknown };
-            const result = operationResult(raw.result);
-            const t: TerminatedInfo = { ...raw, result, finalStatus: result.status };
-            if (t.result.problem !== undefined) this.#h?.onProblem?.(t.result.problem);
-            this.#h?.onTerminated(t);
-            return t;
-        }
-        return null;
     }
 }

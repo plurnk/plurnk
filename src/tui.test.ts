@@ -70,7 +70,7 @@ test("[§cli-daemon-autostart] the resume command retains private storage withou
     const database = "/tmp/Matt's files/$HOME/plurnk.db";
     const command = resumeCommand("workspace", "primary", { PLURNK_SERVICE_DB_PATH: database, PLURNK_PORT: "0", PLURNK_AGUI_URL: "" });
     const output = execFileSync("sh", ["-c", `plurnk() { printf '%s\\n' "$PLURNK_SERVICE_DB_PATH" "$PLURNK_PORT" "$PLURNK_AGUI_URL" "$@"; }; ${command}`], { encoding: "utf8" });
-    assert.equal(output, `${database}\n0\n\n--workspace\nworld\n--worker\nprimary\n`);
+    assert.equal(output, `${database}\n0\n\n--workspace\nworkspace\n--worker\nprimary\n`);
     assert.throws(() => resumeCommand("workspace", "primary", { "BAD;name": "value" }), /Invalid environment variable name/);
 });
 

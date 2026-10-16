@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 process.env.NO_COLOR = "1";
 
-const { default: StreamTrace, streamAddress, inlineable, renderInline } = await import("./stream.ts");
+const { default: StreamTrace, streamAddress, inlineable, inlineOutput, renderInline } = await import("./stream.ts");
 type LogEntryWire = Parameters<typeof streamAddress>[0];
 type Concluded = Parameters<InstanceType<typeof StreamTrace>["concluded"]>[0];
 
@@ -154,4 +154,13 @@ test("{plurnk#162} an execution's output previews one row per line, stderr's mar
     const stderr = renderInline("stderr", "z".repeat(20_621), 60);
     assert.equal(stderr, `    ! ${"z".repeat(53)}…`);
     assert.equal(renderInline("stdout", "w".repeat(500), Number.POSITIVE_INFINITY), `    ${"w".repeat(500)}`, "an unbounded width cuts nothing");
+});
+
+test("[§cli-what-is-not-rendered] an execution's inline preview is followed by one blank line, and an execution with no output adds none (#182)", () => {
+    const render = (channel: string, content: string) => `${channel}:${content.trim()}`;
+    assert.deepEqual(inlineOutput({}, render), [], "no channels add no lines");
+    assert.deepEqual(inlineOutput({ stdout: { content: "" }, stderr: { content: "  \n" } }, render), [], "blank output adds no lines");
+    assert.deepEqual(inlineOutput({ stdout: { content: "done\n" } }, render), ["stdout:done", ""]);
+    assert.deepEqual(inlineOutput({ stdout: { content: "out" }, stderr: { content: "err" } }, render), ["stdout:out", "stderr:err", ""],
+        "every channel with output, then one separator");
 });

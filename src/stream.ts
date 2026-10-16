@@ -126,6 +126,19 @@ export const renderInline = (channel: string, content: string, columns: number):
             : previewLine(l, columns))
         .join("\n");
 
+// {§cli-what-is-not-rendered} An execution's inline preview in the waterfall: each channel that has output, then one
+// blank line to separate it from what follows. An execution with no output adds nothing (#182).
+export const inlineOutput = (
+    channels: Readonly<Record<string, { readonly content?: string } | undefined>>,
+    render: (channel: string, content: string) => string,
+): string[] => {
+    const previews = ["stdout", "stderr"].flatMap((name) => {
+        const content = channels[name]?.content;
+        return typeof content === "string" && content.trim().length > 0 ? [render(name, content)] : [];
+    });
+    return previews.length === 0 ? [] : [...previews, ""];
+};
+
 // Write a stream line to stderr. Used by CLI mode; TUI writes inline in
 // the waterfall through the terminal surface.
 export const reportStream = (line: string): void => {

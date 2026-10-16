@@ -34,7 +34,7 @@ import Review from "./Review.ts";
 import { AguiTransport, type ObservationHandle, type Transport } from "./transport.ts";
 import { ProblemError, isAbsentWorker, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
-import StreamTrace, { renderInline } from "./stream.ts";
+import StreamTrace, { inlineOutput, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
 import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
@@ -1073,13 +1073,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 // preview of each channel inlines under its row ({plurnk#104}).
                 peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
                     const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
-                    for (const name of ["stdout", "stderr"]) {
-                        const content = channels[name]?.content;
-                        if (typeof content === "string" && content.trim().length > 0) printAbove(observed === undefined
-                            ? renderInline(name, content, surface.columns || 80)
-                            : indentDescendant(renderInline(name, content, Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth)), observed.depth));
+                    for (const line of inlineOutput(channels, (name, content) => observed === undefined
+                        ? renderInline(name, content, surface.columns || 80)
+                        : indentDescendant(renderInline(name, content, Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth)), observed.depth))) {
+                        printAbove(line);
                     }
-                }).catch(() => { /* peek is best-effort */ }).finally(() => { printAbove(""); }));
+                }).catch(() => { /* peek is best-effort */ }));
             } else {
                 const line = streams.event(payload as StreamEventPayload);
                 if (line !== null) printAbove(line);

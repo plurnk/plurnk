@@ -1101,7 +1101,7 @@ Concluded output is read through `entry.read` using the event's exact target and
 
 | Surface | Output |
 |---|---|
-| TUI, including human `!` | stdout/stderr previews under the operation row (§5.1) |
+| TUI, including human `!` | stdout/stderr previews under the operation row (§5.1), then one blank line; an execution with no output adds no line |
 | One-shot loop or script, text mode | stderr trace inlines only channels ≤160 characters and ≤2 lines; stderr content is marked `!` |
 | One-shot `!` | Complete verbatim stdout/stderr as the command's product ({§cli-prompt-prefixes}); no duplicate preview |
 | `--json` | No preview read or rendering |

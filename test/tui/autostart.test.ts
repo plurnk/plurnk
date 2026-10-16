@@ -24,7 +24,7 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
             PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "",
             PLURNK_CLIENT_DAEMON_TIMEOUT_MS: "15000", PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS: "2000",
         };
-        const tui = spawnTui("http://127.0.0.1:0", ["--workspace", "private-world", "--worker", "primary"], env, ending === "cancel folder" ? root : project);
+        const tui = spawnTui("http://127.0.0.1:0", ["--workspace", "private-workspace", "--worker", "primary"], env, ending === "cancel folder" ? root : project);
         resources.defer(async () => { tui.kill(); await tui.exited; });
         if (ending === "cancel folder") await tui.waitFor(/Choose a project folder/, 25_000);
         else {

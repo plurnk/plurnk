@@ -11,8 +11,8 @@ export const resolveProjectRoot = (raw: string | undefined, cwd = process.cwd())
     return raw;
 };
 
-/** {§workspace-name}: the daemon names the world rooted at its home directory `~`. */
-export const HOME_WORLD = "~";
+/** {§workspace-name}: the daemon names the workspace rooted at its home directory `~`. */
+export const HOME_WORKSPACE = "~";
 
 type ChooseProjectRoot = (home: string) => Promise<string | null | undefined>;
 
@@ -32,7 +32,7 @@ export default class ProjectRoot {
         this.#root = resolveProjectRoot(raw, cwd);
     }
 
-    /** The stored root of the named world, or `undefined` when the daemon holds no world of that name. */
+    /** The stored root of the named workspace, or `undefined` when the daemon holds no workspace of that name. */
     async saved(workspace: string): Promise<string | null | undefined> {
         const { workspaces } = await actionViaAgui<{ workspaces: { name: string; project_root: string | null }[] }>(
             this.#target, { threadId: "bootstrap", kind: "workspace.list" },
@@ -45,7 +45,7 @@ export default class ProjectRoot {
         return existing.project_root;
     }
 
-    /** The root for a named world: its stored root when it exists, else this invocation's creation default. */
+    /** The root for a named workspace: its stored root when it exists, else this invocation's creation default. */
     async resolve(workspace: string | undefined, choose?: ChooseProjectRoot): Promise<string | null | undefined> {
         if (workspace !== undefined) {
             const stored = await this.saved(workspace);
@@ -58,13 +58,13 @@ export default class ProjectRoot {
 
     /**
      * The folder a launch without `--workspace` designates, for the daemon to name and select the
-     * world by ({§workspace-name}): the explicit root, else the launch directory. From home, the
-     * home world is selected when the daemon holds it; otherwise a folder is chosen first.
+     * workspace by ({§workspace-name}): the explicit root, else the launch directory. From home, the
+     * home workspace is selected when the daemon holds it; otherwise a folder is chosen first.
      */
     async designate(choose?: ChooseProjectRoot): Promise<string | null | undefined> {
         if (this.#explicit) return this.#root;
         if (!(await this.#atHome())) return this.#root;
-        if ((await this.saved(HOME_WORLD)) !== undefined) return this.#root;
+        if ((await this.saved(HOME_WORKSPACE)) !== undefined) return this.#root;
         return this.#choose(choose);
     }
 

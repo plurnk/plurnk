@@ -79,7 +79,7 @@ test("[§cli-workers-topology] no workers renders one honest line", () => {
     assert.equal(renderWorkerTopology([], "main"), "  ● main  (new)  ← bound\n");
 });
 
-// {plurnk#58} — the prompt prefix is the place: which world, which loop, which turn, which worker.
+// {plurnk#58} — the prompt prefix is the place: which workspace, which loop, which turn, which worker.
 test("promptPrefix names the place, and elides what the client has not been told", () => {
     assert.equal(promptPrefix("/~plurnkpk", { workspace: "plurnkpk", loopId: 3, turn: 12 }), "[plurnkpk/~plurnkpk(3/12)]", "the loop and turn sit beside the worker they belong to");
     assert.equal(promptPrefix("/main/fork-1/~recheck", { workspace: "w", loopId: 1, turn: 0 }), "[w/main/fork-1/~recheck(1/0)]");

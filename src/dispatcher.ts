@@ -425,15 +425,15 @@ const parseIntFlag = (raw: string | undefined, name: string): number | undefined
 interface SubcommandOpts {
     signal?: AbortSignal;
     json: boolean;
-    /** The launch world ({§cli-workspaces-and-workers}), bound only by a verb that addresses one. */
-    world: () => Promise<string>;
+    /** The launch workspace ({§cli-workspaces-and-workers}), bound only by a verb that addresses one. */
+    workspaceName: () => Promise<string>;
     workerName?: string;
     values: Record<string, string | boolean | string[] | undefined>;
 }
 
 // Dispatch a positional-driven subcommand over the action surface. Returns the
-// exit code the dispatcher should propagate. A verb that reads or changes a world
-// binds the launch world first; the others never bring one into being.
+// exit code the dispatcher should propagate. A verb that reads or changes a workspace
+// binds the launch workspace first; the others never bring one into being.
 const runSubcommand = async (callerFor: (workspace?: string) => Caller, positionals: string[], opts: SubcommandOpts): Promise<number> => {
     const verb = positionals[0];
     const sub = positionals[1];
@@ -491,7 +491,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
     if (isFamily(verb)) {
         const result = await FAMILY_HANDLERS[verb](
             positionals.slice(1),
-            callerFor(await opts.world()),
+            callerFor(await opts.workspaceName()),
             opts.json
                 ? verb === "mcp" && positionals[1] === "oauth" ? (text) => process.stderr.write(text) : () => undefined
                 : (text) => process.stdout.write(text),
@@ -508,7 +508,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         if (positionals.length > 2) {
             throw new ProblemError(clientSubcommandUnknownVerb(`effort ${positionals.slice(1).join(" ")}`));
         }
-        const rpc = callerFor(await opts.world());
+        const rpc = callerFor(await opts.workspaceName());
         const effort = sub === undefined
             ? await readWorkerEffort(rpc)
             : await setWorkerEffort(rpc, sub);
@@ -522,7 +522,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         if (positionals.length > 2) {
             throw new ProblemError(clientSubcommandUnknownVerb(`capabilities ${positionals.slice(1).join(" ")}`));
         }
-        const rpc = callerFor(await opts.world());
+        const rpc = callerFor(await opts.workspaceName());
         const projection = sub === undefined
             ? await rpc.call("workspace.capabilities.get") as Record<string, CapabilityPolicy>
             : await rpc.call("workspace.capabilities.set", {
@@ -538,9 +538,9 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         if (sub !== "read") {
             throw new ProblemError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
         }
-        // The caller's world scopes the action; the module defaults reads to the
+        // The caller's workspace scopes the action; the module defaults reads to the
         // thread's bound worker; --worker pins by name.
-        const rpc = callerFor(await opts.world());
+        const rpc = callerFor(await opts.workspaceName());
         const workerId = await resolveWorkerId(rpc, opts.workerName);
         const filters: LogReadFilters = { ...(workerId === undefined ? {} : { workerId }) };
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
@@ -564,7 +564,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         }
         // The coordinate is worker-relative; the module defaults to the thread's bound
         // worker — --worker pins by name via params, no connection state.
-        const rpc = callerFor(await opts.world());
+        const rpc = callerFor(await opts.workspaceName());
         return await runRead(rpc, coord, { json: opts.json, workerId: await resolveWorkerId(rpc, opts.workerName) });
     }
 
@@ -796,7 +796,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             return dieWith(64, clientRuntimeError(cause));
         }
     })();
-    // {§cli-project-root} — a world without a folder has nothing to be named after: it needs a name.
+    // {§cli-project-root} — a workspace without a folder has nothing to be named after: it needs a name.
     if (configuredWorkspace === undefined && projectRootRaw === "") {
         const problem = clientFlagMissingDependency(
             values["project-root"] === undefined ? "PLURNK_CLIENT_PROJECT_ROOT=" : "--project-root=",
@@ -870,12 +870,12 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         return workspaceOptionsPromise;
     };
 
-    // {§cli-workspaces-and-workers} — the world this invocation binds: the configured name, attached
-    // or created by its first run; otherwise the daemon names and selects the world by the
+    // {§cli-workspaces-and-workers} — the workspace this invocation binds: the configured name, attached
+    // or created by its first run; otherwise the daemon names and selects the workspace by the
     // designated folder ({§workspace-name}) and the invocation binds the name it answers.
-    let worldPromise: Promise<string> | undefined;
-    const world = (): Promise<string> => {
-        worldPromise ??= (async () => {
+    let workspaceNamePromise: Promise<string> | undefined;
+    const workspaceName = (): Promise<string> => {
+        workspaceNamePromise ??= (async () => {
             if (configuredWorkspace !== undefined) return configuredWorkspace;
             const options = await workspaceOptions();
             const bound = await actionViaAgui<{ name: string }>({ aguiUrl, credential }, {
@@ -883,17 +883,17 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 kind: "workspace.create",
                 params: { projectRoot: options.projectRoot, settings: options.settings },
             });
-            // {§cli-project-root} — an existing world keeps its stored root.
+            // {§cli-project-root} — an existing workspace keeps its stored root.
             const stored = await projectRoots.saved(bound.name);
             if (stored !== undefined) projectRoot = stored;
             return bound.name;
         })();
-        return worldPromise;
+        return workspaceNamePromise;
     };
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the worker named after the workspace.
-            const w = await world();
+            const w = await workspaceName();
             const controlWorkspaceOptions = await workspaceOptions();
             const { settings } = controlWorkspaceOptions;
             let code: number;
@@ -1000,7 +1000,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         let transport: AguiTransport | undefined;
         try {
-            const w = await world();
+            const w = await workspaceName();
             const threadId = workerName ?? w;
             const { settings } = await workspaceOptions();
             // Creation options are idempotent on an existing workspace.
@@ -1045,7 +1045,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
 
     // Subcommands + script speak the action surface through a structural Caller bound to the
-    // world a verb addresses; a worldless verb binds nothing.
+    // workspace a verb addresses; a daemon verb binds nothing.
     const target = { aguiUrl, credential };
     const callerFor = (workspace?: string): Caller => ({
         call: (method: string, params?: object) => actionViaAgui<unknown>(target, {
@@ -1089,7 +1089,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 throw new ProblemError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
-            const workspace = await world();
+            const workspace = await workspaceName();
             const exitCode = await runScriptViaAgui(target, text, {
                 threadId: workerName ?? workspace,
                 workspace,
@@ -1104,7 +1104,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(callerFor, positionals, {
-                json, world, workerName, values, signal: lifetime.signal,
+                json, workspaceName, workerName, values, signal: lifetime.signal,
             });
             process.exitCode = exitCode;
             return;

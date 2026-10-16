@@ -145,9 +145,7 @@ export const runWorkspaceWorkers = async (
 
 // ─── plurnk workspace rename ────────────────────────────────────────────
 
-// workspace.rename mutates the ATTACHED workspace's name (a workspace is the world;
-// its name is a mutable handle — unlike a worker's, which is immutable).
-// Resolve <name> by list, attach, rename.
+// Resolve the workspace name, attach by ID, then rename without changing its identity.
 export const runWorkspaceRename = async (
     rpc: Caller,
     workspaceName: string,

@@ -135,14 +135,14 @@ Help, version, completion and local rendering do not acquire a backend.
 
 ### §1.1 Workspaces and workers {§cli-workspaces-and-workers}
 
-Workspaces and workers are daemon-owned. The client only knows their **names** — ids are internals used by the daemon to avoid conflicts and are not exposed via flags or env. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the thread by name, including after a fork.
+Workspaces and workers are daemon-owned. Human selection uses names; daemon-returned IDs identify records and are not exposed through selection flags or environment settings. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the thread by name, including after a fork.
 
-**The name IS the identity.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim as `forwardedProps.plurnk.workspace`; AG-UI owns attach-or-create admission under {§agui-thread-binding}. Without one, the invocation designates a folder ({§cli-project-root}) and asks the daemon for its world with `workspace.create`: the daemon names a world after its folder and selects an existing world of that name ({§workspace-name}), and the invocation binds the name it answers. The client derives no name of its own, so launches designating the same folder against the same daemon/database share a workspace whichever directory they start in. Workspace identity and project root are independent: the folder sent selects a world and never rewrites a saved root. A world without a folder has nothing to be named after, so `--project-root=` without `--workspace` exits 64 with `client/flag/missing-dependency`. The workspace and the worker's `threadId` remain separate wire fields.
+**Names select; IDs identify.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim as `forwardedProps.plurnk.workspace`; AG-UI owns attach-or-create admission under {§agui-thread-binding}. Without one, the invocation designates a folder ({§cli-project-root}) and asks the daemon for its workspace with `workspace.create`: the daemon names a workspace after its folder and selects an existing workspace of that name ({§workspace-name}), and the invocation binds the name it answers. The client derives no name of its own, so launches designating the same folder against the same daemon/database share a workspace whichever directory they start in. Workspace identity and project root are independent: the folder sent selects a workspace and never rewrites a saved root. A workspace without a folder has nothing to be named after, so `--project-root=` without `--workspace` exits 64 with `client/flag/missing-dependency`. The workspace and the worker's `threadId` remain separate wire fields.
 
-**Creation is ATOMIC with the projectRoot.** The client sends its workspace options (projectRoot/settings) on EVERY request, so whichever request causes creation creates the workspace fully formed — there is no window where a workspace exists undressed. A workspace created without a root is headless on purpose and stays headless forever: changing a project root is unimplemented by design (the root is the world's ground).
+**Creation includes projectRoot.** The client sends its workspace options (projectRoot/settings) on every request, so whichever request causes creation supplies them together. A workspace created without a root is folderless; selecting it later does not assign or change its root.
 
 - **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, so they address the worker named after the workspace, which a message creates. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
-- An explicit worker does not require an explicit workspace: it can attach within the folder's world.
+- An explicit worker does not require an explicit workspace: it can attach within the folder's workspace.
 
 CLI flag takes precedence over env when both are set.
 
@@ -304,13 +304,13 @@ client-set policy.
 |---|---|
 | Existing named workspace, regardless of cwd or creation defaults | Stored root; no prompt or rewrite |
 | `--project-root` or `PLURNK_CLIENT_PROJECT_ROOT` | Explicit absolute path; empty string means headless (`null`) and requires `--workspace`. The flag wins. |
-| Neither, cwd differs from home | cwd: a named workspace's creation root, otherwise the folder the daemon names and selects the world by ({§workspace-name}) |
-| Neither, cwd resolves to home, no `--workspace`, the daemon holds the home world `~` | Home: the launch selects that world; no prompt |
+| Neither, cwd differs from home | cwd: a named workspace's creation root, otherwise the folder the daemon names and selects the workspace by ({§workspace-name}) |
+| Neither, cwd resolves to home, no `--workspace`, the daemon holds the home workspace `~` | Home: the launch selects that workspace; no prompt |
 | Neither, cwd resolves to home, otherwise a new workspace, interactive stdin and stdout, not JSON mode | Inline choice: existing project folder with path completion, no folder, or explicit home |
 | Same new workspace, noninteractive or JSON mode | Exit 64 with `client/project-root/required` and explicit-root guidance; no workspace creation or model run |
 
 The same selection precedes startup and `/workspace` creation. Without
-`--workspace`, binding reads the bound world's stored root back by name: a world
+`--workspace`, binding reads the bound workspace's stored root back by name: a workspace
 the daemon selected by folder keeps the root it was created with. A folder choice
 accepts absolute, home-relative and `~/` paths and validates that the directory
 exists; it creates no directory. An explicit choice becomes this invocation's
@@ -521,7 +521,7 @@ plurnk-service `{§agui-delegation-observation}`): every descendant's own rows a
 arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
 steps and terminal never do, including those the daemon attributes to a subagent run
 (plurnk-service `{§agui-subagents}`). Navigation between workers is explicit.
-`/attach <name>` rebinds the session's thread to that name with the world
+`/attach <name>` rebinds the session's thread to that name with the workspace
 unchanged: an existing worker is bound, and a new name's worker is created as
 the session attaches to it, exactly as with `--worker <name>` at invocation. The verb reports
 `(bound)` or `(new)` from the workspace directory, re-reads the worker's durable

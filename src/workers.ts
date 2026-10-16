@@ -26,7 +26,7 @@ const parentIn = (byId: ReadonlyMap<number, WorkerRow>) => (worker: WorkerRow): 
 // The lineage from the tree root to the bound worker. `~` is a display cursor,
 // not a resource alias: `/~main`, `/main/fork-1/~recheck`, or `/~` before binding.
 // {plurnk#58} — `promptPrefix` wraps this as `[workspace/loop/turn:lineage]`, so the place a
-// prompt goes to is one line: which world, which loop, which turn, which worker.
+// prompt goes to is one line: which workspace, which loop, which turn, which worker.
 export const workerPath = (workers: readonly WorkerRow[], bound: string | null): string => {
     const byId = new Map(workers.map((worker) => [worker.id, worker]));
     const parentOf = parentIn(byId);

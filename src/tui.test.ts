@@ -68,10 +68,10 @@ test("[§cli-tui-flow] the resume command preserves workspace and worker as lite
 
 test("[§cli-daemon-autostart] the resume command retains private storage without shell expansion", () => {
     const database = "/tmp/Matt's files/$HOME/plurnk.db";
-    const command = resumeCommand("world", "primary", { PLURNK_SERVICE_DB_PATH: database, PLURNK_PORT: "0", PLURNK_AGUI_URL: "" });
+    const command = resumeCommand("workspace", "primary", { PLURNK_SERVICE_DB_PATH: database, PLURNK_PORT: "0", PLURNK_AGUI_URL: "" });
     const output = execFileSync("sh", ["-c", `plurnk() { printf '%s\\n' "$PLURNK_SERVICE_DB_PATH" "$PLURNK_PORT" "$PLURNK_AGUI_URL" "$@"; }; ${command}`], { encoding: "utf8" });
     assert.equal(output, `${database}\n0\n\n--workspace\nworld\n--worker\nprimary\n`);
-    assert.throws(() => resumeCommand("world", "primary", { "BAD;name": "value" }), /Invalid environment variable name/);
+    assert.throws(() => resumeCommand("workspace", "primary", { "BAD;name": "value" }), /Invalid environment variable name/);
 });
 
 test("[§cli-environment] scoped env completion uses that scope's variable names", async () => {
@@ -158,7 +158,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
     };
 
     await assert.rejects(
-        runTui(transport, { name: "world" }, { lifetime, yolo: false }),
+        runTui(transport, { name: "workspace" }, { lifetime, yolo: false }),
         /model control plane unavailable/,
     );
     // {§cli-identity-effort} — one readback path: effort before the final route projection.
@@ -185,7 +185,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
     };
 
     await assert.rejects(
-        runTui(transport, { name: "world" }, { lifetime, yolo: false }),
+        runTui(transport, { name: "workspace" }, { lifetime, yolo: false }),
         /invalid ModelRoute/,
     );
 });

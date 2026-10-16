@@ -168,9 +168,9 @@ test("buildVersionNotice: service absent → client line only", () => {
     assert.match(n!, /^plurnk client v0\.21\.3 \(update available\)$/);
 });
 
-// ─── resolveWorkerId: a worker is addressable by NAME within its workspace's world ───
+// ─── resolveWorkerId: a worker is addressable by name within its workspace ───
 // Plurnk's machine model (service SPEC §machine-processes): a workspace holds many
-// workers over one world; --worker selects one by name. Fail-hard: an unknown name is a
+// workers over one workspace; --worker selects one by name. Fail-hard: an unknown name is a
 // contract violation, never a fabricated fallback to another worker.
 
 test("resolveWorkerId: undefined name → undefined, and NEVER queries workspace.workers", async () => {

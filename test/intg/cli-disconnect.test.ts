@@ -43,7 +43,7 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             if (action !== undefined) {
                 assert.ok(["workspace.list", "worker.model.get"].includes(action.kind), "no cancellation, replay or reconnect is needed to retain received evidence");
                 finish({ kind: action.kind, ok: true, result:
-                    action.kind === "workspace.list" ? { workspaces: [{ name: "world", project_root: directory }] } : { model: null },
+                    action.kind === "workspace.list" ? { workspaces: [{ name: "workspace", project_root: directory }] } : { model: null },
                 });
                 return;
             }
@@ -90,7 +90,7 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
         assert.ok(address !== null && typeof address !== "string");
         const child = spawn(process.execPath, [
             resolve(import.meta.dirname, "../../bin/plurnk.js"),
-            "--json", "--yolo", "--status-stream", "--workspace", "world", "--worker", "actor", "test prompt",
+            "--json", "--yolo", "--status-stream", "--workspace", "workspace", "--worker", "actor", "test prompt",
         ], {
             cwd: directory,
             env: { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: directory, NO_COLOR: "1", PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}` },

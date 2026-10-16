@@ -40,14 +40,14 @@ for (const [resumed, reportedFailure, cancelMode] of [
             if (action !== undefined) {
                 if (action.kind === "workspace.list") {
                     frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: {
-                        workspaces: [{ name: "world", project_root: directory }],
+                        workspaces: [{ name: "workspace", project_root: directory }],
                     } } });
                     response.end();
                     return;
                 }
                 if (action.kind === "loop.cancel") {
                     assert.equal(input.threadId, "actor");
-                    assert.equal(input.forwardedProps.plurnk.workspace, "world");
+                    assert.equal(input.forwardedProps.plurnk.workspace, "workspace");
                     assert.equal(action.reason, interrupt === "SIGINT" ? "user_sigint" : "user_sigterm");
                     cancellations += 1;
                     if (cancelMode === "interrupted") { child.kill(interrupt); return; }
@@ -102,7 +102,7 @@ for (const [resumed, reportedFailure, cancelMode] of [
         assert.ok(address !== null && typeof address !== "string");
         const child = spawn(process.execPath, [
             resolve(import.meta.dirname, "../../bin/plurnk.js"),
-            "--json", "--yolo", "--status-stream", "--workspace", "world", "--worker", "actor", "test prompt",
+            "--json", "--yolo", "--status-stream", "--workspace", "workspace", "--worker", "actor", "test prompt",
         ], {
             cwd: directory,
             env: { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: directory, NO_COLOR: "1", PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}` },

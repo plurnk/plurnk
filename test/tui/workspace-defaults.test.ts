@@ -70,9 +70,9 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
         });
     }
 
-    // {§workspace-name} — the folder names the world: a redirected root names its own folder, not
-    // the launch directory, and a world without a folder has nothing to be named after.
-    await t.test("a redirected creation root names the world after that folder", async () => {
+    // {§workspace-name} — the folder names the workspace: a redirected root names its own folder, not
+    // the launch directory, and a workspace without a folder has nothing to be named after.
+    await t.test("a redirected creation root names the workspace after that folder", async () => {
         const cwd = join(folder, "redirected");
         await mkdir(cwd);
         const tui = spawnTui(daemon.url, ["--project-root", elsewhere], env, cwd);
@@ -94,7 +94,7 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
         try {
             assert.equal(await tui.exited, 64, tui.output());
             assert.match(stripVTControlCharacters(tui.output()), /--project-root= requires --workspace \(or PLURNK_CLIENT_WORKSPACE\)/);
-            assert.equal((await rows()).length, before, "no world was created");
+            assert.equal((await rows()).length, before, "no workspace was created");
         } finally { tui.kill(); }
     });
 });

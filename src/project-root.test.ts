@@ -62,7 +62,7 @@ test("[§cli-project-root] resumption reads the stored root without accepting it
     await assert.rejects(roots.resolve("missing"), (cause: unknown) => cause instanceof ProblemError && cause.exitCode === 64);
 });
 
-test("[§cli-project-root] a launch designates its folder for the daemon to name the world by; from home it selects the home world only when the daemon holds it", async (t) => {
+test("[§cli-project-root] a launch designates its folder for the daemon to name the workspace by; from home it selects the home workspace only when the daemon holds it", async (t) => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-project-root-"));
     t.after(() => rm(root, { recursive: true, force: true }));
     const home = join(root, "home");
@@ -78,13 +78,13 @@ test("[§cli-project-root] a launch designates its folder for the daemon to name
     await assert.rejects(fromHome.designate(), (cause: unknown) => cause instanceof ProblemError
         && cause.problem.type === "https://problems.plurnk.xyz/client/project-root/required");
     existing = [{ name: "home-choice", project_root: home }];
-    await assert.rejects(fromHome.designate(), ProblemError, "a world rooted at home under another name is not the home world");
+    await assert.rejects(fromHome.designate(), ProblemError, "a workspace rooted at home under another name is not the home workspace");
     assert.equal(await fromHome.designate(async () => project), project, "a choice is the designated folder");
     const again = new ProjectRoot(target, undefined, home, home);
     existing = [{ name: "~", project_root: home }];
-    assert.equal(await again.designate(), home, "the home world exists: the launch designates home and selects it");
+    assert.equal(await again.designate(), home, "the home workspace exists: the launch designates home and selects it");
     existing = [{ name: "~", project_root: null }];
-    assert.equal(await again.designate(), home, "whatever root the home world keeps, the folder designated is home");
+    assert.equal(await again.designate(), home, "whatever root the home workspace keeps, the folder designated is home");
     assert.equal(await again.saved("~"), null);
     assert.equal(await again.saved("absent"), undefined);
 });

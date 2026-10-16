@@ -370,7 +370,7 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
                 settings: { questions: true },
                 control: true,
             },
-        }, "the workspace (world) + options and control attachment ride the first run's forwardedProps");
+        }, "the workspace, options and control attachment ride the first run's forwardedProps");
     } finally { await mock.close(); }
 });
 
@@ -556,13 +556,13 @@ test("AguiTransport: inject + rpc ride §3 action runs", async () => {
         assert.deepEqual((injectRun?.body as { forwardedProps: { plurnk: { action: unknown } } }).forwardedProps.plurnk.action, { kind: "loop.inject", prompt: "steer mid-run" });
         const rpcRun = mock.captured.find((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "providers.list");
         assert.ok(rpcRun !== undefined, "verbs ride action runs");
-        // A worker thread injects into ITS world: the daemon would otherwise fall back to the
-        // thread name and address a world named after the worker (the 2026-09-11 dogfood).
+        // A worker thread injects into ITS workspace: the daemon would otherwise fall back to the
+        // thread name and address a workspace named after the worker (the 2026-09-11 dogfood).
         bt.useWorker("designer", "plurnkpromo");
         await bt.inject("what are you waiting on?");
         const workerInject = mock.captured.filter((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "loop.inject").at(-1);
         assert.equal((workerInject?.body as { threadId: string }).threadId, "designer");
-        assert.equal((workerInject?.body as { forwardedProps: { plurnk: { workspace: string } } }).forwardedProps.plurnk.workspace, "plurnkpromo", "inject names the worker's world beside the thread");
+        assert.equal((workerInject?.body as { forwardedProps: { plurnk: { workspace: string } } }).forwardedProps.plurnk.workspace, "plurnkpromo", "inject names the worker's workspace beside the thread");
     } finally { await mock.close(); }
 });
 
@@ -574,7 +574,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
     const mock = await bootMock((_request, response) => {
         const input = mock.captured.at(-1)!.body as RunInput;
         assert.equal(input.threadId, "alice");
-        assert.equal(input.forwardedProps.plurnk.workspace, "world");
+        assert.equal(input.forwardedProps.plurnk.workspace, "workspace");
         assert.deepEqual(input.messages, [], "observation does not resubmit a prompt");
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(frame({ type: "RUN_STARTED" }));
@@ -584,7 +584,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         response.write(frame(snapshotOf(early, late)));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "alice", { workspace: "world" });
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "alice", { workspace: "workspace" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -623,7 +623,7 @@ test("{§cli-active-command-admission}: a client operation's row hides nothing t
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         }
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -640,7 +640,7 @@ test("{§cli-active-command-admission}: injection refuses missing admission iden
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "loop.inject", ok: true, result: { status: 100 } } }));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
         await assert.rejects(transport.inject("next"), (error: unknown) =>
             error instanceof ProblemError && error.problem.kind === "result-invalid"
                 && String(error.problem.reason).includes("admission disposition"));
@@ -659,7 +659,7 @@ for (const [snapshot, events] of [
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         });
         try {
-            const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+            const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
             const { h, seen } = collectingHandlers();
             transport.subscribe(h);
             await assert.rejects(transport.observe().done, (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
@@ -675,7 +675,7 @@ test("{§cli-active-command-admission}: a dead sync stream retains its original 
         response.end(frame({ type: "RUN_STARTED" }));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
         const result = await transport.observe().done;
         assert.equal(result?.result.problem?.kind, "terminal-missing");
         assert.equal(mock.captured.length, 1);
@@ -699,7 +699,7 @@ for (const historyLimit of [0, 1, 2]) {
                 response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
             });
         });
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
         try {
             const { h, seen } = collectingHandlers();
             const histories: Array<{ entries: unknown[]; attachment: boolean }> = [];
@@ -724,7 +724,7 @@ test("{§cli-worker-history}: successful sync without a message snapshot is a pr
         response.write(frame({ type: "RUN_STARTED" }));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
     try {
         await assert.rejects(transport.observe({ historyLimit: 10 }).done,
             (cause: unknown) => cause instanceof ProblemError && cause.problem.kind === "result-invalid"
@@ -773,7 +773,7 @@ test("[§cli-conformance] run preserves explicitly requested file paths", async 
     });
     try {
         const paths = ["src/main.ts", "docs/use.md"];
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "world");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
         await transport.run("inspect the referenced files", { openPaths: paths }).done;
         const input = mock.captured[0].body as { forwardedProps: { plurnk: { control: boolean; openPaths: unknown } } };
         assert.deepEqual(input.forwardedProps.plurnk.openPaths, paths);

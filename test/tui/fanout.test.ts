@@ -141,7 +141,7 @@ for (const ending of ["turn", "terminal", "disconnect", "quit", "signal"] as con
         else if (ending === "terminal") f.terminal(200);
         else if (ending === "disconnect") f.disconnect();
         else {
-            await f.tui.waitFor(/EDIT file:\/\/receipt-0\.txt/);
+            await f.tui.waitForScreen(/EDIT\s+file:\/\/receipt-0\.txt/);
             if (ending === "signal") f.tui.kill("SIGTERM");
             else f.tui.write("/quit\r");
         }

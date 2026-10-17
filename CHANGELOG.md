@@ -2,96 +2,44 @@
 
 ## Unreleased
 
-- Terminal conversations bind to the daemon-returned workspace ID and worker name. Renaming the
-  workspace no longer changes routing, ownership or interrupt resumes. Both CLI and TUI default to
-  worker `user` through `PLURNK_CLIENT_WORKER`; the separate TUI-only worker setting is removed.
-  Read-only commands select existing workspaces by name or directory without creating them.
-- Restored replies retain their standard AG-UI assistant role, including replies originally addressed
-  through another spelling of the same thread; reopening them no longer renders them as tool rows.
-- A proposal is the standard AG-UI interrupt the daemon ends a Run with, carrying its proposal
-  projection as `metadata.plurnk.proposal` and naming the operation's own call when the Run holds it;
-  the client reviews from the interrupt and resumes it by its id. The gated call draws nothing while it
-  awaits its decision, and its settlement draws the operation once. The client no longer declares a
-  `request_approval` tool and no longer reads `prop:` calls. It needs a daemon that presents gates this
-  way (plurnk/plurnk-service#1141).
-- The client's observations carry nothing new and no longer send `forwardedProps.plurnk.mode`, which the
-  daemon has retired: a Run that carries no new message, action or resume synchronizes. It needs a daemon
-  that synchronizes such a Run (plurnk/plurnk-service#1141).
-- The TUI restores a worker's history from the sync Run's standard `MESSAGES_SNAPSHOT`, the worker's
-  whole conversation, rebuilding every row from the parts that build it live, and no longer reads it
-  with `log.read`. `--history-entries` still bounds what an attachment draws (plurnk/plurnk-service#1141).
-- A statement the daemon's parser refused is named by its verb in the waterfall and the one-shot trace
-  (`READ — Invalid operation syntax: …`), from the attempt the refusal row records, live and in history
-  (plurnk/plurnk-service#1140).
-- The TUI learns a subagent's worker, its name and generation, from the subagent's `SUBAGENT_STARTED`
-  metadata, and a descendant outside any subagent from `plurnk.descendant` (plurnk/plurnk-service#1141).
-- The waterfall, the one-shot trace and the `--json` record draw each row from the standard AG-UI part
-  it builds: a tool call and its receipt, speech, an arrival, or a result that answers another row's
-  call, each carrying the row's facts as `metadata.plurnk`; a row that builds no part arrives whole as
-  `plurnk.ambient`. The client no longer reads `plurnk.row` and needs a daemon that sends those facts.
-  The `--json` record's ops no longer name `tags`, which the daemon never sent (plurnk/plurnk-service#1141).
+### Upgrade
 
-- The client reads a loop's terminal record, a failed Run's Problem and an action's outcome from the Run's
-  end, where the daemon now sends them as standard AG-UI metadata and result, instead of `plurnk.terminated`,
-  `plurnk.problem` and `plurnk.action.result`. It needs a daemon that sends them; a Problem that ends no Run
-  still arrives as `plurnk.problem` (plurnk/plurnk-service#1141).
-- A worker that does not exist yet is shown with the daemon's defaults until a message or a
-  setting creates it, and a one-shot call without `--worker` addresses the worker named after its
-  workspace: the daemon keeps no workspace default and no longer creates a worker for a read
-  (plurnk/plurnk-service#1134).
-- A session creates its worker by attaching to it as owner, and verbs wait for that attachment.
-  Until it attaches, the model shows the route the daemon lists for its standing selection, effort
-  included; once attached, the session reads back the worker's policy. A one-shot call creates its
-  worker with its message (plurnk/plurnk-service#1134).
-- Capability preparation and indexing on the status line are read from the workspace's state
-  (`STATE /plurnk/workspace/preparation` and `/activity`), which every Run bound to the workspace
-  carries; a Run that binds no worker, such as a workspace action, reports no gauge, and a snapshot
-  that carries a worker's status without its budget, or the reverse, is refused as invalid state
-  (plurnk/plurnk-service#1134).
-- After `/rename` the session follows the new name: later commands keep the bound worker instead of
-  reaching a new workspace under the old name (plurnk/plurnk-service#1128).
-- `/look`, typed LOOK fences and the Alt-p/Alt-n target cycler are gone with the daemon's
-  `op.look`: `/look` is an unknown command, and a LOOK fence goes to `op.parse` like any other
-  named fence. A cut preview names only where the rest lives (`… +N lines · log:///…`), and
-  `plurnk read` prints a whole log entry (plurnk/plurnk-service#1133).
-- The client no longer says "conversation": help, usage, the manual and the specification say
-  worker, thread, message Run or sync Run instead, and the warning for a bound name the daemon
-  answers with no history is `client:worker:history_lost` (was `client:conversation:conversation_lost`)
-  (plurnk/plurnk-service#1133).
-- The status line's folder is the daemon's label for it (`projectLabel`), shown as given: a client
-  attached to a daemon on another host spells the folder from that daemon's home, and the client no
-  longer shortens paths with its own (plurnk/plurnk-service#1127).
-- A loop the client attached to, rather than started, runs its status-line clock from when the
-  daemon first ran it (`status.claimedAt`), so reattaching no longer restarts the elapsed time
-  (plurnk/plurnk-service#1126).
-- Tokens and cost on the status line are the daemon's spend for the bound worker: everything it
-  and its descendants have spent since the worker began, refreshed as each turn settles. A client
-  that attaches to a worker shows what the worker has cost so far, and the client adds nothing of
-  its own to that figure (plurnk/plurnk-service#1126).
-- A row is red only when it failed: its status is 400 or above, or its execution concluded
-  unsuccessfully. A turn disposition's informational detail, such as a `WAIT` with nothing in
-  flight (`Nothing is in flight. Continuing.`), renders dim beside a green name instead of red
-  (#181).
-- `plurnk login` signs in to a daemon the client holds no secret for: the browser opens the
-  daemon's authorization endpoint, a same-host operator answers its consent page once, the code
-  comes back through the client's loopback callback (RFC 8252) and is exchanged with PKCE, and the
-  refresh token is kept under `$XDG_STATE_HOME/plurnk/grants.json` (0600), renewed on every later
-  invocation. An interactive invocation with no secret and no grant signs in by itself; a headless
-  one is refused with `client/credential/sign-in-required` naming `plurnk login`. `plurnk logout`
-  revokes the kept grant at the daemon and forgets it (#0).
-- `PLURNK_SECRET` replaces `PLURNK_AGUI_TOKEN`: the operator's client secret, which the client
-  exchanges at the daemon's authorization server for an access token (RFC 9728 discovery,
-  `client_credentials`) and renews when it lapses or is revoked. Unset, the client reads the secret
-  a daemon running as you minted beside its database (`~/.local/share/plurnk/secret`, or beside
-  `PLURNK_SERVICE_DB_PATH`) and reads it again when a restarted daemon refuses the old one, so a
-  fresh install needs no line set; a private backend gets a secret the client mints. A daemon that
-  authenticates nothing is dialed with no credential (#0).
-- Without `--workspace`, the daemon names the workspace after its folder and selects an
-  existing one of that name: the client sends the folder it launches from, or
-  `--project-root`, and binds the name the daemon answers. A redirected root names its own
-  folder, a launch from home selects the home workspace `~` when it exists and asks for a
-  folder otherwise, `--project-root=` requires `--workspace`, and state commands bind the
-  launch workspace only when they address one (#0).
+Upgrade this client and the daemon together to 4.0. Their authentication,
+worker binding and AG-UI projection replace the 3.x wire contract.
+
+- Replace `PLURNK_AGUI_TOKEN` with `PLURNK_SECRET`, or leave it unset for
+  same-user local discovery. The secret is exchanged for short-lived access
+  credentials; it is not sent as a bearer token.
+- `plurnk login` uses browser authorization with PKCE and a loopback callback.
+  `plurnk logout` revokes and forgets the retained grant. Interactive clients
+  can initiate sign-in; unattended clients report the required action.
+- Both CLI and TUI default to worker `user` through `PLURNK_CLIENT_WORKER`.
+  The separate `--tui-worker` / `PLURNK_CLIENT_TUI_WORKER` setting is removed.
+- LOOK, `/look` and the Alt-p/Alt-n target cycler are removed. Use ordinary
+  resource reads; `plurnk read` reads a complete log entry.
+
+### Worker and protocol alignment
+
+- Bind to the daemon-returned workspace ID and worker name. Workspace renames
+  preserve the worker, ownership and pending interrupt identity. Directory-derived
+  names and folder labels come from the daemon; read-only selection creates nothing.
+- Reopening a worker restores its standard AG-UI conversation snapshot. Live and
+  restored messages use the same row projection, including assistant replies,
+  refused operations, delegated results and subagent identities.
+- Approvals use standard AG-UI interrupts and resume by interrupt ID. The retired
+  `request_approval` pseudo-tool and custom duplicate row/terminal/action events
+  are replaced by standard messages, results and namespaced metadata.
+- Status reads workspace preparation and activity separately from worker state.
+  Elapsed time uses the daemon's original loop start; worker spend includes its
+  descendants and refreshes as turns settle.
+- Informational operation details remain muted; failure styling follows failed
+  status or unsuccessful execution.
+- Development targets native ECMAScript and erasable TypeScript on Node 26.
+  npm's install-script policy explicitly permits the locked native PTY test
+  dependency; it is not a runtime dependency.
+
+The optional web client is not part of this publication. Its conversation UI
+remains deferred.
 
 ## 3.3.0
 

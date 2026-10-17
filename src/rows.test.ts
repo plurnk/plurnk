@@ -38,11 +38,13 @@ test("[§cli-row-sources] speech carries its heading's aside and its receipt; an
     assert.equal((reply?.tx as { aside?: string }).aside, "the answer");
     assert.deepEqual((reply?.tx as { body?: unknown }).body, { raw: "{\"planet\":\"Jupiter\"}", json: { planet: "Jupiter" } }, "a SEND's body is its words and their JSON reading");
     assert.deepEqual(reply?.rx, receipt);
+    assert.deepEqual(reply?.message, { id: "1/1/3", role: "assistant" });
     const [wait] = drawn(speechOf({ id: 9, op: "WAIT", sequence: 4, signal: 202, status_rx: 202, tx: { body: "Back soon." }, rx: { status: 202, attrs: { waiting: 1 } } }));
     assert.deepEqual([wait?.op, (wait?.tx as { body?: unknown }).body, wait?.signal], ["WAIT", "Back soon.", 202], "a WAIT's body is text");
 
     const [arrival] = drawn(arrivalOf({ id: 10, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: { raw: "Done." } } }));
     assert.deepEqual([arrival?.origin, arrival?.source, (arrival?.tx as { body: { raw: string } }).body.raw], ["_plurnk", "worker://helper", "Done."]);
+    assert.deepEqual(arrival?.message, { id: "1/1/1", role: "user", name: "worker://helper" });
     const [own] = drawn(arrivalOf({ id: 11, op: "SEND", origin: "_plurnk", source: "agui://anonymous/threads/t/messages/m1", attrs: { kind: "message" }, tx: { body: { raw: "" } } }, "m1"));
     assert.deepEqual([own?.id, own?.sequence], [11, 1], "the client's own message, which it holds, still names its row");
 });

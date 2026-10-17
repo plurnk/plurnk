@@ -83,14 +83,15 @@
     "workspace.attach": {
       "posture": "native",
       "evidence": [
-        "src/agui.test.ts — workspace attachment"
+        "test/intg/workspace-selection.test.ts — name and folder inspection resolve an existing ID without creating state"
       ],
       "dimensions": [
         "admission",
         "projection",
         "success",
         "failure",
-        "presentation"
+        "presentation",
+        "composition"
       ]
     },
     "workspace.workers": {

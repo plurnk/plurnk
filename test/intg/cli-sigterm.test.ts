@@ -38,16 +38,21 @@ for (const [resumed, reportedFailure, cancelMode] of [
             frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined) {
+                if (action.kind === "workspace.create") {
+                    frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: { id: 7, name: "workspace" } } });
+                    response.end();
+                    return;
+                }
                 if (action.kind === "workspace.list") {
                     frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result: {
-                        workspaces: [{ name: "workspace", project_root: directory }],
+                        workspaces: [{ id: 7, name: "workspace", project_root: directory }],
                     } } });
                     response.end();
                     return;
                 }
                 if (action.kind === "loop.cancel") {
-                    assert.equal(input.threadId, "actor");
-                    assert.equal(input.forwardedProps.plurnk.workspace, "workspace");
+                    assert.equal(input.threadId, "7#actor");
+                    assert.equal(input.forwardedProps.plurnk.workspace, undefined);
                     assert.equal(action.reason, interrupt === "SIGINT" ? "user_sigint" : "user_sigterm");
                     cancellations += 1;
                     if (cancelMode === "interrupted") { child.kill(interrupt); return; }

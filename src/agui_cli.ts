@@ -26,7 +26,7 @@ import {
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
-import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget } from "./agui.ts";
+import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget, type WorkspaceHandle } from "./agui.ts";
 import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, type ActionOutcome } from "./agui.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
@@ -106,12 +106,12 @@ const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<Resol
 
 const readStream = async (
     target: AguiTarget,
-    binding: { threadId: string; workspace?: string },
+    binding: { threadId: string },
     concluded: StreamConcludedPayload,
     signal?: AbortSignal,
 ): Promise<Readonly<Record<string, { content: string }>>> => {
     const result = entryReadResult(await actionViaAgui(target, {
-        threadId: binding.threadId, workspace: binding.workspace,
+        threadId: binding.threadId,
         kind: "entry.read", params: { target: concluded.target, workerId: concluded.workerId },
     }, signal));
     if (result.entry === null) throw new ProblemError(result.problem);
@@ -130,7 +130,6 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     let response = "";
     let terminated: TerminatedValue | null = null;
     let modelWorkerId: number | null = null;
-    let threadId: string | undefined;
     let pendingResume: CliRunResult["pendingResume"] = null;
     let problem: ProblemDetails | null = null;
     let problemReported = false;
@@ -157,7 +156,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
         const workerId = entry.worker_id;
         if (modelWorkerId === null && entry.origin === "model" && typeof workerId === "number") modelWorkerId = workerId;
         const belongsToRun = typeof workerId !== "number" || modelWorkerId === null || workerId === modelWorkerId;
-        const message = belongsToRun && isResponseMessage(entry, threadId) ? extractSendBody(entry.tx) : "";
+        const message = belongsToRun && isResponseMessage(entry) ? extractSendBody(entry.tx) : "";
         const separator = response.length > 0 ? "\n\n" : "";
         if (message.length > 0) response += separator + message;
         if (io.json) { entries.push(entry); return; }
@@ -174,10 +173,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     io.onProgress?.(snapshot());
     for await (const e of events) {
         try {
-            if (e.type === "RUN_STARTED") {
-                threadId = e.threadId;
-                continue;
-            }
+            if (e.type === "RUN_STARTED") continue;
             // A Run's end carries the bound loop's terminal record, the Problem of a Run that failed without one, or an
             // action's outcome (plurnk-service {§agui-plurnk-metadata}).
             const end = runEnd(e);
@@ -330,7 +326,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
 export const runCliViaAgui = async (
     target: AguiTarget,
     prompt: string,
-    opts: { lifetime: Lifetime; threadId: string; workspace?: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; projectRoot?: string | null; settings?: object },
+    opts: { lifetime: Lifetime; threadId: string; workspace: WorkspaceHandle; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean },
 ): Promise<number> => {
     // {§cli-fail-closed-no-review-channel} With no local acceptance or review channel,
     // reject locally. A submitted message cannot change the worker's authority.
@@ -339,12 +335,9 @@ export const runCliViaAgui = async (
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
     const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
     const noReviewChannel = !capabilities.interactive;
-    // Workspace options ride forwardedProps.plurnk — the model must NOT: the
-    // worker owns the model ({§worker-model-selection}), and an explicit --model
-    // was already persisted by the dispatcher before this run.
+    // Only per-run controls ride this bound Run. Workspace creation and durable worker
+    // model selection have already completed ({§cli-workspaces-and-workers}, {§worker-model-selection}).
     const fp: Record<string, unknown> = {
-        ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
-        ...(opts.settings !== undefined && Object.keys(opts.settings).length > 0 ? { settings: opts.settings } : {}),
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
         ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
     };
@@ -361,7 +354,7 @@ export const runCliViaAgui = async (
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
         { lifecycle: "running", model: opts.modelLabel ?? null, loopId: null, packetCount: null, activity: null, children: null },
-        { workspace: opts.workspace ?? null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: started },
+        { workspace: opts.workspace.name, worker: null, child: null, tally: EMPTY_TALLY, runningSince: started },
     );
     statusLine.update({});
     const io = {
@@ -398,7 +391,6 @@ export const runCliViaAgui = async (
     const cancellationGraceMs = 15_000;
     const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAgui(target, {
         threadId: opts.threadId,
-        ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}),
         kind: "loop.cancel", params: { reason },
     }, signal);
     let graceTimer: NodeJS.Timeout | undefined;
@@ -421,7 +413,7 @@ export const runCliViaAgui = async (
         const t = r.terminated;
         const outcome = runOutcome(r);
         const doc = buildJsonRecord({
-            workspace: { id: t?.workspaceId ?? 0, name: opts.workspace ?? opts.threadId },
+            workspace: opts.workspace,
             prompt,
             response: r.response,
             entries: r.entries,
@@ -476,11 +468,11 @@ export const runCliViaAgui = async (
     statusTick?.unref();
     try {
         try {
-            result = mergeRunSegments(result, await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io));
+            result = mergeRunSegments(result, await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...next }, ac.signal), io));
             activeSegment = null;
             while (result.pendingResume !== null) {
                 next = { resume: [result.pendingResume] };
-                const seg = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}), ...next }, ac.signal), io);
+                const seg = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...next }, ac.signal), io);
                 result = mergeRunSegments(result, seg);
                 activeSegment = null;
             }
@@ -537,7 +529,7 @@ export const runCliViaAgui = async (
 export const runScriptViaAgui = async (
     target: AguiTarget,
     text: string,
-    opts: { threadId: string; workspace: string; yolo: boolean; auto: boolean; json: boolean; projectRoot?: string | null; settings?: object },
+    opts: { threadId: string; yolo: boolean; auto: boolean; json: boolean },
 ): Promise<number> => {
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
     const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
@@ -560,10 +552,8 @@ export const runScriptViaAgui = async (
     const started = Date.now();
     const forwardedProps: Record<string, unknown> = {
         action: { kind: "op.parse", text },
-        ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
-        ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     };
-    await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, workspace: opts.workspace, capabilities, forwardedProps }), io);
+    await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, forwardedProps }), io);
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.
     if (parse === null) throw new ProblemError(clientActionResultMissing("op.parse"));
@@ -605,7 +595,7 @@ export const settleExec = (run: {
 export const runExecViaAgui = async (
     target: AguiTarget,
     command: string,
-    opts: { threadId: string; workspace: string; yolo: boolean; auto: boolean; projectRoot?: string | null; settings?: object },
+    opts: { threadId: string; yolo: boolean; auto: boolean },
 ): Promise<number> => {
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
     const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
@@ -624,11 +614,9 @@ export const runExecViaAgui = async (
         },
         onStreamConcluded: (concluded) => { seen.conclusions.set(concluded.target, { ...concluded, result: operationResult(concluded.result) }); },
     };
-    const binding = { threadId: opts.threadId, workspace: opts.workspace, capabilities };
+    const binding = { threadId: opts.threadId, capabilities };
     const run = await consumeCliRun(runViaAgui(target, { ...binding, forwardedProps: {
         action: { kind: "op.exec", command },
-        ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
-        ...(opts.settings !== undefined ? { settings: opts.settings } : {}),
     } }), io);
     const settled = settleExec({ ...seen, problem: run.problem });
     if ("problem" in settled) {
@@ -641,7 +629,7 @@ export const runExecViaAgui = async (
     let read: EntryReadResult;
     try {
         read = entryReadResult(await actionViaAgui(target, {
-            threadId: opts.threadId, workspace: opts.workspace,
+            threadId: opts.threadId,
             kind: "entry.read", params: { target: conclusion.target, workerId: conclusion.workerId },
         }));
     } catch (cause) {

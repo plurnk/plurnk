@@ -41,9 +41,10 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
             const action = input.forwardedProps?.plurnk?.action;
             if (action !== undefined) {
-                assert.ok(["workspace.list", "worker.model.get"].includes(action.kind), "no cancellation, replay or reconnect is needed to retain received evidence");
+                assert.ok(["workspace.list", "workspace.create", "worker.model.get"].includes(action.kind), "no cancellation, replay or reconnect is needed to retain received evidence");
                 finish({ kind: action.kind, ok: true, result:
-                    action.kind === "workspace.list" ? { workspaces: [{ name: "workspace", project_root: directory }] } : { model: null },
+                    action.kind === "workspace.list" ? { workspaces: [{ id: 7, name: "workspace", project_root: directory }] }
+                        : action.kind === "workspace.create" ? { id: 7, name: "workspace" } : { model: null },
                 });
                 return;
             }

@@ -295,18 +295,6 @@ export const clientFlagInvalid = (flag: string, value: string, reason: string): 
 export const clientFlagMissingDependency = (flag: string, requires: string): ProblemDetails =>
     clientProblem("flag", "missing-dependency", 400, `${flag} requires ${requires}`, { flag, requires });
 
-export const clientSubcommandWorkspaceNotFound = (name: string): ProblemDetails =>
-    clientProblem("subcommand", "workspace-not-found", 404, `no workspace named ${JSON.stringify(name)}`, { name });
-
-export const clientSubcommandWorkspaceAmbiguous = (name: string, count: number): ProblemDetails =>
-    clientProblem(
-        "subcommand",
-        "workspace-ambiguous",
-        409,
-        `${count} workspaces named ${JSON.stringify(name)}; pick a unique name`,
-        { name, count },
-    );
-
 export const clientSubcommandUnknownVerb = (path: string, available?: string[]): ProblemDetails =>
     clientProblem(
         "subcommand",

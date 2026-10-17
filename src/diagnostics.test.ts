@@ -16,8 +16,6 @@ const {
     isUnreachable,
     clientFlagInvalid,
     clientFlagMissingDependency,
-    clientSubcommandWorkspaceNotFound,
-    clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
     clientSubcommandMissingArgument,
     clientSubcommandCoordinateInvalid,
@@ -190,17 +188,6 @@ test("clientFlagMissingDependency names both flags", () => {
     const problem = clientFlagMissingDependency("--worker", "--workspace");
     assert.equal(problem.kind, "missing-dependency");
     assert.match(problem.detail, /--worker requires --workspace/);
-});
-
-test("workspace lookup Problems carry their structured facts", () => {
-    const missing = clientSubcommandWorkspaceNotFound("alpha");
-    const ambiguous = clientSubcommandWorkspaceAmbiguous("dup", 3);
-    assert.equal(missing.status, 404);
-    assert.equal(missing.name, "alpha");
-    assert.match(missing.detail, /"alpha"/);
-    assert.equal(ambiguous.status, 409);
-    assert.equal(ambiguous.count, 3);
-    assert.match(ambiguous.detail, /3 workspaces/);
 });
 
 test("[§cli-subcommands] subcommand Problems preserve recovery facts", () => {

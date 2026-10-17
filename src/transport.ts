@@ -21,7 +21,7 @@ import {
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { createHash } from "node:crypto";
-import { runViaAgui, actionOutcome, operationResult, problemDetails, runEnd, type AguiEvent, type AguiTarget } from "./agui.ts";
+import { runViaAgui, actionOutcome, operationResult, problemDetails, runEnd, workerThreadId, type AguiEvent, type AguiTarget, type WorkerBinding, type WorkspaceHandle } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
 import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
@@ -119,16 +119,12 @@ export interface Transport {
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void>;
     shutdown(): void;   // abort every in-flight request on an intentional quit
-    // Switch to (or create) a named workspace by re-mapping the threadId; the daemon
-    // creates the workspace on the next run. Returns the workspace handle for the header.
-    useWorkspace(name: string | undefined, params: { projectRoot?: string | null }): Promise<{ name: string }>;
+    // Acquire before replacing the binding: a failed selection leaves the current conversation intact.
+    useWorkspace(name: string | undefined, params: { projectRoot?: string | null; worker: string }): Promise<WorkspaceHandle>;
     // Rebind this session's thread to a worker by name, keeping the workspace:
     // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
-    useWorker(name: string, workspaceName: string): void;
-    // The attached workspace now carries `name` (workspace.rename): later Runs name it, and the thread
-    // keeps naming its worker.
-    renameWorkspace(name: string): void;
+    useWorker(name: string): void;
     // The thread this transport speaks for: the AG-UI threadId the daemon sources this
     // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
     threadId(): string;
@@ -136,14 +132,12 @@ export interface Transport {
 
 // Model and sync Runs share event projection and interrupt handling. An idle sync
 // can finish without a loop terminal; it cannot manufacture accounting evidence.
-// Workspace options that ride forwardedProps.plurnk on the thread's FIRST run
-// (§agui-forwarded-props) — the daemon applies them at workspace creation.
-export interface AguiTransportOpts { workspace?: string; projectRoot?: string | null; settings?: object; descendants?: boolean; auto?: boolean }
+// Settings apply to explicit workspace creation, not to already-bound Runs.
+export interface AguiTransportOpts { settings?: object; descendants?: boolean; auto?: boolean }
 
 export class AguiTransport implements Transport {
     #target: AguiTarget;
-    #threadId: string;
-    #workspaceName: string | undefined;   // the workspace name when it differs from the thread (--worker)
+    #binding: WorkerBinding;
     #workspace: AguiTransportOpts;
     #h: RunHandlers | null = null;
     #modelProjection: StreamProjection | null = null;
@@ -154,14 +148,13 @@ export class AguiTransport implements Transport {
     #seenRows = new Map<number, string>();
     #lastLoopId: number | null = null;
 
-    constructor(target: AguiTarget, threadId: string, workspace: AguiTransportOpts = {}) {
+    constructor(target: AguiTarget, binding: WorkerBinding, workspace: AguiTransportOpts = {}) {
         this.#target = target;
-        this.#threadId = threadId;
-        this.#workspaceName = workspace.workspace;
+        this.#binding = binding;
         this.#workspace = workspace;
     }
 
-    threadId(): string { return this.#threadId; }
+    threadId(): string { return workerThreadId(this.#binding); }
 
     // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
@@ -186,10 +179,9 @@ export class AguiTransport implements Transport {
         let problem: ProblemDetails | undefined;
         let sawResult = false;
         for await (const e of runViaAgui(this.#target, {
-            threadId: this.#threadId,
-            workspace: this.#workspaceName,
+            threadId: this.threadId(),
             messages: [],
-            forwardedProps: { ...this.#workspaceOpts(), action: { kind: method, ...(params ?? {}) } },
+            forwardedProps: { action: { kind: method, ...(params ?? {}) } },
             capabilities: clientCapabilities(this.#workspace.auto !== true),
         }, signal)) {
             const end = runEnd(e);
@@ -219,18 +211,6 @@ export class AguiTransport implements Transport {
         return ac;
     }
 
-    // Workspace options on every request (#140): workspace creation and
-    // its projectRoot are ATOMIC — the module creates from whichever request arrives
-    // first, so every request carries the options (applied at creation, ignored after).
-    // No consumed-once flag, no race: a headless workspace can only be one on purpose,
-    // and it stays headless forever (root changes are unimplemented by design).
-    #workspaceOpts(): Record<string, unknown> {
-        return {
-            ...(this.#workspace.projectRoot !== undefined ? { projectRoot: this.#workspace.projectRoot } : {}),
-            ...(this.#workspace.settings !== undefined && Object.keys(this.#workspace.settings).length > 0 ? { settings: this.#workspace.settings } : {}),
-        };
-    }
-
     run(prompt: string, opts: RunOpts): RunHandle {
         const handle = this.#run(prompt, opts);
         return { ...handle, done: handle.done.then((terminal) => {
@@ -242,7 +222,7 @@ export class AguiTransport implements Transport {
     observe(opts?: ObserveOpts): ObservationHandle { return this.#run(undefined, undefined, opts); }
 
     #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
-        const binding = { threadId: this.#threadId, workspace: this.#workspaceName };
+        const binding = { threadId: this.threadId() };
         const ac = this.#controller();
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
         this.#modelProjection = projection;
@@ -250,10 +230,8 @@ export class AguiTransport implements Transport {
         // Both promises report the same failed run. Consumers that only await done
         // must not acquire an unhandled rejection from the readiness view.
         void ready.promise.catch(() => {});
-        // Every request carries workspace options (#workspaceOpts — see #140); every
-        // run forwards per-run knobs.
+        // A resume keeps the original binding; only per-run policy travels with it.
         const fwd: Record<string, unknown> = {
-            ...this.#workspaceOpts(),
             // {plurnk#108} — a session that observes its delegation asks on every message and sync Run.
             ...(this.#workspace.descendants === true ? { descendants: true } : {}),
             control: true,
@@ -536,27 +514,24 @@ export class AguiTransport implements Transport {
         if (pending === undefined || pending.decided) throw new Error(`Interaction ${interactionId} has no pending AG-UI interrupt.`);
         pending.settle(payload);
     }
-    async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<{ name: string }> {
-        // Re-map to a fresh WORKSPACE: the thread and the workspace move together (a /workspace
-        // switch is a new workspace, where the TUI then names its worker; a split thread comes from
-        // --worker at invocation, not from this verb). Lazy-created on the next run.
-        const threadId = name ?? `tui-${crypto.randomUUID().slice(0, 8)}`;
-        this.#workspace = {
-            ...this.#workspace,
+    async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<WorkspaceHandle> {
+        const workspace = await this.rpc<WorkspaceHandle>("workspace.create", {
+            ...(name === undefined ? {} : { name }),
             ...(params.projectRoot === undefined ? {} : { projectRoot: params.projectRoot }),
-        };
-        this.#threadId = threadId;
-        this.#workspaceName = undefined;   // thread == workspaceName again
-        this.#seenRows.clear();
-        this.#lastLoopId = null;
-        return { name: threadId };
+            ...(this.#workspace.settings === undefined ? {} : { settings: this.#workspace.settings }),
+        });
+        if (!Number.isSafeInteger(workspace.id) || workspace.id <= 0 || typeof workspace.name !== "string" || workspace.name.length === 0) {
+            throw new ProblemError(clientTransportResultInvalid("workspace.create omitted its workspace identity."));
+        }
+        this.#binding = { workspaceId: workspace.id, worker: params.worker };
+        this.#resetHistory();
+        return workspace;
     }
-    renameWorkspace(name: string): void {
-        this.#workspaceName = name;
+    useWorker(name: string): void {
+        this.#binding = { ...this.#binding, worker: name };
+        this.#resetHistory();
     }
-    useWorker(name: string, workspaceName: string): void {
-        this.#threadId = name;
-        this.#workspaceName = workspaceName;
+    #resetHistory(): void {
         this.#seenRows.clear();
         this.#lastLoopId = null;
     }

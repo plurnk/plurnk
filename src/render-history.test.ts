@@ -11,6 +11,17 @@ const entry = (overrides: Partial<LogEntryWire>): LogEntryWire => ({
     rx: null, loop_seq: 1, turn_seq: 1, sequence: 1, ...overrides,
 });
 
+test("{§cli-broadcast-send-rendering}: qualified attachment preserves standard speech addressed under earlier thread spellings", () => {
+    for (const source of ["agui://operator/threads/alice/messages/m1", "agui://operator/threads/opaque-uuid/messages/m1"]) {
+        const rows = snapshotRows([{ id: "1/1/1", role: "assistant", content: "Retained answer", metadata: { plurnk: {
+            id: 1, coordinate: "1/1/1", worker: 7, origin: "model", op: "SEND", source: null, address: null,
+            signal: 200, status: 200, attrs: {}, receipt: { status: 200, answers: [source], completion: 200 },
+        } } }]);
+        assert.deepEqual(renderHistory({ attachment: true, entries: rows }, "42#alice", 80),
+            ["Retained answer", "— 1 earlier entries · /log for more —"]);
+    }
+});
+
 test("[§cli-worker-history] a snapshot's prompt, operation headings and speech keep their row order; its reasoning is never replayed", () => {
     const source = "agui://anonymous/threads/alice/messages/prompt";
     const facts = (id: number, over: Record<string, unknown> = {}) => ({ plurnk: { id, coordinate: `1/1/${id}`, worker: 7, origin: "model", op: "READ",
@@ -31,7 +42,7 @@ test("[§cli-worker-history] a snapshot's prompt, operation headings and speech 
 test("{§cli-worker-history}: another actor's message keeps its sender, an answer its words, and a materialization draws nothing", () => {
     assert.deepEqual(renderHistory({ attachment: false, entries: [
         entry({ id: 1, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: "worker update" } }),
-        entry({ id: 2, op: "SEND", rx: { answers: ["agui://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
+        entry({ id: 2, op: "SEND", message: { id: "1/1/2", role: "assistant" }, rx: { answers: ["agui://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
         entry({ id: 3, op: "EDIT", origin: "_plurnk", attrs: { kind: "entry_materialized" } }),
     ] }, "alice", 80), ["worker://helper\nworker update", "recent answer"]);
 });

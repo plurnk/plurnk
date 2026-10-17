@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-15" "plurnk 3.3.0" "User Commands"
+.TH PLURNK 1 "2026-10-16" "plurnk 3.3.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -54,11 +54,7 @@ loop.
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Overrides PLURNK_CLIENT_WORKER. TUI defaults to
-                          PLURNK_CLIENT_TUI_WORKER (user); CLI uses the worker
-                          named after the workspace.
-      --tui-worker <name> TUI-only default when no worker is selected; overrides
-                          PLURNK_CLIENT_TUI_WORKER.
+                          Overrides PLURNK_CLIENT_WORKER (user in CLI and TUI).
       --model <selector>  persistently select the worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -167,7 +163,7 @@ The no-argument interactive terminal accepts these slash commands:
 /effort [policy]               Inspect or select reasoning effort.
 /capabilities [json]           Inspect the capability cascade or set the workspace policy.
 /yolo                          Toggle local proposal auto-accept (Shift-Tab). On by default.
-/workspace [name]              Create and enter a fresh workspace.
+/workspace [name]              Open or create a workspace.
 /rename <name>                 Rename this workspace's mutable handle.
 /share <folder>                Write this workspace's share into <folder> for a bug report.
 /rollback <loop>/<turn>/<item> Reverse the bound worker's file mutations after a log coordinate, latest first, as your own operations.

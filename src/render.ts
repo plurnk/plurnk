@@ -12,6 +12,8 @@ import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 
 // A row as the waterfall draws it: rebuilt from the standard part it built or carried whole ({§cli-row-sources}).
 export interface LogEntryWire {
+    // Standard conversation meaning survives projection into the waterfall ({§cli-row-sources}).
+    message?: { id: string; role: "assistant" | "user" | "developer" | "system"; name?: string };
     id: number;
     worker_id?: number;
     // {§message-causal-source} — the causal actor's address; null is the worker's own doing.
@@ -147,16 +149,9 @@ export const indentDescendant = (text: string, depth: number): string => {
 export const markDescendant = (block: string, name: string, depth: number): string =>
     indentDescendant(`${paint(`🐜 ${ModelText.plain(name)}`, "dim")} ${block}`, depth);
 
-export const isResponseMessage = (entry: LogEntryWire, threadId?: string): boolean => {
-    if ((entry.op !== "SEND" && entry.op !== "KILL") || entry.status_rx < 200 || entry.status_rx >= 300) return false;
-    if (extractSendBody(entry.tx).trim().length === 0) return false;
-    const reply = objectOf(entry.attrs)?.kind === "reply";
-    if (!reply && entry.source != null) return false;
-    const answers = objectOf(entry.rx)?.answers;
-    if (!Array.isArray(answers)) return false;
-    const addressed = threadId === undefined ? /^agui:\/\/[^/]+\/threads\//u : new RegExp(`${ownThread(threadId).source}messages/`, "u");
-    return answers.some((address) => typeof address === "string" && addressed.test(address));
-};
+export const isResponseMessage = (entry: LogEntryWire): boolean =>
+    entry.message?.role === "assistant" && (entry.op === "SEND" || entry.op === "KILL")
+    && extractSendBody(entry.tx).trim().length > 0;
 
 export const entryScope = (entry: LogEntryWire): string | null =>
     entry.lineMarker === null ? null : `<${entry.lineMarker.marks.join(",")}>`;

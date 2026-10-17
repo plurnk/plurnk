@@ -38,32 +38,21 @@ const captureStdout = async (fn: () => Promise<unknown>): Promise<string> => {
 
 // ─── runWorkspaceRename ─────────────────────────────────────────────────
 
-test("runWorkspaceRename: resolves by name, attaches, renames the attached workspace", async () => {
+test("runWorkspaceRename: renames the caller's selected workspace through one bound action", async () => {
     const { rpc, calls } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 7, name: "old", project_root: "/p" }] },
-        "workspace.attach": { id: 7, name: "old" },
         "workspace.rename": { id: 7, name: "new" },
     });
     const code = await captureStdout(async () => assert.equal(await runWorkspaceRename(rpc, "old", "new", { json: false }), 0));
     const seq = calls.map((c) => c.method);
-    assert.deepEqual(seq, ["workspace.list", "workspace.attach", "workspace.rename"]);
+    assert.deepEqual(seq, ["workspace.rename"]);
     assert.deepEqual(calls.find((c) => c.method === "workspace.rename")?.params, { name: "new" });
     assert.match(code, /renamed "old" → "new"/);
 });
 
-test("runWorkspaceRename: unknown workspace throws the exact public Problem", async () => {
-    const { rpc, calls } = fakeRpc({ "workspace.list": { workspaces: [] } });
-    await assert.rejects(
-        runWorkspaceRename(rpc, "ghost", "x", { json: false }),
-        (error: unknown) => {
-            assert.ok(error instanceof ProblemError);
-            assert.equal(error.exitCode, 1);
-            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/workspace-not-found");
-            assert.equal(error.problem.name, "ghost");
-            return true;
-        },
-    );
-    assert.equal(calls.some((c) => c.method === "workspace.rename"), false);
+test("runWorkspaceRename: preserves the daemon's selection failure", async () => {
+    const failure = new ProblemError({ type: "https://problems.plurnk.xyz/daemon/workspace/workspace-not-found", title: "Workspace not found", status: 404, detail: "Workspace ghost does not exist.", name: "ghost" });
+    const rpc = { call: async () => { throw failure; } };
+    await assert.rejects(runWorkspaceRename(rpc, "ghost", "x", { json: false }), (error) => error === failure);
 });
 
 // ─── runModels ────────────────────────────────────────────────────────
@@ -198,14 +187,8 @@ test("runWorkspaceList: empty list → friendly message in table mode", async ()
 
 // ─── runWorkspaceWorkers ───────────────────────────────────────────────────
 
-test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up workspace by name then calls workspace.workers with id", async () => {
+test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: renders the caller's ID-bound directory without resolving its name again", async () => {
     const { rpc, calls } = fakeRpc({
-        "workspace.list": {
-            workspaces: [
-                { id: 1, name: "alpha", project_root: null, created_at: "t" },
-                { id: 2, name: "beta", project_root: null, created_at: "t" },
-            ],
-        },
         "workspace.workers": {
             workers: [
                 { id: 10, name: "run-1", created_at: "t1" },
@@ -214,10 +197,7 @@ test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up worksp
         },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "beta", { json: false }));
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].method, "workspace.list");
-    assert.equal(calls[1].method, "workspace.workers");
-    assert.deepEqual(calls[1].params, { id: 2 });
+    assert.deepEqual(calls, [{ method: "workspace.workers", params: undefined }]);
     assert.match(out, /run-1/);
     assert.match(out, /run-2/);
     assert.doesNotMatch(out, /cost/, "worker directory does not invent an accounting rollup");
@@ -226,51 +206,20 @@ test("[§cli-plurnk-workspace-workers-name] runWorkspaceWorkers: looks up worksp
 test("runWorkspaceWorkers: --json emits workers array", async () => {
     const workers = [{ id: 10, name: "r", created_at: "t" }];
     const { rpc } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t" }] },
         "workspace.workers": { workers },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "x", { json: true }));
     assert.deepEqual(JSON.parse(out.trim()), workers);
 });
 
-test("runWorkspaceWorkers: unknown workspace name throws the exact public Problem", async () => {
-    const { rpc } = fakeRpc({ "workspace.list": { workspaces: [] } });
-    await assert.rejects(
-        runWorkspaceWorkers(rpc, "nonexistent", { json: false }),
-        (error: unknown) => {
-            assert.ok(error instanceof ProblemError);
-            assert.equal(error.exitCode, 1);
-            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/workspace-not-found");
-            assert.equal(error.problem.name, "nonexistent");
-            return true;
-        },
-    );
-});
-
-test("runWorkspaceWorkers: ambiguous name throws the exact public Problem", async () => {
-    const { rpc } = fakeRpc({
-        "workspace.list": {
-            workspaces: [
-                { id: 1, name: "dup", project_root: null, created_at: "t" },
-                { id: 2, name: "dup", project_root: null, created_at: "t" },
-            ],
-        },
-    });
-    await assert.rejects(
-        runWorkspaceWorkers(rpc, "dup", { json: false }),
-        (error: unknown) => {
-            assert.ok(error instanceof ProblemError);
-            assert.equal(error.exitCode, 1);
-            assert.equal(error.problem.type, "https://problems.plurnk.xyz/client/subcommand/workspace-ambiguous");
-            assert.equal(error.problem.count, 2);
-            return true;
-        },
-    );
+test("runWorkspaceWorkers: preserves the daemon's selection failure", async () => {
+    const failure = new ProblemError({ type: "https://problems.plurnk.xyz/daemon/workspace/workspace-not-found", title: "Workspace not found", status: 404, detail: "Workspace nonexistent does not exist.", name: "nonexistent" });
+    const rpc = { call: async () => { throw failure; } };
+    await assert.rejects(runWorkspaceWorkers(rpc, "nonexistent", { json: false }), (error) => error === failure);
 });
 
 test("runWorkspaceWorkers: workspace has no workers → friendly message in table mode", async () => {
     const { rpc } = fakeRpc({
-        "workspace.list": { workspaces: [{ id: 1, name: "x", project_root: null, created_at: "t" }] },
         "workspace.workers": { workers: [] },
     });
     const out = await captureStdout(() => runWorkspaceWorkers(rpc, "x", { json: false }));

@@ -52,6 +52,7 @@ test("{§cli-markdown-projection} pathological layout returns labeled source and
         import { displayWidth } from ${JSON.stringify(new URL("./markdown.ts", import.meta.url).href)};
         const source = readFileSync(${JSON.stringify(new URL("../test/fixtures/mermaid-fan-in.md", import.meta.url).pathname)}, "utf8");
         const row = (raw) => ({
+            message: { id: "1/1/1", role: "assistant" },
             id: 1, loop_seq: 1, turn_seq: 1, sequence: 1, op: "SEND", origin: "model",
             signal: null, target: null, lineMarker: null,
             tx: { body: { raw } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] }, status_rx: 200, tags: [],

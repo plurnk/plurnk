@@ -12,7 +12,7 @@ import Knobs, { KnobError } from "./knobs.ts";
 import { isColorMode } from "./color.ts";
 import { runCliViaAgui, runExecViaAgui, runScriptViaAgui } from "./agui_cli.ts";
 import { AguiTransport } from "./transport.ts";
-import { actionViaAgui } from "./agui.ts";
+import { actionViaAgui, workerThreadId, type WorkspaceHandle } from "./agui.ts";
 import Credential, { SignInCredential } from "./credential.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
@@ -35,8 +35,6 @@ import {
     clientRuntimeError,
     clientAguiError,
     clientSubcommandMissingArgument,
-    clientSubcommandWorkspaceNotFound,
-    clientSubcommandWorkspaceAmbiguous,
     clientSubcommandUnknownVerb,
     clientWorkerNotFound,
     isAbsentWorker,
@@ -145,11 +143,7 @@ options:
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Overrides PLURNK_CLIENT_WORKER. TUI defaults to
-                          PLURNK_CLIENT_TUI_WORKER (user); CLI uses the worker
-                          named after the workspace.
-      --tui-worker <name> TUI-only default when no worker is selected; overrides
-                          PLURNK_CLIENT_TUI_WORKER.
+                          Overrides PLURNK_CLIENT_WORKER (user in CLI and TUI).
       --model <selector>  persistently select the worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -422,11 +416,13 @@ const parseIntFlag = (raw: string | undefined, name: string): number | undefined
     if (!Number.isInteger(n) || n < 0) throw new ProblemError(clientFlagInvalid(name, raw, "must be a non-negative integer"));
     return n;
 };
+type WorkspaceSelection = { name: string } | { projectRoot: string };
+
 interface SubcommandOpts {
     signal?: AbortSignal;
     json: boolean;
     /** The launch workspace ({§cli-workspaces-and-workers}), bound only by a verb that addresses one. */
-    workspaceName: () => Promise<string>;
+    workspace: () => WorkspaceSelection;
     workerName?: string;
     values: Record<string, string | boolean | string[] | undefined>;
 }
@@ -434,7 +430,7 @@ interface SubcommandOpts {
 // Dispatch a positional-driven subcommand over the action surface. Returns the
 // exit code the dispatcher should propagate. A verb that reads or changes a workspace
 // binds the launch workspace first; the others never bring one into being.
-const runSubcommand = async (callerFor: (workspace?: string) => Caller, positionals: string[], opts: SubcommandOpts): Promise<number> => {
+const runSubcommand = async (callerFor: (workspace?: WorkspaceSelection) => Caller, positionals: string[], opts: SubcommandOpts): Promise<number> => {
     const verb = positionals[0];
     const sub = positionals[1];
 
@@ -472,7 +468,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
             if (positionals.length > 3) {
                 throw new ProblemError(clientSubcommandUnknownVerb(`workspace workers ${positionals.slice(3).join(" ")}`));
             }
-            return await runWorkspaceWorkers(callerFor(name), name, { json: opts.json });
+            return await runWorkspaceWorkers(callerFor({ name }), name, { json: opts.json });
         }
         if (sub === "rename") {
             const name = positionals[2];
@@ -483,7 +479,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
             if (positionals.length > 4) {
                 throw new ProblemError(clientSubcommandUnknownVerb(`workspace rename ${positionals.slice(4).join(" ")}`));
             }
-            return await runWorkspaceRename(callerFor(name), name, newName, { json: opts.json });
+            return await runWorkspaceRename(callerFor({ name }), name, newName, { json: opts.json });
         }
         throw new ProblemError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
     }
@@ -491,7 +487,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
     if (isFamily(verb)) {
         const result = await FAMILY_HANDLERS[verb](
             positionals.slice(1),
-            callerFor(await opts.workspaceName()),
+            callerFor(opts.workspace()),
             opts.json
                 ? verb === "mcp" && positionals[1] === "oauth" ? (text) => process.stderr.write(text) : () => undefined
                 : (text) => process.stdout.write(text),
@@ -508,7 +504,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         if (positionals.length > 2) {
             throw new ProblemError(clientSubcommandUnknownVerb(`effort ${positionals.slice(1).join(" ")}`));
         }
-        const rpc = callerFor(await opts.workspaceName());
+        const rpc = callerFor(opts.workspace());
         const effort = sub === undefined
             ? await readWorkerEffort(rpc)
             : await setWorkerEffort(rpc, sub);
@@ -522,7 +518,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         if (positionals.length > 2) {
             throw new ProblemError(clientSubcommandUnknownVerb(`capabilities ${positionals.slice(1).join(" ")}`));
         }
-        const rpc = callerFor(await opts.workspaceName());
+        const rpc = callerFor(opts.workspace());
         const projection = sub === undefined
             ? await rpc.call("workspace.capabilities.get") as Record<string, CapabilityPolicy>
             : await rpc.call("workspace.capabilities.set", {
@@ -540,7 +536,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         }
         // The caller's workspace scopes the action; the module defaults reads to the
         // thread's bound worker; --worker pins by name.
-        const rpc = callerFor(await opts.workspaceName());
+        const rpc = callerFor(opts.workspace());
         const workerId = await resolveWorkerId(rpc, opts.workerName);
         const filters: LogReadFilters = { ...(workerId === undefined ? {} : { workerId }) };
         const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
@@ -564,7 +560,7 @@ const runSubcommand = async (callerFor: (workspace?: string) => Caller, position
         }
         // The coordinate is worker-relative; the module defaults to the thread's bound
         // worker — --worker pins by name via params, no connection state.
-        const rpc = callerFor(await opts.workspaceName());
+        const rpc = callerFor(opts.workspace());
         return await runRead(rpc, coord, { json: opts.json, workerId: await resolveWorkerId(rpc, opts.workerName) });
     }
 
@@ -591,7 +587,6 @@ export const CLIENT_OPTIONS = {
     "env-file-if-exists": { type: "string", multiple: true },
     workspace: { type: "string" },
     worker: { type: "string" },
-    "tui-worker": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
     autostart: { type: "string" },
@@ -767,9 +762,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
     // Client flags select client behavior. Provider defaults remain daemon-owned.
     const configuredWorkspace = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
-    const workerName = values.worker ?? process.env.PLURNK_CLIENT_WORKER
-        ?? (!isSubcommand && prompt.length === 0
-            ? values["tui-worker"] ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER") : undefined);
+    const workerName = values.worker ?? Knobs.text("PLURNK_CLIENT_WORKER");
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
@@ -870,42 +863,35 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         return workspaceOptionsPromise;
     };
 
-    // {§cli-workspaces-and-workers} — the workspace this invocation binds: the configured name, attached
-    // or created by its first run; otherwise the daemon names and selects the workspace by the
-    // designated folder ({§workspace-name}) and the invocation binds the name it answers.
-    let workspaceNamePromise: Promise<string> | undefined;
-    const workspaceName = (): Promise<string> => {
-        workspaceNamePromise ??= (async () => {
-            if (configuredWorkspace !== undefined) return configuredWorkspace;
+    // {§cli-workspaces-and-workers}: resolve a literal label (or the daemon's folder-derived default)
+    // once, then address the returned identity. A rename never retargets an established conversation.
+    let workspacePromise: Promise<WorkspaceHandle> | undefined;
+    const openWorkspace = (): Promise<WorkspaceHandle> => {
+        workspacePromise ??= (async () => {
             const options = await workspaceOptions();
-            const bound = await actionViaAgui<{ name: string }>({ aguiUrl, credential }, {
+            const bound = await actionViaAgui<WorkspaceHandle>({ aguiUrl, credential }, {
                 threadId: "bootstrap",
                 kind: "workspace.create",
-                params: { projectRoot: options.projectRoot, settings: options.settings },
+                params: { ...(configuredWorkspace === undefined ? {} : { name: configuredWorkspace }), ...options },
             });
             // {§cli-project-root} — an existing workspace keeps its stored root.
             const stored = await projectRoots.saved(bound.name);
             if (stored !== undefined) projectRoot = stored;
-            return bound.name;
+            return bound;
         })();
-        return workspaceNamePromise;
+        return workspacePromise;
     };
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
-            // {§cli-workspaces-and-workers} — a one-shot call without --worker uses the worker named after the workspace.
-            const w = await workspaceName();
-            const controlWorkspaceOptions = await workspaceOptions();
-            const { settings } = controlWorkspaceOptions;
+            const w = await openWorkspace();
+            const threadId = workerThreadId({ workspaceId: w.id, worker: workerName });
             let code: number;
             if (command !== null) {
                 // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
                 code = await runExecViaAgui({ aguiUrl, credential }, command, {
-                    threadId: workerName ?? w,
-                    workspace: w,
+                    threadId,
                     yolo,
                     auto,
-                    projectRoot,
-                    settings,
                 });
             } else {
                 // {§worker-model-selection} — an explicit --model is a durable selection:
@@ -916,9 +902,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     activeModel = Validator.assertModelRoute(await actionViaAgui(
                         { aguiUrl, credential },
                         {
-                            threadId: workerName ?? w,
-                            workspace: w,
-                            workspaceOptions: controlWorkspaceOptions,
+                            threadId,
                             kind: "worker.model.set",
                             params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
                         },
@@ -929,9 +913,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     const projection = await actionViaAgui<{ model: unknown }>(
                         { aguiUrl, credential },
                         {
-                            threadId: workerName ?? w,
-                            workspace: w,
-                            workspaceOptions: controlWorkspaceOptions,
+                            threadId,
                             kind: "worker.model.get",
                         },
                     ).catch((cause: unknown) => {
@@ -942,9 +924,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 }
                 if (effort !== undefined && values.model === undefined) {
                     await actionViaAgui({ aguiUrl, credential }, {
-                        threadId: workerName ?? w,
-                        workspace: w,
-                        workspaceOptions: controlWorkspaceOptions,
+                        threadId,
                         kind: "worker.effort.set",
                         params: { effort },
                     });
@@ -955,7 +935,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 const reviewRequested = /^\s*\?/u.test(prompt);
                 code = await runCliViaAgui({ aguiUrl, credential }, projected.prompt, {
                     lifetime,
-                    threadId: workerName ?? w,
+                    threadId,
                     workspace: w,
                     ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
                     ...(maxTurns !== undefined ? { maxTurns } : {}),
@@ -966,14 +946,11 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     reviewRequested,
                     json,
                     statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
-                    projectRoot,
-                    settings,
                 });
             }
             if (shareTarget !== undefined) {
                 const shared = await actionViaAgui<ShareResult>({ aguiUrl, credential }, {
-                    threadId: workerName ?? w,
-                    workspace: w,
+                    threadId,
                     kind: "workspace.share",
                     params: { folder: shareTarget },
                 });
@@ -996,23 +973,20 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         }
     }
 
-    // The transport owns the workspace binding; the TUI receives its name, not a fabricated database ID.
+    // The transport binds the daemon-returned identity; the TUI displays its mutable label.
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
         let transport: AguiTransport | undefined;
         try {
-            const w = await workspaceName();
-            const threadId = workerName ?? w;
+            const w = await openWorkspace();
+            const binding = { workspaceId: w.id, worker: workerName };
             const { settings } = await workspaceOptions();
-            // Creation options are idempotent on an existing workspace.
-            transport = await lifetime.own(Promise.resolve(new AguiTransport({ aguiUrl, credential }, threadId, {
-                workspace: w,
-                projectRoot,
+            transport = await lifetime.own(Promise.resolve(new AguiTransport({ aguiUrl, credential }, binding, {
                 settings,
                 descendants: true,   // {plurnk#108} — the TUI observes its delegation
                 auto,
             })));
             const { runTui } = await import("./tui.ts");
-            await runTui(transport, { name: w }, {
+            await runTui(transport, w, {
                 lifetime,
                 resumeEnv: backend.resumeEnv,
                 modelSelector,
@@ -1027,8 +1001,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             });
             if (shareTarget !== undefined) {
                 const shared = await actionViaAgui<ShareResult>({ aguiUrl, credential }, {
-                    threadId,
-                    workspace: w,
+                    threadId: transport.threadId(),
                     kind: "workspace.share",
                     params: { folder: shareTarget },
                 });
@@ -1047,14 +1020,19 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     // Subcommands + script speak the action surface through a structural Caller bound to the
     // workspace a verb addresses; a daemon verb binds nothing.
     const target = { aguiUrl, credential };
-    const callerFor = (workspace?: string): Caller => ({
-        call: (method: string, params?: object) => actionViaAgui<unknown>(target, {
-            threadId: workerName ?? workspace ?? "bootstrap",
-            ...(workspace === undefined ? {} : { workspace }),
-            kind: method,
-            params,
-        }),
-    });
+    const callerFor = (selection?: WorkspaceSelection): Caller => {
+        let binding: Promise<WorkspaceHandle> | undefined;
+        return { call: async (method: string, params?: object) => {
+            if (selection !== undefined) binding ??= actionViaAgui<WorkspaceHandle>(target, {
+                threadId: "bootstrap", kind: "workspace.attach", params: selection,
+            });
+            return actionViaAgui<unknown>(target, {
+                threadId: binding === undefined ? "bootstrap" : workerThreadId({ workspaceId: (await binding).id, worker: workerName }),
+                kind: method,
+                params,
+            });
+        } };
+    };
 
     try {
         // {§cli-sign-in} — `plurnk login` signs in through the browser now and keeps the grant;
@@ -1089,14 +1067,12 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 throw new ProblemError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
-            const workspace = await workspaceName();
+            const workspace = await openWorkspace();
             const exitCode = await runScriptViaAgui(target, text, {
-                threadId: workerName ?? workspace,
-                workspace,
+                threadId: workerThreadId({ workspaceId: workspace.id, worker: workerName }),
                 yolo,
                 auto,
                 json,
-                ...await workspaceOptions(),
             });
             process.exitCode = exitCode;
             return;
@@ -1104,7 +1080,12 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
         if (isSubcommand) {
             const exitCode = await runSubcommand(callerFor, positionals, {
-                json, workspaceName, workerName, values, signal: lifetime.signal,
+                json, workerName, values, signal: lifetime.signal,
+                workspace: () => {
+                    if (configuredWorkspace !== undefined) return { name: configuredWorkspace };
+                    if (projectRoot === null) throw new Error("a folderless invocation must select its workspace by name");
+                    return { projectRoot };
+                },
             });
             process.exitCode = exitCode;
             return;

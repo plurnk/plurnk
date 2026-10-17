@@ -88,17 +88,19 @@ test("runViaAgui: forwardedProps.plurnk carries the selected workspace and its o
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         const seen: string[] = [];
-        for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
+        for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", workspace: "selected", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
         assert.deepEqual(seen, ["RUN_FINISHED"]);
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "t", projectRoot: "/x" } });
+        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "selected", projectRoot: "/x" } });
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: the current client defaults its workspace selection to the thread name", async () => {
+test("{§cli-workspaces-and-workers}: thread identity never fabricates a workspace selector", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
-        for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "solo", prompt: "hi" })) void _e;
-        assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "solo" } });
+        for (const threadId of ["opaque-uuid", "42#user"]) {
+            for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId, prompt: "hi" })) void _e;
+            assert.deepEqual((mock.captured.at(-1)!.body as { forwardedProps: unknown }).forwardedProps, { plurnk: {} });
+        }
     } finally { await mock.close(); }
 });
 
@@ -269,7 +271,7 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     try {
         for (const auto of [false, true]) {
-            await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto, json: true, statusStream: false, projectRoot: null });
+            await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, yolo: true, auto, json: true, statusStream: false });
         }
         const declared = mock.captured.map(({ body }) => {
             const run = body as { tools: { name: string }[]; forwardedProps: { plurnk: { interactive?: boolean } } };
@@ -286,7 +288,7 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
     }
 });
 
-test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgui: one-shot workspace options and owner capabilities reach the wire", async () => {
+test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgui: bound runs carry per-run controls and owner capabilities, not workspace selection", async () => {
     await using lifetime = new Lifetime();
     const { runCliViaAgui } = await import("./agui_cli.ts");
     const mock = await bootMock((_req, res) => {
@@ -297,20 +299,20 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgu
     try {
         await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
             lifetime,
-            threadId: "w",
-            workspace: "w",
+            threadId: "7#w",
+            workspace: { id: 7, name: "w" },
             maxTurns: 7,
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
             auto: false,
             json: true,
             statusStream: false,
-            projectRoot: "/repo",
-            settings: { filesItems: 0 },
         });
         const fp = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
-        assert.equal(fp.projectRoot, "/repo", "the project root reaches the wire");
-        assert.deepEqual(fp.settings, { filesItems: 0 }, "workspace settings reach the wire");
+        assert.equal(fp.projectRoot, undefined);
+        assert.equal(fp.settings, undefined);
+        assert.equal(fp.workspace, undefined, "the human-facing label is not sent as a selector");
+        assert.equal((mock.captured[0].body as { threadId: string }).threadId, "7#w");
         assert.equal(fp.selector, undefined, "no model selector rides the run — the worker owns the model ({§worker-model-selection})");
         assert.equal(fp.childSelector, undefined);
         const input = mock.captured[0].body as { tools: { name: string }[] };
@@ -345,12 +347,11 @@ test("[§cli-workspaces-and-workers] a worker's JSON record retains its workspac
         await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
             lifetime,
             threadId: "user",
-            workspace: "workspace",
+            workspace: { id: 7, name: "workspace" },
             yolo: true,
             auto: false,
             json: true,
             statusStream: false,
-            projectRoot: null,
         });
         const doc = JSON.parse(outs.map(String).find((value) => value.startsWith('{"schemaVersion"')) ?? "{}") as {
             workspace?: { id?: number; name?: string };
@@ -394,7 +395,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
         return true;
     };
     try {
-        const code = await runCliViaAgui({ aguiUrl: mock.url }, "spin forever", { lifetime, threadId: "w", workspace: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaAgui({ aguiUrl: mock.url }, "spin forever", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -423,7 +424,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "w", workspace: "w", yolo: true, auto: false, json: true, statusStream: false, projectRoot: null });
+        const code = await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, yolo: true, auto: false, json: true, statusStream: false });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

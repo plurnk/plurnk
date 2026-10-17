@@ -153,12 +153,11 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         shutdown: () => {},
         useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
-        renameWorkspace: () => {},
         threadId: () => "test-thread",
     };
 
     await assert.rejects(
-        runTui(transport, { name: "workspace" }, { lifetime, yolo: false }),
+        runTui(transport, { name: "workspace" }, { lifetime, yolo: false, workerName: "user" }),
         /model control plane unavailable/,
     );
     // {§cli-identity-effort} — one readback path: effort before the final route projection.
@@ -180,12 +179,11 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
         shutdown: () => {},
         useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
-        renameWorkspace: () => {},
         threadId: () => "test-thread",
     };
 
     await assert.rejects(
-        runTui(transport, { name: "workspace" }, { lifetime, yolo: false }),
+        runTui(transport, { name: "workspace" }, { lifetime, yolo: false, workerName: "user" }),
         /invalid ModelRoute/,
     );
 });

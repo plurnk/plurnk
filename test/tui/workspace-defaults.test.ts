@@ -50,9 +50,8 @@ test("[§cli-workspaces-and-workers] built TUIs share directory workspaces and i
 
     for (const [name, args, extra, expectedWorkspace, worker, root] of [
         ["worker flag needs no workspace flag", ["--worker", "reviewer"], {}, workspace, "reviewer", folder],
-        ["worker environment overrides TUI default", [], { PLURNK_CLIENT_WORKER: "envworker", PLURNK_CLIENT_TUI_WORKER: "fallback" }, workspace, "envworker", folder],
-        ["TUI default follows the environment cascade", [], { PLURNK_CLIENT_TUI_WORKER: "fallback" }, workspace, "fallback", folder],
-        ["TUI default flag overrides its environment setting", ["--tui-worker", "localdefault"], { PLURNK_CLIENT_TUI_WORKER: "fallback" }, workspace, "localdefault", folder],
+        ["worker default follows the environment cascade", [], { PLURNK_CLIENT_WORKER: "envworker" }, workspace, "envworker", folder],
+        ["worker flag overrides its environment setting", ["--worker", "localdefault"], { PLURNK_CLIENT_WORKER: "fallback" }, workspace, "localdefault", folder],
         ["workspace environment and explicit headless root", ["--project-root="], { PLURNK_CLIENT_WORKSPACE: "folderless" }, "folderless", "user", null],
         ["flags override both identity environment settings", ["--workspace", "chosen", "--worker", "flagworker", "--project-root", elsewhere], { PLURNK_CLIENT_WORKSPACE: "ignored", PLURNK_CLIENT_WORKER: "ignored" }, "chosen", "flagworker", elsewhere],
     ] as const) {

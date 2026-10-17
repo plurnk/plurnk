@@ -101,7 +101,7 @@ export const COMMANDS = [
     { name: "capabilities", usage: "/capabilities [json]", summary: "Inspect the capability cascade or set the workspace policy.", group: "policy" },
     { name: "yolo", usage: "/yolo", summary: "Toggle local proposal auto-accept (Shift-Tab). On by default.", group: "policy" },
 
-    { name: "workspace", usage: "/workspace [name]", summary: "Create and enter a fresh workspace.", group: "workspace", rebinds: true },
+    { name: "workspace", usage: "/workspace [name]", summary: "Open or create a workspace.", group: "workspace", rebinds: true },
     { name: "rename", usage: "/rename <name>", summary: "Rename this workspace's mutable handle.", group: "workspace", rebinds: true },
     { name: "share", usage: "/share <folder>", summary: "Write this workspace's share into <folder> for a bug report.", group: "workspace" },
     { name: "rollback", usage: "/rollback <loop>/<turn>/<item>", summary: "Reverse the bound worker's file mutations after a log coordinate, latest first, as your own operations.", group: "workspace" },

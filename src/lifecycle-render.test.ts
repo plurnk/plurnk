@@ -4,25 +4,25 @@ import { stripVTControlCharacters } from "node:util";
 import { extractSendBody, isResponseMessage, type LogEntryWire } from "./render.ts";
 import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSendBody } from "./render-message.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import RowAssembler from "./rows.ts";
+import { partsOf } from "../test/agui-parts.ts";
 
-const row = (op: string, body: string | null, status: number, delivered = false): LogEntryWire => ({
+const row = (op: string, body: string | null, status: number, delivered = false): LogEntryWire => partsOf({
     id: 1, loop_seq: 1, turn_seq: 2, sequence: 1, op, origin: "model", signal: null,
     target: null, lineMarker: null,
     tx: { op, body, target: null, aside: null },
     rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/user/messages/m1"] } : {}) }, status_rx: status,
-});
+}, "user").flatMap((event) => assembler.consume(event))[0]!;
+const assembler = new RowAssembler();
 
-test("an addressed answer is rendered from successful delivery, not targetlessness or a terminal verb", () => {
+test("{§cli-broadcast-send-rendering}: standard speech remains speech independently of its historical address spelling", () => {
     const entry = row("SEND", "**Authored response.**", 200, true);
     entry.target = "agui:///threads/user/messages/m1";
     entry.rx = { answers: ["agui://anonymous/threads/user/messages/m1"] };
-    assert.equal(isResponseMessage(entry, "user"), true);
-    assert.equal(isResponseMessage(entry, "other"), false);
+    assert.equal(isResponseMessage(entry), true);
     assert.equal(extractSendBody(entry.tx), "**Authored response.**");
     assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
-    assert.equal(isResponseMessage({ ...entry, status_rx: 409 }), false);
-    assert.equal(isResponseMessage({ ...entry, rx: { answers: ["worker://child/?message=01234567"] } }), false);
-    assert.equal(isResponseMessage({ ...entry, source: "worker://another" }), false);
+    assert.equal(isResponseMessage({ ...entry, rx: { answers: ["agui://operator/threads/old-alias/messages/m1"] } }), true);
     assert.equal(isResponseMessage({ ...entry, source: "worker://another", origin: "_plurnk", attrs: { kind: "reply" } }), true);
     assert.equal(isResponseMessage(row("SEND", "Not delivered", 200)), false);
 });
@@ -110,7 +110,6 @@ test("{§cli-broadcast-send-rendering} a SEND without a delivered recipient is n
     const entry = row("SEND", "Unaddressed text.", 200);
     entry.rx = { status: 200, answers: [] };
     assert.equal(isResponseMessage(entry), false);
-    assert.equal(isResponseMessage(entry, "user"), false);
     assert.match(stripVTControlCharacters(renderLogEntry(entry)), /^SEND\b/u);
 });
 
@@ -127,7 +126,7 @@ test("{§cli-broadcast-send-rendering} an undelivered SEND renders as an operati
     assert.equal(stripVTControlCharacters(renderLogEntry(delivered, 80)), "\nDelivered.", "a delivered targetless reply is a message block");
     const undelivered = row("SEND", "Not delivered.", 200);
     const failed = { ...row("SEND", "Refused.", 409), rx: { status: 409, problem: { title: "Refused" } } };
-    const unrelated = { ...delivered, target: "worker:///child", rx: { answers: ["worker://child/?message=01234567"] } };
+    const unrelated = { ...undelivered, target: "worker:///child", rx: { answers: ["worker://child/?message=01234567"] } };
     for (const [name, entry] of Object.entries({ undelivered, failed, unrelated })) {
         assert.equal(isResponseMessage(entry), false, `${name} is not speech`);
         assert.match(heading(entry), /^SEND\b/, `${name} keeps its operation heading`);

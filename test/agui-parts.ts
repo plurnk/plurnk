@@ -3,6 +3,7 @@
 
 import type { AguiEvent } from "../src/agui.ts";
 import { objectOf, type LogEntryWire } from "../src/render.ts";
+import RowAssembler from "../src/rows.ts";
 
 export type PartRow = Partial<LogEntryWire> & { op: string; invocation?: string };
 
@@ -125,6 +126,12 @@ export const partsOf = (row: PartRow, thread = "t"): AguiEvent[] => {
     if (row.op === "SEND" && objectOf(row.attrs)?.kind === "message") return arrivalOf(row);
     const call = answered(row);
     return call === null ? [ambientOf(row)] : dischargeOf(row, call);
+};
+
+// Rendering fixtures preserve the standard meaning that arrives with their row.
+export const presentedRow = (row: LogEntryWire, thread = "t"): LogEntryWire => {
+    const assembler = new RowAssembler();
+    return { ...row, message: partsOf(row, thread).flatMap((event) => assembler.consume(event))[0]?.message };
 };
 
 // The snapshot messages the daemon sends for one row (plurnk-service `{§agui-snapshot}`): the same parts, each with

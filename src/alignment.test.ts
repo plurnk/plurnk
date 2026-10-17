@@ -8,10 +8,11 @@ import { renderReasoning } from "./render.ts";
 import { renderLogEntry } from "./render-message.ts";
 import type { LogEntryWire } from "./render.ts";
 import StreamTrace from "./stream.ts";
+import { presentedRow } from "../test/agui-parts.ts";
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
-const entry = (over: Partial<LogEntryWire>): LogEntryWire => ({
+const entry = (over: Partial<LogEntryWire>): LogEntryWire => presentedRow({
     id: 1, loop_seq: 1, turn_seq: 1, sequence: 5, op: "READ", origin: "model",
     signal: null, target: "file:///x",
     lineMarker: null, tx: { target: { raw: "/x" } }, rx: { status: 200 }, status_rx: 200,

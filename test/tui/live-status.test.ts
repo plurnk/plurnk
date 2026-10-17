@@ -113,12 +113,12 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
     }, daemon.home);
     t.after(() => tui.kill());
-    await tui.waitFor(new RegExp(`${RegExp.escape(first)} \\[project-first/`));
-    assert.match(stripVTControlCharacters(tui.output()), new RegExp(`(?:^|[\\r\\n])${RegExp.escape(first)} \\[project-first/`),
+    const firstScreen = await tui.waitForScreen(new RegExp(`${RegExp.escape(first)}\\s+\\[project-first/`));
+    assert.match(firstScreen, new RegExp(`(?:^|[\\r\\n])${RegExp.escape(first)}\\s+\\[project-first/`),
         "the folder is at column zero, before the workspace/worker coordinates");
     const switched = tui.output().length;
     tui.write("/workspace project-second\r");
-    await tui.waitFor(new RegExp(`${RegExp.escape(second)} \\[project-second/`), 10_000, switched);
+    await tui.waitForScreen(new RegExp(`${RegExp.escape(second)}\\s+\\[project-second/`));
     await tui.waitFor(/workspace: project-second \(new\)/, 10_000, switched);
     const headless = tui.output().length;
     tui.write("/workspace project-headless\r");

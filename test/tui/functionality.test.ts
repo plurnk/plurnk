@@ -66,20 +66,20 @@ describe("TUI Functionality dogfood", () => {
             tui.write(`/skills add extra ${source}\r`);
             await tui.waitFor(/added: extra \(active\)/, 20_000);
             tui.write("/skills\r");
-            await tui.waitFor(/extra\s+active[\s\S]*Extra dogfood skill/, 20_000);
+            await tui.waitForScreen(/extra\s+active[\s\S]*Extra\s+dogfood\s+skill/, 20_000);
             tui.write("/skills disable extra\r");
             await tui.waitFor(/disabled: extra \(disabled\)/, 20_000);
             tui.write("/skills enable extra\r");
             await tui.waitFor(/enabled: extra \(active\)/, 20_000);
             tui.write(`/skills add ghost ${source}\r`);
-            const skillProblem = await tui.waitFor(/ghost[\s\S]*carries no Agent Skill named 'ghost'/, 20_000);
+            const skillProblem = await tui.waitForScreen(/ghost[\s\S]*carries\s+no\s+Agent\s+Skill\s+named\s+'ghost'/, 20_000);
             assert.doesNotMatch(skillProblem, /added: ghost/);
             tui.write("/skills remove extra\r");
             await tui.waitFor(/removed: extra/, 20_000);
 
             // Agents: the configured researcher is live; a dead peer is an exact Problem.
             tui.write("/a2a\r");
-            await tui.waitFor(/researcher[\s\S]*active[\s\S]*http:\/\/127\.0\.0\.1:\d+[\s\S]*Plurnk A2A protocol witness v1\.0\.0[\s\S]*1 skills[\s\S]*\(service\)/, 20_000);
+            await tui.waitForScreen(/researcher[\s\S]*active[\s\S]*http:\/\/127\.0\.0\.1:\d+[\s\S]*Plurnk\s+A2A\s+protocol\s+witness\s+v1\.0\.0[\s\S]*1\s+skills[\s\S]*\(service\)/, 20_000);
             tui.write(`/a2a discover ${agent!.baseUrl}\r`);
             await tui.waitFor(/plurnk-a2a-protocol-witness\s+candidate/, 20_000);
             // Remote-agent delegation through the ordinary client surface: the
@@ -92,7 +92,7 @@ describe("TUI Functionality dogfood", () => {
             tui.write("/a2a disable researcher\r");
             await tui.waitFor(/disabled: researcher \(disabled\)/, 20_000);
             tui.write(`/a2a add ghost ${await unreachableUrl()}\r`);
-            const agentProblem = await tui.waitFor(/ghost[\s\S]*(Agent Card|unreachable|card)/i, 20_000);
+            const agentProblem = await tui.waitForScreen(/ghost[\s\S]*(Agent\s+Card|unreachable|card)/i, 20_000);
             assert.doesNotMatch(agentProblem, /added: ghost/);
             tui.write("/a2a remove peer\r");
             await tui.waitFor(/removed: peer/, 20_000);

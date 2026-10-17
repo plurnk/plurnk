@@ -108,7 +108,7 @@ export const wholeRow = (value: unknown): LogEntryWire | null => {
 // One Run's stream, one assembler: a row's events arrive together, so a part opened and never finished is a broken wire.
 export default class RowAssembler {
     #calls = new Map<string, { facts: Facts; args: string; ended: boolean }>();
-    #texts = new Map<string, { facts: Facts; content: string }>();
+    #texts = new Map<string, { facts: Facts; content: string; message: NonNullable<LogEntryWire["message"]> }>();
 
     // One standard event in; the rows it completes out.
     consume(e: AguiEvent): LogEntryWire[] {
@@ -151,7 +151,9 @@ export default class RowAssembler {
             case "TEXT_MESSAGE_START": {
                 this.#unanswered();
                 const facts = factsOf(e.metadata);
-                if (facts !== null) this.#texts.set(e.messageId, { facts, content: "" });
+                if (facts !== null) this.#texts.set(e.messageId, { facts, content: "", message: {
+                    id: e.messageId, role: e.role ?? "assistant", ...(e.name === undefined ? {} : { name: e.name }),
+                } });
                 return [];
             }
             case "TEXT_MESSAGE_CONTENT": {
@@ -163,10 +165,10 @@ export default class RowAssembler {
                 const text = this.#texts.get(e.messageId);
                 if (text === undefined) return [];
                 this.#texts.delete(e.messageId);
-                const { facts, content } = text;
+                const { facts, content, message } = text;
                 // Speech carries its heading's aside and its receipt; an arrival is the message it delivered.
                 const aside = typeof facts.aside === "string" ? { aside: facts.aside } : {};
-                return [rowOf(facts, { ...aside, body: bodyOf(facts.op, content) }, facts.receipt ?? null)];
+                return [{ ...rowOf(facts, { ...aside, body: bodyOf(facts.op, content) }, facts.receipt ?? null), message }];
             }
             default:
                 return [];

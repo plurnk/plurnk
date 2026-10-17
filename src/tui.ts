@@ -495,9 +495,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             write(`  yolo: ${opts.yolo ? "ON" : "OFF"}\n`);
             return;
         case "workspace": {
-            // Switch workspace: the transport re-maps its threadId. The
-            // name is optional (generated when omitted) and is a mutable handle
-            // (/rename retargets it).
+            // The daemon selects or creates the workspace; only successful acquisition switches the view.
             const selected = await ctx.switchWorkspace(rest.length > 0 ? rest : undefined);
             if (selected === undefined) return;
             ctx.setWorkspace(selected);
@@ -626,7 +624,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
-    workerName?: string;        // resolved invocation selection, also used after workspace switches
+    workerName: string;        // resolved invocation selection, also used after workspace switches
 }): Promise<void> => {
     let current = workspace;
     // Loop state, hoisted so the line handler and SIGINT can share it.
@@ -682,7 +680,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let placeTurn: number | null = null;
     let seenLoopId: number | null = null;
     let placeWorkers: readonly WorkerRow[] = [];
-    let boundWorker: string | null = opts.workerName ?? null;
+    let boundWorker = opts.workerName;
     let searchFetching = false;
     let searchPercent: number | null = null;
     // A `?` prompt asks for review of that run; the request outranks the standing yolo setting.
@@ -818,7 +816,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const workspaceName = current.name;
         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
         if (threadId !== transport.threadId() || workspaceName !== current.name) return;
-        boundWorkerId = workers.find((worker) => worker.name === threadId)?.id ?? null;
+        boundWorkerId = workers.find((worker) => worker.name === boundWorker)?.id ?? null;
         workerPosition = siblingPosition(workers, boundWorker);
         placeWorkers = workers;
         reprompt();
@@ -1024,7 +1022,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // {§cli-what-is-not-rendered} — a started execution appears when its outcome is known.
             if (streams.launch(entry)) return;
             for (const row of fanout.admit(entry)) {
-                if (isResponseMessage(row.entry, transport.threadId())) surface.addResponse(row.entry);
+                if (isResponseMessage(row.entry)) surface.addResponse(row.entry);
                 else surface.append(renderLogEntry(row.entry, surface.columns || 80, row.override));
             }
         },
@@ -1052,7 +1050,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
             // {§cli-history-lost} — a bound name answered with no history is a new worker.
             if (historyLost(seenLoopId, authoritativeStatus.loopId)) {
-                printAlert(renderDiagnostic(clientHistoryLost(current.name, boundWorker ?? current.name)));
+                printAlert(renderDiagnostic(clientHistoryLost(current.name, boundWorker)));
             }
             seenLoopId = authoritativeStatus.loopId;
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
@@ -1152,16 +1150,14 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         getWorkspace: () => current,
         setWorkspace: (s) => { current = s; },
         renameWorkspace: (s) => {
-            transport.renameWorkspace(s.name);
             current = s;
             surface.setTitle(windowTitle(s.name, boundWorker));
         },
         switchWorkspace: async (name) => {
             const projectRoot = opts.selectProjectRoot === undefined ? opts.projectRoot : await opts.selectProjectRoot(name, surface);
             if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;
-            const workspace = await transport.useWorkspace(name, { projectRoot });
-            const worker = opts.workerName ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
-            transport.useWorker(worker, workspace.name);
+            const worker = opts.workerName;
+            const workspace = await transport.useWorkspace(name, { projectRoot, worker });
             opts.projectRoot = projectRoot;
             resetBindingView();
             boundWorker = worker;
@@ -1174,7 +1170,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         },
         getWorker: () => boundWorker,
         attachWorker: async (name) => {
-            transport.useWorker(name, current.name);
+            transport.useWorker(name);
             resetBindingView();
             boundWorker = name;
             surface.setTitle(windowTitle(current.name, name));
@@ -1328,7 +1324,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, boundWorker ?? workspace.name, opts.resumeEnv)}`, "dim")}\n`);
+            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, boundWorker, opts.resumeEnv)}`, "dim")}\n`);
             resolve();
         };
         requestClose = close;

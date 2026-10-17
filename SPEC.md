@@ -14,7 +14,7 @@ what it guarantees, what its exit codes mean, and what it renders.
 | Term | Meaning |
 |---|---|
 | **daemon** | A running `plurnk-service` process whose in-process AG-UI+ module (`@plurnk/plurnk-agui`) serves HTTP/SSE. The client connects to it; it owns all state. |
-| **workspace** | Daemon-owned shared environment, selected by name through `forwardedProps.plurnk.workspace`; see {§agui-thread-binding}. |
+| **workspace** | Daemon-owned shared environment, selected by name or folder at acquisition and addressed by its immutable ID thereafter; see {§cli-workspaces-and-workers}. |
 | **worker** | An actor within a workspace, with its own log. `--worker` selects the worker the thread binds; client operations have their own actor. |
 | **AG-UI Run** | One protocol exchange on a thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
 | **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; the Run's end carries the authoritative terminal record as `metadata.plurnk.terminal` (plurnk-service `{§agui-plurnk-metadata}`). |
@@ -53,8 +53,7 @@ Options:
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, structured errors; interactive OAuth instructions use stderr. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
-| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Overrides `PLURNK_CLIENT_WORKER`. TUI default: `PLURNK_CLIENT_TUI_WORKER`; CLI default: the worker named after the workspace. See §1.1. |
-| `--tui-worker <name>` | string | TUI-only default when no worker is selected. Overrides `PLURNK_CLIENT_TUI_WORKER`. |
+| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Overrides `PLURNK_CLIENT_WORKER` (shipped `user` in CLI and TUI). See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
 | `--effort <policy>` | string | Persist the daemon-validated effort on the worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_EFFORT`. |
 | `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: permit private local startup or require attachment. See {§cli-daemon-autostart}. |
@@ -135,16 +134,22 @@ Help, version, completion and local rendering do not acquire a backend.
 
 ### §1.1 Workspaces and workers {§cli-workspaces-and-workers}
 
-Workspaces and workers are daemon-owned. Human selection uses names; daemon-returned IDs identify records and are not exposed through selection flags or environment settings. Workspace-scoped calls use the transport's bound workspace; the client never invents an ID. Worker switching rebinds the thread by name, including after a fork.
+Workspaces and workers are daemon-owned. Names select; IDs identify.
 
-**Names select; IDs identify.** Terminal invocations send `--workspace`/`PLURNK_CLIENT_WORKSPACE` verbatim as `forwardedProps.plurnk.workspace`; AG-UI owns attach-or-create admission under {§agui-thread-binding}. Without one, the invocation designates a folder ({§cli-project-root}) and asks the daemon for its workspace with `workspace.create`: the daemon names a workspace after its folder and selects an existing workspace of that name ({§workspace-name}), and the invocation binds the name it answers. The client derives no name of its own, so launches designating the same folder against the same daemon/database share a workspace whichever directory they start in. Workspace identity and project root are independent: the folder sent selects a workspace and never rewrites a saved root. A workspace without a folder has nothing to be named after, so `--project-root=` without `--workspace` exits 64 with `client/flag/missing-dependency`. The workspace and the worker's `threadId` remain separate wire fields.
+| Surface | Contract |
+|---|---|
+| Workspace acquisition | `workspace.create` receives the literal selected label, if any, with projectRoot/settings. It returns `{id, name}` before bound work begins. |
+| Directory default | Without a label, the invocation designates a folder ({§cli-project-root}); the daemon names/selects its workspace ({§workspace-name}). The client invents neither a label nor an ID. |
+| Bound requests | `threadId` is `<workspace ID>#<worker name>` ({§agui-thread-binding}); no workspace label or creation options are resent. |
+| Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. |
+| Workspace switch | Acquire first, then replace the binding. A failed acquisition preserves the previous conversation. |
+| Worker selection | `--worker` overrides `PLURNK_CLIENT_WORKER`, shipped as `user` for CLI and TUI, including workspace switches. A worker selection needs no explicit workspace. |
+| Worker switch/fork | Change the worker name within the same workspace ID. No client-side thread alias table. |
+| Inspection | `workspace.attach` resolves the selected literal name, or the launch/project folder's daemon-derived default. Absence fails without creating a workspace or asking for a creation folder. Worker reads resolve the selected name through `workspace.workers`; absence never falls back. |
 
-**Creation includes projectRoot.** The client sends its workspace options (projectRoot/settings) on every request, so whichever request causes creation supplies them together. A workspace created without a root is folderless; selecting it later does not assign or change its root.
-
-- **Worker selection**: `--worker` → `PLURNK_CLIENT_WORKER` → TUI-only `--tui-worker`/`PLURNK_CLIENT_TUI_WORKER` (shipped `user`). The selected name becomes `threadId`. TUI workspace switches use this same selection. One-shot and state-command invocations without a selection use the workspace name as `threadId`, so they address the worker named after the workspace, which a message creates. For read subcommands, an explicit worker resolves via `workspace.workers`; an unknown name fails rather than falling back.
-- An explicit worker does not require an explicit workspace: it can attach within the folder's workspace.
-
-CLI flag takes precedence over env when both are set.
+Workspace identity, mutable label and saved project root are independent. Creation options never rewrite
+an existing root. `--project-root=` without `--workspace` exits 64 with `client/flag/missing-dependency`:
+a folderless workspace needs a label. IDs are not selection flags or environment settings.
 
 {§cli-history-lost} **A bound name answered with no history is a new worker, and the client says so.** The daemon mints a worker anew under its old name when it no longer holds it ({§agui-thread-binding}: a fresh database, a deleted worker), and the name cannot tell the client. The run-start gauge can: `snapshot.plurnk.status.loopId` is `null` only for a worker with no loop at all, so a `STATE_SNAPSHOT` reporting `null` after a gauge on the same binding that carried a loop raises the `history_lost` warning Notice, naming the workspace and worker, ahead of the run's rows. The transcript above the alert is the terminal's memory, not the model's. Switching workspace or worker starts a fresh watch.
 
@@ -437,7 +442,7 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.1 Flow {§cli-tui-flow}
 
-1. Bind an `AguiTransport` to the module (§1.1 name-verbatim workspace on every run); its persistent handlers un-project `CUSTOM plurnk.*` events to the daemon shapes the waterfall renders. Restore the bound worker's history under {§cli-worker-history}.
+1. Acquire the workspace and bind `AguiTransport` to its ID and worker name (§1.1). Its persistent handlers retain standard conversation meaning and add Plurnk waterfall details. Restore the bound worker's history under {§cli-worker-history}.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
    and §1.2.1's aggregate line on the place line below the composer. Before AG-UI
    state arrives, derivation, search, and
@@ -446,7 +451,7 @@ Triggered when `argv` has no positional prompt.
    and ❌ on failure; YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). Singular verbs CREATE, plural verbs LIST: `/workspace [name]` opens a fresh workspace (rebinds the AG-UI thread in place), `/workspaces` lists; `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2); `/rename <name>` retargets the workspace's mutable handle (a worker's name is immutable), and the session follows it: later commands name the new handle and keep the bound worker. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). `/workspace [name]` selects or creates a workspace, then binds its shared-default worker under §1.1; `/workspaces` lists. `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2). `/rename <name>` changes the workspace's display name without changing its ID, worker or thread. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; the person's own command, so it runs at once: the daemon never routes it for review, though its server policy can still refuse it.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
@@ -918,6 +923,10 @@ A row's `target` is the address it recorded; its heading shows the target as aut
 has one (§5.1). A call ended without its receipt, a result that is not text, or row facts that are present
 but unreadable are a broken wire (`result-invalid`), never a row skipped.
 
+Text-message identity, role and optional sender name survive projection. The daemon owns whether a
+delivery is speech: the client does not reinterpret recorded reply addresses using its current thread
+spelling. Reopening a conversation through another supported spelling preserves its delivered answers.
+
 ### §5.1 `log/entry` line format {§cli-log-entry-line-format}
 
 Received operation rows render as below, except delivered message blocks (§5.4)
@@ -1132,7 +1141,7 @@ A failed preview read is diagnosed without replacing the execution or loop resul
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
-A successful SEND whose receipt addresses the current AG-UI thread carries response content, including an exact-address reply or another actor's delivered reply observation. A missing path does not establish delivery. The interactive client renders full message bodies, not diagnostic previews; an unrelated worker or protocol recipient does not become speech. Completion metadata does not change delivery or rendering: message resolution and loop settlement belong to the daemon. An empty body creates no message and neither repeats nor erases a previous reply.
+An assistant text message projected from SEND or KILL carries response content, including another actor's delivered reply observation. The standard message role establishes delivery; the receipt's historic thread spelling does not reclassify it. The interactive client renders full message bodies, not diagnostic previews. Completion metadata does not change rendering: message resolution and loop settlement belong to the daemon. An empty body creates no response and neither repeats nor erases a previous reply.
 
 TUI mode contract:
 
@@ -1152,11 +1161,9 @@ CLI/one-shot mode: trace entries use stderr per §5.1; delivered response messag
 
 The message body source is `entry.tx.body`, carrying `{ raw, json }`.
 
-Successful (`200 ≤ status_rx < 300`) SEND rows contribute through their recorded
-`answers` message addresses, independently of loop completion. An ordinary source
-observation cannot deliver the same message again; a source-attributed `reply`
-observation is a genuine delivery to this thread.
-Bodies accumulate in delivery order, separated by a blank line. NOTE and WAIT are not speech.
+Bodies accumulate in delivery order, separated by a blank line. Tool results and ambient rows do not
+become responses through their metadata. NOTE is working memory; WAIT speech remains progress rather
+than contributing to the CLI's answer accumulator.
 
 **CLI default** emits each qualifying body verbatim, without Markdown or
 JSON transformation. **CLI `--json`** includes the aggregated `response` in the
@@ -1478,7 +1485,7 @@ With `--json`: emits `workspaces` array verbatim.
 
 ### §7.3 `plurnk workspace workers <name>` {§cli-plurnk-workspace-workers-name}
 
-Lists workers within a named workspace via `workspace.workers`. Resolves `<name>` to a workspace id via a `workspace.list` filter; no attach required. Exits `1` if the name is unknown or ambiguous.
+Lists workers within the existing workspace selected by literal `<name>` through `workspace.attach`, then calls `workspace.workers` on its qualified thread. A missing workspace preserves the daemon's 404 Problem and creates nothing.
 
 Default output: a column-aligned table of `name / created`. With `--json`: emits `workers` array verbatim. Physical provider-request accounting is not denormalized into this directory view.
 
@@ -1488,7 +1495,7 @@ Typical use: discover a worker name to pass as `--worker` on `plurnk log read`.
 
 Reads a worker's log through `log.read` in the workspace selected under §1.1.
 `--worker <name>` selects an existing worker;
-omission selects the worker named after the workspace under §1.1.
+omission uses the shared worker default under §1.1.
 
 Filter flags (all numeric, all optional):
 

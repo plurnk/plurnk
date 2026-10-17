@@ -32,9 +32,10 @@ const {
 } = await import("./render.ts");
 const { renderLogEntry, renderSendBody } = await import("./render-message.ts");
 import type { LogEntryWire } from "./render.ts";
+import { presentedRow } from "../test/agui-parts.ts";
 
 // Minimal entry factory — fills in plausible defaults; callers override what matters.
-const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
+const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => presentedRow({
     id: 1,
     op: "READ",
     origin: "model",

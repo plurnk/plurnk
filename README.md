@@ -59,7 +59,7 @@ Run from your project directory. Or try it without a global install:
 `npx @plurnk/plurnk --workspace="myProject"`.
 
 Without `--workspace`, the daemon names the workspace after its folder, the
-directory you launch from (for example, `~/projects/myProject`); the TUI opens
+directory you launch from (for example, `~/projects/myProject`); both CLI and TUI open
 worker `user`. Launches in the same folder share that workspace on the same
 daemon/database. Override either identity with `--workspace` or `--worker`;
 neither changes an existing workspace's folder.

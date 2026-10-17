@@ -17,8 +17,6 @@ import {
     ProblemError,
     clientSubcommandCoordinateInvalid,
     clientSubcommandEntryNotFound,
-    clientSubcommandWorkspaceAmbiguous,
-    clientSubcommandWorkspaceNotFound,
 } from "./diagnostics.ts";
 
 // The minimal action surface a subcommand needs; the AG-UI action caller satisfies it.
@@ -119,17 +117,7 @@ export const runWorkspaceWorkers = async (
     workspaceName: string,
     opts: { json: boolean },
 ): Promise<number> => {
-    // Look up the workspace id by name without attaching — workspace.workers accepts
-    // an explicit id, so we don't need to spend an attach on a read-only call.
-    const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
-    const matches = workspaces.filter((s) => s.name === workspaceName);
-    if (matches.length === 0) {
-        throw new ProblemError(clientSubcommandWorkspaceNotFound(workspaceName), 1);
-    }
-    if (matches.length > 1) {
-        throw new ProblemError(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length), 1);
-    }
-    const { workers } = await rpc.call("workspace.workers", { id: matches[0].id }) as { workers: WorkerRow[] };
+    const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(workers)}\n`);
         return 0;
@@ -145,22 +133,13 @@ export const runWorkspaceWorkers = async (
 
 // ─── plurnk workspace rename ────────────────────────────────────────────
 
-// Resolve the workspace name, attach by ID, then rename without changing its identity.
+// The caller is already bound to the selected workspace ID; attaching is not a rebind operation.
 export const runWorkspaceRename = async (
     rpc: Caller,
     workspaceName: string,
     newName: string,
     opts: { json: boolean },
 ): Promise<number> => {
-    const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
-    const matches = workspaces.filter((s) => s.name === workspaceName);
-    if (matches.length === 0) {
-        throw new ProblemError(clientSubcommandWorkspaceNotFound(workspaceName), 1);
-    }
-    if (matches.length > 1) {
-        throw new ProblemError(clientSubcommandWorkspaceAmbiguous(workspaceName, matches.length), 1);
-    }
-    await rpc.call("workspace.attach", { id: matches[0].id });
     const result = await rpc.call("workspace.rename", { name: newName }) as { id: number; name: string };
     if (opts.json) {
         process.stdout.write(`${JSON.stringify(result)}\n`);

@@ -74,17 +74,17 @@ test("[§cli-script-binding] built scripts bind their workspace, worker, and set
             const result = await run(url, directory, ["--workspace", "workspace", "--worker", "actor", "--project-root", root, ...flags]);
             assert.equal(result.stderr, "");
             assert.equal(JSON.parse(result.stdout).exitCode, 0);
-            assert.equal(requests.length, 2);
-            const [lookup, ...bound] = requests;
+            assert.equal(requests.length, 4);
+            const [lookup, create, stored, bound] = requests;
             assert.deepEqual(lookup.forwardedProps?.plurnk?.action, { kind: "workspace.list" });
             assert.equal(lookup.forwardedProps?.plurnk?.projectRoot, undefined, "root discovery imposes no creation default");
-            for (const input of bound) {
-                assert.equal(input.threadId, "actor");
-                assert.equal(input.forwardedProps?.plurnk?.workspace, "workspace");
-            }
-            assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, root === "" ? null : root);
-            assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
-            assert.deepEqual(bound[0].forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
+            assert.deepEqual(create.forwardedProps?.plurnk?.action, { kind: "workspace.create", name: "workspace", projectRoot: root === "" ? null : root, settings });
+            assert.equal(stored.forwardedProps?.plurnk?.action?.kind, "workspace.list");
+            assert.equal(bound.threadId, `${created}#actor`);
+            assert.equal(bound.forwardedProps?.plurnk?.workspace, undefined);
+            assert.equal(bound.forwardedProps?.plurnk?.projectRoot, undefined);
+            assert.equal(bound.forwardedProps?.plurnk?.settings, undefined);
+            assert.deepEqual(bound.forwardedProps?.plurnk?.action, { kind: "op.parse", text: script });
         });
     }
     // {§workspace-name} — the daemon names an unnamed workspace after the folder the launch designates.
@@ -97,13 +97,12 @@ test("[§cli-script-binding] built scripts bind their workspace, worker, and set
             const [create, lookup, ...bound] = requests;
             assert.deepEqual(create.forwardedProps?.plurnk?.action, { kind: "workspace.create", projectRoot: directory, settings });
             assert.equal(lookup.forwardedProps?.plurnk?.action?.kind, "workspace.list", "the bound workspace's stored root is read back by name");
-            const name = `generated-${attempt + 1}`;
             for (const input of bound) {
-                assert.equal(input.threadId, name);
-                assert.equal(input.forwardedProps?.plurnk?.workspace, name);
+                assert.equal(input.threadId, `${created}#user`);
+                assert.equal(input.forwardedProps?.plurnk?.workspace, undefined);
             }
-            assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, directory);
-            assert.deepEqual(bound[0].forwardedProps?.plurnk?.settings, settings);
+            assert.equal(bound[0].forwardedProps?.plurnk?.projectRoot, undefined);
+            assert.equal(bound[0].forwardedProps?.plurnk?.settings, undefined);
             assert.ok(requests.every((input) => input.forwardedProps?.plurnk?.workspace !== directory), "the client derives no name of its own");
         }
     });

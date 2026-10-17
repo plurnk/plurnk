@@ -32,6 +32,16 @@ import {
 export type AguiEvent = AGUIEvent;
 
 export interface AguiTarget { aguiUrl: string; credential?: ClientCredential }
+export interface WorkspaceHandle { readonly id: number; readonly name: string }
+export interface WorkerBinding { readonly workspaceId: number; readonly worker: string }
+
+// {§cli-workspaces-and-workers}: display labels never participate in a bound thread's identity.
+export const workerThreadId = ({ workspaceId, worker }: WorkerBinding): string => {
+    if (!Number.isSafeInteger(workspaceId) || workspaceId <= 0) {
+        throw new ProblemError(clientTransportResultInvalid("A worker binding requires a daemon-returned workspace ID."));
+    }
+    return `${workspaceId}#${worker}`;
+};
 
 export type ActionOutcome<T = unknown> =
     | { kind: string; ok: true; result?: T }
@@ -154,7 +164,7 @@ export async function* runViaAgui(
         // This client's workspace-qualified binding; workspace selection is a Plurnk extension.
         // {§cli-worker-ownership} A Run that declares capabilities also states whether a person attends.
         forwardedProps: { plurnk: {
-            workspace: run.workspace ?? run.threadId,
+            ...(run.workspace === undefined ? {} : { workspace: run.workspace }),
             ...(run.capabilities === undefined ? {} : { interactive: run.capabilities.interactive }),
             ...(run.forwardedProps ?? {}),
         } },

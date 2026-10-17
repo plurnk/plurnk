@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Terminal conversations bind to the daemon-returned workspace ID and worker name. Renaming the
+  workspace no longer changes routing, ownership or interrupt resumes. Both CLI and TUI default to
+  worker `user` through `PLURNK_CLIENT_WORKER`; the separate TUI-only worker setting is removed.
+  Read-only commands select existing workspaces by name or directory without creating them.
+- Restored replies retain their standard AG-UI assistant role, including replies originally addressed
+  through another spelling of the same thread; reopening them no longer renders them as tool rows.
 - A proposal is the standard AG-UI interrupt the daemon ends a Run with, carrying its proposal
   projection as `metadata.plurnk.proposal` and naming the operation's own call when the Run holds it;
   the client reviews from the interrupt and resumes it by its id. The gated call draws nothing while it

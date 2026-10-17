@@ -15,7 +15,7 @@ export const renderHistory = (history: WorkerHistory, threadId: string, columns:
             const content = ModelText.plain(extractSendBody(entry.tx));
             if (isOwnArrival(entry, threadId)) blocks.push(renderSubmittedInput(content));
             else blocks.push(`${paint(ModelText.plain(entry.source ?? "SEND"), "dim")}\n${content}`);
-        } else if (isResponseMessage(entry, threadId)) {
+        } else if (isResponseMessage(entry)) {
             blocks.push(renderSendBody(entry.tx, columns));
         } else {
             blocks.push(paint(renderOperationRow(entry), "dim"));

@@ -41,13 +41,11 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     );
     const connectionA = new AguiTransport(
         { aguiUrl: daemon.url },
-        "terminal-durable-worker",
-        { workspace: original },
+        { workspaceId: created.id, worker: "terminal-durable-worker" },
     );
     const connectionB = new AguiTransport(
         { aguiUrl: daemon.url },
-        "terminal-durable-worker",
-        { workspace: original },
+        { workspaceId: created.id, worker: "terminal-durable-worker" },
     );
     const from = <T>(connection: "a" | "b", kind: string, params: object = {}): Promise<T> =>
         (connection === "a" ? connectionA : connectionB).rpc<T>(kind, params);
@@ -137,6 +135,9 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
         { threadId: "terminal-observer-after-rename", kind: "workspace.list" },
     );
     assert.ok(afterRename.workspaces.some(({ id, name }) => id === created.id && name === renamed));
+    assert.equal(connectionB.threadId(), `${created.id}#terminal-durable-worker`);
+    assert.equal((await from<{ model: { alias: string } }>("b", "worker.model.get")).model.alias, "controlfixture",
+        "an independently open connection keeps addressing the same worker after rename");
 });
 
 test("[§cli-file-members] separate client connections observe the durable file members family", { timeout: 60_000 }, async (t) => {
@@ -157,9 +158,9 @@ test("[§cli-file-members] separate client connections observe the durable file 
     await writeFile(join(project, "docs", "guide.md"), "# guide\n");
     await writeFile(join(project, "note.md"), "# note\n");
     const name = `terminal-members-${crypto.randomUUID()}`;
-    await actionViaAgui(target, { threadId: "terminal-members-control", kind: "workspace.create", params: { name, projectRoot: project } });
-    const connectionA = new AguiTransport(target, "terminal-members-worker", { workspace: name });
-    const connectionB = new AguiTransport(target, "terminal-members-worker", { workspace: name });
+    const created = await actionViaAgui<{ id: number }>(target, { threadId: "terminal-members-control", kind: "workspace.create", params: { name, projectRoot: project } });
+    const connectionA = new AguiTransport(target, { workspaceId: created.id, worker: "terminal-members-worker" });
+    const connectionB = new AguiTransport(target, { workspaceId: created.id, worker: "terminal-members-worker" });
     type Definition = { alias: string; origin: string; state: string; detail?: { effect: string; pattern: string; matched: number; files: string[]; ignored: number } };
     const members = async (): Promise<Definition[]> =>
         (await connectionB.rpc<{ definitions: Definition[] }>("workspace.members.list", {})).definitions;

@@ -8,8 +8,11 @@ import { isResponseMessage } from "./render.ts";
 import { clientFlagInvalid } from "./diagnostics.ts";
 import type { FunctionalityFamily } from "./commands.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
+import RowAssembler from "./rows.ts";
+import { partsOf } from "../test/agui-parts.ts";
 
-const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
+const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => {
+    const row: LogEntryWire = {
     id: 1,
     op: "READ",
     origin: "model",
@@ -24,7 +27,10 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => ({
     tx: overrides.op === "SEND" ? { body: "Fixture reply." } : null,
     rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
     ...overrides,
-});
+    };
+    const assembler = new RowAssembler();
+    return { ...row, message: partsOf(row).flatMap((event) => assembler.consume(event))[0]?.message };
+};
 
 test("successful delivered SEND messages contribute to the response independently of lifecycle", () => {
     assert.equal(isResponseMessage(entry({ op: "SEND" })), true);

@@ -20,14 +20,15 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
         const input = RunAgentInputSchema.parse(JSON.parse(body));
         const action = input.forwardedProps?.plurnk?.action;
         assert.ok(action);
-        assert.equal(input.forwardedProps?.plurnk?.workspace, "workspace");
-        assert.equal(input.threadId, "actor");
-        actions.push(action);
+        assert.equal(input.forwardedProps?.plurnk?.workspace, undefined);
+        assert.equal(input.threadId, action.kind === "workspace.attach" ? "bootstrap" : "7#actor");
+        if (action.kind === "workspace.attach") assert.equal(action.name, "workspace");
+        else actions.push(action);
         response.writeHead(200, { "content-type": "text/event-stream" });
         const frame = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
         frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId });
         // A members add names its definitions by their globs and is answered with the list it admitted.
-        const result = action.kind === "workspace.members.add"
+        const result = action.kind === "workspace.attach" ? { id: 7, name: "workspace" } : action.kind === "workspace.members.add"
             ? { status: 201, family: "members", definitions: (action.files as string[]).map((glob) => ({ alias: glob, origin: "workspace", state: "active", definition: { glob } })) }
             : { status: 201, alias: action.alias, definition: { state: "active" } };
         frame({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" }, result: { kind: action.kind, ok: true, result } });

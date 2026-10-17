@@ -110,9 +110,10 @@ for (const { browserFails, fixedRedirect } of [
         const daemon = await bootDaemon(bin);
         t.after(daemon.cleanup);
         const workspace = "oauth-client";
-        await actionViaAgui({ aguiUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        const created = await actionViaAgui<{ id: number }>({ aguiUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        const threadId = `${created.id}#user`;
         const added = await actionViaAgui({ aguiUrl: daemon.url }, {
-            threadId: workspace, kind: "workspace.mcp.add", params: { definition },
+            threadId, kind: "workspace.mcp.add", params: { definition },
         }) as FunctionalityMutationResult;
         assert.equal(added.status, 202);
         assert.equal(added.definition?.state, "authorization-required");
@@ -149,7 +150,7 @@ for (const { browserFails, fixedRedirect } of [
         assert.deepEqual(JSON.parse(stdout), { status: 202, alias: "oauth" });
         assert.match(stderr, /Sign-in accepted; tools awaiting activation/);
         assert.equal(tokenRequests.length, 1);
-        const list = () => actionViaAgui({ aguiUrl: daemon.url }, { threadId: workspace, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
+        const list = () => actionViaAgui({ aguiUrl: daemon.url }, { threadId, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
         let listed = await list();
         for (let attempt = 0; attempt < 100 && listed.definitions.find(({ alias }) => alias === "oauth")?.state !== "active"; attempt++) {
             await delay(20);
@@ -161,7 +162,7 @@ for (const { browserFails, fixedRedirect } of [
         assert.deepEqual(listed.definitions.find(({ alias }) => alias === "oauth")?.definition, definition,
             "the callback binding and tokens never become persisted MCP configuration");
         const invocation = await actionViaAgui({ aguiUrl: daemon.url }, {
-            threadId: workspace, kind: "op.parse", params: { text: "````oauth (inspect)\n{}\n````" },
+            threadId, kind: "op.parse", params: { text: "````oauth (inspect)\n{}\n````" },
         }) as { results: { status: number }[] };
         assert.equal(invocation.results.length, 1);
         assert.ok(invocation.results[0].status < 400, JSON.stringify(invocation));

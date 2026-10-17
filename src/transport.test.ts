@@ -167,7 +167,7 @@ test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle sp
                 res.end();
             });
             try {
-                const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
+                const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
                 const { h, seen } = collectingHandlers();
                 transport.subscribe({
                     ...h,
@@ -235,7 +235,7 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         const result = await transport.run("fixture", {}).done;
@@ -261,7 +261,7 @@ test("{§cli-agui-conformance}: a Run that binds no worker carries its workspace
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         await assert.rejects(() => transport.rpc(specimen.expect.action!.kind),
@@ -280,7 +280,7 @@ test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "fixture");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
         transport.subscribe(collectingHandlers().h);
         await assert.rejects(
             () => transport.run("fixture", {}).done,
@@ -310,7 +310,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
         response.write(frame(ownSnapshot));
         response.end(frame({ type: "RUN_FINISHED", result: { kind: "providers.list", ok: true, result: { aliases: [] } } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "thread");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "thread" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe({ ...h, onStatus: (status) => { seen.status.push(status); ready.resolve(); } });
@@ -347,7 +347,7 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th", { projectRoot: "/proj", settings: { questions: true } });
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, { settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", {}).done;
@@ -364,13 +364,11 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
         assert.equal(t.workspaceId, 7, "done resolves with the terminated outcome incl. workspaceId");
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, {
             plurnk: {
-                workspace: "th",
                 interactive: true,
-                projectRoot: "/proj",
-                settings: { questions: true },
                 control: true,
             },
-        }, "the workspace, options and control attachment ride the first run's forwardedProps");
+        }, "a bound run carries control policy, not mutable workspace selection or creation options");
+        assert.equal((mock.captured[0].body as RunInput).threadId, "42#th");
     } finally { await mock.close(); }
 });
 
@@ -397,7 +395,7 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th", { descendants: true });
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, { descendants: true });
         const { h, seen } = collectingHandlers();
         const introduced: unknown[] = [];
         bt.subscribe({ ...h, onDescendant: (descendant) => introduced.push(descendant) });
@@ -425,7 +423,7 @@ test("AguiTransport: the Run error's Problem supplies the exact terminal status 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -441,7 +439,7 @@ test("AguiTransport: RUN_ERROR without the exact Problem returns a client contra
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -470,7 +468,7 @@ test("AguiTransport: the terminal record's result is the ordinary terminal truth
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -494,7 +492,7 @@ test("AguiTransport.rpc: an action failure throws its exact Problem", async () =
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         await assert.rejects(
             () => bt.rpc("missing"),
             (error: unknown) => error instanceof ProblemError && error.problem.type === problem.type,
@@ -509,7 +507,7 @@ test("AguiTransport.rpc: an action stream without a result fails explicitly", as
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         await assert.rejects(
             () => bt.rpc("op.exec", { command: "printf done" }),
             (error: unknown) => error instanceof ProblemError
@@ -518,24 +516,21 @@ test("AguiTransport.rpc: an action stream without a result fails explicitly", as
     } finally { await mock.close(); }
 });
 
-test("[§cli-tui-flow] AguiTransport: after a rename, later Runs name the new workspace and keep the bound worker", async () => {
+test("[§cli-workspaces-and-workers] a rename leaves the transport identity unchanged", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.end(frame({ type: "RUN_FINISHED", result: { kind: "worker.env.list", ok: true, result: {} } }));
     });
     try {
-        const split = new AguiTransport({ aguiUrl: mock.url }, "second", { workspace: "fresh" });
-        split.renameWorkspace("renamed");
+        const split = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "second" });
+        await split.rpc("workspace.rename", { name: "new label/#second" });
         await split.rpc("worker.env.list");
-        const implicit = new AguiTransport({ aguiUrl: mock.url }, "fresh");
-        implicit.renameWorkspace("renamed");
-        await implicit.rpc("worker.env.list");
         const bindings = mock.captured.map(({ body }) => {
             const input = body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
             return [input.threadId, input.forwardedProps.plurnk.workspace];
         });
-        assert.deepEqual(bindings, [["second", "renamed"], ["fresh", "renamed"]],
-            "the thread keeps naming its worker; only the workspace's name moves");
+        assert.deepEqual(bindings, [["42#second", undefined], ["42#second", undefined]],
+            "renaming never changes wire identity or supplies a mutable selector");
     } finally { await mock.close(); }
 });
 
@@ -547,7 +542,7 @@ test("AguiTransport: inject + rpc ride §3 action runs", async () => {
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         assert.deepEqual(await bt.inject("steer mid-run"), { status: 100, action: "injected_next_turn", loopId: 7 });
         const providers = await bt.rpc<{ action: string }>("providers.list");
         assert.equal(providers.action, "injected_next_turn", "the action result returns verbatim");
@@ -556,13 +551,11 @@ test("AguiTransport: inject + rpc ride §3 action runs", async () => {
         assert.deepEqual((injectRun?.body as { forwardedProps: { plurnk: { action: unknown } } }).forwardedProps.plurnk.action, { kind: "loop.inject", prompt: "steer mid-run" });
         const rpcRun = mock.captured.find((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "providers.list");
         assert.ok(rpcRun !== undefined, "verbs ride action runs");
-        // A worker thread injects into ITS workspace: the daemon would otherwise fall back to the
-        // thread name and address a workspace named after the worker (the 2026-09-11 dogfood).
-        bt.useWorker("designer", "plurnkpromo");
+        bt.useWorker("designer");
         await bt.inject("what are you waiting on?");
         const workerInject = mock.captured.filter((c) => (c.body as { forwardedProps?: { plurnk?: { action?: { kind: string } } } })?.forwardedProps?.plurnk?.action?.kind === "loop.inject").at(-1);
-        assert.equal((workerInject?.body as { threadId: string }).threadId, "designer");
-        assert.equal((workerInject?.body as { forwardedProps: { plurnk: { workspace: string } } }).forwardedProps.plurnk.workspace, "plurnkpromo", "inject names the worker's workspace beside the thread");
+        assert.equal((workerInject?.body as { threadId: string }).threadId, "42#designer");
+        assert.equal((workerInject?.body as RunInput).forwardedProps.plurnk.workspace, undefined);
     } finally { await mock.close(); }
 });
 
@@ -573,8 +566,8 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
     const late = wire({ id: 9, op: "NOTE", tx: { body: null } });
     const mock = await bootMock((_request, response) => {
         const input = mock.captured.at(-1)!.body as RunInput;
-        assert.equal(input.threadId, "alice");
-        assert.equal(input.forwardedProps.plurnk.workspace, "workspace");
+        assert.equal(input.threadId, "42#alice");
+        assert.equal(input.forwardedProps.plurnk.workspace, undefined);
         assert.deepEqual(input.messages, [], "observation does not resubmit a prompt");
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(frame({ type: "RUN_STARTED" }));
@@ -584,7 +577,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         response.write(frame(snapshotOf(early, late)));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "alice", { workspace: "workspace" });
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "alice" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -623,7 +616,7 @@ test("{§cli-active-command-admission}: a client operation's row hides nothing t
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         }
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -640,7 +633,7 @@ test("{§cli-active-command-admission}: injection refuses missing admission iden
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "loop.inject", ok: true, result: { status: 100 } } }));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         await assert.rejects(transport.inject("next"), (error: unknown) =>
             error instanceof ProblemError && error.problem.kind === "result-invalid"
                 && String(error.problem.reason).includes("admission disposition"));
@@ -659,7 +652,7 @@ for (const [snapshot, events] of [
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         });
         try {
-            const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+            const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
             const { h, seen } = collectingHandlers();
             transport.subscribe(h);
             await assert.rejects(transport.observe().done, (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
@@ -675,7 +668,7 @@ test("{§cli-active-command-admission}: a dead sync stream retains its original 
         response.end(frame({ type: "RUN_STARTED" }));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         const result = await transport.observe().done;
         assert.equal(result?.result.problem?.kind, "terminal-missing");
         assert.equal(mock.captured.length, 1);
@@ -699,7 +692,7 @@ for (const historyLimit of [0, 1, 2]) {
                 response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
             });
         });
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         try {
             const { h, seen } = collectingHandlers();
             const histories: Array<{ entries: unknown[]; attachment: boolean }> = [];
@@ -724,7 +717,7 @@ test("{§cli-worker-history}: successful sync without a message snapshot is a pr
         response.write(frame({ type: "RUN_STARTED" }));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
     try {
         await assert.rejects(transport.observe({ historyLimit: 10 }).done,
             (cause: unknown) => cause instanceof ProblemError && cause.problem.kind === "result-invalid"
@@ -753,7 +746,7 @@ test("{§cli-worker-history}: a recreated worker resets replay identities", asyn
         }
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "thread");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "thread" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -773,7 +766,7 @@ test("[§cli-conformance] run preserves explicitly requested file paths", async 
     });
     try {
         const paths = ["src/main.ts", "docs/use.md"];
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "workspace");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         await transport.run("inspect the referenced files", { openPaths: paths }).done;
         const input = mock.captured[0].body as { forwardedProps: { plurnk: { control: boolean; openPaths: unknown } } };
         assert.deepEqual(input.forwardedProps.plurnk.openPaths, paths);
@@ -784,7 +777,7 @@ test("[§cli-conformance] run preserves explicitly requested file paths", async 
 test("[§cli-cancellation] AguiTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "RUN_STARTED" })); });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         bt.subscribe(collectingHandlers().h);
         const handle = bt.run("go", {});
         await new Promise((r) => setTimeout(r, 50));
@@ -802,7 +795,7 @@ test("{§cli-daemon-autostart}: disposing the TUI transport releases its open ob
         res.once("close", disconnected.resolve);
         connected.resolve();
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, "th");
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
     try {
         const observation = transport.observe();
         await connected.promise;
@@ -815,21 +808,32 @@ test("{§cli-daemon-autostart}: disposing the TUI transport releases its open ob
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("AguiTransport.useWorkspace: re-maps the threadId — the next run addresses the new workspace", async () => {
-    const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, result: { status: 200 } } } } })); res.end(); });
+test("{§cli-workspaces-and-workers}: workspace acquisition precedes binding, preserves creation options, and leaves a failed switch intact", async () => {
+    const mock = await bootMock((_req, res) => {
+        const action = (mock.captured.at(-1)!.body as RunInput).forwardedProps.plurnk.action as { kind: string; name?: string } | undefined;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        if (action?.kind === "workspace.create") {
+            res.end(frame({ type: "RUN_FINISHED", result: { kind: action.kind, ok: true,
+                result: action.name === "broken" ? {} : { id: 81, name: action.name ?? "~/chosen" } } }));
+        } else res.end(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, result: { status: 200 } } } } }));
+    });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "old", { projectRoot: "/old", settings: { client: "plurnk-tui" } });
-        const s = await bt.useWorkspace("new-thread", { projectRoot: "/chosen" });
-        assert.equal(s.name, "new-thread");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "old" }, { settings: { client: "plurnk-tui" } });
+        const s = await bt.useWorkspace(undefined, { projectRoot: "/chosen", worker: "user" });
+        assert.deepEqual(s, { id: 81, name: "~/chosen" });
+        assert.equal(bt.threadId(), "81#user");
         bt.subscribe(collectingHandlers().h);
         await bt.run("go", {}).done;
-        assert.equal((mock.captured[0].body as { threadId: string }).threadId, "new-thread", "the run targets the re-mapped thread");
-        const properties = (mock.captured[0].body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
-        assert.equal(properties.projectRoot, "/chosen", "{§cli-project-root}: a switch uses its selected root, not the previous binding's root");
-        assert.deepEqual(properties.settings, { client: "plurnk-tui" });
-        await bt.useWorkspace("headless", { projectRoot: null });
+        assert.equal((mock.captured[1].body as RunInput).threadId, "81#user");
+        assert.deepEqual((mock.captured[0].body as RunInput).forwardedProps.plurnk.action,
+            { kind: "workspace.create", projectRoot: "/chosen", settings: { client: "plurnk-tui" } });
+        await bt.useWorkspace("headless", { projectRoot: null, worker: "user" });
         await bt.run("go", {}).done;
-        assert.equal((mock.captured[1].body as { forwardedProps: { plurnk: { projectRoot: unknown } } }).forwardedProps.plurnk.projectRoot, null);
+        assert.deepEqual((mock.captured[2].body as RunInput).forwardedProps.plurnk.action,
+            { kind: "workspace.create", name: "headless", projectRoot: null, settings: { client: "plurnk-tui" } });
+        await assert.rejects(bt.useWorkspace("broken", { projectRoot: null, worker: "replacement" }),
+            (cause: unknown) => cause instanceof ProblemError && cause.problem.kind === "result-invalid");
+        assert.equal(bt.threadId(), "81#user", "failed selection leaves the conversation intact");
     } finally { await mock.close(); }
 });
 
@@ -847,7 +851,7 @@ test("AguiTransport: terminate-resume — a gate pauses done on the operation's 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("edit it", {});
@@ -874,7 +878,7 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
         response.end(parts.at(-1));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, "worker");
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "worker" });
         transport.subscribe({ ...collectingHandlers().h, onProposal: () => ready.resolve() });
         const run = transport.run("review", {});
         await ready.promise;
@@ -919,7 +923,7 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("choose", {});
@@ -953,7 +957,7 @@ test("AguiTransport: an interaction's call without its matching interrupt outcom
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("ask", {}).done;
@@ -969,7 +973,7 @@ test("AguiTransport: a proposal interrupt whose projection is malformed returns 
         res.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "gate", reason: "tool_call", metadata: { plurnk: { proposal: { op: "EDIT" } } } }] } }));
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("edit it", {}).done;
@@ -993,7 +997,7 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h } = collectingHandlers();
         bt.subscribe({
             ...h,
@@ -1008,7 +1012,7 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
 });
 
 test("AguiTransport: resolve without a delivered interrupt fails hard", async () => {
-    const bt = new AguiTransport({ aguiUrl: "http://127.0.0.1:1" }, "th");
+    const bt = new AguiTransport({ aguiUrl: "http://127.0.0.1:1" }, { workspaceId: 42, worker: "th" });
     await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /Proposal 1 has no pending AG-UI interrupt\./);
 });
 
@@ -1020,34 +1024,36 @@ test("AguiTransport: a stream that dies without terminal truth is an ERROR, neve
         res.end();   // no Run end, no RUN_ERROR — the stream just dies
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         bt.subscribe(collectingHandlers().h);
         const t = await bt.run("go", {}).done;
         assert.equal(t.finalStatus, 502, "silent stream death surfaces as 502, not success");
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] every request preserves rooted, headless, or unspecified creation options", async () => {
+test("[§cli-workspaces-and-workers] rooted, headless and unspecified options belong only to workspace acquisition", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(frame({ type: "RUN_FINISHED", result: { kind: "worker.model.get", ok: true, result: { model: null } } }));
+        const action = (mock.captured.at(-1)!.body as RunInput).forwardedProps.plurnk.action!;
+        res.write(frame({ type: "RUN_FINISHED", result: { kind: action.kind, ok: true, result:
+            action.kind === "workspace.create" ? { id: 81, name: "selected" } : { model: null } } }));
         res.end();
     });
     try {
         for (const projectRoot of ["/home/user/repo", null, undefined]) {
             mock.captured.length = 0;
-            const bt = new AguiTransport({ aguiUrl: mock.url }, "th", {
-                projectRoot, settings: { capabilities: { deny: [{ runtime: "sh" }] } },
+            const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, {
+                settings: { capabilities: { deny: [{ runtime: "sh" }] } },
             });
-            await bt.rpc("worker.model.get");
+            await bt.useWorkspace("selected", { projectRoot, worker: "th" });
             await bt.rpc("worker.model.get");
             assert.equal(mock.captured.length, 2);
-            for (const c of mock.captured) {
-                const fp = (c.body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
-                assert.equal(fp.projectRoot, projectRoot, "creation intent survives whichever request arrives first");
-                assert.equal(Object.hasOwn(fp, "projectRoot"), projectRoot !== undefined);
-                assert.deepEqual(fp.settings, { capabilities: { deny: [{ runtime: "sh" }] } });
-            }
+            const create = (mock.captured[0].body as RunInput).forwardedProps.plurnk.action as Record<string, unknown>;
+            assert.equal(create.projectRoot, projectRoot);
+            assert.equal(Object.hasOwn(create, "projectRoot"), projectRoot !== undefined);
+            assert.deepEqual(create.settings, { capabilities: { deny: [{ runtime: "sh" }] } });
+            assert.deepEqual((mock.captured[1].body as RunInput).forwardedProps.plurnk,
+                { interactive: true, action: { kind: "worker.model.get" } });
         }
     } finally { await mock.close(); }
 });
@@ -1061,7 +1067,7 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, "th");
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         bt.subscribe(collectingHandlers().h);
         await bt.run("first", {}).done;
         await bt.run("second", {}).done;

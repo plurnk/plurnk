@@ -642,7 +642,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let printAbove: (text: string) => void = (text) => { process.stdout.write(`${text}\n`); };
     // {plurnk#104} — an alert block stands apart: a blank row above and below it.
     const printAlert = (block: string): void => { printAbove(""); printAbove(block); printAbove(""); };
-    const acceptance = new ToolAcceptance((notice) => printAlert(renderDiagnostic(notice)));
+    const acceptance = new ToolAcceptance((notice) => printAbove(renderDiagnostic(notice)));
     const cancelLoop = async (reason: string): Promise<unknown> => {
         const run = activeRun;
         const result = await transport.rpc("loop.cancel", { reason });
@@ -975,7 +975,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             repromptPreserving();
             return;
         }
-        printAlert(renderDiagnostic(notice));
+        flushFanout();
+        printAbove(renderDiagnostic(notice));
     };
 
     transport.subscribe({
@@ -1050,7 +1051,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
             // {§cli-history-lost} — a bound name answered with no history is a new worker.
             if (historyLost(seenLoopId, authoritativeStatus.loopId)) {
-                printAlert(renderDiagnostic(clientHistoryLost(current.name, boundWorker)));
+                printAbove(renderDiagnostic(clientHistoryLost(current.name, boundWorker)));
             }
             seenLoopId = authoritativeStatus.loopId;
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.

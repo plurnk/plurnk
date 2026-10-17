@@ -44,18 +44,18 @@ test("{§cli-model-selection} missing-model guidance uses existing selection com
     assert.deepEqual(notice.hints, ["https://github.com/plurnk/plurnk#models"]);
 });
 
-test("[§cli-notice-rendering] renderDiagnostic renders a Notice as an alert titled by its discriminator", () => {
-    assert.equal(renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" }), "│ ℹ️  Note engine:rail:strike");
+test("[§cli-notice-rendering] renderDiagnostic renders a Notice as an inline row titled by its discriminator", () => {
+    assert.equal(renderDiagnostic({ source: "engine:rail", kind: "strike", level: "info" }), "INFO engine:rail:strike");
 });
 
-test("renderDiagnostic puts a Notice message in the alert body", () => {
+test("renderDiagnostic puts a Notice message on the same row", () => {
     const out = renderDiagnostic({
         source: "engine:rail",
         kind: "recovery",
         level: "info",
         message: "trying again",
     });
-    assert.equal(out, "│ ℹ️  Note engine:rail:recovery — trying again");
+    assert.equal(out, "INFO engine:rail:recovery — trying again");
 });
 
 test("renderDiagnostic renders ContentOffset and LogCoordinate positions", () => {
@@ -88,10 +88,10 @@ test("renderDiagnostic renders producer snippets and hints below the message", (
         hints: ["close the EDIT target"],
     });
     assert.deepEqual(out.split("\n"), [
-        "│ ⚠️  Warning grammar:parse_advisory",
-        "│   2:\t### EDIT_ (worker://foo",
-        "│   3:\t               ^",
-        "│ close the EDIT target",
+        "WARN grammar:parse_advisory",
+        "  2:\t### EDIT_ (worker://foo",
+        "  3:\t               ^",
+        "close the EDIT target",
     ]);
 });
 
@@ -104,7 +104,7 @@ const colored = <T>(render: () => T): T => {
     }
 };
 
-test("[§cli-notice-rendering] severity picks the alert: a Problem or error is a caution, a warning a warning, the rest a note", () => {
+test("[§cli-notice-rendering] Problems retain alerts; notices use red WARN/ERROR or muted INFO rows", () => {
     const [problem, error, warn, info] = colored(() => [
         renderDiagnostic(clientRuntimeError("failed")),
         renderDiagnostic({ source: "engine", kind: "fatal", level: "error", message: "stopped" }),
@@ -112,10 +112,12 @@ test("[§cli-notice-rendering] severity picks the alert: a Problem or error is a
         renderDiagnostic({ source: "engine", kind: "graceful", level: "info", message: "done" }),
     ]);
     assert.match(problem, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑  Caution\x1b\[0m/u);
-    assert.match(error, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑  Caution\x1b\[0m/u);
-    assert.match(warn, /^\x1b\[38;5;172m│\x1b\[0m \x1b\[38;5;172;1m⚠️  Warning\x1b\[0m/u);
-    assert.match(info, /^\x1b\[94m│\x1b\[0m \x1b\[94;1mℹ️  Note\x1b\[0m/u);
-    assert.match(info, / — done$/u, "the message itself stays plain, on the title line");
+    assert.match(error, /^\x1b\[1;31mERROR\x1b\[0m/u);
+    assert.match(warn, /^\x1b\[1;31mWARN\x1b\[0m/u);
+    assert.match(info, /^\x1b\[1;38;5;145mINFO\x1b\[0m/u);
+    assert.match(error, / — \x1b\[31mstopped\x1b\[0m$/u);
+    assert.match(warn, / — \x1b\[31mupdate available\x1b\[0m$/u);
+    assert.match(info, / — \x1b\[38;5;145mdone\x1b\[0m$/u);
 });
 
 test("renderDiagnostic renders a Problem's producer-owned recovery once", () => {
@@ -127,6 +129,27 @@ test("renderDiagnostic renders a Problem's producer-owned recovery once", () => 
         "│ 🛑  Caution client:runtime:error — The request failed.",
         "│ Retry after restoring the connection.",
     ]);
+});
+
+test("{§cli-notice-rendering} notice kinds and teaching never override declared severity or change the payload", () => {
+    const kinds = [
+        "output_unaccounted", "parse_advisory", "search_progress", "git_inspection_refused",
+        "continued_without_note", "outside_text", "invalid_emission", "output_truncated",
+        "provider_warning", "provider_retry", "provider_unavailable", "path_normalized",
+        "read_fanout_bounded", "parse_issues_unavailable", "metadata_ignored", "scope_normalized",
+        "edit_merged", "unknown_kind",
+    ];
+    for (const kind of kinds) {
+        for (const level of ["warn", "error", "info"] as const) {
+            const notice = Object.freeze({
+                source: "fixture", kind, level, message: "Exact message.",
+                directive: "Model-facing teaching.",
+            });
+            const before = JSON.stringify(notice);
+            assert.equal(renderDiagnostic(notice), `${level.toUpperCase()} fixture:${kind} — Exact message.`);
+            assert.equal(JSON.stringify(notice), before);
+        }
+    }
 });
 
 test("[§cli-problem-control-flow] ProblemError carries exact Problem Details and exit code", () => {
@@ -232,7 +255,7 @@ test("[§cli-history-lost] a lost history renders as a warning naming the worksp
     assert.equal(notice.kind, "history_lost");
     assert.equal(notice.level, "warn");
     const [title] = renderDiagnostic(notice).split("\n");
-    assert.match(title!, /^│ ⚠️ {2}Warning /u);
+    assert.match(title!, /^WARN /u);
     assert.match(title!, /\bdogfood\b/u, "the workspace is named");
     assert.match(title!, /\bplurnk\b/u, "the worker is named");
 });

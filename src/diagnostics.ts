@@ -60,16 +60,6 @@ export class ProblemError extends Error {
     }
 }
 
-// {§cli-notice-rendering} — every diagnostic is an alert block (plurnk#97): a Problem or an error
-// Notice is a caution, a warning Notice a warning, an informational Notice a note.
-// Each glyph is two columns wide: a second space keeps the word off its shoulder (plurnk#104).
-const ALERTS = Object.freeze({
-    caution: "🛑  Caution",
-    warning: "⚠️  Warning",
-    note: "ℹ️  Note",
-});
-const GUTTER = "│";
-
 const isProblem = (diagnostic: Diagnostic): diagnostic is ProblemDetails =>
     "type" in diagnostic
     && "title" in diagnostic
@@ -104,15 +94,9 @@ const positionOf = (diagnostic: Diagnostic): Position | null | undefined => {
     return undefined;
 };
 
-const alertOf = (diagnostic: Diagnostic): keyof typeof ALERTS =>
-    isProblem(diagnostic) || diagnostic.level === "error" ? "caution"
-        : diagnostic.level === "warn" ? "warning"
-        : "note";
-
-const renderTitle = (diagnostic: Diagnostic, alert: keyof typeof ALERTS): string => {
+const discriminatorOf = (diagnostic: Diagnostic): string => {
     const position = formatPosition(positionOf(diagnostic));
-    const discriminator = `${sourceOf(diagnostic)}:${kindOf(diagnostic)}${position.length > 0 ? ` ${position}` : ""}`;
-    return `${paint(ALERTS[alert], alert, "bold")} ${paint(discriminator, "dim")}`;
+    return `${sourceOf(diagnostic)}:${kindOf(diagnostic)}${position.length > 0 ? ` ${position}` : ""}`;
 };
 
 const lines = (text: string): string[] => text.length === 0 ? [] : text.split("\n");
@@ -128,18 +112,26 @@ const renderHints = (diagnostic: Diagnostic): string[] =>
 const renderRecovery = (diagnostic: Diagnostic): string[] =>
     isProblem(diagnostic) && typeof diagnostic.recovery === "string" ? [paint(diagnostic.recovery, "dim")] : [];
 
-// {plurnk#104} — the message rides the title line; only its further lines, a snippet, a
-// recovery or hints take rows of their own.
+// {§cli-notice-rendering} — transient notices share the operation-row style; a Problem remains an alert.
 export const renderDiagnostic = (diagnostic: Diagnostic): string => {
-    const alert = alertOf(diagnostic);
     const [first, ...rest] = lines(messageOf(diagnostic));
+    const discriminator = paint(discriminatorOf(diagnostic), "dim");
+    if (!isProblem(diagnostic)) {
+        const accent = diagnostic.level === "info" ? "dim" : "failure";
+        return [
+            `${paint(diagnostic.level.toUpperCase(), "bold", accent)} ${discriminator}${first === undefined ? "" : ` — ${paint(first, accent)}`}`,
+            ...rest.map((line) => paint(line, accent)),
+            ...renderSnippet(diagnostic),
+            ...renderHints(diagnostic),
+        ].join("\n");
+    }
     return [
-        `${renderTitle(diagnostic, alert)}${first === undefined ? "" : ` — ${first}`}`,
+        `${paint("🛑  Caution", "caution", "bold")} ${discriminator}${first === undefined ? "" : ` — ${first}`}`,
         ...rest,
         ...renderSnippet(diagnostic),
         ...renderRecovery(diagnostic),
         ...renderHints(diagnostic),
-    ].map((line) => `${paint(GUTTER, alert)} ${line}`).join("\n");
+    ].map((line) => `${paint("│", "caution")} ${line}`).join("\n");
 };
 
 export const report = (diagnostic: Diagnostic): void => {

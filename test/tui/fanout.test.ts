@@ -96,6 +96,20 @@ const fixture = async (t: TestContext) => {
     };
 };
 
+test("{§cli-notice-rendering}: a warning is an adjacent operation-aligned row, not an alert block", { timeout: 60_000 }, async (t) => {
+    const f = await fixture(t);
+    f.row(receipt("READ", 0));
+    f.emit({ type: "CUSTOM", name: "plurnk.notice", value: {
+        source: "scheme:file", kind: "path_normalized", level: "warn", message: "Path resolved to 'notes.md'.",
+    } });
+    f.row({ ...receipt("READ", 1), attrs: {} });
+    await f.tui.waitForScreen(/^READ \(receipt-0\.txt\) *\nWARN scheme:file:path_normalized — Path resolved to 'notes\.md'\. *\nREAD \(receipt-1\.txt\) *$/mu);
+    f.terminal(200);
+    await f.tui.waitFor(/done · 1 turn/);
+    f.tui.write("/quit\r");
+    assert.equal(await f.tui.exited, 0);
+});
+
 for (const op of ["READ", "EDIT", "KILL"]) {
     test(`{§cli-log-entry-line-format}: live ${op} failure is visible before termination and survives history`, { timeout: 60_000 }, async (t) => {
         const f = await fixture(t);

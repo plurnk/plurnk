@@ -87,14 +87,18 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const output = await tui.waitFor(witness, timeoutMs, since);
         return output.slice(since);
     };
+    const identity = async (tui: ReturnType<typeof spawnTui>, command: string, witness: RegExp): Promise<string> => {
+        tui.write(`${command}\r`);
+        return tui.waitForScreen(witness);
+    };
 
     test("[§cli-identity-effort] /effort repaints the identity from the readback while idle, before any loop", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest"]);
         try {
             await tui.waitFor(/plurnk.*\/help/s);
-            await tui.waitFor(/🎲 clienttest\(adaptive\)/);
-            await status(tui, "/effort high", /🎲 clienttest\[high\]/);
+            await tui.waitForScreen(/🎲\s+clienttest\(adaptive\)/);
+            await identity(tui, "/effort high", /🎲\s+clienttest\[high\]/);
         } finally { tui.kill(); }
     });
 
@@ -103,8 +107,8 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const tui = spawnTui(daemon.url, ["--workspace", t.name]);
         try {
             await tui.waitFor(/plurnk.*\/help/s);
-            await status(tui, "/model clienttest", /🎲 clienttest\(adaptive\)/);
-            await status(tui, "/effort high", /🎲 clienttest\[high\]/);
+            await identity(tui, "/model clienttest", /🎲\s+clienttest\(adaptive\)/);
+            await identity(tui, "/effort high", /🎲\s+clienttest\[high\]/);
         } finally { tui.kill(); }
     });
 
@@ -114,10 +118,10 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         try {
             await tui.waitFor(/plurnk.*\/help/s);
             tui.write("run one turn\r");
-            await tui.waitFor(/⏹️ {2}· 🎲 clientloop\(adaptive\)/, 30_000);
+            await tui.waitForScreen(/⏹️\s+· 🎲\s+clientloop\(adaptive\)/, 30_000);
             // A base-URL-routed alias is an OpenAI-compatible provider admitting only off and adaptive.
-            const row = await status(tui, "/effort off", /🎲 clientloop\[off\]/);
-            assert.match(row, /⏹️ {2}· 🎲 clientloop\[off\] · /, "the completed loop's glyph and tallies stay; only the identity changed");
+            const row = await identity(tui, "/effort off", /🎲\s+clientloop\[off\]/);
+            assert.match(row, /⏹️\s+· 🎲\s+clientloop\[off\]\s+· /, "the completed loop's glyph and tallies stay; only the identity changed");
         } finally { tui.kill(); }
     });
 
@@ -126,8 +130,8 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest", "--effort", "high"]);
         try {
             await tui.waitFor(/plurnk.*\/help/s);
-            await tui.waitFor(/🎲 clienttest\[high\]/);
-            await status(tui, "/model clientfirst", /🎲 clientfirst\[high\]/);
+            await tui.waitForScreen(/🎲\s+clienttest\[high\]/);
+            await identity(tui, "/model clientfirst", /🎲\s+clientfirst\[high\]/);
         } finally { tui.kill(); }
     });
 
@@ -140,7 +144,7 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
             await tui.waitFor(/plurnk.*\/help/s);
             await status(tui, "/child clientfirst", /child: clientfirst/);
             await status(tui, "/child", /child: clientfirst\(adaptive\)/);
-            await status(tui, "/effort high", /🎲 clienttest\[high\]/);
+            await identity(tui, "/effort high", /🎲\s+clienttest\[high\]/);
             await status(tui, "/child", /child: clientfirst\[high\]/);
             await status(tui, "/child inherit", /child: inherit/);
             await status(tui, "/child", /child: inherit/);
@@ -152,11 +156,11 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const tui = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clienttest"]);
         try {
             await tui.waitFor(/plurnk.*\/help/s);
-            await tui.waitFor(/🎲 clienttest\(adaptive\)/);
+            await tui.waitForScreen(/🎲\s+clienttest\(adaptive\)/);
             const since = tui.output().length;
             tui.write("/effort bogus\r");
             await tui.waitFor(/does not match any of/, 10_000, since);
-            await tui.waitFor(/🎲 clienttest\(adaptive\)/, 10_000, since);
+            await tui.waitForScreen(/🎲\s+clienttest\(adaptive\)/);
             assert.doesNotMatch(tui.output().slice(since), /clienttest\[bogus\]|effort: bogus/);
         } finally { tui.kill(); }
     });
@@ -166,8 +170,8 @@ describe("TUI verbs + input (model-independent; was HITL-only)", () => {
         const given = spawnTui(daemon.url, ["--workspace", t.name, "--model", "clientfirst"]);
         try {
             await given.waitFor(/plurnk.*\/help/s);
-            await given.waitFor(/🎲 clientfirst\(adaptive\)/);
-            await status(given, "/effort adaptive", /🎲 clientfirst\[adaptive\]/);
+            await given.waitForScreen(/🎲\s+clientfirst\(adaptive\)/);
+            await identity(given, "/effort adaptive", /🎲\s+clientfirst\[adaptive\]/);
         } finally { given.kill(); }
     });
 

@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "target": "ES2025",
+        "target": "ESNext",
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "strict": true,
@@ -10,9 +10,10 @@
         "allowImportingTsExtensions": true,
         "resolveJsonModule": true,
         "isolatedModules": true,
-        "verbatimModuleSyntax": false,
+        "verbatimModuleSyntax": true,
+        "erasableSyntaxOnly": true,
         "types": ["node"],
-        "lib": ["ES2025"]
+        "lib": ["ESNext"]
     },
     "include": ["src/**/*.ts", "test/**/*.ts"],
     "exclude": ["node_modules", "dist"]

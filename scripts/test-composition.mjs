@@ -197,6 +197,7 @@ try {
 
     const env = {
         ...isolatedEnv,
+        PLURNK_SECRET: serviceEnv.PLURNK_SECRET,
         PLURNK_HOST: daemon.host,
         PLURNK_PORT: String(daemon.port),
     };

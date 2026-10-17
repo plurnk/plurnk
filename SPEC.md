@@ -1661,8 +1661,24 @@ they advise without terminating an operation. Client failures are Problems.
 
 ### §8.3 Rendering and channel posture {§cli-notice-rendering} {§cli-channel-posture}
 
-`renderDiagnostic(diagnostic)` renders either contract as an alert block without
-converting one into the other:
+`renderDiagnostic(diagnostic)` preserves the distinction between transient Notices
+and RFC 9457 Problems. Notices use the operation-row presentation, not an alert block:
+
+```
+WARN <source>:<kind> [<position>] — <message>
+```
+
+| Contract | Label and style | Layout |
+| --- | --- | --- |
+| Notice, `warn` | Bold `WARN` and message in the operation failure red | Flush-left, no emoji, gutter or surrounding blank rows |
+| Notice, `error` | Bold `ERROR` and message in the operation failure red | Same as `warn` |
+| Notice, `info` | Bold `INFO` and message in muted text | Same as `warn` |
+| Problem | 🛑 Caution in its existing accent (§5.5) | Alert block, with a blank row above and below in the TUI |
+
+Notice discriminators are muted; further message, snippet and hint lines follow
+without an alert gutter. Rendering does not change severity, operation results,
+or model teaching, and never infers severity from `kind`. Problems retain their
+alert presentation:
 
 ```
 │ <icon>  <Alert> <source>:<kind> [<position>] — <detail-or-message>
@@ -1674,12 +1690,10 @@ converting one into the other:
 The icon is two columns wide, so two spaces separate it from the word; the message rides the
 title line.
 
-A Problem or an `error` Notice is a 🛑 Caution, a `warn` Notice a ⚠️ Warning, and an
-`info` Notice an ℹ️ Note, each in its accent (§5.5); the client never infers severity
-from `kind`. `ContentOffset` renders as
+`ContentOffset` renders as
 `L<line> col<column>` and `LogCoordinate` as its coordinate plus optional op.
 CLI mode writes diagnostics to stderr. TUI mode inserts them into the waterfall
-without colliding with the active prompt, with a blank row above and below the block.
+without colliding with the active prompt. JSON records retain the original diagnostic.
 
 ### §8.4 `stream/event` and `stream/concluded` {§cli-stream-event-and-stream-concluded}
 

@@ -11,7 +11,7 @@ import type { AguiEvent } from "./agui.ts";
 import type { LogEntryWire } from "./render.ts";
 import type { Resolution } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
-import { ProblemError } from "./diagnostics.ts";
+import { ProblemError, renderDiagnostic } from "./diagnostics.ts";
 import { callOf, partsOf } from "../test/agui-parts.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
@@ -303,6 +303,22 @@ test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice 
     assert.equal(notices.length, 1, "Notice captured");
     assert.equal(out.join(""), "", "generic TEXT_MESSAGE not rendered by the family client");
     assert.equal(err.join(""), "", "no row → no trace");
+});
+
+test("{§cli-notice-rendering} CLI warnings use compact trace rows while JSON retains the exact notice", async () => {
+    const notice = { source: "scheme:file", kind: "path_normalized", level: "warn", message: "Path resolved to 'notes.md'.", directive: "YOU SHOULD address the resolved path." };
+    for (const json of [false, true]) {
+        const trace: string[] = [];
+        const { io, out } = sink({ json, notice: (value) => trace.push(renderDiagnostic(value)) });
+        const result = await consumeCliRun(stream([
+            { type: EventType.CUSTOM, name: "plurnk.notice", value: notice },
+            terminalSend("Answer."), terminated(),
+        ]), io);
+        assert.equal(result.exitCode, 0, "a notice is not an operation failure");
+        assert.deepEqual(result.notices, json ? [notice] : [], "JSON retains the exact notice; text mode delivers it through the notice sink");
+        assert.deepEqual(trace, json ? [] : ["WARN scheme:file:path_normalized — Path resolved to 'notes.md'."]);
+        assert.deepEqual(out, json ? [] : ["Answer.\n"], "notices never enter the answer channel");
+    }
 });
 
 test("consumeCliRun: indexing state is quiet and indexing failures remain diagnostics", async () => {

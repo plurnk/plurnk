@@ -1,6 +1,6 @@
 # @plurnk/plurnk
 
-## Unreleased
+## 4.0.0
 
 ### Upgrade
 

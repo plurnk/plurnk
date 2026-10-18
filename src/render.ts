@@ -9,6 +9,7 @@ import stringWidth from "string-width";
 import ModelText from "./model-text.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
+import { operationLabel } from "./operation-glyphs.ts";
 
 // A row as the waterfall draws it: rebuilt from the standard part it built or carried whole ({§cli-row-sources}).
 export interface LogEntryWire {
@@ -162,6 +163,20 @@ export const entryScope = (entry: LogEntryWire): string | null =>
 export const operationIdentity = (entry: LogEntryWire): string => {
     const verb = objectOf(objectOf(entry.attrs)?.attempt)?.verb;
     return entry.op === "error" && typeof verb === "string" ? verb : entry.op;
+};
+
+// Presentation consumes the category word, never the durable aside or operation identity.
+export const operationHeading = (entry: LogEntryWire): { label: string; aside: string | null } => {
+    const op = operationIdentity(entry);
+    const aside = entryAside(entry);
+    const category = aside?.toUpperCase();
+    if (op === "NOTE" && (category === "FACT" || category === "IDEA" || category === "PLAN")) {
+        return { label: operationLabel(category), aside: null };
+    }
+    const completion = entry.signal ?? objectOf(entry.rx)?.completion;
+    const name = op === "SEND" && (completion === 200 || completion === 499) ? `SEND [${completion}]`
+        : op === "error" ? "FAIL" : op;
+    return { label: operationLabel(ModelText.plain(name)), aside };
 };
 
 // The authored target text when the statement carries it; the row's address otherwise.
@@ -333,9 +348,10 @@ export const isCurationNotice = (entry: LogEntryWire): boolean =>
     entry.op === "error" && objectOf(objectOf(entry.rx)?.problem)?.type === PACKET_EXCEEDS_BUDGET;
 
 export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = {}): string => {
-    if (isCurationNotice(entry)) return `${paint("notice", "bold", "success")} ${styledOutcome("curating context", false)}`;
+    if (isCurationNotice(entry)) return `${paint(operationLabel("INFO"), "bold", "success")} ${styledOutcome("curating context", false)}`;
     const failed = override.failed ?? entry.status_rx >= 400;
-    const parts = [paint(ModelText.plain(operationIdentity(entry)), "bold", failed ? "failure" : "success")];
+    const { label, aside } = operationHeading(entry);
+    const parts = [paint(label, "bold", failed ? "failure" : "success")];
     const tx = objectOf(entry.tx);
     if (entry.op === "COPY" || entry.op === "MOVE") {
         for (const operand of [selectionText(tx?.source), selectionText(tx?.destination)]) {
@@ -352,7 +368,6 @@ export const renderOperationRow = (entry: LogEntryWire, override: RowOverride = 
     }
     const count = override.count === undefined ? receiptCount(entry) : override.count;
     if (count !== null) parts.push(`{${count}}`);
-    const aside = entryAside(entry);
     if (aside !== null) parts.push(paint(aside, "dim", "italic"));
     const outcome = override.failure === undefined ? outcomeTitle(entry) : override.failure;
     if (outcome !== null) parts.push(styledOutcome(outcome, failed));

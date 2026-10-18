@@ -14,14 +14,14 @@ const row = (op: string, index: number, overrides: Partial<LogEntryWire> = {}): 
     ...overrides,
 });
 
-for (const op of ["READ", "EDIT", "KILL"]) {
+for (const [op, glyph] of [["READ", "📖"], ["EDIT", "📝"], ["KILL", "🗑️"]]) {
     test(`{§cli-log-entry-line-format}: ${op} collapses only a complete successful group`, () => {
         const collapse = new FanoutCollapse();
         assert.deepEqual(collapse.admit(row(op, 0)), []);
         assert.deepEqual(collapse.admit(row(op, 1)), []);
         const shown = collapse.admit(row(op, 2));
         assert.equal(shown.length, 1);
-        assert.equal(renderOperationRow(shown[0].entry, shown[0].override), `${op} (part-*.txt) {3}`);
+        assert.equal(renderOperationRow(shown[0].entry, shown[0].override), `${glyph} (part-*.txt) {3}`);
         assert.deepEqual(collapse.flush(), []);
     });
 

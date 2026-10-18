@@ -316,7 +316,7 @@ test("{§cli-notice-rendering} CLI warnings use compact trace rows while JSON re
         ]), io);
         assert.equal(result.exitCode, 0, "a notice is not an operation failure");
         assert.deepEqual(result.notices, json ? [notice] : [], "JSON retains the exact notice; text mode delivers it through the notice sink");
-        assert.deepEqual(trace, json ? [] : ["WARN scheme:file:path_normalized — Path resolved to 'notes.md'."]);
+        assert.deepEqual(trace, json ? [] : ["⚠️ scheme:file:path_normalized — Path resolved to 'notes.md'."]);
         assert.deepEqual(out, json ? [] : ["Answer.\n"], "notices never enter the answer channel");
     }
 });
@@ -529,7 +529,7 @@ test("[§cli-stream-event-and-stream-concluded] one-shot stream previews use the
     for (const content of ["", "x".repeat(161), "first\nsecond\nthird\n"]) {
         const { io, err } = sink({ readStream: async () => ({ stdout: { content } }) });
         await consumeCliRun(stream([{ type: EventType.CUSTOM, name: "plurnk.stream", value: execConclusion("sh:///large") }, terminated()]), io);
-        assert.deepEqual(err, ["sh (sh:///large)\n"]);
+        assert.deepEqual(err, ["⚙️ sh (sh:///large)\n"]);
     }
 });
 

@@ -103,28 +103,28 @@ test("{§cli-notice-rendering}: a warning is an adjacent operation-aligned row, 
         source: "scheme:file", kind: "path_normalized", level: "warn", message: "Path resolved to 'notes.md'.",
     } });
     f.row({ ...receipt("READ", 1), attrs: {} });
-    await f.tui.waitForScreen(/^READ \(receipt-0\.txt\) *\nWARN scheme:file:path_normalized — Path resolved to 'notes\.md'\. *\nREAD \(receipt-1\.txt\) *$/mu);
+    await f.tui.waitForScreen(/^📖 \(receipt-0\.txt\) *\n⚠️ scheme:file:path_normalized — Path resolved to 'notes\.md'\. *\n📖 \(receipt-1\.txt\) *$/mu);
     f.terminal(200);
     await f.tui.waitFor(/done · 1 turn/);
     f.tui.write("/quit\r");
     assert.equal(await f.tui.exited, 0);
 });
 
-for (const op of ["READ", "EDIT", "KILL"]) {
+for (const [op, glyph] of [["READ", "📖"], ["EDIT", "📝"], ["KILL", "🗑️"]]) {
     test(`{§cli-log-entry-line-format}: live ${op} failure is visible before termination and survives history`, { timeout: 60_000 }, async (t) => {
         const f = await fixture(t);
         f.row(receipt(op, 0));
         f.row(receipt(op, 1, 409));
-        await f.tui.waitFor(new RegExp(`${op} \\(receipt-1\\.txt\\).*Entry changed: Retained conflict detail`));
-        assert.match(stripVTControlCharacters(f.tui.output()), new RegExp(`${op} \\(receipt-0\\.txt\\)`));
+        await f.tui.waitFor(new RegExp(`${glyph} \\(receipt-1\\.txt\\).*Entry changed: Retained conflict detail`));
+        assert.match(stripVTControlCharacters(f.tui.output()), new RegExp(`${glyph} \\(receipt-0\\.txt\\)`));
         f.terminal();
         await f.tui.waitFor(/cancelled/);
         const since = f.tui.output().length;
         f.tui.write("/attach main\r");
         await f.tui.waitFor(/earlier entries/, 10_000, since);
         const history = stripVTControlCharacters(f.tui.output().slice(since));
-        assert.match(history, new RegExp(`${op} \\(receipt-0\\.txt\\)`));
-        assert.match(history, new RegExp(`${op} \\(receipt-1\\.txt\\).*Entry changed: Retained conflict detail`));
+        assert.match(history, new RegExp(`${glyph} \\(receipt-0\\.txt\\)`));
+        assert.match(history, new RegExp(`${glyph} \\(receipt-1\\.txt\\).*Entry changed: Retained conflict detail`));
         assert.doesNotMatch(history, /receipt-2\.txt|receipt-\*\.txt/, "unexecuted work is not invented");
         f.tui.write("/quit\r");
         assert.equal(await f.tui.exited, 0);
@@ -145,8 +145,8 @@ for (const ending of ["turn", "terminal", "disconnect", "quit", "signal"] as con
             if (ending === "signal") f.tui.kill("SIGTERM");
             else f.tui.write("/quit\r");
         }
-        await f.tui.waitFor(/EDIT \(receipt-0\.txt\)/);
-        assert.doesNotMatch(stripVTControlCharacters(f.tui.output()), /EDIT \(receipt-\*\.txt\).*\{3\}/);
+        await f.tui.waitFor(/📝 \(receipt-0\.txt\)/u);
+        assert.doesNotMatch(stripVTControlCharacters(f.tui.output()), /📝 \(receipt-\*\.txt\).*\{3\}/u);
         if (ending !== "quit" && ending !== "signal") f.tui.write("/quit\r");
         assert.equal(await f.tui.exited, ending === "signal" ? 143 : 0);
     });
@@ -155,8 +155,8 @@ for (const ending of ["turn", "terminal", "disconnect", "quit", "signal"] as con
 test("{§cli-log-entry-line-format}: a complete live group keeps one compact row", { timeout: 60_000 }, async (t) => {
     const f = await fixture(t);
     for (const index of [0, 1, 2]) f.row(receipt("EDIT", index));
-    await f.tui.waitFor(/EDIT \(receipt-\*\.txt\) \{3\}/);
-    assert.doesNotMatch(stripVTControlCharacters(f.tui.output()), /EDIT \(receipt-\d\.txt\)/);
+    await f.tui.waitFor(/📝 \(receipt-\*\.txt\) \{3\}/u);
+    assert.doesNotMatch(stripVTControlCharacters(f.tui.output()), /📝 \(receipt-\d\.txt\)/u);
     f.terminal(200);
     await f.tui.waitFor(/done · 1 turn/);
     f.tui.write("/quit\r");

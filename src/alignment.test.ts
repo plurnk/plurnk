@@ -1,6 +1,5 @@
 // The waterfall's stable alignment contract is its left edge: every row begins at column
-// zero with the operation as written, no glyph column, no protocol code. Reasoning opens with 💭;
-// a final answer opens with a blank row (plurnk#104).
+// zero with its operation glyph, no extra gutter or protocol code. Reasoning opens with 💭.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -36,14 +35,14 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
     for (const [label, value] of rows) {
         const first = stripAnsi(value).split("\n")[0];
         assert.doesNotMatch(first, /^\s/, `${label} did not begin at column zero: ${JSON.stringify(first)}`);
-        if (label !== "reasoning") assert.doesNotMatch(first, /^[^\p{L}]/u, `${label} begins with the operation's name, not a glyph: ${JSON.stringify(first)}`);
+        assert.match(first, /^\p{Extended_Pictographic}/u, `${label} begins with its glyph: ${JSON.stringify(first)}`);
     }
 
-    assert.equal(stripAnsi(rows[0][1]), "READ (/x)");
-    assert.equal(stripAnsi(rows[1][1]), "FIND (/x) — Entry not found", "a failure carries its title, not a numeric code");
-    assert.equal(stripAnsi(rows[2][1]), "\nInspect.", "a model NOTE uses the Markdown message layout without implying delivery");
-    assert.equal(stripAnsi(rows[4][1]), "\ndone", "a delivered message is its body under a blank line");
-    assert.equal(stripAnsi(rows[6][1]), "SEND (worker:///gone) — Worker gone");
-    assert.equal(stripAnsi(rows[7][1]), "sh list the files", "an execution is its fence, once, at its conclusion");
+    assert.equal(stripAnsi(rows[0][1]), "📖 (/x)");
+    assert.equal(stripAnsi(rows[1][1]), "🔎 (/x) — Entry not found", "a failure carries its title, not a numeric code");
+    assert.equal(stripAnsi(rows[2][1]), "🗒️\nInspect.", "a model NOTE uses the Markdown message layout without implying delivery");
+    assert.equal(stripAnsi(rows[4][1]), "🐹\ndone", "a delivered message is its body under a glyph line");
+    assert.equal(stripAnsi(rows[6][1]), "✉️ (worker:///gone) — Worker gone");
+    assert.equal(stripAnsi(rows[7][1]), "⚙️ sh list the files", "an execution is its fence, once, at its conclusion");
     assert.equal(streams.event({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", channel: "stdout", state: "active", contentLength: 0 }), null);
 });

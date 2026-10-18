@@ -26,8 +26,9 @@ client.
 
 ## Rendering
 
-The waterfall is intentionally compact: styled operation headings begin at the
+The waterfall is intentionally compact: operation glyphs begin at the
 left edge, with only the fields that identify their action and outcome.
+Runtimes and subsystems retain their names after ⚙️ ({§cli-operation-glyphs}).
 Delivered messages render as full response blocks rather than diagnostic rows.
 The status row projects standard AG-UI state in lifecycle → model → packet →
 activity order. An active loop replaces idle 🔥 with `⌛︎`; indexing and search

@@ -7,6 +7,7 @@
 
 import { paint, withColorOutput } from "./color.ts";
 import process from "node:process";
+import { operationLabel } from "./operation-glyphs.ts";
 import {
     Problems,
     Validator,
@@ -118,8 +119,9 @@ export const renderDiagnostic = (diagnostic: Diagnostic): string => {
     const discriminator = paint(discriminatorOf(diagnostic), "dim");
     if (!isProblem(diagnostic)) {
         const accent = diagnostic.level === "info" ? "dim" : "failure";
+        const label = operationLabel(diagnostic.level === "error" ? "FAIL" : diagnostic.level.toUpperCase());
         return [
-            `${paint(diagnostic.level.toUpperCase(), "bold", accent)} ${discriminator}${first === undefined ? "" : ` — ${paint(first, accent)}`}`,
+            `${paint(label, "bold", accent)} ${discriminator}${first === undefined ? "" : ` — ${paint(first, accent)}`}`,
             ...rest.map((line) => paint(line, accent)),
             ...renderSnippet(diagnostic),
             ...renderHints(diagnostic),

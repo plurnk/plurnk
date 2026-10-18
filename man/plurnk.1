@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-16" "plurnk 3.3.0" "User Commands"
+.TH PLURNK 1 "2026-10-17" "plurnk 4.0.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -68,6 +68,7 @@ loop.
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
       --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
       --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
+      --cancel-grace-ms <n> positive grace after loop.cancel before hanging up on the run, in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).

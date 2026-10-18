@@ -22,6 +22,13 @@ export default class Knobs {
         return raw;
     }
 
+    // {§cli-cancellation} The grace between a cancel's acknowledgement and the client's own hangup.
+    static cancelGraceMs(env: NodeJS.ProcessEnv = process.env): number {
+        const ms = Knobs.count("PLURNK_CLIENT_CANCEL_GRACE_MS", env);
+        if (ms === 0) throw new KnobError("PLURNK_CLIENT_CANCEL_GRACE_MS", String(ms), "must be positive.");
+        return ms;
+    }
+
     static count(name: string, env: NodeJS.ProcessEnv = process.env): number {
         const raw = Knobs.text(name, env);
         const count = Number(raw);

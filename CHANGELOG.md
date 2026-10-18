@@ -1,5 +1,15 @@
 # @plurnk/plurnk
 
+## Unreleased
+
+- TUI cancellation keeps the run's connection until the daemon's terminal record arrives, up to
+  `PLURNK_CLIENT_CANCEL_GRACE_MS` / `--cancel-grace-ms` (default 15000); the summary carries the
+  loop's turn count and usage. A run the client hung up on reports `turns unknown`, never `0 turns`
+  (#190). The one-shot `--timeout` hangup uses the same grace.
+- The live reasoning tail is retired when the run streaming it settles (terminal, cancellation, lost
+  connection), so the next prompt's reasoning starts clean instead of failing with "A second reasoning
+  message started before the first ended." (#189).
+
 ## 4.0.0
 
 ### Upgrade

@@ -6,6 +6,7 @@
 //
 // JSON mode uses the terminal projection's complete loop identity and usage.
 
+import Knobs from "./knobs.ts";
 import process from "node:process";
 import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
@@ -388,7 +389,7 @@ export const runCliViaAgui = async (
     // SSE locally (hangup is the abort). Exit 3 with timedOut:true in the record,
     // per SPEC §1.
     let timedOut = false;
-    const cancellationGraceMs = 15_000;
+    const cancellationGraceMs = Knobs.cancelGraceMs();
     const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAgui(target, {
         threadId: opts.threadId,
         kind: "loop.cancel", params: { reason },
@@ -513,8 +514,9 @@ export const runCliViaAgui = async (
         });
         const terminated = result.terminated;
         statusLine.settle({ turns: terminated?.turnIds.length ?? 0, wallMs: Date.now() - started });
+        // {§cli-cancellation} Without the daemon's terminal record the turn count is unknown, never zero.
         process.stderr.write(withColorOutput(process.stderr, () => `${renderSummary(
-            terminated?.turnIds.length ?? 0,
+            terminated?.turnIds.length ?? null,
             Date.now() - started,
             outcome,
             terminated?.hitMaxTurns ?? false,

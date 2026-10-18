@@ -60,6 +60,7 @@ Options:
 | `--daemon-timeout-ms <n>` | string | Positive connection/startup limit; overrides `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`. |
 | `--daemon-stop-timeout-ms <n>` | string | Positive owned-service shutdown grace; overrides `PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS`. |
 | `--oauth-timeout-ms <n>` | string | Positive browser OAuth callback deadline; overrides `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. See {§cli-mcp-oauth-callback}. |
+| `--cancel-grace-ms <n>` | string | Positive grace after `loop.cancel` is acknowledged before the client hangs up on the run; overrides `PLURNK_CLIENT_CANCEL_GRACE_MS`. See {§cli-cancellation}. |
 | `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
@@ -400,7 +401,7 @@ known daemon evidence. Failures before Run consumption use the problem-only form
 `SIGINT` and `SIGTERM` explicitly request `loop.cancel` for the bound worker and
 flush one JSON document containing all rows, notices, and response text observed
 at interruption, then exit 130 and 143 respectively. Cancellation uses the same
-15-second grace as the run timeout; another signal stops waiting for its reply.
+grace as the run timeout (`PLURNK_CLIENT_CANCEL_GRACE_MS`); another signal stops waiting for its reply.
 Cancellation or flush failures are reported on stderr, including in JSON mode.
 A daemon terminal result wins; otherwise an
 observed Problem retains its status, or a `client/transport/terminal-missing`
@@ -644,7 +645,7 @@ fires `loop.cancel` (reason `user_escape`) through the identical cancel path;
 while idle it clears the composed value. Esc never exits.
 pi-tui owns escape-sequence reassembly and keyboard-protocol negotiation.
 
-`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits — the escape hatch for dispatches a drain-cancel cannot unblock (`op.parse`). (Dropping a message Run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
+`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `loop.cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits — the escape hatch for dispatches a drain-cancel cannot unblock (`op.parse`). (Dropping a message Run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 
@@ -1083,8 +1084,10 @@ must not send semantic content to an unproven executable.
 Readable provider reasoning is neither working memory nor assistant speech. The client
 consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle.
 The TUI shows a dim `💭` tail, at most one third of the terminal, below operation
-history and above delivered responses. It disappears when reasoning ends;
-reasoning history remains available from the daemon, not duplicated into scrollback.
+history and above delivered responses. It disappears when reasoning ends, and the tail belongs to the Run streaming it: when that Run settles
+— by its terminal, by cancellation, or by a lost connection — the tail is retired whether or not its end
+arrived, so the next prompt's reasoning starts clean. Reasoning history remains available from the daemon,
+not duplicated into scrollback.
 It never infers reasoning
 from NOTE, renders encrypted reasoning as text, or invents an empty transcript.
 The one-shot client streams this human trace to stderr; stdout remains the bare

@@ -646,7 +646,22 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     const cancelLoop = async (reason: string): Promise<unknown> => {
         const run = activeRun;
         const result = await transport.rpc("loop.cancel", { reason });
-        run?.cancel();
+        // {§cli-cancellation} The daemon's terminal record is the summary's truth: a streaming run keeps
+        // its connection until the record arrives, and the client hangs up only past the grace. A run
+        // paused on a client-side interrupt has no stream to carry it: it settles locally, and the
+        // observation that follows presents the daemon's record.
+        if (run === null) return result;
+        if (!run.streaming()) {
+            run.cancel();
+            return result;
+        }
+        let timer: NodeJS.Timeout | undefined;
+        const arrived = await Promise.race([
+            run.done.then(() => true, () => true),
+            new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), Knobs.cancelGraceMs()); }),
+        ]);
+        clearTimeout(timer);
+        if (!arrived) run.cancel();
         return result;
     };
     // One cancel path for every interrupt gesture (Ctrl-C, Esc, /stop): the
@@ -904,6 +919,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             surface.setLive(rendered);
             return;
         }
+        surface.setLive(null);
+        liveReasoning = null;
+    };
+    // {§cli-provider-reasoning} The live tail belongs to the run streaming it: when that run settles —
+    // its terminal, a cancellation, a lost connection — the tail is retired, whether or not its end arrived.
+    const retireReasoning = (): void => {
+        if (liveReasoning === null) return;
         surface.setLive(null);
         liveReasoning = null;
     };
@@ -1216,10 +1238,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             for (;;) {
                 const terminal = await activeRun.done;
                 flushFanout();
+                retireReasoning();
                 const detached = observing && terminal?.loopId === undefined && terminal?.finalStatus === 499;
                 reviewRequested = false;
                 if (terminal !== null && !shuttingDown && !detached) {
-                    const turnCount = terminal.turnIds?.length ?? 0;
+                    // {§cli-cancellation} A run the client hung up on carries no turn ids: unknown, never zero.
+                    const turnCount = terminal.turnIds === undefined ? null : terminal.turnIds.length;
                     if (terminal.workerId !== undefined && terminal.workerId !== boundWorkerId) {
                         boundWorkerId = terminal.workerId;
                         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
@@ -1235,7 +1259,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     const wallMs = Date.now() - start;
                     surface.archiveResponses();
                     printAbove(renderSummary(turnCount, wallMs, terminal.result, terminal.hitMaxTurns, terminal.usage));
-                    tally = tallyOutcome(tally, { turns: turnCount, wallMs });
+                    tally = tallyOutcome(tally, { turns: turnCount ?? 0, wallMs });
                 }
                 while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
                 if (shuttingDown || detached || terminal !== null && terminal.loopId === undefined && terminal.finalStatus >= 400) break;
@@ -1251,6 +1275,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 reprompt();
             }
         } catch (cause) {
+            retireReasoning();
             // plurnk-service {§agui-action-binding}: a worker no message has created yet has nothing to observe:
             // the first message creates it, and the session observes it from then on.
             if (!shuttingDown && !(observing && isAbsentWorker(cause))) {
@@ -1259,6 +1284,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         } finally {
             if (!shuttingDown) flushFanout();
+            retireReasoning();
             runningSince = null;
             inFlight = false;
             observingExisting = false;

@@ -469,7 +469,9 @@ export const terminalStatusLabel = (result: OperationResult): string => {
                         : `final ${status}`;
 };
 
-export const renderSummary = (turns: number, wallMs: number, result: OperationResult, hitMaxTurns: boolean, usage?: LoopUsage): string => {
+// {§cli-cancellation} `turns` is null when the client hung up before the daemon's terminal record arrived:
+// unknown is said as unknown, never as zero.
+export const renderSummary = (turns: number | null, wallMs: number, result: OperationResult, hitMaxTurns: boolean, usage?: LoopUsage): string => {
     const tag = hitMaxTurns ? "maxTurns" : terminalStatusLabel(result);
     const ms = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(2)}s` : `${wallMs}ms`;
     let tokenPart = "";
@@ -482,5 +484,6 @@ export const renderSummary = (turns: number, wallMs: number, result: OperationRe
         const cost = costWithSubtotal(usage.accounting.costUsd, usage.accounting.knownCostUsd);
         if (cost.length > 0) tokenPart += ` · loop ${cost}`;
     }
-    return paint(`  ${tag} · ${turns} turn${turns === 1 ? "" : "s"} · ${ms}${tokenPart}`, "dim");
+    const turnPart = turns === null ? "turns unknown" : `${turns} turn${turns === 1 ? "" : "s"}`;
+    return paint(`  ${tag} · ${turnPart} · ${ms}${tokenPart}`, "dim");
 };

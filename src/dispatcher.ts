@@ -157,6 +157,7 @@ options:
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
       --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
       --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
+      --cancel-grace-ms <n> positive grace after loop.cancel before hanging up on the run, in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
@@ -593,6 +594,7 @@ export const CLIENT_OPTIONS = {
     "daemon-timeout-ms": { type: "string" },
     "daemon-stop-timeout-ms": { type: "string" },
     "oauth-timeout-ms": { type: "string" },
+    "cancel-grace-ms": { type: "string" },
     "service-bin": { type: "string" },
     "project-root": { type: "string" },
     yolo: { type: "boolean" },
@@ -657,6 +659,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     if (values["daemon-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS = values["daemon-timeout-ms"];
     if (values["daemon-stop-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS = values["daemon-stop-timeout-ms"];
     if (values["oauth-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS = values["oauth-timeout-ms"];
+    if (values["cancel-grace-ms"] !== undefined) process.env.PLURNK_CLIENT_CANCEL_GRACE_MS = values["cancel-grace-ms"];
     if (values["service-bin"] !== undefined) process.env.PLURNK_CLIENT_SERVICE_BIN = values["service-bin"];
     if (values.help) {
         process.stdout.write(commandHelp(positionals[0]));

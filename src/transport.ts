@@ -69,7 +69,9 @@ export interface RunHandlers {
     onTerminated: (t: TerminatedInfo) => void;
 }
 
-export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void }
+// `streaming` is true while a Run segment's event stream is open: a run paused on a client-side interrupt
+// (a review, a question) has no stream that could carry the daemon's terminal record ({§cli-cancellation}).
+export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void; streaming: () => boolean }
 
 // A subagent's worker as its start names it, or null for a start that names none.
 const descendantOf = (metadata: unknown): Descendant | null => {
@@ -81,7 +83,7 @@ const descendantOf = (metadata: unknown): Descendant | null => {
     }
     return { workerId: workerId!, name, parentWorkerId: parentWorkerId!, depth: depth! };
 };
-export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void }
+export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void; streaming: () => boolean }
 // {§cli-worker-history} The rows a sync Run's snapshot held that this session had not drawn, in log order.
 export interface WorkerHistory {
     entries: LogEntryWire[];
@@ -244,6 +246,7 @@ export class AguiTransport implements Transport {
         // TOOL_CALL (the loop stays paused in-engine). resolve() supplies the decision; we POST a
         // standard resume as the resume run and keep consuming — done spans the whole pause/resume
         // chain, so the TUI's seam contract never changes.
+        let streaming = false;
         const done = (async (): Promise<TerminatedInfo | null> => {
             let terminated: TerminatedInfo | null = null;
             let sawRunError = false;
@@ -270,6 +273,7 @@ export class AguiTransport implements Transport {
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
                     const synchronized = observing ? this.#synchronize(events, observation, ready.resolve, projection.rows) : events;
+                    streaming = true;
                     for await (const e of synchronized) {
                         if (!observing) ready.resolve();
                         const ended = this.#ended(e);
@@ -343,7 +347,9 @@ export class AguiTransport implements Transport {
                             this.#dispatch(e, projection);
                         }
                     }
+                    streaming = false;
                 } catch (err) {
+                    streaming = false;
                     if (ac.signal.aborted) {
                         const problem = clientTransportCancelled();
                         return terminated ?? {
@@ -436,7 +442,7 @@ export class AguiTransport implements Transport {
             this.#controllers.delete(ac);
             if (this.#modelProjection === projection) this.#modelProjection = null;
         });
-        return { done, ready: ready.promise, cancel: () => ac.abort() };
+        return { done, ready: ready.promise, cancel: () => ac.abort(), streaming: () => streaming };
     }
 
     // {§cli-worker-history}: establish the historical prefix before releasing

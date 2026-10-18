@@ -459,6 +459,12 @@ test("renderSummary: success → 'done'", () => {
     assert.match(s, /1 turn /);
 });
 
+test("{§cli-cancellation} renderSummary: a hung-up run says turns unknown, never zero", () => {
+    const s = renderSummary(null, 1000, terminalResult(499), false);
+    assert.match(s, /cancelled · turns unknown · 1\.00s/);
+    assert.doesNotMatch(s, /0 turns/);
+});
+
 test("renderSummary: maxTurns flag wins over finalStatus", () => {
     const s = renderSummary(50, 18200, terminalResult(200), true, usage(100, 50));
     assert.match(s, /maxTurns/);

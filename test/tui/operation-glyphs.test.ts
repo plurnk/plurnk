@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-test("{§cli-operation-glyphs} built TUI renders operations, note categories, tools and completed replies", { timeout: 60_000 }, async (t) => {
+test("[§cli-operation-glyphs] built TUI renders operations, note categories, tools and completed replies", { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service);
     const program = [

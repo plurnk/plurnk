@@ -16,7 +16,7 @@ const entry = (op: string, overrides: Partial<LogEntryWire> = {}): LogEntryWire 
     ...overrides,
 });
 
-test("{§cli-operation-glyphs} operation labels are glyphs; other runtimes retain their names after a gear", () => {
+test("[§cli-operation-glyphs] operation labels are glyphs; other runtimes retain their names after a gear", () => {
     const labels = {
         NOTE: "🗒️", FIND: "🔎", READ: "📖", EDIT: "📝", COPY: "🖨️", MOVE: "📦",
         KILL: "🗑️", WORK: "🐜", FORK: "🔱", BARE: "☁️", WAIT: "⏳", SEND: "✉️",
@@ -36,7 +36,7 @@ test("{§cli-operation-glyphs} operation labels are glyphs; other runtimes retai
     }
 });
 
-test("{§cli-operation-glyphs} NOTE categories replace both the NOTE label and its category aside, never its body", () => {
+test("[§cli-operation-glyphs] NOTE categories replace both the NOTE label and its category aside, never its body", () => {
     for (const [aside, label] of [["fact", "📊"], ["IDEA", "💡"], [" plan ", "🚧"]]) {
         const row = entry("NOTE", { target: null, tx: { aside, body: { raw: "Retained words." } } });
         assert.equal(renderOperationRow(row), label);
@@ -47,7 +47,7 @@ test("{§cli-operation-glyphs} NOTE categories replace both the NOTE label and i
     assert.equal(renderLogEntry(row), "🗒️ plan for tomorrow\nRetained words.", "free-form asides are not inferred categories");
 });
 
-test("{§cli-operation-glyphs} SEND completion is not the receipt's transport status", () => {
+test("[§cli-operation-glyphs] SEND completion is not the receipt's transport status", () => {
     for (const [completion, label] of [[undefined, "✉️"], [200, "🐹"], [499, "❌"]] as const) {
         for (const delivered of [false, true]) {
             const row = entry("SEND", { target: null, signal: completion ?? null,
@@ -63,7 +63,7 @@ test("{§cli-operation-glyphs} SEND completion is not the receipt's transport st
         "📖 — Invalid range", "a refused operation retains its identity");
 });
 
-test("{§cli-operation-glyphs} diagnostics use the corresponding severity glyph", () => {
+test("[§cli-operation-glyphs] diagnostics use the corresponding severity glyph", () => {
     for (const [level, glyph] of [["warn", "⚠️"], ["error", "⛔"], ["info", "📌"]] as const) {
         assert.equal(renderDiagnostic({ source: "fixture", kind: "notice", level, message: "Exact words." }),
             `${glyph} fixture:notice — Exact words.`);

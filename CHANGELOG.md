@@ -1,6 +1,6 @@
 # @plurnk/plurnk
 
-## Unreleased
+## 4.2.0
 
 - TUI cancellation keeps the run's connection until the daemon's terminal record arrives, up to
   `PLURNK_CLIENT_CANCEL_GRACE_MS` / `--cancel-grace-ms` (default 15000); the summary carries the

@@ -178,7 +178,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
     assert.equal(inferenceCount, 2, "each admitted prompt generated exactly one model request");
     assert.doesNotMatch(tui.output(), /Terminal missing|State invalid/);
     assert.match(stripVTControlCharacters(tui.output()), /Continue with the new requirement/);
-    assert.doesNotMatch(stripVTControlCharacters(tui.output()), /^SEND(?: \([^\r\n]*\))? *\r?$/mu,
+    assert.doesNotMatch(stripVTControlCharacters(tui.output()), /^✉️(?: \([^\r\n]*\))? *\r*$/mu,
         "own input remains at the prompt, not duplicated as an inbound SEND block");
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);

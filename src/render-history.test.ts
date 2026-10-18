@@ -18,7 +18,7 @@ test("{§cli-broadcast-send-rendering}: qualified attachment preserves standard 
             signal: 200, status: 200, attrs: {}, receipt: { status: 200, answers: [source], completion: 200 },
         } } }]);
         assert.deepEqual(renderHistory({ attachment: true, entries: rows }, "42#alice", 80),
-            ["Retained answer", "— 1 earlier entries · /log for more —"]);
+            ["🐹\nRetained answer", "— 1 earlier entries · /log for more —"]);
     }
 });
 
@@ -36,7 +36,7 @@ test("[§cli-worker-history] a snapshot's prompt, operation headings and speech 
             metadata: { plurnk: { ...facts(3, { op: "SEND" }).plurnk, aside: null, receipt: { status: 200, answers: [source], completion: 200 } } } },
     ]);
     assert.deepEqual(renderHistory({ attachment: true, entries: rows }, "alice", 80),
-        ["› snapshot prompt\n  second line", "READ (a.md)", "snapshot answer", "— 3 earlier entries · /log for more —"]);
+        ["› snapshot prompt\n  second line", "📖 (a.md)", "🐹\nsnapshot answer", "— 3 earlier entries · /log for more —"]);
 });
 
 test("{§cli-worker-history}: another actor's message keeps its sender, an answer its words, and a materialization draws nothing", () => {
@@ -44,7 +44,7 @@ test("{§cli-worker-history}: another actor's message keeps its sender, an answe
         entry({ id: 1, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: "worker update" } }),
         entry({ id: 2, op: "SEND", message: { id: "1/1/2", role: "assistant" }, rx: { answers: ["agui://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
         entry({ id: 3, op: "EDIT", origin: "_plurnk", attrs: { kind: "entry_materialized" } }),
-    ] }, "alice", 80), ["worker://helper\nworker update", "recent answer"]);
+    ] }, "alice", 80), ["✉️ (worker://helper)\nworker update", "🐹\nrecent answer"]);
 });
 
 test("{§cli-worker-history}: an empty history emits no decorative seam or old reasoning", () => {
@@ -56,5 +56,5 @@ test("{§cli-log-entry-line-format}: history retains the same structured failure
         entry({ op: "brave", status_rx: 502, tx: { target: { kind: "local", raw: "brave_web_search" } },
             rx: { status: 502, problem: { type: "https://problems.plurnk.xyz/executor/mcp/tool-reported-error",
                 title: "Tool reported error", status: 502, diagnostic: "No web results found" } } }),
-    ] }, "alice", 80), ["brave (brave_web_search) — Tool reported error: No web results found"]);
+    ] }, "alice", 80), ["⚙️ brave (brave_web_search) — Tool reported error: No web results found"]);
 });

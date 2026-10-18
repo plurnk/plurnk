@@ -126,6 +126,10 @@ provider supplies it, Markdown and Mermaid rendering, and slash commands for
 managing models, workers, and tools. Run `/help` to explore; `/model` and
 `/child` select the worker's model and its delegated model.
 
+Operation headings use emoji labels, such as `📖 (README.md)` and `⚙️ sh`.
+Notes marked fact, idea, or plan use 📊, 💡, or 🚧; completed replies use 🐹.
+These labels change presentation only—CLI answers and JSON records retain their original content.
+
 ### CLI and pipelines
 
 ```sh

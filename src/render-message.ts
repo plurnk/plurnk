@@ -3,8 +3,9 @@ import { TurnDisposition } from "@plurnk/plurnk-contracts";
 import { paint } from "./color.ts";
 import { renderMarkdownDocument } from "./markdown.ts";
 import ModelText from "./model-text.ts";
+import { operationLabel } from "./operation-glyphs.ts";
 import {
-    entryAside, extractSendBody, isArrivalEntry, isResponseMessage,
+    operationHeading, extractSendBody, isArrivalEntry, isResponseMessage,
     LINEAGE_OFFSET, lineageWorker, markDescendant, objectOf, outcomeTitle, previewLine, previewLines, previewMore, renderOperationBlock,
     type LogEntryWire, type OutsideText, type RowOverride,
 } from "./render.ts";
@@ -21,15 +22,13 @@ export const renderSendBody = (txUnknown: unknown, viewport = process.stdout.col
     return renderMarkdownDocument(ModelText.plain(extractSendBody(txUnknown)), viewport);
 };
 
-// The lead line of a block: no keyword and no glyph (plurnk#104); a final answer's, a NOTE's and
-// a SEND's stand blank where the keyword was. A failure puts its Problem title there in red, a
-// deferred or joined completion its `detail`; the sanitized aside follows either.
+// {§cli-operation-glyphs} Message blocks share the row's label and aside, not its body styling.
 const leadLine = (entry: LogEntryWire, detail: boolean): string => {
-    const parts: string[] = [];
+    const { label, aside } = operationHeading(entry);
+    const parts = [paint(label, "dim")];
     const rx = objectOf(entry.rx);
     if (entry.status_rx >= 400 && !(isResponseMessage(entry) && rx?.problem == null)) parts.push(paint(ModelText.plain(outcomeTitle(entry) ?? String(entry.status_rx)), "failure"));
     else if (detail && entry.status_rx !== 200 && typeof rx?.detail === "string" && rx.detail.length > 0) parts.push(ModelText.plain(rx.detail));
-    const aside = entryAside(entry);
     if (aside !== null) parts.push(paint(aside, "dim", "italic"));
     return parts.join(" ");
 };
@@ -40,7 +39,7 @@ const modelBlock = (lead: string, body: string): string => body.length === 0 ? l
 const renderModelText = (entry: LogEntryWire, columns: number, body = renderSendBody(entry.tx, Math.max(1, columns))): string =>
     modelBlock(leadLine(entry, TurnDisposition.isOp(entry.op)), body);
 
-// A model NOTE ({§cli-note-rendering}): a reply's blank lead and aside, then its body whole in the
+// A model NOTE ({§cli-note-rendering}): a glyph and aside, then its body whole in the
 // Markdown layout at the width, stripped of every weight and painted dim — the status line's
 // weight — so bearings never read as an answer.
 const renderNoteText = (entry: LogEntryWire, columns: number): string => {
@@ -62,7 +61,7 @@ const previewBlock = (entry: LogEntryWire, columns: number): string =>
 // same plain body block, previewed.
 const renderArrival = (entry: LogEntryWire, columns: number): string => {
     const sender = typeof entry.source === "string" ? ` (${ModelText.plain(entry.source)})` : "";
-    const lead = `${paint("SEND", "bold", "success")}${sender}`;
+    const lead = `${paint(operationLabel("SEND"), "bold", "success")}${sender}`;
     return extractSendBody(entry.tx).length === 0 ? lead : `${lead}\n${previewBlock(entry, columns)}\n`;
 };
 

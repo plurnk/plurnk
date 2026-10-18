@@ -936,23 +936,23 @@ A row is the operation as written, literal text with the client's own styling an
 Markdown pass:
 
 ```
-<OP> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <outcome>]
+<label> (<target>) [<scope>] [<pattern>] [{<n>}] [<aside>] [— <outcome>]
 ```
 
-- `OP` is the operation's name, bold: green when the outcome succeeded, red otherwise. An
-  execution row is named by its runtime (`sh`, `python3`): the row's `op` is the fence name as written, never a generic keyword.
+- The operation label uses {§cli-operation-glyphs}, bold: green when the outcome succeeded, red otherwise. An
+  execution row retains its runtime (`⚙️ sh`, `⚙️ python3`): the row's `op` is the fence name as written, never a generic keyword.
   A parse refusal is named by the verb of the statement it refused (plurnk-service `{§parse-attempt}`); one that
-  names no attempt keeps the row's own name, `error`.
+  names no attempt uses the failure glyph, `⛔`.
 - **The verdict is the row's status, never the presence of an outcome text.** A row failed when its
   status is 400 or above, or when its execution concluded with any status but 200; nothing else
   reddens it. The outcome after the dash takes the verdict's paint: a failed row's Problem title,
   with its diagnostic, in red; any other row's outcome dim. A turn disposition (`WAIT`, and the
   other loop-state rows) carries the daemon's `detail` there, so a `WAIT` with nothing in flight
-  renders its green name and `— Nothing is in flight. Continuing.` dim: a note about what happened.
+  renders its glyph and `— Nothing is in flight. Continuing.` dim: a note about what happened.
 - {§cli-curation-notice} **Over budget is a curation moment, not a failure.** The daemon's over-budget
   row — an `error` row whose Problem is `engine/context/packet-exceeds-budget` ({§context-over-budget-row}
   in the service SPEC) — is a mandate to the model to curate, and the model is about to. It renders as
-  `notice — curating context`, green and dim, with no title, status or detail; the Problem stays on the
+  `📌 — curating context`, green and dim, with no title, status or detail; the Problem stays on the
   wire and in the daemon's log untouched. Every other failed row keeps its red `OP` and its title.
 - `(target)` is the authored target text, in its parentheses; `<scope>` is the canonical
   `<mark,...>` form; `<pattern>` is the matcher as authored (`/regex/i`, `~query`, `&symbol`).
@@ -1001,8 +1001,44 @@ Markdown pass:
   interprets output bodies to invent an explanation nor changes the wire result.
   A 204 is not a failure: a FIND counts `{0}`; a glob READ that matched no path carries the
   daemon's detail instead of a count.
-- No body, preview, hit count beyond `{n}`, byte count, numeric status, glyph, or log coordinate
+- No body, preview, hit count beyond `{n}`, byte count, numeric status, or log coordinate
   reaches the row; coordinates and every exact status remain on the wire and in `--json`.
+
+§cli-operation-glyphs **Operation labels.** TUI operation labels replace known names with the following glyphs. Other runtimes and
+subsystems retain their literal names after `⚙️`. This is presentation only: operation names,
+statuses, bodies, and metadata remain unchanged on the wire and in CLI records and plain traces.
+
+| Operation or category | Label |
+|---|---|
+| NOTE | 🗒️ |
+| FIND | 🔎 |
+| READ | 📖 |
+| EDIT | 📝 |
+| COPY | 🖨️ |
+| MOVE | 📦 |
+| KILL | 🗑️ |
+| WORK | 🐜 |
+| FORK | 🔱 |
+| BARE | ☁️ |
+| WAIT | ⏳ |
+| SEND | ✉️ |
+| SEND with completion 200 | 🐹 |
+| SEND with completion 499 | ❌ |
+| WARN | ⚠️ |
+| FAIL / error | ⛔ |
+| INFO | 📌 |
+| FACT | 📊 |
+| IDEA | 💡 |
+| PLAN | 🚧 |
+
+A NOTE whose entire sanitized aside is `fact`, `idea`, or `plan` (case-insensitive)
+uses that category's glyph instead of the NOTE glyph and category word. Other asides
+remain literal. SEND uses its authored completion signal, or the receipt's completion
+when no signal is available; receipt status alone never implies a completion reply.
+Live, pending, descendant, and historical rows share this mapping. Delivered messages
+and model notes retain their existing body layout beneath the glyph-bearing lead line.
+Use explicit emoji presentation for text-default symbols and one ordinary separating
+space; width measurement and clipping use the existing terminal-aware utilities.
 
 Fan-out READ, EDIT and resource KILL carry service-owned `attrs.fanout`
 (`{target, matched, index, count}`). The live waterfall may collapse a contiguous,
@@ -1106,7 +1142,7 @@ refreshes and archival; only a width or presentation invalidation rerenders them
 
 | Operation | Waterfall projection |
 |---|---|
-| NOTE | {§cli-note-rendering} A model NOTE renders its whole body in the Markdown layout at the current width, stripped of every weight and painted dim — the status line's weight — with the same blank lead/aside and column-zero layout as a reply, so bearings never read as an answer. Its log identity and failure visibility remain; it is not a delivered message and does not enter CLI response stdout. A harness NOTE retains its operation heading and whole plain, dim, four-column-indented body. |
+| NOTE | {§cli-note-rendering} A model NOTE renders its whole body in the Markdown layout at the current width, stripped of every weight and painted dim — the status line's weight — beneath its glyph and aside ({§cli-operation-glyphs}), with a reply's column-zero layout. Its log identity and failure visibility remain; it is not a delivered message and does not enter CLI response stdout. A harness NOTE retains its operation heading and whole plain, dim, four-column-indented body. |
 | Outside text (`plurnk.outside`) | {§cli-outside-text} A turn's prose outside its fences arrives once per turn as `CUSTOM plurnk.outside` ({§agui-outside-text}: its log coordinate, the text verbatim, its packet weight), never as a row. It renders with a reply's layout — blank lead line, full Markdown body at column zero at the current width — where the turn's rows are, in arrival order. It is not speech: never the response surface, never a delivered reply, never CLI stdout. The one-shot CLI traces the text verbatim to stderr, and the `--json` record's `response` excludes it. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered SEND | Message block per §5.4. |
@@ -1144,11 +1180,11 @@ A failed preview read is diagnosed without replacing the execution or loop resul
 
 ### §5.4 Delivered messages {§cli-broadcast-send-rendering}
 
-An assistant text message projected from SEND or KILL carries response content, including another actor's delivered reply observation. The standard message role establishes delivery; the receipt's historic thread spelling does not reclassify it. The interactive client renders full message bodies, not diagnostic previews. Completion metadata does not change rendering: message resolution and loop settlement belong to the daemon. An empty body creates no response and neither repeats nor erases a previous reply.
+An assistant text message projected from SEND or KILL carries response content, including another actor's delivered reply observation. The standard message role establishes delivery; the receipt's historic thread spelling does not reclassify it. The interactive client renders full message bodies, not diagnostic previews. Completion metadata selects the SEND glyph, not delivery or loop settlement, which belong to the daemon. An empty body creates no response and neither repeats nor erases a previous reply.
 
 TUI mode contract:
 
-- Lead line: no keyword and no glyph; the sanitized aside follows. The body's lines stay at column zero. No numeric code, no path.
+- Lead line: the operation glyph ({§cli-operation-glyphs}), muted, followed by the sanitized aside. The body's lines stay at column zero. No keyword, numeric code, or path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal; its receipt remains an operation row, not blank speech.
@@ -1668,14 +1704,14 @@ they advise without terminating an operation. Client failures are Problems.
 and RFC 9457 Problems. Notices use the operation-row presentation, not an alert block:
 
 ```
-WARN <source>:<kind> [<position>] — <message>
+⚠️ <source>:<kind> [<position>] — <message>
 ```
 
 | Contract | Label and style | Layout |
 | --- | --- | --- |
-| Notice, `warn` | Bold `WARN` and message in the operation failure red | Flush-left, no emoji, gutter or surrounding blank rows |
-| Notice, `error` | Bold `ERROR` and message in the operation failure red | Same as `warn` |
-| Notice, `info` | Bold `INFO` and message in muted text | Same as `warn` |
+| Notice, `warn` | `⚠️` and message in the operation failure red | Flush-left, no gutter or surrounding blank rows |
+| Notice, `error` | `⛔` and message in the operation failure red | Same as `warn` |
+| Notice, `info` | `📌` and message in muted text | Same as `warn` |
 | Problem | 🛑 Caution in its existing accent (§5.5) | Alert block, with a blank row above and below in the TUI |
 
 Notice discriminators are muted; further message, snippet and hint lines follow

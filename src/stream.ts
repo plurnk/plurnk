@@ -6,6 +6,7 @@
 import ModelText from "./model-text.ts";
 import { paint } from "./color.ts";
 import process from "node:process";
+import { operationLabel } from "./operation-glyphs.ts";
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { PREVIEW_OFFSET, fitRow, lineageWorker, objectOf, previewLine, previewLines, problemSummary, renderOperationBlock, renderOperationRow, type LogEntryWire } from "./render.ts";
 
@@ -103,7 +104,7 @@ export default class StreamTrace {
         const failed = status !== 200;
         const failure = !failed ? null : problemSummary(ev.result.problem) ?? (summaryTail(ev) || String(status));
         if (launch !== undefined) return renderOperationBlock(launch, { failed, failure }, false, columns);
-        const parts = [paint(ModelText.plain(ev.scheme), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
+        const parts = [paint(operationLabel(ModelText.plain(ev.scheme)), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];
         if (failure !== null) parts.push(`— ${paint(ModelText.plain(failure), "failure")}`);
         return parts.join(" ");
     }

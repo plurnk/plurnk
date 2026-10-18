@@ -63,7 +63,7 @@ test("a model WAIT with a body renders as the model's message: Markdown at full 
     assert.doesNotMatch(plain, /\*\*12 of 30\*\*/u, "the body went through the Markdown layout, not the literal preview");
     assert.equal(spoken, renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: body }, aside: "park while the poll runs" }, rx: { answers: ["agui://anonymous/threads/t/messages/m1"] } })).replace(/^[^\n]*\n/u, spoken.split("\n")[0] + "\n"), "the body is painted exactly as a reply's body is");
     const silent = stripVTControlCharacters(renderLogEntry(entry({ op: "WAIT", origin: "model", signal: 202, status_rx: 202, lineMarker: { marks: [600] }, tx: { body: null, aside: "park while the poll runs" }, rx: { status: 202, attrs: { waiting: 600 } } })));
-    assert.match(silent, /^WAIT/u, "a bodiless WAIT is still its operation row");
+    assert.match(silent, /^⏳/u, "a bodiless WAIT is still its operation row");
 });
 
 // ─── sendSubGlyph ─────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ test("[§cli-what-is-not-rendered] an arrival is the daemon's inbound SEND row; 
     assert.equal(isOwnArrival(other, "my thread"), false, "another thread's message renders");
     assert.equal(isOwnArrival(peer, "my thread"), false, "a peer worker's message renders");
     const rendered = renderLogEntry(peer, 80);
-    assert.match(rendered, /SEND/);
+    assert.match(rendered, /^✉️ /u);
     assert.match(rendered, /\(worker:\/\/reviewer\)/, "the sender sits where a target would");
     assert.match(rendered, /done/, "the body follows");
 });
@@ -229,7 +229,7 @@ const read = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => entry({
 });
 
 test("[§cli-log-entry-line-format] a READ row is the authored heading with the lines it returned", () => {
-    assert.equal(renderLogEntry(read()), "READ (AGENTS.md) <17,-1> {240}");
+    assert.equal(renderLogEntry(read()), "📖 (AGENTS.md) <17,-1> {240}");
 });
 
 test("[§cli-log-entry-line-format] a pattern READ keeps the pattern literal and counts its matched lines", () => {
@@ -239,7 +239,7 @@ test("[§cli-log-entry-line-format] a pattern READ keeps the pattern literal and
         rx: { status: 200, content: "…", lineOrdinals: [1, 5, 35], range: { unit: "line", total: 5244, requested: [1, 35], returned: [1, 35] } },
         lineMarker: null,
     }));
-    assert.equal(line, "READ (plurnk-core/SPEC.md) /^#{1,2} / {3}", "the pattern is not a Markdown heading and the count is the matched lines, not the span");
+    assert.equal(line, "📖 (plurnk-core/SPEC.md) /^#{1,2} / {3}", "the pattern is not a Markdown heading and the count is the matched lines, not the span");
 });
 
 test("[§cli-log-entry-line-format] a FIND counts the items it returned and carries its aside last", () => {
@@ -248,7 +248,7 @@ test("[§cli-log-entry-line-format] a FIND counts the items it returned and carr
         tx: { op: "FIND", target: { kind: "local", raw: "plurnk-parser/**" }, matcher: null, aside: "what the new package contains" },
         rx: { status: 200, results: [], range: { unit: "resource", total: 28, requested: [1, 16], returned: [1, 16] }, matchingPathCount: 28, matchLocationCount: 0 },
     }));
-    assert.equal(line, "FIND (plurnk-parser/**) {16} what the new package contains", "a glob is not emphasis; the aside is a styled field after the count");
+    assert.equal(line, "🔎 (plurnk-parser/**) {16} what the new package contains", "a glob is not emphasis; the aside is a styled field after the count");
 });
 
 test("[§cli-log-entry-line-format] a 204 FIND counts zero and is not a failure", () => {
@@ -257,7 +257,7 @@ test("[§cli-log-entry-line-format] a 204 FIND counts zero and is not a failure"
         tx: { op: "FIND", target: { kind: "local", raw: "src/**/*.ts" }, matcher: null, aside: null },
         rx: { status: 204, content: null, results: [], range: { unit: "resource", total: 0, requested: [1, 16] } },
     }));
-    assert.equal(line, "FIND (src/**/*.ts) {0}");
+    assert.equal(line, "🔎 (src/**/*.ts) {0}");
 });
 
 test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, and aside, then the Problem title at the right", () => {
@@ -266,12 +266,12 @@ test("[§cli-log-entry-line-format] a failure keeps op, target, scope, pattern, 
         tx: { op: "READ", target: { kind: "local", raw: "plurnk-parser/README.md" }, matcher: null, aside: null },
         rx: { status: 404, content: null, problem: { type: "https://problems.plurnk.xyz/scheme/file/entry-not-member", title: "Entry not member", status: 404, detail: "'plurnk-parser/README.md' exists on disk but is not a member of this workspace." } },
         lineMarker: { marks: [1, -1] },
-    })), "READ (plurnk-parser/README.md) <1,-1> — Entry not member");
+    })), "📖 (plurnk-parser/README.md) <1,-1> — Entry not member");
     assert.equal(renderLogEntry(read({
         target: "belfry.md", status_rx: 404, lineMarker: null,
         tx: { op: "READ", target: { kind: "local", raw: "belfry.md" }, matcher: { dialect: "regex", raw: "/\\bbats?\\b/i", pattern: "\\bbats?\\b", flags: "i" }, aside: "only the lines matching \"bat\" or \"bats\"" },
         rx: { status: 404, content: null, problem: { type: "https://problems.plurnk.xyz/scheme/file/entry-not-found", title: "Entry not found", status: 404, detail: "No entry exists at belfry.md." } },
-    })), "READ (belfry.md) /\\bbats?\\b/i only the lines matching \"bat\" or \"bats\" — Entry not found", "one line; the title is to the right of the aside");
+    })), "📖 (belfry.md) /\\bbats?\\b/i only the lines matching \"bat\" or \"bats\" — Entry not found", "one line; the title is to the right of the aside");
 });
 
 test("[§cli-hyperlinks] a web READ row links its target to itself; a workspace address never links", () => {
@@ -279,7 +279,7 @@ test("[§cli-hyperlinks] a web READ row links its target to itself; a workspace 
         target: "https://example.com/guide", lineMarker: null,
         tx: { op: "READ", target: { kind: "url", raw: "https://example.com/guide" }, matcher: null, aside: null },
     });
-    assert.match(renderLogEntry(web), /^READ \(https:\/\/example\.com\/guide\)/u, "without styling, the address is text");
+    assert.match(renderLogEntry(web), /^📖 \(https:\/\/example\.com\/guide\)/u, "without styling, the address is text");
     assert.match(colored(() => renderLogEntry(web)), /\(\x1b\]8;;https:\/\/example\.com\/guide\x1b\\https:\/\/example\.com\/guide\x1b\]8;;\x1b\\\)/u, "with styling, the target links to itself");
     const local = read({
         target: "notes.md", lineMarker: null,
@@ -294,13 +294,13 @@ test("[§cli-curation-notice] the daemon's over-budget row renders as a curation
         tx: null,
         rx: { status: 413, problem: { type: "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget", title: "Packet exceeds budget", status: 413, detail: "Context exceeds budget. YOU MUST ONLY KILL, MOVE or NOTE this turn." } },
     });
-    assert.equal(renderLogEntry(overBudget), "notice — curating context", "the person sees the curation moment, not the model's mandate");
+    assert.equal(renderLogEntry(overBudget), "📌 — curating context", "the person sees the curation moment, not the model's mandate");
     assert.match(colored(() => renderLogEntry(overBudget)), /\u001B\[(?:1;)?32m/u, "the notice is painted as a success, not a failure");
     const other = entry({
         op: "error", origin: "_plurnk", status_rx: 422, target: null, lineMarker: null, tx: null,
         rx: { status: 422, problem: { type: "https://problems.plurnk.xyz/engine/rail/no-operation", title: "No operation", status: 422, detail: "The turn performed no operation." } },
     });
-    assert.equal(renderLogEntry(other), "error — No operation", "every other daemon error row keeps its title");
+    assert.equal(renderLogEntry(other), "⛔ — No operation", "every other daemon error row keeps its title");
 });
 
 test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the daemon's detail, not a count", () => {
@@ -308,7 +308,7 @@ test("[§cli-log-entry-line-format] a glob READ that matched nothing carries the
         target: "pets_*.md", status_rx: 204, lineMarker: null,
         tx: { op: "READ", target: { kind: "local", raw: "pets_*.md" }, matcher: null, aside: null },
         rx: { status: 204, detail: "No path matched pets_*.md." },
-    })), "READ (pets_*.md) — No path matched pets_*.md.");
+    })), "📖 (pets_*.md) — No path matched pets_*.md.");
 });
 
 test("[§cli-log-entry-line-format] failed rows show structured diagnostics as literal text beside their title", () => {
@@ -317,12 +317,12 @@ test("[§cli-log-entry-line-format] failed rows show structured diagnostics as l
         rx: { status: 502, problem: { type: "https://problems.plurnk.xyz/executor/mcp/tool-reported-error", status: 502,
             title: "Tool reported error", detail: "The MCP tool reported an error.", diagnostic } },
     });
-    assert.equal(renderLogEntry(failed("No web results found")), "brave (brave_web_search) — Tool reported error: No web results found");
+    assert.equal(renderLogEntry(failed("No web results found")), "⚙️ brave (brave_web_search) — Tool reported error: No web results found");
     for (const diagnostic of [undefined, null, 42, {}, "", " \n ", "Tool reported error"]) {
-        assert.equal(renderLogEntry(failed(diagnostic)), "brave (brave_web_search) — Tool reported error");
+        assert.equal(renderLogEntry(failed(diagnostic)), "⚙️ brave (brave_web_search) — Tool reported error");
     }
     assert.equal(renderLogEntry(failed("\x1b[31mNo\x1b[0m\n\t**results** \x1b]52;c;c2VjcmV0\x07found\r")),
-        "brave (brave_web_search) — Tool reported error: No **results** found");
+        "⚙️ brave (brave_web_search) — Tool reported error: No **results** found");
     assert.equal(outcomeTitle({ ...failed("No web results found"), status_rx: 200 }), null, "success does not acquire failure narration");
     const value = failed("No web results found");
     const original = structuredClone(value);
@@ -336,7 +336,7 @@ test("[§cli-log-entry-line-format] an execution row is named by its runtime and
         tx: { runtime: "sh", target: null, aside: "Run the focused tests", body: "npm test -- --grep focused" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     }));
-    assert.equal(line, "sh Run the focused tests\n    npm test -- --grep focused\n", "{plurnk#104} the invocation body previews beneath the row, a blank row under it");
+    assert.equal(line, "⚙️ sh Run the focused tests\n    npm test -- --grep focused\n", "{plurnk#104} the invocation body previews beneath the row, a blank row under it");
 });
 
 test("[§cli-log-entry-line-format] a client `!` row is named by its op, the daemon's default runtime", () => {
@@ -345,13 +345,13 @@ test("[§cli-log-entry-line-format] a client `!` row is named by its op, the dae
         tx: { runtime: "sh", target: null, aside: null, body: "printf x" },
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
-    assert.equal(renderLogEntry(started), "sh\n    printf x\n", "the human's `!` command runs in the default shell; its row says so, its command beneath");
+    assert.equal(renderLogEntry(started), "⚙️ sh\n    printf x\n", "the human's `!` command runs in the default shell; its row says so, its command beneath");
     const refused = entry({
         op: "cobol", target: null, status_rx: 404,
         tx: { runtime: "cobol", target: null, aside: null, body: "x" },
         rx: { status: 404, problem: { type: "x", title: "Unknown executor", status: 404 } },
     });
-    assert.equal(renderLogEntry(refused), "cobol — Unknown executor\n    x\n", "a refused execution is an ordinary failed row under its runtime");
+    assert.equal(renderLogEntry(refused), "⚙️ cobol — Unknown executor\n    x\n", "a refused execution is an ordinary failed row under its runtime");
 });
 
 test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own path", () => {
@@ -360,14 +360,14 @@ test("[§cli-log-entry-line-format] COPY and MOVE keep each scope beside its own
         tx: { op: "COPY", aside: null, source: { target: { kind: "local", raw: "notes.md" }, lineMarker: { marks: [1, 3] }, matcher: null, metadata: null }, destination: { target: { kind: "url", raw: "worker:///archive/notes.md" }, lineMarker: { marks: [-1] }, matcher: null, metadata: null } },
         rx: { status: 201 },
     }));
-    assert.equal(line, "COPY (notes.md) <1,3> (worker:///archive/notes.md) <-1>");
+    assert.equal(line, "🖨️ (notes.md) <1,3> (worker:///archive/notes.md) <-1>");
 });
 
-test("[§cli-log-entry-line-format] the row is literal text: no Markdown, no glyphs, the op name at column zero", () => {
+test("[§cli-log-entry-line-format] the row is literal text: no Markdown, the operation glyph at column zero", () => {
     const line = renderLogEntry(entry({ op: "FIND", target: "*.md", tx: { op: "FIND", target: { kind: "local", raw: "*.md" }, matcher: null, aside: null }, rx: { status: 200, results: [], range: { unit: "resource", total: 7, requested: [1, 16], returned: [1, 7] } } }));
-    assert.equal(line, "FIND (*.md) {7}");
-    assert.match(renderLogEntry(entry({ op: "WHATEVER", target: "/x", tx: { op: "WHATEVER", target: { raw: "/x" } } })), /^WHATEVER \(\/x\)/, "an unknown op still renders as itself");
-    assert.match(renderLogEntry(entry({ op: "BARE", tx: { op: "BARE", target: null, aside: "ask the model" } })), /^BARE ask the model$/);
+    assert.equal(line, "🔎 (*.md) {7}");
+    assert.match(renderLogEntry(entry({ op: "WHATEVER", target: "/x", tx: { op: "WHATEVER", target: { raw: "/x" } } })), /^⚙️ WHATEVER \(\/x\)/, "an unknown op still renders as itself");
+    assert.match(renderLogEntry(entry({ op: "BARE", tx: { op: "BARE", target: null, aside: "ask the model" } })), /^☁️ ask the model$/);
 });
 
 test("receiptCount and outcomeTitle read only the receipt", () => {
@@ -393,14 +393,14 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
     assert.deepEqual(collapse.admit(row(1)), []);
     const last = collapse.admit(row(2));
     assert.equal(last.length, 1);
-    assert.equal(renderLogEntry(last[0].entry, 80, last[0].override), "READ (pets_*.md) /dogs/i {3} every dog", "one line for the authored statement, counting the paths it read");
+    assert.equal(renderLogEntry(last[0].entry, 80, last[0].override), "📖 (pets_*.md) /dogs/i {3} every dog", "one line for the authored statement, counting the paths it read");
     const ordinary = read();
     assert.deepEqual(collapse.admit(ordinary), [{ entry: ordinary }], "an ordinary row is untouched");
     for (const diagnostic of [undefined, "Not indexed"]) {
         const failed = collapse.admit(row(0, { status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not member", status: 404, diagnostic } } }));
         assert.equal(failed.length, 1, "a failed path is visible immediately");
         assert.equal(renderLogEntry(failed[0].entry, 80, failed[0].override),
-            `READ (pets_0.md) /dogs/i every dog — Entry not member${diagnostic === undefined ? "" : `: ${diagnostic}`}`);
+            `📖 (pets_0.md) /dogs/i every dog — Entry not member${diagnostic === undefined ? "" : `: ${diagnostic}`}`);
         assert.deepEqual(collapse.admit(row(1)), [{ entry: row(1) }]);
         assert.deepEqual(collapse.admit(row(2)), [{ entry: row(2) }], "later rows cannot hide the concrete failure in a summary");
     }
@@ -408,16 +408,16 @@ test("[§cli-log-entry-line-format] a fanned-out READ collapses to its authored 
 
 // ─── SEND blocks ({§cli-broadcast-send-rendering}) ─────
 
-test("[§cli-broadcast-send-rendering] a delivered message is its body under a blank lead line; a failed one is an operation", () => {
-    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "\nParis.", "no keyword: a blank line, then the body at column zero");
+test("[§cli-broadcast-send-rendering] a delivered message is its body under a glyph lead line; a failed one is an operation", () => {
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: null, body: { raw: "Paris.", json: null } } })), "✉️\nParis.", "no keyword: a glyph line, then the body at column zero");
     const block = renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: "the answer", body: { raw: "line one\nline two", json: null } } }));
-    assert.deepEqual(block.split("\n"), ["the answer", "line one", "line two"], "the aside takes the lead line; body lines stay at column zero");
-    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "SEND — Recipient unknown\n    Undelivered.\n", "a failed message is an operation carrying its Problem title");
-    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: null, body: null } })), "SEND", "an empty reply retains its operation receipt without blank speech");
+    assert.deepEqual(block.split("\n"), ["✉️ the answer", "line one", "line two"], "the aside follows the glyph; body lines stay at column zero");
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, status_rx: 400, tx: { op: "SEND", aside: null, body: { raw: "Undelivered.", json: null } }, rx: { status: 400, problem: { type: "x", title: "Recipient unknown", status: 400 } } })), "✉️ — Recipient unknown\n    Undelivered.\n", "a failed message is an operation carrying its Problem title");
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: null, tx: { op: "SEND", aside: null, body: null } })), "✉️", "an empty reply retains its operation receipt without blank speech");
 });
 
 test("[§cli-log-entry-line-format] a directed SEND is an operation row, never a message block", () => {
-    assert.equal(renderLogEntry(entry({ op: "SEND", target: "worker:///gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "SEND (worker:///gone) — Worker gone\n    hi\n");
+    assert.equal(renderLogEntry(entry({ op: "SEND", target: "worker:///gone", status_rx: 410, tx: { op: "SEND", target: { kind: "url", raw: "worker:///gone" }, aside: null, body: { raw: "hi", json: null } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } })), "✉️ (worker:///gone) — Worker gone\n    hi\n");
 });
 
 
@@ -576,22 +576,20 @@ test("renderSummary: pluralizes turns", () => {
 
 // ─── Inline broadcasts + universal status glyph (v0.10.0) ─────────────
 
-test("[§cli-broadcast-send-rendering] broadcast: short single-line body inlines after the header", () => {
+test("[§cli-broadcast-send-rendering] broadcast: short single-line body follows the glyph header", () => {
     const out = renderLogEntry(entry({
         op: "SEND", target: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "Paris.", json: null } },
     }));
-    const inner = out.replace(/^\n|\n$/g, "");
-    assert.ok(!inner.includes("\n"), `expected one line, got: ${JSON.stringify(out)}`);
-    assert.match(inner, /Paris\.$/);
+    assert.equal(out, "🐹\nParis.");
 });
 
-test("broadcast: a multi-line body follows the blank lead line at column zero", () => {
+test("broadcast: a multi-line body follows the glyph lead line at column zero", () => {
     const out = renderLogEntry(entry({
         op: "SEND", target: null, signal: 200, status_rx: 200,
         tx: { body: { raw: "line one\nline two", json: null } },
     }));
-    assert.deepEqual(out.split("\n"), ["", "line one", "line two"]);
+    assert.deepEqual(out.split("\n"), ["🐹", "line one", "line two"]);
 });
 
 // ─── Coordinate-free human waterfall (plurnk#21) ──────────────────────
@@ -755,7 +753,7 @@ test("[§cli-summary-line-per-loop] renderSummary takes both gauge denominators 
 
 test("[§cli-what-is-not-rendered] a pending execution's grey row is the plain row with no outcome", () => {
     const row = renderPendingRow(entry({ op: "sh", target: null, tx: { runtime: "sh", target: null, aside: "Run the suite", body: "npm test" }, rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" } }));
-    assert.equal(row, "sh Run the suite");
+    assert.equal(row, "⚙️ sh Run the suite");
     assert.doesNotMatch(row, /npm test|started/);
 });
 
@@ -767,19 +765,19 @@ test("{plurnk#107} a body previews at the knob's line count and names the addres
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "sh", stream: "sh:///1a2b3c4d" },
     });
     const rows = renderLogEntry(sh, 80).split("\n");
-    assert.equal(rows[0], "sh");
+    assert.equal(rows[0], "⚙️ sh");
     assert.deepEqual(rows.slice(1, 4), lines.slice(0, 3).map((line) => `    ${line}`), "three of forty lines, the shipped PLURNK_CLIENT_PREVIEW_LINES, four columns in");
     assert.equal(rows[4], "    … +37 lines · log:///1/2/3/sh", "the rest is named with the address it lives at");
     assert.deepEqual(rows.slice(5), [""], "a blank row closes the block");
     const short = entry({ ...sh, tx: { runtime: "sh", target: null, aside: null, body: "one\ntwo" } });
-    assert.equal(renderLogEntry(short, 80), "sh\n    one\n    two\n", "a short body is shown whole");
+    assert.equal(renderLogEntry(short, 80), "⚙️ sh\n    one\n    two\n", "a short body is shown whole");
     const note = entry({
         op: "NOTE", target: null, loop_seq: 1, turn_seq: 2, sequence: 4,
         tx: { op: "NOTE", target: null, aside: null, body: { raw: lines.join("\n"), json: null } },
     });
     const noteRows = renderLogEntry(note, 80).split("\n");
-    assert.deepEqual([noteRows[0], noteRows.at(-1)], ["", "line 40"], "a model NOTE uses the message layout");
-    assert.equal(noteRows.length, 41, "the blank lead and all forty lines");
+    assert.deepEqual([noteRows[0], noteRows.at(-1)], ["🗒️", "line 40"], "a model NOTE uses the message layout");
+    assert.equal(noteRows.length, 41, "the glyph lead and all forty lines");
     assert.deepEqual(noteRows.slice(1, 3), ["line 1", "line 2"], "a model NOTE uses the full column width");
     assert.ok(!noteRows.some((row) => /… \+\d+ lines/u.test(row)), "a NOTE is never cut");
 });
@@ -792,10 +790,10 @@ test("{§cli-note-rendering} a model NOTE renders plain and dim, the status line
     process.env.PLURNK_CLIENT_COLOR = "always";
     try {
         const rows = renderLogEntry(note, 80).split("\n");
-        assert.deepEqual(rows, ["", paint("bearings kept", "dim"), paint("next: read the test", "dim")],
-            "a blank lead, then every line dim: no reply weight");
+        assert.deepEqual(rows, [paint("🗒️", "dim"), paint("bearings kept", "dim"), paint("next: read the test", "dim")],
+            "a glyph lead, then every line dim: no reply weight");
         const bold = entry({ ...note, tx: { op: "NOTE", target: null, aside: null, body: { raw: "**bold**", json: null } } });
-        assert.equal(renderLogEntry(bold, 80), `\n${paint("bold", "dim")}`, "Markdown weight is stripped before the dim paint");
+        assert.equal(renderLogEntry(bold, 80), `${paint("🗒️", "dim")}\n${paint("bold", "dim")}`, "Markdown weight is stripped before the dim paint");
     } finally {
         delete process.env.PLURNK_CLIENT_COLOR;
     }
@@ -808,7 +806,7 @@ test("{plurnk#108} a lineage row renders two columns in with the child's name, i
         rx: { status: 200, outcome: "started" }, attrs: { runtime: "brave", stream: "brave:///5623708a" },
     });
     const rows = renderLogEntry(launch, 80).split("\n");
-    assert.equal(rows[0], "  🐜 identity brave (brave_web_search)", "the child's name leads, two columns in");
+    assert.equal(rows[0], "  🐜 identity ⚙️ brave (brave_web_search)", "the child's name leads, two columns in");
     assert.equal(rows[1], "      {\"query\":\"space bunny\"}", "the body previews beneath, one step deeper");
     assert.deepEqual(rows.slice(2), [""], "the blank row closes the block");
     const struck = entry({
@@ -817,7 +815,7 @@ test("{plurnk#108} a lineage row renders two columns in with the child's name, i
         rx: { status: 500, problem: { type: "x", title: "Struck out", status: 500 } },
     });
     const conclusion = renderLogEntry(struck, 80);
-    assert.match(conclusion, /^READ \(ops:\/\/identity\/14\).*— Struck out/u, "a child's conclusion is the parent's own row, carrying the child's terminal outcome");
+    assert.match(conclusion, /^📖 \(ops:\/\/identity\/14\).*— Struck out/u, "a child's conclusion is the parent's own row, carrying the child's terminal outcome");
     assert.ok(!conclusion.includes("🐜"), "no mark: the harness reads ops:// for the worker itself too, and the ant is the status line's child count");
     assert.ok(!renderLogEntry(entry({ op: "sh", origin: "model", tx: { runtime: "sh", body: "ls" } }), 80).includes("🐜"), "the bound worker's own rows carry no mark");
     const arrival = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://identity", tx: { body: { raw: "done" } } });
@@ -827,7 +825,7 @@ test("{plurnk#108} a lineage row renders two columns in with the child's name, i
 test("{plurnk#108} an observed descendant's row steps in one step per generation, and its output follows", () => {
     const grandchild = entry({ op: "sh", origin: "model", tx: { runtime: "sh", body: "ls" } });
     const rows = renderDescendantBlock(grandchild, "grand", 2).split("\n");
-    assert.equal(rows[0], "    🐜 grand sh", "two generations, four columns in");
+    assert.equal(rows[0], "    🐜 grand ⚙️ sh", "two generations, four columns in");
     assert.equal(rows[1], "        ls", "the preview follows one step deeper");
     assert.equal(indentDescendant("    one\n\n    two", 1), "      one\n\n      two", "blank lines stay blank");
     assert.equal(markDescendant("sh\n    ls", "child", 1), "  🐜 child sh\n      ls");
@@ -844,7 +842,7 @@ test("{plurnk#107} the preview count is the knob's, never the terminal's height,
         process.env.PLURNK_CLIENT_PREVIEW_LINES = "8";
         assert.equal(renderLogEntry(sh, 80).split("\n").length, 11, "eight lines, the marker, a blank row");
         process.env.PLURNK_CLIENT_PREVIEW_LINES = "0";
-        assert.equal(renderLogEntry(sh, 80), "sh\n    … +12 lines · log:///1/2/3/sh\n", "zero shows only where the body lives");
+        assert.equal(renderLogEntry(sh, 80), "⚙️ sh\n    … +12 lines · log:///1/2/3/sh\n", "zero shows only where the body lives");
         process.env.PLURNK_CLIENT_PREVIEW_LINES = "a third";
         assert.throws(() => renderLogEntry(sh, 80), /PLURNK_CLIENT_PREVIEW_LINES must be a non-negative integer/u);
     } finally {
@@ -878,10 +876,10 @@ const RED = (text: string): string => `\x1b[31m${text}\x1b[0m`;
 test("{§cli-log-entry-line-format} the verdict is the row's status: a disposition's informational detail is dim beside a green name", () => {
     for (const detail of ["Nothing is in flight. Continuing.", "This loop is already concluded.", "All Open Messages resolved. Review new results; emit no OPs if finished."]) {
         const wait = entry({ op: "WAIT", status_rx: 102, tx: { op: "WAIT", body: null, target: null, aside: null }, rx: { status: 102, detail } });
-        assert.equal(colored(() => renderLogEntry(wait, 120)), `${GREEN_NAME("WAIT")} — ${DIM(detail)}`, detail);
+        assert.equal(colored(() => renderLogEntry(wait, 120)), `${GREEN_NAME("⏳")} — ${DIM(detail)}`, detail);
     }
     const silent = entry({ op: "WAIT", status_rx: 102, tx: { op: "WAIT", body: null, target: null, aside: null }, rx: { status: 102 } });
-    assert.equal(colored(() => renderLogEntry(silent, 120)), GREEN_NAME("WAIT"), "no detail, no dash");
+    assert.equal(colored(() => renderLogEntry(silent, 120)), GREEN_NAME("⏳"), "no detail, no dash");
 });
 
 test("{§cli-log-entry-line-format} a row at 400 or above is red, name and outcome, with its Problem title or its detail", () => {
@@ -889,26 +887,26 @@ test("{§cli-log-entry-line-format} a row at 400 or above is red, name and outco
         op: "WAIT", status_rx: 422, tx: { op: "WAIT", body: null, target: null, aside: null },
         rx: { status: 422, problem: { type: "https://problems.plurnk.xyz/engine/turn/no-operation", title: "No operation", status: 422 } },
     });
-    assert.equal(colored(() => renderLogEntry(refused, 120)), `${RED_NAME("WAIT")} — ${RED("No operation")}`);
+    assert.equal(colored(() => renderLogEntry(refused, 120)), `${RED_NAME("⏳")} — ${RED("No operation")}`);
     const problemless = entry({ op: "WAIT", status_rx: 499, tx: { op: "WAIT", body: null, target: null, aside: null }, rx: { status: 499, detail: "Cancelled." } });
-    assert.equal(colored(() => renderLogEntry(problemless, 120)), `${RED_NAME("WAIT")} — ${RED("Cancelled.")}`, "a failing status reddens a Problem-less detail too");
+    assert.equal(colored(() => renderLogEntry(problemless, 120)), `${RED_NAME("⏳")} — ${RED("Cancelled.")}`, "a failing status reddens a Problem-less detail too");
     const read = entry({ op: "READ", status_rx: 404, tx: { target: "missing.txt" }, rx: { status: 404, problem: { type: "https://problems.plurnk.xyz/engine/entry/not-found", title: "Entry not found", status: 404 } } });
-    assert.match(colored(() => renderLogEntry(read, 120)), /^\x1b\[1;31mREAD\x1b\[0m .*— \x1b\[31mEntry not found\x1b\[0m\n?$/u);
+    assert.match(colored(() => renderLogEntry(read, 120)), /^\x1b\[1;31m📖\x1b\[0m .*— \x1b\[31mEntry not found\x1b\[0m\n?$/u);
 });
 
 test("{§cli-log-entry-line-format} a caller's verdict overrides the status in both directions, and an outcome text alone never reddens", () => {
     const launched = entry({ op: "sh", status_rx: 102, tx: { runtime: "sh", target: null, aside: null, body: null }, rx: { status: 102 } });
-    assert.equal(colored(() => renderOperationRow(launched, { failed: true, failure: "exit 2" })), `${RED_NAME("sh")} — ${RED("exit 2")}`, "an execution that concluded unsuccessfully");
-    assert.equal(colored(() => renderOperationRow(launched, { failed: false, failure: null })), GREEN_NAME("sh"), "an execution that concluded 200");
-    assert.equal(colored(() => renderOperationRow(launched, { failure: "a note" })), `${GREEN_NAME("sh")} — ${DIM("a note")}`, "text is not a verdict");
+    assert.equal(colored(() => renderOperationRow(launched, { failed: true, failure: "exit 2" })), `${RED_NAME("⚙️ sh")} — ${RED("exit 2")}`, "an execution that concluded unsuccessfully");
+    assert.equal(colored(() => renderOperationRow(launched, { failed: false, failure: null })), GREEN_NAME("⚙️ sh"), "an execution that concluded 200");
+    assert.equal(colored(() => renderOperationRow(launched, { failure: "a note" })), `${GREEN_NAME("⚙️ sh")} — ${DIM("a note")}`, "text is not a verdict");
     const refused = entry({ op: "sh", status_rx: 403, tx: { runtime: "sh", target: null, aside: null, body: null }, rx: { status: 403 } });
-    assert.equal(colored(() => renderOperationRow(refused, { failed: false, failure: null })), GREEN_NAME("sh"), "the caller's verdict stands over a failing status");
+    assert.equal(colored(() => renderOperationRow(refused, { failed: false, failure: null })), GREEN_NAME("⚙️ sh"), "the caller's verdict stands over a failing status");
 });
 
 test("[§cli-log-entry-line-format] a parse refusal is named by the verb of the statement it refused, live as in history", () => {
     const problem = { type: "https://problems.plurnk.xyz/grammar/parser/invalid-operation-syntax", title: "Invalid operation syntax", status: 400, diagnostic: "invalid READ scope" };
     const refusal = entry({ op: "error", status_rx: 400, rx: { status: 400, problem }, attrs: { attempt: { verb: "READ", text: "````READ (a.md) <1,\n````" } } });
-    assert.equal(stripVTControlCharacters(renderLogEntry(refusal, 80)).split("\n")[0], "READ — Invalid operation syntax: invalid READ scope");
-    assert.equal(stripVTControlCharacters(renderLogEntry({ ...refusal, attrs: {} }, 80)).split("\n")[0], "error — Invalid operation syntax: invalid READ scope",
+    assert.equal(stripVTControlCharacters(renderLogEntry(refusal, 80)).split("\n")[0], "📖 — Invalid operation syntax: invalid READ scope");
+    assert.equal(stripVTControlCharacters(renderLogEntry({ ...refusal, attrs: {} }, 80)).split("\n")[0], "⛔ — Invalid operation syntax: invalid READ scope",
         "a refusal that names no attempt keeps the row's own name");
 });

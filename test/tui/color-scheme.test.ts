@@ -15,7 +15,7 @@ before(async () => {
 
 after(async () => { await daemon?.cleanup(); });
 
-// The harness daemon has no model: WARN stays failure red, its discriminator uses the learned ground.
+// The harness daemon has no model: its warning stays failure red, its discriminator uses the learned ground.
 const startupWarning = async (background: string): Promise<string> => {
     const tui = spawnTui(daemon!.url, ["--yolo"], { NO_COLOR: undefined, COLORFGBG: undefined, PLURNK_CLIENT_COLOR: "always" });
     try {
@@ -33,7 +33,7 @@ const startupWarning = async (background: string): Promise<string> => {
 test("[§cli-color-scheme] a light terminal's startup warning uses a readable muted discriminator", async (t) => {
     if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
     const output = await startupWarning("ffff/ffff/ffff");
-    assert.match(output, /\x1b\[1;31mWARN/u);
+    assert.match(output, /\x1b\[1;31m⚠️/u);
     assert.match(output, /\x1b\[38;5;60mclient:model:unselected/u);
     assert.doesNotMatch(output, /\x1b\[38;5;145mclient:model:unselected/u);
 });
@@ -41,7 +41,7 @@ test("[§cli-color-scheme] a light terminal's startup warning uses a readable mu
 test("[§cli-color-scheme] a dark terminal's startup warning uses a readable muted discriminator", async (t) => {
     if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
     const output = await startupWarning("0000/0000/0000");
-    assert.match(output, /\x1b\[1;31mWARN/u);
+    assert.match(output, /\x1b\[1;31m⚠️/u);
     assert.match(output, /\x1b\[38;5;145mclient:model:unselected/u);
     assert.doesNotMatch(output, /\x1b\[38;5;60mclient:model:unselected/u);
 });

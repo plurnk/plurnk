@@ -625,7 +625,8 @@ observation. `injected_next_turn` stays on the existing stream;
 uses {§agui-sync} and restores the snapshot's unseen durable rows before releasing
 live rows. Rows are seen by durable identity, so a row drawn out of order, such as an
 independent client operation's, hides no row the snapshot holds. A successful
-observation without a new terminal record adds no synthetic loop summary, usage, or tally.
+observation without a new terminal record adds no loop summary, usage, or tally, whether it
+completed, lost its connection or ended with a Problem ({§cli-summary-line-per-loop}).
 
 Questions use their own inline controls under {§cli-inline-review}. Input there
 is answer data, including slash-prefixed text. In the composer, all input keeps
@@ -1157,6 +1158,11 @@ Loop state comes from the daemon's status events, not an inference from a verb o
 ```
 
 `tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; another 500 is `failed`.
+A summary follows exactly one loop terminal. An observation that ends without one — the sync Run
+completing, the daemon stopping, a credential revoked, a dead wire, this client's own hangup — is no
+loop outcome: no summary, no usage, no tally, no lifecycle change; its Problem is diagnosed as it arrives
+and the session stops observing. Idle connection time is never loop wall time. A prompt's own Run that
+ends without terminal truth keeps its summary of uncertainty (`turns unknown`, the wire's Problem).
 Input and output are the conventional aggregate fields from the daemon's accounting envelope. Missing token quantities render as `?`; zero or unavailable aggregate cost is omitted; a nonzero exact decimal is rendered without floating-point conversion. JSON output retains the complete accounting evidence.
 
 ### §5.3 What is NOT rendered {§cli-what-is-not-rendered}
@@ -1712,7 +1718,7 @@ and RFC 9457 Problems. Notices use the operation-row presentation, not an alert 
 | Notice, `warn` | `⚠️` and message in the operation failure red | Flush-left, no gutter or surrounding blank rows |
 | Notice, `error` | `⛔` and message in the operation failure red | Same as `warn` |
 | Notice, `info` | `📌` and message in muted text | Same as `warn` |
-| Problem | 🛑 Caution in its existing accent (§5.5) | Alert block, with a blank row above and below in the TUI |
+| Problem | `❌` and message in the operation failure red: a request of this session's, or its connection, failed (the glyph of a failed status and a cancelled SEND); `⛔` stays the worker's own operation failing | Same as `warn`; recovery and hint lines follow |
 
 Notice discriminators are muted; further message, snippet and hint lines follow
 without an alert gutter. Rendering does not change severity, operation results,

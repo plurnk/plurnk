@@ -104,14 +104,15 @@ const colored = <T>(render: () => T): T => {
     }
 };
 
-test("[§cli-notice-rendering] Problems retain alerts; notices use severity glyphs with red or muted messages", () => {
+test("{§cli-notice-rendering} Problems and notices share the operation-row glyph vocabulary: ❌, ⛔, ⚠️, 📌", () => {
     const [problem, error, warn, info] = colored(() => [
         renderDiagnostic(clientRuntimeError("failed")),
         renderDiagnostic({ source: "engine", kind: "fatal", level: "error", message: "stopped" }),
         renderDiagnostic({ source: "client:connection", kind: "daemon_stale", level: "warn", message: "update available" }),
         renderDiagnostic({ source: "engine", kind: "graceful", level: "info", message: "done" }),
     ]);
-    assert.match(problem, /^\x1b\[31m│\x1b\[0m \x1b\[31;1m🛑  Caution\x1b\[0m/u);
+    assert.match(problem, /^\x1b\[1;31m❌\x1b\[0m/u);
+    assert.match(problem, / — \x1b\[31mfailed\x1b\[0m$/u);
     assert.match(error, /^\x1b\[1;31m⛔\x1b\[0m/u);
     assert.match(warn, /^\x1b\[1;31m⚠️\x1b\[0m/u);
     assert.match(info, /^\x1b\[1;38;5;145m📌\x1b\[0m/u);
@@ -126,8 +127,8 @@ test("renderDiagnostic renders a Problem's producer-owned recovery once", () => 
         recovery: "Retry after restoring the connection.",
     });
     assert.deepEqual(out.split("\n"), [
-        "│ 🛑  Caution client:runtime:error — The request failed.",
-        "│ Retry after restoring the connection.",
+        "❌ client:runtime:error — The request failed.",
+        "Retry after restoring the connection.",
     ]);
 });
 

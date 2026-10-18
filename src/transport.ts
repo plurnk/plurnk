@@ -71,7 +71,7 @@ export interface RunHandlers {
 
 // `streaming` is true while a Run segment's event stream is open: a run paused on a client-side interrupt
 // (a review, a question) has no stream that could carry the daemon's terminal record ({§cli-cancellation}).
-export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void; streaming: () => boolean }
+export interface RunHandle { done: Promise<TerminatedInfo>; ready: Promise<void>; cancel: () => void; streaming: () => boolean; failure: () => ProblemDetails | null }
 
 // A subagent's worker as its start names it, or null for a start that names none.
 const descendantOf = (metadata: unknown): Descendant | null => {
@@ -83,7 +83,10 @@ const descendantOf = (metadata: unknown): Descendant | null => {
     }
     return { workerId: workerId!, name, parentWorkerId: parentWorkerId!, depth: depth! };
 };
-export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void; streaming: () => boolean }
+// {§cli-summary-line-per-loop} `done` resolves a loop terminal, or null when the observation ended without one;
+// `failure` then names the Problem that ended it (the daemon stopping, a revoked credential, a dead wire, this
+// client's own cancellation), or null for a sync Run that simply completed.
+export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready: Promise<void>; cancel: () => void; streaming: () => boolean; failure: () => ProblemDetails | null }
 // {§cli-worker-history} The rows a sync Run's snapshot held that this session had not drawn, in log order.
 export interface WorkerHistory {
     entries: LogEntryWire[];
@@ -247,6 +250,13 @@ export class AguiTransport implements Transport {
         // standard resume as the resume run and keep consuming — done spans the whole pause/resume
         // chain, so the TUI's seam contract never changes.
         let streaming = false;
+        let ending: ProblemDetails | null = null;
+        // {§cli-summary-line-per-loop} A Problem that ends a Run: a prompt's Run reports it as its outcome (a broken
+        // wire is never a success); an observation reports no loop outcome at all and names it through `failure`.
+        const failed = (problem: ProblemDetails): TerminatedInfo | null => {
+            ending = problem;
+            return prompt === undefined ? null : { finalStatus: problem.status, hitMaxTurns: false, result: operationResult({ status: problem.status, problem }) };
+        };
         const done = (async (): Promise<TerminatedInfo | null> => {
             let terminated: TerminatedInfo | null = null;
             let sawRunError = false;
@@ -295,7 +305,7 @@ export class AguiTransport implements Transport {
                             } catch (cause) {
                                 if (!(cause instanceof ProblemError)) throw cause;
                                 this.#h?.onProblem?.(cause.problem);
-                                return { finalStatus: cause.problem.status, hitMaxTurns: false, result: operationResult({ status: cause.problem.status, problem: cause.problem }) };
+                                return failed(cause.problem);
                             }
                             if (gate !== undefined) {
                                 pausedProp = gate.proposal.logEntryId;
@@ -337,11 +347,7 @@ export class AguiTransport implements Transport {
                             } catch (cause) {
                                 const problem = clientTransportInteractionInvalid(pausedInteraction, cause);
                                 this.#h?.onProblem?.(problem);
-                                return {
-                                    finalStatus: problem.status,
-                                    hitMaxTurns: false,
-                                    result: operationResult({ status: problem.status, problem }),
-                                };
+                                return failed(problem);
                             }
                         } else {
                             this.#dispatch(e, projection);
@@ -350,48 +356,30 @@ export class AguiTransport implements Transport {
                     streaming = false;
                 } catch (err) {
                     streaming = false;
-                    if (ac.signal.aborted) {
-                        const problem = clientTransportCancelled();
-                        return terminated ?? {
-                            finalStatus: problem.status,
-                            hitMaxTurns: false,
-                            result: operationResult({ status: problem.status, problem }),
-                        };
-                    }
+                    if (ac.signal.aborted) return terminated ?? failed(clientTransportCancelled());
                     throw err;
                 }
                 // HttpAgent reports abort through the event stream and then completes;
                 // cancellation is therefore observed here rather than necessarily in
                 // the catch path. The transport contract remains a clean 499 outcome.
-                if (ac.signal.aborted) {
-                    const problem = clientTransportCancelled();
-                    return terminated ?? {
-                        finalStatus: problem.status,
-                        hitMaxTurns: false,
-                        result: operationResult({ status: problem.status, problem }),
-                    };
-                }
+                if (ac.signal.aborted) return terminated ?? failed(clientTransportCancelled());
                 if (terminated !== null) return terminated;
                 if (pausedInteraction !== null && interruptId === undefined) {
                     const problem = clientTransportInterruptMismatch(`int:${pausedInteraction}`);
                     this.#h?.onProblem?.(problem);
-                    return {
-                        finalStatus: problem.status,
-                        hitMaxTurns: false,
-                        result: operationResult({ status: problem.status, problem }),
-                    };
+                    return failed(problem);
                 }
                 if (pausedProp === null && pausedInteraction === null) {
                     if (prompt === undefined && observed && !sawRunError && runProblem === null) return null;
                     // NO fabricated success (fabrication audit, 2026-07-11): a stream that
-                    // ends without terminal truth is a broken wire — 502, never 200.
-                    const problem = runProblem
-                        ?? (sawRunError ? clientTransportProblemMissing() : clientTransportTerminalMissing());
-                    return {
-                        finalStatus: problem.status,
-                        hitMaxTurns: false,
-                        result: operationResult({ status: problem.status, problem }),
-                    };
+                    // ends without terminal truth is a broken wire — 502, never 200. The daemon's own
+                    // Problem was already diagnosed by #ended; a synthesized one is diagnosed here.
+                    if (runProblem === null) {
+                        const synthesized = sawRunError ? clientTransportProblemMissing() : clientTransportTerminalMissing();
+                        this.#h?.onProblem?.(synthesized);
+                        return failed(synthesized);
+                    }
+                    return failed(runProblem);
                 }
                 if (joined !== undefined) {
                     // One resolver per interrupt in this client; a reconnect may
@@ -435,14 +423,13 @@ export class AguiTransport implements Transport {
             if (prompt === undefined && isAbsentWorker(cause)) ready.resolve();
             else ready.reject(cause);
             if (!ac.signal.aborted) throw cause;
-            const problem = clientTransportCancelled();
-            return { finalStatus: problem.status, hitMaxTurns: false, result: operationResult({ status: problem.status, problem }) };
+            return failed(clientTransportCancelled()) as TerminatedInfo;
         }).finally(() => {
             ac.abort();
             this.#controllers.delete(ac);
             if (this.#modelProjection === projection) this.#modelProjection = null;
         });
-        return { done, ready: ready.promise, cancel: () => ac.abort(), streaming: () => streaming };
+        return { done, ready: ready.promise, cancel: () => ac.abort(), streaming: () => streaming, failure: () => ending };
     }
 
     // {§cli-worker-history}: establish the historical prefix before releasing

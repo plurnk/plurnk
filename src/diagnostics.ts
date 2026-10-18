@@ -127,13 +127,15 @@ export const renderDiagnostic = (diagnostic: Diagnostic): string => {
             ...renderHints(diagnostic),
         ].join("\n");
     }
+    // {§cli-notice-rendering} A Problem is a request of this session's that failed: ❌, the glyph of a failed
+    // status and a cancelled SEND, in the operation-row presentation beside ⚠️ and ⛔ Notices.
     return [
-        `${paint("🛑  Caution", "caution", "bold")} ${discriminator}${first === undefined ? "" : ` — ${first}`}`,
-        ...rest,
+        `${paint("❌", "bold", "failure")} ${discriminator}${first === undefined ? "" : ` — ${paint(first, "failure")}`}`,
+        ...rest.map((line) => paint(line, "failure")),
         ...renderSnippet(diagnostic),
         ...renderRecovery(diagnostic),
         ...renderHints(diagnostic),
-    ].map((line) => `${paint("│", "caution")} ${line}`).join("\n");
+    ].join("\n");
 };
 
 export const report = (diagnostic: Diagnostic): void => {

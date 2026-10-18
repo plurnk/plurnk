@@ -1052,7 +1052,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // {§cli-outside-text} — the turn's prose outside its fences, a NOTE's block in the waterfall.
         onOutside: (outside) => printAbove(renderOutsideText(outside, surface.columns || 80)),
         onNotice: handleNotice,
-        onProblem: (problem) => printAlert(renderDiagnostic(problem)),
+        onProblem: (problem) => printAbove(renderDiagnostic(problem)),
         onWorkspace: (workspace) => {
             workspaceStatus = projectWorkspaceState(workspace);
             if (workspaceStatus.projectRoot !== undefined) boundProjectRoot = workspaceStatus.projectRoot;
@@ -1237,9 +1237,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         try {
             for (;;) {
                 const terminal = await activeRun.done;
+                // {§cli-summary-line-per-loop} An observation that ended without a loop terminal is no loop outcome:
+                // its Problem was diagnosed as it arrived, and the session stops observing.
+                const failure = terminal === null ? activeRun.failure() : null;
                 flushFanout();
                 retireReasoning();
-                const detached = observing && terminal?.loopId === undefined && terminal?.finalStatus === 499;
+                const detached = observing && failure !== null;
                 reviewRequested = false;
                 if (terminal !== null && !shuttingDown && !detached) {
                     // {§cli-cancellation} A run the client hung up on carries no turn ids: unknown, never zero.

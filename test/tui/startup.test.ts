@@ -23,7 +23,7 @@ for (const workspace of [undefined, "startup-worker"]) {
         }, project);
         t.after(() => tui.kill());
         assert.equal(await tui.exited, 1);
-        assert.match(tui.output(), /Caution client:connection:refused/);
+        assert.match(tui.output(), /❌ client:connection:refused/);
         assert.match(tui.output(), /Could not reach the configured service/);
         assert.match(tui.output(), /plurnk-service start/);
         assert.doesNotMatch(tui.output(), /\n\s+at |TypeError:|node_modules\//);

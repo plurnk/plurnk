@@ -662,15 +662,20 @@ for (const [snapshot, events] of [
     });
 }
 
-test("{§cli-active-command-admission}: a dead sync stream retains its original failure without attempting history", async () => {
+test("{§cli-summary-line-per-loop}: a dead sync stream is diagnosed as its original failure, not reported as a loop outcome", async () => {
     const mock = await bootMock((_request, response) => {
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.end(frame({ type: "RUN_STARTED" }));
     });
     try {
         const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
-        const result = await transport.observe().done;
-        assert.equal(result?.result.problem?.kind, "terminal-missing");
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        const observation = transport.observe();
+        assert.equal(await observation.done, null, "no loop terminal, no loop outcome");
+        assert.equal(observation.failure()?.kind, "terminal-missing");
+        assert.deepEqual(seen.problems.map((problem) => (problem as { kind?: string }).kind), ["terminal-missing"]);
+        assert.deepEqual(seen.terminated, []);
         assert.equal(mock.captured.length, 1);
     } finally { await mock.close(); }
 });
@@ -800,7 +805,8 @@ test("{§cli-daemon-autostart}: disposing the TUI transport releases its open ob
         const observation = transport.observe();
         await connected.promise;
         await transport[Symbol.asyncDispose]();
-        assert.equal((await observation.done)?.finalStatus, 499);
+        assert.equal(await observation.done, null, "a released observation is no loop outcome");
+        assert.equal(observation.failure()?.status, 499);
         await disconnected.promise;
         await assert.rejects(transport.rpc("workspace.workers"), { name: "AbortError" });
         assert.throws(() => transport.observe(), { name: "AbortError" });
@@ -1083,5 +1089,32 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
             const input = run.body as { tools: unknown };
             assert.deepEqual(input.tools, clientCapabilities(true).tools, "every loop declares the client's capability set");
         }
+    } finally { await mock.close(); }
+});
+
+test("{§cli-summary-line-per-loop}: an observation the daemon ends with a Problem is diagnosed once and is no loop outcome", async () => {
+    const problem = {
+        type: "https://problems.plurnk.xyz/agui/lifecycle/service-stopping",
+        title: "Service stopping",
+        status: 503,
+        detail: "The PLURNK service is shutting down.",
+        retryable: true,
+    };
+    const mock = await bootMock((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(frame({ type: "RUN_STARTED" }));
+        res.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
+        res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type, metadata: { plurnk: { problem } } }));
+        res.end();
+    });
+    try {
+        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const { h, seen } = collectingHandlers();
+        transport.subscribe(h);
+        const observation = transport.observe();
+        assert.equal(await observation.done, null, "no loop terminal arrived, so there is no loop outcome");
+        assert.deepEqual(observation.failure(), problem, "the ending is named, not reported as a loop");
+        assert.deepEqual(seen.problems, [problem], "diagnosed exactly once");
+        assert.deepEqual(seen.terminated, [], "nothing terminated");
     } finally { await mock.close(); }
 });

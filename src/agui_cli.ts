@@ -386,8 +386,8 @@ export const runCliViaAgui = async (
     };
     // --timeout <s>: at the deadline, fire loop.cancel at the daemon (the loop
     // resolves 499) and, if the stream still hasn't ended after a grace, abort the
-    // SSE locally (hangup is the abort). Exit 3 with timedOut:true in the record,
-    // per SPEC §1.
+    // SSE locally: that ends delivery only, the cancel was already sent
+    // ({§agui-run-disconnect}). Exit 3 with timedOut:true in the record, per SPEC §1.
     let timedOut = false;
     const cancellationGraceMs = Knobs.cancelGraceMs();
     const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAgui(target, {

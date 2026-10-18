@@ -575,7 +575,7 @@ The status line's worker segment carries the sibling position when there is one:
 Startup and successful workspace/worker navigation synchronize through the existing
 AG-UI Run `{§agui-sync}` before admitting new bound work. Synchronization
 submits no prompt and performs no inference. An attached live loop remains observable;
-disconnecting that observer does not cancel independently-owned work.
+disconnecting never cancels work ({§agui-run-disconnect}).
 
 | Surface | History behavior |
 |---|---|
@@ -645,7 +645,7 @@ fires `loop.cancel` (reason `user_escape`) through the identical cancel path;
 while idle it clears the composed value. Esc never exits.
 pi-tui owns escape-sequence reassembly and keyboard-protocol negotiation.
 
-`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `loop.cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits — the escape hatch for dispatches a drain-cancel cannot unblock (`op.parse`). (Dropping a message Run's SSE also aborts its loop — hangup is the abort; `loop.cancel` is the addressable spelling.)
+`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `loop.cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits the client; work the daemon admitted runs on, since dropping a Run's connection ends only its delivery ({§agui-run-disconnect}) — `loop.cancel` is the one cancellation.
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 

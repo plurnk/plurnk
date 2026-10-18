@@ -143,8 +143,8 @@ export const runEnd = (e: AguiEvent): RunEnd | null => {
 };
 
 // Run one turn through the AG-UI endpoint, async-yielding each AG-UI event until
-// the daemon ends the stream. A connect request observes existing work; disconnecting
-// it does not cancel the worker. An authored run retains its cancellation scope.
+// the daemon ends the stream. Disconnecting, from any Run, ends only this delivery; the work
+// runs on until `loop.cancel` or its own end ({§agui-run-disconnect}).
 export async function* runViaAgui(
     target: AguiTarget,
     run: { threadId: string; workspace?: string; prompt?: string; messages?: RunAgentInput["messages"]; capabilities?: ClientCapabilities; connect?: boolean; resume?: ResumeEntry[]; runId?: string; forwardedProps?: Record<string, unknown> },

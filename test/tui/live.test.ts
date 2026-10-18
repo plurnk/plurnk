@@ -5,6 +5,7 @@
 import { test, before, after, describe } from "node:test";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
+import { operationLabel } from "../../src/operation-glyphs.ts";
 
 let daemon: Daemon | null = null;
 const liveEnabled = process.env.PLURNK_CLIENT_LIVE === "1";
@@ -47,9 +48,10 @@ describe("TUI live (model-gated)", () => {
             // is already in the transcript; the status row carries lifecycle.
             tui.write("Run python in several separate steps: print 1, then 2, then 3, then 4. Wait for each result before the next. Then summarize.\r");
             await tui.waitFor(/⌛︎/);
-            // The model's first execution row, named by its runtime (§5.1): the renderer paints a row
-            // after an erase-line, never after a bare newline, and turn 0 has no execution rows.
-            await tui.waitFor(/\x1b\[2K(?:python3?|sh)(?:\s|\x1b|$)/, 540_000);
+            // The model's first execution row, labelled by its runtime ({§cli-operation-glyphs}): the renderer
+            // paints a row after an erase-line, never after a bare newline, and turn 0 has no execution rows.
+            const runtimes = ["python3", "python", "sh"].map((runtime) => operationLabel(runtime)).join("|");
+            await tui.waitFor(new RegExp(`\\x1b\\[2K(?:${runtimes})(?:\\s|\\x1b|$)`, "u"), 540_000);
             tui.write("btw keep the summary short\r");
             await tui.waitFor(/↳ added to the run/, 540_000);     // loop.inject path (NOT a new loop)
         } finally { tui.kill(); }

@@ -268,6 +268,9 @@ export class AguiTransport implements Transport {
             let fp = forwardedProps;
             // plurnk-service {§agui-run-input}: a Run that carries nothing new synchronizes.
             let observing = prompt === undefined;
+            // {§cli-gate-answer-lifetime} The gate whose answer the next Run carries, held until that Run ends.
+            let answered: { readonly release: () => void } | undefined;
+            const letGo = (): void => { answered?.release(); answered = undefined; };
             for (;;) {
                 let pausedProp: number | null = null;
                 let pausedInteraction: number | null = null;
@@ -289,6 +292,8 @@ export class AguiTransport implements Transport {
                     streaming = true;
                     for await (const e of synchronized) {
                         if (!observing) ready.resolve();
+                        // Applied, refused or lost, the answer's Run is over before what it presents is reviewed.
+                        if (e.type === "RUN_FINISHED" || e.type === "RUN_ERROR") letGo();
                         const ended = this.#ended(e);
                         if (ended.terminated !== null) terminated = ended.terminated;
                         if (ended.problem !== null) runProblem = ended.problem;
@@ -361,6 +366,8 @@ export class AguiTransport implements Transport {
                     streaming = false;
                     if (ac.signal.aborted) return terminated ?? failed(clientTransportCancelled());
                     throw err;
+                } finally {
+                    letGo();
                 }
                 // HttpAgent reports abort through the event stream and then completes;
                 // cancellation is therefore observed here rather than necessarily in
@@ -397,11 +404,19 @@ export class AguiTransport implements Transport {
                     return failed(runProblem);
                 }
                 if (joined !== undefined) {
-                    // One resolver per interrupt in this client; a reconnect may
-                    // resurface a gate already held by a concurrent action Run.
-                    const completed = AbortSignal.any([joined, ac.signal]);
-                    if (!completed.aborted) await new Promise<void>((resolve) => completed.addEventListener("abort", () => resolve(), { once: true }));
+                    // {§cli-gate-answer-lifetime} One resolver per interrupt in this client: a gate another of its Runs holds is
+                    // held here on a connection too, until it settles or that Run lets it go; then the work is followed.
+                    const ended = AbortSignal.any([joined, ac.signal]);
+                    const letGoThere = new Promise<void>((resolve) => {
+                        if (ended.aborted) resolve();
+                        else ended.addEventListener("abort", () => resolve(), { once: true });
+                    });
+                    const held = interruptId === undefined ? undefined : await this.#hold(binding, forwardedProps, interruptId, ac.signal, letGoThere);
+                    if (held === undefined) await letGoThere;
                     ac.signal.throwIfAborted();
+                    if (held !== undefined && held.terminated !== null) return held.terminated;
+                    // The held call was folded on the hold; the observation's snapshot rebuilds the conversation's calls.
+                    projection.rows = new RowAssembler();
                     next = {};
                     fp = forwardedProps;
                     observing = true;
@@ -434,6 +449,7 @@ export class AguiTransport implements Transport {
                     next = a === "cancel"
                         ? { resume: [{ interruptId, status: "cancelled" }] }
                         : { resume: [{ interruptId, status: "resolved", payload: a }] };
+                    answered = review;
                     fp = resumeProps;
                     observing = false;
                     continue;
@@ -444,6 +460,7 @@ export class AguiTransport implements Transport {
                 ac.signal.throwIfAborted();
                 if (r === undefined) throw new Error("proposal ended without a resolution");
                 next = { resume: [proposalResume(interruptId, r)] };
+                answered = review;
                 fp = resumeProps;
                 observing = false;
             }
@@ -465,14 +482,24 @@ export class AguiTransport implements Transport {
         return { done, ready: ready.promise, cancel: () => ac.abort(), streaming: () => streaming, failure: () => ending };
     }
 
-    // plurnk-service {§agui-held-interrupts}: while this client's review of a gate is open, a connection naming its interrupt
-    // observes the worker, drawing what it brings as live rows. Undefined when the review is answered here first, or the
-    // hold ends without the gate settling; otherwise the gate settled elsewhere and the review is withdrawn: the loop's
-    // terminal when the hold carried it, else null.
+    // plurnk-service {§agui-held-interrupts}: while this client's review of a gate is open, a connection holds its interrupt.
+    // Undefined when the review is answered here first, or the hold ends without the gate settling; otherwise the gate
+    // settled elsewhere and the review is withdrawn: the loop's terminal when the hold carried it, else null.
     async #holdReview(binding: { threadId: string }, forwardedProps: Record<string, unknown> | undefined, interruptId: string,
         signal: AbortSignal, review: { readonly decided: boolean; readonly withdraw: () => void },
         decision: Promise<unknown>): Promise<TerminatedInfo | null | undefined> {
         if (review.decided) return undefined;
+        const held = await this.#hold(binding, forwardedProps, interruptId, signal, decision);
+        if (held === undefined) return undefined;
+        review.withdraw();
+        return held.terminated;
+    }
+
+    // plurnk-service {§agui-held-interrupts}: a connection naming a gate's interrupt observes the worker, drawing what it brings
+    // as live rows, until the gate settles or `until` does. The settlement, with the loop's terminal when the hold carried
+    // it; undefined when `until` came first or the hold ended without the gate settling.
+    async #hold(binding: { threadId: string }, forwardedProps: Record<string, unknown> | undefined, interruptId: string,
+        signal: AbortSignal, until: Promise<unknown>): Promise<{ readonly terminated: TerminatedInfo | null } | undefined> {
         const hold = new AbortController();
         // The hold's own conversation: its snapshot rebuilds the calls, the held one among them, that its settlement folds onto.
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
@@ -495,13 +522,9 @@ export class AguiTransport implements Transport {
             if (!hold.signal.aborted && !signal.aborted && cause instanceof ProblemError) this.#h?.onProblem?.(cause.problem);
             return undefined;
         });
-        const first = await Promise.race([decision.then(() => "answered" as const), observed]);
-        if (first === "answered" || first === undefined) {
-            hold.abort();
-            return undefined;
-        }
-        review.withdraw();
-        return first.terminated;
+        const first = await Promise.race([until.then(() => undefined), observed]);
+        if (first === undefined) hold.abort();
+        return first;
     }
 
     // {§cli-worker-history}: establish the historical prefix before releasing
@@ -563,7 +586,7 @@ export class AguiTransport implements Transport {
                 this.#h?.onInterruptEnd?.(`${kind === "Proposal" ? "proposal" : "int"}:${id}`);
             };
             const release = (): void => {
-                pending.delete(id);
+                if (pending.get(id) === entry) pending.delete(id);
                 signal.removeEventListener("abort", cancel);
                 completed.abort();
             };

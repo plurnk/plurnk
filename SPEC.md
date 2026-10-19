@@ -1348,9 +1348,14 @@ resolved interrupt. That owner connection creates the session's worker when ther
 (plurnk-service `{§agui-action-binding}`); verbs wait for it. Inspection and direct operations do not
 detach that owner connection. Future owned work, including independently active children, can request
 review without a new user prompt. Disconnect changes neither ownership nor pending gates.
-Concurrent Runs share one local resolver per interrupt. A resurfaced gate does not
-open another review or submit another decision; its observer resumes once the gated row
-arrives settled, without waiting for the approved work to finish.
+
+{§cli-gate-answer-lifetime} Concurrent Runs share one local resolver per interrupt, and an answer
+holds its gate only while the Run that carries it lasts. A gate presented to a Run while another of
+the client's Runs holds it opens no second review and submits no second decision: that Run holds
+the gate's interrupt on a connection (plurnk-service `{§agui-held-interrupts}`) and follows the
+work once the gate settles or the other Run lets it go. Once the Run carrying an answer ends, the
+answer applied, refused or lost with its connection, the gate is no longer held: a later
+presentation of it is reviewed again.
 
 `--yolo`, configured acceptance, and `?` remain client-side decisions. Server
 `PLURNK_SERVICE_PROPOSALS` owns automatic server disposition.

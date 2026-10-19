@@ -108,6 +108,8 @@ interface PendingInterrupt<T> {
     readonly signal: AbortSignal;
     readonly settle: (value: T | undefined) => void;
     readonly release: () => void;
+    // plurnk-service {§agui-held-interrupts}: the gate settled elsewhere; the review retires without an answer of ours.
+    readonly withdraw: () => void;
     decided: boolean;
 }
 
@@ -371,6 +373,18 @@ export class AguiTransport implements Transport {
                     return failed(problem);
                 }
                 if (pausedProp === null && pausedInteraction === null) {
+                    // plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits, settled by
+                    // another client or the daemon, ends nothing: the refusal is shown and the work is followed.
+                    if (next.resume !== undefined && runProblem !== null && AguiTransport.#unpending(runProblem)) {
+                        sawRunError = false;
+                        runProblem = null;
+                        // The refused call still awaits its decision here; the observation's snapshot rebuilds it settled.
+                        projection.rows = new RowAssembler();
+                        next = {};
+                        fp = forwardedProps;
+                        observing = true;
+                        continue;
+                    }
                     if (prompt === undefined && observed && !sawRunError && runProblem === null) return null;
                     // NO fabricated success (fabrication audit, 2026-07-11): a stream that
                     // ends without terminal truth is a broken wire — 502, never 200. The daemon's own
@@ -393,8 +407,26 @@ export class AguiTransport implements Transport {
                     observing = true;
                     continue;
                 }
-                if (proposalResolution === null && interactionResolution === null) throw new Error("paused run ended without a resolution channel");
+                const decision = interactionResolution ?? proposalResolution;
+                if (decision === null) throw new Error("paused run ended without a resolution channel");
                 if (interruptId === undefined) throw new Error("paused run ended without an interrupt identity");
+                // plurnk-service {§agui-held-interrupts}: while the review is open, a connection holding its interrupt observes
+                // the worker; a gate another client's answer or the daemon settles withdraws the review, and the work that
+                // continues is followed.
+                const review = pausedInteraction !== null ? this.#pendingInteractions.get(pausedInteraction)
+                    : pausedProp === null ? undefined : this.#pendingProposals.get(pausedProp);
+                const settledElsewhere = review === undefined ? undefined
+                    : await this.#holdReview(binding, forwardedProps, interruptId, ac.signal, review, decision);
+                ac.signal.throwIfAborted();
+                if (settledElsewhere !== undefined) {
+                    if (settledElsewhere !== null) return settledElsewhere;
+                    // The settled call was folded on the hold; the observation's snapshot rebuilds the conversation's calls.
+                    projection.rows = new RowAssembler();
+                    next = {};
+                    fp = forwardedProps;
+                    observing = true;
+                    continue;
+                }
                 if (interactionResolution !== null && pausedInteraction !== null) {
                     const a = await interactionResolution;
                     ac.signal.throwIfAborted();
@@ -431,6 +463,50 @@ export class AguiTransport implements Transport {
             if (this.#modelProjection === projection) this.#modelProjection = null;
         });
         return { done, ready: ready.promise, cancel: () => ac.abort(), streaming: () => streaming, failure: () => ending };
+    }
+
+    // plurnk-service {§agui-held-interrupts}: while this client's review of a gate is open, a connection naming its interrupt
+    // observes the worker, drawing what it brings as live rows. Undefined when the review is answered here first, or the
+    // hold ends without the gate settling; otherwise the gate settled elsewhere and the review is withdrawn: the loop's
+    // terminal when the hold carried it, else null.
+    async #holdReview(binding: { threadId: string }, forwardedProps: Record<string, unknown> | undefined, interruptId: string,
+        signal: AbortSignal, review: { readonly decided: boolean; readonly withdraw: () => void },
+        decision: Promise<unknown>): Promise<TerminatedInfo | null | undefined> {
+        if (review.decided) return undefined;
+        const hold = new AbortController();
+        // The hold's own conversation: its snapshot rebuilds the calls, the held one among them, that its settlement folds onto.
+        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
+        const observed = (async (): Promise<{ readonly terminated: TerminatedInfo | null } | undefined> => {
+            let settled = false;
+            let terminated: TerminatedInfo | null = null;
+            for await (const e of runViaAgui(this.#target, {
+                ...binding, forwardedProps: { ...forwardedProps, interrupts: [interruptId] },
+                capabilities: clientCapabilities(this.#workspace.auto !== true), connect: true,
+            }, AbortSignal.any([signal, hold.signal]))) {
+                const ended = this.#ended(e);
+                if (ended.terminated !== null) terminated = ended.terminated;
+                if (e.type === "RUN_FINISHED") settled = e.outcome?.type !== "interrupt";
+                else if (e.type === "MESSAGES_SNAPSHOT") {
+                    for (const entry of snapshotRows(e.messages, projection.rows)) if (this.#seenRows.get(entry.id) !== this.#rowVersion(entry)) this.#row(entry);
+                } else if (e.type !== "RUN_ERROR") this.#dispatch(e, projection);
+            }
+            return settled || terminated !== null ? { terminated } : undefined;
+        })().catch((cause: unknown) => {
+            if (!hold.signal.aborted && !signal.aborted && cause instanceof ProblemError) this.#h?.onProblem?.(cause.problem);
+            return undefined;
+        });
+        const first = await Promise.race([decision.then(() => "answered" as const), observed]);
+        if (first === "answered" || first === undefined) {
+            hold.abort();
+            return undefined;
+        }
+        review.withdraw();
+        return first.terminated;
+    }
+
+    // plurnk-service {§agui-held-interrupts}: a resume refused because its gate no longer waits.
+    static #unpending(problem: ProblemDetails): boolean {
+        return problem.status === 409 && /\/(?:interrupt|proposal|interaction)-not-pending$/u.test(problem.type);
     }
 
     // {§cli-worker-history}: establish the historical prefix before releasing
@@ -496,7 +572,14 @@ export class AguiTransport implements Transport {
                 signal.removeEventListener("abort", cancel);
                 completed.abort();
             };
-            const entry = { signal: completed.signal, settle, release, decided: false };
+            const withdraw = (): void => {
+                if (entry.decided) return;
+                entry.decided = true;
+                resolve(undefined);
+                release();
+                this.#h?.onInterruptEnd?.(`${kind === "Proposal" ? "proposal" : "int"}:${id}`);
+            };
+            const entry = { signal: completed.signal, settle, release, withdraw, decided: false };
             const cancel = (): void => { settle(undefined); release(); };
             pending.set(id, entry);
             if (signal.aborted) cancel();

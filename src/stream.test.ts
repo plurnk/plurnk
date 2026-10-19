@@ -114,6 +114,55 @@ test("StreamTrace: a stream without a launching fence renders from its own paylo
     assert.doesNotMatch(line, /resumed|wake/);
 });
 
+// A subsystem command the daemon runs inside its settlement: its row settles with the verb's own status.
+const members = { target: "members:///4c848a41", scheme: "members" } as const;
+const settledRow = (status: number): LogEntryWire => launch({
+    op: "members", state: "resolved", status_rx: status, rx: { status },
+    tx: { runtime: "members", aside: "include the docs", target: { kind: "local", raw: "add" }, body: "{\"files\":[\"docs/**\"]}" },
+    attrs: { runtime: "members", stream: members.target },
+});
+const membersConcluded = (status: number): Concluded => ({
+    ...concluded({ status, summary: `${members.target} completed; results=48 bytes`, wakeAction: "no-op-active-loop" }), ...members,
+    ...(status >= 400 ? { result: { status, problem: { type: "https://problems.plurnk.xyz/functionality/alias-exists", title: "Alias exists", status, detail: "'docs/**' already has a different definition." } } } : {}),
+});
+
+test("[§cli-stream-event-and-stream-concluded] a result succeeds below 400: only a failure names its outcome", () => {
+    for (const status of [200, 201, 204, 400, 409, 500]) {
+        const launched = new StreamTrace();
+        launched.launch(launch());
+        const paired = launched.concluded(concluded(status < 400
+            ? { status, summary: "python:///0c0ffee1 completed (exit 0); stdout=12 bytes, stderr=0 bytes" }
+            : { status, summary: "python:///0c0ffee1 executor threw; stdout=12 bytes, stderr=0 bytes", problem: { type: "https://problems.plurnk.xyz/scheme/exec/executor-threw", title: "Executor threw" } }), 80);
+        const unpaired = new StreamTrace().concluded(membersConcluded(status), 80);
+        if (status < 400) {
+            assert.equal(paired, "⚙️ python Run the focused tests\n    print(1)", `${status}: the launching fence, no outcome text`);
+            assert.equal(unpaired, "⚙️ members (members:///4c848a41)", `${status}: no launch known, scheme and address only`);
+        } else {
+            assert.match(paired, / — Executor threw/u, `${status}: a failure names its Problem`);
+            assert.equal(unpaired, "⚙️ members (members:///4c848a41) — Alias exists", `${status}: the Problem's title`);
+        }
+    }
+});
+
+test("[§cli-stream-event-and-stream-concluded] a conclusion that arrives while its call awaits its settled row renders with that row, once", () => {
+    for (const status of [201, 409]) {
+        const t = new StreamTrace();
+        const conclusion = membersConcluded(status);
+        assert.equal(t.concluded(conclusion, 80, true), null, `${status}: the call has not settled; the conclusion waits`);
+        const row = settledRow(status);
+        assert.equal(t.settled(row), conclusion, `${status}: the settled row arrives and claims its conclusion`);
+        const rendered = t.renderSettled(row, conclusion, 80);
+        assert.match(rendered, /^⚙️ members \(add\) include the docs/u, `${status}: one row, the fence that launched it`);
+        if (status < 400) assert.doesNotMatch(rendered, / — /u, "a success names no outcome");
+        else assert.match(rendered, / — Alias exists/u, "a failure names its Problem");
+        assert.equal(t.settled(row), null, `${status}: claimed once`);
+    }
+    const launched = new StreamTrace();
+    launched.launch(launch());
+    assert.equal(launched.concluded(concluded(), 80, true), "⚙️ python Run the focused tests\n    print(1)", "a known launch renders at once, awaited or not");
+    assert.equal(new StreamTrace().settled(settledRow(201)), null, "a row with no held conclusion claims nothing");
+});
+
 test("inlineable: short one-or-two-line content only", () => {
     assert.equal(inlineable("Ulaanbaatar\n"), true);
     assert.equal(inlineable("line one\nline two\n"), true);

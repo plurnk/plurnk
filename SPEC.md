@@ -1171,7 +1171,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 - Whole bodies. Every body but a NOTE's is a preview (§5.1); `plurnk read` retrieves a complete log entry.
 - Raw SSE frames.
 - Emission rows. A `_plurnk` READ whose `attrs.kind` is `emission` is the daemon's announcement of the worker's own admitted emission, whose operations already render as their own rows. The TUI waterfall, history replay and CLI trace skip it; `--json` and `plurnk read` keep it.
-- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall. An admitted execution appears when its outcome is known: the conclusion renders the launching fence's row (§5.1), colored by result, with the Problem title or daemon summary on failure. A stream whose launch is unknown renders as its scheme and address. Activity belongs to the status line; wake bookkeeping is never a row.
+- Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall. An admitted execution appears when its outcome is known: the conclusion renders the launching fence's row (§5.1), colored by result, which succeeds below `400`, with the Problem title or daemon summary on failure. A conclusion that arrives before the gated call that launched its stream has settled waits for the settled row and renders with it (§8.4). A stream whose launch is unknown renders as its scheme and address. Activity belongs to the status line; wake bookkeeping is never a row.
 
 Concluded output is read through `entry.read` using the event's exact target and worker perspective:
 
@@ -1752,7 +1752,7 @@ stream/event     { entryId, workerId, target, channel, state, contentLength }
 stream/concluded { entryId, workerId, target, subscriptionId, scheme, result, summary, wakeAction }
 ```
 
-`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the execution row as `attrs.stream` (`python3:///0c0ffee1`), opaque to the client and never composed. An address alone does not establish a producer. Only an admitted receipt (`200` started or `202` queued) waits for a conclusion; refusals render immediately. Approval may supply the receipt's outcome text; admission follows status, not that text. The TUI keeps the admitted row until that address concludes, then renders it once, per §5.1:
+`workerId` is the entry-read perspective and `target` is the stream's address: the one the service stamped on the execution row as `attrs.stream` (`python3:///0c0ffee1`), opaque to the client and never composed. An address alone does not establish a producer. Only an admitted receipt (`200` started or `202` queued) waits for a conclusion; refusals render immediately. Approval may supply the receipt's outcome text; admission follows status, not that text. A conclusion can come first: the daemon runs a subsystem command inside the settlement of its call, so the stream concludes while the call still awaits its settled row. That conclusion waits for the row, which then renders with it whatever its status, and the CLI trace prints the conclusion's line right after the row. The TUI keeps the admitted row until that address concludes, then renders it once, per §5.1:
 
 ```
 python3 Run the focused tests

@@ -1,7 +1,7 @@
 // The TUI's AG-UI transport. Model and action runs share presentation handlers,
 // not stream state or interrupt ownership ({§cli-active-command-admission}).
 
-import type { Descendant, OutsideText } from "./render.ts";
+import { objectOf, type Descendant, type OutsideText } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { proposalOf, proposalResume, type ProposalParams, type Resolution } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
@@ -57,7 +57,8 @@ export interface RunHandlers {
         message: string;
         responseSchema: Record<string, unknown>;
     }) => void;
-    onStream: (payload: StreamEventPayload | StreamConcludedPayload) => void;
+    // `awaitingReceipt`: the gated call that launched this stream has not settled yet ({§cli-stream-event-and-stream-concluded}).
+    onStream: (payload: StreamEventPayload | StreamConcludedPayload, awaitingReceipt: boolean) => void;
     onDescendant?: (descendant: Descendant) => void;   // {plurnk#108} — a delegation observation's introduction
     onOutside: (outside: OutsideText) => void;   // {§cli-outside-text} — the turn's prose outside its fences
     onNotice: (notice: Notice) => void;
@@ -605,7 +606,10 @@ export class AguiTransport implements Transport {
         if (name === "plurnk.ambient") {
             const row = wholeRow(value);
             if (row !== null) this.#row(row);
-        } else if (name === "plurnk.stream") this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload);
+        } else if (name === "plurnk.stream") {
+            const target = objectOf(value)?.target;
+            this.#h?.onStream(value as StreamEventPayload | StreamConcludedPayload, typeof target === "string" && projection.rows.awaitsReceipt(target));
+        }
         else if (name === "plurnk.notice") this.#h?.onNotice(value as Notice);
         else if (name === "plurnk.descendant") this.#h?.onDescendant?.(value as Descendant);
         else if (name === "plurnk.outside") this.#h?.onOutside(value as OutsideText);

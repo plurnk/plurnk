@@ -1001,6 +1001,32 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         printAbove(renderDiagnostic(notice));
     };
 
+    // {§cli-stream-event-and-stream-concluded} An execution's one row once its outcome is known, then a preview of each
+    // channel's output beneath it, the human's and the model's alike ({plurnk#104}).
+    const conclusionColumns = (workerId: number): number => {
+        const observed = descendants.get(workerId);
+        return observed === undefined ? surface.columns || 80 : Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth);
+    };
+    const presentConclusion = (p: StreamConcludedPayload, block: string): void => {
+        const observed = descendants.get(p.workerId);
+        printAbove(observed === undefined ? block : markDescendant(block, observed.name, observed.depth));
+        peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
+            const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
+            for (const line of inlineOutput(channels, (name, content) => observed === undefined
+                ? renderInline(name, content, surface.columns || 80)
+                : indentDescendant(renderInline(name, content, Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth)), observed.depth))) {
+                printAbove(line);
+            }
+        }).catch(() => { /* peek is best-effort */ }));
+    };
+    // An execution that concluded before its call settled renders when that settled row arrives, with its conclusion.
+    const presentSettled = (entry: LogEntryWire): boolean => {
+        const concluded = streams.settled(entry);
+        if (concluded === null) return false;
+        presentConclusion(concluded, streams.renderSettled(entry, concluded, conclusionColumns(concluded.workerId)));
+        return true;
+    };
+
     transport.subscribe({
         onReasoning: presentReasoning,
         onHistory: (history) => {
@@ -1023,7 +1049,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // never the turn presentation's, the status line's or the response area's business.
             const descendant = descendants.get(entry.worker_id ?? -1);
             if (descendant !== undefined) {
-                if (streams.launch(entry)) return;
+                if (presentSettled(entry) || streams.launch(entry)) return;
                 printAbove(renderDescendantBlock(entry, descendant.name, descendant.depth, undefined, surface.columns || 80));
                 return;
             }
@@ -1043,7 +1069,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 repromptPreserving();
             }
             // {§cli-what-is-not-rendered} — a started execution appears when its outcome is known.
-            if (streams.launch(entry)) return;
+            if (presentSettled(entry) || streams.launch(entry)) return;
             for (const row of fanout.admit(entry)) {
                 if (isResponseMessage(row.entry)) surface.addResponse(row.entry);
                 else surface.append(renderLogEntry(row.entry, surface.columns || 80, row.override));
@@ -1081,24 +1107,13 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             placeTurn = authoritativeStatus.packetCount;
             repromptPreserving();
         },
-        onStream: (payload) => {
+        onStream: (payload, awaitingReceipt) => {
             // One channel for the lifecycle: a conclusion carries its exact result and is the
             // execution's one row; start and growth events say nothing in the transcript.
             if (typeof (payload as { result?: { status?: unknown } }).result?.status === "number") {
                 const p = payload as StreamConcludedPayload;
-                const observed = descendants.get(p.workerId);
-                const block = streams.concluded(p, observed === undefined ? surface.columns || 80 : Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth));
-                printAbove(observed === undefined ? block : markDescendant(block, observed.name, observed.depth));
-                // Every execution is asked for its output, the human's and the model's alike: a
-                // preview of each channel inlines under its row ({plurnk#104}).
-                peeks.push(transport.rpc("entry.read", { target: p.target, workerId: p.workerId }).then((r) => {
-                    const channels = (r as { entry?: { channels?: Record<string, { content?: string }> } | null }).entry?.channels ?? {};
-                    for (const line of inlineOutput(channels, (name, content) => observed === undefined
-                        ? renderInline(name, content, surface.columns || 80)
-                        : indentDescendant(renderInline(name, content, Math.max(1, (surface.columns || 80) - LINEAGE_OFFSET.length * observed.depth)), observed.depth))) {
-                        printAbove(line);
-                    }
-                }).catch(() => { /* peek is best-effort */ }));
+                const block = streams.concluded(p, conclusionColumns(p.workerId), awaitingReceipt);
+                if (block !== null) presentConclusion(p, block);
             } else {
                 const line = streams.event(payload as StreamEventPayload);
                 if (line !== null) printAbove(line);

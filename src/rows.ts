@@ -110,6 +110,12 @@ export default class RowAssembler {
     #calls = new Map<string, { facts: Facts; args: string; ended: boolean }>();
     #texts = new Map<string, { facts: Facts; content: string; message: NonNullable<LogEntryWire["message"]> }>();
 
+    // plurnk-service `{§agui-proposal-resolve}`: whether a gated call still awaiting its decision streams at this address.
+    // Its settled row is still to come, so a conclusion that arrives first waits for it ({§cli-stream-event-and-stream-concluded}).
+    awaitsReceipt(address: string): boolean {
+        return [...this.#calls.values()].some(({ facts }) => awaitsDecision(facts) && objectOf(facts.attrs)?.stream === address);
+    }
+
     // One standard event in; the rows it completes out.
     consume(e: AguiEvent): LogEntryWire[] {
         switch (e.type) {

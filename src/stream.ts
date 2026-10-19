@@ -53,10 +53,12 @@ const summaryTail = (ev: StreamConcludedPayload): string => {
     return (summary.startsWith(ev.target) ? summary.slice(ev.target.length) : summary).replace(/^\s+/, "");
 };
 
-// Launched executions awaiting their conclusion, keyed by stream address. Plain Map, no timers.
+// Launched executions awaiting their conclusion, and conclusions awaiting their settled row, keyed by stream address.
+// Plain Maps, no timers.
 export default class StreamTrace {
     #launched = new Map<string, LogEntryWire>();
     #greyed = new Set<string>();
+    #held = new Map<string, StreamConcludedPayload>();
 
     // A started execution has no outcome yet; its row waits for its stream's conclusion.
     // False for any other row, including an execution the daemon refused to start.
@@ -95,13 +97,39 @@ export default class StreamTrace {
     }
 
     // One row per execution, at its conclusion, in the operation grammar: the launching
-    // fence when it is known, the stream's own scheme and address otherwise.
-    concluded(ev: StreamConcludedPayload, columns: number): string {
+    // fence when it is known, the stream's own scheme and address otherwise. A conclusion whose call still awaits its
+    // settled row waits for that row ({§cli-stream-event-and-stream-concluded}): nothing now, and the row renders it.
+    concluded(ev: StreamConcludedPayload, columns: number): string;
+    concluded(ev: StreamConcludedPayload, columns: number, awaitingReceipt: boolean): string | null;
+    concluded(ev: StreamConcludedPayload, columns: number, awaitingReceipt = false): string | null {
         const launch = this.#launched.get(ev.target);
+        if (launch === undefined && awaitingReceipt) {
+            this.#held.set(ev.target, ev);
+            return null;
+        }
         this.#launched.delete(ev.target);
         this.#greyed.delete(ev.target);
+        return StreamTrace.#render(launch, ev, columns);
+    }
+
+    // The conclusion that arrived before this row's settlement, consumed once the row arrives.
+    settled(entry: LogEntryWire): StreamConcludedPayload | null {
+        const address = objectOf(entry.attrs)?.stream;
+        const held = typeof address === "string" ? this.#held.get(address) : undefined;
+        if (held === undefined) return null;
+        this.#held.delete(held.target);
+        return held;
+    }
+
+    // An execution that concluded before its call settled: the settled row, rendered with that conclusion.
+    renderSettled(entry: LogEntryWire, ev: StreamConcludedPayload, columns: number): string {
+        return StreamTrace.#render(entry, ev, columns);
+    }
+
+    // A result succeeds below 400; a failure names its Problem's title, else the daemon's summary.
+    static #render(launch: LogEntryWire | undefined, ev: StreamConcludedPayload, columns: number): string {
         const status = ev.result.status ?? 0;
-        const failed = status !== 200;
+        const failed = status >= 400;
         const failure = !failed ? null : problemSummary(ev.result.problem) ?? (summaryTail(ev) || String(status));
         if (launch !== undefined) return renderOperationBlock(launch, { failed, failure }, false, columns);
         const parts = [paint(operationLabel(ModelText.plain(ev.scheme)), "bold", failed ? "failure" : "success"), `(${ModelText.plain(ev.target)})`];

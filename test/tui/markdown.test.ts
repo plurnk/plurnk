@@ -76,9 +76,9 @@ for (const op of ["SEND [200]", "NOTE", "prose"]) test(`[§cli-markdown-projecti
     const output = stripVTControlCharacters(tui.output());
     assert.match(output, /Addressable Context/);
     assert.doesNotMatch(output, /\*\*Addressable Context\*\*/);
-    assert.match(output, /💻 mermaid/);
+    assert.match(output, /💻 mermaid — rendered width \d+ exceeds \d+/u, "the overwide diagram's fallback names its width");
     assert.match(output, /mermaid — diagram failed to render/);
-    assert.doesNotMatch(output, /exceeds terminal width|rendered width|mermaid source|runtime:error/);
+    assert.doesNotMatch(output, /exceeds terminal width|runtime:error/);
     const afterResponse = tui.output().length;
     tui.write("/model\r");
     await tui.waitFor(/model:.*markdownfixture/, 10_000, afterResponse);

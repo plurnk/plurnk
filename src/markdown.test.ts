@@ -423,7 +423,8 @@ test("[§cli-markdown-projection] Mermaid admission follows the supplied viewpor
         "root --> h[Hotel surface]",
     ].join("\n");
     const tooNarrow = renderMermaid(source, 10);
-    assert.equal(tooNarrow[0], "💻 mermaid");
+    const drawn = Math.min(...[source, source.replace("flowchart TB", "flowchart LR")].map((attempt) => Math.max(...renderMermaid(attempt, 1000).map(displayWidth))));
+    assert.equal(tooNarrow[0], `💻 mermaid — rendered width ${drawn} exceeds 10`, "the fallback names the narrower attempt's width and the viewport's");
     assert.deepEqual(tooNarrow.slice(1), source.split("\n").map((line) => `│ ${line}`), "source fallback remains verbatim when neither orientation fits");
     const narrow = renderMermaid(source, 120);
     assert.doesNotMatch(narrow.join("\n"), /💻 mermaid/);

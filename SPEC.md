@@ -1087,8 +1087,9 @@ flowchart layout exchanging horizontal and vertical directions, including explic
 subgraph directions. Both attempts share the `PLURNK_CLIENT_MERMAID_TIMEOUT_MS`
 execution deadline from the client panel. An error, unsupported diagram, or
 expired deadline renders the complete source under
-`💻 mermaid — diagram failed to render`; a valid but still-overwide diagram uses
-the ordinary `💻 mermaid` header. An invalid deadline is diagnosed in that same
+`💻 mermaid — diagram failed to render`; a valid diagram that neither attempt fits renders it
+under `💻 mermaid — rendered width <W> exceeds <V>`, the narrower attempt's width and the
+viewport's. An invalid deadline is diagnosed in that same
 fallback header without preventing the rest of the message from rendering.
 Decide the projection before appending it;
 there is no delayed replacement, recovery narration, or half-drawn diagram. The wire always

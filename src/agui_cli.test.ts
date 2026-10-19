@@ -9,10 +9,10 @@ import { EventType } from "@ag-ui/core";
 import { consumeCliRun, exitCodeForExec, settleExec, type CliRunSinks } from "./agui_cli.ts";
 import type { AguiEvent } from "./agui.ts";
 import type { LogEntryWire } from "./render.ts";
-import type { Resolution } from "./proposal.ts";
+import { proposalResume, type Resolution } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
 import { ProblemError, renderDiagnostic } from "./diagnostics.ts";
-import { callOf, partsOf } from "../test/agui-parts.ts";
+import { callOf, messagesOf, partsOf } from "../test/agui-parts.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", origin: "model", signal: null,
@@ -176,19 +176,41 @@ test("consumeCliRun: the Run error's Problem preserves the terminal failure that
     assert.deepEqual(result.problem, problem);
 });
 
-test("[§cli-one-shot-flow] consumeCliRun: a proposal is reviewed; the decision rides pendingResume", async () => {
-    const reviewed: unknown[] = [];
-    const { io } = sink({ review: async (proposal) => { reviewed.push(proposal); return { decision: "accept", body: "edited" }; } });
+test("[§cli-one-shot-flow] consumeCliRun: a proposal a person reviews ends the segment on its gate, undecided", async () => {
+    let reviewed = false;
+    const { io } = sink({ review: async () => { reviewed = true; return { decision: "accept" }; } });
     const r = await consumeCliRun(stream(proposalCall(9)), io);
-    assert.deepEqual(r.pendingResume, { interruptId: "gate-9", status: "resolved", payload: { decision: "accept", body: "edited" } }, "the resume carries the reviewed decision");
-    assert.deepEqual(reviewed.map((proposal) => (proposal as { body?: unknown }).body), ["diff"], "the review is of the projection the interrupt carries");
+    assert.equal(r.gate?.interruptId, "gate-9", "the segment ends on the gate");
+    assert.equal(r.gate?.proposal.body, "diff", "carrying the projection its interrupt carries, for the person to review");
+    assert.equal(r.pendingResume, null, "the run consumer decides nothing a person reviews");
+    assert.equal(reviewed, false);
     assert.deepEqual(r.entries, [], "the call awaiting its decision draws nothing");
+    assert.equal(r.problem, null, "a gate is no dead stream");
 });
 
 test("[§cli-proposal-review] CLI resumes the supplied interrupt identity, not its tool-call identity", async () => {
-    const { io } = sink({ review: async () => ({ decision: "accept" }) });
+    const { io } = sink();
     const result = await consumeCliRun(stream(proposalCall(9, {}, "presentation-opaque")), io);
-    assert.deepEqual(result.pendingResume, { interruptId: "presentation-opaque", status: "resolved", payload: { decision: "accept" } });
+    const gate = result.gate;
+    assert.ok(gate !== null);
+    assert.equal(gate.interruptId, "presentation-opaque");
+    assert.deepEqual(proposalResume(gate.interruptId, { decision: "accept" }), { interruptId: "presentation-opaque", status: "resolved", payload: { decision: "accept" } });
+});
+
+test("plurnk-service {§agui-sync} {§agui-held-interrupts}: an observation after a gate draws the rows from the gate's on it has not drawn; its Run's end is no dead stream", async () => {
+    const { io, err } = sink();
+    const older = entry({ id: 5, sequence: 5, op: "READ", target: "file:///older" });
+    const settled = entry({ id: 9, sequence: 9, op: "EDIT", target: "file:///a.ts" });
+    const drawnAlready = entry({ id: 10, sequence: 10, op: "READ", target: "file:///drawn" });
+    const r = await consumeCliRun(stream([
+        { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
+        { type: EventType.MESSAGES_SNAPSHOT, messages: [older, settled, drawnAlready].flatMap((row) => messagesOf(row)) } as unknown as AguiEvent,
+        { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
+    ]), io, { since: 9, drawn: new Set(["10/200"]) });
+    const trace = err.join("");
+    assert.match(trace, /a\.ts/u, "the settled gate's row, never drawn, is drawn");
+    assert.doesNotMatch(trace, /older|drawn/u, "nothing before the gate, nor what was drawn already");
+    assert.deepEqual([r.observedEnd, r.problem, r.terminated], [true, null, null], "the observation saw its Run end, with no terminal and no dead stream");
 });
 
 test("consumeCliRun: an interaction's call without its matching interrupt outcome returns an exact Problem", async () => {

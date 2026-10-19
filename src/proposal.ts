@@ -80,18 +80,24 @@ export const formatTarget = ({ scheme, pathname }: ProposalParams["target"], op?
 
 // Read one raw byte from stdin and return its char form. Caller is responsible
 // after the caller relinquishes terminal custody.
-const readSingleKey = (): Promise<string> => new Promise((resolve) => {
+// One keypress, or null once `signal` aborts first; stdin returns to its prior mode either way.
+const readSingleKey = (signal?: AbortSignal): Promise<string | null> => new Promise((resolve) => {
+    if (signal?.aborted === true) { resolve(null); return; }
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
-    stdin.setRawMode(true);
-    stdin.resume();
-    const onData = (chunk: Buffer): void => {
+    const done = (key: string | null): void => {
         stdin.removeListener("data", onData);
+        signal?.removeEventListener("abort", onAbort);
         stdin.setRawMode(wasRaw);
         stdin.pause();
-        resolve(chunk.toString("utf8")[0] ?? "");
+        resolve(key);
     };
+    const onData = (chunk: Buffer): void => { done(chunk.toString("utf8")[0] ?? ""); };
+    const onAbort = (): void => { done(null); };
+    stdin.setRawMode(true);
+    stdin.resume();
     stdin.on("data", onData);
+    signal?.addEventListener("abort", onAbort, { once: true });
 });
 
 // Drop a body into a tmpfile, spawn $EDITOR (or VISUAL, or vi) on it, wait
@@ -161,10 +167,21 @@ export const keyToResolution = async (key: string, params: ProposalParams): Prom
 // Interactively review a proposal (CLI mode — blocking, owns stdin). Writes the
 // diff + menu to stderr, reads one keypress, returns the resolution. The TUI
 // uses the non-blocking renderProposalMenu + keyToResolution instead.
-export const reviewProposal = async (params: ProposalParams): Promise<Resolution> => {
+// plurnk-service {§agui-held-interrupts}: null when `signal` withdraws the menu before a key, its gate settled elsewhere.
+export const reviewProposal = async (params: ProposalParams, signal?: AbortSignal): Promise<Resolution | null> => {
     process.stderr.write(withColorOutput(process.stderr, () => renderProposalMenu(params)));
-    const key = (await readSingleKey()).toLowerCase();
+    const pressed = await readSingleKey(signal);
+    if (pressed === null) {
+        process.stderr.write("settled elsewhere\n");
+        return null;
+    }
+    const key = pressed.toLowerCase();
     process.stderr.write(`${key}\n`);
     // Unknown key (incl. ctrl-c = \x03) → cancel for safety.
     return (await keyToResolution(key, params)) ?? { decision: "cancel", outcome: "unknown_key" };
 };
+
+// plurnk-service {§agui-held-interrupts}: a resume refused because its gate no longer waits, settled by another client or
+// the daemon.
+export const isUnpending = (problem: { readonly status: number; readonly type: string }): boolean =>
+    problem.status === 409 && /\/(?:interrupt|proposal|interaction)-not-pending$/u.test(problem.type);

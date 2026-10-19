@@ -12,7 +12,7 @@ import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody, isEmission, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage, OutsideText } from "./render.ts";
-import { proposalOf, proposalResume, reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
+import { isUnpending, proposalOf, proposalResume, reviewProposal, type Resolution, type ProposalParams } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
 import {
     ProblemError,
@@ -31,7 +31,7 @@ import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget, type Worksp
 import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, type ActionOutcome } from "./agui.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
-import RowAssembler, { wholeRow } from "./rows.ts";
+import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
 import TerminalStatusLine, { accrueTurnAccounting, turnAccountingFromNotice, type TurnAccounting, EMPTY_TALLY, isWorkerGauge, projectStatusGauge, reduceStatusGauge, type ClientStatus, type StatusGaugeEnvelope } from "./status.ts";
 import { renderSummary } from "./render.ts";
 import { withColorOutput } from "./color.ts";
@@ -55,6 +55,10 @@ export interface CliRunResult {
     // Terminate-resume: set when the segment ended on a client-owned proposal
     // tool-call — the caller POSTs this as the next run's standard resume.
     pendingResume: ResumeEntry | null;
+    // The proposal the segment ended on: decided already when pendingResume is set, otherwise the person's to review.
+    gate: { readonly interruptId: string; readonly proposal: ProposalParams } | null;
+    // The segment saw its Run finish with an outcome other than an interrupt.
+    observedEnd: boolean;
     entries: LogEntryWire[];
     notices: Notice[];
     response: string;
@@ -72,7 +76,8 @@ export interface CliRunSinks {
     noReviewChannel: boolean;
     acceptance: ToolAcceptance;
     reviewRequested?: boolean;
-    review: (p: ProposalParams) => Promise<Resolution>;
+    // plurnk-service {§agui-held-interrupts}: null when `signal` withdraws the review, its gate settled elsewhere.
+    review: (p: ProposalParams, signal: AbortSignal) => Promise<Resolution | null>;
     onActionResult?: (v: ActionOutcome) => void;
     onRow?: (entry: LogEntryWire) => void;
     onStreamConcluded?: (concluded: StreamConcludedPayload) => void;
@@ -97,13 +102,15 @@ const runOutcome = (result: CliRunResult): OperationResult => {
     return { status: problem.status, problem };
 };
 
-// Decide a stopped-world proposal: the AG-UI run ended on its interrupt; the decision
-// returns as the next run's resume payload. A proposal that reaches the client is
-// client-owned; loop-owned dispositions settle before the AG-UI boundary.
-const decideProposal = async (p: ProposalParams, io: CliRunSinks): Promise<Resolution & { logEntryId: number }> => {
-    const resolution = io.acceptance.resolve(p, io) ?? await io.review(p);
-    return { logEntryId: p.logEntryId, ...resolution };
-};
+// A row as this invocation drew it: a later version of the same row is drawn again.
+const drawnKey = (entry: LogEntryWire): string => `${entry.id}/${String(entry.status_rx ?? "")}`;
+
+// plurnk-service {§agui-sync}: an observation of the work that follows a gate draws, from its snapshot, the rows from that
+// gate's row on that this invocation has not drawn.
+export interface CliObservation {
+    readonly since: number;
+    readonly drawn: ReadonlySet<string>;
+}
 
 const readStream = async (
     target: AguiTarget,
@@ -125,13 +132,15 @@ const readStream = async (
 // to emit as ONE document. The Run end's terminal record is the authoritative outcome (its
 // result.status/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live daemon.
-export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
+export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks, observation?: CliObservation): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
     let finalStatus = 200;
     let hitMaxTurns = false;
     let response = "";
     let terminated: TerminatedValue | null = null;
     let modelWorkerId: number | null = null;
     let pendingResume: CliRunResult["pendingResume"] = null;
+    let gate: CliRunResult["gate"] = null;
+    let observedEnd = false;
     let problem: ProblemDetails | null = null;
     let problemReported = false;
     const reportProblem = (reported: ProblemDetails): void => {
@@ -193,7 +202,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
     let statusGauge: StatusGaugeEnvelope | null = null;
     const snapshot = (): CliRunResult => ({
         exitCode: exitCodeForLoop(finalStatus, hitMaxTurns), entries, notices, response,
-        terminated, modelWorkerId, pendingResume, problem,
+        terminated, modelWorkerId, pendingResume, gate, observedEnd, problem,
     });
     io.onProgress?.(snapshot());
     for await (const e of events) {
@@ -204,6 +213,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             const end = runEnd(e);
             if (end !== null) {
                 if (e.type === "RUN_ERROR") sawRunError = true;
+                if (e.type === "RUN_FINISHED" && e.outcome?.type !== "interrupt") observedEnd = true;
                 if (e.type === "RUN_FINISHED" && e.outcome?.type === "interrupt") {
                     for (const interrupt of e.outcome.interrupts) {
                         interrupts.set(interrupt.id, interrupt.id);
@@ -218,7 +228,12 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                             finalStatus = problem.status;
                             continue;
                         }
-                        if (proposal !== null) pendingResume = proposalResume(interrupt.id, await decideProposal(proposal, io));
+                        if (proposal === null) continue;
+                        // A proposal reaching the client is client-owned. A decision no person makes resumes it at once; a
+                        // person's review is the caller's, held meanwhile (plurnk-service {§agui-held-interrupts}).
+                        gate = { interruptId: interrupt.id, proposal };
+                        const automatic = io.acceptance.resolve(proposal, io);
+                        if (automatic !== null) pendingResume = proposalResume(interrupt.id, automatic);
                     }
                 }
                 if (end.terminal !== undefined) {
@@ -236,6 +251,14 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 if (end.result !== undefined) {
                     sawActionResult = true;
                     io.onActionResult?.(actionOutcome(end.result));
+                }
+                continue;
+            }
+            // plurnk-service {§agui-sync}: a snapshot seeds the calls this Run's live events fold onto; an observation of the
+            // work after a gate draws the rows from that gate's on that this invocation has not drawn.
+            if (e.type === "MESSAGES_SNAPSHOT") {
+                for (const entry of snapshotRows(e.messages, rows)) {
+                    if (observation !== undefined && entry.id >= observation.since && !observation.drawn.has(drawnKey(entry))) await presentWithConclusion(entry);
                 }
                 continue;
             }
@@ -322,8 +345,9 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
         }
     }
     // A stream that ended with NO terminal truth (no terminated, no RUN_ERROR, no
-    // pending resume) is a DEAD stream — 502, never the initialized 200.
-    if (terminated === null && pendingResume === null && problem === null && !sawActionResult) {
+    // pending resume) is a DEAD stream — 502, never the initialized 200. An observation's Run may finish without a loop's
+    // terminal: it saw what it observed end.
+    if (terminated === null && pendingResume === null && gate === null && problem === null && !sawActionResult && !(observation !== undefined && observedEnd)) {
         problem = sawRunError ? clientTransportProblemMissing() : clientTransportTerminalMissing();
         finalStatus = problem.status;
     }
@@ -358,9 +382,11 @@ export const runCliViaAgui = async (
     const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
     let result: CliRunResult = {
-        exitCode: 4, pendingResume: null, entries: [], notices: diagnostics, response: "",
+        exitCode: 4, pendingResume: null, gate: null, observedEnd: false, entries: [], notices: diagnostics, response: "",
         terminated: null, modelWorkerId: null, problem: null,
     };
+    // The rows this invocation drew, so an observation after a gate draws only what it has not.
+    const drawn = new Set<string>();
     let activeSegment: CliRunResult | null = null;
     let accruedStream: TurnAccounting | null = null;
     const ac = new AbortController();
@@ -396,6 +422,7 @@ export const runCliViaAgui = async (
         acceptance,
         reviewRequested: opts.reviewRequested,
         review: reviewProposal,
+        onRow: (entry: LogEntryWire) => { drawn.add(drawnKey(entry)); },
     };
     // --timeout <s>: at the deadline, fire loop.cancel at the daemon (the loop
     // resolves 499) and, if the stream still hasn't ended after a grace, abort the
@@ -482,13 +509,69 @@ export const runCliViaAgui = async (
     statusTick?.unref();
     try {
         try {
-            result = mergeRunSegments(result, await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...next }, ac.signal), io));
-            activeSegment = null;
-            while (result.pendingResume !== null) {
-                next = { resume: [result.pendingResume] };
-                const seg = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...next }, ac.signal), io);
-                result = mergeRunSegments(result, seg);
+            const segment = async (input: typeof next, observation?: CliObservation): Promise<CliRunResult> => {
+                const run = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...input }, ac.signal), io, observation);
                 activeSegment = null;
+                return run;
+            };
+            // plurnk-service {§agui-held-interrupts}: the person reviews a proposal while a connection holds its interrupt. When
+            // another client's answer or the daemon settles it first, the menu withdraws, a decision already under way (an
+            // editor) finishes and is not sent, and what the hold observed stands.
+            const heldReview = async (gate: NonNullable<CliRunResult["gate"]>, observation: CliObservation): Promise<{ readonly resume: ResumeEntry } | { readonly held: CliRunResult }> => {
+                const menu = new AbortController();
+                const hold = new AbortController();
+                const reviewing = io.review(gate.proposal, menu.signal);
+                const holding = consumeCliRun(runViaAgui(target, {
+                    threadId: opts.threadId, capabilities, forwardedProps: { ...forwardedProps, interrupts: [gate.interruptId] },
+                }, AbortSignal.any([ac.signal, hold.signal])), io, observation).then(
+                    (held) => held.observedEnd || held.terminated !== null ? held : null,
+                    () => null,
+                );
+                const first = await Promise.race([reviewing.then(() => null), holding]);
+                activeSegment = null;
+                if (first === null) {
+                    // Answered here, or the hold ended with the gate still pending: the person's decision resumes it.
+                    hold.abort();
+                    const resolution = await reviewing;
+                    if (resolution === null) throw new Error("A review withdrew while its gate was still pending.");
+                    return { resume: proposalResume(gate.interruptId, resolution) };
+                }
+                menu.abort();
+                await reviewing;
+                return { held: first };
+            };
+            result = mergeRunSegments(result, await segment(next));
+            for (;;) {
+                const gate = result.gate;
+                const following = gate === null ? undefined : { since: gate.proposal.logEntryId, drawn };
+                if (result.pendingResume !== null) {
+                    const resumed = await segment({ resume: [result.pendingResume] });
+                    // plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits ends nothing:
+                    // the refusal stands as a notice, and the CLI follows the work.
+                    const refused = resumed.terminated === null ? resumed.problem : null;
+                    if (refused !== null && isUnpending(refused)) {
+                        result = mergeRunSegments(result, { ...resumed, problem: null,
+                            notices: [...resumed.notices, { source: "client:agui", kind: "refused", level: "warn", message: refused.detail, problem: refused }] });
+                        result = mergeRunSegments(result, await segment({}, following));
+                    } else result = mergeRunSegments(result, resumed);
+                    continue;
+                }
+                if (gate !== null && following !== undefined) {
+                    const reviewed = await heldReview(gate, following);
+                    if ("resume" in reviewed) {
+                        result = { ...result, pendingResume: reviewed.resume };
+                        continue;
+                    }
+                    result = mergeRunSegments(result, reviewed.held);
+                    if (result.terminated === null && result.gate === null) result = mergeRunSegments(result, await segment({}, following));
+                    continue;
+                }
+                break;
+            }
+            // An observation that saw its Run end without the loop's terminal leaves the loop's outcome unobserved.
+            if (result.terminated === null && result.problem === null) {
+                const unobserved = clientTransportTerminalMissing();
+                result = { ...result, problem: unobserved, exitCode: exitCodeForLoop(unobserved.status, false) };
             }
         } catch (cause) {
             // {§cli-partial-record} The invocation owns received evidence even when
@@ -498,6 +581,7 @@ export const runCliViaAgui = async (
             result = {
                 ...partial,
                 pendingResume: null,
+                gate: null,
                 exitCode: cause instanceof ProblemError ? cause.exitCode : 1,
                 problem: partial.problem ?? problem,
                 notices: partial.terminated === null && partial.problem === null ? partial.notices : [

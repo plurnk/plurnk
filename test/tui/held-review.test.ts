@@ -1,6 +1,7 @@
-// [§cli-inline-review] plurnk-service {§agui-held-interrupts} — two views of one worker on the real daemon: the built TUI
-// with manual review, and a second client of the same thread. Whichever answers the gate, the other's review is withdrawn,
-// never answered there, and it follows the work that continues; the command runs once.
+// [§cli-inline-review] [§cli-review-menu-interactive] plurnk-service {§agui-held-interrupts} — two views of one worker on the
+// real daemon: the built TUI or the one-shot CLI with manual review, and a second client of the same thread. Whichever
+// answers the gate, the other's review is withdrawn, never answered there, and it follows the work that continues; the
+// command runs once.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -12,8 +13,9 @@ import { spawnTui } from "./harness.ts";
 import { openTransport } from "../transport.ts";
 import type { RunHandlers } from "../../src/transport.ts";
 
-// A model that runs one reviewed command, then answers.
-const boot = async (t: TestContext, workspace: string) => {
+// A model that runs one reviewed command, then answers. Given a prompt, the built client runs it one-shot and the second
+// view joins once its review menu shows; otherwise the TUI starts and the second view joins once it is up.
+const boot = async (t: TestContext, workspace: string, prompt?: string) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed client test requires the sibling service");
     let requests = 0;
@@ -50,13 +52,13 @@ const boot = async (t: TestContext, workspace: string) => {
     } });
     t.after(() => daemon.cleanup());
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
-    const tui = spawnTui(daemon.url, ["--workspace", workspace, "--worker", "main", "--max-turns", "3"], {
+    const tui = spawnTui(daemon.url, ["--workspace", workspace, "--worker", "main", "--max-turns", "3", ...(prompt === undefined ? [] : [prompt])], {
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "", PLURNK_CLIENT_YOLO: "0",
     }, daemon.workspace);
     t.after(() => tui.kill());
     t.after(() => { if (!t.passed) t.diagnostic(stripVTControlCharacters(tui.output())); });
-    // The TUI acquires the workspace, its project root among its options; the second view then joins it.
-    await tui.waitFor(/plurnk[\s\S]*\/help/);
+    // The client acquires the workspace, its project root among its options; the second view then joins it.
+    await tui.waitFor(prompt === undefined ? /plurnk[\s\S]*\/help/ : /\[a\]ccept · \[e\]dit · \[r\]eject · \[c\]ancel/);
     const other = await openTransport({ aguiUrl: daemon.url }, "main", { workspace });
     t.after(() => other.shutdown());
     const ran = async (): Promise<string> => await readFile(join(daemon.workspace, "ran.txt"), "utf8").catch(() => "");
@@ -111,4 +113,32 @@ test("[§cli-inline-review] a client holding a review converges when the TUI ans
     await tui.waitFor(/The command ran\./, 15_000);
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
+});
+
+test("[§cli-review-menu-interactive] a one-shot menu another client settles withdraws, and the CLI follows the work to its end", { timeout: 90_000 }, async (t) => {
+    const { tui: cli, other, ran, requests } = await boot(t, "held-cli-elsewhere", "Run the command.");
+    other.subscribe({ ...quiet, onProposal: (proposal) => { void other.resolve({ logEntryId: proposal.logEntryId, decision: "accept" }); } });
+    assert.equal((await other.observe().done)?.finalStatus, 200, "the answering view saw the work complete");
+    await cli.waitFor(/settled elsewhere/, 15_000);
+    await cli.waitFor(/The command ran\./, 15_000);
+    assert.equal(await cli.exited, 0, "the CLI followed the work to its end");
+    assert.equal(await ran(), "once", "the command ran once");
+    assert.equal(requests(), 2);
+});
+
+test("[§cli-review-menu-interactive] a client holding a review converges when the one-shot menu answers it", { timeout: 90_000 }, async (t) => {
+    const { tui: cli, other, ran } = await boot(t, "held-cli-here", "Run the command.");
+    const presented = Promise.withResolvers<void>();
+    const ended: string[] = [];
+    other.subscribe({ ...quiet, onProposal: () => presented.resolve(), onInterruptEnd: (id) => ended.push(id) });
+    const observation = other.observe();
+    await presented.promise;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    cli.write("a");
+    assert.equal((await observation.done)?.finalStatus, 200, "the holding view follows the work to its end");
+    assert.deepEqual(ended.map((id) => /^proposal:\d+$/u.test(id)), [true], "its review was withdrawn");
+    assert.equal(await cli.exited, 0);
+    assert.equal(await ran(), "once", "the command ran once");
+    assert.doesNotMatch(stripVTControlCharacters(cli.output()), /settled elsewhere/u, "the CLI's own answer withdrew nothing of its own");
 });

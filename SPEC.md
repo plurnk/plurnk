@@ -917,6 +917,7 @@ as `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `i
 | A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
 | A delivered reply, or a WAIT that carries a body | `TEXT_MESSAGE_START/CONTENT/END`, the metadata adding its heading's `aside` and its `receipt` | When the message ends |
 | An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
+| An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§agui-message-acceptance}`) | Never: its arrival, when the Worker observes it, draws it |
 | A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate | On arrival: a reply's words as its body, any other answer as its receipt |
 | A row that builds no part | `CUSTOM plurnk.ambient`, the whole row | On arrival; an actionless row draws nothing |
 | History | A sync Run's `MESSAGES_SNAPSHOT`: the same parts, as messages | {§cli-worker-history} |

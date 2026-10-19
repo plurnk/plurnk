@@ -165,6 +165,30 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
         io.err(`${formatPlain(entry)}\n`);
         if (message.length > 0) io.out(`${separator.length > 0 ? "\n" : ""}${message}\n`);
     };
+    // {§cli-stream-event-and-stream-concluded} An execution's conclusion line, then a preview of its output.
+    const presentConclusion = async (payload: StreamConcludedPayload, line: string): Promise<void> => {
+        io.err(`${line}\n`);
+        if (io.readStream === undefined) return;
+        try {
+            const channels = await io.readStream(payload);
+            for (const name of ["stdout", "stderr"]) {
+                const content = channels[name]?.content;
+                if (content !== undefined && inlineable(content)) io.err(`${renderInline(name, content, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
+            }
+        } catch (cause) {
+            if (cause instanceof ProblemError) io.err(`${renderDiagnostic(cause.problem)}\n`);
+            else io.notice({ source: "client:stream", kind: "preview_unavailable", level: "warn",
+                message: `Stream output unavailable: ${cause instanceof Error ? cause.message : String(cause)}` });
+        }
+    };
+    // A row, then the conclusion that arrived before it settled, if one did.
+    const presentWithConclusion = async (entry: LogEntryWire): Promise<void> => {
+        presentRow(entry);
+        if (io.json) return;
+        const concluded = streams.settled(entry);
+        if (concluded === null) return;
+        await presentConclusion(concluded, streams.concluded(concluded, process.stderr.columns ?? Number.POSITIVE_INFINITY));
+    };
     const visibleReasoning = new Map<string, { atLineStart: boolean }>();
     let statusGauge: StatusGaugeEnvelope | null = null;
     const snapshot = (): CliRunResult => ({
@@ -216,7 +240,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 continue;
             }
             // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
-            for (const entry of rows.consume(e)) presentRow(entry);
+            for (const entry of rows.consume(e)) await presentWithConclusion(entry);
             if (e.type === "TOOL_CALL_START") { toolId = String((e as { toolCallId?: unknown }).toolCallId ?? ""); continue; }
             if (e.type === "TOOL_CALL_END" && /^int:[1-9]\d*$/.test(toolId)) {
                 pendingResume = { interruptId: toolId, status: "cancelled" };
@@ -250,7 +274,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
             const value = (e as { value?: unknown }).value;
             if (name === "plurnk.ambient") {
                 const entry = wholeRow(value);
-                if (entry !== null) presentRow(entry);
+                if (entry !== null) await presentWithConclusion(entry);
             } else if (name === "plurnk.problem") {
                 // A Problem that ends no Run, such as an unavailable provider catalog, stays its own event.
                 reportProblem(problemDetails(value));
@@ -274,20 +298,9 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks)
                 if (concluded) io.onStreamConcluded?.(value as StreamConcludedPayload);
                 if (!io.json) {
                     if (concluded) {
-                        io.err(`${streams.concluded(value as StreamConcludedPayload, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
-                        if (io.readStream !== undefined) {
-                            try {
-                                const channels = await io.readStream(value as StreamConcludedPayload);
-                                for (const name of ["stdout", "stderr"]) {
-                                    const content = channels[name]?.content;
-                                    if (content !== undefined && inlineable(content)) io.err(`${renderInline(name, content, process.stderr.columns ?? Number.POSITIVE_INFINITY)}\n`);
-                                }
-                            } catch (cause) {
-                                if (cause instanceof ProblemError) io.err(`${renderDiagnostic(cause.problem)}\n`);
-                                else io.notice({ source: "client:stream", kind: "preview_unavailable", level: "warn",
-                                    message: `Stream output unavailable: ${cause instanceof Error ? cause.message : String(cause)}` });
-                            }
-                        }
+                        const payload = value as StreamConcludedPayload;
+                        const line = streams.concluded(payload, process.stderr.columns ?? Number.POSITIVE_INFINITY, rows.awaitsReceipt(payload.target));
+                        if (line !== null) await presentConclusion(payload, line);
                     } else {
                         const line = streams.event(value as StreamEventPayload);
                         if (line !== null) io.err(`${line}\n`);

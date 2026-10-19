@@ -95,6 +95,17 @@ test("[§cli-row-sources] a gated call awaiting its decision is no broken wire a
     }
 });
 
+test("[§cli-stream-event-and-stream-concluded] a gated call that streams awaits its receipt until its settlement arrives", () => {
+    const stream = "members:///4c848a41";
+    const gated = { ...read, op: "members", state: "proposed", status_rx: 202, rx: { status: 202 }, attrs: { stream } };
+    const rows = new RowAssembler();
+    drawn(callOf(gated), rows);
+    assert.equal(rows.awaitsReceipt(stream), true, "its settled row is still to come");
+    assert.equal(rows.awaitsReceipt("sh:///ab3d5678"), false, "no pending call streams there");
+    drawn(settlementOf({ ...gated, state: "resolved", status_rx: 201, rx: { status: 201 } }), rows);
+    assert.equal(rows.awaitsReceipt(stream), false, "settled: nothing left to await");
+});
+
 test("[§cli-row-sources] a whole row draws as its parts do: the address it recorded, and nothing for an actionless row", () => {
     const whole = (over: Record<string, unknown>) => wholeRow({ id: 1, worker_id: 7, loop_seq: 1, turn_seq: 1, sequence: 1, origin: "_plurnk", op: "READ",
         source: null, signal: null, scheme: null, hostname: null, port: null, pathname: null, query: null, fragment: null, lineMarker: null,

@@ -38,7 +38,7 @@ This repository provides the CLI and interactive terminal client for
 
 Workspaces, workers and their history live in the daemon, independently of the
 client session. Choose your model, context limits, tools, and capability
-policies without replacing the environment. No Plurnk account is required.
+policies without replacing the environment.
 
 ![A Plurnk terminal session: a prompt, the model's operations, and its answer](https://raw.githubusercontent.com/plurnk/plurnk-service/main/docs/media/session.gif)
 

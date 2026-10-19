@@ -52,24 +52,27 @@ const widestLine = (lines: string[]): number =>
 
 // Preserve the authored layout whenever it fits the current viewport. A
 // transposed projection is the one bounded alternative; invalid, unsupported,
-// or still-overwide diagrams remain inspectable as labeled source.
+// or still-overwide diagrams remain inspectable as source, labeled with what happened.
 export const renderMermaid = (
     source: string,
     viewport: number = process.stdout.columns ?? 80,
 ): string[] => {
     const width = Math.max(1, Math.trunc(viewport));
-    let failure = "";
+    let failure: string;
     try {
         const timeout = Knobs.count("PLURNK_CLIENT_MERMAID_TIMEOUT_MS");
         if (timeout === 0) throw new KnobError("PLURNK_CLIENT_MERMAID_TIMEOUT_MS", String(timeout), "must be positive.");
-        const lines = mermaidProjection.runInNewContext({ project: () => {
+        // The first layout that fits, else the narrower width the attempts drew.
+        const projected = mermaidProjection.runInNewContext({ project: () => {
             const authored = renderMermaidLines(source);
             if (widestLine(authored) <= width) return authored;
             const alternateSource = transposeFlowchart(source);
             const alternate = alternateSource === source ? null : renderMermaidLines(alternateSource);
-            return alternate !== null && widestLine(alternate) <= width ? alternate : null;
-        } }, { timeout }) as string[] | null;
-        if (lines !== null) return lines;
+            if (alternate !== null && widestLine(alternate) <= width) return alternate;
+            return Math.min(widestLine(authored), alternate === null ? Number.POSITIVE_INFINITY : widestLine(alternate));
+        } }, { timeout }) as string[] | number;
+        if (Array.isArray(projected)) return projected;
+        failure = ` — rendered width ${projected} exceeds ${width}`;
     } catch (cause) {
         failure = " — diagram failed to render";
         if (cause instanceof KnobError) failure += `: ${cause.message}`;

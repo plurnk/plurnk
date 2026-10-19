@@ -27,12 +27,14 @@ interface Facts {
 
 const COORDINATE = /^(\d+)\/(\d+)\/(\d+)$/u;
 
-// A part's row facts, or null for a part no row built (a client-owned interrupt's call). Facts that are present
-// but unreadable are a broken wire, never a part to skip.
+// A part's row facts, or null for a part no row built: a client-owned interrupt's call, or an accepted message the
+// Worker has not observed, which its arrival draws (plurnk-service `{§agui-message-acceptance}`: `published: false`).
+// Facts that are present but unreadable are a broken wire, never a part to skip.
 const factsOf = (metadata: unknown): Facts | null => {
     const plurnk = objectOf(metadata)?.plurnk;
     if (plurnk === undefined) return null;
     const facts = objectOf(plurnk);
+    if (facts?.published === false) return null;
     if (facts === null || !Number.isSafeInteger(facts.id) || typeof facts.coordinate !== "string" || !COORDINATE.test(facts.coordinate)
         || !Number.isSafeInteger(facts.worker) || typeof facts.origin !== "string" || typeof facts.op !== "string"
         || !(facts.source === null || typeof facts.source === "string") || !(facts.address === null || typeof facts.address === "string")

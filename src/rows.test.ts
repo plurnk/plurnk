@@ -49,6 +49,17 @@ test("[§cli-row-sources] speech carries its heading's aside and its receipt; an
     assert.deepEqual([own?.id, own?.sequence], [11, 1], "the client's own message, which it holds, still names its row");
 });
 
+test("[§cli-row-sources] an accepted message the Worker has not observed is no row; its arrival draws it", () => {
+    // plurnk-service `{§agui-message-acceptance}`: the snapshot lists the client's own accepted message after every row, its
+    // metadata the message's lifecycle rather than row facts; a loop cancelled before observing it leaves it listed.
+    const source = "agui://anonymous/threads/t/messages/m1";
+    const accepted = { id: "m1", role: "user", content: "added while streaming", metadata: { plurnk: { message: source, loop: 2, lifecycle: "failed", source, published: false } } };
+    const rows = new RowAssembler();
+    assert.deepEqual(snapshotRows([...messagesOf(read), accepted], rows).map(({ id }) => id), [4], "the snapshot's rows, and nothing for the message");
+    const [own] = drawn(arrivalOf({ id: 11, op: "SEND", origin: "_plurnk", source, attrs: { kind: "message" }, tx: { body: { raw: "" } } }, "m1"), rows);
+    assert.deepEqual([own?.id, own?.source], [11, source], "its arrival row, when it comes, is drawn");
+});
+
 test("[§cli-row-sources] a result that answers another row's call is that row: a reply's words, or what it received", () => {
     const [reply] = drawn(dischargeOf({ id: 12, op: "SEND", origin: "_plurnk", source: "worker://peer", sequence: 5, attrs: { kind: "reply" }, tx: { body: { raw: "forty-two" } } }, "1/1/2"));
     assert.deepEqual([reply?.op, reply?.source, (reply?.tx as { body: { raw: string } }).body.raw, reply?.rx], ["SEND", "worker://peer", "forty-two", null]);

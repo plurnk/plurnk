@@ -1396,6 +1396,12 @@ The one-shot raw-key menu cancels on other input. The TUI retains ordinary
 commands and the `/accept`, `/edit`, `/reject`, `/cancel` spellings under
 {§cli-active-command-admission}.
 
+While the one-shot menu waits, the CLI holds the proposal's interrupt on a connection (plurnk-service
+`{§agui-held-interrupts}`). When another client's answer or the daemon settles it first, the menu withdraws with
+`settled elsewhere` and sends no decision; a decision already under way, such as an open editor, finishes unsent. The CLI
+then follows the work to its end. An answer refused because its gate no longer waits is shown, never retried, and the CLI
+follows the work.
+
 Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan, headers (`+++`/`---`) bold. Execution bodies render plain.
 
 #### Inline review {§cli-inline-review}

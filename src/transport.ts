@@ -3,7 +3,7 @@
 
 import { objectOf, type Descendant, type OutsideText } from "./render.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
-import { proposalOf, proposalResume, type ProposalParams, type Resolution } from "./proposal.ts";
+import { isUnpending, proposalOf, proposalResume, type ProposalParams, type Resolution } from "./proposal.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import type { Notice } from "./diagnostics.ts";
 import {
@@ -375,7 +375,7 @@ export class AguiTransport implements Transport {
                 if (pausedProp === null && pausedInteraction === null) {
                     // plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits, settled by
                     // another client or the daemon, ends nothing: the refusal is shown and the work is followed.
-                    if (next.resume !== undefined && runProblem !== null && AguiTransport.#unpending(runProblem)) {
+                    if (next.resume !== undefined && runProblem !== null && isUnpending(runProblem)) {
                         sawRunError = false;
                         runProblem = null;
                         // The refused call still awaits its decision here; the observation's snapshot rebuilds it settled.
@@ -502,11 +502,6 @@ export class AguiTransport implements Transport {
         }
         review.withdraw();
         return first.terminated;
-    }
-
-    // plurnk-service {§agui-held-interrupts}: a resume refused because its gate no longer waits.
-    static #unpending(problem: ProblemDetails): boolean {
-        return problem.status === 409 && /\/(?:interrupt|proposal|interaction)-not-pending$/u.test(problem.type);
     }
 
     // {§cli-worker-history}: establish the historical prefix before releasing

@@ -1412,6 +1412,7 @@ buffer; there are no overlays, alternate screen, or captured mouse gestures.
 | Input in review | pi-tui owns selection, multiline editing, paste and cursor/IME placement. Enter confirms/submits; slash-prefixed answers are literal data. |
 | Input in composer | Normal commands, inspection and prompt injection; proposal keys do not intercept ordinary letters. |
 | Resolution or withdrawal | Remove only that interrupt. Show the next queued request if reviewing, otherwise retain composer focus. Restore the composer when no reviews remain. |
+| Settled elsewhere | While a request is pending, the client holds its interrupt on a connection (plurnk-service `{§agui-held-interrupts}`). When another client's answer or the daemon settles it, the connection finishes and the request is withdrawn, never answered by this client; the client follows the work that continues. An answer refused because its gate no longer waits is shown, and the client follows the work. |
 
 Reasoning, transcript and status updates continue while reviewing. A pending
 submission cannot be submitted twice. An external-editor result belongs only

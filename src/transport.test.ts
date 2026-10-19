@@ -95,17 +95,32 @@ const gate = (row: WireRow, interruptId: string, over: Record<string, unknown> =
         metadata: { plurnk: { proposal: projection({ logEntryId: row.id, coordinate: `1/1/${row.id}`, op: row.op, ...over }) } } }] } }),
 ];
 
-const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
+const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse, body: unknown) => void) => {
     const captured: Array<{ url: string | undefined; body: unknown }> = [];
     const server = createServer((req, res) => {
         let body = "";
         req.on("data", (c) => { body += c; });
-        req.on("end", () => { captured.push({ url: req.url, body: body.length > 0 ? JSON.parse(body) : null }); handler(req, res); });
+        req.on("end", () => {
+            const parsed: unknown = body.length > 0 ? JSON.parse(body) : null;
+            captured.push({ url: req.url, body: parsed });
+            handler(req, res, parsed);
+        });
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
     const port = (server.address() as { port: number }).port;
-    return { url: `http://127.0.0.1:${port}`, captured, close: () => new Promise<void>((r) => server.close(() => r())) };
+    return { url: `http://127.0.0.1:${port}`, captured, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
 };
+// plurnk-service {§agui-held-interrupts}: the interrupts a request names its client as holding, when it names any.
+const heldBy = (body: unknown): unknown => (body as { forwardedProps?: { plurnk?: { interrupts?: unknown } } } | null)?.forwardedProps?.plurnk?.interrupts;
+const resumeOf = (body: unknown): unknown => (body as { resume?: unknown } | null)?.resume;
+// A held connection whose gate nothing settles: it stays open, bringing nothing new, until its client closes it.
+const holdOpen = (res: ServerResponse, closed: () => void = () => {}): void => {
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.write(frame({ type: "RUN_STARTED" }));
+    res.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [] }));
+    res.on("close", closed);
+};
+const settled = { type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } };
 const frame = (event: Record<string, unknown>): string => {
     const lifecycle = event.type === "RUN_STARTED" || event.type === "RUN_FINISHED"
         ? { threadId: "th", runId: "r", ...event }
@@ -846,13 +861,15 @@ test("{§cli-workspaces-and-workers}: workspace acquisition precedes binding, pr
 test("AguiTransport: terminate-resume — a gate pauses done on the operation's call; resolve() resumes and its settlement draws it once", async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     let call = 0;
-    const mock = await bootMock((_req, res) => {
+    let closedHolds = 0;
+    const mock = await bootMock((_req, res, body) => {
+        if (heldBy(body) !== undefined) return holdOpen(res, () => { closedHolds += 1; });
         call += 1;
         res.writeHead(200, { "content-type": "text/event-stream" });
         if (call === 1) for (const part of gate(edit, "proposal-presentation")) res.write(part);
         else {
             for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
-            res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
+            res.write(frame(settled));
         }
         res.end();
     });
@@ -868,7 +885,10 @@ test("AguiTransport: terminate-resume — a gate pauses done on the operation's 
         await bt.resolve({ logEntryId: 42, decision: "accept", body: "edited", outcome: "reviewed" });
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
-        const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
+        assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["proposal-presentation"]],
+            "plurnk-service {§agui-held-interrupts}: while the review was open, a connection held its interrupt");
+        assert.equal(closedHolds, 1, "and closed once the review was answered here");
+        const resume = mock.captured.find(({ body }) => resumeOf(body) !== undefined)!.body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
         assert.deepEqual(resume.resume, [{ interruptId: "proposal-presentation", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
         assert.deepEqual(drawn(seen.entries), ["42 EDIT"], "the settlement draws the operation once");
         assert.deepEqual((seen.entries[0] as LogEntryWire).tx, { target: { raw: "a.ts" }, body: "after" }, "with the statement its call was built with");
@@ -877,7 +897,8 @@ test("AguiTransport: terminate-resume — a gate pauses done on the operation's 
 
 test("cancelling a model run waiting for a proposal settles it and retires its resolver", async () => {
     const ready = Promise.withResolvers<void>();
-    const mock = await bootMock((_req, response) => {
+    const mock = await bootMock((_req, response, body) => {
+        if (heldBy(body) !== undefined) return holdOpen(response);
         response.writeHead(200, { "content-type": "text/event-stream" });
         const parts = gate(wire({ id: 17, op: "sh", tx: { body: "printf ok" } }), "gate-17", { target: { scheme: "sh", authority: null, pathname: "" }, body: "printf ok" });
         for (const part of parts.slice(0, -1)) response.write(part);
@@ -892,7 +913,7 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
         run.cancel();
         assert.equal((await run.done).finalStatus, 499);
         await assert.rejects(transport.resolve({ logEntryId: 17, decision: "accept" }), /Proposal 17 has no pending/);
-        assert.equal(mock.captured.length, 1, "cancel never submits a resume to execute the proposal");
+        assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "cancel never submits a resume to execute the proposal");
     } finally { await mock.close(); }
 });
 
@@ -903,7 +924,8 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
         required: ["repository"],
         properties: { repository: { enum: ["plurnk-service", "plurnk"] } },
     };
-    const mock = await bootMock((_req, res) => {
+    const mock = await bootMock((_req, res, body) => {
+        if (heldBy(body) !== undefined) return holdOpen(res);
         call += 1;
         res.writeHead(200, { "content-type": "text/event-stream" });
         if (call === 1) {
@@ -942,15 +964,102 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
             responseSchema,
         }]);
         await assert.rejects(bt.resolveInteraction(7, { repository: "wrong-request" }), /Interaction 7 has no pending AG-UI interrupt\./u);
-        assert.equal(mock.captured.length, 1, "a stale UI callback cannot answer the active interrupt");
+        assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "a stale UI callback cannot answer the active interrupt");
         await bt.resolveInteraction(8, { repository: "plurnk-service" });
         assert.equal((await handle.done).finalStatus, 200);
-        const resume = mock.captured[1].body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
+        const resume = mock.captured.find(({ body }) => resumeOf(body) !== undefined)!.body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
         assert.deepEqual(resume.resume, [{
             interruptId: "interaction-presentation",
             status: "resolved",
             payload: { repository: "plurnk-service" },
         }]);
+    } finally { await mock.close(); }
+});
+
+test("plurnk-service {§agui-held-interrupts}: a review is withdrawn when another client settles its gate, never answered here, and the run follows the work", async () => {
+    const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
+    const mock = await bootMock((_req, res, body) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        if (!observes(body as RunInput)) for (const part of gate(edit, "held-presentation")) res.write(part);
+        else if (heldBy(body) !== undefined) {
+            // Its snapshot holds the call awaiting its decision; another client answers, and the held connection brings the
+            // settlement and finishes.
+            res.write(frame({ type: "RUN_STARTED" }));
+            res.write(frame(snapshotOf({ ...edit, state: "proposed", status_rx: 202, rx: { status: 202 } })));
+            for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
+            res.write(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+        } else {
+            // The work that continues, followed to its end.
+            res.write(frame({ type: "RUN_STARTED" }));
+            res.write(frame(snapshotOf(edit)));
+            res.write(frame(settled));
+        }
+        res.end();
+    });
+    try {
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const { h, seen } = collectingHandlers();
+        const ended: string[] = [];
+        bt.subscribe({ ...h, onInterruptEnd: (id) => ended.push(id) });
+        const t = await bt.run("edit it", {}).done;
+        assert.equal(t.finalStatus, 200, "the run follows the work that continues to its end");
+        assert.equal(seen.proposals.length, 1);
+        assert.deepEqual(ended, ["proposal:42"], "the review was withdrawn");
+        await assert.rejects(bt.resolve({ logEntryId: 42, decision: "accept" }), /Proposal 42 has no pending AG-UI interrupt/u, "and cannot be answered here");
+        assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "this client never answered");
+        assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["held-presentation"]], "the hold named its interrupt");
+        assert.deepEqual(drawn(seen.entries), ["42 EDIT"], "the settled operation is drawn once");
+    } finally { await mock.close(); }
+});
+
+test("plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits is shown, and the run follows the work", async () => {
+    const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
+    const problem = { type: "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending", title: "Proposal not pending", status: 409,
+        detail: "Proposal 42 is not pending.", retryable: false };
+    const mock = await bootMock((_req, res, body) => {
+        if (heldBy(body) !== undefined) return holdOpen(res);
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        if (!observes(body as RunInput) && resumeOf(body) === undefined) for (const part of gate(edit, "late-presentation")) res.write(part);
+        else if (resumeOf(body) !== undefined) res.write(frame({ type: "RUN_ERROR", message: problem.detail, code: problem.type, metadata: { plurnk: { problem } } }));
+        else {
+            res.write(frame({ type: "RUN_STARTED" }));
+            res.write(frame(snapshotOf({ ...edit, status_rx: 200 })));
+            res.write(frame(settled));
+        }
+        res.end();
+    });
+    try {
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const { h, seen } = collectingHandlers();
+        bt.subscribe(h);
+        const handle = bt.run("edit it", {});
+        while (seen.proposals.length === 0) await new Promise((r) => setTimeout(r, 10));
+        await bt.resolve({ logEntryId: 42, decision: "accept" });
+        const t = await handle.done;
+        assert.equal(t.finalStatus, 200, "the refusal ends nothing: the run follows the work to its end");
+        assert.deepEqual(seen.problems, [problem], "the refusal is shown");
+        assert.equal(mock.captured.filter(({ body }) => resumeOf(body) !== undefined).length, 1, "and the answer is never retried");
+    } finally { await mock.close(); }
+});
+
+test("plurnk-service {§agui-held-interrupts}: a review answered before its Run ended holds nothing", async () => {
+    const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
+    const mock = await bootMock((_req, res, body) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        if (resumeOf(body) === undefined) for (const part of gate(edit, "answered-presentation")) res.write(part);
+        else {
+            for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
+            res.write(frame(settled));
+        }
+        res.end();
+    });
+    try {
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const { h } = collectingHandlers();
+        // An automatic acceptance answers as the proposal is presented.
+        bt.subscribe({ ...h, onProposal: (p) => { void bt.resolve({ logEntryId: p.logEntryId, decision: "accept" }); } });
+        assert.equal((await bt.run("edit it", {}).done).finalStatus, 200);
+        assert.equal(mock.captured.some(({ body }) => heldBy(body) !== undefined), false, "no connection held an interrupt already answered");
     } finally { await mock.close(); }
 });
 

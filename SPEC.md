@@ -523,7 +523,8 @@ lane presentation of #38), never by inference; unrelated workspace workers never
 render inside a session. What the daemon correlates (a direct child's mutations, messages,
 executions, launches and conclusion) renders in the session as lineage rows (§5.1). The
 TUI also asks the daemon to observe its delegation (`forwardedProps.plurnk.descendants`,
-plurnk-service `{§agui-delegation-observation}`): every descendant's own rows and executions
+plurnk-service `{§agui-delegation-observation}`) on every Run that observes its worker, a resume
+included ({§cli-resume-observation}): every descendant's own rows and executions
 arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
 steps and terminal never do, including those the daemon attributes to a subagent run
 (plurnk-service `{§agui-subagents}`). Navigation between workers is explicit.
@@ -1314,6 +1315,10 @@ Run with the selected decision, echoing the supplied opaque `Interrupt.id`; it n
 derives a resume identity from the call or from a proposal number. The gated call awaits
 its decision without a row; its settlement folds the settled facts onto the call and draws
 the operation once ({§cli-row-sources}). The following sections describe its local review projection.
+
+{§cli-resume-observation} A resume continues the Run it answers: it carries that Run's observation
+and claim (`forwardedProps.plurnk.descendants` when the session observes its delegation, and
+`control`), never a message's own parameters (`maxTurns`, `openPaths`).
 
 ### §6.0 Worker ownership {§cli-worker-ownership}
 

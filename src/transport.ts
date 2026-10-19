@@ -238,11 +238,11 @@ export class AguiTransport implements Transport {
         // Both promises report the same failed run. Consumers that only await done
         // must not acquire an unhandled rejection from the readiness view.
         void ready.promise.catch(() => {});
-        // A resume keeps the original binding; only per-run policy travels with it.
+        // {§cli-resume-observation} A resume continues the Run it answers: it carries that Run's observation and claim, never
+        // a message's own parameters. {plurnk#108} — a session that observes its delegation asks on every Run that observes.
+        const resumeProps: Record<string, unknown> = { ...(this.#workspace.descendants === true ? { descendants: true } : {}), control: true };
         const fwd: Record<string, unknown> = {
-            // {plurnk#108} — a session that observes its delegation asks on every message and sync Run.
-            ...(this.#workspace.descendants === true ? { descendants: true } : {}),
-            control: true,
+            ...resumeProps,
             ...(opts?.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
             ...(opts?.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
         };
@@ -434,7 +434,7 @@ export class AguiTransport implements Transport {
                     next = a === "cancel"
                         ? { resume: [{ interruptId, status: "cancelled" }] }
                         : { resume: [{ interruptId, status: "resolved", payload: a }] };
-                    fp = undefined;
+                    fp = resumeProps;
                     observing = false;
                     continue;
                 }
@@ -444,7 +444,7 @@ export class AguiTransport implements Transport {
                 ac.signal.throwIfAborted();
                 if (r === undefined) throw new Error("proposal ended without a resolution");
                 next = { resume: [proposalResume(interruptId, r)] };
-                fp = undefined;
+                fp = resumeProps;
                 observing = false;
             }
         })().then((terminal) => {

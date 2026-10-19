@@ -1063,6 +1063,51 @@ test("plurnk-service {§agui-held-interrupts}: a review answered before its Run 
     } finally { await mock.close(); }
 });
 
+// A gate of either kind under the interrupt id its presentation names: proposal `id` the operation's call, interaction `id`
+// its request's call.
+const presentation = (kind: "proposal" | "interaction", id: number, interruptId: string): string[] => kind === "proposal"
+    ? gate(wire({ id, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } }), interruptId)
+    : [
+        frame({ type: "TOOL_CALL_START", toolCallId: `int:${id}`, toolCallName: "ask" }),
+        frame({ type: "TOOL_CALL_ARGS", toolCallId: `int:${id}`, delta: "{}" }),
+        frame({ type: "TOOL_CALL_END", toolCallId: `int:${id}` }),
+        frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: interruptId, reason: "tool_call", toolCallId: `int:${id}`,
+            message: "Which?", responseSchema: { type: "object" } }] } }),
+    ];
+const kinds = ["proposal", "interaction"] as const;
+const plurnkOf = (body: unknown): Record<string, unknown> => (body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+// A session that answers every gate as it is presented, recording each review it opens.
+const answering = (bt: AguiTransport, h: RunHandlers, reviews: string[]): RunHandlers => ({ ...h,
+    onProposal: (p) => { reviews.push(`proposal:${p.logEntryId}`); void bt.resolve({ logEntryId: p.logEntryId, decision: "accept" }); },
+    onInteraction: (q) => { reviews.push(`int:${q.interactionId}`); void bt.resolveInteraction(q.interactionId, { answer: "one" }); } });
+
+// {§cli-resume-observation} Each gate kind's resume, from a session observing its delegation and from one observing its
+// worker alone.
+for (const kind of kinds) {
+    for (const descendants of [true, false]) {
+        test(`[§cli-resume-observation]: ${kind === "proposal" ? "a proposal's" : "an interaction's"} resume observes and claims as the Run it answers${descendants ? ", delegation included" : ""}, without the message's parameters`, async () => {
+            const mock = await bootMock((_req, res, body) => {
+                res.writeHead(200, { "content-type": "text/event-stream" });
+                if (resumeOf(body) !== undefined) res.write(frame(settled));
+                else for (const part of presentation(kind, kind === "proposal" ? 42 : 8, "presented")) res.write(part);
+                res.end();
+            });
+            try {
+                const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, { descendants });
+                const { h } = collectingHandlers();
+                bt.subscribe(answering(bt, h, []));
+                assert.equal((await bt.run("go", { maxTurns: 3, openPaths: ["a.ts"] }).done).finalStatus, 200);
+                const [message, resume] = mock.captured.map(({ body }) => plurnkOf(body));
+                const observation = (props: Record<string, unknown>): unknown[] => [props.descendants, props.control];
+                assert.deepEqual(observation(resume!), observation(message!), "the resume observes and claims as the Run it answers");
+                assert.deepEqual(observation(resume!), [descendants ? true : undefined, true]);
+                assert.deepEqual([message!.maxTurns, message!.openPaths], [3, ["a.ts"]], "the message carries its parameters");
+                assert.deepEqual([resume!.maxTurns, resume!.openPaths], [undefined, undefined], "its resume does not");
+            } finally { await mock.close(); }
+        });
+    }
+}
+
 test("AguiTransport: an interaction's call without its matching interrupt outcome returns an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });

@@ -1076,6 +1076,8 @@ const presentation = (kind: "proposal" | "interaction", id: number, interruptId:
     ];
 const kinds = ["proposal", "interaction"] as const;
 const plurnkOf = (body: unknown): Record<string, unknown> => (body as { forwardedProps: { plurnk: Record<string, unknown> } }).forwardedProps.plurnk;
+const resumedIds = (captured: ReadonlyArray<{ body: unknown }>): unknown[] => captured.flatMap(({ body }) =>
+    (resumeOf(body) as Array<{ interruptId: string }> | undefined)?.map(({ interruptId }) => interruptId) ?? []);
 // A session that answers every gate as it is presented, recording each review it opens.
 const answering = (bt: AguiTransport, h: RunHandlers, reviews: string[]): RunHandlers => ({ ...h,
     onProposal: (p) => { reviews.push(`proposal:${p.logEntryId}`); void bt.resolve({ logEntryId: p.logEntryId, decision: "accept" }); },
@@ -1106,6 +1108,97 @@ for (const kind of kinds) {
             } finally { await mock.close(); }
         });
     }
+}
+
+// {§cli-gate-answer-lifetime} Each gate kind, answered, by each way the Run carrying the answer can end and the gate come
+// back: presented again by that Run, presented again by a later Run, refused, or the connection lost.
+for (const kind of kinds) {
+    const [first, other] = kind === "proposal" ? [42, 43] : [8, 9];
+    const label = (id: number): string => kind === "proposal" ? `proposal:${id}` : `int:${id}`;
+    const endings = {
+        "presents the gate again": { failed: undefined,
+            script: [presentation(kind, first, "p1"), presentation(kind, first, "p2"), [frame(settled)]],
+            reviews: [first, first], resumes: ["p1", "p2"] },
+        "presents another gate, whose answer's Run presents the first again": { failed: undefined,
+            script: [presentation(kind, first, "p1"), presentation(kind, other, "q1"), presentation(kind, first, "p2"), [frame(settled)]],
+            reviews: [first, other, first], resumes: ["p1", "q1", "p2"] },
+        "is refused": { failed: 400,
+            script: [presentation(kind, first, "p1"), [frame({ type: "RUN_ERROR", code: "https://problems.plurnk.xyz/agui/interrupt/interrupt-binding-invalid",
+                message: "The resume does not match its interrupt's binding.", metadata: { plurnk: { problem: { type: "https://problems.plurnk.xyz/agui/interrupt/interrupt-binding-invalid",
+                    title: "Interrupt binding invalid", status: 400, detail: "The resume does not match its interrupt's binding." } } } })],
+                [frame({ type: "RUN_STARTED" }), frame(snapshotOf()), ...presentation(kind, first, "p2")], [frame(settled)]],
+            reviews: [first, first], resumes: ["p1", "p2"] },
+        "loses its connection": { failed: 502,
+            script: [presentation(kind, first, "p1"), [frame({ type: "RUN_STARTED" })],
+                [frame({ type: "RUN_STARTED" }), frame(snapshotOf()), ...presentation(kind, first, "p2")], [frame(settled)]],
+            reviews: [first, first], resumes: ["p1", "p2"] },
+    };
+    for (const [ending, { failed, script, reviews: expected, resumes }] of Object.entries(endings)) {
+        test(`[§cli-gate-answer-lifetime]: ${kind === "proposal" ? "a proposal" : "an interaction"} whose answer's Run ${ending} is reviewed again when it comes back`, { timeout: 10_000 }, async () => {
+            let served = 0;
+            const mock = await bootMock((_req, res) => {
+                res.writeHead(200, { "content-type": "text/event-stream" });
+                for (const part of script[served++] ?? []) res.write(part);
+                res.end();
+            });
+            try {
+                const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+                const { h } = collectingHandlers();
+                const reviews: string[] = [];
+                bt.subscribe(answering(bt, h, reviews));
+                const run = await bt.run("go", {}).done;
+                if (failed === undefined) assert.equal(run.finalStatus, 200);
+                else {
+                    assert.equal(run.finalStatus, failed, "the Run that carried the answer ends the run");
+                    await bt.observe().done;
+                }
+                assert.deepEqual(reviews, expected.map(label), "the gate that came back was reviewed again, never waited on");
+                assert.deepEqual(resumedIds(mock.captured), resumes, "and answered again");
+                assert.equal(mock.captured.some(({ body }) => heldBy(body) !== undefined), false);
+            } finally { await mock.close(); }
+        });
+    }
+}
+
+// {§cli-gate-answer-lifetime} Each gate kind, presented to a second Run while the first holds its open review.
+for (const kind of kinds) {
+    test(`[§cli-gate-answer-lifetime]: ${kind === "proposal" ? "a proposal" : "an interaction"} another Run of this client holds is held on a connection, and the work is followed once it settles`, { timeout: 10_000 }, async () => {
+        const id = kind === "proposal" ? 42 : 8;
+        let observations = 0;
+        let secondHold: ServerResponse | undefined;
+        const mock = await bootMock((_req, res, body) => {
+            const held = heldBy(body) as string[] | undefined;
+            if (held?.[0] === "first") return holdOpen(res);
+            if (held?.[0] === "second") { secondHold = res; return holdOpen(res); }
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            if (resumeOf(body) !== undefined) {
+                // The answer settles the gate: its Run follows the work to its end, and the other Run's hold finishes.
+                res.write(frame(settled));
+                secondHold?.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+            } else if (!observes(body as RunInput)) for (const part of presentation(kind, id, "first")) res.write(part);
+            else if (observations++ === 0) for (const part of [frame({ type: "RUN_STARTED" }), frame(snapshotOf()), ...presentation(kind, id, "second")]) res.write(part);
+            else for (const part of [frame({ type: "RUN_STARTED" }), frame(snapshotOf()), frame({ type: "RUN_FINISHED", outcome: { type: "success" } })]) res.write(part);
+            res.end();
+        });
+        try {
+            const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+            const { h, seen } = collectingHandlers();
+            bt.subscribe(h);
+            const holds = (): unknown[] => mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined);
+            const until = async (reached: () => boolean): Promise<void> => { while (!reached()) await new Promise((r) => setTimeout(r, 10)); };
+            const prompted = bt.run("go", {});
+            await until(() => holds().length === 1);
+            const observed = bt.observe();
+            await until(() => holds().length === 2);
+            assert.deepEqual(holds(), [["first"], ["second"]], "the second Run holds its own presentation's interrupt on a connection");
+            assert.equal(seen.proposals.length + seen.interactions.length, 1, "and opens no second review");
+            if (kind === "proposal") await bt.resolve({ logEntryId: id, decision: "accept" });
+            else await bt.resolveInteraction(id, { answer: "one" });
+            assert.equal((await prompted.done).finalStatus, 200);
+            assert.equal(await observed.done, null, "the second Run follows the work to its end once the gate settles");
+            assert.deepEqual(resumedIds(mock.captured), ["first"], "one answer, from the Run whose review it was");
+        } finally { await mock.close(); }
+    });
 }
 
 test("AguiTransport: an interaction's call without its matching interrupt outcome returns an exact Problem", async () => {

@@ -915,7 +915,7 @@ as `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `i
 
 | The row | Arrives as | Drawn |
 |---|---|---|
-| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
+| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt: text, or a receipt that holds a body as its text part beside the body's document part (plurnk-service `{§agui-body-reference}`), the body never fetched to draw it | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
 | A delivered reply, or a WAIT that carries a body | `TEXT_MESSAGE_START/CONTENT/END`, the metadata adding its heading's `aside` and its `receipt` | When the message ends |
 | An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
 | An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§agui-message-acceptance}`) | Never: its arrival, when the Worker observes it, draws it |
@@ -924,7 +924,7 @@ as `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `i
 | History | A sync Run's `MESSAGES_SNAPSHOT`: the same parts, as messages | {§cli-worker-history} |
 
 A row's `target` is the address it recorded; its heading shows the target as authored when its statement
-has one (§5.1). A call ended without its receipt, a result that is not text, or row facts that are present
+has one (§5.1). A call ended without its receipt, a result with no text, or row facts that are present
 but unreadable are a broken wire (`result-invalid`), never a row skipped.
 
 Text-message identity, role and optional sender name survive projection. The daemon owns whether a

@@ -50,6 +50,16 @@ const valueOf = (text: string): unknown => {
     try { return JSON.parse(text) as unknown; } catch { return text; }
 };
 
+// plurnk-service {§agui-body-reference}: a result is text, or its receipt's text part beside the document part its body
+// travels by; the body is never fetched to draw the row.
+const textOf = (content: unknown, toolCallId: string): string => {
+    if (typeof content === "string") return content;
+    const part = Array.isArray(content) ? content.find((candidate) => objectOf(candidate)?.type === "text") : undefined;
+    const text = objectOf(part)?.text;
+    if (typeof text !== "string") throw new ProblemError(clientTransportResultInvalid(`The result for ${toolCallId} carries no text.`));
+    return text;
+};
+
 // A SEND body is `{ raw, json }`, json being the best-effort parse the daemon's parser makes of raw; others are text.
 const bodyOf = (op: string, content: string): unknown =>
     op === "SEND" ? { raw: content, json: (() => { try { return JSON.parse(content) as unknown; } catch { return null; } })() } : content;
@@ -146,15 +156,15 @@ export default class RowAssembler {
                 const facts = factsOf(e.metadata);
                 if (facts === null) return [];
                 // The daemon answers a call in text: its receipt as JSON, or the words a reply delivered.
-                if (typeof e.content !== "string") throw new ProblemError(clientTransportResultInvalid(`The result for ${e.toolCallId} is not text.`));
+                const content = textOf(e.content, e.toolCallId);
                 const call = this.#calls.get(e.toolCallId);
                 if (call?.ended === true && call.facts.id === facts.id) {
                     this.#calls.delete(e.toolCallId);
-                    return [rowOf(facts, this.#statement(call.args), valueOf(e.content))];
+                    return [rowOf(facts, this.#statement(call.args), valueOf(content))];
                 }
                 this.#unanswered();
                 // plurnk-service `{§agui-call-result}`: what another row delivered for the call, a reply's words or what was observed.
-                return [facts.op === "SEND" ? rowOf(facts, { body: bodyOf("SEND", e.content) }, null) : rowOf(facts, null, valueOf(e.content))];
+                return [facts.op === "SEND" ? rowOf(facts, { body: bodyOf("SEND", content) }, null) : rowOf(facts, null, valueOf(content))];
             }
             case "TEXT_MESSAGE_START": {
                 this.#unanswered();

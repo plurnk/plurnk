@@ -68,19 +68,30 @@ test("[§cli-row-sources] a result that answers another row's call is that row: 
     assert.deepEqual([concluded?.op, concluded?.target, concluded?.rx], ["READ", "ops://helper/1", conclusion]);
 });
 
-test("[§cli-row-sources] a call ended without its receipt, a result that is not text, or unreadable facts are a broken wire; an interrupt's call is no row", () => {
+test("[§cli-row-sources] a call ended without its receipt, a result with no text, or unreadable facts are a broken wire; an interrupt's call is no row", () => {
     const broken = (events: AguiEvent[]): void => assert.throws(() => drawn(events),
         (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
     const [start, args, end] = callOf(read);
     broken([start!, args!, end!, ...callOf({ ...read, id: 5, sequence: 2 })]);
     broken([{ ...start!, metadata: { plurnk: { id: 4, op: "READ" } } } as AguiEvent]);
     const [, , , result] = callOf(read);
-    broken([start!, args!, end!, { ...result!, content: [{ type: "text", text: "receipt" }] } as unknown as AguiEvent]);
+    broken([start!, args!, end!, { ...result!, content: [{ type: "document", source: { type: "url", value: "http://agui.test/agui/3/1/log/1/1/4/READ" } }] } as unknown as AguiEvent]);
+    broken([start!, args!, end!, { ...result!, content: 5 } as unknown as AguiEvent]);
     assert.deepEqual(drawn([
         { type: "TOOL_CALL_START", toolCallId: "int:43", toolCallName: "request_user_input" },
         { type: "TOOL_CALL_ARGS", toolCallId: "int:43", delta: "{}" },
         { type: "TOOL_CALL_END", toolCallId: "int:43" },
     ] as AguiEvent[]), [], "a client interaction's call builds no row");
+});
+
+// plurnk-service {§agui-body-reference}: a receipt that holds a body arrives as its text part beside the body's document part.
+test("[§cli-row-sources] a receipt whose body travels by reference draws its row from the receipt's text part", () => {
+    const [start, args, end, result] = callOf(read);
+    const [row] = drawn([start!, args!, end!, { ...result!, content: [
+        { type: "text", text: JSON.stringify(read.rx) },
+        { type: "document", source: { type: "url", value: "http://agui.test/agui/3/7/log/2/3/1/READ", mimeType: "text/markdown" } },
+    ] } as unknown as AguiEvent]);
+    assert.deepEqual([row?.op, row?.rx], ["READ", read.rx], "the receipt draws the row; its body is not needed to draw it");
 });
 
 // plurnk-service {§agui-proposal-resolve}: the gated call awaits its decision, then settles with a receipt or opening an obligation.

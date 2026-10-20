@@ -978,23 +978,61 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
     } finally { await mock.close(); }
 });
 
-test("plurnk-service {§agui-held-interrupts}: a review is withdrawn when another client settles its gate, never answered here, and the run follows the work", async () => {
+// When the other client's answer lands: while the hold is open, or before it connects, so that its snapshot already holds
+// the settled call and its Run finishes at once (plurnk-service {§agui-held-interrupts}).
+for (const answered of ["while the hold is open", "before the hold connects"] as const) {
+    test(`plurnk-service {§agui-held-interrupts}: a review is withdrawn when another client settles its gate ${answered}, never answered here, and the run follows the work`, async () => {
+        const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
+        const mock = await bootMock((_req, res, body) => {
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            if (!observes(body as RunInput)) for (const part of gate(edit, "held-presentation")) res.write(part);
+            else if (heldBy(body) !== undefined) {
+                res.write(frame({ type: "RUN_STARTED" }));
+                if (answered === "while the hold is open") {
+                    // Its snapshot holds the call awaiting its decision; the settlement arrives on the held connection.
+                    res.write(frame(snapshotOf({ ...edit, state: "proposed", status_rx: 202, rx: { status: 202 } })));
+                    for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
+                } else res.write(frame(snapshotOf(edit)));
+                res.write(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+            } else {
+                // The work that continues, followed to its end.
+                res.write(frame({ type: "RUN_STARTED" }));
+                res.write(frame(snapshotOf(edit)));
+                res.write(frame(settled));
+            }
+            res.end();
+        });
+        try {
+            const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+            const { h, seen } = collectingHandlers();
+            const ended: string[] = [];
+            bt.subscribe({ ...h, onInterruptEnd: (id) => ended.push(id) });
+            const t = await bt.run("edit it", {}).done;
+            assert.equal(t.finalStatus, 200, "the run follows the work that continues to its end");
+            assert.equal(seen.proposals.length, 1);
+            assert.deepEqual(ended, ["proposal:42"], "the review was withdrawn");
+            await assert.rejects(bt.resolve({ logEntryId: 42, decision: "accept" }), /Proposal 42 has no pending AG-UI interrupt/u, "and cannot be answered here");
+            assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "this client never answered");
+            assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["held-presentation"]], "the hold named its interrupt");
+            assert.deepEqual(drawn(seen.entries), ["42 EDIT"], "the settled operation is drawn once");
+        } finally { await mock.close(); }
+    });
+}
+
+test("plurnk-service {§agui-held-interrupts}: a hold whose Run presents a gate, its interrupt no longer pending, withdraws the review, and the gate is reviewed where the work is followed", { timeout: 10_000 }, async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     const mock = await bootMock((_req, res, body) => {
+        const held = heldBy(body);
         res.writeHead(200, { "content-type": "text/event-stream" });
-        if (!observes(body as RunInput)) for (const part of gate(edit, "held-presentation")) res.write(part);
-        else if (heldBy(body) !== undefined) {
-            // Its snapshot holds the call awaiting its decision; another client answers, and the held connection brings the
-            // settlement and finishes.
+        if (resumeOf(body) !== undefined) {
+            for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
+            res.write(frame(settled));
+        } else if (!observes(body as RunInput)) for (const part of gate(edit, "first-presentation")) res.write(part);
+        else {
+            // A Run holding nothing presents the pending gate, the hold's own Run among them: its interrupt is no longer pending.
             res.write(frame({ type: "RUN_STARTED" }));
             res.write(frame(snapshotOf({ ...edit, state: "proposed", status_rx: 202, rx: { status: 202 } })));
-            for (const part of settlementOf(wholeRow(edit)!)) res.write(frame(part as unknown as Record<string, unknown>));
-            res.write(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
-        } else {
-            // The work that continues, followed to its end.
-            res.write(frame({ type: "RUN_STARTED" }));
-            res.write(frame(snapshotOf(edit)));
-            res.write(frame(settled));
+            for (const part of gate(edit, held === undefined ? "observed-presentation" : "re-presented").slice(-1)) res.write(part);
         }
         res.end();
     });
@@ -1002,15 +1040,15 @@ test("plurnk-service {§agui-held-interrupts}: a review is withdrawn when anothe
         const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         const ended: string[] = [];
-        bt.subscribe({ ...h, onInterruptEnd: (id) => ended.push(id) });
-        const t = await bt.run("edit it", {}).done;
-        assert.equal(t.finalStatus, 200, "the run follows the work that continues to its end");
-        assert.equal(seen.proposals.length, 1);
-        assert.deepEqual(ended, ["proposal:42"], "the review was withdrawn");
-        await assert.rejects(bt.resolve({ logEntryId: 42, decision: "accept" }), /Proposal 42 has no pending AG-UI interrupt/u, "and cannot be answered here");
-        assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "this client never answered");
-        assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["held-presentation"]], "the hold named its interrupt");
-        assert.deepEqual(drawn(seen.entries), ["42 EDIT"], "the settled operation is drawn once");
+        bt.subscribe({ ...h, onInterruptEnd: (id) => ended.push(id),
+            onProposal: (p) => { h.onProposal?.(p); if (seen.proposals.length === 2) void bt.resolve({ logEntryId: p.logEntryId, decision: "accept" }); } });
+        assert.equal((await bt.run("edit it", {}).done).finalStatus, 200, "the run follows the work to its end");
+        assert.equal(seen.proposals.length, 2, "the gate is reviewed again where the work is followed");
+        assert.deepEqual(ended, ["proposal:42", "proposal:42"], "the stale review was withdrawn, and the second answered");
+        assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["first-presentation"]],
+            "the first review held its interrupt; the second was answered as it was presented");
+        assert.deepEqual(mock.captured.map(({ body }) => resumeOf(body)).filter((resume) => resume !== undefined)
+            .map((resume) => (resume as Array<{ interruptId: string }>)[0]?.interruptId), ["observed-presentation"], "the answer names the pending presentation");
     } finally { await mock.close(); }
 });
 

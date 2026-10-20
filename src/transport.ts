@@ -498,7 +498,8 @@ export class AguiTransport implements Transport {
 
     // plurnk-service {§agui-held-interrupts}: a connection naming a gate's interrupt observes the worker, drawing what it brings
     // as live rows, until the gate settles or `until` does. The settlement, with the loop's terminal when the hold carried
-    // it; undefined when `until` came first or the hold ended without the gate settling.
+    // it; undefined when `until` came first or the stream ended unfinished. A Run holding the interrupt presents no gate, so
+    // one that presents a gate finishes because the held interrupt is no longer pending: that too is its settlement.
     async #hold(binding: { threadId: string }, forwardedProps: Record<string, unknown> | undefined, interruptId: string,
         signal: AbortSignal, until: Promise<unknown>): Promise<{ readonly terminated: TerminatedInfo | null } | undefined> {
         const hold = new AbortController();
@@ -513,7 +514,7 @@ export class AguiTransport implements Transport {
             }, AbortSignal.any([signal, hold.signal]))) {
                 const ended = this.#ended(e);
                 if (ended.terminated !== null) terminated = ended.terminated;
-                if (e.type === "RUN_FINISHED") settled = e.outcome?.type !== "interrupt";
+                if (e.type === "RUN_FINISHED") settled = true;
                 else if (e.type === "MESSAGES_SNAPSHOT") {
                     for (const entry of snapshotRows(e.messages, projection.rows)) if (this.#seenRows.get(entry.id) !== this.#rowVersion(entry)) this.#row(entry);
                 } else if (e.type !== "RUN_ERROR") this.#dispatch(e, projection);

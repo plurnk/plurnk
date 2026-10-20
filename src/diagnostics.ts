@@ -339,7 +339,7 @@ export const clientProposalEditsBlocked = (): Notice => ({
     message: "edits and exec blocked: no review channel to approve them (run on a TTY, or pass --yolo)",
 });
 
-export const NO_MODEL_HINT = "Use /models to list available models, then /model <selector> to choose one.";
+export const NO_MODEL_HINT = "Supply a provider's API key to the backend (for example, export DEEPSEEK_API_KEY before launching); /models then lists its models and /model <selector> chooses one.";
 
 export const clientModelUnselected = (): Notice => ({
     source: "client:model",

@@ -32,6 +32,10 @@ plurnk [options] [prompt...]                # one-shot from positionals
 plurnk [options]                             # TUI mode (no positionals, TTY stdin)
 ```
 
+{§cli-runtime-floor} Before the client loads, `plurnk` compares the running Node.js with the
+floor its package declares in `engines.node`. Below it, one stderr line names both versions and
+the process exits 1, before any option is read or any daemon is contacted.
+
 The prompt is assembled from positional args + piped stdin. If both are present, positionals come first followed by a blank line, then stdin. If only positionals → those. If only piped stdin → that. If neither and stdin is a TTY → TUI mode. Empty non-TTY input is a usage error (exit 64), before contacting the daemon. `CI` does not change this terminal-based choice. The `--json` flag requires a non-empty prompt (errors with exit 64 if neither source provides one).
 
 `plurnk <subcommand> --help` prints that command's invocation forms and summary

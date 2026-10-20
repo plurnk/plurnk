@@ -37,10 +37,13 @@ test("[§cli-partial-record] AG-UI failures preserve exact Problems and distingu
     assert.equal(clientAguiError(url, new TypeError("terminated")).detail, "terminated");
 });
 
-test("{§cli-model-selection} missing-model guidance uses existing selection commands", () => {
+test("{§cli-model-selection} missing-model guidance names the key the backend needs, then the selection commands", () => {
     const notice = clientModelUnselected();
     assert.equal(notice.level, "warn");
-    assert.equal(notice.message, "No model selected. Use /models to list available models, then /model <selector> to choose one.");
+    const message = notice.message ?? "";
+    assert.match(message, /API key to the backend/u);
+    assert.ok(message.indexOf("API key") < message.indexOf("/models"), "the key comes before the commands it unlocks");
+    assert.match(message, /\/model <selector>/u);
     assert.deepEqual(notice.hints, ["https://github.com/plurnk/plurnk#models"]);
 });
 

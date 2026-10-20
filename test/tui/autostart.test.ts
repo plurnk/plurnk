@@ -30,7 +30,7 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
         else {
             await tui.waitFor(/plurnk.*\/help/s, 25_000);
             await tui.waitFor(/No model selected\./);
-            assert.match(tui.output(), /Use \/models/);
+            assert.match(tui.output(), /\/models\b/u, "the notice names the listing command");
         }
         assert.doesNotMatch(tui.output(), /Use the resume command printed on exit/, "explicit storage needs no first-use hint");
         const lock = JSON.parse(await readFile(`${database}.lock`, "utf8")) as { pid: number };

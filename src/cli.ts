@@ -7,7 +7,7 @@ import type { LogEntryWire, LoopUsage } from "./render.ts";
 import { contextGauge, entryAside, entryScope, lineageWorker, operationIdentity } from "./render.ts";
 import { reviewProposal } from "./proposal.ts";
 import type { ProposalParams } from "./proposal.ts";
-import { report, clientProposalEditsBlocked, NO_MODEL_HINT } from "./diagnostics.ts";
+import { report, clientProposalEditsBlocked } from "./diagnostics.ts";
 import type { Notice, ProblemDetails } from "./diagnostics.ts";
 
 interface WorkspaceResult { id: number; name: string }

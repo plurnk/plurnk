@@ -369,7 +369,7 @@ const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => va
     : value === "queued" ? "⏳"
     : value === "parked" ? "💤"
         : value === "completed" ? "⏹️"
-            : value === "cancelled" ? "✋"
+            : value === "cancelled" ? "🛑"
             : value === "failed" ? "❌"
                 : idleGlyph;
 

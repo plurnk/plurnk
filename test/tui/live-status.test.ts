@@ -39,9 +39,9 @@ test("[§cli-status-wait] built TUI counts down a bounded park and retains its d
     await second.waitFor(/updates in [1-6]\.0s/);
     assert.equal(calls, 1, "reattachment observes the existing park without another model call");
     const beforeWake = first.output().length;
-    await first.waitFor(/✋|cancelled|499/, 12_000, beforeWake);
+    await first.waitFor(/🛑|cancelled|499/, 12_000, beforeWake);
     assert.equal(calls, 2, "the explicit eight-second wait expires before the 30-second process ends");
-    await first.waitFor(/\[wait-countdown\/~user[^\r\n]*(?:✋|❌)/, 5_000, beforeWake);
+    await first.waitFor(/\[wait-countdown\/~user[^\r\n]*(?:🛑|❌)/, 5_000, beforeWake);
     const footer = stripVTControlCharacters(first.output()).split(/\r?\n/).filter((line) => line.includes("[wait-countdown/~user")).at(-1);
     assert.ok(footer);
     assert.doesNotMatch(footer, /updates (?:in|due)/,

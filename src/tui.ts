@@ -1272,9 +1272,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                         workerPosition = siblingPosition(workers, boundWorker);
                         placeWorkers = workers;
                     }
-                    lifecycle = terminal.result.status === 202 ? "parked"
-                        : terminal.result.status === 499 ? "cancelled"
-                            : terminal.result.status >= 400 ? "failed" : "completed";
                     const wallMs = Date.now() - start;
                     surface.archiveResponses();
                     printAbove(renderSummary(turnCount, wallMs, terminal.result, terminal.hitMaxTurns, terminal.usage));

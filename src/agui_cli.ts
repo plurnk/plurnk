@@ -603,13 +603,8 @@ export const runCliViaAgui = async (
     if (!opts.json) {
         const outcome = runOutcome(result);
         const finalStatus = outcome.status;
-        statusLine.update({
-            lifecycle: finalStatus === 202 ? "parked"
-                : finalStatus === 499 ? "cancelled"
-                : finalStatus >= 400 ? "failed"
-                    : "completed",
-            activity: null,
-        });
+        // plurnk-service {§loop-lifecycle-vocabulary}: the lifecycle is the daemon's word, never inferred from the outcome.
+        statusLine.update({ activity: null });
         const terminated = result.terminated;
         statusLine.settle({ turns: terminated?.turnIds.length ?? 0, wallMs: Date.now() - started });
         // {§cli-cancellation} Without the daemon's terminal record the turn count is unknown, never zero.

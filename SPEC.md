@@ -201,7 +201,7 @@ a workspace action, reports no gauge.
 Human status is the summary line's shape aggregated over the session:
 
 ```
-[<project folder> ] [<TUI place> ] [🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🧮 <percent>%]
+[<project folder> ] [<TUI place> ] [🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 🧮 <percent>%]
 ```
 
 YOLO is a fireball beside the lifecycle glyph. The model sits next, ahead of
@@ -221,14 +221,21 @@ the separate folder when the label equals the workspace name; the place already 
 Path text is terminal-safe.
 The TUI footer uses the muted color role, subject to {§cli-color-policy}.
 
-{§cli-status-children} The ant is the daemon's count of the bound worker's alive
-direct children (`snapshot.plurnk.status.children`: queued, running, or parked —
-a parked child still owes a result), followed by the child model while a spawn
+{§cli-status-children} The ant counts the bound worker's alive direct children
+(queued, running, or parked — a parked child still owes a result) in the daemon's
+tree beneath it (`snapshot.plurnk.status.descendants`, plurnk-service
+`{§agui-status-descendants}`), followed by the child model while a spawn
 override is set: `🐜 2 dumbox`. Zero hides the whole child segment, even with a
 configured child model. A transport without the gauge shows only the bare
-`🐜 <child>`. The count is never derived from the directory;
-the user hops to a child (§3.1.2) rather than watching it. `(<i>/<n>)` after the
-worker is its sibling position, newest first, present only with siblings.
+`🐜 <child>`. The count is the gauge's, never the directory's, and a gauge whose
+tree is not one worker's tree is refused; the user hops to a child (§3.1.2) rather
+than watching it. `(<i>/<n>)` after the worker is its sibling position, newest
+first, present only with siblings.
+
+{§cli-status-gated} The traffic light counts the workers anywhere in that tree
+waiting on a gate, a proposal or a client interaction (`gates` above zero):
+`🚦 15`. None waiting, or no gauge, hides it. The gates themselves reach their
+owner as interrupts ({§cli-proposal-review}) and wait in its review.
 
 {§cli-status-clock} Turns and wall time include the running loop — its packet count from the
 authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time, ticking once a

@@ -853,6 +853,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             loopId: placeLoop,
             packetCount: null,
             children: null,
+            gated: null,
             ...workspaceStatus,
             activity: searchFetching ? { label: "search", percent: searchPercent } : workspaceStatus?.activity ?? null,
         }, statusContext(), { yolo: opts.yolo });

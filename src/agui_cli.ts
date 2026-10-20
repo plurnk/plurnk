@@ -393,7 +393,7 @@ export const runCliViaAgui = async (
     const statusLine = new TerminalStatusLine(
         (value) => process.stderr.write(value),
         !opts.json && process.stderr.isTTY === true,
-        { lifecycle: "running", model: opts.modelLabel ?? null, loopId: null, packetCount: null, activity: null, children: null },
+        { lifecycle: "running", model: opts.modelLabel ?? null, loopId: null, packetCount: null, activity: null, children: null, gated: null },
         { workspace: opts.workspace.name, worker: null, child: null, tally: EMPTY_TALLY, runningSince: started },
     );
     statusLine.update({});

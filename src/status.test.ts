@@ -9,7 +9,7 @@ const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: n
 
 // A whole gauge as the daemon sends it; each test overrides the fields it is about.
 const GAUGE = {
-    lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, children: 0,
+    lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, descendants: [],
     spend: { requests: 0, usage: null, knownUsage: null, costUsd: "0", knownCostUsd: "0" }, claimedAt: null, terminatedAt: null,
 };
 // The bound workspace as the daemon sends it: no folder, nothing preparing or indexing.
@@ -22,6 +22,7 @@ const running: ClientStatus = {
     packetCount: 2,
     activity: null,
     children: null,
+    gated: null,
 };
 
 test("[§cli-status-wait] the parked countdown uses the daemon deadline and clears on wake", () => {
@@ -104,7 +105,7 @@ test("[§cli-worker-status] status presentation uses only client-owned facts", (
         renderStatusLine({ ...running, lifecycle: "completed", activity: { label: "indexing", percent: 55 } }, { ...CONTEXT, tally: concluded, runningSince: null }),
         "⏹️  · 🎲 deepdumb · 1m05s · 🧮 55%",
     );
-    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, loopId: null, packetCount: null, activity: null, children: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { yolo: true }), "🔥");
+    assert.equal(renderStatusLine({ lifecycle: "idle", model: null, loopId: null, packetCount: null, activity: null, children: null, gated: null }, { workspace: null, worker: null, child: null, tally: EMPTY_TALLY, runningSince: null }, { yolo: true }), "🔥");
     assert.equal(renderStatusLine(running, CONTEXT, { yolo: true }), "🔥 ⌛︎  · 🎲 deepdumb · 3.2s", "{plurnk#104} YOLO is a fireball at the left edge, and the model sits ahead of what ticks");
 });
 
@@ -127,8 +128,6 @@ test("[§cli-status-project-root] status shows the daemon's label for the bound 
     }
 });
 
-// {§cli-status-children} {§cli-workers-topology} — the ant is the daemon's alive-children count, the
-// child model rides beside it, and the worker segment carries the sibling position.
 test("[§cli-status-project-root] the folder is the daemon's label as given, omitted where it repeats the workspace name", () => {
     // A daemon on another host spells the folder from its own home; the client shows that spelling.
     const status = { ...running, projectRoot: "/srv/daemon-home/projects/client", projectLabel: "~/projects/client" };
@@ -144,21 +143,68 @@ test("[§cli-status-project-root] the folder is the daemon's label as given, omi
     assert.equal(renderStatusLine({ ...status, projectRoot: null, projectLabel: null }, { ...CONTEXT, place }), `${place} ${activity}`);
 });
 
+// {§cli-status-children} {§cli-status-gated} — plurnk-service {§agui-status-descendants}: one worker of the tree
+// beneath the bound worker (here worker 1), as the gauge carries it.
+const descendant = (id: number, parentWorkerId: number, lifecycle: string, gates = 0) =>
+    ({ id, name: `worker-${id}`, parentWorkerId, kind: "work", lifecycle, gates });
+const treeCounts = (descendants: unknown): Pick<ClientStatus, "children" | "gated"> => {
+    const { children, gated } = projectStatusGauge({ ...GAUGE, descendants }, PLACE);
+    return { children, gated };
+};
+
+// {§cli-status-children} {§cli-workers-topology} — the ant is the tree's alive direct children, the child model
+// rides beside it, and the worker segment carries the sibling position.
 test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {
     assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
     assert.equal(renderStatusLine({ ...running, children: 0 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s", "a configured child model is not active child work");
     assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2 dumbox");
     assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 dumbox", "no gauge, no count: the bare child model");
     assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 1", "the place is the prompt prefix's, not the status line's");
-    assert.equal(projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, children: 3 }, PLACE).children, 3);
-    assert.throws(() => projectStatusGauge({ ...GAUGE, lifecycle: "parked", model: null, loopId: 4, packetCount: 1, children: -1 }, PLACE), /Invalid runtime children count/u);
 });
 
-test("[§cli-status-children] the live child indicator disappears when the last child concludes", () => {
+test("[§cli-status-children] the ant counts the tree's direct children that owe a result: every lifecycle, at every depth", () => {
+    assert.deepEqual(treeCounts([]), { children: 0, gated: 0 }, "an empty tree");
+    for (const lifecycle of ["queued", "running", "parked"]) {
+        assert.deepEqual(treeCounts([descendant(2, 1, lifecycle)]), { children: 1, gated: 0 }, `a ${lifecycle} child still owes its result`);
+        assert.deepEqual(treeCounts([descendant(2, 1, "completed"), descendant(3, 2, lifecycle)]), { children: 0, gated: 0 }, `a ${lifecycle} grandchild is not a child`);
+    }
+    for (const lifecycle of ["idle", "completed", "cancelled", "failed"]) {
+        assert.deepEqual(treeCounts([descendant(2, 1, lifecycle)]), { children: 0, gated: 0 }, `a ${lifecycle} child owes nothing`);
+    }
+    assert.deepEqual(treeCounts([descendant(2, 1, "running"), descendant(3, 2, "running"), descendant(4, 1, "parked"), descendant(5, 4, "queued"), descendant(6, 1, "completed")]),
+        { children: 2, gated: 0 }, "two generations: the bound worker's own children alone");
+});
+
+test("[§cli-status-gated] the traffic light counts the workers anywhere in the tree that wait on a gate", () => {
+    assert.deepEqual(treeCounts([descendant(2, 1, "running", 1)]), { children: 1, gated: 1 }, "a child waits");
+    assert.deepEqual(treeCounts([descendant(2, 1, "completed"), descendant(3, 2, "running", 2)]), { children: 0, gated: 1 },
+        "a grandchild beneath a concluded child, waiting on two gates, is one worker waiting");
+    assert.deepEqual(treeCounts([descendant(2, 1, "running", 1), descendant(3, 2, "running", 1), descendant(4, 3, "running", 1), descendant(5, 1, "parked")]),
+        { children: 2, gated: 3 }, "every depth counts");
+    assert.equal(renderStatusLine({ ...running, children: 2, gated: 15 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2 dumbox · 🚦 15");
+    assert.equal(renderStatusLine({ ...running, children: 0, gated: 3 }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s · 🚦 3", "waiting work without an alive child still shows");
+    assert.equal(renderStatusLine({ ...running, children: 2, gated: 0 }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2", "none waiting shows nothing");
+    assert.equal(renderStatusLine({ ...running, children: null, gated: null }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s", "no gauge shows nothing");
+});
+
+test("[§cli-status-children] a gauge whose tree is not one worker's tree is refused", () => {
+    const valid = descendant(2, 1, "running");
+    for (const descendants of [
+        undefined, null, 3, {}, [null], [[]], [{ ...valid, id: "2" }], [{ ...valid, parentWorkerId: null }], [{ ...valid, name: 2 }],
+        [{ ...valid, kind: null }], [{ ...valid, lifecycle: "asleep" }], [{ ...valid, gates: -1 }], [{ ...valid, gates: 1.5 }],
+        [valid, valid], [valid, descendant(3, 9, "running")],
+    ]) {
+        assert.throws(() => treeCounts(descendants), /Invalid runtime descendants/u, JSON.stringify(descendants) ?? "undefined");
+    }
+});
+
+test("[§cli-status-children] [§cli-status-gated] the live indicators disappear when the last child concludes and the last gate settles", () => {
     const writes: string[] = [];
     const line = new TerminalStatusLine((value) => writes.push(value), true, running, { ...CONTEXT, child: "dumbox" });
-    line.update({ children: 2 });
-    assert.match(writes.at(-1)!, /🐜 2 dumbox/);
+    line.update({ children: 2, gated: 1 });
+    assert.match(writes.at(-1)!, /🐜 2 dumbox · 🚦 1/);
+    line.update({ gated: 0 });
+    assert.doesNotMatch(writes.at(-1)!, /🚦/);
     line.update({ children: 0 });
     assert.doesNotMatch(writes.at(-1)!, /🐜|dumbox/);
 });

@@ -141,9 +141,11 @@ export interface ClientStatus {
     loopId: number | null;
     packetCount: number | null;
     activity: StatusActivity | null;
-    // {§cli-status-children} — the daemon's count of the bound worker's alive direct children; null
-    // when the transport carries no gauge.
+    // {§cli-status-children} — the bound worker's alive direct children, counted in the daemon's tree
+    // beneath it; null when the transport carries no gauge.
     children: number | null;
+    // {§cli-status-gated} — the workers anywhere in that tree waiting on a gate; null without a gauge.
+    gated: number | null;
     // {§cli-status-spend} — the daemon's spend of the bound worker and its descendants since the
     // worker began; null when nothing is spent or the transport carries no gauge.
     spend?: TurnAccounting | null;
@@ -167,7 +169,7 @@ export interface RuntimeStatusGauge {
     model: ModelRoute | null;
     loopId: number | null;
     packetCount: number;
-    children: unknown;
+    descendants: unknown;
     spend: unknown;
     claimedAt: unknown;
     terminatedAt: unknown;
@@ -215,6 +217,32 @@ export const isWorkerGauge = (gauge: StatusGaugeEnvelope): gauge is WorkerGauge 
 const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
     "idle", "queued", "running", "parked", "completed", "cancelled", "failed",
 ]);
+
+// {§cli-status-children} — a child that still owes a result is alive; a parked one still owes it.
+const ALIVE: ReadonlySet<string> = new Set<StatusLifecycle>(["queued", "running", "parked"]);
+
+// {§cli-status-children} {§cli-status-gated} — plurnk-service {§agui-status-descendants}: the daemon's tree beneath
+// the bound worker, read for the two counts the status line shows. A direct child is one whose parent is not in the
+// tree: every other parent is the one worker the tree hangs from.
+const treeCounts = (value: unknown): { children: number; gated: number } => {
+    const fail = (): never => { throw new TypeError("Invalid runtime descendants."); };
+    if (!Array.isArray(value)) return fail();
+    const tree = value.map((entry: unknown) => {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return fail();
+        const { id, name, parentWorkerId, kind, lifecycle, gates } = entry as Record<string, unknown>;
+        if (!Number.isSafeInteger(id) || !Number.isSafeInteger(parentWorkerId) || typeof name !== "string"
+            || typeof kind !== "string" || typeof lifecycle !== "string" || !LIFECYCLES.has(lifecycle)
+            || !Number.isSafeInteger(gates) || (gates as number) < 0) return fail();
+        return { id: id as number, parentWorkerId: parentWorkerId as number, lifecycle, gates: gates as number };
+    });
+    const ids = new Set(tree.map(({ id }) => id));
+    const direct = tree.filter(({ parentWorkerId }) => !ids.has(parentWorkerId));
+    if (ids.size !== tree.length || new Set(direct.map(({ parentWorkerId }) => parentWorkerId)).size > 1) return fail();
+    return {
+        children: direct.filter(({ lifecycle }) => ALIVE.has(lifecycle)).length,
+        gated: tree.filter(({ gates }) => gates > 0).length,
+    };
+};
 
 // {§cli-status-project-root} {§cli-status-preparation} — the bound workspace's folder, a path the client uses,
 // the daemon's label, and the activity that belongs to the workspace rather than to its worker.
@@ -270,9 +298,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
     if (value.waitUntil !== null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
         throw new TypeError("Invalid runtime wait deadline.");
     }
-    if (!Number.isSafeInteger(value.children) || (value.children as number) < 0) {
-        throw new TypeError(`Invalid runtime children count '${String(value.children)}'.`);
-    }
+    const { children, gated } = treeCounts(value.descendants);
     for (const stamp of [value.claimedAt, value.terminatedAt]) {
         if (stamp !== null && (!Number.isSafeInteger(stamp) || (stamp as number) < 0)) throw new TypeError("Invalid runtime loop timing.");
     }
@@ -281,7 +307,8 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
         model: model === null ? null : formatRouteIdentity(model),
         loopId: value.loopId,
         packetCount: value.packetCount,
-        children: value.children as number,
+        children,
+        gated,
         waitUntil: value.waitUntil as number | null,
         spend: spendAccounting(value.spend),
         claimedAt: value.claimedAt as number | null,
@@ -396,6 +423,8 @@ export const renderStatusLine = (
     // {§cli-status-children} — a known zero hides the child segment, including its model override.
     const ant = [...(value.children === null ? [] : [String(value.children)]), ...(context.child === null ? [] : [context.child])];
     if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
+    // {§cli-status-gated} — none waiting, or no gauge, shows nothing.
+    if (value.gated !== null && value.gated > 0) parts.push(`🚦 ${value.gated}`);
     if (value.lifecycle === "parked" && value.waitUntil != null) {
         const seconds = Math.ceil(Math.max(0, value.waitUntil - (context.now ?? Date.now())) / 1000);
         parts.push(seconds === 0 ? "updates due" : `updates in ${formatDuration(seconds * 1000)}`);

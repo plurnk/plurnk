@@ -30,7 +30,7 @@ test("[§cli-worker-history] a snapshot's prompt, operation headings and speech 
         { id: "prompt", role: "user", content: "snapshot prompt\nsecond line", metadata: facts(1, { origin: "_plurnk", op: "SEND", source, attrs: { kind: "message" } }) },
         { id: "1/1/2", role: "assistant", toolCalls: [{ id: "1/1/2", type: "function",
             function: { name: "READ", arguments: JSON.stringify({ target: { kind: "local", raw: "a.md" } }) }, metadata: facts(2, { address: "a.md" }) }] },
-        { id: "1/1/2/result", role: "tool", toolCallId: "1/1/2", content: JSON.stringify({ status: 200 }), metadata: facts(2, { address: "a.md" }) },
+        { id: "1/1/2/result", role: "tool", toolCallId: "1/1/2", content: JSON.stringify({ status: 200 }) },
         { id: "1/1/3/reasoning", role: "reasoning", content: "OLD_REASONING_NOT_REPLAYED" },
         { id: "1/1/3", role: "assistant", content: "snapshot answer",
             metadata: { plurnk: { ...facts(3, { op: "SEND" }).plurnk, aside: null, receipt: { status: 200, answers: [source], completion: 200 } } } },

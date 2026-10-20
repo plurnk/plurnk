@@ -916,23 +916,24 @@ failures remain causal errors, never a silent replacement rendering mode.
 
 ### §5.0.1 Row sources {§cli-row-sources}
 
-The client draws each row from the standard AG-UI part the row builds, every part carrying the row's facts
-as `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `id`, log `coordinate`,
-`worker`, `origin`, `op`, `source`, the `address` it recorded, `signal`, `status` and `attrs`.
+The client draws each row from the standard AG-UI part the row builds, the row's facts riding once as that
+part's `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `id`, log `coordinate`,
+`worker`, `origin`, `op`, `source`, the `address` it recorded, `signal`, `status` and `attrs`. A call holds
+them; its own receipt repeats none.
 
 | The row | Arrives as | Drawn |
 |---|---|---|
-| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt: text, or a receipt that holds a body as its text part beside the body's document part (plurnk-service `{§agui-body-reference}`), the body never fetched to draw it | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
+| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt and no facts: text, or a receipt that holds a body as its text part beside the body's document part (plurnk-service `{§agui-body-reference}`), the body never fetched to draw it | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
 | A delivered reply, or a WAIT that carries a body | `TEXT_MESSAGE_START/CONTENT/END`, the metadata adding its heading's `aside` and its `receipt` | When the message ends |
 | An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
 | An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§agui-message-acceptance}`) | Never: its arrival, when the Worker observes it, draws it |
-| A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate | On arrival: a reply's words as its body, any other answer as its receipt |
+| A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate, with its own facts | On arrival: a reply's words as its body, any other answer as its receipt |
 | A row that builds no part | `CUSTOM plurnk.ambient`, the whole row | On arrival; an actionless row draws nothing |
 | History | A sync Run's `MESSAGES_SNAPSHOT`: the same parts, as messages | {§cli-worker-history} |
 
 A row's `target` is the address it recorded; its heading shows the target as authored when its statement
-has one (§5.1). A call ended without its receipt, a result with no text, or row facts that are present
-but unreadable are a broken wire (`result-invalid`), never a row skipped.
+has one (§5.1). A call ended without its receipt, a receipt before its call ended, a result with no text, or
+row facts that are present but unreadable are a broken wire (`result-invalid`), never a row skipped.
 
 Text-message identity, role and optional sender name survive projection. The daemon owns whether a
 delivery is speech: the client does not reinterpret recorded reply addresses using its current thread

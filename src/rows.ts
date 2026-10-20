@@ -1,6 +1,7 @@
 // {§cli-row-sources} The rows the waterfall draws, rebuilt from the standard parts a row builds: a tool call and its
-// receipt, a result that answers another row's call, speech, or an arrival, each carrying the row's facts as its
-// metadata (plurnk-service `{§agui-plurnk-metadata}`). A sync Run's `MESSAGES_SNAPSHOT` holds the same parts as messages.
+// receipt, a result that answers another row's call, speech, or an arrival, the row's facts riding once as the metadata
+// of its call, result, speech or arrival, never of a call's own receipt (plurnk-service `{§agui-plurnk-metadata}`). A sync
+// Run's `MESSAGES_SNAPSHOT` holds the same parts as messages.
 // A row that builds nothing in the conversation arrives whole as `CUSTOM plurnk.ambient`, as `log.read` returns every
 // row; each becomes the same row.
 
@@ -154,14 +155,18 @@ export default class RowAssembler {
             }
             case "TOOL_CALL_RESULT": {
                 const facts = factsOf(e.metadata);
-                if (facts === null) return [];
-                // The daemon answers a call in text: its receipt as JSON, or the words a reply delivered.
-                const content = textOf(e.content, e.toolCallId);
                 const call = this.#calls.get(e.toolCallId);
-                if (call?.ended === true && call.facts.id === facts.id) {
+                // A call's own receipt repeats none of the facts its call holds; one for a call that built no row, such as a
+                // client interaction's answer, draws nothing.
+                if (facts === null) {
+                    if (call === undefined) return [];
+                    if (!call.ended) throw new ProblemError(clientTransportResultInvalid(`The call ${e.toolCallId} was answered before it ended.`));
                     this.#calls.delete(e.toolCallId);
-                    return [rowOf(facts, this.#statement(call.args), valueOf(content))];
+                    // The daemon answers a call in text: its receipt as JSON.
+                    return [rowOf(call.facts, this.#statement(call.args), valueOf(textOf(e.content, e.toolCallId)))];
                 }
+                // Or the words a reply delivered, or what another row received.
+                const content = textOf(e.content, e.toolCallId);
                 this.#unanswered();
                 // plurnk-service `{§agui-call-result}`: what another row delivered for the call, a reply's words or what was observed.
                 return [facts.op === "SEND" ? rowOf(facts, { body: bodyOf("SEND", content) }, null) : rowOf(facts, null, valueOf(content))];

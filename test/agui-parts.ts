@@ -1,5 +1,6 @@
 // What the daemon sends for one row (plurnk-service {§agui-projection}, {§agui-plurnk-metadata}): the standard part
-// the row builds, carrying the row's facts, or the whole row as CUSTOM plurnk.ambient when it builds none.
+// the row builds, carrying the row's facts once, never on a call's own receipt, or the whole row as CUSTOM plurnk.ambient
+// when it builds none.
 
 import type { AguiEvent } from "../src/agui.ts";
 import { objectOf, type LogEntryWire } from "../src/render.ts";
@@ -28,8 +29,9 @@ const answeredLater = (row: PartRow): boolean => {
     return row.state === "proposed" || ((typeof attrs?.stream === "string" || typeof attrs?.message === "string") && (row.status_rx ?? 200) < 400);
 };
 
-const receiptOf = (row: PartRow, id: string, metadata: unknown): AguiEvent =>
-    ({ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}/result`, content: row.rx === undefined || row.rx === null ? "" : JSON.stringify(row.rx), metadata }) as AguiEvent;
+// A call's own receipt: its call holds the row's facts.
+const receiptOf = (row: PartRow, id: string): AguiEvent =>
+    ({ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}/result`, content: row.rx === undefined || row.rx === null ? "" : JSON.stringify(row.rx) }) as AguiEvent;
 
 // A tool call and its receipt; a call answered later ends without one.
 export const callOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
@@ -39,7 +41,7 @@ export const callOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
         { type: "TOOL_CALL_START", toolCallId: id, toolCallName: row.op, metadata },
         { type: "TOOL_CALL_ARGS", toolCallId: id, delta: JSON.stringify(operands) },
         { type: "TOOL_CALL_END", toolCallId: id },
-        ...(answeredLater(row) ? [] : [receiptOf(row, id, metadata)]),
+        ...(answeredLater(row) ? [] : [receiptOf(row, id)]),
     ] as AguiEvent[];
 };
 
@@ -50,7 +52,7 @@ export const settlementOf = (row: PartRow, id = coordinate(row)): AguiEvent[] =>
     return [
         { type: "TOOL_CALL_START", toolCallId: id, toolCallName: row.op, metadata },
         { type: "TOOL_CALL_END", toolCallId: id },
-        ...(answeredLater(row) ? [] : [receiptOf(row, id, metadata)]),
+        ...(answeredLater(row) ? [] : [receiptOf(row, id)]),
     ] as AguiEvent[];
 };
 
@@ -134,8 +136,8 @@ export const presentedRow = (row: LogEntryWire, thread = "t"): LogEntryWire => {
     return { ...row, message: partsOf(row, thread).flatMap((event) => assembler.consume(event))[0]?.message };
 };
 
-// The snapshot messages the daemon sends for one row (plurnk-service `{§agui-snapshot}`): the same parts, each with
-// the row's facts; a row that builds none has no message.
+// The snapshot messages the daemon sends for one row (plurnk-service `{§agui-snapshot}`): the same parts, with the row's
+// facts as they carry them live; a row that builds none has no message.
 export const messagesOf = (row: PartRow, thread = "t"): Array<Record<string, unknown>> => {
     const id = coordinate(row);
     const metadata = { plurnk: factsOf(row) };
@@ -148,7 +150,7 @@ export const messagesOf = (row: PartRow, thread = "t"): Array<Record<string, unk
         const { op: _op, position: _position, ...operands } = objectOf(row.tx) ?? {};
         return [
             { id, role: "assistant", toolCalls: [{ id, type: "function", function: { name: row.op, arguments: JSON.stringify(operands) }, metadata }] },
-            ...(answeredLater(row) ? [] : [{ id: `${id}/result`, role: "tool", toolCallId: id, content: JSON.stringify(row.rx ?? null), metadata }]),
+            ...(answeredLater(row) ? [] : [{ id: `${id}/result`, role: "tool", toolCallId: id, content: JSON.stringify(row.rx ?? null) }]),
         ];
     }
     if (row.op === "SEND" && objectOf(row.attrs)?.kind === "message") {

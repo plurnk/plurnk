@@ -16,6 +16,7 @@ const read = { id: 4, op: "READ", origin: "model", loop_seq: 2, turn_seq: 3, seq
 test("[§cli-row-sources] a call and its receipt are one row, drawn when the receipt arrives; a call that opened an obligation at its end", () => {
     const rows = new RowAssembler();
     const [start, args, end, result] = callOf(read);
+    assert.equal((result as { metadata?: unknown }).metadata, undefined, "the call holds the row's facts; its receipt repeats none");
     assert.deepEqual(drawn([start!, args!, end!], rows), [], "nothing is drawn before the receipt");
     const [row] = drawn([result!], rows);
     assert.deepEqual([row?.id, row?.op, row?.origin, row?.worker_id, row?.status_rx], [4, "READ", "model", 7, 200]);
@@ -68,7 +69,7 @@ test("[§cli-row-sources] a result that answers another row's call is that row: 
     assert.deepEqual([concluded?.op, concluded?.target, concluded?.rx], ["READ", "ops://helper/1", conclusion]);
 });
 
-test("[§cli-row-sources] a call ended without its receipt, a result with no text, or unreadable facts are a broken wire; an interrupt's call is no row", () => {
+test("[§cli-row-sources] a call ended without its receipt, a receipt before its call ended, a result with no text, or unreadable facts are a broken wire; an interrupt's call is no row", () => {
     const broken = (events: AguiEvent[]): void => assert.throws(() => drawn(events),
         (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
     const [start, args, end] = callOf(read);
@@ -77,11 +78,13 @@ test("[§cli-row-sources] a call ended without its receipt, a result with no tex
     const [, , , result] = callOf(read);
     broken([start!, args!, end!, { ...result!, content: [{ type: "document", source: { type: "url", value: "http://agui.test/agui/3/1/log/1/1/4/READ" } }] } as unknown as AguiEvent]);
     broken([start!, args!, end!, { ...result!, content: 5 } as unknown as AguiEvent]);
+    broken([start!, args!, result!]);
     assert.deepEqual(drawn([
         { type: "TOOL_CALL_START", toolCallId: "int:43", toolCallName: "request_user_input" },
         { type: "TOOL_CALL_ARGS", toolCallId: "int:43", delta: "{}" },
         { type: "TOOL_CALL_END", toolCallId: "int:43" },
-    ] as AguiEvent[]), [], "a client interaction's call builds no row");
+        { type: "TOOL_CALL_RESULT", toolCallId: "int:43", messageId: "int:43/result", content: "{\"status\":\"resolved\",\"payload\":null}" },
+    ] as AguiEvent[]), [], "a client interaction's call and its answer build no row");
 });
 
 // plurnk-service {§agui-body-reference}: a receipt that holds a body arrives as its text part beside the body's document part.

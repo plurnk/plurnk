@@ -1129,8 +1129,11 @@ must not send semantic content to an unproven executable.
 
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
-Readable provider reasoning is neither working memory nor assistant speech. The client
-consumes AG-UI's standard `REASONING_MESSAGE_START/CONTENT/END` lifecycle.
+Readable provider reasoning is neither working memory nor assistant speech. Every Run negotiates
+reasoning by link (plurnk-service `{§agui-reasoning-link}`, `forwardedProps.plurnk.reasoning: "link"`):
+the live text arrives as the `plurnk.reasoning` preview of the reasoning message it belongs to, and each
+turn's reasoning travels by its link, a message that draws nothing. AG-UI's standard
+`REASONING_MESSAGE_START/CONTENT/END` text stays a preview source when the text rides the message itself.
 The TUI shows a dim `💭` tail, at most one third of the terminal, below operation
 history and above delivered responses. It disappears when reasoning ends, and the tail belongs to the Run streaming it: when that Run settles
 — by its terminal, by cancellation, or by a lost connection — the tail is retired whether or not its end

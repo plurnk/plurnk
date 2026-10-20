@@ -375,11 +375,12 @@ export const runCliViaAgui = async (
     const noReviewChannel = !capabilities.interactive;
     // Only per-run controls ride this bound Run. Workspace creation and durable worker
     // model selection have already completed ({§cli-workspaces-and-workers}, {§worker-model-selection}).
-    const fp: Record<string, unknown> = {
+    // {§cli-provider-reasoning} The Run negotiates reasoning by link.
+    const forwardedProps: Record<string, unknown> = {
+        reasoning: "link",
         ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
         ...(opts.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
     };
-    const forwardedProps = Object.keys(fp).length > 0 ? fp : undefined;
     const started = Date.now();
     let result: CliRunResult = {
         exitCode: 4, pendingResume: null, gate: null, observedEnd: false, entries: [], notices: diagnostics, response: "",

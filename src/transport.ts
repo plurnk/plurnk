@@ -240,7 +240,8 @@ export class AguiTransport implements Transport {
         void ready.promise.catch(() => {});
         // {§cli-resume-observation} A resume continues the Run it answers: it carries that Run's observation and claim, never
         // a message's own parameters. {plurnk#108} — a session that observes its delegation asks on every Run that observes.
-        const resumeProps: Record<string, unknown> = { ...(this.#workspace.descendants === true ? { descendants: true } : {}), control: true };
+        // {§cli-provider-reasoning} Every Run negotiates reasoning by link.
+        const resumeProps: Record<string, unknown> = { ...(this.#workspace.descendants === true ? { descendants: true } : {}), control: true, reasoning: "link" };
         const fwd: Record<string, unknown> = {
             ...resumeProps,
             ...(opts?.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),

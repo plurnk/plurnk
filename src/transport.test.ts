@@ -381,6 +381,7 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
             plurnk: {
                 interactive: true,
                 control: true,
+                reasoning: "link",
             },
         }, "a bound run carries control policy, not mutable workspace selection or creation options");
         assert.equal((mock.captured[0].body as RunInput).threadId, "42#th");
@@ -788,9 +789,10 @@ test("[§cli-conformance] run preserves explicitly requested file paths", async 
         const paths = ["src/main.ts", "docs/use.md"];
         const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         await transport.run("inspect the referenced files", { openPaths: paths }).done;
-        const input = mock.captured[0].body as { forwardedProps: { plurnk: { control: boolean; openPaths: unknown } } };
+        const input = mock.captured[0].body as { forwardedProps: { plurnk: { control: boolean; openPaths: unknown; reasoning: unknown } } };
         assert.deepEqual(input.forwardedProps.plurnk.openPaths, paths);
         assert.equal(input.forwardedProps.plurnk.control, true);
+        assert.equal(input.forwardedProps.plurnk.reasoning, "link", "[§cli-provider-reasoning] every Run negotiates reasoning by link");
     } finally { await mock.close(); }
 });
 

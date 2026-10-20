@@ -160,7 +160,7 @@ test("[§cli-color-scheme] muted UI and inline code use a ground-aware foregroun
             assert.equal(paint("muted", "dim"), `${foreground}muted\x1b[0m`);
             assert.equal(paint("aside", "dim", "italic"), `\x1b[38;5;${index};3maside\x1b[0m`);
             assert.equal(renderMarkdownDocument("Plain `inline` text.", 80).trimEnd(), `Plain ${foreground}inline\x1b[0m text.`);
-            assert.equal(renderSummary(1, 500, { status: 200 }, false), `${foreground}  done · 1 turn · 500ms\x1b[0m`);
+            assert.equal(renderSummary(1, 500, { status: 200 }, false), `${foreground}🎯 done · 1 turn · 500ms\x1b[0m`);
         });
         assert.equal(withColor("1", () => paint("muted", "dim")), "muted");
     }

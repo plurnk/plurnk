@@ -78,7 +78,7 @@ test("[§cli-color-scheme] the built TUI shares a readable muted foreground acro
                 const foreground = `\x1b[38;5;${index}m`;
                 assert.ok(output.includes(`${foreground}─`), "prompt borders");
                 assert.ok(output.includes(`${foreground}[color-${scheme}/`), "statusline");
-                assert.ok(output.includes(`${foreground}  done · 2 turns ·`), "completion summary");
+                assert.ok(output.includes(`${foreground}🎯 done · 2 turns ·`), "completion summary");
                 assert.ok(output.includes(`Plain ${foreground}inline\x1b[0m text.`), "inline code leaves ordinary response text uncoloured");
             }
             assert.doesNotMatch(output, /\x1b\[2m/, "no terminal-dependent faint text");

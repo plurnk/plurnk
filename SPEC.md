@@ -1169,10 +1169,11 @@ Loop state comes from the daemon's status events, not an inference from a verb o
 ### §5.2 Summary line (per loop) {§cli-summary-line-per-loop}
 
 ```
-  <tag> · <N> turns · <wall>ms · ↓<input> ↑<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<usd to the hundredth of a cent>]
+<lead><tag> · <N> turns · <wall>ms · ↓<input> ↑<output> [· cur <percent>/<budget>] [· ctx <percent>/<capacity>] [· loop $<usd to the hundredth of a cent>]
 ```
 
-`tag` derives from the exact terminal `OperationResult`. A 500 is `strike-out` only for `engine/rails/strike-threshold`; another 500 is `failed`.
+`tag` derives from the exact terminal `OperationResult`; `lead` is `🎯 ` for a success (`done`) and two spaces
+for every other tag. A 500 is `strike-out` only for `engine/rails/strike-threshold`; another 500 is `failed`.
 A summary follows exactly one loop terminal. An observation that ends without one — the sync Run
 completing, the daemon stopping, a credential revoked, a dead wire, this client's own hangup — is no
 loop outcome: no summary, no usage, no tally, no lifecycle change; its Problem is diagnosed as it arrives

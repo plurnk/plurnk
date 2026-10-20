@@ -453,10 +453,15 @@ const terminalResult = (status: number, type?: string) => status >= 400 ? {
     },
 } : { status };
 
-test("renderSummary: success → 'done'", () => {
+test("{§cli-summary-line-per-loop} renderSummary: a success leads with 🎯 as 'done'; every other tag keeps the indent", () => {
     const s = renderSummary(1, 500, terminalResult(200), false, usage(10, 5));
-    assert.match(s, /done/);
-    assert.match(s, /1 turn /);
+    assert.match(s, /🎯 done · 1 turn /);
+    for (const [status, tag] of [[500, "failed"], [413, "budget overflow"], [429, "turn ceiling"], [499, "cancelled"], [508, "loop detected"], [504, "final 504"]] as const) {
+        const other = renderSummary(1, 500, terminalResult(status), false);
+        assert.match(other, new RegExp(`  ${tag} · 1 turn `, "u"), tag);
+        assert.doesNotMatch(other, /🎯/u, `${tag} carries no target`);
+    }
+    assert.doesNotMatch(renderSummary(50, 500, terminalResult(200), true), /🎯/u, "maxTurns is no success tag");
 });
 
 test("{§cli-cancellation} renderSummary: a hung-up run says turns unknown, never zero", () => {

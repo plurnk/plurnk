@@ -500,5 +500,7 @@ export const renderSummary = (turns: number | null, wallMs: number, result: Oper
         if (cost.length > 0) tokenPart += ` · loop ${cost}`;
     }
     const turnPart = turns === null ? "turns unknown" : `${turns} turn${turns === 1 ? "" : "s"}`;
-    return paint(`  ${tag} · ${turnPart} · ${ms}${tokenPart}`, "dim");
+    // {§cli-summary-line-per-loop} A success leads with 🎯 in the indent's place.
+    const lead = tag === "done" ? "🎯 " : "  ";
+    return paint(`${lead}${tag} · ${turnPart} · ${ms}${tokenPart}`, "dim");
 };

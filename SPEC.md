@@ -587,7 +587,7 @@ disconnecting never cancels work ({§agui-run-disconnect}).
 
 | Surface | History behavior |
 |---|---|
-| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the bound worker's whole conversation, supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. |
+| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the window of the bound worker's conversation (plurnk-service `{§agui-history-window}`), supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A snapshot the daemon sends again during a Run (plurnk-service `{§agui-history-advance}`) changes nothing already drawn. |
 | Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |

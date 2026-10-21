@@ -20,8 +20,7 @@ const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     // Joins SHARED when the contracts release that declares it on the shared panel is the one installed here.
     ["PLURNK_SECRET", "@plurnk/plurnk-contracts — the operator's client secret on the shared panel; unset, the client reads the daemon's minted file"],
-    ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, retained in a private resume command"],
-    ["PLURNK_SERVICE_STATE_ROOT", "@plurnk/plurnk-core — the selected service's storage root, passed through its public launcher"],
+    ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, beside which the client reads the secret it minted"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
 ]);
 

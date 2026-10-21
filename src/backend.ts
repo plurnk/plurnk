@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, realpath } from "node:fs/promises";
+import { access, readFile, realpath } from "node:fs/promises";
+import { request } from "node:http";
 import { createRequire } from "node:module";
 import { connect, isIP } from "node:net";
 import { homedir } from "node:os";
@@ -15,7 +15,8 @@ const SERVICE = "@plurnk/plurnk-service";
 interface Daemon {
     readonly url: string;
     readonly dbPath: string;
-    stop(): Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+    readonly child: { readonly pid?: number };
+    readonly logFile: string | null;
 }
 
 interface Launcher {
@@ -23,13 +24,19 @@ interface Launcher {
         command: readonly string[];
         env: NodeJS.ProcessEnv;
         cwd: string;
-        stateRoot?: string;
         host: string;
         port: number;
-        lifetime: "private";
+        lifetime: "shared";
         readyTimeoutMs: number;
         stopGraceMs: number;
     }): Promise<Daemon>;
+}
+
+/** The service an invocation started and left running. */
+export interface StartedService {
+    readonly pid: number | null;
+    readonly url: string;
+    readonly logFile: string | null;
 }
 
 const hasCode = (cause: unknown, code: string): boolean =>
@@ -95,78 +102,99 @@ export const isLoopback = (hostname: string): boolean => {
 // Only ECONNREFUSED means there is no listener. A slow, unavailable, foreign, or rejecting
 // endpoint is not permission to substitute an unrelated environment. A live listener still
 // has to satisfy the ordinary AG-UI protocol; this probe establishes no identity or authority.
-export const listenerPresent = (url: URL, timeoutMs: number): Promise<boolean> => {
-    if (url.port === "0") return Promise.resolve(false);
-    return new Promise<boolean>((accept, reject) => {
-        const socket = connect({ host: url.hostname.replace(/^\[|\]$/gu, ""), port: Number(url.port || (url.protocol === "https:" ? 443 : 80)) });
-        socket.once("connect", () => { socket.destroy(); accept(true); });
-        socket.once("error", (cause) => { socket.destroy(); hasCode(cause, "ECONNREFUSED") ? accept(false) : reject(cause); });
-        socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error(`Connection to ${url.origin} timed out.`)); });
+export const listenerPresent = (url: URL, timeoutMs: number): Promise<boolean> => new Promise<boolean>((accept, reject) => {
+    const socket = connect({ host: url.hostname.replace(/^\[|\]$/gu, ""), port: Number(url.port || (url.protocol === "https:" ? 443 : 80)) });
+    socket.once("connect", () => { socket.destroy(); accept(true); });
+    socket.once("error", (cause) => { socket.destroy(); hasCode(cause, "ECONNREFUSED") ? accept(false) : reject(cause); });
+    socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error(`Connection to ${url.origin} timed out.`)); });
+});
+
+// How often an attach looks again at a service that is still starting.
+const ADMISSION_POLL_MS = 100;
+
+// {§cli-daemon-autostart} A service owns its listener before it admits clients, answering 503
+// `service-starting` until then; an attach waits for admission within the startup deadline. The probe is
+// one OPTIONS on its own connection, which an admitted service answers before any authentication. Any
+// other answer, or none (a listener that is not HTTP), is the AG-UI caller's to judge.
+const starting = (aguiUrl: string, timeoutMs: number): Promise<boolean> => new Promise((accept) => {
+    const probe = request(aguiUrl, { method: "OPTIONS", agent: false, timeout: timeoutMs }, (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => { text += chunk; });
+        response.on("error", () => accept(false));
+        response.on("end", () => {
+            if (response.statusCode !== 503) { accept(false); return; }
+            try {
+                const body: unknown = JSON.parse(text);
+                accept(typeof body === "object" && body !== null && "type" in body
+                    && typeof body.type === "string" && body.type.endsWith("/http/service-starting"));
+            } catch { accept(false); }
+        });
     });
+    probe.on("timeout", () => { probe.destroy(); accept(false); });
+    probe.on("error", () => accept(false));
+    probe.end();
+});
+
+const admitted = async (aguiUrl: string, timeoutMs: number): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    while (await starting(aguiUrl, timeoutMs) && Date.now() < deadline) {
+        await new Promise((accept) => setTimeout(accept, ADMISSION_POLL_MS));
+    }
 };
 
-// {§cli-daemon-autostart} — one invocation owns at most one backend. Persistent state and
-// process ownership are separate: close never deletes user data or stops an attached service.
+const unshareablePort = (): ProblemError => new ProblemError(clientProblem(
+    "daemon", "port-unshareable", 400, "Autostart needs the service's port; PLURNK_PORT is 0.",
+    { hints: ["Set PLURNK_PORT to the port the service listens on, or PLURNK_AGUI_URL to attach to a running one."] },
+), 64);
+
+// What a failed start said: its stderr, or the shared log's lines when that is where both streams went.
+const startOutput = (cause: unknown): string => cause instanceof Error && "stderr" in cause && "stdout" in cause
+    && typeof cause.stderr === "string" && typeof cause.stdout === "string" ? cause.stderr.trim() || cause.stdout.trim() : "";
+
+// {§cli-daemon-autostart} — one service per configuration. The client attaches to the one listening at
+// its address, or starts it once with the launcher's shared lifetime and leaves it running for every
+// later client; it never stops a service.
 export default class Backend {
     readonly target: AguiTarget;
-    readonly database: string | null;
-    readonly resumeEnv: Readonly<Record<string, string>>;
-    readonly allocatedStorage: boolean;
-    readonly #daemon: Daemon | null;
-    #closing: Promise<void> | undefined;
+    // The service this invocation started, for its notice; null when it attached to one already running.
+    readonly started: StartedService | null;
 
-    private constructor(target: AguiTarget, daemon: Daemon | null, resumeEnv: Readonly<Record<string, string>> = {}, allocatedStorage = false) {
+    private constructor(target: AguiTarget, started: StartedService | null = null) {
         this.target = target;
-        this.database = daemon?.dbPath ?? null;
-        this.resumeEnv = resumeEnv;
-        this.allocatedStorage = allocatedStorage;
-        this.#daemon = daemon;
+        this.started = started;
     }
 
     static async open(target: AguiTarget, env: NodeJS.ProcessEnv = process.env): Promise<Backend> {
         const url = new URL(target.aguiUrl);
         if ((env.PLURNK_AGUI_URL ?? "").length > 0 || !isLoopback(url.hostname)
-            || !Knobs.flag("PLURNK_CLIENT_AUTOSTART", "live", env)) return new Backend(target, null);
+            || !Knobs.flag("PLURNK_CLIENT_AUTOSTART", "live", env)) return new Backend(target);
         const timeout = Knobs.count("PLURNK_CLIENT_DAEMON_TIMEOUT_MS", env);
-        const grace = Knobs.count("PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS", env);
         if (timeout === 0) throw new KnobError("PLURNK_CLIENT_DAEMON_TIMEOUT_MS", String(timeout), "must be positive.");
-        if (grace === 0) throw new KnobError("PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS", String(grace), "must be positive.");
-        if (await listenerPresent(url, timeout)) return new Backend(target, null);
-        const { command, launch } = await serviceInstallation(env);
-        let stateRoot = env.PLURNK_SERVICE_STATE_ROOT || undefined;
-        const allocatedStorage = stateRoot === undefined && !(env.PLURNK_SERVICE_DB_PATH ?? "").length;
-        if (allocatedStorage) {
-            const data = env.XDG_DATA_HOME;
-            const root = join(data !== undefined && isAbsolute(data) ? data : join(homedir(), ".local", "share"), "plurnk", "instances");
-            await mkdir(root, { recursive: true, mode: 0o700 });
-            stateRoot = await mkdtemp(join(root, "client-"));
+        if (url.port === "0") throw unshareablePort();
+        if (await listenerPresent(url, timeout)) {
+            await admitted(target.aguiUrl, timeout);
+            return new Backend(target);
         }
-        // {§cli-credential} — a private backend gets the operator's secret this client minted for it.
-        const secret = randomBytes(32).toString("hex");
-        const daemon = await launch.start({
-            command, env: { ...env, PLURNK_SECRET: secret }, cwd: process.cwd(), stateRoot,
-            host: "127.0.0.1", port: 0, lifetime: "private", readyTimeoutMs: timeout, stopGraceMs: grace,
-        }).catch((cause: unknown) => {
-            if (!(cause instanceof Error) || !("stderr" in cause) || typeof cause.stderr !== "string" || !cause.stderr.trim()) throw cause;
-            throw new Error(`${cause.message}\n${cause.stderr.trim()}`, { cause });
-        });
-        const resumeEnv = {
-            PLURNK_AGUI_URL: "",
-            PLURNK_HOST: "127.0.0.1",
-            PLURNK_PORT: "0",
-            ...(stateRoot === undefined ? {} : { PLURNK_SERVICE_STATE_ROOT: stateRoot }),
-            PLURNK_SERVICE_DB_PATH: daemon.dbPath,
-        };
-        return new Backend({ aguiUrl: daemon.url, credential: new Credential(secret) }, daemon, resumeEnv, allocatedStorage);
+        const { command, launch } = await serviceInstallation(env);
+        let daemon: Daemon;
+        try {
+            daemon = await launch.start({
+                command, env, cwd: homedir(), host: url.hostname.replace(/^\[|\]$/gu, ""), port: Number(url.port),
+                lifetime: "shared", readyTimeoutMs: timeout, stopGraceMs: timeout,
+            });
+        } catch (cause) {
+            // A concurrent first launch that won the address serves this client too.
+            if (await listenerPresent(url, timeout)) {
+                await admitted(target.aguiUrl, timeout);
+                return new Backend({ ...target, credential: Credential.fromEnvironment(env) ?? target.credential });
+            }
+            const said = startOutput(cause);
+            if (said.length === 0 || !(cause instanceof Error)) throw cause;
+            throw new Error(`${cause.message}\n${said}`, { cause });
+        }
+        // {§cli-credential} — the secret the started service minted beside its database.
+        const credential = Credential.fromFile(join(dirname(daemon.dbPath), "secret")) ?? target.credential;
+        return new Backend({ aguiUrl: daemon.url, credential }, { pid: daemon.child.pid ?? null, url: daemon.url, logFile: daemon.logFile });
     }
-
-    close(): Promise<void> {
-        return this.#closing ??= (async () => {
-            if (this.#daemon === null) return;
-            const { code, signal } = await this.#daemon.stop();
-            if (code !== 0 || signal !== null) throw new Error(`Private service shutdown failed (code ${code}, signal ${signal}).`);
-        })();
-    }
-
-    [Symbol.asyncDispose](): Promise<void> { return this.close(); }
 }

@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-18" "plurnk 4.2.0" "User Commands"
+.TH PLURNK 1 "2026-10-20" "plurnk 4.2.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -25,10 +25,12 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
        plurnk schedule [subcommand]
 .fi
 .SH DESCRIPTION
-Connects to plurnk-service, starting an installed private backend if the
-default
-local listener is absent. The private process stops on exit; saved data
-remains.
+Connects to plurnk-service at its configured address, starting the
+installed
+service
+there when nothing listens; it keeps running after this client
+(plurnk-service stop ends
+it).
 Run a single prompt
 one-shot
 (positional args, piped stdin, or both — positionals come first,
@@ -54,7 +56,10 @@ loop.
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Overrides PLURNK_CLIENT_WORKER (user in CLI and TUI).
+                          Overrides PLURNK_CLIENT_WORKER. Unset, the TUI binds
+                          --tui-worker and a one-shot a new worker of its own.
+      --tui-worker <name>  the worker the TUI binds when no worker is selected.
+                          Overrides PLURNK_CLIENT_TUI_WORKER (user).
       --model <selector>  persistently select the worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -63,10 +68,9 @@ loop.
       --effort <level>    persistently select the worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
-      --autostart <0|1>   start a private installed backend if the local listener is
-                          absent (1), or require attachment (0).
+      --autostart <0|1>   start the installed service when nothing listens at the
+                          configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
-      --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
       --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
       --cancel-grace-ms <n> positive grace after loop.cancel before hanging up on the run, in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
@@ -208,9 +212,9 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         tokens; unset, the client reads the secret a daemon running as
                         you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
-                        1 (default): start a private installed backend on local
-                        connection refusal. 0: attach only. Explicit AG-UI URLs
-                        and remote hosts are always attach-only.
+                        1 (default): start the installed service on local
+                        connection refusal and leave it running. 0: attach only.
+                        Explicit AG-UI URLs and remote hosts are always attach-only.
 .fi
 .SH EXIT STATUS
 .TP

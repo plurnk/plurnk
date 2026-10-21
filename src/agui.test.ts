@@ -271,7 +271,7 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     try {
         for (const auto of [false, true]) {
-            await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, yolo: true, auto, json: true, statusStream: false });
+            await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", yolo: true, auto, json: true, statusStream: false });
         }
         const declared = mock.captured.map(({ body }) => {
             const run = body as { tools: { name: string }[]; forwardedProps: { plurnk: { interactive?: boolean } } };
@@ -301,6 +301,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgu
             lifetime,
             threadId: "7#w",
             workspace: { id: 7, name: "w" },
+            worker: "w",
             maxTurns: 7,
             openPaths: ["README.md", "src/index.ts"],
             yolo: true,
@@ -348,6 +349,7 @@ test("[§cli-workspaces-and-workers] a worker's JSON record retains its workspac
             lifetime,
             threadId: "user",
             workspace: { id: 7, name: "workspace" },
+            worker: "user",
             yolo: true,
             auto: false,
             json: true,
@@ -395,7 +397,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
         return true;
     };
     try {
-        const code = await runCliViaAgui({ aguiUrl: mock.url }, "spin forever", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false });
+        const code = await runCliViaAgui({ aguiUrl: mock.url }, "spin forever", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -424,7 +426,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, yolo: true, auto: false, json: true, statusStream: false });
+        const code = await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", yolo: true, auto: false, json: true, statusStream: false });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");

@@ -57,12 +57,12 @@ Options:
 | `-h`, `--help` | flag | Print usage, exit 0 |
 | `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, structured errors; interactive OAuth instructions use stderr. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
-| `--worker <name>` | string | Resume (or create) the named worker within the workspace. Overrides `PLURNK_CLIENT_WORKER` (shipped `user` in CLI and TUI). See §1.1. |
+| `--worker <name>` | string | Resume (or create) the named worker within the workspace, in either mode. Overrides `PLURNK_CLIENT_WORKER`, which ships unset. See §1.1. |
+| `--tui-worker <name>` | string | The worker the TUI, scripts and subcommands bind when no worker is selected. Overrides `PLURNK_CLIENT_TUI_WORKER` (shipped `user`). See §1.1. |
 | `--model <selector>` | string | Persist a declared alias or exact `provider/model` route on the worker before its first loop. See §1.2. Overrides `PLURNK_CLIENT_MODEL`. |
 | `--effort <policy>` | string | Persist the daemon-validated effort on the worker before its first loop. See §1.2.3. Overrides `PLURNK_CLIENT_EFFORT`. |
-| `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: permit private local startup or require attachment. See {§cli-daemon-autostart}. |
+| `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: start the installed service when nothing listens, or require attachment. See {§cli-daemon-autostart}. |
 | `--daemon-timeout-ms <n>` | string | Positive connection/startup limit; overrides `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`. |
-| `--daemon-stop-timeout-ms <n>` | string | Positive owned-service shutdown grace; overrides `PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS`. |
 | `--oauth-timeout-ms <n>` | string | Positive browser OAuth callback deadline; overrides `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. See {§cli-mcp-oauth-callback}. |
 | `--cancel-grace-ms <n>` | string | Positive grace after `loop.cancel` is acknowledged before the client hangs up on the run; overrides `PLURNK_CLIENT_CANCEL_GRACE_MS`. See {§cli-cancellation}. |
 | `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
@@ -103,39 +103,35 @@ The client package declares the service as an optional dependency. A normal
 install includes it; `--omit=optional` preserves client-only use with an explicit
 endpoint or separately installed service. Runtime startup never downloads it.
 
-The client uses the service's public `@plurnk/plurnk-service/launch` interface;
-it does not implement a second daemon supervisor. Process ownership and data
-retention are separate.
+There is one service per configuration. The client attaches to it, or starts it
+once and leaves it running for every later client; the client never stops a
+service. It uses the service's public `@plurnk/plurnk-service/launch` interface
+and implements no second daemon supervisor.
 
 | Connection/configuration | Behavior |
 |---|---|
-| Ordinary loopback host/port has a listener | Attach; ordinary AG-UI validation still applies. Never stop that service. |
-| Ordinary loopback connection is refused; `PLURNK_CLIENT_AUTOSTART=1` | Start an installed private service on an allocated loopback port with an invocation-local bearer. Each client owns a separate process. |
+| The configured loopback host/port has a listener | Attach; ordinary AG-UI validation still applies. |
+| That listener answers 503 `service-starting` | The service owns its address but has not admitted clients yet; wait for admission within `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`, then attach. |
+| The configured loopback connection is refused; `PLURNK_CLIENT_AUTOSTART=1` | Start the installed service on that address with the launcher's `shared` lifetime and the service's own storage, then attach. It keeps running after the client exits; `plurnk-service stop` ends it. |
+| A start that loses the address to a concurrent first launch | Attach to the service that won it. |
+| The configured port is `0` with autostart on | Usage Problem `client/daemon/port-unshareable` (exit 64): a service on an allocated port is unreachable by a later client. |
 | Explicit `PLURNK_AGUI_URL`, remote host, or autostart disabled | Attach only. Failure never creates a substitute environment. |
 | Timeout, DNS/routing failure, authentication rejection, or invalid protocol | Preserve the failure; do not interpret it as an absent service. |
-| Explicit loopback port `0` | Start privately on an allocated port; do not look for a shared listener. |
 
-Configuration comes from the ordinary cascade. Resolve the installed service
-package, or its executable on `PATH`; `PLURNK_CLIENT_SERVICE_BIN` explicitly
-selects an installation. The executable and launcher must come from the same
-package. Missing installation is an actionable failure, never an automatic
-download. Readiness and shutdown use the positive millisecond limits in the
-client's `.env.defaults`. The shipped shutdown grace exceeds the service's
-shipped teardown budget; an operator increasing that budget must also allow
-enough client grace. A grace is a ceiling, not a delay after a clean exit.
-
-| Private backend boundary | Guarantee |
-|---|---|
-| Storage | Honor an explicit service state root/database. Otherwise allocate a unique root under `$XDG_DATA_HOME/plurnk/instances` (standard home fallback). Keep the service's existing database/workspace model and exclusive database lock. |
-| Normal, failed, or interrupted invocation | Stop and await the owned service before exit. CLI interruption flushes its partial record first; TUI restores the terminal and closes its transport before waiting. A signal during startup cannot admit a prompt after shutdown begins. |
-| Retention | Exit never deletes private data. Text mode identifies the database; JSON stdout/stderr semantics stay unchanged. The TUI's resume command includes the exact storage binding and private port selection, not the temporary bearer. |
-| Multiple clients | No implicit rendezvous, shared background service, or reference counting. Sharing requires an explicitly running service. |
-
-The service launcher cleans failed acquisition. Shutdown errors remain visible:
-an owned service's nonzero exit or signal termination rejects client cleanup,
-including a grace-expiry SIGKILL. Repeated cleanup retains the same outcome.
-Forced process death (`SIGKILL`, host failure) cannot run graceful cleanup.
-Help, version, completion and local rendering do not acquire a backend.
+Configuration comes from the ordinary cascade, and the started service reads its
+own: its database, port, secret and log are the ones `plurnk-service start`
+would use, the log being the service's `<state dir>/service.log`. Resolve the
+installed service package, or its executable on `PATH`;
+`PLURNK_CLIENT_SERVICE_BIN` explicitly selects an installation. The executable
+and launcher must come from the same package. Missing installation is an
+actionable failure, never an automatic download. Readiness uses the positive
+`PLURNK_CLIENT_DAEMON_TIMEOUT_MS`, and a start that fails is stopped and awaited
+by the launcher within the same limit. The client dials a service it started
+with the secret that service minted beside its database ({§cli-credential}).
+Text mode reports the start as `client:daemon:started`, naming the service's
+pid, address and log and how to stop it; JSON stdout/stderr semantics stay
+unchanged. Help, version, completion and local rendering do not acquire a
+backend.
 
 ### §1.1 Workspaces and workers {§cli-workspaces-and-workers}
 
@@ -148,7 +144,7 @@ Workspaces and workers are daemon-owned. Names select; IDs identify.
 | Bound requests | `threadId` is `<workspace ID>#<worker name>` ({§agui-thread-binding}); no workspace label or creation options are resent. |
 | Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. |
 | Workspace switch | Acquire first, then replace the binding. A failed acquisition preserves the previous conversation. |
-| Worker selection | `--worker` overrides `PLURNK_CLIENT_WORKER`, shipped as `user` for CLI and TUI, including workspace switches. A worker selection needs no explicit workspace. |
+| Worker selection | `--worker` overrides `PLURNK_CLIENT_WORKER`, the worker an invocation binds in either mode, which ships unset. Unset, the TUI (workspace switches included), scripts and subcommands bind `PLURNK_CLIENT_TUI_WORKER` (`--tui-worker`, shipped `user`), and a one-shot prompt binds a new worker of its own: twelve random lowercase hexadecimal characters, which text mode reports as `client:worker:new` and the JSON record carries as `worker`, so `--worker` can continue it. A worker selection needs no explicit workspace. |
 | Worker switch/fork | Change the worker name within the same workspace ID. No client-side thread alias table. |
 | Inspection | `workspace.attach` resolves the selected literal name, or the launch/project folder's daemon-derived default. Absence fails without creating a workspace or asking for a creation folder. Worker reads resolve the selected name through `workspace.workers`; absence never falls back. |
 
@@ -174,10 +170,9 @@ under the worker's previous policy.
 The daemon alone owns provider configuration, credentials, alias declarations, and its `PLURNK_MODEL` seed. A client connected to a local or remote daemon has the same contract.
 
 When the initial worker has no selected model, the TUI emits one startup warning
-pointing to `/models`, `/model <selector>`, and README's Models section. It does
-not choose a model or fetch the catalog automatically. When startup allocates
-private storage, its existing informational notice points to the exit resume
-command and README's Service section; explicit storage bindings receive no such hint.
+that names the provider API key the backend needs, then `/models` and
+`/model <selector>`, and links README's Models section. It does not choose a
+model or fetch the catalog automatically.
 
 The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the resolved durable route. `providers.list` remains the small declared-alias directory used for bare-fragment completion; a `/model` or `/child` fragment holding a provider prefix (`openai/…`) completes lazily from one bounded provider-scoped `models.list` page, cached per provider for the session — the client never preloads or owns the catalog. `/models [search]` and `plurnk models` lazily query `models.list`; no model catalog is fetched at startup or injected into a model packet.
 
@@ -394,7 +389,7 @@ Standard Unix discipline: **stdout is the program's product, stderr is its narra
   history. It still receives durable trace, diagnostics, and the summary.
 
 **json mode (`--json` / `PLURNK_CLIENT_JSON`):**
-- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal}]}]`, `notices`, `usage`, exit metadata. Each op's `target` is the address its row recorded, and its `scope` the daemon's line marker as its ordered coordinate array. `usage` is preserved verbatim from the terminal record: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. The terminal record supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
+- **stdout** - ONE complete document and nothing else: the coherent record of the terminated worker loop - `schemaVersion`, the bound `worker` name, authoritative `workerId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal}]}]`, `notices`, `usage`, exit metadata. Each op's `target` is the address its row recorded, and its `scope` the daemon's line marker as its ordered coordinate array. `usage` is preserved verbatim from the terminal record: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. The terminal record supplies both owning coordinates; the client never combines a terminal loop with a worker inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
 - **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
@@ -1684,8 +1679,8 @@ request then presents `Authorization: Bearer <access token>`. A token is renewed
 once more when the daemon answers `bearer-token-invalid` before any event of a run was seen. A secret
 read from the file is read once more when the daemon answers `invalid_client`, since a restarted
 daemon mints anew, and the exchange is retried with the new line. A daemon that publishes no resource
-metadata authenticates nothing, and the client presents nothing. A private backend the client starts
-receives a secret the client minted, under the same name, and is dialed the same way. The daemon
+metadata authenticates nothing, and the client presents nothing. A service the client starts is
+dialed with the secret it minted beside its database ({§cli-daemon-autostart}). The daemon
 refusing the secret is `client/credential/refused`, whose recovery names the file when one was read;
 metadata that cannot be read is `client/credential/discovery-failed`; both end the invocation as any
 Problem does. With no secret at hand, the client signs in ({§cli-sign-in}).

@@ -21,11 +21,11 @@ complete -c plurnk -l version
 complete -c plurnk -l json
 complete -c plurnk -l workspace
 complete -c plurnk -l worker
+complete -c plurnk -l tui-worker
 complete -c plurnk -l model
 complete -c plurnk -l effort
 complete -c plurnk -l autostart
 complete -c plurnk -l daemon-timeout-ms
-complete -c plurnk -l daemon-stop-timeout-ms
 complete -c plurnk -l oauth-timeout-ms
 complete -c plurnk -l cancel-grace-ms
 complete -c plurnk -l service-bin

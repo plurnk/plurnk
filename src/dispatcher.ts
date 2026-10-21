@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { buildJsonError } from "./cli.ts";
 import { loadFloor } from "./envdefaults.ts";
+import { randomBytes } from "node:crypto";
 import Knobs, { KnobError } from "./knobs.ts";
 import { isColorMode } from "./color.ts";
 import { runCliViaAgui, runExecViaAgui, runScriptViaAgui } from "./agui_cli.ts";
@@ -103,8 +104,8 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        <markdown stdin> | plurnk render [--width <columns>]
 ${COMMANDS.filter(({ group }) => group === "functionality").map(({ usage }) => `       plurnk ${usage.slice(1)}`).join("\n")}
 
-Connects to plurnk-service, starting an installed private backend if the default
-local listener is absent. The private process stops on exit; saved data remains.
+Connects to plurnk-service at its configured address, starting the installed service
+there when nothing listens; it keeps running after this client (plurnk-service stop ends it).
 Run a single prompt one-shot
 (positional args, piped stdin, or both — positionals come first, stdin
 is appended after a blank line). With no positionals and a TTY stdin,
@@ -126,9 +127,9 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         tokens; unset, the client reads the secret a daemon running as
                         you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
-                        1 (default): start a private installed backend on local
-                        connection refusal. 0: attach only. Explicit AG-UI URLs
-                        and remote hosts are always attach-only.
+                        1 (default): start the installed service on local
+                        connection refusal and leave it running. 0: attach only.
+                        Explicit AG-UI URLs and remote hosts are always attach-only.
 
 options:
   -h, --help              print this message and exit
@@ -143,7 +144,10 @@ options:
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --worker <name>        resume (or create) the named worker within the workspace.
-                          Overrides PLURNK_CLIENT_WORKER (user in CLI and TUI).
+                          Overrides PLURNK_CLIENT_WORKER. Unset, the TUI binds
+                          --tui-worker and a one-shot a new worker of its own.
+      --tui-worker <name>  the worker the TUI binds when no worker is selected.
+                          Overrides PLURNK_CLIENT_TUI_WORKER (user).
       --model <selector>  persistently select the worker's model
                           before the first loop (worker.model.set). A selector is
                           a declared alias or exact provider/model route. Without
@@ -152,10 +156,9 @@ options:
       --effort <level>    persistently select the worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
-      --autostart <0|1>   start a private installed backend if the local listener is
-                          absent (1), or require attachment (0).
+      --autostart <0|1>   start the installed service when nothing listens at the
+                          configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
-      --daemon-stop-timeout-ms <n> positive private-backend shutdown grace in milliseconds.
       --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
       --cancel-grace-ms <n> positive grace after loop.cancel before hanging up on the run, in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
@@ -257,7 +260,7 @@ class ClientExit extends Error {
     constructor(code: number) { super("Client invocation ended."); this.code = code; }
 }
 
-// Unwind through the invocation owner before exiting; owned services must be stopped.
+// Unwind through the invocation owner before exiting, so the transports it owns close.
 const dieWith = (code: number, problem: ProblemDetails): never => {
     report(problem);
     throw new ClientExit(code);
@@ -588,11 +591,11 @@ export const CLIENT_OPTIONS = {
     "env-file-if-exists": { type: "string", multiple: true },
     workspace: { type: "string" },
     worker: { type: "string" },
+    "tui-worker": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
     autostart: { type: "string" },
     "daemon-timeout-ms": { type: "string" },
-    "daemon-stop-timeout-ms": { type: "string" },
     "oauth-timeout-ms": { type: "string" },
     "cancel-grace-ms": { type: "string" },
     "service-bin": { type: "string" },
@@ -657,7 +660,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     if (values["mermaid-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS = values["mermaid-timeout-ms"];
     if (values.autostart !== undefined) process.env.PLURNK_CLIENT_AUTOSTART = values.autostart;
     if (values["daemon-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS = values["daemon-timeout-ms"];
-    if (values["daemon-stop-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS = values["daemon-stop-timeout-ms"];
     if (values["oauth-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS = values["oauth-timeout-ms"];
     if (values["cancel-grace-ms"] !== undefined) process.env.PLURNK_CLIENT_CANCEL_GRACE_MS = values["cancel-grace-ms"];
     if (values["service-bin"] !== undefined) process.env.PLURNK_CLIENT_SERVICE_BIN = values["service-bin"];
@@ -765,7 +767,10 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
 
     // Client flags select client behavior. Provider defaults remain daemon-owned.
     const configuredWorkspace = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
-    const workerName = values.worker ?? Knobs.text("PLURNK_CLIENT_WORKER");
+    // {§cli-workspaces-and-workers} — a stated worker binds in either mode; without one, the TUI, scripts and
+    // subcommands bind the TUI's worker and a one-shot gets a new worker of its own.
+    const selectedWorker = values.worker ?? stated("PLURNK_CLIENT_WORKER");
+    const workerName = selectedWorker ?? values["tui-worker"] ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
@@ -807,11 +812,11 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     try {
         // {§cli-credential} {§cli-sign-in} — the operator's secret when one is at hand; otherwise the
         // browser sign-in's grant, with a browser only when a person is at the terminal.
-        backend = await lifetime.own(Backend.open({ aguiUrl: configuredUrl, credential: Credential.fromEnvironment() ?? new SignInCredential({
+        backend = await Backend.open({ aguiUrl: configuredUrl, credential: Credential.fromEnvironment() ?? new SignInCredential({
             write: (text) => { process.stderr.write(text); },
             interactive: !json && process.stdin.isTTY === true && process.stderr.isTTY === true,
             timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS"),
-        }) }));
+        }) });
     } catch (cause) {
         if (lifetime.interrupted) return;
         const flag = cause instanceof KnobError ? cause.knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-") : "";
@@ -831,16 +836,12 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         } : undefined;
     const selectProjectRoot = (name: string | undefined, surface?: TuiSurface): Promise<string | null | undefined> =>
         projectRoots.resolve(name, chooser(surface));
-    if (backend.database !== null && !json) {
+    if (backend.started !== null && !json) {
+        const { pid, url, logFile } = backend.started;
         report({
             source: "client:daemon", kind: "started", level: "info",
-            message: `Private backend; data retained at ${backend.database}`,
-            ...(backend.allocatedStorage && !isSubcommand && prompt.length === 0 ? {
-                hints: [
-                    "Use the resume command printed on exit to return to this session.",
-                    "https://github.com/plurnk/plurnk#service",
-                ],
-            } : {}),
+            message: `Started plurnk-service${pid === null ? "" : ` (pid ${pid})`} at ${url}; it keeps running after this session.`,
+            hints: ["Stop it with plurnk-service stop.", ...(logFile === null ? [] : [`Log: ${logFile}`])],
         });
     }
     let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
@@ -887,7 +888,11 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             const w = await openWorkspace();
-            const threadId = workerThreadId({ workspaceId: w.id, worker: workerName });
+            const oneShotWorker = selectedWorker ?? randomBytes(6).toString("hex");
+            if (selectedWorker === undefined && !json) {
+                report({ source: "client:worker", kind: "new", level: "info", message: `New worker ${oneShotWorker}`, hints: [`Continue it with --worker ${oneShotWorker}`] });
+            }
+            const threadId = workerThreadId({ workspaceId: w.id, worker: oneShotWorker });
             let code: number;
             if (command !== null) {
                 // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
@@ -940,6 +945,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     lifetime,
                     threadId,
                     workspace: w,
+                    worker: oneShotWorker,
                     ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
                     ...(maxTurns !== undefined ? { maxTurns } : {}),
                     ...(openPaths.length === 0 ? {} : { openPaths }),
@@ -991,7 +997,6 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             const { runTui } = await import("./tui.ts");
             await runTui(transport, w, {
                 lifetime,
-                resumeEnv: backend.resumeEnv,
                 modelSelector,
                 modelExplicit: values.model !== undefined,
                 effort,

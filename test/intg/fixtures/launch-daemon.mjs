@@ -10,13 +10,8 @@ const witness = process.env.LAUNCH_WITNESS;
 const state = { pid: process.pid, root, home: process.env.HOME, model: process.env.PLURNK_MODEL };
 writeFileSync(witness, JSON.stringify(state));
 process.on("SIGTERM", () => {
-    const finish = () => {
-        writeFileSync(`${witness}.stopped`, JSON.stringify({ rootExists: existsSync(root) }));
-        process.exit(Number(process.env.LAUNCH_STOP_CODE || "0"));
-    };
-    const delay = Number(process.env.LAUNCH_STOP_DELAY_MS || "0");
-    if (delay > 0) setTimeout(finish, delay);
-    else finish();
+    writeFileSync(`${witness}.stopped`, JSON.stringify({ rootExists: existsSync(root) }));
+    process.exit(0);
 });
 
 if (process.env.LAUNCH_CASE === "exit") {

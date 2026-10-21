@@ -1,4 +1,4 @@
-// {§cli-daemon-autostart} — process termination waits for invocation-owned resources.
+// {§cli-interrupted-record} — process termination waits for invocation-owned resources.
 // A foreground surface may handle interrupts first (for example, flushing a CLI record).
 // Before and after that surface, the same owner handles interruption during admission.
 const EXIT_CODES = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 } as const;

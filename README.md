@@ -71,9 +71,10 @@ folder names the workspace after itself. No folder (`--project-root=`) needs
 
 Give it a task in ordinary language. The model uses the operation language;
 you do not need to learn it to use Plurnk. If no model is selected, follow the
-startup hint or [choose one below](#models). The included backend starts
-privately when no shared service is running and stops on exit. History is
-saved; the printed resume command reopens the same workspace and worker.
+startup hint or [choose one below](#models). The first launch starts the
+included service, which keeps running for later sessions ([Service](#service)).
+The TUI returns to worker `user` and its history; each one-shot prompt runs in
+a new worker of its own, named on stderr so `--worker` can continue it.
 
 Proposals are accepted automatically by default (`PLURNK_CLIENT_YOLO=1`);
 set it to `0` or start a prompt with `?` to review them. Neither overrides
@@ -82,7 +83,9 @@ capability restrictions.
 ## Models
 
 Supply your provider's API key to the backend—for example,
-`export DEEPSEEK_API_KEY="your-api-key"` before launching Plurnk.
+`export DEEPSEEK_API_KEY="your-api-key"` before launching Plurnk. The service
+reads it when it starts, so export it before the first launch, or stop the
+service (`plurnk-service stop`) and launch again.
 In the TUI, `/models` lists models with configured credentials and
 `/model <provider/model>` selects one. You can also launch with
 `--model=<provider/model>`; aliases are optional.
@@ -100,9 +103,14 @@ for local endpoints and tuning.
 
 ## Service
 
-For a shared, persistent environment, install `@plurnk/plurnk-service` separately
-and run `plurnk-service start`. Clients attach at `http://127.0.0.1:1066/agui` by default.
-Linux users can install the package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
+`plurnk` attaches to the service at `http://127.0.0.1:1066/agui` (`PLURNK_HOST`
+and `PLURNK_PORT` move it), starting the installed `plurnk-service` there when
+nothing listens. The service keeps running after the client exits and serves
+every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
+its log in `~/.local/state/plurnk/service.log`. Stop it with
+`plurnk-service stop`.
+
+To start it at login on Linux, install the package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
 (`plurnk.service` in the package root); its comments cover installation,
 executable paths, and environment setup. The service must receive your provider
 credentials—systemd does not source your interactive shell.

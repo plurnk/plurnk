@@ -170,6 +170,7 @@ const accountedUsage: LoopUsage = {
 
 const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}): Parameters<typeof buildJsonRecord>[0] => ({
     workspace: { id: 12, name: "sess" },
+    worker: "3f9a1c0be47d",
     prompt: "what is the capital of France?",
     response: "Paris",
     entries: [
@@ -196,6 +197,7 @@ test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
     assert.equal(doc.finalStatus, 200);
     assert.equal(doc.loopId, 7);
     assert.equal(doc.workerId, 39);   // the bound worker
+    assert.equal(doc.worker, "3f9a1c0be47d", "the record names the bound worker, so --worker can continue it");
     assert.equal(doc.turnCount, 2);
     assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
     assert.deepEqual(doc.usage, accountedUsage, "JSON preserves the cardinal accounting envelope verbatim");

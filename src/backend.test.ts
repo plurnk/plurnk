@@ -5,8 +5,18 @@ import Backend, { isLoopback, listenerPresent, serviceInstallation } from "./bac
 import { ProblemError } from "./diagnostics.ts";
 
 const env = {
-    PLURNK_CLIENT_AUTOSTART: "1", PLURNK_CLIENT_DAEMON_TIMEOUT_MS: "1000", PLURNK_CLIENT_DAEMON_STOP_TIMEOUT_MS: "1000",
+    PLURNK_CLIENT_AUTOSTART: "1", PLURNK_CLIENT_DAEMON_TIMEOUT_MS: "1000",
     PLURNK_CLIENT_SERVICE_BIN: "/nonexistent/plurnk-service", PATH: "",
+};
+
+// A loopback port nothing listens on: bound, then released.
+const refusedPort = async (): Promise<number> => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address !== null && typeof address === "object");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    return address.port;
 };
 
 test("[§cli-daemon-autostart] only loopback destinations are eligible", () => {
@@ -15,35 +25,40 @@ test("[§cli-daemon-autostart] only loopback destinations are eligible", () => {
 });
 
 test("[§cli-daemon-autostart] remote, portal and attach-only targets do not resolve or start a package", async () => {
+    const port = await refusedPort();
     for (const [aguiUrl, overrides] of [
         ["https://example.invalid", {}],
-        ["http://127.0.0.1:0", { PLURNK_AGUI_URL: "http://127.0.0.1:0" }],
-        ["http://127.0.0.1:0", { PLURNK_CLIENT_AUTOSTART: "0" }],
+        [`http://127.0.0.1:${port}`, { PLURNK_AGUI_URL: `http://127.0.0.1:${port}` }],
+        [`http://127.0.0.1:${port}`, { PLURNK_CLIENT_AUTOSTART: "0" }],
     ] as const) {
         const target = { aguiUrl, token: "existing-token" };
-        await using backend = await Backend.open(target, { ...env, ...overrides });
+        const backend = await Backend.open(target, { ...env, ...overrides });
         assert.deepEqual(backend.target, target);
-        assert.equal(backend.database, null);
-        assert.deepEqual(backend.resumeEnv, {});
-        assert.equal(backend.allocatedStorage, false);
+        assert.equal(backend.started, null, "attaching starts nothing");
     }
 });
 
 test("[§cli-daemon-autostart] a live listener is attached even when it is not an AG-UI server", async () => {
-    const server = createServer((socket) => socket.end());
+    // It drains what it is sent, as any listener does, then hangs up.
+    const server = createServer((socket) => { socket.resume(); socket.end(); });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
         const address = server.address();
         assert.ok(address !== null && typeof address === "object");
         const target = { aguiUrl: `http://127.0.0.1:${address.port}` };
-        await using backend = await Backend.open(target, env);
+        const backend = await Backend.open(target, env);
         assert.deepEqual(backend.target, target, "protocol/authentication remain the AG-UI caller's decision");
-        assert.equal(backend.database, null);
+        assert.equal(backend.started, null);
     } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
 });
 
+test("[§cli-daemon-autostart] autostart refuses port 0, which no later client could reach", async () => {
+    await assert.rejects(Backend.open({ aguiUrl: "http://127.0.0.1:0" }, env), (cause) => cause instanceof ProblemError
+        && cause.exitCode === 64 && cause.problem.kind === "port-unshareable");
+});
+
 test("[§cli-daemon-autostart] connection refusal is distinct from other network errors", async () => {
-    assert.equal(await listenerPresent(new URL("http://127.0.0.1:0"), 1000), false);
+    assert.equal(await listenerPresent(new URL(`http://127.0.0.1:${await refusedPort()}`), 1000), false);
     await assert.rejects(listenerPresent(new URL("http://256.256.256.256.invalid:1066"), 1000));
 });
 

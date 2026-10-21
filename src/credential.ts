@@ -131,7 +131,11 @@ export default class Credential implements ClientCredential {
     static fromEnvironment(env: NodeJS.ProcessEnv = process.env): Credential | undefined {
         const configured = env.PLURNK_SECRET;
         if (configured !== undefined && configured.length > 0) return new Credential(configured);
-        const file = Credential.secretFile(env);
+        return Credential.fromFile(Credential.secretFile(env));
+    }
+
+    /** The secret a daemon minted into `file`, read again when it is refused; nothing when there is none. */
+    static fromFile(file: string): Credential | undefined {
         const minted = readSecret(file);
         return minted === null ? undefined : new Credential(minted, file);
     }

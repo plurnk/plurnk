@@ -63,7 +63,7 @@ test("{§cli-workspaces-and-workers} built inspection selects names and folder d
         "a qualified-looking label never selects another workspace's ID");
 });
 
-test("{§cli-workspaces-and-workers} built prompt CLI uses user in a folder-named workspace and preserves explicit worker selection", { timeout: 30_000 }, async (t) => {
+test("{§cli-workspaces-and-workers} built prompt CLI runs in a new worker of its own in a folder-named workspace and preserves explicit worker selection", { timeout: 30_000 }, async (t) => {
     let calls = 0;
     const provider = await completionsEndpoint(() => {
         calls += 1;
@@ -86,17 +86,21 @@ test("{§cli-workspaces-and-workers} built prompt CLI uses user in a folder-name
     const env = clientEnv(daemon.home, daemon.url);
     const folder = join(daemon.home, "project");
     await mkdir(folder);
+    const bound: string[] = [];
     for (const args of [[], ["--worker", "reviewer"]]) {
         const invocation = exec(binary, ["--json", ...args, "Hello."], { cwd: folder, env, timeout: 10_000 });
         invocation.child.stdin?.end();
-        const result = await invocation;
-        assert.equal(JSON.parse(result.stdout).response, "SELECTED_WORKER_ANSWER");
+        const record = JSON.parse((await invocation).stdout) as { response: string; worker: string };
+        assert.equal(record.response, "SELECTED_WORKER_ANSWER");
+        bound.push(record.worker);
     }
+    assert.match(bound[0]!, /^[0-9a-f]{12}$/u, "with no worker selected, the one-shot runs in a new worker of its own");
+    assert.equal(bound[1], "reviewer");
     const target = { aguiUrl: daemon.url };
     const { workspaces } = await actionViaAgui<{ workspaces: WorkspaceHandle[] }>(target, { threadId: "bootstrap", kind: "workspace.list" });
     assert.equal(workspaces.length, 1);
     assert.equal(workspaces[0]?.name, "~/project");
     const { workers } = await actionViaAgui<{ workers: { name: string; origin: string }[] }>(target, { threadId: `${workspaces[0]!.id}#user`, kind: "workspace.workers" });
-    assert.deepEqual(workers.filter(({ origin }) => origin === "model").map(({ name }) => name).sort(), ["reviewer", "user"]);
+    assert.deepEqual(workers.filter(({ origin }) => origin === "model").map(({ name }) => name).sort(), [...bound].sort());
     assert.equal(calls, 2);
 });

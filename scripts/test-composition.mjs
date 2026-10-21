@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { parseArgs, promisify } from "node:util";
-import { mkdir, mkdtemp, readFile, readdir, rm, access } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, access } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -48,6 +48,8 @@ const runClient = (file, args, options) => new Promise((accept, reject) => {
 });
 
 let daemon;
+// The shared service the client starts below, until `plurnk-service stop` has ended it.
+let sharedPid;
 let model;
 let passed = false;
 const modelRequests = [];
@@ -309,28 +311,33 @@ try {
         throw new Error(`packed run created no durable worker/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
     }
 
-    // {§cli-daemon-autostart}: the installed client discovers the installed service,
-    // launches privately, retains its state, and stops it without a pre-launched daemon.
-    const privateEnv = { ...serviceEnv, PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0", PLURNK_AGUI_URL: "" };
-    const privateRun = await runClient(clientBin, ["--json", "--workspace", "private-composition", "--worker", "primary", "--project-root", "", "Confirm private startup."], {
-        cwd: install, env: privateEnv, timeout: 30_000,
+    // {§cli-daemon-autostart} {§service-stop}: with nothing listening, the installed client starts the
+    // installed service as the one shared service on its configured address and leaves it running; a later
+    // client reaches the same history, and `plurnk-service stop` ends it.
+    const free = createServer();
+    const sharedPort = await listen(free);
+    await new Promise((accept) => free.close(accept));
+    const sharedEnv = { ...serviceEnv, PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(sharedPort), PLURNK_AGUI_URL: "" };
+    const sharedRun = await runClient(clientBin, ["--json", "--workspace", "shared-composition", "--worker", "primary", "--project-root", "", "Confirm shared startup."], {
+        cwd: install, env: sharedEnv, timeout: 30_000,
     });
-    if (JSON.parse(privateRun.stdout).response !== "composition ok: composition" || privateRun.stderr !== "") {
-        throw new Error(`private packed run failed: ${privateRun.stdout}\n${privateRun.stderr}`);
+    if (JSON.parse(sharedRun.stdout).response !== "composition ok: composition" || sharedRun.stderr !== "") {
+        throw new Error(`shared packed run failed: ${sharedRun.stdout}\n${sharedRun.stderr}`);
     }
-    const roots = await readdir(join(isolatedEnv.XDG_DATA_HOME, "plurnk", "instances"));
-    if (roots.length !== 1) throw new Error(`private startup allocated ${roots.length} roots`);
-    const stateRoot = join(isolatedEnv.XDG_DATA_HOME, "plurnk", "instances", roots[0]);
-    const database = join(stateRoot, "data", "plurnk", "plurnk.db");
-    await access(database);
+    const database = join(isolatedEnv.XDG_DATA_HOME, "plurnk", "plurnk.db");
+    sharedPid = JSON.parse(await readFile(`${database}.lock`, "utf8")).pid;
+    process.kill(sharedPid, 0);
+    await access(join(isolatedEnv.XDG_STATE_HOME, "plurnk", "service.log"));
+    const resumed = await runClient(clientBin, ["log", "read", "--json", "--workspace", "shared-composition", "--worker", "primary"], {
+        cwd: install, env: sharedEnv, timeout: 30_000,
+    });
+    if (!resumed.stdout.includes("composition ok: composition")) throw new Error("a later client did not reach the running service's history");
+    await runClient(daemonBin, ["stop"], { cwd: install, env: sharedEnv, timeout: 60_000 });
     await access(`${database}.lock`).then(
-        () => { throw new Error("private backend still owns its database after client exit"); },
+        () => { throw new Error("plurnk-service stop left the database owned"); },
         (cause) => { if (cause.code !== "ENOENT") throw cause; },
     );
-    const resumed = await runClient(clientBin, ["log", "read", "--json", "--workspace", "private-composition", "--worker", "primary"], {
-        cwd: install, env: { ...privateEnv, PLURNK_SERVICE_STATE_ROOT: stateRoot, PLURNK_SERVICE_DB_PATH: database }, timeout: 30_000,
-    });
-    if (!resumed.stdout.includes("composition ok: composition")) throw new Error("private worker history was not retained across daemon lifetimes");
+    sharedPid = undefined;
 
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));
@@ -347,6 +354,10 @@ try {
     passed = true;
 } finally {
     await daemon?.stop();
+    if (sharedPid !== undefined) {
+        try { process.kill(sharedPid, "SIGKILL"); }
+        catch (cause) { if (cause.code !== "ESRCH") throw cause; }
+    }
     if (model !== undefined) await new Promise((accept) => model.close(accept));
     if (passed) await rm(temp, { recursive: true, force: true });
     else process.stderr.write(`packed composition evidence preserved at ${temp}\n`);

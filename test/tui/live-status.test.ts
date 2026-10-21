@@ -174,7 +174,8 @@ const statusRelay = async (t: TestContext, url: string, hooks: {
                 ...(raw.length > 0 ? { body: raw } : {}), signal,
             });
             response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" });
-            assert.ok(upstream.body);
+            // A bodiless answer (the client's OPTIONS probe gets 204) passes through as it is.
+            if (upstream.body === null) { response.end(); return; }
             const decoder = new TextDecoder();
             let pending = "";
             for await (const chunk of upstream.body) {

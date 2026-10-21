@@ -60,7 +60,7 @@ const groupOpsByTurn = (entries: LogEntryWire[]): Array<{ turn: number; ops: Arr
 // The complete client-observed record of one loop run, as a plain object ready
 // to JSON.stringify. Pure → unit-testable without a daemon.
 export const buildJsonRecord = (input: {
-    workspace: WorkspaceResult; prompt: string; response: string;
+    workspace: WorkspaceResult; worker: string; prompt: string; response: string;
     entries: LogEntryWire[]; notices: Notice[];
     result: { loopId: number; modelWorkerId?: number; turnIds: number[]; finalStatus: number; hitMaxTurns: boolean; reason?: string; usage?: LoopUsage; problem?: ProblemDetails };
     wallMs: number; timedOut: boolean;
@@ -78,6 +78,7 @@ export const buildJsonRecord = (input: {
         hitMaxTurns: input.result.hitMaxTurns,
         timedOut: input.timedOut,
         loopId: input.result.loopId,
+        worker: input.worker,                            // the bound worker's name, for `--worker` to continue it
         workerId: input.result.modelWorkerId ?? null,   // the bound worker, for correlation / `read --worker`
         turnCount: input.result.turnIds.length,
         wallMs: input.wallMs,

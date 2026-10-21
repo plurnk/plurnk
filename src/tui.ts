@@ -122,13 +122,9 @@ export const printSubmittedInput = (print: (text: string) => void, text: string)
     print("");
 };
 
-export const resumeCommand = (workspace: string, worker: string, env: Readonly<Record<string, string>> = {}): string => {
+export const resumeCommand = (workspace: string, worker: string): string => {
     const quote = (value: string): string => /^[A-Za-z0-9_.:/-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\"'\"'")}'`;
-    const bindings = Object.entries(env).map(([name, value]) => {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) throw new TypeError(`Invalid environment variable name: ${name}`);
-        return `${name}=${quote(value)} `;
-    }).join("");
-    return `${bindings}plurnk --workspace ${quote(workspace)} --worker ${quote(worker)}`;
+    return `plurnk --workspace ${quote(workspace)} --worker ${quote(worker)}`;
 };
 
 export const parseSlash = (line: string): { verb: string; rest: string } => {
@@ -616,7 +612,6 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
 
 export const runTui = async (transport: Transport, workspace: WorkspaceResult, opts: {
     lifetime: Lifetime;
-    resumeEnv?: Readonly<Record<string, string>>;
     // The explicit --model selector for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup.
     modelSelector?: string; modelExplicit?: boolean; effort?: string; effortExplicit?: boolean;
@@ -1367,7 +1362,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             transport.shutdown();
             removeInputListener();
             surface.stop();
-            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, boundWorker, opts.resumeEnv)}`, "dim")}\n`);
+            process.stdout.write(`  ${paint(`resume this workspace:  ${resumeCommand(current.name, boundWorker)}`, "dim")}\n`);
             resolve();
         };
         requestClose = close;

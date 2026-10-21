@@ -66,14 +66,6 @@ test("[§cli-tui-flow] the resume command preserves workspace and worker as lite
     assert.equal(result, `--workspace\n${workspace}\n--worker\n${worker}\n`);
 });
 
-test("[§cli-daemon-autostart] the resume command retains private storage without shell expansion", () => {
-    const database = "/tmp/Matt's files/$HOME/plurnk.db";
-    const command = resumeCommand("workspace", "primary", { PLURNK_SERVICE_DB_PATH: database, PLURNK_PORT: "0", PLURNK_AGUI_URL: "" });
-    const output = execFileSync("sh", ["-c", `plurnk() { printf '%s\\n' "$PLURNK_SERVICE_DB_PATH" "$PLURNK_PORT" "$PLURNK_AGUI_URL" "$@"; }; ${command}`], { encoding: "utf8" });
-    assert.equal(output, `${database}\n0\n\n--workspace\nworkspace\n--worker\nprimary\n`);
-    assert.throws(() => resumeCommand("workspace", "primary", { "BAD;name": "value" }), /Invalid environment variable name/);
-});
-
 test("[§cli-environment] scoped env completion uses that scope's variable names", async () => {
     const calls: unknown[] = [];
     const options = { getAliases: () => [], cwd: "/tmp", getProjectRoot: () => null, getFunctionalityAliases: async (family: string, scope?: string) => { calls.push([family, scope]); return ["SHARED"]; } };

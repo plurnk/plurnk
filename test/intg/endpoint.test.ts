@@ -16,6 +16,8 @@ test("[§cli-invocation] host/port selects /agui; an explicit endpoint remains e
     const requests: Array<{ method: string | undefined; path: string | undefined }> = [];
     const server = createServer(async (request, response) => {
         requests.push({ method: request.method, path: request.url });
+        // An admitted service answers OPTIONS before anything else; an attach probes with it.
+        if (request.method === "OPTIONS") { response.writeHead(204).end(); return; }
         let body = "";
         for await (const chunk of request) body += chunk;
         const input = RunAgentInputSchema.parse(JSON.parse(body));
@@ -48,6 +50,7 @@ test("[§cli-invocation] host/port selects /agui; an explicit endpoint remains e
         });
         assert.equal(result.stderr, "");
         assert.deepEqual(JSON.parse(result.stdout), []);
-        assert.deepEqual(requests, [{ method: "POST", path }]);
+        assert.deepEqual(requests.filter(({ method }) => method === "POST"), [{ method: "POST", path }]);
+        assert.ok(requests.every((request) => request.path === path), "every request reaches the selected endpoint");
     }
 });

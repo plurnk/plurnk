@@ -364,7 +364,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
 export const runCliViaAgui = async (
     target: AguiTarget,
     prompt: string,
-    opts: { lifetime: Lifetime; threadId: string; workspace: WorkspaceHandle; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean },
+    opts: { lifetime: Lifetime; threadId: string; workspace: WorkspaceHandle; worker: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean },
 ): Promise<number> => {
     // {§cli-fail-closed-no-review-channel} With no local acceptance or review channel,
     // reject locally. A submitted message cannot change the worker's authority.
@@ -456,6 +456,7 @@ export const runCliViaAgui = async (
         const outcome = runOutcome(r);
         const doc = buildJsonRecord({
             workspace: opts.workspace,
+            worker: opts.worker,
             prompt,
             response: r.response,
             entries: r.entries,
@@ -497,7 +498,7 @@ export const runCliViaAgui = async (
         ]).then(async ([flushed, cancelled]) => {
             if (flushed.status === "rejected") process.stderr.write(`Could not flush interrupted CLI record: ${String(flushed.reason)}\n`);
             if (cancelled.status === "rejected") process.stderr.write(`Cancellation could not be confirmed: ${String(cancelled.reason)}\n`);
-            // Close our response before stopping an owned backend. Deliberate cancellation
+            // Close our response before exiting. Deliberate cancellation
             // must not leave the SSE reader to discover a severed socket during shutdown.
             ac.abort();
             await opts.lifetime.exit(exitCode);

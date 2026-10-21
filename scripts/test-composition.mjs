@@ -26,6 +26,15 @@ const listen = (server) => new Promise((accept, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => accept(server.address().port));
 });
+// npm pack --json's records: npm 11 prints an array, npm 12 an object keyed by package name.
+const packRecords = (stdout) => {
+    const value = JSON.parse(stdout);
+    const records = Array.isArray(value) ? value : value !== null && typeof value === "object" ? Object.values(value) : [];
+    if (records.length === 0 || records.some((record) => typeof record?.filename !== "string" || record.filename.length === 0)) {
+        throw new Error("npm pack returned no valid artifacts");
+    }
+    return records;
+};
 const runClient = (file, args, options) => new Promise((accept, reject) => {
     const child = spawn(file, args, {
         cwd: options.cwd,
@@ -66,11 +75,10 @@ try {
         let installedClient = clientSpec;
         if (installedClient === undefined) {
             await run("npm", ["run", "build"], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
-            const packed = JSON.parse((await run("npm", [
+            const [packed] = packRecords((await run("npm", [
                 "pack", "--ignore-scripts", "--json", "--pack-destination", temp,
             ], { cwd: root, maxBuffer: 64 * 1024 * 1024 })).stdout);
-            if (!Array.isArray(packed) || typeof packed[0]?.filename !== "string") throw new Error("npm pack returned no client artifact");
-            installedClient = join(temp, packed[0].filename);
+            installedClient = join(temp, packed.filename);
         }
         let serviceSpecs = serviceSpec === undefined ? [] : [serviceSpec];
         if (serviceRoot !== undefined && serviceRoot.length > 0) {
@@ -79,13 +87,9 @@ try {
                 cwd: absoluteServiceRoot,
                 maxBuffer: 128 * 1024 * 1024,
             });
-            const packed = JSON.parse((await run("npm", [
+            serviceSpecs = packRecords((await run("npm", [
                 "pack", "--workspaces", "--ignore-scripts", "--json", "--pack-destination", temp,
-            ], { cwd: absoluteServiceRoot, maxBuffer: 128 * 1024 * 1024 })).stdout);
-            if (!Array.isArray(packed) || packed.some((item) => typeof item?.filename !== "string")) {
-                throw new Error("npm pack returned an invalid service workspace artifact set");
-            }
-            serviceSpecs = packed.map(({ filename }) => join(temp, filename));
+            ], { cwd: absoluteServiceRoot, maxBuffer: 128 * 1024 * 1024 })).stdout).map(({ filename }) => join(temp, filename));
         }
         await run("npm", ["install", "--ignore-scripts", installedClient, ...serviceSpecs], {
             cwd: install,

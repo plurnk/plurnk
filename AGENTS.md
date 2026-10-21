@@ -21,11 +21,11 @@ changelogs.
 `npm test` runs lint, unit, integration, and TUI checks. The integration and
 TUI tiers boot the service from the checkout `PLURNK_SERVICE_CHECKOUT` names
 (`../plurnk-service` by default) and borrow its MCP and A2A fixtures from there;
-`test/service-checkout.ts` is the one place that path is resolved. Integration and TUI
-tiers use Node's `--test-concurrency=4`: each file can start real daemon and
-terminal fixtures, so their parallelism does not grow with the host's CPU count.
-This bounds concurrent test files, not their memory; use an external resource
-limit when investigating a runaway test. Unit tests retain Node's default.
+`test/service-checkout.ts` is the one place that path is resolved. Each integration and
+TUI file can start a real daemon and terminal fixtures, so those tiers run as many files
+at once as the host holds: its available cores, bounded by its available memory over a
+file's measured footprint (`scripts/test-concurrency.mjs`). No tier fixes a number for
+one machine. Unit tests retain Node's default.
 
 The service's pre-push drill drives this checkout's installed CLI and TUI against
 a live daemon and waits for their exact output (`scripts/test-client-conformance.mjs`

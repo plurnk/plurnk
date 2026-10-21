@@ -76,7 +76,7 @@ test("[§cli-row-sources] a call ended without its receipt, a receipt before its
     broken([start!, args!, end!, ...callOf({ ...read, id: 5, sequence: 2 })]);
     broken([{ ...start!, metadata: { plurnk: { id: 4, op: "READ" } } } as AguiEvent]);
     const [, , , result] = callOf(read);
-    broken([start!, args!, end!, { ...result!, content: [{ type: "document", source: { type: "url", value: "http://agui.test/agui/3/1/log/1/1/4/READ" } }] } as unknown as AguiEvent]);
+    broken([start!, args!, end!, { ...result!, content: [{ type: "document", source: { type: "url", value: "http://agui.test/agui/3/1/entry?target=log%3A%2F%2F%2F1%2F1%2F4%2FREAD" } }] } as unknown as AguiEvent]);
     broken([start!, args!, end!, { ...result!, content: 5 } as unknown as AguiEvent]);
     broken([start!, args!, result!]);
     assert.deepEqual(drawn([
@@ -92,7 +92,7 @@ test("[§cli-row-sources] a receipt whose body travels by reference draws its ro
     const [start, args, end, result] = callOf(read);
     const [row] = drawn([start!, args!, end!, { ...result!, content: [
         { type: "text", text: JSON.stringify(read.rx) },
-        { type: "document", source: { type: "url", value: "http://agui.test/agui/3/7/log/2/3/1/READ", mimeType: "text/markdown" } },
+        { type: "document", source: { type: "url", value: "http://agui.test/agui/3/7/entry?target=log%3A%2F%2F%2F2%2F3%2F1%2FREAD", mimeType: "text/markdown" } },
     ] } as unknown as AguiEvent]);
     assert.deepEqual([row?.op, row?.rx], ["READ", read.rx], "the receipt draws the row; its body is not needed to draw it");
 });

@@ -44,7 +44,7 @@ test("a broken reasoning lifecycle fails at the projection boundary", () => {
 
 test("[§cli-provider-reasoning] a negotiated preview accumulates as the message's live text, and a message that names its link draws nothing", () => {
     const events = new ReasoningEvents();
-    const link = { plurnk: { body: { url: "http://agui.test/agui/3/7/reasoning/1/2", mimeType: "text/plain" } } };
+    const link = { plurnk: { body: { url: "http://agui.test/agui/3/7/entry?target=reasoning%3A%2F%2Fmain%2F1%2F2", mimeType: "text/plain" } } };
     events.consume({ type: EventType.REASONING_START, messageId: "r" });
     events.consume({ type: EventType.REASONING_MESSAGE_START, messageId: "r", role: "reasoning" });
     assert.deepEqual(events.consume({ type: EventType.CUSTOM, name: "plurnk.reasoning", value: { messageId: "r", delta: "one " } }), {

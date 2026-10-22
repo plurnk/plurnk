@@ -50,7 +50,7 @@ describe("TUI pty harness", () => {
             assert.match(afterHelp, /\/models .*\/workspaces/, "help lists inspection verbs");
             assert.match(afterHelp, /\/yolo/, "help lists the verb surface");
             tui.write("/workers\r");
-            await tui.waitFor(/● startup-worker[^\n]*← bound/);
+            await tui.waitFor(/● startup-worker\b/u);
             // 3. /quit closes the REPL with a clean exit code + the resume hint.
             tui.write("/quit\r");
             await tui.waitFor(/resume this workspace:\s+plurnk --workspace /);
@@ -82,7 +82,7 @@ describe("TUI pty harness", () => {
         const tui = spawnTui(daemon.url, ["--workspace", "resume-workers", "--worker", "first"]);
         try {
             await tui.waitFor(/plurnk.*\/help/s);
-            tui.write("/attach second\r");
+            tui.write("/worker second\r");
             await tui.waitFor(/worker: second \(new\)/);
             tui.write("/quit\r");
             assert.equal(await tui.exited, 0);
@@ -92,7 +92,7 @@ describe("TUI pty harness", () => {
         try {
             await resumed.waitFor(/plurnk.*\/help/s);
             resumed.write("/workers\r");
-            await resumed.waitFor(/● second[^\n]*← bound/);
+            await resumed.waitFor(/● second\b/u);
             resumed.write("/workspace fresh-resume\r");
             await resumed.waitFor(/workspace: fresh-resume \(new\)/);
             resumed.write("/env add RESUME_WITNESS before-rename\r");

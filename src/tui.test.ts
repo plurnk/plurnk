@@ -11,6 +11,7 @@ import { handleVerb, completeInput, makeAutocompleteProvider, seedPromptHistory,
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { clientRuntimeError, ProblemError } from "./diagnostics.ts";
 import { PLURNK_FENCE } from "@plurnk/plurnk-contracts";
+import type { LogEntryWire } from "./render.ts";
 import type { Transport } from "./transport.ts";
 import Lifetime from "./lifetime.ts";
 
@@ -146,6 +147,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
         useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
         threadId: () => "test-thread",
+        loop: async () => { throw new Error("the TUI read a loop after failed admission"); },
     };
 
     await assert.rejects(
@@ -172,6 +174,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
         useWorkspace: async () => { throw new Error("the TUI switched workspaces after failed admission"); },
         useWorker: () => {},
         threadId: () => "test-thread",
+        loop: async () => { throw new Error("the TUI read a loop after failed admission"); },
     };
 
     await assert.rejects(
@@ -300,6 +303,14 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
         setWorkspace: (s) => { workspace = s; },
         renameWorkspace: (s) => { workspace = s; },
         getWorker: () => worker,
+        threadId: () => "1#sess",
+        columns: () => 100,
+        readLoop: async (workerId, sequence) => {
+            calls.push({ method: "loop page", params: { workerId, sequence } });
+            const r = results["loop page"];
+            return (typeof r === "function" ? (r as (p: unknown) => unknown)({ workerId, sequence }) : r ?? []) as LogEntryWire[];
+        },
+        gates: () => ({}),
         attachWorker: async (name) => { attached.push(name); worker = name; },
         switchWorkspace: async (name) => {
             calls.push({ method: "workspace.create", params: { name } });
@@ -317,40 +328,40 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
 
 test("{§cli-active-command-admission} only commands that change the thread binding require it to settle", () => {
     assert.deepEqual(COMMANDS.filter(({ name }) => commandSpec(name)?.rebinds).map(({ name }) => name),
-        ["workspace", "rename", "worker", "attach", "parent", "enter", "older", "newer"]);
+        ["workspace", "rename", "worker", "fork", "parent", "enter", "older", "newer"]);
     for (const name of ["model", "effort", "mcp", "script", "stop", "quit"]) {
         assert.notEqual(commandSpec(name)?.rebinds, true, `${name} does not rebind the thread`);
     }
 });
 
-// ─── /attach (bind or mint a worker by name) ──────────────────────────
-test("[§cli-workers-topology] handleVerb /attach <known> rebinds the thread and reports the bound worker", async () => {
+// ─── /worker (show the bound worker, or go to one by name, creating a new one) ───
+test("[§cli-workers-topology] handleVerb /worker <known> rebinds the thread and reports the bound worker", async () => {
     const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }, { id: 2, name: "sess-fork" }] } });
-    await handleVerb("/attach sess-fork", ctx);
+    await handleVerb("/worker sess-fork", ctx);
     assert.deepEqual(ctx.attached, ["sess-fork"]);
     assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: undefined });
     assert.ok(ctx.calls.some((c) => c.method === "worker.model.get"), "policy is re-read for the newly bound worker");
     assert.equal(ctx.out.join(""), "  worker: sess-fork (bound)\n");
 });
 
-test("[§cli-workers-topology] handleVerb /attach <new> rebinds and reports a new worker", async () => {
+test("[§cli-workers-topology] handleVerb /worker <new> rebinds and reports a new worker", async () => {
     const ctx = makeCtx({ "workspace.workers": { workers: [{ id: 1, name: "sess" }] } });
-    await handleVerb("/attach recheck", ctx);
+    await handleVerb("/worker recheck", ctx);
     assert.deepEqual(ctx.attached, ["recheck"]);
     assert.equal(ctx.out.join(""), "  worker: recheck (new)\n");
 });
 
 test("[§cli-workers-topology] handleVerb /workers renders the directory as a tree rooted at the bound worker", async () => {
     const ctx = makeCtx({ "workspace.workers": { workers: [
-        { id: 1, name: "sess", created_at: "2026-09-04T10:01:00Z", origin: "model", parentWorkerId: null },
-        { id: 2, name: "sess-fork", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1 },
+        { id: 1, name: "sess", created_at: "2026-09-04T10:01:00Z", origin: "model", parentWorkerId: null, lifecycle: "running" },
+        { id: 2, name: "sess-fork", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1, lifecycle: "idle" },
     ] } });
     await handleVerb("/workers", ctx);
     assert.deepEqual(ctx.calls[0], { method: "workspace.workers", params: undefined });
-    assert.match(ctx.out.join(""), /^ {2}● sess .*← bound\n {2}└─ ○ sess-fork /u);
+    assert.equal(ctx.out.join(""), "  ● sess ⌛︎\n  └─ ○ sess-fork\n");
 });
 
-test("[§cli-workers-topology] /attach completion offers worker names lazily and survives a failed directory read", async () => {
+test("[§cli-workers-topology] /worker completion offers worker names lazily and survives a failed directory read", async () => {
     let reads = 0;
     const complete = (line: string, names: () => Promise<string[]>) => completeInput(line, {
         getAliases: () => [],
@@ -358,11 +369,11 @@ test("[§cli-workers-topology] /attach completion offers worker names lazily and
         getProjectRoot: () => null,
         getWorkerNames: async () => { reads += 1; return await names(); },
     });
-    const ok = await complete("/attach ma", async () => ["main", "main-fork", "guesser1"]);
+    const ok = await complete("/worker ma", async () => ["main", "main-fork", "guesser1"]);
     assert.deepEqual(ok.suggestions.map((s) => s.value), ["main", "main-fork"]);
     assert.equal(ok.prefix, "ma");
     assert.equal(ok.suggestions[0].description, "worker");
-    const down = await complete("/attach ", async () => { throw new Error("directory unavailable"); });
+    const down = await complete("/worker ", async () => { throw new Error("directory unavailable"); });
     assert.deepEqual(down.suggestions, []);
     assert.equal(reads, 2, "names are fetched only when the cursor consumes them");
     const unrelated = await complete("/model ma", async () => ["main"]);
@@ -402,11 +413,14 @@ test("[§cli-workers-topology] handleVerb /enter, /older, /newer, /parent hop th
     assert.equal(ctx.attached.length, before, "an edge attaches nothing");
 });
 
-test("handleVerb /attach without a name prints usage and binds nothing", async () => {
-    const ctx = makeCtx();
-    await handleVerb("/attach", ctx);
+test("[§cli-workers-topology] handleVerb /worker without a name shows where the session is and binds nothing", async () => {
+    const ctx = makeCtx({ "workspace.workers": { workers: [
+        { id: 1, name: "main", created_at: "2026-09-04T10:01:00Z", origin: "model", parentWorkerId: null },
+        { id: 2, name: "sess", created_at: "2026-09-04T10:02:00Z", origin: "model", parentWorkerId: 1 },
+    ] } });
+    await handleVerb("/worker", ctx);
     assert.deepEqual(ctx.attached, []);
-    assert.equal(ctx.out.join(""), "  usage: /attach <name>\n");
+    assert.equal(ctx.out.join(""), "  worker: sess [/main/~sess]\n");
 });
 
 // ─── /members (file members Functionality family through AG-UI+) ─────
@@ -482,22 +496,22 @@ test("handleVerb /rename with no name → usage, no rpc", async () => {
     assert.match(ctx.out.join(""), /usage: \/rename/);
 });
 
-test("handleVerb /worker [name] → run.fork (new worker) then binds to it", async () => {
+test("[§cli-workers-topology] handleVerb /fork [name] → run.fork (a child that keeps its history) then binds to it", async () => {
     const ctx = makeCtx({
         "run.fork": { workerId: 42, workerName: "main-fork" },
     });
-    await handleVerb("/worker branch-a", ctx);
+    await handleVerb("/fork branch-a", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: { name: "branch-a" } });
-    assert.deepEqual(ctx.attached, ["main-fork"], "the fork uses the same thread binding as /attach");
+    assert.deepEqual(ctx.attached, ["main-fork"], "the fork uses the same thread binding as /worker");
     assert.ok(ctx.calls.every(({ method }) => method !== "workspace.attach"));
     assert.match(ctx.out.join(""), /worker: main-fork \(new\)/);
 });
 
-test("handleVerb /worker with no name → run.fork with a daemon-assigned name", async () => {
+test("[§cli-workers-topology] handleVerb /fork with no name → run.fork with a daemon-assigned name", async () => {
     const ctx = makeCtx({
         "run.fork": { workerId: 42, workerName: "main-fork" },
     });
-    await handleVerb("/worker", ctx);
+    await handleVerb("/fork", ctx);
     assert.deepEqual(ctx.calls[0], { method: "run.fork", params: {} });
 });
 
@@ -878,4 +892,54 @@ test("[§cli-effort] handleVerb /model <selector> <effort> chooses both in one w
     assert.deepEqual(ctx.calls[0], { method: "worker.model.set", params: { selector: "qmax", effort: "medium" } });
     await handleVerb("/model qmax", ctx);
     assert.deepEqual(ctx.calls.filter(({ method }) => method === "worker.model.set").at(-1), { method: "worker.model.set", params: { selector: "qmax" } });
+});
+
+// ─── /loops and /loop (plurnk-service {§agui-worker-loops}) ─────────────
+const LOOPS = { loops: [
+    { id: 11, sequence: 1, lifecycle: "completed", source: "agui://anonymous/threads/1%23sess/messages/a", opening: "Let's build an app! Make no mistakes.", continued: false },
+    { id: 12, sequence: 2, lifecycle: "cancelled", source: "agui://anonymous/threads/1%23sess/messages/b", opening: "No, you did it wrong!", continued: true },
+    { id: 13, sequence: 3, lifecycle: "running", source: "worker://helper", opening: "Check the tests.", continued: false },
+] };
+
+const SESS = { workers: [{ id: 7, name: "sess" }, { id: 8, name: "other" }] };
+
+test("[§cli-loops] /loops lists the worker's loops oldest first: number, sender when no person, opening line, and a mark for one under way or ended early", async () => {
+    const ctx = makeCtx({ "workspace.workers": SESS, "worker.loops": LOOPS });
+    await handleVerb("/loops", ctx);
+    assert.deepEqual(ctx.calls, [{ method: "workspace.workers", params: undefined }, { method: "worker.loops", params: { workerId: 7 } }], "the bound worker's, by its id");
+    assert.equal(ctx.out.join(""), [
+        "  1: Let's build an app! Make no mistakes.",
+        "  2: No, you did it wrong!… 🛑",
+        "  3: worker://helper: Check the tests. ⌛︎",
+        "",
+    ].join("\n"));
+    const empty = makeCtx({ "workspace.workers": SESS, "worker.loops": { loops: [] } });
+    await handleVerb("/loops", empty);
+    assert.equal(empty.out.join(""), "  (no loops yet)\n");
+    const absent = makeCtx({ "workspace.workers": { workers: [{ id: 8, name: "other" }] } });
+    await handleVerb("/loops", absent);
+    assert.deepEqual([absent.out.join(""), absent.calls.map(({ method }) => method)], ["  (no loops yet)\n", ["workspace.workers"]], "a worker no act has created has none");
+});
+
+test("[§cli-loops] /loop <n> prints that loop whole as its messages build it, oldest first; /loop alone prints the current loop", async () => {
+    const row = (id: number, loop: number, file: string) => ({
+        id, worker_id: 1, origin: "model", op: "READ", source: null, signal: null, status_rx: 200, attrs: {},
+        tx: { target: { kind: "url", raw: file } }, rx: { status: 200 }, scheme: null, hostname: null, pathname: `/${file}`, fragment: null,
+        lineMarker: null, loop_seq: loop, turn_seq: 1, sequence: id,
+    });
+    const ctx = makeCtx({ "workspace.workers": SESS, "worker.loops": LOOPS, "loop page": [row(21, 2, "first.md"), row(22, 2, "second.md"), row(23, 2, "third.md")] });
+    await handleVerb("/loop 2", ctx);
+    assert.deepEqual(ctx.calls.filter(({ method }) => method === "loop page").map(({ params }) => params), [{ workerId: 7, sequence: 2 }], "the bound worker's loop, by its number");
+    const printed = ctx.out.join("");
+    assert.match(printed, /^── loop 2 ──\n/u);
+    assert.ok(printed.indexOf("first.md") > 0 && printed.indexOf("first.md") < printed.indexOf("second.md") && printed.indexOf("second.md") < printed.indexOf("third.md"), printed);
+
+    const current = makeCtx({ "workspace.workers": SESS, "worker.loops": LOOPS });
+    await handleVerb("/loop", current);
+    assert.deepEqual(current.calls.filter(({ method }) => method === "loop page").map(({ params }) => params), [{ workerId: 7, sequence: 3 }], "the current loop is the newest");
+    for (const [line, said] of [["/loop 9", "  (no loop 9; /loops lists them)\n"], ["/loop two", "  usage: /loop [n]\n"]] as const) {
+        const missing = makeCtx({ "workspace.workers": SESS, "worker.loops": LOOPS });
+        await handleVerb(line, missing);
+        assert.deepEqual([missing.out.join(""), missing.calls.some(({ method }) => method === "loop page")], [said, false]);
+    }
 });

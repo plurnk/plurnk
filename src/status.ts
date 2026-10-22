@@ -144,6 +144,8 @@ export interface ClientStatus {
     children: number | null;
     // {§cli-status-gated} — the workers anywhere in that tree waiting on a gate; null without a gauge.
     gated: number | null;
+    // {§cli-workers-topology} — each of those workers' pending gates, by id; absent without a gauge.
+    gates?: Readonly<Record<number, number>>;
     // {§cli-status-spend} — the daemon's spend of the bound worker and its descendants since the
     // worker began; null when nothing is spent or the transport carries no gauge.
     spend?: TurnAccounting | null;
@@ -237,7 +239,7 @@ const ALIVE: ReadonlySet<string> = new Set<StatusLifecycle>(["queued", "running"
 // {§cli-status-children} {§cli-status-gated} — plurnk-service {§agui-status-descendants}: the daemon's tree beneath
 // the bound worker, read for the two counts the status line shows. A direct child is one whose parent is not in the
 // tree: every other parent is the one worker the tree hangs from.
-const treeCounts = (value: unknown): { children: number; gated: number } => {
+const treeCounts = (value: unknown): { children: number; gated: number; gates: Record<number, number> } => {
     const fail = (): never => { throw new TypeError("Invalid runtime descendants."); };
     if (!Array.isArray(value)) return fail();
     const tree = value.map((entry: unknown) => {
@@ -254,6 +256,7 @@ const treeCounts = (value: unknown): { children: number; gated: number } => {
     return {
         children: direct.filter(({ lifecycle }) => ALIVE.has(lifecycle)).length,
         gated: tree.filter(({ gates }) => gates > 0).length,
+        gates: Object.fromEntries(tree.filter(({ gates }) => gates > 0).map(({ id, gates }) => [id, gates])),
     };
 };
 
@@ -347,7 +350,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
     if (value.waitUntil !== null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
         throw new TypeError("Invalid runtime wait deadline.");
     }
-    const { children, gated } = treeCounts(value.descendants);
+    const { children, gated, gates } = treeCounts(value.descendants);
     for (const stamp of [value.claimedAt, value.terminatedAt]) {
         if (stamp !== null && (!Number.isSafeInteger(stamp) || (stamp as number) < 0)) throw new TypeError("Invalid runtime loop timing.");
     }
@@ -358,6 +361,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
         packetCount: value.packetCount,
         children,
         gated,
+        gates,
         waitUntil: value.waitUntil as number | null,
         spend: spendAccounting(value.spend),
         claimedAt: value.claimedAt as number | null,
@@ -415,6 +419,10 @@ export const reduceStatusGauge = (
     else projectWorkspaceState(next.plurnk.workspace);
     return { handled: true, gauge: next };
 };
+
+// {§cli-workers-topology} {§cli-loops} — a list marks what is under way or ended early; an idle or concluded one carries
+// no mark.
+export const lifecycleMark = (value: StatusLifecycle): string => value === "completed" ? "" : lifecycleGlyph(value, "");
 
 const lifecycleGlyph = (value: StatusLifecycle, idleGlyph: string): string => value === "running" ? "⌛︎"
     : value === "queued" ? "⏳"

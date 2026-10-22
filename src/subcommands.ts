@@ -48,17 +48,22 @@ const readinessLabel = (entry: ModelCatalogEntry): string => {
         .join("; ");
 };
 
+// Where a subcommand writes: stdout for the CLI, the TUI's own surface for its verbs.
+export type Out = (text: string) => void;
+const stdout: Out = (text) => { process.stdout.write(text); };
+
 export const runModels = async (
     rpc: Caller,
     opts: { json: boolean; query?: ModelCatalogQuery },
+    out: Out = stdout,
 ): Promise<number> => {
     const page = Validator.assertModelCatalogPage(await rpc.call("models.list", opts.query ?? {}));
     if (opts.json) {
-        process.stdout.write(`${JSON.stringify(page)}\n`);
+        out(`${JSON.stringify(page)}\n`);
         return 0;
     }
     if (page.items.length === 0) {
-        process.stdout.write("(no models match; use --all to include models missing local configuration)\n");
+        out("(no models match; use --all to include models missing local configuration)\n");
         return 0;
     }
     const rows = page.items.map((model) => [
@@ -69,9 +74,9 @@ export const runModels = async (
         model.capabilities.reasoning ? model.capabilities.efforts.join(",") : "-",
         readinessLabel(model),
     ]);
-    process.stdout.write(`${renderTable(["selector", "name", "context", "efforts", "readiness"], rows)}\n`);
+    out(`${renderTable(["selector", "name", "context", "efforts", "readiness"], rows)}\n`);
     if (page.nextOffset !== undefined) {
-        process.stdout.write(`(showing ${page.offset + 1}-${page.offset + page.items.length} of ${page.total}; next --offset ${page.nextOffset})\n`);
+        out(`(showing ${page.offset + 1}-${page.offset + page.items.length} of ${page.total}; next --offset ${page.nextOffset})\n`);
     }
     return 0;
 };
@@ -85,14 +90,14 @@ interface WorkspaceRow {
     created_at: string;
 }
 
-export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Promise<number> => {
+export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }, out: Out = stdout): Promise<number> => {
     const { workspaces } = await rpc.call("workspace.list") as { workspaces: WorkspaceRow[] };
     if (opts.json) {
-        process.stdout.write(`${JSON.stringify(workspaces)}\n`);
+        out(`${JSON.stringify(workspaces)}\n`);
         return 0;
     }
     if (workspaces.length === 0) {
-        process.stdout.write("(no workspaces; run `plurnk` to create one)\n");
+        out("(no workspaces; run `plurnk` to create one)\n");
         return 0;
     }
     const rows = workspaces.map((s) => [
@@ -100,7 +105,7 @@ export const runWorkspaceList = async (rpc: Caller, opts: { json: boolean }): Pr
         s.project_root ?? "(headless)",
         s.created_at,
     ]);
-    process.stdout.write(`${renderTable(["name", "project_root", "created"], rows)}\n`);
+    out(`${renderTable(["name", "project_root", "created"], rows)}\n`);
     return 0;
 };
 

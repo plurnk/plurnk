@@ -48,19 +48,17 @@ test("{§cli-worker-history}: startup and attach restore the bound worker's hist
     }, daemon.workspace);
     t.after(() => tui.kill());
     await tui.waitFor(/RESTORED_ANSWER_1/);
-    await tui.waitFor(/earlier entries/);
     assert.match(tui.output(), /Remember the alpha question\./);
     assert.doesNotMatch(tui.output(), /RESTORED_ANSWER_2|Remember the beta question/);
     assert.equal(requests, 2, "restoring history does not infer or resubmit a prompt");
     assert.doesNotMatch(tui.output(), /completed · \d+ turns? ·/, "history is not a fresh loop summary");
     const before = tui.output().length;
-    tui.write("/attach beta\r");
+    tui.write("/worker beta\r");
     await tui.waitFor(/RESTORED_ANSWER_2/, 10_000, before);
-    await tui.waitFor(/earlier entries/, 10_000, before);
     await tui.waitFor(/worker: beta \(bound\)/, 10_000, before);
     assert.match(tui.output().slice(before), /Remember the beta question\./);
     assert.equal(requests, 2, "worker navigation is inference-free");
-    tui.write("/worker leaf\r");
+    tui.write("/fork leaf\r");
     await tui.waitFor(/worker: leaf \(new\)/);
     const beforeHop = tui.output().length;
     tui.write("/parent\r");
@@ -76,7 +74,7 @@ test("{§cli-worker-history}: startup and attach restore the bound worker's hist
     await quiet.waitFor(/plurnk.*\/help/s);
     quiet.write("/model\r");
     await quiet.waitFor(/model: historyfixture/);
-    assert.doesNotMatch(quiet.output(), /RESTORED_ANSWER|Remember the alpha question|earlier entries/);
+    assert.doesNotMatch(quiet.output(), /RESTORED_ANSWER|Remember the alpha question|earlier loops/);
     quiet.write("/quit\r");
     assert.equal(await quiet.exited, 0);
     assert.equal(requests, 2, "disabling backfill does not start work");
@@ -114,8 +112,7 @@ test("{§cli-worker-history}: quitting an attached live observer leaves the orig
         HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "",
     }, daemon.workspace);
     t.after(() => tui.kill());
-    await tui.waitFor(/earlier entries/);
-    assert.match(tui.output(), /Finish the independent work/);
+    await tui.waitFor(/Finish the independent work/);
     assert.doesNotMatch(tui.output(), /Reasoning before the observer/);
     tui.write("/workers\r");
     await tui.waitFor(/● main/);

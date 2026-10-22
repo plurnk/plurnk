@@ -63,7 +63,7 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     tui.write("/workers\r");
     await tui.waitFor(/● main/);
 
-    tui.write("/attach elsewhere\r");
+    tui.write("/worker elsewhere\r");
     await tui.waitFor(/until its run and submitted commands settle/);
     tui.write("\x1bh");
     await tui.waitFor(/(?:until its run and submitted commands settle[\s\S]*){2}/);
@@ -81,7 +81,7 @@ test("[§cli-active-command-admission] ordinary commands and client operations r
     await tui.waitFor(/stop before changing its review setting/);
     tui.write("/stop\r");
     await tui.waitFor(/cancelled|final 499/);
-    tui.write("/attach elsewhere\r");
+    tui.write("/worker elsewhere\r");
     await tui.waitFor(/worker: elsewhere \(new\)/);
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);

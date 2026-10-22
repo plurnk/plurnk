@@ -211,15 +211,15 @@ const wordsAddress = (content: unknown): string | null => {
         && (source.mimeType === "text/plain" || source.mimeType === "text/markdown") ? source.value : null;
 };
 
-// {§cli-credential} The words are read as the Run that carried them was posted: with the credential's access token,
-// renewed once when the daemon says it lapsed.
-const readWords = async (target: AguiTarget, url: string, signal?: AbortSignal): Promise<string> => {
+// {§cli-credential} What a daemon serves beside its Runs is read as a Run is posted: with the credential's access token,
+// renewed once when the daemon says it lapsed. A refusal is the daemon's Problem.
+const readServed = async (target: AguiTarget, url: string, what: string, signal?: AbortSignal): Promise<Response> => {
     for (let attempt = 0; ; attempt += 1) {
         const headers = target.credential === undefined ? {} : await target.credential.headers(target.aguiUrl);
         try {
             const response = await problemFetch(url, { headers, ...(signal === undefined ? {} : { signal }) });
-            if (!response.ok) throw new ProblemError(clientTransportResultInvalid(`The words at ${url} answered HTTP ${response.status}.`));
-            return await response.text();
+            if (!response.ok) throw new ProblemError(clientTransportResultInvalid(`${what} at ${url} answered HTTP ${response.status}.`));
+            return response;
         } catch (error) {
             if (attempt === 0 && target.credential !== undefined
                 && error instanceof ProblemError && /\/bearer-token-(?:invalid|required)$/u.test(error.problem.type)) {
@@ -231,22 +231,46 @@ const readWords = async (target: AguiTarget, url: string, signal?: AbortSignal):
     }
 };
 
+const readWords = async (target: AguiTarget, url: string, signal?: AbortSignal): Promise<string> =>
+    (await readServed(target, url, "The words", signal)).text();
+
+const contentWithWords = async (content: unknown, target: AguiTarget, signal?: AbortSignal): Promise<unknown> => {
+    const url = wordsAddress(content);
+    return url === null ? content : readWords(target, url, signal);
+};
+
+// Messages whose words travel by reference, with their words in their place.
+const messagesWithWords = <T>(messages: readonly T[], target: AguiTarget, signal?: AbortSignal): Promise<T[]> =>
+    Promise.all(messages.map(async (message) => {
+        const content = await contentWithWords(objectOf(message)?.content, target, signal);
+        return content === objectOf(message)?.content ? message : { ...message, content };
+    }));
+
 // An event whose words travel by reference, with its words in their place: a reply's result, or a snapshot's messages.
 const withWords = async (event: AguiEvent, target: AguiTarget, signal?: AbortSignal): Promise<AguiEvent> => {
-    const read = async (content: unknown): Promise<unknown> => {
-        const url = wordsAddress(content);
-        return url === null ? content : readWords(target, url, signal);
-    };
     if (event.type === "TOOL_CALL_RESULT") {
-        const content = await read(event.content);
+        const content = await contentWithWords(event.content, target, signal);
         return content === event.content ? event : { ...event, content } as AguiEvent;
     }
     if (event.type !== "MESSAGES_SNAPSHOT") return event;
-    const messages = await Promise.all(event.messages.map(async (message) => {
-        const content = await read(objectOf(message)?.content);
-        return content === objectOf(message)?.content ? message : { ...message, content };
-    }));
-    return { ...event, messages } as AguiEvent;
+    return { ...event, messages: await messagesWithWords(event.messages, target, signal) } as AguiEvent;
+};
+
+// plurnk-service {§agui-loop-page}: one loop of a worker's conversation, whole, under the view this session's Runs
+// negotiate ({§cli-provider-reasoning}), each sender's words past the ceiling read in their place.
+export const readLoopPage = async (target: AguiTarget, page: { readonly workspaceId: number; readonly workerId: number; readonly threadId: string;
+    readonly descendants: boolean; readonly sequence: number }, signal?: AbortSignal): Promise<unknown[]> => {
+    const url = new URL(`${target.aguiUrl.replace(/\/$/, "")}/${page.workspaceId}/${page.workerId}/messages`);
+    url.searchParams.set("thread", page.threadId);
+    if (page.descendants) url.searchParams.set("descendants", "true");
+    url.searchParams.set("reasoning", "link");
+    url.searchParams.set("loop", String(page.sequence));
+    const body = objectOf(await (await readServed(target, url.href, "The loop page", signal)).json().catch(() => null));
+    if (body === null || typeof body.final !== "boolean" || !(body.older === null || typeof body.older === "string")
+        || !Array.isArray(body.messages) || !body.messages.every((message) => objectOf(message) !== null)) {
+        throw new ProblemError(clientTransportResultInvalid(`The loop page at ${url.href} is not { final, messages, older }.`));
+    }
+    return messagesWithWords(body.messages as unknown[], target, signal);
 };
 
 async function* consumeRun(agent: HttpAgent, input: RunAgentInput, signal?: AbortSignal): AsyncGenerator<AguiEvent> {

@@ -403,8 +403,8 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         terminated(),
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, gated: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, gated: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, gated: 0, gates: {}, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, gated: 0, gates: {}, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
     ]);
 });
 

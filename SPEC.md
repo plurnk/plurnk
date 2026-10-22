@@ -478,7 +478,7 @@ Triggered when `argv` has no positional prompt.
    YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /log [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /attach <name> /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). `/workspace [name]` selects or creates a workspace, then binds its shared-default worker under §1.1; `/workspaces` lists. `/worker [name]` forks a new worker (`run.fork`), `/attach <name>` binds this session to a worker by name, `/workers` lists the directory as a topology rooted at the bound worker (both §3.1.2). `/rename <name>` changes the workspace's display name without changing its ID, worker or thread. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/attach` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /loops /loop [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /fork [name] /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). `/workspace [name]` selects or creates a workspace, then binds its shared-default worker under §1.1; `/workspaces` lists. The plural lists and the singular opens one: `/workers` lists the workspace's workers as a tree, `/worker [name]` shows the bound worker or goes to the named one, creating it when the workspace holds no worker by that name, and `/fork [name]` branches the bound worker (`run.fork`) and goes there (all §3.1.2); `/loops` lists the bound worker's loops and `/loop [n]` prints one whole ({§cli-loops}). `/rename <name>` changes the workspace's display name without changing its ID, worker or thread. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/worker` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`. Help and tab-completion derive the canonical fence from the published contract ({§operation-fences}); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; the person's own command, so it runs at once: the daemon never routes it for review, though its server policy can still refuse it.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
@@ -512,9 +512,9 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 
 | Group | Verbs |
 |---|---|
-| Inspect | `/help /models /workspaces /workers /log` |
+| Inspect | `/help /models /workspaces /workers /loops /loop` |
 | Policy | `/model /child /effort /capabilities /yolo` |
-| Workspace | `/workspace /rename /share /rollback /worker /attach /parent /enter /older /newer` |
+| Workspace | `/workspace /rename /share /rollback /worker /fork /parent /enter /older /newer` |
 | Functionality | `/mcp /skills /a2a /members /env /schedule` |
 | Compose | `/import /script /editor` |
 | Review | `/review /accept /reject /cancel /edit` |
@@ -554,23 +554,24 @@ included ({§cli-resume-observation}): every descendant's own rows and execution
 arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
 steps and terminal never do, including those the daemon attributes to a subagent run
 (plurnk-service `{§agui-subagents}`). Navigation between workers is explicit.
-`/attach <name>` rebinds the session's thread to that name with the workspace
+`/worker <name>` rebinds the session's thread to that name with the workspace
 unchanged: an existing worker is bound, and a new name's worker is created as
-the session attaches to it, exactly as with `--worker <name>` at invocation. The verb reports
-`(bound)` or `(new)` from the workspace directory, re-reads the worker's durable
-policy, and the header and status line adopt the name.
+the session goes to it, exactly as with `--worker <name>` at invocation and as `/workspace <name>`
+creates a workspace. The verb reports `(bound)` or `(new)` from the workspace directory, re-reads the
+worker's durable policy, and the header and status line adopt the name. `/worker` alone names the bound
+worker and its lineage, `worker: recheck [/main/fork-1/~recheck]`, and binds nothing. `/fork [name]`
+branches the bound worker into a child that keeps its history (`run.fork`) and goes there.
 `/workers` renders `workspace.workers` as a forest of parent/child trees from
-`parentWorkerId`: the bound worker's tree first with the bound worker marked `●`,
-other workers `○`, siblings newest first, each row carrying the worker's origin
-(`model`, `client`, `_plurnk`) and creation time, a worker whose parent is not in
-the directory standing as a root. A bound name the directory does not hold yet leads as
-`● <name>  (new)`. The map carries no lifecycle: a worker's state
-is seen by being in it. `plurnk workspace workers <name>` (§7.3) keeps its flat
-table.
+`parentWorkerId`, places only: the bound worker's tree first with the bound worker marked `●`,
+other workers `○`, siblings newest first, a worker whose parent is not in the directory standing as
+a root. Each worker carries the lifecycle mark the directory states for it (⌛︎ running, ⏳ queued,
+💤 parked, 🛑 cancelled, ❌ failed, none when idle or completed) and, for one in the session's tree,
+`🚦 n` for the gates it waits on (`status.descendants`). A bound name the directory does not hold yet
+leads as `● <name>  (new)`. `plurnk workspace workers <name>` (§7.3) keeps its flat table.
 
 **Topology is navigation, not a dashboard** (plurnk-service#523). A child worker
 is a first-class place the user goes to, prompts, forks, or makes the root of
-another session. One hop is a full `/attach` of the target, never a read-only
+another session. One hop is a full `/worker` of the target, never a read-only
 visit; the composer then speaks to that worker. The hops follow vim's tree
 orientation, depth horizontal and siblings vertical, as `Alt-h/j/k/l` and as
 verbs for terminals that swallow Alt:
@@ -595,6 +596,28 @@ hops down, `[/~]` before the worker is named; an unknown loop or turn is elided.
 always shows that it is a child, so a session opened on a child reads its full lineage. The
 §1.2.1 footer includes the place after the project folder and before activity, so the composer has one line above it.
 
+### §3.1.3 Loops {§cli-loops}
+
+A worker's conversation is its loops. `/loops` lists the bound worker's loops oldest first, one line
+each, from the daemon's list (`worker.loops`, plurnk-service `{§agui-worker-loops}`): the loop's number,
+the sender of its opening message when no person sent it (a worker, a schedule, a peer), that message's
+first line with `…` when it holds more, and the lifecycle mark of a loop under way or ended early, each
+line cut to the terminal's width:
+
+```
+  1: Let's build an app! Make no mistakes.
+  2: No, you did it wrong!… 🛑
+  3: worker://helper: Check the tests. ⌛︎
+```
+
+`/loop <n>` prints loop `n` whole, oldest first, as history draws it ({§cli-worker-history}): the person's
+prompts, replies whole, operations as their headings, reasoning never. It reads the loop's page
+(plurnk-service `{§agui-loop-page}`) under the view the session's Runs negotiate, its delegation
+observed and reasoning by link, reads each sender's words that travel by reference in their place,
+rebuilds its rows from the parts that build them live ({§cli-row-sources}), and prints them below
+everything already on the screen under `── loop n ──`. `/loop` alone prints the current loop. A worker
+no act has created yet has no loops.
+
 ### §cli-worker-history Worker history on attach
 
 Startup and successful workspace/worker navigation synchronize through the existing
@@ -608,7 +631,7 @@ disconnecting never cancels work ({§agui-run-disconnect}).
 | Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
-| Past/live boundary | A quiet count of earlier displayed entries and `/log` for more. Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
+| Past/live boundary | A window that begins after the first loop ends with `— earlier loops: /loops —`; `/loop <n>` prints any of them ({§cli-loops}). Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
 | State/accounting | Replayed entries are not live activity, turns, terminal events, or fresh usage. Only the current gauge and subsequently observed events update status. Elapsed session time does not include time before attachment. |
 | Return visits | Each explicit binding restores its current bounded tail. Existing terminal scrollback stays intact. Input recall is separate. |
 
@@ -632,7 +655,7 @@ without changing the client's selected policy after a refusal.
 | Plain prompt or `...` | Inject into the bound worker's loop; observe an admitted successor through the standard sync Run after the existing stream settles |
 | `?`, or `:` removing an active `?` request | Explain that the local review choice belongs to a new run; do not silently strip it and inject |
 | `/stop`, proposal responses, question responses, `/quit` | Remain reachable; resolve the identified owner, never whichever request arrived last |
-| `/workspace`, `/rename`, `/worker`, `/attach`, topology hops | Refused until the attached model run and submitted commands settle, with that specific reason |
+| `/workspace`, `/rename`, `/worker <name>`, `/fork`, topology hops | Refused until the attached model run and submitted commands settle, with that specific reason |
 
 The TUI presents one bound worker. Navigation does not implicitly cancel
 or detach its stream. Its binding cannot change halfway through a command; a

@@ -36,7 +36,8 @@ import { ProblemError, isAbsentWorker, renderDiagnostic, report, clientSubcomman
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineOutput, openLaunches, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
-import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
+import { runModels, runWorkspaceList } from "./subcommands.ts";
+import { readLoops, renderLoop, renderLoopList, workerIdNamed } from "./loops.ts";
 import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
 import {
     Validator,
@@ -79,10 +80,10 @@ export const renderTuiFailure = (cause: unknown): string => {
 
 interface WorkspaceResult { id: number; name: string }
 
-// One verb vocabulary across the TUI and (where they exist) argv subcommands.
-// Singular = CREATE, plural = LIST: /workspace makes a new workspace, /workspaces
-// lists them; /worker forks a new worker, /workers lists them. /rename retargets the
-// current workspace's mutable handle (a worker's name is immutable — no /rename for workers).
+// One verb vocabulary across the TUI and (where they exist) argv subcommands ({§cli-workers-topology}, {§cli-loops}).
+// The plural lists, the singular opens one: /workspaces and /workspace <name>, /workers and /worker <name>, /loops and
+// /loop <n>; opening a name the workspace does not hold creates it. /fork branches the bound worker. /rename retargets
+// the current workspace's mutable handle (a worker's name is immutable — no /rename for workers).
 export const VERBS: readonly CommandName[] = COMMANDS.map(({ name }) => name);
 export const TUI_HELP = renderCommandHelp();
 
@@ -90,7 +91,7 @@ export const TUI_HELP = renderCommandHelp();
 // Delivered as Alt not Ctrl because Ctrl-<letter> collides with terminal and
 // editor control keys. Alt-b/f/d remain the editor's word operations.
 export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
-    m: "/models", s: "/workspaces", R: "/workers", L: "/log",
+    m: "/models", s: "/workspaces", R: "/workers", L: "/loops",
     Y: "/yolo", N: "/workspace", M: "/members", x: "/stop", "?": "/help", e: "/editor",
     // {§cli-workers-topology} — vim's tree orientation: depth is horizontal, siblings vertical.
     h: "/parent", l: "/enter", j: "/older", k: "/newer",
@@ -177,7 +178,7 @@ export const completeInput = async (line: string, options: CompletionOptions): P
                 prefix: command.prefix,
             };
         }
-        const workerFrag = line.match(/^\/attach\s+(\S*)$/);
+        const workerFrag = line.match(/^\/worker\s+(\S*)$/);
         if (workerFrag) {
             let names: string[] = [];
             try { names = await options.getWorkerNames?.() ?? []; }
@@ -317,8 +318,15 @@ export interface VerbContext {
     // Switch to (or create) a named workspace by re-mapping the transport's thread.
     // Returns the new workspace handle.
     switchWorkspace: (name: string | undefined) => Promise<WorkspaceResult | undefined>;
-    // The bound worker's name (null until a loop or /attach names it).
+    // The bound worker's name (null until a loop or /worker names it).
     getWorker: () => string | null;
+    // {§cli-loops} The thread the session speaks on and the terminal's width, to print a loop as history is drawn, and
+    // the rows of a worker's loop as its messages build them.
+    threadId: () => string;
+    columns: () => number;
+    readLoop: (workerId: number, sequence: number) => Promise<readonly LogEntryWire[]>;
+    // {§cli-workers-topology} The pending gates of the workers the session's gauge knows, by id.
+    gates: () => Readonly<Record<number, number>>;
     // Rebind the session's thread to a worker by name, workspace unchanged
     // ({§cli-workers-topology}); the daemon binds or mints on the next run.
     attachWorker: (name: string) => Promise<void>;
@@ -414,18 +422,28 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
         case "models": await runModels(rpc, {
             json: false,
             query: rest.length === 0 ? {} : { search: rest },
-        }); return;
-        case "workspaces": await runWorkspaceList(rpc, { json: false }); return;
+        }, write); return;
+        case "workspaces": await runWorkspaceList(rpc, { json: false }, write); return;
         case "workers": {
             // {§cli-workers-topology} — the directory as a forest rooted at the bound worker.
             const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
-            write(renderWorkerTopology(workers, ctx.getWorker()));
+            write(renderWorkerTopology(workers, ctx.getWorker(), ctx.gates()));
             return;
         }
-        case "log": {
-            const limit = rest.length > 0 ? Number(rest) : undefined;
-            const filters = Number.isInteger(limit) && (limit as number) > 0 ? { limit: limit as number } : {};
-            await runLogRead(rpc, { json: false, filters });
+        case "loops": {
+            // {§cli-loops} The bound worker's loops, oldest first: the list a conversation is navigated by.
+            const workerId = await workerIdNamed(rpc, ctx.getWorker());
+            write(renderLoopList(workerId === null ? [] : await readLoops(rpc, workerId), ctx.columns()));
+            return;
+        }
+        case "loop": {
+            // {§cli-loops} One loop whole, printed as history is: the current one without a number.
+            if (rest.length > 0 && !/^[1-9]\d*$/u.test(rest)) { write("  usage: /loop [n]\n"); return; }
+            const workerId = await workerIdNamed(rpc, ctx.getWorker());
+            const loops = workerId === null ? [] : await readLoops(rpc, workerId);
+            const loop = rest.length === 0 ? loops.at(-1) : loops.find(({ sequence }) => sequence === Number(rest));
+            if (workerId === null || loop === undefined) { write(rest.length === 0 ? "  (no loops yet)\n" : `  (no loop ${rest}; /loops lists them)\n`); return; }
+            write(renderLoop(loop, await ctx.readLoop(workerId, loop.sequence), ctx.threadId(), ctx.columns()));
             return;
         }
         case "model": {
@@ -528,24 +546,27 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             }
             return;
         case "worker": {
-            // New worker — run.fork branches the bound worker, optionally
-            // named at instantiation (immutable after). Bind to the fork so the
-            // next prompt speaks there. The workspace is unchanged.
-            const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
-            await ctx.attachWorker(forked.workerName);
-            await refreshWorkerPolicy();
-            write(`  worker: ${forked.workerName} (new)\n`);
-            return;
-        }
-        case "attach": {
-            // {§cli-workers-topology} — an existing worker is bound, a new name mints a
-            // new worker on the next run (the `--worker` path); the workspace stays.
-            if (rest.length === 0) { write("  usage: /attach <name>\n"); return; }
+            // {§cli-workers-topology} — the bound worker, or the named one: an existing worker is bound, a new name's
+            // worker is created as the session goes to it (the `--worker` path); the workspace stays.
             const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
+            if (rest.length === 0) {
+                const bound = ctx.getWorker();
+                write(bound === null ? "  worker: (none yet; /worker <name> goes to one)\n" : `  worker: ${bound} [${workerPath(workers, bound)}]\n`);
+                return;
+            }
             const known = workers.some((worker) => worker.name === rest);
             await ctx.attachWorker(rest);
             await refreshWorkerPolicy();
             write(`  worker: ${rest} (${known ? "bound" : "new"})\n`);
+            return;
+        }
+        case "fork": {
+            // {§cli-workers-topology} — run.fork branches the bound worker into a child that keeps its history,
+            // optionally named at instantiation (immutable after); the session goes there. The workspace is unchanged.
+            const forked = await rpc.call("run.fork", rest.length > 0 ? { name: rest } : {}) as { workerId: number; workerName: string };
+            await ctx.attachWorker(forked.workerName);
+            await refreshWorkerPolicy();
+            write(`  worker: ${forked.workerName} (new)\n`);
             return;
         }
         case "parent":
@@ -693,7 +714,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // A `?` prompt asks for review of that run; the request outranks the standing yolo setting.
     let reviewRequested = false;
     // {§cli-workers-topology} — the `worker://<name>` references the waterfall has shown, from model
-    // and client-authored operations alike, complete /attach beside the directory. The binding scopes
+    // and client-authored operations alike, complete /worker beside the directory. The binding scopes
     // them; resetBindingView clears them on attach.
     const seenWorkerNames = new Set<string>();
     const harvestWorkerName = (target: string | null): void => {
@@ -1270,6 +1291,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             return workspace;
         },
         getWorker: () => boundWorker,
+        threadId: () => transport.threadId(),
+        columns: () => surface.columns || 80,
+        readLoop: (workerId, sequence) => transport.loop(workerId, sequence),
+        gates: () => authoritativeStatus?.gates ?? {},
         attachWorker: async (name) => {
             transport.useWorker(name);
             resetBindingView();
@@ -1393,9 +1418,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     };
 
     const dispatchVerb = async (line: string): Promise<void> => {
-        const { verb } = parseSlash(line);
+        const { verb, rest } = parseSlash(line);
         if (!["help", "quit", "stop"].includes(verb)) await bindingReady;
-        const rebinds = commandSpec(verb)?.rebinds === true;
+        // `/worker` alone shows where the session is; only a worker it names rebinds.
+        const rebinds = commandSpec(verb)?.rebinds === true && !(verb === "worker" && rest.length === 0);
         if (rebinds && (inFlight || pendingCommands > 0)) {
             printAbove("  The worker stays bound until its run and submitted commands settle; /stop cancels the run.");
             return;

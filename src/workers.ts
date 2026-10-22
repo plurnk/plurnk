@@ -1,11 +1,15 @@
 // The workspace directory as a topology ({§cli-workers-topology}): a forest of
 // parent/child trees from `workspace.workers`, the bound worker's tree first.
+import { lifecycleMark, type StatusLifecycle } from "./status.ts";
+
 export interface WorkerRow {
     id: number;
     name: string;
     created_at: string;
     origin?: "model" | "_plurnk";
     parentWorkerId?: number | null;
+    // plurnk-service {§methods-worker-list}: the directory row's lifecycle, the daemon's word.
+    lifecycle?: StatusLifecycle;
 }
 
 // Only a pathless `worker://<name>` references an actor; scratch paths do not.
@@ -67,7 +71,7 @@ export const traverse = (
     const byId = new Map(workers.map((worker) => [worker.id, worker]));
     const parentOf = parentIn(byId);
     const current = workers.find((worker) => worker.name === bound) ?? null;
-    if (current === null) return { target: null, notice: "no bound worker yet: run a prompt or /attach <name> first" };
+    if (current === null) return { target: null, notice: "no bound worker yet: run a prompt or /worker <name> first" };
     if (hop === "parent") {
         const parent = parentOf(current);
         return parent === null ? { target: null, notice: "at the root: no parent" } : { target: parent, notice: null };
@@ -99,11 +103,12 @@ const siblingsOf = (workers: readonly WorkerRow[], current: WorkerRow): WorkerRo
         .toSorted(byRecency);
 };
 
-// Lifecycle glyphs for workers other than the bound one arrive with
-// plurnk-service#653; until then no glyph is inferred from row coordinates.
-export const renderWorkerTopology = (workers: readonly WorkerRow[], bound: string | null): string => {
+// {§cli-workers-topology} The places only, each with its lifecycle mark and, where the session's gauge knows them,
+// the gates it waits on: `gates` by worker id.
+export const renderWorkerTopology = (listed: readonly WorkerRow[], bound: string | null, gates: Readonly<Record<number, number>> = {}): string => {
+    const workers = listed.filter(isPlace);
     // {§cli-workers-topology} A bound name the directory does not hold yet is where the next message goes.
-    const fresh = bound !== null && !workers.some(({ name }) => name === bound) ? `  ● ${bound}  (new)  ← bound\n` : "";
+    const fresh = bound !== null && !workers.some(({ name }) => name === bound) ? `  ● ${bound}  (new)\n` : "";
     if (workers.length === 0) return fresh === "" ? "  (no workers)\n" : fresh;
     const byId = new Map(workers.map((worker) => [worker.id, worker]));
     const parentOf = (worker: WorkerRow): number | null =>
@@ -133,8 +138,9 @@ export const renderWorkerTopology = (workers: readonly WorkerRow[], bound: strin
         kids.forEach((kid, index) => walk(kid, childPrefix, index === kids.length - 1 ? "└─ " : "├─ "));
     };
     for (const root of roots) walk(root, "", "");
-    const width = Math.max(...rows.map(({ tree }) => tree.length));
-    return `${fresh}${rows.map(({ tree, worker }) =>
-        `  ${tree.padEnd(width)}  ${(worker.origin ?? "?").padEnd(7)}  ${worker.created_at}${worker.name === bound ? "  ← bound" : ""}`,
-    ).join("\n")}\n`;
+    const marks = (worker: WorkerRow): string => [
+        ...(worker.lifecycle === undefined ? [] : [lifecycleMark(worker.lifecycle)]),
+        ...((gates[worker.id] ?? 0) > 0 ? [`🚦 ${gates[worker.id]}`] : []),
+    ].filter((mark) => mark.length > 0).join(" ");
+    return `${fresh}${rows.map(({ tree, worker }) => `  ${[tree, marks(worker)].filter((part) => part.length > 0).join(" ")}`).join("\n")}\n`;
 };

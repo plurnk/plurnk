@@ -165,6 +165,20 @@
         "presentation"
       ]
     },
+    "worker.loops": {
+      "posture": "native",
+      "evidence": [
+        "src/tui.test.ts — /loops and /loop",
+        "test/tui/loops.test.ts — loops listed and one printed whole against the daemon"
+      ],
+      "dimensions": [
+        "admission",
+        "projection",
+        "success",
+        "failure",
+        "presentation"
+      ]
+    },
     "workspace.share": {
       "posture": "native",
       "evidence": [

@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-20" "plurnk 4.2.0" "User Commands"
+.TH PLURNK 1 "2026-10-21" "plurnk 4.2.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -161,8 +161,9 @@ The no-argument interactive terminal accepts these slash commands:
 /help [verb]                   Show the command index or one command's usage.
 /models [search]               Search the bounded model catalog.
 /workspaces                    List daemon workspaces.
-/workers                       List this workspace's workers as a topology rooted at the bound worker.
-/log [limit]                   Read recent log entries.
+/workers                       List this workspace's workers as a tree, each with its state.
+/loops                         List this worker's loops: each one's number and opening line.
+/loop [n]                      Print loop n whole, or the current loop.
 /model [selector] [effort]     Inspect or select this worker's durable model, and its effort with it.
 /child [selector|inherit]      Inspect or select the inherited child model.
 /effort [policy]               Inspect or select reasoning effort.
@@ -172,8 +173,8 @@ The no-argument interactive terminal accepts these slash commands:
 /rename <name>                 Rename this workspace's mutable handle.
 /share <folder>                Write this workspace's share into <folder> for a bug report.
 /rollback <loop>/<turn>/<item> Reverse the bound worker's file mutations after a log coordinate, latest first, as your own operations.
-/worker [name]                 Fork and enter a new worker.
-/attach <name>                 Bind this session to a worker by name; a new name mints a new worker.
+/worker [name]                 Show this worker, or go to the named one; a new name makes a new worker.
+/fork [name]                   Fork this worker into a child that keeps its history, and go there.
 /parent                        Hop to the bound worker's parent (Alt-h).
 /enter                         Hop into the bound worker's newest child (Alt-l).
 /older                         Hop to the next older sibling worker, wrapping (Alt-j).

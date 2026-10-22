@@ -88,7 +88,7 @@ test("[§cli-active-command-admission] stopping a model run leaves the person's 
         "the owner can review new work while the person's command is still running");
     await writeFile(join(daemon.workspace, "release-client"), "release");
     await tui.waitFor(/client-settled/);
-    tui.write("/attach next\r");
+    tui.write("/worker next\r");
     await tui.waitFor(/worker: next \(new\)/);
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);

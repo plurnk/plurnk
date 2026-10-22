@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-test("[§cli-workers-topology] /attach completes a worker the waterfall has shown, until the binding changes", { timeout: 90_000 }, async (t) => {
+test("[§cli-workers-topology] /worker completes a worker the waterfall has shown, until the binding changes", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed test requires the sibling service");
     let calls = 0;
@@ -32,15 +32,15 @@ test("[§cli-workers-topology] /attach completes a worker the waterfall has show
     await tui.waitFor(/done · \d+ turns? ·/, 10_000, tui.output().lastIndexOf("Asked the helper."));
 
     start = tui.output().length;
-    tui.write("/attach hel\t");
-    await tui.waitFor(/\/attach helper/, 10_000, start);
+    tui.write("/worker hel\t");
+    await tui.waitFor(/\/worker helper/, 10_000, start);
 
-    tui.write("\x15/attach other\r");
+    tui.write("\x15/worker other\r");
     await tui.waitFor(/worker: other \(new\)/, 10_000, start);
 
     // The new binding's waterfall has shown no helper, and the directory holds none.
     start = tui.output().length;
-    tui.write("/attach hel\tX");
-    await tui.waitFor(/\/attach helX/, 10_000, start);
+    tui.write("/worker hel\tX");
+    await tui.waitFor(/\/worker helX/, 10_000, start);
     tui.write("\x15");
 });

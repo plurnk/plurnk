@@ -50,7 +50,8 @@ remains the escape hatch from the interactive client when idle.
 Opening or switching a workspace or worker restores a bounded recent transcript and
 observes any current loop, without resubmitting a prompt. Replies remain whole;
 historical operations are headings, and old reasoning is not replayed.
-`PLURNK_CLIENT_HISTORY_ENTRIES` sets the tail size; `/log` inspects further back.
+`PLURNK_CLIENT_HISTORY_ENTRIES` sets the tail size; `/loops` lists the worker's loops and `/loop <n>`
+prints any of them whole.
 
 Side-effect proposals are rendered for human review unless loop or client
 policy has already resolved them. A transport or resolution failure is shown

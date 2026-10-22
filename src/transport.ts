@@ -21,7 +21,7 @@ import {
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { createHash } from "node:crypto";
-import { runViaAgui, actionOutcome, operationResult, problemDetails, runEnd, workerThreadId, type AguiEvent, type AguiTarget, type WorkerBinding, type WorkspaceHandle } from "./agui.ts";
+import { runViaAgui, actionOutcome, operationResult, problemDetails, readLoopPage, runEnd, workerThreadId, type AguiEvent, type AguiTarget, type WorkerBinding, type WorkspaceHandle } from "./agui.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
 import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
@@ -149,6 +149,8 @@ export interface Transport {
     // The thread this transport speaks for: the AG-UI threadId the daemon sources this
     // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
     threadId(): string;
+    // {§cli-loops} The worker's loop `sequence`, whole, as the rows its messages build (plurnk-service {§agui-loop-page}).
+    loop(workerId: number, sequence: number): Promise<LogEntryWire[]>;
 }
 
 // Model and sync Runs share event projection and interrupt handling. An idle sync
@@ -177,10 +179,21 @@ export class AguiTransport implements Transport {
 
     threadId(): string { return workerThreadId(this.#binding); }
 
+    async loop(workerId: number, sequence: number): Promise<LogEntryWire[]> {
+        const ac = this.#controller();
+        try {
+            return snapshotRows(await readLoopPage(this.#target, { workspaceId: this.#binding.workspaceId, workerId, threadId: this.threadId(),
+                descendants: this.#workspace.descendants === true, sequence }, ac.signal));
+        } finally {
+            ac.abort();
+            this.#controllers.delete(ac);
+        }
+    }
+
     // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
     // emitted (a raw-DSL op's rows, notices, streams). Feed those through the same
-    // persistent handlers a run uses (e.g. /attach completion harvests worker
+    // persistent handlers a run uses (e.g. /worker completion harvests worker
     // references from onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
         const ac = this.#controller();

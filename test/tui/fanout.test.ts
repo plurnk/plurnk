@@ -120,8 +120,8 @@ for (const [op, glyph] of [["READ", "📖"], ["EDIT", "📝"], ["KILL", "🗑️
         f.terminal();
         await f.tui.waitFor(/cancelled/);
         const since = f.tui.output().length;
-        f.tui.write("/attach main\r");
-        await f.tui.waitFor(/earlier entries/, 10_000, since);
+        f.tui.write("/worker main\r");
+        await f.tui.waitFor(/receipt-1\.txt[\s\S]*Retained conflict detail/u, 10_000, since);
         const history = stripVTControlCharacters(f.tui.output().slice(since));
         assert.match(history, new RegExp(`${glyph} \\(receipt-0\\.txt\\)`));
         assert.match(history, new RegExp(`${glyph} \\(receipt-1\\.txt\\).*Entry changed: Retained conflict detail`));

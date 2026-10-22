@@ -89,13 +89,13 @@ for (const action of ["accept", "cancel", "stop", "fixed", "free"]) {
                 await tui.waitFor(/model: questionfixture/);
                 const listed = tui.output().length;
                 tui.write("/workers\r");
-                await tui.waitFor(/← bound/, 10_000, listed);
+                await tui.waitFor(/● user\b/u, 10_000, listed);
                 assert.equal(requests.length, 1, "inspection and commands do not answer the question");
                 if (action === "stop") {
                     tui.write("/stop\r");
                     await tui.waitFor(/cancelled|final 499/);
                     assert.equal(requests.length, 1, "stopping does not generate a continuation");
-                    tui.write("/attach after-stop\r");
+                    tui.write("/worker after-stop\r");
                     await tui.waitFor(/worker: after-stop \(new\)/);
                     tui.write("/quit\r");
                     assert.equal(await tui.exited, 0);

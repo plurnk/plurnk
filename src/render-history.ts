@@ -42,10 +42,6 @@ export const renderRows = (entries: readonly LogEntryWire[], threadId: string, c
     return blocks;
 };
 
-// {§cli-worker-history}: the snapshot's rows; on attach, the screen holds none of the person's prompts yet, and the
-// footer names where the loops before the window are ({§cli-loops}).
-export const renderHistory = (history: WorkerHistory, threadId: string, columns: number, tree: ReadonlyMap<number, Descendant> = new Map()): string[] => {
-    const blocks = renderRows(history.entries, threadId, columns, history.attachment, tree);
-    if (history.attachment && (history.entries[0]?.loop_seq ?? 1) > 1) blocks.push(paint("— earlier loops: /loops —", "dim"));
-    return blocks;
-};
+// {§cli-worker-history}: the snapshot's rows; on attach, the screen holds none of the person's prompts yet.
+export const renderHistory = (history: WorkerHistory, threadId: string, columns: number, tree: ReadonlyMap<number, Descendant> = new Map()): string[] =>
+    renderRows(history.entries, threadId, columns, history.attachment, tree);

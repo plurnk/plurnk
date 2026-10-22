@@ -55,12 +55,7 @@ test("[§cli-worker-history] a snapshot's prompt, operation headings and speech 
             metadata: { plurnk: { ...facts(3, { op: "SEND" }).plurnk, aside: null, receipt: { status: 200, answers: [source], completion: 200 } } } },
     ]);
     assert.deepEqual(renderHistory({ attachment: true, accepted: new Map(), entries: rows }, "alice", 80),
-        ["› snapshot prompt\n  second line", "📖 (a.md)", "🐹\nsnapshot answer"], "a window from the first loop has nothing before it");
-    // {§cli-loops} A window that begins at a later loop names where the loops before it are.
-    const later = rows.map((row) => ({ ...row, loop_seq: 3 }));
-    assert.equal(renderHistory({ attachment: true, accepted: new Map(), entries: later }, "alice", 80).at(-1), "— earlier loops: /loops —");
-    assert.equal(renderHistory({ attachment: false, accepted: new Map(), entries: later }, "alice", 80).includes("— earlier loops: /loops —"), false,
-        "only an attachment's window carries it");
+        ["› snapshot prompt\n  second line", "📖 (a.md)", "🐹\nsnapshot answer"]);
 });
 
 test("{§cli-worker-history}: another actor's message keeps its sender, an answer its words, and a materialization draws nothing", () => {

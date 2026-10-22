@@ -133,7 +133,8 @@ test("[§cli-review-attribution] a gate's heading names the worker asking when i
     assert.equal(gateTitle("proposal EDIT a.ts", null, today, now), "proposal EDIT a.ts · decide by 14:32", "a deadline today is its time");
     assert.equal(gateTitle("question", "helper", later, now), "question · from helper · decide by 2026-10-23 08:05", "another day carries its date");
     const menu = renderProposalMenu({ ...proposal(), worker: "helper", workerId: 4, expiresAt: today }, "main");
-    assert.match(menu, /proposal EDIT \S*\/tmp\/x · from helper · decide by \d\d:\d\d/u, "the one-shot menu says the same");
+    // The menu reads the clock: its deadline is a time today or a dated one, the forms the titles above pin.
+    assert.match(menu, /proposal EDIT \S*\/tmp\/x · from helper · decide by (?:\d{4}-\d\d-\d\d )?\d\d:\d\d/u, "the one-shot menu says the same");
     assert.doesNotMatch(renderProposalMenu(proposal(), "main"), /from main/u, "the bound worker's own names none");
 });
 

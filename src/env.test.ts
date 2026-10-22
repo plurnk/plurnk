@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { applyWorkerEnv, handleEnv, resolveClientWorkerEnv } from "./env.ts";
+import { admitWorkerEnv, commandEnv, handleEnv, resolveClientWorkerEnv } from "./env.ts";
+import type { WorkerRow } from "./workers.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const harness = (results: Record<string, unknown> = {}) => {
@@ -247,25 +248,50 @@ test("[§cli-environment] resolveClientWorkerEnv cascades PLURNK_CLIENT_ENV_INHE
     });
 });
 
-test("[§cli-environment] applyWorkerEnv replaces each entry and re-enables disabled ones", async () => {
-    const calls: Array<{ method: string; params?: object }> = [];
-    const rpc = {
-        call: async (method: string, params?: object) => {
-            calls.push({ method, params });
-            const alias = (params as { alias?: string } | undefined)?.alias;
-            if (method === "worker.env.replace" && alias === "DISABLED_VAR") {
-                return { status: 200, alias, definition: { state: "disabled" } };
-            }
-            return { status: 200, alias, definition: { state: "active" } };
-        },
+test("[§cli-environment] PLURNK_CLIENT_ENV_EXCLUDE and --env-exclude narrow only what inheritance matched", () => {
+    const env: NodeJS.ProcessEnv = {
+        GIT_AUTHOR_NAME: "Shell",
+        GITHUB_TOKEN: "token",
+        GITLAB_TOKEN: "token",
+        PLURNK_CLIENT_ENV_INHERIT: "GIT*",
+        PLURNK_CLIENT_ENV_EXCLUDE: "GITHUB_*,GITLAB_TOKEN",
     };
-    await applyWorkerEnv(rpc, new Map([
-        ["ACTIVE_VAR", "one"],
-        ["DISABLED_VAR", "two"],
-    ]));
-    assert.deepEqual(calls, [
+    assert.deepEqual(Object.fromEntries(resolveClientWorkerEnv({}, env)), { GIT_AUTHOR_NAME: "Shell" });
+    assert.deepEqual(Object.fromEntries(resolveClientWorkerEnv({ envExclude: "GIT_*" }, env)), { GITHUB_TOKEN: "token", GITLAB_TOKEN: "token" },
+        "the flag replaces the knob, as --env-inherit does");
+    assert.deepEqual(Object.fromEntries(resolveClientWorkerEnv({ env: ["GITHUB_TOKEN"] }, { ...env, PLURNK_CLIENT_ENV_GITLAB_TOKEN: "explicit" })),
+        { GIT_AUTHOR_NAME: "Shell", GITLAB_TOKEN: "explicit", GITHUB_TOKEN: "token" },
+        "an explicit entry is never excluded, and neither knob is a worker variable of its own");
+});
+
+test("[§cli-environment] admitWorkerEnv writes a worker without a parent and leaves a child's environment to its parent", async () => {
+    const admit = async (row: WorkerRow | undefined, env: ReadonlyMap<string, string>) => {
+        const calls: Array<{ method: string; params?: object }> = [];
+        await admitWorkerEnv({
+            call: async (method: string, params?: object) => {
+                calls.push({ method, ...(params === undefined ? {} : { params }) });
+                if (method === "workspace.workers") return { workers: row === undefined ? [] : [row] };
+                const alias = (params as { alias?: string } | undefined)?.alias;
+                return { status: 200, alias, definition: { state: alias === "DISABLED_VAR" ? "disabled" : "active" } };
+            },
+        }, "bound", env);
+        return calls;
+    };
+    const env = new Map([["ACTIVE_VAR", "one"], ["DISABLED_VAR", "two"]]);
+    const writes = [
+        { method: "workspace.workers" },
         { method: "worker.env.replace", params: { alias: "ACTIVE_VAR", definition: { value: "one" } } },
         { method: "worker.env.replace", params: { alias: "DISABLED_VAR", definition: { value: "two" } } },
         { method: "worker.env.enable", params: { alias: "DISABLED_VAR" } },
-    ]);
+    ];
+    assert.deepEqual(await admit(undefined, env), writes, "a name the directory does not list yet is the client's own, created by the first write");
+    assert.deepEqual(await admit({ id: 1, name: "bound", created_at: "", parentWorkerId: null }, env), writes, "a root worker receives the environment");
+    assert.deepEqual(await admit({ id: 2, name: "bound", created_at: "", parentWorkerId: 1 }, env), [{ method: "workspace.workers" }],
+        "a child keeps the environment its parent handed down");
+    assert.deepEqual(await admit(undefined, new Map()), [], "nothing configured, nothing asked");
+});
+
+test("[§cli-environment] a person's command carries the resolved entries as its own environment", () => {
+    assert.deepEqual(commandEnv(new Map()), {}, "nothing configured sends no env");
+    assert.deepEqual(commandEnv(new Map([["GREETING", "Hello"]])), { env: { GREETING: "Hello" } });
 });

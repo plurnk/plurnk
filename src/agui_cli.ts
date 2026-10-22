@@ -37,6 +37,7 @@ import { renderSummary } from "./render.ts";
 import { withColorOutput } from "./color.ts";
 import type Lifetime from "./lifetime.ts";
 import { signalExitCode } from "./lifetime.ts";
+import { commandEnv } from "./env.ts";
 
 // The terminal record a Run's end carries (plurnk-service {§agui-plurnk-metadata}): the loop/terminated
 // notification plus the daemon workspaceId.
@@ -693,7 +694,7 @@ export const settleExec = (run: {
 export const runExecViaAgui = async (
     target: AguiTarget,
     command: string,
-    opts: { threadId: string; yolo: boolean; auto: boolean },
+    opts: { threadId: string; yolo: boolean; auto: boolean; env?: ReadonlyMap<string, string> },
 ): Promise<number> => {
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
     // A one-shot prompt reviews but presents no questions ({§cli-question-forms}): it offers no clarification tools.
@@ -715,7 +716,7 @@ export const runExecViaAgui = async (
     };
     const binding = { threadId: opts.threadId, capabilities };
     const run = await consumeCliRun(runViaAgui(target, { ...binding, forwardedProps: {
-        action: { kind: "op.exec", command },
+        action: { kind: "op.exec", command, ...commandEnv(opts.env ?? new Map()) },
     } }), io);
     const settled = settleExec({ ...seen, problem: run.problem });
     if ("problem" in settled) {

@@ -20,7 +20,8 @@ import Knobs from "./knobs.ts";
 import { paint } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completeAddressPath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
-import { applyWorkerEnv } from "./env.ts";
+import { admitWorkerEnv, commandEnv } from "./env.ts";
+import type { WorkerBinding } from "./agui.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow, operationIdentity } from "./render.ts";
@@ -795,6 +796,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // onto the worker at startup (a one-time durable selection, not a per-loop
     // reassertion).
     const admission: VerbCaller = { call: (method, params) => transport.rpc(method, params) };
+    // {§cli-environment} The same admission on another worker's thread, before the session rebinds to it.
+    const admissionAt = (binding: WorkerBinding): VerbCaller => ({ call: (method, params) => transport.rpcAt(binding, method, params) });
+    const workerEnv = opts.workerEnv ?? new Map<string, string>();
     if (opts.modelExplicit === true && opts.modelSelector !== undefined) {
         // A deliberate selection is part of invocation admission, not display
         // hydration. Refuse the TUI before it accepts input if the daemon cannot
@@ -811,9 +815,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // the invocation fails before any model work can run under a stale one.
         await setWorkerEffort(admission, opts.effort);
     }
-    if (opts.workerEnv !== undefined && opts.workerEnv.size > 0) {
-        await applyWorkerEnv(admission, opts.workerEnv);
-    }
+    await admitWorkerEnv(admission, opts.workerName, workerEnv);
     // Model identity is control-plane truth, not decorative header data. A
     // transport failure or malformed projection leaves this client unable to
     // know which durable worker policy it is presenting, so admission fails
@@ -1289,10 +1291,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const projectRoot = opts.selectProjectRoot === undefined ? opts.projectRoot : await opts.selectProjectRoot(name, surface);
             if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;
             const worker = opts.workerName;
-            const workspace = await transport.useWorkspace(name, { projectRoot, worker });
-            if (opts.workerEnv !== undefined && opts.workerEnv.size > 0) {
-                await applyWorkerEnv(admission, opts.workerEnv);
-            }
+            const workspace = await transport.useWorkspace(name, {
+                projectRoot, worker, admit: (binding) => admitWorkerEnv(admissionAt(binding), worker, workerEnv),
+            });
             opts.projectRoot = projectRoot;
             resetBindingView();
             boundWorker = worker;
@@ -1311,10 +1312,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         tree: () => treeOf(),
         gates: () => authoritativeStatus?.gates ?? {},
         attachWorker: async (name) => {
+            await admitWorkerEnv(admissionAt({ workspaceId: current.id, worker: name }), name, workerEnv);
             transport.useWorker(name);
-            if (opts.workerEnv !== undefined && opts.workerEnv.size > 0) {
-                await applyWorkerEnv(admission, opts.workerEnv);
-            }
             resetBindingView();
             boundWorker = name;
             surface.setTitle(windowTitle(current.name, name));
@@ -1507,7 +1506,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 try {
                     const result = statementText !== null
                         ? (await transport.rpc("op.parse", { text: statementText }) as { results: OperationResult[] }).results.at(-1) ?? { status: 0 }
-                        : await transport.rpc("op.exec", { command: trimmed.replace(/^!+\s*/, "") }) as OperationResult;
+                        : await transport.rpc("op.exec", { command: trimmed.replace(/^!+\s*/, ""), ...commandEnv(workerEnv) }) as OperationResult;
                     await settlePeeks();
                     printAbove(renderSummary(0, Date.now() - start, result, false));
                 } finally {

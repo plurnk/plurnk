@@ -77,6 +77,10 @@ loop.
                           comma-separated variable names or trailing-* prefix globs
                           carried from this environment onto the worker before the
                           first loop. Overrides PLURNK_CLIENT_ENV_INHERIT.
+      --env-exclude <list>
+                          comma-separated variable names or trailing-* prefix globs
+                          removed from what --env-inherit carries. Overrides
+                          PLURNK_CLIENT_ENV_EXCLUDE.
       --autostart <0|1>   start the installed service when nothing listens at the
                           configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.

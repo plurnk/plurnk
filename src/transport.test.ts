@@ -910,6 +910,28 @@ test("{§cli-workspaces-and-workers}: workspace acquisition precedes binding, pr
     } finally { await mock.close(); }
 });
 
+test("{§cli-environment}: a switch admits its target before rebinding, so a refused admission leaves the conversation intact", async () => {
+    const mock = await bootMock((_req, res) => {
+        const action = (mock.captured.at(-1)!.body as RunInput).forwardedProps.plurnk.action as { kind: string; name?: string } | undefined;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end(frame({ type: "RUN_FINISHED", result: { kind: action?.kind, ok: true,
+            result: action?.kind === "workspace.create" ? { id: 81, name: action.name ?? "chosen" } : { workers: [] } } }));
+    });
+    try {
+        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "old" });
+        await bt.rpcAt({ workspaceId: 42, worker: "other" }, "workspace.workers");
+        assert.equal((mock.captured.at(-1)!.body as RunInput).threadId, "42#other", "the action speaks for the thread it names");
+        assert.equal(bt.threadId(), "42#old", "and the session's binding is unchanged");
+        await assert.rejects(bt.useWorkspace("next", { projectRoot: null, worker: "user", admit: async (binding) => {
+            assert.deepEqual(binding, { workspaceId: 81, worker: "user" }, "admission sees the binding the switch would make");
+            throw new Error("admission refused");
+        } }), /admission refused/u);
+        assert.equal(bt.threadId(), "42#old", "a refused admission leaves the conversation intact");
+        await bt.useWorkspace("next", { projectRoot: null, worker: "user", admit: async () => {} });
+        assert.equal(bt.threadId(), "81#user", "an admitted switch binds");
+    } finally { await mock.close(); }
+});
+
 test("AguiTransport: terminate-resume — a gate pauses done on the operation's call; resolve() resumes and its settlement draws it once", async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     let call = 0;

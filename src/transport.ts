@@ -133,6 +133,9 @@ export interface RunOpts { maxTurns?: number; openPaths?: string[] }
 
 export interface Transport {
     rpc<T = unknown>(method: string, params?: object): Promise<T>;
+    // An action on another worker's thread, this session's binding unchanged: a switch admits its target
+    // before rebinding, so a refused admission leaves the session where it was ({§cli-environment}).
+    rpcAt<T = unknown>(binding: WorkerBinding, method: string, params?: object): Promise<T>;
     subscribe(handlers: RunHandlers): void;
     run(prompt: string, opts: RunOpts): RunHandle;
     observe(opts?: ObserveOpts): ObservationHandle;
@@ -140,8 +143,13 @@ export interface Transport {
     resolve(r: { logEntryId: number; decision: "accept" | "reject" | "cancel"; body?: string; outcome?: string }): Promise<void>;
     resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void>;
     shutdown(): void;   // abort every in-flight request on an intentional quit
-    // Acquire before replacing the binding: a failed selection leaves the current conversation intact.
-    useWorkspace(name: string | undefined, params: { projectRoot?: string | null; worker: string }): Promise<WorkspaceHandle>;
+    // Acquire, then admit the new binding, before replacing the session's: a failed selection or a refused
+    // admission leaves the current conversation intact.
+    useWorkspace(name: string | undefined, params: {
+        projectRoot?: string | null;
+        worker: string;
+        admit?: (binding: WorkerBinding) => Promise<void>;
+    }): Promise<WorkspaceHandle>;
     // Rebind this session's thread to a worker by name, keeping the workspace:
     // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
@@ -196,9 +204,13 @@ export class AguiTransport implements Transport {
     // persistent handlers a run uses (e.g. /worker completion harvests worker
     // references from onEntry).
     async rpc<T>(method: string, params?: object): Promise<T> {
+        return this.rpcAt<T>(this.#binding, method, params);
+    }
+
+    async rpcAt<T>(binding: WorkerBinding, method: string, params?: object): Promise<T> {
         const ac = this.#controller();
         try {
-            return await this.#action<T>(method, params, ac.signal);
+            return await this.#action<T>(workerThreadId(binding), method, params, ac.signal);
         } finally {
             ac.abort();
             this.#controllers.delete(ac);
@@ -207,13 +219,13 @@ export class AguiTransport implements Transport {
 
     // An action answers on its own Run and presents no interrupt: a client operation is the person's own
     // decision, never routed for review (plurnk/plurnk-service {§agui-client-operation}).
-    async #action<T>(method: string, params: object | undefined, signal: AbortSignal): Promise<T> {
+    async #action<T>(threadId: string, method: string, params: object | undefined, signal: AbortSignal): Promise<T> {
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler(), windowed: false };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
         let sawResult = false;
         for await (const e of runViaAgui(this.#target, {
-            threadId: this.threadId(),
+            threadId,
             messages: [],
             forwardedProps: { action: { kind: method, ...(params ?? {}) } },
             capabilities: clientCapabilities(this.#workspace.auto !== true, true),
@@ -651,7 +663,9 @@ export class AguiTransport implements Transport {
         if (!Number.isSafeInteger(workspace.id) || workspace.id <= 0 || typeof workspace.name !== "string" || workspace.name.length === 0) {
             throw new ProblemError(clientTransportResultInvalid("workspace.create omitted its workspace identity."));
         }
-        this.#binding = { workspaceId: workspace.id, worker: params.worker };
+        const binding = { workspaceId: workspace.id, worker: params.worker };
+        await params.admit?.(binding);
+        this.#binding = binding;
         this.#resetHistory();
         return workspace;
     }

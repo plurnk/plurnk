@@ -16,7 +16,7 @@ import { AguiTransport } from "./transport.ts";
 import { actionViaAgui, workerThreadId, type WorkspaceHandle } from "./agui.ts";
 import Credential, { SignInCredential } from "./credential.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
-import { applyWorkerEnv, resolveClientWorkerEnv } from "./env.ts";
+import { admitWorkerEnv, resolveClientWorkerEnv } from "./env.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
 import {
@@ -166,6 +166,10 @@ options:
                           comma-separated variable names or trailing-* prefix globs
                           carried from this environment onto the worker before the
                           first loop. Overrides PLURNK_CLIENT_ENV_INHERIT.
+      --env-exclude <list>
+                          comma-separated variable names or trailing-* prefix globs
+                          removed from what --env-inherit carries. Overrides
+                          PLURNK_CLIENT_ENV_EXCLUDE.
       --autostart <0|1>   start the installed service when nothing listens at the
                           configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
@@ -606,6 +610,7 @@ export const CLIENT_OPTIONS = {
     effort: { type: "string" },
     env: { type: "string", multiple: true },
     "env-inherit": { type: "string" },
+    "env-exclude": { type: "string" },
     autostart: { type: "string" },
     "daemon-timeout-ms": { type: "string" },
     "oauth-timeout-ms": { type: "string" },
@@ -787,6 +792,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
     const workerEnv = resolveClientWorkerEnv({
         envInherit: values["env-inherit"],
+        envExclude: values["env-exclude"],
         env: values.env,
     });
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
@@ -914,6 +920,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
                 code = await runExecViaAgui({ aguiUrl, credential }, command, {
                     threadId,
+                    env: workerEnv,
                     yolo,
                     auto,
                 });
@@ -953,12 +960,11 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                         params: { effort },
                     });
                 }
-                if (workerEnv.size > 0) {
-                    await applyWorkerEnv(
-                        { call: (kind, params) => actionViaAgui({ aguiUrl, credential }, { threadId, kind, params }) },
-                        workerEnv,
-                    );
-                }
+                await admitWorkerEnv(
+                    { call: (kind, params) => actionViaAgui({ aguiUrl, credential }, { threadId, kind, params }) },
+                    oneShotWorker,
+                    workerEnv,
+                );
                 const projected = parsePrompt(prompt);
                 const openPaths = extractOpenPaths(projected.prompt, projectRoot);
                 // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.

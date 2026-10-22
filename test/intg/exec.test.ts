@@ -45,6 +45,18 @@ test("[§cli-prompt-prefixes] the built one-shot `! command` runs through op.exe
             "the command created no model worker, so nothing became a prompt");
     });
 
+    await t.test("[§cli-environment] --env rides the command as its own environment and persists nowhere", async () => {
+        const carried = await run(["--workspace", "exec-env", "--env", "GREETING=Hello", "! printf %s \"$GREETING\""]);
+        assert.equal(carried.code, 0, carried.stderr);
+        assert.equal(carried.stdout, "Hello");
+        const { workers } = await actionViaAgui<{ workers: Array<{ origin: string }> }>({ aguiUrl: daemon.url }, { threadId: "inspect", workspace: "exec-env", kind: "workspace.workers" });
+        assert.deepEqual(workers.filter(({ origin }) => origin !== "_plurnk"), [], "a person's command runs in the workspace's runtime worker and writes no model worker");
+        const refused = await run(["--workspace", "exec-env", "--env", "PLURNK_GREETING=Hello", "! echo ran"]);
+        assert.equal(refused.code, 4, refused.stderr);
+        assert.equal(refused.stdout, "", "a refused environment runs nothing");
+        assert.match(refused.stderr, /PLURNK_GREETING/u);
+    });
+
     await t.test("a failing command's stderr reaches stderr and the client exits 4", async () => {
         const result = await run(["--workspace", "exec", "! echo oops >&2; exit 3"]);
         assert.equal(result.code, 4, result.stderr);

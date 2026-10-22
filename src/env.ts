@@ -6,6 +6,7 @@ import { parseEnv } from "node:util";
 import { commandUsage } from "./commands.ts";
 import { configurationSource } from "./functionality-source.ts";
 import { ProblemError } from "./diagnostics.ts";
+import type { WorkerRow } from "./workers.ts";
 
 interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
@@ -13,24 +14,31 @@ interface ActionCaller {
 
 const CLIENT_ENV_PREFIX = "PLURNK_CLIENT_ENV_";
 const CLIENT_ENV_INHERIT_KEY = "PLURNK_CLIENT_ENV_INHERIT";
+const CLIENT_ENV_EXCLUDE_KEY = "PLURNK_CLIENT_ENV_EXCLUDE";
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
+// Exact names and trailing-`*` prefix globs, comma-separated: the syntax of the service's
+// PLURNK_SERVICE_EXEC_ENV_INHERIT and PLURNK_SERVICE_EXEC_ENV_EXCLUDE.
+const patternList = (raw: string | undefined): string[] => raw === undefined
+    ? []
+    : raw.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+const matchesAny = (name: string, patterns: readonly string[]): boolean =>
+    patterns.some((pattern) => (pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern));
+
 // {§cli-environment} Resolve the worker environment entries declared across the client cascade:
-// PLURNK_CLIENT_ENV_INHERIT (--env-inherit) < PLURNK_CLIENT_ENV_<NAME> < --env.
+// PLURNK_CLIENT_ENV_INHERIT (--env-inherit) less PLURNK_CLIENT_ENV_EXCLUDE (--env-exclude)
+// < PLURNK_CLIENT_ENV_<NAME> < --env.
 // Invalid or reserved names are carried through so the daemon's own admission refuses them.
 export const resolveClientWorkerEnv = (
     options: {
         readonly envInherit?: string;
+        readonly envExclude?: string;
         readonly env?: readonly string[];
     } = {},
     environment: NodeJS.ProcessEnv = process.env,
 ): Map<string, string> => {
     const out = new Map<string, string>();
-    const rawInherit = options.envInherit ?? environment[CLIENT_ENV_INHERIT_KEY];
-    const patterns = rawInherit === undefined
-        ? []
-        : rawInherit.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
-    for (const pattern of patterns) {
+    for (const pattern of patternList(options.envInherit ?? environment[CLIENT_ENV_INHERIT_KEY])) {
         if (pattern.endsWith("*")) {
             const prefix = pattern.slice(0, -1);
             if (prefix.length > 0 && !ENV_NAME.test(prefix)) {
@@ -50,8 +58,13 @@ export const resolveClientWorkerEnv = (
         const inherited = environment[pattern];
         if (inherited !== undefined) out.set(pattern, inherited);
     }
+    // The exclusions narrow only what the inherit patterns matched; an explicit entry is never excluded.
+    const excluded = patternList(options.envExclude ?? environment[CLIENT_ENV_EXCLUDE_KEY]);
+    for (const name of [...out.keys()]) {
+        if (matchesAny(name, excluded)) out.delete(name);
+    }
     for (const [key, value] of Object.entries(environment)) {
-        if (value === undefined || !key.startsWith(CLIENT_ENV_PREFIX) || key === CLIENT_ENV_INHERIT_KEY) continue;
+        if (value === undefined || !key.startsWith(CLIENT_ENV_PREFIX) || key === CLIENT_ENV_INHERIT_KEY || key === CLIENT_ENV_EXCLUDE_KEY) continue;
         out.set(key.slice(CLIENT_ENV_PREFIX.length), value);
     }
     for (const entry of options.env ?? []) {
@@ -67,11 +80,18 @@ export const resolveClientWorkerEnv = (
     return out;
 };
 
-// {§cli-environment} Persist each resolved worker environment entry onto the bound worker at admission.
-export const applyWorkerEnv = async (
+// {§cli-environment} Persist each resolved entry onto `worker` at admission when it has no parent: a child's
+// environment is the one its parent handed down. A name the directory does not list yet is a worker of the
+// client's own, which the first write creates (plurnk-service {§agui-action-binding}).
+export const admitWorkerEnv = async (
     rpc: ActionCaller,
+    worker: string,
     env: ReadonlyMap<string, string>,
 ): Promise<void> => {
+    if (env.size === 0) return;
+    const { workers } = await rpc.call("workspace.workers") as { workers: WorkerRow[] };
+    const parent = workers.find(({ name }) => name === worker)?.parentWorkerId;
+    if (parent !== undefined && parent !== null) return;
     for (const [alias, value] of env) {
         const result = await rpc.call("worker.env.replace", { alias, definition: { value } }) as MutationResult;
         if (result.definition?.state === "disabled") {
@@ -79,6 +99,11 @@ export const applyWorkerEnv = async (
         }
     }
 };
+
+// {§cli-environment} A person's command carries the resolved entries as its own environment: it runs as the
+// workspace's, which no worker's layer reaches (plurnk-service {§env-option}).
+export const commandEnv = (env: ReadonlyMap<string, string>): { readonly env?: Readonly<Record<string, string>> } =>
+    env.size === 0 ? {} : { env: Object.fromEntries(env) };
 
 type EnvDefinition = { value: string };
 

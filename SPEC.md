@@ -897,18 +897,26 @@ Daemon Problems — a name a shell cannot export, one of plurnk's own names, a
 service-owned definition that cannot be removed — cross the existing
 diagnostic path without rewriting or retry.
 
-At invocation admission (and when switching workspaces or workers in the TUI),
-the client persists its configured worker environment onto the bound worker via
-`worker.env.replace` (and `worker.env.enable` if the entry was disabled):
+At invocation admission, and when the TUI switches workspace or worker, the
+client persists its configured worker environment onto the bound worker via
+`worker.env.replace` (and `worker.env.enable` if the entry was disabled) when that
+worker has no parent: a child's environment is the one its parent handed down. A
+person's own `! command`, in the CLI and the TUI, carries the same entries as the
+command's own environment (`op.exec`'s `env`) instead: it runs as the workspace's,
+which no worker's layer reaches. A script's statements carry their own
+`[{"env": …}]`.
 
 | Source (low → high) | Meaning |
 |---|---|
 | `PLURNK_CLIENT_ENV_INHERIT` / `--env-inherit <NAME,...>` | Comma-separated exact variable names or trailing-`*` prefix globs whose present values in the client's environment are carried onto the worker (globs skip `PLURNK_*`). |
-| `PLURNK_CLIENT_ENV_<NAME>=<value>` | Explicit worker variable definition across the client's `.env` cascade and shell. |
+| `PLURNK_CLIENT_ENV_EXCLUDE` / `--env-exclude <NAME,...>` | Names or trailing-`*` prefix globs, the same syntax, removed from what the inherit patterns matched: `GIT*` less `GITHUB_*`. An explicit entry below is never excluded. |
+| `PLURNK_CLIENT_ENV_<NAME>=<value>` | Explicit worker variable definition across the client's `.env` cascade and shell; `INHERIT` and `EXCLUDE` name the two knobs above, never a variable. |
 | `--env <NAME>[=<value>]` (repeatable) | Explicit per-invocation override; without `=`, carries `<NAME>` from the client's environment when set. |
 
-A daemon refusal on any configured entry fails admission before a prompt is
-sent or TUI input is accepted.
+A persisted value is the worker's: its `env list` shows it, to the worker's model
+as well. A daemon refusal on any configured entry fails admission before a prompt
+is sent or TUI input is accepted; a TUI switch whose admission is refused stays
+where it was.
 
 ---
 

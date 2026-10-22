@@ -26,6 +26,7 @@ complete -c plurnk -l model
 complete -c plurnk -l effort
 complete -c plurnk -l env
 complete -c plurnk -l env-inherit
+complete -c plurnk -l env-exclude
 complete -c plurnk -l autostart
 complete -c plurnk -l daemon-timeout-ms
 complete -c plurnk -l oauth-timeout-ms

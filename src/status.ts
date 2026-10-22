@@ -152,6 +152,19 @@ export interface ClientStatus {
     // {§cli-status-clock} — when the latest loop first ran and when it concluded, Unix milliseconds.
     claimedAt?: number | null;
     terminatedAt?: number | null;
+    // {§cli-status-inbox} — the accepted messages the bound worker has not read; absent without a gauge.
+    inbox?: readonly InboxMessage[];
+    // {§cli-status-streams} — the addresses of the streams the bound worker holds open; absent without a gauge.
+    openStreams?: readonly string[];
+}
+
+// {§cli-status-inbox} — plurnk-service {§agui-message-acceptance}: a message the daemon accepted for the bound worker,
+// by its address, the id this client gave it when it sent it, and the lifecycle of the loop holding it.
+export interface InboxMessage {
+    readonly path: string;
+    readonly id: string | null;
+    readonly loopId: number;
+    readonly lifecycle: StatusLifecycle;
 }
 
 // {§cli-status-clock} — a loop this client did not start runs on the daemon's clock: from when it first
@@ -173,6 +186,8 @@ export interface RuntimeStatusGauge {
     spend: unknown;
     claimedAt: unknown;
     terminatedAt: unknown;
+    inbox: unknown;
+    streams: unknown;
 }
 
 // The service owns the tree and cumulative accounting. This is only its human
@@ -244,9 +259,49 @@ const treeCounts = (value: unknown): { children: number; gated: number } => {
     };
 };
 
+// {§cli-status-inbox} — the daemon's word on what the bound worker has not read; every entry readable or a broken gauge.
+const inboxMessages = (value: unknown): InboxMessage[] => {
+    const fail = (): never => { throw new TypeError("Invalid runtime inbox."); };
+    if (!Array.isArray(value)) return fail();
+    return value.map((entry: unknown) => {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return fail();
+        const { path, id, loopId, lifecycle } = entry as Record<string, unknown>;
+        if (typeof path !== "string" || !(id === null || typeof id === "string") || !Number.isSafeInteger(loopId)
+            || typeof lifecycle !== "string" || !LIFECYCLES.has(lifecycle)) return fail();
+        return { path, id: id as string | null, loopId: loopId as number, lifecycle: lifecycle as StatusLifecycle };
+    });
+};
+
+// {§cli-status-streams} — plurnk-service {§agui-status-streams}: the streams the bound worker holds open, by address.
+const openStreamAddresses = (value: unknown): string[] => {
+    const fail = (): never => { throw new TypeError("Invalid runtime streams."); };
+    if (!Array.isArray(value)) return fail();
+    return value.map((entry: unknown) => {
+        const target = entry !== null && typeof entry === "object" && !Array.isArray(entry) ? (entry as Record<string, unknown>).target : undefined;
+        return typeof target === "string" ? target : fail();
+    });
+};
+
+// {§cli-status-inbox} — the messages a concluded loop held without reading them: nothing will read them now.
+export const unreadMessages = (inbox: readonly InboxMessage[] | undefined): InboxMessage[] =>
+    (inbox ?? []).filter(({ lifecycle }) => lifecycle === "completed" || lifecycle === "cancelled" || lifecycle === "failed");
+
+// {§cli-identity-effort} — a route the gauge newly carries that differs from the one last read is a change made
+// elsewhere, which only a readback applies; the gauge itself never supplies the identity.
+export const routeChangedElsewhere = (carried: string | null, previous: string | null, read: string | null): boolean =>
+    carried !== previous && carried !== read;
+
+// {§cli-workspaces-and-workers} — the bound workspace under the name the daemon now gives it, or null when that is
+// still its name or the state is another workspace's.
+export const renamedWorkspace = <T extends { readonly id: number; readonly name: string }>(current: T, state: { readonly id?: number; readonly name?: string }): T | null =>
+    state.id === current.id && typeof state.name === "string" && state.name !== current.name ? { ...current, name: state.name } : null;
+
 // {§cli-status-project-root} {§cli-status-preparation} — the bound workspace's folder, a path the client uses,
 // the daemon's label, and the activity that belongs to the workspace rather than to its worker.
 export interface WorkspaceState {
+    // plurnk-service {§agui-workspace-state}: the bound workspace's identity and its current name.
+    readonly id?: number;
+    readonly name?: string;
     readonly projectRoot?: string | null;
     readonly projectLabel?: string | null;
     readonly preparation: unknown;
@@ -313,6 +368,8 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
         spend: spendAccounting(value.spend),
         claimedAt: value.claimedAt as number | null,
         terminatedAt: value.terminatedAt as number | null,
+        inbox: inboxMessages(value.inbox),
+        openStreams: openStreamAddresses(value.streams),
         ...place,
     };
 };
@@ -425,6 +482,9 @@ export const renderStatusLine = (
     if (value.children !== 0 && ant.length > 0) parts.push(`🐜 ${ant.join(" ")}`);
     // {§cli-status-gated} — none waiting, or no gauge, shows nothing.
     if (value.gated !== null && value.gated > 0) parts.push(`🚦 ${value.gated}`);
+    // {§cli-status-inbox} — the messages accepted for the worker that it has yet to read; none shows nothing.
+    const waiting = (value.inbox ?? []).filter(({ lifecycle }) => ALIVE.has(lifecycle)).length;
+    if (waiting > 0) parts.push(`📨 ${waiting}`);
     if (value.lifecycle === "parked" && value.waitUntil != null) {
         const seconds = Math.ceil(Math.max(0, value.waitUntil - (context.now ?? Date.now())) / 1000);
         parts.push(seconds === 0 ? "updates due" : `updates in ${formatDuration(seconds * 1000)}`);

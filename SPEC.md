@@ -142,7 +142,7 @@ Workspaces and workers are daemon-owned. Names select; IDs identify.
 | Workspace acquisition | `workspace.create` receives the literal selected label, if any, with projectRoot/settings. It returns `{id, name}` before bound work begins. |
 | Directory default | Without a label, the invocation designates a folder ({§cli-project-root}); the daemon names/selects its workspace ({§workspace-name}). The client invents neither a label nor an ID. |
 | Bound requests | `threadId` is `<workspace ID>#<worker name>` ({§agui-thread-binding}); no workspace label or creation options are resent. |
-| Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. |
+| Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. A rename made elsewhere reaches the session in the workspace state the daemon sends for the bound workspace's ID (plurnk-service `{§agui-workspace-state}`): the title, the place and the resume command take its new name. |
 | Workspace switch | Acquire first, then replace the binding. A failed acquisition preserves the previous conversation. |
 | Worker selection | `--worker` overrides `PLURNK_CLIENT_WORKER`, the worker an invocation binds in either mode, which ships unset. Unset, the TUI (workspace switches included), scripts and subcommands bind `PLURNK_CLIENT_TUI_WORKER` (`--tui-worker`, shipped `user`), and a one-shot prompt binds a new worker of its own: twelve random lowercase hexadecimal characters, which text mode reports as `client:worker:new` and the JSON record carries as `worker`, so `--worker` can continue it. A worker selection needs no explicit workspace. |
 | Worker switch/fork | Change the worker name within the same workspace ID. No client-side thread alias table. |
@@ -200,7 +200,7 @@ a workspace action, reports no gauge.
 Human status is the summary line's shape aggregated over the session:
 
 ```
-[<project folder> ] [<TUI place> ] [🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 🧮 <percent>%]
+[<project folder> ] [<TUI place> ] [🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 📨 <waiting>] [· 🧮 <percent>%]
 ```
 
 YOLO is a fireball beside the lifecycle glyph. The model sits next, ahead of
@@ -235,6 +235,18 @@ first, present only with siblings.
 waiting on a gate, a proposal or a client interaction (`gates` above zero):
 `🚦 15`. None waiting, or no gauge, hides it. The gates themselves reach their
 owner as interrupts ({§cli-proposal-review}) and wait in its review.
+
+{§cli-status-inbox} The envelope counts the messages the daemon accepted for the bound worker that a
+live loop still holds unread (`snapshot.plurnk.status.inbox`, plurnk-service
+`{§agui-message-acceptance}`): `📨 2`. None waiting, or no gauge, hides it. A message whose loop
+concluded without reading it, cancelled say, is never counted, since nothing will read it: once the
+history is drawn the session says so once, `client:message:message_unread`, naming the message by
+its words when this thread sent it (the snapshot carries them) and by its address otherwise.
+
+{§cli-status-streams} `snapshot.plurnk.status.streams` names the streams the bound worker holds open
+(plurnk-service `{§agui-status-streams}`). On attach, the history's launch row of each one still open
+is held as a live launch is ({§cli-what-is-not-rendered}): its conclusion draws the launch with its
+outcome, never the stream's bare address.
 
 {§cli-status-clock} Turns and wall time include the running loop — its packet count from the
 authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time, ticking once a
@@ -303,7 +315,10 @@ worker reads back once created (plurnk-service `{§agui-provider-routes}`). Ever
 before the change is confirmed; a setter's echo is never spliced into a label. A
 persisted change whose readback fails is reported as a readback failure, distinct
 from a refused change: it neither shows the requested value as read back nor rolls
-anything back. A status gauge is a cache of lifecycle, place, activity and children
+anything back. A route the gauge newly carries that differs from the one last read is a
+change made elsewhere, another client's model or effort (plurnk-service
+`{§notifications-worker-policy}`): the session reads the policy back once and repaints from
+that readback. A status gauge is a cache of lifecycle, place, activity and children
 and never supplies the identity, so a gauge carrying an older route (the setter's own
 action run snapshots the worker before it mutates) cannot override a newer
 client-set policy.
@@ -926,7 +941,7 @@ them; its own receipt repeats none.
 | A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt and no facts: text, or a receipt that holds a body as its text part beside the body's document part (plurnk-service `{§agui-body-reference}`), the body never fetched to draw it | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
 | A delivered reply, or a WAIT that carries a body | `TEXT_MESSAGE_START/CONTENT/END`, the metadata adding its heading's `aside` and its `receipt` | When the message ends |
 | An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
-| An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§agui-message-acceptance}`) | Never: its arrival, when the Worker observes it, draws it |
+| An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§agui-message-acceptance}`) | Never as a row: its arrival, when the Worker observes it, draws it; one its loop left unread is said once ({§cli-status-inbox}) |
 | A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate, with its own facts | On arrival: a reply's words as its body, any other answer as its receipt |
 | A row that builds no part | `CUSTOM plurnk.ambient`, the whole row | On arrival; an actionless row draws nothing |
 | History | A sync Run's `MESSAGES_SNAPSHOT`: the same parts, as messages | {§cli-worker-history} |

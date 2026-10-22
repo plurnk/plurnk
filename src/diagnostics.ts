@@ -172,6 +172,16 @@ export const clientHistoryLost = (workspace: string, worker: string): Notice => 
     hints: ["The daemon restarted on a fresh database, or the worker was deleted."],
 });
 
+// {§cli-status-inbox} — the daemon accepted a message for the bound worker and the loop holding it concluded without
+// reading it: nothing will read it now. The message is named by its words when this terminal sent it, else its address.
+export const clientMessageUnread = (message: { path: string; lifecycle: string }, words: string | undefined): Notice => ({
+    source: "client:message",
+    kind: "message_unread",
+    level: "warn",
+    message: `a message accepted for this worker was not read: the loop holding it ${message.lifecycle === "completed" ? "completed" : message.lifecycle === "cancelled" ? "was cancelled" : "failed"} first`,
+    hints: [words === undefined ? message.path : words],
+});
+
 export const clientConnectionRefused = (url: string, cause: unknown): ProblemDetails =>
     clientProblem(
         "connection",

@@ -149,7 +149,7 @@ test("{§worker-model-selection}: TUI admission fails when durable model truth c
     };
 
     await assert.rejects(
-        runTui(transport, { name: "workspace" }, { lifetime, yolo: false, workerName: "user" }),
+        runTui(transport, { id: 42, name: "workspace" }, { lifetime, yolo: false, workerName: "user" }),
         /model control plane unavailable/,
     );
     // {§cli-identity-effort} — one readback path: effort before the final route projection.
@@ -175,7 +175,7 @@ test("{§worker-model-selection}: TUI admission rejects a malformed durable mode
     };
 
     await assert.rejects(
-        runTui(transport, { name: "workspace" }, { lifetime, yolo: false, workerName: "user" }),
+        runTui(transport, { id: 42, name: "workspace" }, { lifetime, yolo: false, workerName: "user" }),
         /invalid ModelRoute/,
     );
 });
@@ -267,7 +267,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
     const imports: string[] = [];
     const resolved: string[] = [];
     const composed: boolean[] = [];
-    let workspace = { name: "sess" };
+    let workspace = { id: 1, name: "sess" };
     let worker: string | null = "sess";
     const attached: string[] = [];
     const modelState = {

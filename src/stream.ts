@@ -53,6 +53,10 @@ const summaryTail = (ev: StreamConcludedPayload): string => {
     return (summary.startsWith(ev.target) ? summary.slice(ev.target.length) : summary).replace(/^\s+/, "");
 };
 
+// {§cli-status-streams} — the rows of a history that launched a stream the bound worker still holds open.
+export const openLaunches = (entries: readonly LogEntryWire[], open: readonly string[]): LogEntryWire[] =>
+    entries.filter((entry) => { const address = streamAddress(entry); return address !== null && open.includes(address); });
+
 // Launched executions awaiting their conclusion, and conclusions awaiting their settled row, keyed by stream address.
 // Plain Maps, no timers.
 export default class StreamTrace {

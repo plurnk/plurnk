@@ -32,9 +32,9 @@ import type { LogEntryWire } from "./render.ts";
 import { keyToResolution, editInEditor } from "./proposal.ts";
 import Review from "./Review.ts";
 import { AguiTransport, type ObservationHandle, type Transport } from "./transport.ts";
-import { ProblemError, isAbsentWorker, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
+import { ProblemError, isAbsentWorker, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientMessageUnread, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
-import StreamTrace, { inlineOutput, renderInline } from "./stream.ts";
+import StreamTrace, { inlineOutput, openLaunches, renderInline } from "./stream.ts";
 import type { StreamEventPayload, StreamConcludedPayload } from "./stream.ts";
 import { runModels, runWorkspaceList, runLogRead } from "./subcommands.ts";
 import { promptPrefix, renderWorkerTopology, siblingPosition, traverse, workerNameFromTarget, workerPath, type Hop, type WorkerRow } from "./workers.ts";
@@ -55,7 +55,7 @@ import {
     setWorkerEffort,
     type WorkerEffort,
 } from "./effort.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, renderStatusLine, tallyOutcome, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, renamedWorkspace, renderStatusLine, routeChangedElsewhere, tallyOutcome, unreadMessages, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -77,7 +77,7 @@ export const renderTuiFailure = (cause: unknown): string => {
     return `  ${paint(`error: ${ModelText.plain(cause instanceof Error ? cause.message : String(cause))}`, "failure")}`;
 };
 
-interface WorkspaceResult { name: string }
+interface WorkspaceResult { id: number; name: string }
 
 // One verb vocabulary across the TUI and (where they exist) argv subcommands.
 // Singular = CREATE, plural = LIST: /workspace makes a new workspace, /workspaces
@@ -704,6 +704,22 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (name !== null) seenWorkerNames.add(name);
     };
     let liveReasoning: { messageId: string; rendered: string } | null = null;
+    // {§cli-status-inbox} — the unread messages already announced, and the words of those this terminal sent, by address.
+    const unreadAnnounced = new Set<string>();
+    const acceptedWords = new Map<string, string>();
+    let historyArrived = false;
+    // {§cli-identity-effort} — the route the latest gauge carried, and whether a readback it prompted is under way.
+    let gaugeRoute: string | null = null;
+    let policyRereading = false;
+    // {§cli-status-inbox} — once the history is drawn, each message a concluded loop left unread is said once.
+    const announceUnread = (): void => {
+        if (!historyArrived || authoritativeStatus === null) return;
+        for (const message of unreadMessages(authoritativeStatus.inbox)) {
+            if (unreadAnnounced.has(message.path)) continue;
+            unreadAnnounced.add(message.path);
+            printAbove(renderDiagnostic(clientMessageUnread(message, acceptedWords.get(message.path))));
+        }
+    };
 
     // Streams, coalesced: one start line, one conclusion line, and tiny concluded
     // outputs inlined (the single bounded content fetch the TUI makes — SPEC §5.3).
@@ -1033,6 +1049,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             for (const entry of history.entries) {
                 if (!isEmission(entry)) harvestWorkerName(entry.target);
             }
+            for (const [path, words] of history.accepted) acceptedWords.set(path, words);
+            // {§cli-status-streams} — an execution still open when the session attached concludes as its launch's one row.
+            for (const entry of openLaunches(history.entries, authoritativeStatus?.openStreams ?? [])) streams.launch(entry);
+            historyArrived = true;
+            announceUnread();
         },
         onDescendant: (descendant) => { descendants.set(descendant.workerId, descendant); observedNames.add(descendant.name); },
         onEntry: (entry) => {
@@ -1078,6 +1099,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onWorkspace: (workspace) => {
             workspaceStatus = projectWorkspaceState(workspace);
             if (workspaceStatus.projectRoot !== undefined) boundProjectRoot = workspaceStatus.projectRoot;
+            // {§cli-workspaces-and-workers} — a rename made elsewhere reaches the title, the place and the resume command.
+            const renamed = renamedWorkspace(current, workspace);
+            if (renamed !== null) {
+                current = renamed;
+                surface.setTitle(windowTitle(current.name, boundWorker));
+            }
             repromptPreserving();
         },
         onStatus: (gauge) => {
@@ -1098,6 +1125,24 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 printAbove(renderDiagnostic(clientHistoryLost(current.name, boundWorker)));
             }
             seenLoopId = authoritativeStatus.loopId;
+            announceUnread();
+            // {§cli-identity-effort} — the gauge never supplies the identity, but a route it newly carries that differs from
+            // the one last read is a change made elsewhere: the policy is read again, and its readback repaints.
+            const carried = authoritativeStatus.model;
+            const previous = gaugeRoute;
+            gaugeRoute = carried;
+            if (routeChangedElsewhere(carried, previous, workerModel === null ? null : resolvedModelLabel(workerModel))) {
+                if (!workerAbsent && !policyRereading) {
+                    policyRereading = true;
+                    void readWorkerPolicy(admission).then((policy) => {
+                        workerModel = policy.model;
+                        workerSpawnModel = policy.spawnModel;
+                        workerEffort = policy.effort;
+                        workerAbsent = policy.absent;
+                        repromptPreserving();
+                    }).catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); }).finally(() => { policyRereading = false; });
+                }
+            }
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
             placeLoop = authoritativeStatus.loopId;
             placeTurn = authoritativeStatus.packetCount;
@@ -1167,6 +1212,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         seenWorkerNames.clear();
         descendants.clear();
         observedNames.clear();
+        unreadAnnounced.clear();
+        acceptedWords.clear();
+        historyArrived = false;
+        gaugeRoute = null;
         streams = new StreamTrace();
         fanout = new FanoutCollapse();
     };

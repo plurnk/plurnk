@@ -92,7 +92,17 @@ export interface ObservationHandle { done: Promise<TerminatedInfo | null>; ready
 export interface WorkerHistory {
     entries: LogEntryWire[];
     attachment: boolean;
+    // {§cli-status-inbox} The words of the accepted messages this thread sent that the worker has not read, by address
+    // (plurnk-service {§agui-message-acceptance}).
+    accepted: ReadonlyMap<string, string>;
 }
+
+// plurnk-service {§agui-message-acceptance}: the snapshot carries this thread's accepted, unread messages after every row.
+const acceptedWords = (messages: readonly unknown[]): Map<string, string> => new Map(messages.flatMap((message) => {
+    const value = message !== null && typeof message === "object" ? message as { content?: unknown; metadata?: { plurnk?: { published?: unknown; message?: unknown } } } : null;
+    const plurnk = value?.metadata?.plurnk;
+    return plurnk?.published === false && typeof plurnk.message === "string" && typeof value?.content === "string" ? [[plurnk.message, value.content] as const] : [];
+}));
 export interface ObserveOpts { historyLimit: number }
 // What loop.inject answers: the admission of the prompt and the loop it landed on.
 export type LoopAdmission = OperationResult & {
@@ -548,7 +558,8 @@ export class AguiTransport implements Transport {
             const entries = snapshotRows(event.messages, projection.rows).filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
             for (const entry of entries) this.#seenRows.set(entry.id, this.#rowVersion(entry));
             const limit = opts?.historyLimit;
-            this.#h?.onHistory?.({ entries: limit === undefined ? entries : entries.slice(Math.max(0, entries.length - limit)), attachment: opts !== undefined });
+            this.#h?.onHistory?.({ entries: limit === undefined ? entries : entries.slice(Math.max(0, entries.length - limit)), attachment: opts !== undefined,
+                accepted: acceptedWords(event.messages) });
             restored = true;
             projection.windowed = true;
             ready();

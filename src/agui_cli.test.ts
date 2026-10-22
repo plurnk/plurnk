@@ -26,7 +26,7 @@ const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
 const row = (e: Partial<LogEntryWire>): AguiEvent[] => partsOf(entry(e));
 const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent[] => partsOf({ ...entry(e), worker_id: workerId });
 // A whole status gauge as the daemon sends it; each specimen overrides what it is about.
-const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, descendants: [], spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
+const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, descendants: [], inbox: [], streams: [], spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
 // The bound workspace as the daemon sends it beside the gauge: no folder, nothing preparing or indexing.
 const WORKSPACE = { id: 1, name: "work", projectRoot: null, projectLabel: null, preparation: [], activity: null };
 const terminalSend = (text: string): AguiEvent[] => row({ op: "SEND", target: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
@@ -403,8 +403,8 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         terminated(),
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, gated: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client", projectLabel: "/projects/client" },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, gated: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, gated: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, gated: 0, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
     ]);
 });
 

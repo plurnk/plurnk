@@ -696,6 +696,29 @@ test("{§cli-summary-line-per-loop}: a dead sync stream is diagnosed as its orig
     } finally { await mock.close(); }
 });
 
+// plurnk-service {§agui-message-acceptance}: a sync Run's snapshot carries this thread's accepted, unread messages after every row.
+test("[§cli-status-inbox]: the history carries the words of this thread's accepted, unread messages by their address, and draws none", async () => {
+    const older = wire({ id: 8, op: "READ", tx: { body: "old output" } });
+    const pending = { id: "m1", role: "user", content: "Also check the tests.",
+        metadata: { plurnk: { message: "agui://anonymous/threads/th/messages/m1", loop: 3, lifecycle: "cancelled", source: "agui://anonymous/threads/th/messages/m1", published: false } } };
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(frame({ type: "RUN_STARTED" }));
+        const snapshot = snapshotOf(older) as { messages: unknown[] };
+        response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [...snapshot.messages, pending] }));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+    try {
+        const { h } = collectingHandlers();
+        const histories: Array<{ entries: unknown[]; accepted: ReadonlyMap<string, string> }> = [];
+        transport.subscribe({ ...h, onHistory: (history) => { histories.push(history); } });
+        assert.equal(await transport.observe({ historyLimit: 10 }).done, null);
+        assert.deepEqual(histories.map(({ entries }) => drawn(entries)), [["8 READ"]], "an accepted message is no row");
+        assert.deepEqual([...histories[0]!.accepted], [["agui://anonymous/threads/th/messages/m1", "Also check the tests."]]);
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
 // plurnk-service {§agui-history-advance}: past the ceiling, the daemon sends the Run a fresh window at a turn boundary and
 // skips the live events of the rows it holds.
 test("{§cli-worker-history}: a window the daemon sends again during a Run draws the rows its live stream skipped, and nothing drawn twice", async () => {

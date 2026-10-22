@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 process.env.NO_COLOR = "1";
 
-const { default: StreamTrace, streamAddress, inlineable, inlineOutput, renderInline } = await import("./stream.ts");
+const { default: StreamTrace, openLaunches, streamAddress, inlineable, inlineOutput, renderInline } = await import("./stream.ts");
 type LogEntryWire = Parameters<typeof streamAddress>[0];
 type Concluded = Parameters<InstanceType<typeof StreamTrace>["concluded"]>[0];
 
@@ -212,4 +212,17 @@ test("[§cli-what-is-not-rendered] an execution's inline preview is followed by 
     assert.deepEqual(inlineOutput({ stdout: { content: "done\n" } }, render), ["stdout:done", ""]);
     assert.deepEqual(inlineOutput({ stdout: { content: "out" }, stderr: { content: "err" } }, render), ["stdout:out", "stderr:err", ""],
         "every channel with output, then one separator");
+});
+
+// {§cli-status-streams} — plurnk-service {§agui-status-streams}: an execution still open at attach concludes as its launch.
+test("[§cli-status-streams] a history's launch rows of streams the worker still holds open are the ones adopted", () => {
+    const launch = (id: number, stream: string | null) => ({ id, worker_id: 1, origin: "model", op: "sh", source: null, signal: null, status_rx: 200,
+        attrs: stream === null ? {} : { stream }, tx: { runtime: "sh", body: "sleep 9" }, rx: null, target: null, lineMarker: null,
+        loop_seq: 1, turn_seq: 1, sequence: id }) as unknown as LogEntryWire;
+    const entries = [launch(1, "sh:///aaaa1111"), launch(2, "sh:///bbbb2222"), launch(3, null)];
+    assert.deepEqual(openLaunches(entries, ["sh:///bbbb2222"]).map(({ id }) => id), [2], "the one still open");
+    assert.deepEqual(openLaunches(entries, []), [], "none open, none adopted");
+    const trace = new StreamTrace();
+    for (const entry of openLaunches(entries, ["sh:///bbbb2222"])) assert.equal(trace.launch(entry), true);
+    assert.equal(trace.launchedBy("sh:///bbbb2222")?.id, 2, "its conclusion finds its launch");
 });

@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import TerminalStatusLine, { historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renamedWorkspace, renderStatusLine, routeChangedElsewhere, tallyOutcome, unreadMessages, type ClientStatus, type StatusContext } from "./status.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
 
 // A whole gauge as the daemon sends it; each test overrides the fields it is about.
 const GAUGE = {
-    lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, descendants: [],
+    lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, descendants: [], inbox: [], streams: [],
     spend: { requests: 0, usage: null, knownUsage: null, costUsd: "0", knownCostUsd: "0" }, claimedAt: null, terminatedAt: null,
 };
 // The bound workspace as the daemon sends it: no folder, nothing preparing or indexing.
@@ -327,4 +327,51 @@ test("[§cli-history-lost] a gauge without a loop after one with a loop marks th
     assert.equal(historyLost(null, null), false, "a first gauge without a loop is the new worker the client expects");
     assert.equal(historyLost(37, 38), false, "a later loop is the same worker continuing");
     assert.equal(historyLost(null, 1), false, "the first loop arriving is not a loss");
+});
+
+// {§cli-status-inbox} — plurnk-service {§agui-message-acceptance}: the accepted messages the bound worker has not read.
+test("[§cli-status-inbox] the status line counts the messages waiting to be read; a concluded loop's unread ones are said, never counted", () => {
+    const message = (lifecycle: string, n: number) => ({ path: `agui://anonymous/threads/t/messages/m${n}`, id: `m${n}`, loopId: 3, lifecycle });
+    const inbox = [message("running", 1), message("queued", 2), message("parked", 3), message("cancelled", 4), message("completed", 5), message("failed", 6)];
+    const status = projectStatusGauge({ ...GAUGE, lifecycle: "running", inbox }, PLACE);
+    assert.match(renderStatusLine(status, CONTEXT), / · 📨 3(?: ·|$)/u, "the three a live loop holds are waiting");
+    assert.deepEqual(unreadMessages(status.inbox).map(({ id }) => id), ["m4", "m5", "m6"], "nothing will read the ones a concluded loop held");
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge({ ...GAUGE, inbox: [message("cancelled", 4)] }, PLACE), CONTEXT), /📨/u, "none waiting shows nothing");
+    assert.doesNotMatch(renderStatusLine(projectStatusGauge(GAUGE, PLACE), CONTEXT), /📨/u);
+    for (const invalid of [null, {}, [{ ...message("running", 1), path: 7 }], [{ ...message("running", 1), id: 1 }], [{ ...message("running", 1), loopId: "3" }], [{ ...message("running", 1), lifecycle: "lost" }], [null]]) {
+        assert.throws(() => projectStatusGauge({ ...GAUGE, inbox: invalid }, PLACE), /Invalid runtime inbox/u, JSON.stringify(invalid));
+    }
+});
+
+// {§cli-status-streams} — plurnk-service {§agui-status-streams}: the streams the bound worker holds open, by address.
+test("[§cli-status-streams] the gauge names the streams the worker holds open by address; an unreadable census is a broken gauge", () => {
+    const stream = (target: string) => ({ entryId: 9, workerId: 1, target, lifetime: null, channels: [{ channel: 1, state: "open", mimetype: "text/plain" }] });
+    assert.deepEqual(projectStatusGauge({ ...GAUGE, streams: [stream("sh:///ab3d5678"), stream("node:///c0ffee00")] }, PLACE).openStreams, ["sh:///ab3d5678", "node:///c0ffee00"]);
+    assert.deepEqual(projectStatusGauge(GAUGE, PLACE).openStreams, []);
+    for (const invalid of [null, {}, [{ ...stream("sh:///ab3d5678"), target: 1 }], [null]]) {
+        assert.throws(() => projectStatusGauge({ ...GAUGE, streams: invalid }, PLACE), /Invalid runtime streams/u, JSON.stringify(invalid));
+    }
+});
+
+// {§cli-identity-effort} — the gauge never supplies the identity; a route it newly carries prompts the readback that does.
+test("{§cli-identity-effort} only a route the gauge newly carries, unlike the one last read, is a change made elsewhere", () => {
+    const rows: Array<[string | null, string | null, string | null, boolean, string]> = [
+        ["kimi[high]", "deepdumb", "deepdumb", true, "another client chose a model"],
+        ["deepdumb[low]", "deepdumb", "deepdumb", true, "another client chose an effort"],
+        ["deepdumb", null, "deepdumb", false, "the first gauge agrees with the readback"],
+        ["kimi", null, "deepdumb", true, "the first gauge carries a route the readback has not"],
+        ["kimi", "deepdumb", "kimi", false, "this client's own change, already read back"],
+        ["kimi", "kimi", "deepdumb", false, "a route the gauge already carried prompts nothing again"],
+        [null, null, null, false, "a modelless worker"],
+    ];
+    for (const [carried, previous, read, changed, why] of rows) assert.equal(routeChangedElsewhere(carried, previous, read), changed, why);
+});
+
+// {§cli-workspaces-and-workers} — plurnk-service {§agui-workspace-state}: the bound workspace's identity and current name.
+test("{§cli-workspaces-and-workers} a rename made elsewhere renames the bound workspace, and only that one", () => {
+    const current = { id: 4, name: "notes" };
+    assert.deepEqual(renamedWorkspace(current, { id: 4, name: "journal" }), { id: 4, name: "journal" });
+    assert.equal(renamedWorkspace(current, { id: 4, name: "notes" }), null, "its name unchanged");
+    assert.equal(renamedWorkspace(current, { id: 5, name: "journal" }), null, "another workspace's state");
+    assert.equal(renamedWorkspace(current, {}), null, "a state that names no workspace");
 });

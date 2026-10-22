@@ -286,15 +286,11 @@ const openStreamAddresses = (value: unknown): string[] => {
 export const unreadMessages = (inbox: readonly InboxMessage[] | undefined): InboxMessage[] =>
     (inbox ?? []).filter(({ lifecycle }) => lifecycle === "completed" || lifecycle === "cancelled" || lifecycle === "failed");
 
-// {§cli-identity-effort} — a route the gauge newly carries that differs from the one last read is a change made
-// elsewhere, which only a readback applies; the gauge itself never supplies the identity.
-export const routeChangedElsewhere = (carried: string | null, previous: string | null, read: string | null): boolean =>
-    carried !== previous && carried !== read;
-
-// {§cli-workspaces-and-workers} — the bound workspace under the name the daemon now gives it, or null when that is
-// still its name or the state is another workspace's.
-export const renamedWorkspace = <T extends { readonly id: number; readonly name: string }>(current: T, state: { readonly id?: number; readonly name?: string }): T | null =>
-    state.id === current.id && typeof state.name === "string" && state.name !== current.name ? { ...current, name: state.name } : null;
+// {§cli-identity-effort} {§cli-workspaces-and-workers} — a Run's state is a cache taken when it started, never the
+// identity: a value it newly carries that differs from the one the session holds is a change made elsewhere, which
+// only a readback applies.
+export const changedElsewhere = (carried: string | null, previous: string | null, held: string | null): boolean =>
+    carried !== previous && carried !== held;
 
 // {§cli-status-project-root} {§cli-status-preparation} — the bound workspace's folder, a path the client uses,
 // the daemon's label, and the activity that belongs to the workspace rather than to its worker.

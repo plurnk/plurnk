@@ -55,7 +55,7 @@ import {
     setWorkerEffort,
     type WorkerEffort,
 } from "./effort.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, renamedWorkspace, renderStatusLine, routeChangedElsewhere, tallyOutcome, unreadMessages, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, changedElsewhere, renderStatusLine, tallyOutcome, unreadMessages, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -711,6 +711,11 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {§cli-identity-effort} — the route the latest gauge carried, and whether a readback it prompted is under way.
     let gaugeRoute: string | null = null;
     let policyRereading = false;
+    // {§cli-workspaces-and-workers} — the name the latest workspace state carried, a readback it prompted, and the
+    // generation of the session's own naming, which a readback begun before it cannot undo.
+    let stateName: string | null = null;
+    let nameRereading = false;
+    let nameEpoch = 0;
     // {§cli-status-inbox} — once the history is drawn, each message a concluded loop left unread is said once.
     const announceUnread = (): void => {
         if (!historyArrived || authoritativeStatus === null) return;
@@ -1102,10 +1107,19 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             workspaceStatus = projectWorkspaceState(workspace);
             if (workspaceStatus.projectRoot !== undefined) boundProjectRoot = workspaceStatus.projectRoot;
             // {§cli-workspaces-and-workers} — a rename made elsewhere reaches the title, the place and the resume command.
-            const renamed = renamedWorkspace(current, workspace);
-            if (renamed !== null) {
-                current = renamed;
-                surface.setTitle(windowTitle(current.name, boundWorker));
+            const carried = workspace.id === current.id && typeof workspace.name === "string" ? workspace.name : null;
+            const previous = stateName;
+            if (carried !== null) stateName = carried;
+            if (carried !== null && changedElsewhere(carried, previous, current.name) && !nameRereading) {
+                nameRereading = true;
+                const epoch = nameEpoch;
+                void transport.rpc("workspace.list").then((listed) => {
+                    const name = (listed as { workspaces: Array<{ id: number; name: string }> }).workspaces.find(({ id }) => id === current.id)?.name;
+                    if (epoch !== nameEpoch || name === undefined || name === current.name) return;
+                    current = { ...current, name };
+                    surface.setTitle(windowTitle(current.name, boundWorker));
+                    repromptPreserving();
+                }).catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); }).finally(() => { nameRereading = false; });
             }
             repromptPreserving();
         },
@@ -1133,7 +1147,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             const carried = authoritativeStatus.model;
             const previous = gaugeRoute;
             gaugeRoute = carried;
-            if (routeChangedElsewhere(carried, previous, workerModel === null ? null : resolvedModelLabel(workerModel))) {
+            if (changedElsewhere(carried, previous, workerModel === null ? null : resolvedModelLabel(workerModel))) {
                 if (!workerAbsent && !policyRereading) {
                     policyRereading = true;
                     void readWorkerPolicy(admission).then((policy) => {
@@ -1218,6 +1232,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         acceptedWords.clear();
         historyArrived = false;
         gaugeRoute = null;
+        stateName = null;
         streams = new StreamTrace();
         fanout = new FanoutCollapse();
     };
@@ -1233,9 +1248,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         setEffort: (effort) => { workerEffort = effort; },
         setAbsent: (absent) => { workerAbsent = absent; },
         getWorkspace: () => current,
-        setWorkspace: (s) => { current = s; },
+        setWorkspace: (s) => { current = s; nameEpoch += 1; },
         renameWorkspace: (s) => {
             current = s;
+            nameEpoch += 1;
             surface.setTitle(windowTitle(s.name, boundWorker));
         },
         switchWorkspace: async (name) => {
@@ -1247,6 +1263,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             resetBindingView();
             boundWorker = worker;
             current = workspace;
+            nameEpoch += 1;
             surface.setTitle(windowTitle(workspace.name, worker));
             observeBinding();
             await bindingReady;

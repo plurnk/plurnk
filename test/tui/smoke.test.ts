@@ -121,6 +121,24 @@ describe("TUI pty harness", () => {
         } finally { tui.kill(); }
     });
 
+    // plurnk-service {§agui-workspace-state}: a Run that begins after another client's rename carries the new name.
+    test("[§cli-workspaces-and-workers] a rename made elsewhere reaches the title and the resume command", async (t) => {
+        if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
+        const tui = spawnTui(daemon.url, ["--workspace", "elsewhere-start"]);
+        try {
+            await tui.waitFor(/plurnk.*\/help/s);
+            const renamed = await fetch(daemon.url, { method: "POST", headers: { "content-type": "application/json", accept: "text/event-stream" },
+                body: JSON.stringify({ threadId: "user", runId: "rename-elsewhere", state: {}, tools: [], context: [], messages: [],
+                    forwardedProps: { plurnk: { workspace: "elsewhere-start", action: { kind: "workspace.rename", name: "elsewhere-renamed" } } } }) });
+            assert.match(await renamed.text(), /"ok":true/u, "another client renamed the workspace");
+            tui.write("/workers\r");
+            await tui.waitFor(/plurnk · elsewhere-renamed · user/u);
+            tui.write("/quit\r");
+            assert.equal(await tui.exited, 0);
+            assert.match(tui.output(), /plurnk --workspace elsewhere-renamed --worker user/u);
+        } finally { tui.kill(); }
+    });
+
     test("bare Esc clears the composed line while idle (plurnk#25)", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url);

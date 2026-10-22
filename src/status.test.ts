@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import TerminalStatusLine, { historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renamedWorkspace, renderStatusLine, routeChangedElsewhere, tallyOutcome, unreadMessages, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { changedElsewhere, historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, unreadMessages, type ClientStatus, type StatusContext } from "./status.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
@@ -353,8 +353,9 @@ test("[§cli-status-streams] the gauge names the streams the worker holds open b
     }
 });
 
-// {§cli-identity-effort} — the gauge never supplies the identity; a route it newly carries prompts the readback that does.
-test("{§cli-identity-effort} only a route the gauge newly carries, unlike the one last read, is a change made elsewhere", () => {
+// {§cli-identity-effort} {§cli-workspaces-and-workers} — a Run's state never supplies the identity; a value it newly
+// carries prompts the readback that does.
+test("[§cli-identity-effort] only a route the gauge newly carries, unlike the one last read, is a change made elsewhere", () => {
     const rows: Array<[string | null, string | null, string | null, boolean, string]> = [
         ["kimi[high]", "deepdumb", "deepdumb", true, "another client chose a model"],
         ["deepdumb[low]", "deepdumb", "deepdumb", true, "another client chose an effort"],
@@ -364,14 +365,13 @@ test("{§cli-identity-effort} only a route the gauge newly carries, unlike the o
         ["kimi", "kimi", "deepdumb", false, "a route the gauge already carried prompts nothing again"],
         [null, null, null, false, "a modelless worker"],
     ];
-    for (const [carried, previous, read, changed, why] of rows) assert.equal(routeChangedElsewhere(carried, previous, read), changed, why);
+    for (const [carried, previous, read, changed, why] of rows) assert.equal(changedElsewhere(carried, previous, read), changed, why);
 });
 
-// {§cli-workspaces-and-workers} — plurnk-service {§agui-workspace-state}: the bound workspace's identity and current name.
-test("{§cli-workspaces-and-workers} a rename made elsewhere renames the bound workspace, and only that one", () => {
-    const current = { id: 4, name: "notes" };
-    assert.deepEqual(renamedWorkspace(current, { id: 4, name: "journal" }), { id: 4, name: "journal" });
-    assert.equal(renamedWorkspace(current, { id: 4, name: "notes" }), null, "its name unchanged");
-    assert.equal(renamedWorkspace(current, { id: 5, name: "journal" }), null, "another workspace's state");
-    assert.equal(renamedWorkspace(current, {}), null, "a state that names no workspace");
+// {§cli-workspaces-and-workers} — plurnk-service {§agui-workspace-state}: a Run's workspace state is its start's.
+test("[§cli-workspaces-and-workers] a name the workspace state newly carries prompts a readback; the session's own rename outlasts a stale one", () => {
+    assert.equal(changedElsewhere("journal", "notes", "notes"), true, "another client renamed it");
+    assert.equal(changedElsewhere("notes", "notes", "journal"), false, "a Run that began before this session's own rename");
+    assert.equal(changedElsewhere("journal", "notes", "journal"), false, "this session's own rename, now in the state");
+    assert.equal(changedElsewhere("notes", null, "notes"), false, "the first state agrees");
 });

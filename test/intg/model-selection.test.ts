@@ -20,6 +20,7 @@ const close = (server: ReturnType<typeof createServer>): Promise<void> =>
 const runClient = async (
     url: string,
     args: string[],
+    extraEnv: NodeJS.ProcessEnv = {},
 ): Promise<{ code: number | null; stdout: string; stderr: string }> => {
     const address = new URL(url);
     return new Promise((resolveRun, reject) => {
@@ -32,6 +33,7 @@ const runClient = async (
                 PLURNK_HOST: address.hostname,
                 PLURNK_PORT: address.port,
                 NO_COLOR: "1",
+                ...extraEnv,
             },
             stdio: ["ignore", "pipe", "pipe"],
         });
@@ -157,10 +159,19 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
     const reconnected = await runClient(daemon.url, [...common, "Reconnect without selecting a model."]);
     assert.equal(reconnected.code, 0, reconnected.stderr);
     assert.equal(JSON.parse(reconnected.stdout).response, "selected client-family/selected");
+
+    const envSelected = await runClient(
+        daemon.url,
+        [...common, "Select via PLURNK_CLIENT_MODEL."],
+        { PLURNK_CLIENT_MODEL: "openai/client-family/from-env" },
+    );
+    assert.equal(envSelected.code, 0, envSelected.stderr);
+    assert.equal(JSON.parse(envSelected.stdout).response, "selected client-family/from-env");
     assert.deepEqual(selectedModels, [
         "client-default",
         "client-family/selected",
         "client-family/selected",
+        "client-family/from-env",
     ]);
 
     const requestsBeforeEffort = selectedModels.length;
@@ -171,6 +182,62 @@ test("{§cli-model-selection}: separate client invocations replace and retain on
     assert.equal(inspectedEffort.code, 0, inspectedEffort.stderr);
     assert.deepEqual(JSON.parse(inspectedEffort.stdout), JSON.parse(selectedEffort.stdout));
     assert.equal(selectedModels.length, requestsBeforeEffort, "effort is a durable worker action, never an inference prompt");
+
+    // {§cli-environment} — worker environment admission creates an absent worker when needed,
+    // cascades PLURNK_CLIENT_ENV_INHERIT < PLURNK_CLIENT_ENV_<NAME> < --env, and fails before inference on refusal.
+    const envWorkerArgs = [
+        "--json",
+        "--workspace", "client-model-lifecycle",
+        "--worker", "env-admitted-worker",
+        "--project-root", "",
+        "--max-turns", "2",
+        "--timeout", "20",
+    ];
+    const admittedEnv = await runClient(
+        daemon.url,
+        [
+            ...envWorkerArgs,
+            "--env", "TEST_INHERIT_NAME=FromFlag",
+            "Run with admitted worker environment.",
+        ],
+        {
+            TEST_INHERIT_NAME: "FromShell",
+            TEST_INHERIT_EMAIL: "shell@example.com",
+            PLURNK_CLIENT_ENV_INHERIT: "TEST_INHERIT_*",
+            PLURNK_CLIENT_ENV_TEST_INHERIT_EMAIL: "cascade@example.com",
+            PLURNK_CLIENT_ENV_COMMITTER_ROLE: "reviewer",
+        },
+    );
+    assert.equal(admittedEnv.code, 0, admittedEnv.stderr);
+    const listedEnv = await runClient(daemon.url, [
+        "--json",
+        "--workspace", "client-model-lifecycle",
+        "--worker", "env-admitted-worker",
+        "env", "list",
+    ]);
+    assert.equal(listedEnv.code, 0, listedEnv.stderr);
+    const definitions = (JSON.parse(listedEnv.stdout) as {
+        definitions: Array<{ alias: string; origin: string; state: string; definition?: { value: string } }>;
+    }).definitions;
+    assert.deepEqual(
+        definitions
+            .filter(({ origin }) => origin === "worker")
+            .map(({ alias, state, definition }) => ({ alias, state, value: definition?.value })),
+        [
+            { alias: "COMMITTER_ROLE", state: "active", value: "reviewer" },
+            { alias: "TEST_INHERIT_EMAIL", state: "active", value: "cascade@example.com" },
+            { alias: "TEST_INHERIT_NAME", state: "active", value: "FromFlag" },
+        ],
+    );
+
+    const requestsBeforeEnvRefusal = selectedModels.length;
+    const refusedEnv = await runClient(daemon.url, [
+        ...envWorkerArgs,
+        "--env", "PLURNK_MODEL=illegal",
+        "This prompt must never reach inference.",
+    ]);
+    assert.notEqual(refusedEnv.code, 0, "a reserved worker env variable fails admission");
+    assert.equal(selectedModels.length, requestsBeforeEnvRefusal, "worker env admission failure occurs before inference");
 });
 
 test("[§cli-worker-ownership]: a headless owner advertises no clarification tool, so its worker's question is refused", { timeout: 120_000 }, async (t) => {

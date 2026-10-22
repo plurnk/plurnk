@@ -160,8 +160,8 @@ The worker owns its model route ({§worker-model-selection}); the client persist
 
 Resolution at the client:
 
-- `--model <selector>` set → one `worker.model.set` before the first loop of this invocation, then no per-loop selector.
-- `--model` unset → send nothing; the worker's durable route (or the daemon's `PLURNK_MODEL` default when the worker is first created) runs.
+- `--model <selector>` or `PLURNK_CLIENT_MODEL` set → one `worker.model.set` before the first loop of this invocation, then no per-loop selector.
+- `--model` and `PLURNK_CLIENT_MODEL` unset → send nothing; the worker's durable route (or the daemon's `PLURNK_MODEL` default when the worker is first created) runs.
 
 An explicit model or reasoning selection is invocation admission: rejection fails
 before the CLI sends a prompt or the TUI accepts input. The client never continues
@@ -896,6 +896,19 @@ their launch environment; clients do not restart them automatically.
 Daemon Problems — a name a shell cannot export, one of plurnk's own names, a
 service-owned definition that cannot be removed — cross the existing
 diagnostic path without rewriting or retry.
+
+At invocation admission (and when switching workspaces or workers in the TUI),
+the client persists its configured worker environment onto the bound worker via
+`worker.env.replace` (and `worker.env.enable` if the entry was disabled):
+
+| Source (low → high) | Meaning |
+|---|---|
+| `PLURNK_CLIENT_ENV_INHERIT` / `--env-inherit <NAME,...>` | Comma-separated exact variable names or trailing-`*` prefix globs whose present values in the client's environment are carried onto the worker (globs skip `PLURNK_*`). |
+| `PLURNK_CLIENT_ENV_<NAME>=<value>` | Explicit worker variable definition across the client's `.env` cascade and shell. |
+| `--env <NAME>[=<value>]` (repeatable) | Explicit per-invocation override; without `=`, carries `<NAME>` from the client's environment when set. |
+
+A daemon refusal on any configured entry fails admission before a prompt is
+sent or TUI input is accepted.
 
 ---
 

@@ -16,6 +16,7 @@ import { AguiTransport } from "./transport.ts";
 import { actionViaAgui, workerThreadId, type WorkspaceHandle } from "./agui.ts";
 import Credential, { SignInCredential } from "./credential.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
+import { applyWorkerEnv, resolveClientWorkerEnv } from "./env.ts";
 import { COMMANDS, commandSpec } from "./commands.ts";
 import { formatRouteIdentity } from "./status.ts";
 import {
@@ -156,6 +157,15 @@ options:
       --effort <level>    persistently select the worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
+      --env <NAME>[=<value>]
+                          persistently set <NAME> on the worker before the first loop
+                          (worker.env.replace); without =, carry <NAME> from this
+                          environment when set. Repeatable. Overrides
+                          PLURNK_CLIENT_ENV_<NAME>.
+      --env-inherit <list>
+                          comma-separated variable names or trailing-* prefix globs
+                          carried from this environment onto the worker before the
+                          first loop. Overrides PLURNK_CLIENT_ENV_INHERIT.
       --autostart <0|1>   start the installed service when nothing listens at the
                           configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
@@ -594,6 +604,8 @@ export const CLIENT_OPTIONS = {
     "tui-worker": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
+    env: { type: "string", multiple: true },
+    "env-inherit": { type: "string" },
     autostart: { type: "string" },
     "daemon-timeout-ms": { type: "string" },
     "oauth-timeout-ms": { type: "string" },
@@ -773,6 +785,10 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const workerName = selectedWorker ?? values["tui-worker"] ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
     const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
     const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
+    const workerEnv = resolveClientWorkerEnv({
+        envInherit: values["env-inherit"],
+        env: values.env,
+    });
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
     // {§cli-worker-ownership} Nobody is attending: the client declares itself not interactive.
     const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
@@ -906,7 +922,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 // persist it onto the worker before the run, then run WITHOUT
                 // a per-loop model selector (the worker owns the model).
                 let activeModel: ModelRoute | null;
-                if (values.model !== undefined && modelSelector !== undefined) {
+                if (modelSelector !== undefined) {
                     activeModel = Validator.assertModelRoute(await actionViaAgui(
                         { aguiUrl, credential },
                         {
@@ -930,12 +946,18 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     });
                     activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
                 }
-                if (effort !== undefined && values.model === undefined) {
+                if (effort !== undefined && modelSelector === undefined) {
                     await actionViaAgui({ aguiUrl, credential }, {
                         threadId,
                         kind: "worker.effort.set",
                         params: { effort },
                     });
+                }
+                if (workerEnv.size > 0) {
+                    await applyWorkerEnv(
+                        { call: (kind, params) => actionViaAgui({ aguiUrl, credential }, { threadId, kind, params }) },
+                        workerEnv,
+                    );
                 }
                 const projected = parsePrompt(prompt);
                 const openPaths = extractOpenPaths(projected.prompt, projectRoot);
@@ -998,9 +1020,10 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             await runTui(transport, w, {
                 lifetime,
                 modelSelector,
-                modelExplicit: values.model !== undefined,
+                modelExplicit: modelSelector !== undefined,
                 effort,
                 effortExplicit: effort !== undefined,
+                workerEnv,
                 yolo,
                 maxTurns,
                 projectRoot,

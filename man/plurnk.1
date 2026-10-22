@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-21" "plurnk 4.2.0" "User Commands"
+.TH PLURNK 1 "2026-10-22" "plurnk 4.2.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -68,6 +68,15 @@ loop.
       --effort <level>    persistently select the worker's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
+      --env <NAME>[=<value>]
+                          persistently set <NAME> on the worker before the first loop
+                          (worker.env.replace); without =, carry <NAME> from this
+                          environment when set. Repeatable. Overrides
+                          PLURNK_CLIENT_ENV_<NAME>.
+      --env-inherit <list>
+                          comma-separated variable names or trailing-* prefix globs
+                          carried from this environment onto the worker before the
+                          first loop. Overrides PLURNK_CLIENT_ENV_INHERIT.
       --autostart <0|1>   start the installed service when nothing listens at the
                           configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.

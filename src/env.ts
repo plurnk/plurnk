@@ -11,6 +11,75 @@ interface ActionCaller {
     call(method: string, params?: object): Promise<unknown>;
 }
 
+const CLIENT_ENV_PREFIX = "PLURNK_CLIENT_ENV_";
+const CLIENT_ENV_INHERIT_KEY = "PLURNK_CLIENT_ENV_INHERIT";
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+// {§cli-environment} Resolve the worker environment entries declared across the client cascade:
+// PLURNK_CLIENT_ENV_INHERIT (--env-inherit) < PLURNK_CLIENT_ENV_<NAME> < --env.
+// Invalid or reserved names are carried through so the daemon's own admission refuses them.
+export const resolveClientWorkerEnv = (
+    options: {
+        readonly envInherit?: string;
+        readonly env?: readonly string[];
+    } = {},
+    environment: NodeJS.ProcessEnv = process.env,
+): Map<string, string> => {
+    const out = new Map<string, string>();
+    const rawInherit = options.envInherit ?? environment[CLIENT_ENV_INHERIT_KEY];
+    const patterns = rawInherit === undefined
+        ? []
+        : rawInherit.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+    for (const pattern of patterns) {
+        if (pattern.endsWith("*")) {
+            const prefix = pattern.slice(0, -1);
+            if (prefix.length > 0 && !ENV_NAME.test(prefix)) {
+                out.set(pattern, "");
+                continue;
+            }
+            for (const [key, value] of Object.entries(environment)) {
+                if (value === undefined || key.startsWith("PLURNK_") || !ENV_NAME.test(key)) continue;
+                if (key.startsWith(prefix)) out.set(key, value);
+            }
+            continue;
+        }
+        if (!ENV_NAME.test(pattern) || pattern.startsWith("PLURNK_")) {
+            out.set(pattern, environment[pattern] ?? "");
+            continue;
+        }
+        const inherited = environment[pattern];
+        if (inherited !== undefined) out.set(pattern, inherited);
+    }
+    for (const [key, value] of Object.entries(environment)) {
+        if (value === undefined || !key.startsWith(CLIENT_ENV_PREFIX) || key === CLIENT_ENV_INHERIT_KEY) continue;
+        out.set(key.slice(CLIENT_ENV_PREFIX.length), value);
+    }
+    for (const entry of options.env ?? []) {
+        const eq = entry.indexOf("=");
+        if (eq === -1) {
+            const inherited = environment[entry];
+            if (inherited !== undefined) out.set(entry, inherited);
+            else if (!ENV_NAME.test(entry) || entry.startsWith("PLURNK_")) out.set(entry, "");
+            continue;
+        }
+        out.set(entry.slice(0, eq), entry.slice(eq + 1));
+    }
+    return out;
+};
+
+// {§cli-environment} Persist each resolved worker environment entry onto the bound worker at admission.
+export const applyWorkerEnv = async (
+    rpc: ActionCaller,
+    env: ReadonlyMap<string, string>,
+): Promise<void> => {
+    for (const [alias, value] of env) {
+        const result = await rpc.call("worker.env.replace", { alias, definition: { value } }) as MutationResult;
+        if (result.definition?.state === "disabled") {
+            await rpc.call("worker.env.enable", { alias });
+        }
+    }
+};
+
 type EnvDefinition = { value: string };
 
 type DefinitionState = {

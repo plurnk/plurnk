@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { handleEnv } from "./env.ts";
+import { applyWorkerEnv, handleEnv, resolveClientWorkerEnv } from "./env.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const harness = (results: Record<string, unknown> = {}) => {
@@ -195,4 +195,77 @@ test("[§cli-environment] import names its path, and an unreadable one reaches n
     assert.equal(await handleEnv("import /nonexistent/.env.plurnk", missing.rpc, missing.write), null);
     assert.match(missing.out.join(""), /not readable: ENOENT/u);
     assert.deepEqual(missing.calls, []);
+});
+
+test("[§cli-environment] resolveClientWorkerEnv cascades PLURNK_CLIENT_ENV_INHERIT < PLURNK_CLIENT_ENV_<NAME> < --env", () => {
+    const env: NodeJS.ProcessEnv = {
+        GIT_AUTHOR_NAME: "FromShell",
+        GIT_AUTHOR_EMAIL: "shell@example.com",
+        UNMATCHED: "ignored",
+        PLURNK_CLIENT_YOLO: "1",
+        PLURNK_CLIENT_ENV_INHERIT: "GIT_*,EXACT_VAR,MISSING_VAR",
+        EXACT_VAR: "exact",
+        PLURNK_CLIENT_ENV_GIT_AUTHOR_EMAIL: "cascade@example.com",
+        PLURNK_CLIENT_ENV_EXPLICIT_ONLY: "from-cascade",
+        CARRY_BY_FLAG: "carried",
+    };
+    const resolved = resolveClientWorkerEnv({
+        env: [
+            "GIT_AUTHOR_NAME=FromFlag",
+            "CARRY_BY_FLAG",
+            "UNSET_BY_FLAG",
+            "RATIO=a=b=c",
+        ],
+    }, env);
+    assert.deepEqual(Object.fromEntries(resolved), {
+        GIT_AUTHOR_NAME: "FromFlag",
+        GIT_AUTHOR_EMAIL: "cascade@example.com",
+        EXACT_VAR: "exact",
+        EXPLICIT_ONLY: "from-cascade",
+        CARRY_BY_FLAG: "carried",
+        RATIO: "a=b=c",
+    });
+
+    const flagInherit = resolveClientWorkerEnv({
+        envInherit: "EXACT_VAR",
+    }, env);
+    assert.deepEqual(Object.fromEntries(flagInherit), {
+        EXACT_VAR: "exact",
+        GIT_AUTHOR_EMAIL: "cascade@example.com",
+        EXPLICIT_ONLY: "from-cascade",
+    });
+
+    const invalid = resolveClientWorkerEnv({
+        envInherit: "PLURNK_MODEL,9BAD",
+        env: ["PLURNK_SECRET", "=nameless"],
+    }, {});
+    assert.deepEqual(Object.fromEntries(invalid), {
+        PLURNK_MODEL: "",
+        "9BAD": "",
+        PLURNK_SECRET: "",
+        "": "nameless",
+    });
+});
+
+test("[§cli-environment] applyWorkerEnv replaces each entry and re-enables disabled ones", async () => {
+    const calls: Array<{ method: string; params?: object }> = [];
+    const rpc = {
+        call: async (method: string, params?: object) => {
+            calls.push({ method, params });
+            const alias = (params as { alias?: string } | undefined)?.alias;
+            if (method === "worker.env.replace" && alias === "DISABLED_VAR") {
+                return { status: 200, alias, definition: { state: "disabled" } };
+            }
+            return { status: 200, alias, definition: { state: "active" } };
+        },
+    };
+    await applyWorkerEnv(rpc, new Map([
+        ["ACTIVE_VAR", "one"],
+        ["DISABLED_VAR", "two"],
+    ]));
+    assert.deepEqual(calls, [
+        { method: "worker.env.replace", params: { alias: "ACTIVE_VAR", definition: { value: "one" } } },
+        { method: "worker.env.replace", params: { alias: "DISABLED_VAR", definition: { value: "two" } } },
+        { method: "worker.env.enable", params: { alias: "DISABLED_VAR" } },
+    ]);
 });

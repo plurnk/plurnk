@@ -53,14 +53,14 @@ const sources = tracked.map((name) => ({ name, code: stripComments(readFileSync(
 
 const panel = readFileSync(join(ROOT, ".env.defaults"), "utf8");
 const live = new Map([...panel.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gmu)].map((match) => [match[1], match[2]]));
-const optional = new Set([...panel.matchAll(/^# ([A-Z][A-Z0-9_]*)=/gmu)].map((match) => match[1]));
+const optional = new Set([...panel.matchAll(/^# ([A-Z][A-Z0-9_]*)(?:_<[A-Z0-9_]+>)?=/gmu)].map((match) => match[1]));
 const declared = new Set([...live.keys(), ...optional]);
 
 // A key is named wherever shipped source spells it: a read, a usage line, a hint to the operator.
 // A hint that advertises a key nobody owns is as much a lie as a read of one.
 const read = new Set();
 for (const { code } of sources) {
-    for (const match of code.matchAll(/\bPLURNK_[A-Z0-9_]*[A-Z0-9]\b/gu)) read.add(match[0]);
+    for (const match of code.matchAll(/\b(PLURNK_[A-Z0-9_]*[A-Z0-9])(?:_<[A-Z0-9_]+>|\b)/gu)) read.add(match[1]);
 }
 
 test("[§cli-env-defaults] the client's panel declares only its own prefix: one owner per key", () => {

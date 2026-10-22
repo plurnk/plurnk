@@ -20,6 +20,7 @@ import Knobs from "./knobs.ts";
 import { paint } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completeAddressPath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
+import { applyWorkerEnv } from "./env.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow, operationIdentity } from "./render.ts";
@@ -638,6 +639,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // The explicit --model selector for this invocation ({§worker-model-selection}):
     // an explicit flag persistently selects the worker at startup.
     modelSelector?: string; modelExplicit?: boolean; effort?: string; effortExplicit?: boolean;
+    workerEnv?: ReadonlyMap<string, string>;
     yolo: boolean;
     maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
@@ -808,6 +810,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         // Same admission rule as --model: an explicit effort must take effect or
         // the invocation fails before any model work can run under a stale one.
         await setWorkerEffort(admission, opts.effort);
+    }
+    if (opts.workerEnv !== undefined && opts.workerEnv.size > 0) {
+        await applyWorkerEnv(admission, opts.workerEnv);
     }
     // Model identity is control-plane truth, not decorative header data. A
     // transport failure or malformed projection leaves this client unable to
@@ -1285,6 +1290,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (opts.selectProjectRoot !== undefined && projectRoot === undefined) return undefined;
             const worker = opts.workerName;
             const workspace = await transport.useWorkspace(name, { projectRoot, worker });
+            if (opts.workerEnv !== undefined && opts.workerEnv.size > 0) {
+                await applyWorkerEnv(admission, opts.workerEnv);
+            }
             opts.projectRoot = projectRoot;
             resetBindingView();
             boundWorker = worker;
@@ -1304,6 +1312,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         gates: () => authoritativeStatus?.gates ?? {},
         attachWorker: async (name) => {
             transport.useWorker(name);
+            if (opts.workerEnv !== undefined && opts.workerEnv.size > 0) {
+                await applyWorkerEnv(admission, opts.workerEnv);
+            }
             resetBindingView();
             boundWorker = name;
             surface.setTitle(windowTitle(current.name, name));

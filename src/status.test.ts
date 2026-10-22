@@ -196,6 +196,19 @@ test("[§cli-status-gated] the traffic light counts the workers anywhere in the 
     assert.equal(renderStatusLine({ ...running, children: null, gated: null }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s", "no gauge shows nothing");
 });
 
+test("[§cli-worker-history] the tree names each worker beneath the bound one with its generation, parents first", () => {
+    const tree = (descendants: unknown) => projectStatusGauge({ ...GAUGE, descendants }, PLACE).descendants;
+    assert.deepEqual(tree([]), [], "no delegation");
+    assert.deepEqual(tree([descendant(2, 1, "running"), descendant(3, 2, "parked"), descendant(4, 3, "running"), descendant(5, 1, "completed")]), [
+        { workerId: 2, name: "worker-2", parentWorkerId: 1, depth: 1 },
+        { workerId: 3, name: "worker-3", parentWorkerId: 2, depth: 2 },
+        { workerId: 4, name: "worker-4", parentWorkerId: 3, depth: 3 },
+        { workerId: 5, name: "worker-5", parentWorkerId: 1, depth: 1 },
+    ], "a child's generation is its parent's and one more");
+    assert.throws(() => tree([descendant(2, 1, "running"), descendant(4, 3, "running"), descendant(3, 2, "running")]), /Invalid runtime descendants/u,
+        "the daemon lists the tree depth first: a worker before its parent is a broken gauge");
+});
+
 test("[§cli-status-children] a gauge whose tree is not one worker's tree is refused", () => {
     const valid = descendant(2, 1, "running");
     for (const descendants of [

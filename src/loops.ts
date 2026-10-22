@@ -4,7 +4,7 @@
 import { paint } from "./color.ts";
 import { clientTransportResultInvalid, ProblemError } from "./diagnostics.ts";
 import ModelText from "./model-text.ts";
-import { fitRow, type LogEntryWire } from "./render.ts";
+import { fitRow, type Descendant, type LogEntryWire } from "./render.ts";
 import { renderRows } from "./render-history.ts";
 import { lifecycleMark, type StatusLifecycle } from "./status.ts";
 
@@ -60,8 +60,9 @@ export const renderLoopList = (loops: readonly LoopEntry[], columns: number): st
     }).join("\n")}\n`;
 };
 
-// The loop as history draws it, headed by its number, the person's own prompts included.
-export const renderLoop = (loop: LoopEntry, rows: readonly LogEntryWire[], threadId: string, columns: number): string => {
-    const blocks = renderRows(rows, threadId, columns, true);
+// The loop as history draws it, headed by its number, the person's own prompts and its delegation's rows included.
+export const renderLoop = (loop: LoopEntry, rows: readonly LogEntryWire[], threadId: string, columns: number,
+    tree: ReadonlyMap<number, Descendant> = new Map()): string => {
+    const blocks = renderRows(rows, threadId, columns, true, tree);
     return `${[paint(`── loop ${loop.sequence} ──`, "dim"), ...(blocks.length === 0 ? [paint("(no rows)", "dim")] : blocks)].join("\n")}\n`;
 };

@@ -153,7 +153,7 @@ test("[§cli-row-sources] a whole row draws as its parts do: the address it reco
         "the same row draws the same whichever way it arrived");
 });
 
-test("[§cli-worker-history] a snapshot rebuilds every row its live parts built, in log order; a subagent's messages and reasoning build none", () => {
+test("[§cli-worker-history] a snapshot rebuilds every row its live parts built, in log order, a subagent's in its own worker's; reasoning builds none", () => {
     const exec = { id: 5, op: "sh", sequence: 1, attrs: { stream: "sh:///ab3d5678" }, tx: { runtime: "sh", body: "ls" }, rx: { status: 200, outcome: "started" } };
     const look = { id: 6, op: "READ", sequence: 2, target: "notes.md", tx: { target: { kind: "local", raw: "notes.md" } }, rx: { status: 200 } };
     const reply = { id: 7, op: "SEND", sequence: 3, tx: { aside: "the answer", body: { raw: "Done." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } };
@@ -165,7 +165,10 @@ test("[§cli-worker-history] a snapshot rebuilds every row its live parts built,
     // plurnk-service `{§agui-snapshot}`: a discharge follows the call it answers, ahead of the rows between them.
     const messages = [exec, concluded, look, reply, arrival, again].flatMap((row) => messagesOf(row));
     assert.deepEqual(snapshotRows(messages), live, "the snapshot draws what the live stream drew, in log order");
-    const subagent = messagesOf({ ...look, id: 11, sequence: 7 }).map((message) => ({ ...message, subagentRunId: "child" }));
+    // plurnk-service `{§agui-subagents}`: a subagent's messages are its own worker's, attributed by its run.
+    const child = { ...look, id: 11, sequence: 7, worker_id: 4 };
+    const subagent = messagesOf(child).map((message) => ({ ...message, subagentRunId: "ops://helper/1" }));
     const reasoning = { id: "1/1/8/reasoning", role: "reasoning", content: "thinking" };
-    assert.deepEqual(snapshotRows([...messages, ...subagent, reasoning]), live, "a subagent's messages belong to its run, and reasoning is never backfilled");
+    assert.deepEqual(snapshotRows([...messages, ...subagent, reasoning]), [...live, ...drawn(partsOf(child))],
+        "a subagent's message builds its worker's row as its live parts do, and reasoning is never backfilled");
 });

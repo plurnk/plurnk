@@ -1,7 +1,7 @@
 import { ProblemError, clientTransportStateInvalid } from "./diagnostics.ts";
 import { Validator, type FunctionalityPreparationActivity, type JsonSchema, type ModelRoute, type ProviderUsage } from "@plurnk/plurnk-contracts";
 import preparationSchema from "@plurnk/plurnk-contracts/schema/FunctionalityPreparationActivity.json" with { type: "json" };
-import type { LoopUsage } from "./render.ts";
+import type { Descendant, LoopUsage } from "./render.ts";
 import { countWithSubtotal, costWithSubtotal } from "./figures.ts";
 import ModelText from "./model-text.ts";
 
@@ -149,6 +149,8 @@ export interface ClientStatus {
     gated: number | null;
     // {§cli-workers-topology} — each of those workers' pending gates, by id; absent without a gauge.
     gates?: Readonly<Record<number, number>>;
+    // {§cli-worker-history} — that tree, each worker with its name and generation, the bound worker's children first.
+    descendants?: readonly Descendant[];
     // {§cli-status-spend} — the daemon's spend of the bound worker and its descendants since the
     // worker began; null when nothing is spent or the transport carries no gauge.
     spend?: TurnAccounting | null;
@@ -243,7 +245,7 @@ const ALIVE: ReadonlySet<string> = new Set<StatusLifecycle>(["queued", "running"
 // {§cli-status-children} {§cli-status-gated} — plurnk-service {§agui-status-descendants}: the daemon's tree beneath
 // the bound worker, read for the two counts the status line shows. A direct child is one whose parent is not in the
 // tree: every other parent is the one worker the tree hangs from.
-const treeCounts = (value: unknown): { children: number; gated: number; gates: Record<number, number> } => {
+const treeCounts = (value: unknown): { children: number; gated: number; gates: Record<number, number>; descendants: Descendant[] } => {
     const fail = (): never => { throw new TypeError("Invalid runtime descendants."); };
     if (!Array.isArray(value)) return fail();
     const tree = value.map((entry: unknown) => {
@@ -252,15 +254,22 @@ const treeCounts = (value: unknown): { children: number; gated: number; gates: R
         if (!Number.isSafeInteger(id) || !Number.isSafeInteger(parentWorkerId) || typeof name !== "string"
             || typeof kind !== "string" || typeof lifecycle !== "string" || !LIFECYCLES.has(lifecycle)
             || !Number.isSafeInteger(gates) || (gates as number) < 0) return fail();
-        return { id: id as number, parentWorkerId: parentWorkerId as number, lifecycle, gates: gates as number };
+        return { id: id as number, name, parentWorkerId: parentWorkerId as number, lifecycle, gates: gates as number };
     });
     const ids = new Set(tree.map(({ id }) => id));
     const direct = tree.filter(({ parentWorkerId }) => !ids.has(parentWorkerId));
     if (ids.size !== tree.length || new Set(direct.map(({ parentWorkerId }) => parentWorkerId)).size > 1) return fail();
+    // Depth first: a worker's parent precedes it, so its generation is its parent's and one more.
+    const depths = new Map<number, number>();
+    for (const { id, parentWorkerId } of tree) {
+        if (ids.has(parentWorkerId) && !depths.has(parentWorkerId)) return fail();
+        depths.set(id, (depths.get(parentWorkerId) ?? 0) + 1);
+    }
     return {
         children: direct.filter(({ lifecycle }) => ALIVE.has(lifecycle)).length,
         gated: tree.filter(({ gates }) => gates > 0).length,
         gates: Object.fromEntries(tree.filter(({ gates }) => gates > 0).map(({ id, gates }) => [id, gates])),
+        descendants: tree.map(({ id, name, parentWorkerId }) => ({ workerId: id, name, parentWorkerId, depth: depths.get(id)! })),
     };
 };
 
@@ -358,7 +367,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
     if (value.waitUntil !== null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
         throw new TypeError("Invalid runtime wait deadline.");
     }
-    const { children, gated, gates } = treeCounts(value.descendants);
+    const { children, gated, gates, descendants } = treeCounts(value.descendants);
     for (const stamp of [value.claimedAt, value.terminatedAt]) {
         if (stamp !== null && (!Number.isSafeInteger(stamp) || (stamp as number) < 0)) throw new TypeError("Invalid runtime loop timing.");
     }
@@ -371,6 +380,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
         children,
         gated,
         gates,
+        descendants,
         waitUntil: value.waitUntil as number | null,
         spend: spendAccounting(value.spend),
         claimedAt: value.claimedAt as number | null,

@@ -325,6 +325,8 @@ export interface VerbContext {
     threadId: () => string;
     columns: () => number;
     readLoop: (workerId: number, sequence: number) => Promise<readonly LogEntryWire[]>;
+    // {§cli-worker-history} The bound worker's tree beneath it as the gauge holds it, each worker by its id.
+    tree: () => ReadonlyMap<number, Descendant>;
     // {§cli-workers-topology} The pending gates of the workers the session's gauge knows, by id.
     gates: () => Readonly<Record<number, number>>;
     // Rebind the session's thread to a worker by name, workspace unchanged
@@ -443,7 +445,7 @@ export const handleVerb = async (line: string, ctx: VerbContext): Promise<"quit"
             const loops = workerId === null ? [] : await readLoops(rpc, workerId);
             const loop = rest.length === 0 ? loops.at(-1) : loops.find(({ sequence }) => sequence === Number(rest));
             if (workerId === null || loop === undefined) { write(rest.length === 0 ? "  (no loops yet)\n" : `  (no loop ${rest}; /loops lists them)\n`); return; }
-            write(renderLoop(loop, await ctx.readLoop(workerId, loop.sequence), ctx.threadId(), ctx.columns()));
+            write(renderLoop(loop, await ctx.readLoop(workerId, loop.sequence), ctx.threadId(), ctx.columns(), ctx.tree()));
             return;
         }
         case "model": {
@@ -861,6 +863,9 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         workerAbsent = policy.absent;
         await refreshTopology();
     };
+    // {§cli-worker-history} The bound worker's tree beneath it, as the latest gauge holds it, each worker by its id.
+    const treeOf = (): ReadonlyMap<number, Descendant> =>
+        new Map((authoritativeStatus?.descendants ?? []).map((descendant) => [descendant.workerId, descendant]));
     const refreshTopology = async (): Promise<void> => {
         const threadId = transport.threadId();
         const workspaceName = current.name;
@@ -1071,7 +1076,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             if (shuttingDown) return;
             flushFanout();
             surface.archiveResponses();
-            for (const block of renderHistory(history, transport.threadId(), surface.columns || 80)) printAbove(block);
+            for (const block of renderHistory(history, transport.threadId(), surface.columns || 80, treeOf())) printAbove(block);
             for (const entry of history.entries) {
                 if (!isEmission(entry)) harvestWorkerName(entry.target);
             }
@@ -1295,6 +1300,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         threadId: () => transport.threadId(),
         columns: () => surface.columns || 80,
         readLoop: (workerId, sequence) => transport.loop(workerId, sequence),
+        tree: () => treeOf(),
         gates: () => authoritativeStatus?.gates ?? {},
         attachWorker: async (name) => {
             transport.useWorker(name);

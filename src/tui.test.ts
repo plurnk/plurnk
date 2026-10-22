@@ -310,6 +310,7 @@ const makeCtx = (results: Record<string, unknown> = {}, opts: Partial<VerbContex
             const r = results["loop page"];
             return (typeof r === "function" ? (r as (p: unknown) => unknown)({ workerId, sequence }) : r ?? []) as LogEntryWire[];
         },
+        tree: () => new Map(),
         gates: () => ({}),
         attachWorker: async (name) => { attached.push(name); worker = name; },
         switchWorkspace: async (name) => {

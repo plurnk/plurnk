@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderHistory } from "./render-history.ts";
+import { renderHistory, renderRows } from "./render-history.ts";
 import type { LogEntryWire } from "./render.ts";
 import { snapshotRows } from "./rows.ts";
 
@@ -20,6 +20,25 @@ test("{§cli-broadcast-send-rendering}: qualified attachment preserves standard 
         assert.deepEqual(renderHistory({ attachment: true, accepted: new Map(), entries: rows }, "42#alice", 80),
             ["🐹\nRetained answer"]);
     }
+});
+
+// plurnk-service {§agui-status-descendants}: the bound worker's tree names each descendant and its generation.
+test("[§cli-worker-history] a descendant's rows are drawn as quietly as the bound worker's, marked and stepped in by generation", () => {
+    const tree = new Map([[8, { workerId: 8, name: "helper", parentWorkerId: 7, depth: 1 }], [9, { workerId: 9, name: "digger", parentWorkerId: 8, depth: 2 }]]);
+    const rows = [
+        entry({ id: 1, worker_id: 7, target: "a.md", pathname: "/a.md" } as Partial<LogEntryWire>),
+        entry({ id: 2, worker_id: 8, origin: "_plurnk", op: "SEND", source: "worker://main", attrs: { kind: "message" }, tx: { body: { raw: "Look into it." } } } as Partial<LogEntryWire>),
+        entry({ id: 3, worker_id: 8, target: "b.md", pathname: "/b.md" } as Partial<LogEntryWire>),
+        entry({ id: 4, worker_id: 9, target: "c.md", pathname: "/c.md" } as Partial<LogEntryWire>),
+        entry({ id: 5, worker_id: 8, op: "SEND", signal: 200, tx: { body: { raw: "Found it." } } } as Partial<LogEntryWire>),
+    ];
+    const [own, asked, read, deeper, replied] = renderRows(rows, "main", 80, true, tree);
+    assert.doesNotMatch(own ?? "", /🐜/u, "the bound worker's own row carries no mark");
+    assert.match(asked ?? "", /^ {2}🐜 helper \S+ \(worker:\/\/main\)\n {2}Look into it\.$/u, "a descendant's arrival: its sender, then its words, one step in");
+    assert.match(read ?? "", /^ {2}🐜 helper [^\n]*b\.md/u, "a descendant's operation: its heading, one step in");
+    assert.match(deeper ?? "", /^ {4}🐜 digger [^\n]*c\.md/u, "a grandchild steps in once more");
+    assert.match(replied ?? "", /^ {2}🐜 helper [^\n]*\n {2}Found it\.$/u, "a descendant's reply keeps its words whole, as the bound worker's do");
+    assert.deepEqual(renderRows(rows, "main", 80, true), renderRows(rows, "main", 80, true, new Map()), "without a tree, every row is drawn as its own");
 });
 
 test("[§cli-worker-history] a snapshot's prompt, operation headings and speech keep their row order; its reasoning is never replayed", () => {

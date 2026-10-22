@@ -612,7 +612,7 @@ line cut to the terminal's width:
 ```
 
 `/loop <n>` prints loop `n` whole, oldest first, as history draws it ({§cli-worker-history}): the person's
-prompts, replies whole, operations as their headings, reasoning never. It reads the loop's page
+prompts, replies whole, operations as their headings, its delegation's rows marked and stepped in, reasoning never. It reads the loop's page
 (plurnk-service `{§agui-loop-page}`) under the view the session's Runs negotiate, its delegation
 observed and reasoning by link, reads each sender's words that travel by reference in their place,
 rebuilds its rows from the parts that build them live ({§cli-row-sources}), and prints them below
@@ -631,6 +631,7 @@ disconnecting never cancels work ({§agui-run-disconnect}).
 | Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the window of the bound worker's conversation (plurnk-service `{§agui-history-window}`), supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A snapshot the daemon sends again during a Run (plurnk-service `{§agui-history-advance}`) draws each row it holds that the Run has not drawn, the rows its live stream then skips; nothing drawn changes, and a call the Run already holds keeps the arguments it was built with. |
 | Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
+| Delegation | A descendant's rows the window holds, the delegation the TUI observes (plurnk-service `{§agui-history-window}`), are drawn as quietly as the bound worker's, a message or reply with its words whole and any other operation as its heading, in log order among them, marked `🐜 <name>` and stepped in per generation as §5.1 marks them live, by the bound worker's tree in the gauge (plurnk-service `{§agui-status-descendants}`). A descendant's reasoning and terminal never are. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
 | Past/live boundary | A window that begins after the first loop ends with `— earlier loops: /loops —`; `/loop <n>` prints any of them ({§cli-loops}). Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
 | State/accounting | Replayed entries are not live activity, turns, terminal events, or fresh usage. Only the current gauge and subsequently observed events update status. Elapsed session time does not include time before attachment. |

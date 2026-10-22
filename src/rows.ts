@@ -222,8 +222,7 @@ export default class RowAssembler {
 // {§cli-worker-history} A snapshot message as the events that build it live: the same parts, with the same facts.
 const eventsOf = (value: unknown): AguiEvent[] => {
     const message = objectOf(value);
-    // The bound worker's own conversation: a subagent's parts belong to its own run.
-    if (message === null || message.subagentRunId !== undefined) return [];
+    if (message === null) return [];
     const id = message.id as string;
     const text = typeof message.content === "string" ? message.content : "";
     if (message.role === "tool") {
@@ -250,7 +249,7 @@ const eventsOf = (value: unknown): AguiEvent[] => {
 };
 
 // {§cli-worker-history} The rows a MESSAGES_SNAPSHOT holds, in log order: every part carries its row's facts, so the
-// snapshot rebuilds each row as the live stream built it.
+// snapshot rebuilds each row as the live stream built it, a subagent's in its own worker's.
 // A gated call the snapshot holds stays in the assembler that builds the live stream, so its settlement finds it.
 export const snapshotRows = (messages: readonly unknown[], rows = new RowAssembler()): LogEntryWire[] => {
     const events = messages.flatMap(eventsOf);

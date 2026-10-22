@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 // NO_COLOR=1 so coloring helpers emit empty strings; assertions stay textual.
 process.env.NO_COLOR = "1";
 
-const { renderBody, formatTarget, renderProposalMenu, keyToResolution, questionChoices, proposalResume } = await import("./proposal.ts");
+const { renderBody, formatTarget, gateTitle, proposalOf, renderProposalMenu, keyToResolution, questionChoices, proposalResume } = await import("./proposal.ts");
 
 test("[§cli-proposal-review]: resolution bodies and outcomes survive standard AG-UI resume", () => {
     for (const decision of ["accept", "reject"] as const) {
@@ -29,13 +29,12 @@ test("[§cli-proposal-review]: resolution bodies and outcomes survive standard A
 
 const proposal = () => ({
     logEntryId: 1,
-    loopId: 1,
-    turnId: 1,
+    workerId: 1,
+    worker: "main",
     op: "EDIT",
     target: { scheme: "file", pathname: "/tmp/x" },
     body: "",
     attrs: {},
-    owner: "agui://anonymous/threads/client",
 });
 
 // ─── request-user-input questions ({§question-tool}) ─────────────────
@@ -122,4 +121,27 @@ test("formatTarget: an execution with no target → its runtime, not '(no target
     assert.equal(formatTarget({ scheme: null, pathname: null }, "sh"), "sh");
     // Keyword ops with no target are genuinely targetless.
     assert.equal(formatTarget({ scheme: null, pathname: null }, "EDIT"), "(no target)");
+});
+
+// {§cli-review-attribution} plurnk-service {§proposal-projection}: a proposal names the worker asking and any decision deadline.
+test("[§cli-review-attribution] a gate's heading names the worker asking when it is not the bound one, and the deadline for the decision", () => {
+    const now = new Date(2026, 9, 21, 9, 0);
+    const today = new Date(2026, 9, 21, 14, 32).toISOString();
+    const later = new Date(2026, 9, 23, 8, 5).toISOString();
+    assert.equal(gateTitle("proposal EDIT a.ts", null, undefined, now), "proposal EDIT a.ts", "the bound worker's own, untimed");
+    assert.equal(gateTitle("proposal EDIT a.ts", "helper", undefined, now), "proposal EDIT a.ts · from helper");
+    assert.equal(gateTitle("proposal EDIT a.ts", null, today, now), "proposal EDIT a.ts · decide by 14:32", "a deadline today is its time");
+    assert.equal(gateTitle("question", "helper", later, now), "question · from helper · decide by 2026-10-23 08:05", "another day carries its date");
+    const menu = renderProposalMenu({ ...proposal(), worker: "helper", workerId: 4, expiresAt: today }, "main");
+    assert.match(menu, /proposal EDIT \S*\/tmp\/x · from helper · decide by \d\d:\d\d/u, "the one-shot menu says the same");
+    assert.doesNotMatch(renderProposalMenu(proposal(), "main"), /from main/u, "the bound worker's own names none");
+});
+
+test("[§cli-review-attribution] a proposal without its worker, or with a deadline that is no time, is a broken wire", () => {
+    const interrupt = (over: Record<string, unknown>) => ({ id: "i1", metadata: { plurnk: { proposal: { ...proposal(), ...over } } } });
+    assert.equal(proposalOf(interrupt({}))?.worker, "main");
+    assert.equal(proposalOf(interrupt({ expiresAt: "2026-10-21T18:32:00.000Z" }))?.expiresAt, "2026-10-21T18:32:00.000Z");
+    for (const broken of [{ worker: undefined }, { workerId: "1" }, { expiresAt: "soon" }, { expiresAt: 5 }]) {
+        assert.throws(() => proposalOf(interrupt(broken)), (error: unknown) => (error as { problem?: { kind?: string } }).problem?.kind === "proposal-invalid", JSON.stringify(broken));
+    }
 });

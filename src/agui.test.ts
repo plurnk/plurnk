@@ -278,9 +278,9 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
             return [run.forwardedProps.plurnk.interactive, run.tools.map(({ name }) => name)];
         });
         assert.deepEqual(declared, [
-            [true, ["question", "mcp_input_required"]],
+            [true, []],
             [false, []],
-        ], "--auto removes the person, and the client tools a person answers");
+        ], "a terminal declares a person, whom a one-shot prompt offers no question, and --auto removes the person");
     } finally {
         if (tty === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
         else Object.defineProperty(process.stdin, "isTTY", tty);

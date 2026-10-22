@@ -2,7 +2,7 @@ import { Container, Editor, SelectList, Text, type Focusable } from "@earendil-w
 import { paint } from "./color.ts";
 import ModelText from "./model-text.ts";
 import QuestionForm, { type QuestionAnswer } from "./QuestionForm.ts";
-import { formatTarget, renderBody, type ProposalParams, type Resolution } from "./proposal.ts";
+import { formatTarget, gateTitle, renderBody, type ProposalParams, type Resolution } from "./proposal.ts";
 import type { RunHandlers } from "./transport.ts";
 import TuiSurface, { editorTheme } from "./tui-surface.ts";
 
@@ -23,6 +23,8 @@ interface Actions {
     resolveQuestion: (id: number, answer: Record<string, unknown> | "cancel") => Promise<void>;
     record: (text: string) => void;
     error: (cause: unknown) => void;
+    // {§cli-review-attribution} the name of the worker a gate is from, null when it is the bound worker.
+    askedBy: (workerId: number, name?: string) => string | null;
 }
 
 /** {§cli-inline-review} — a view of transport-owned interrupts, not another run lifecycle. */
@@ -56,7 +58,7 @@ export default class Review extends Container implements Focusable {
         ], 4, editorTheme.selectList);
         const request: Request = {
             id: `proposal:${proposal.logEntryId}`, kind: "proposal", proposal, control,
-            title: `proposal ${proposal.op} ${formatTarget(proposal.target, proposal.op)}`,
+            title: gateTitle(`proposal ${proposal.op} ${formatTarget(proposal.target, proposal.op)}`, this.#actions.askedBy(proposal.workerId, proposal.worker), proposal.expiresAt),
             details: renderBody(proposal.op, ModelText.plain(proposal.body)), error: "", busy: false,
         };
         control.onSelect = ({ value }) => { void this.#decide(request, value as Action); };
@@ -67,7 +69,8 @@ export default class Review extends Container implements Focusable {
         const request: Request = {
             id: `int:${question.interactionId}`, kind: "question", question,
             form: new QuestionForm(question.responseSchema, question.toolName), control: this.#surface.createEditor(),
-            title: "question", details: ModelText.plain(question.message), error: "", busy: false,
+            title: gateTitle("question", question.workerId === undefined ? null : this.#actions.askedBy(question.workerId), undefined),
+            details: ModelText.plain(question.message), error: "", busy: false,
         };
         this.#questionControl(request);
         this.#add(request);

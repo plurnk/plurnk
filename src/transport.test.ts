@@ -1424,7 +1424,7 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
         }
         for (const run of runs) {
             const input = run.body as { tools: unknown };
-            assert.deepEqual(input.tools, clientCapabilities(true).tools, "every loop declares the client's capability set");
+            assert.deepEqual(input.tools, clientCapabilities(true, true).tools, "every loop declares the client's capability set");
         }
     } finally { await mock.close(); }
 });

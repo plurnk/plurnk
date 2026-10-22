@@ -23,13 +23,14 @@ const isRuntimeOp = (op: string): boolean => /^[a-z]/.test(op);
 
 export interface ProposalParams {
     logEntryId: number;
-    loopId: number;
-    turnId: number;
+    // {§cli-review-attribution} the worker asking, and the deadline the operator set for the decision (ISO 8601).
+    workerId: number;
+    worker: string;
+    expiresAt?: string;
     op: string;
     target: { scheme: string | null; pathname: string | null };
     body: string;
     attrs: unknown;
-    owner: string;
 }
 
 export type Resolution = ProposalResolution;
@@ -43,8 +44,10 @@ export const proposalOf = (interrupt: { readonly id: string; readonly metadata?:
     const target = objectOf(proposal?.target);
     if (proposal === null || !Number.isSafeInteger(proposal.logEntryId) || typeof proposal.op !== "string" || typeof proposal.body !== "string"
         || target === null || !(target.scheme === null || typeof target.scheme === "string")
-        || !(target.pathname === null || typeof target.pathname === "string")) {
-        throw new ProblemError(clientTransportProposalInvalid(interrupt.id, "metadata.plurnk.proposal lacks logEntryId, op, body or target."));
+        || !(target.pathname === null || typeof target.pathname === "string")
+        || !Number.isSafeInteger(proposal.workerId) || typeof proposal.worker !== "string"
+        || !(proposal.expiresAt === undefined || typeof proposal.expiresAt === "string" && Number.isFinite(Date.parse(proposal.expiresAt)))) {
+        throw new ProblemError(clientTransportProposalInvalid(interrupt.id, "metadata.plurnk.proposal lacks logEntryId, workerId, worker, op, body or target, or its expiresAt is no time."));
     }
     return proposal as unknown as ProposalParams;
 };
@@ -121,11 +124,21 @@ export const editInEditor = async (body: string, suffix: string): Promise<string
     }
 };
 
+// {§cli-review-attribution} A gate's heading: what it asks, the worker asking when it is not the bound one, and the
+// deadline the operator set for the decision, as a local time (with its date when not today).
+export const gateTitle = (what: string, asker: string | null, expiresAt: string | undefined, now = new Date()): string => {
+    const two = (n: number): string => String(n).padStart(2, "0");
+    const by = expiresAt === undefined ? null : new Date(expiresAt);
+    const deadline = by === null ? null : `${by.toDateString() === now.toDateString() ? "" : `${by.getFullYear()}-${two(by.getMonth() + 1)}-${two(by.getDate())} `}${two(by.getHours())}:${two(by.getMinutes())}`;
+    return [what, ...(asker === null ? [] : [`from ${ModelText.plain(asker)}`]), ...(deadline === null ? [] : [`decide by ${deadline}`])].join(" · ");
+};
+
 // The one-shot TTY client's rendered diff and raw-key menu. No I/O here.
-export const renderProposalMenu = (params: ProposalParams): string => {
+export const renderProposalMenu = (params: ProposalParams, boundWorker?: string): string => {
     const body = ModelText.plain(params.body);   // plurnk#35 — the body is the model's
     const nl = body.endsWith("\n") ? "" : "\n";
-    return `\n${paint(`── proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)} ──`, "bold")}\n`
+    const what = `proposal ${params.op} ${formatTarget(ModelText.plainFields(params.target), params.op)}`;
+    return `\n${paint(`── ${gateTitle(what, params.worker === boundWorker ? null : params.worker, params.expiresAt)} ──`, "bold")}\n`
         + renderBody(params.op, body) + nl
         + `${paint("[a]ccept · [e]dit · [r]eject · [c]ancel", "dim")} `;
 };
@@ -168,8 +181,8 @@ export const keyToResolution = async (key: string, params: ProposalParams): Prom
 // diff + menu to stderr, reads one keypress, returns the resolution. The TUI
 // uses the non-blocking renderProposalMenu + keyToResolution instead.
 // plurnk-service {§agui-held-interrupts}: null when `signal` withdraws the menu before a key, its gate settled elsewhere.
-export const reviewProposal = async (params: ProposalParams, signal?: AbortSignal): Promise<Resolution | null> => {
-    process.stderr.write(withColorOutput(process.stderr, () => renderProposalMenu(params)));
+export const reviewProposal = async (params: ProposalParams, signal?: AbortSignal, boundWorker?: string): Promise<Resolution | null> => {
+    process.stderr.write(withColorOutput(process.stderr, () => renderProposalMenu(params, boundWorker)));
     const pressed = await readSingleKey(signal);
     if (pressed === null) {
         process.stderr.write("settled elsewhere\n");

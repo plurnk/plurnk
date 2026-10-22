@@ -7,8 +7,8 @@ import TuiSurface from "./tui-surface.ts";
 import type { ProposalParams, Resolution } from "./proposal.ts";
 
 const proposal = (id = 1): ProposalParams => ({
-    logEntryId: id, loopId: 1, turnId: 1, op: "sh", target: { scheme: null, pathname: null },
-    body: "printf hello", attrs: {}, owner: "agui://anonymous/threads/client",
+    logEntryId: id, workerId: 1, worker: "main", op: "sh", target: { scheme: null, pathname: null },
+    body: "printf hello", attrs: {},
 });
 const question = (id = 1, responseSchema: Record<string, unknown> = {
     type: "object", properties: { name: { type: "string" } }, required: ["name"],
@@ -40,6 +40,7 @@ const fixture = (t: TestContext) => {
         },
         record: (text: string) => { records.push(text); },
         error: (cause: unknown) => { errors.push(cause); },
+        askedBy: (workerId: number, name?: string) => workerId === 1 ? null : name ?? `worker ${workerId}`,
     };
     const review = new Review(surface, actions);
     surface.start();
@@ -345,4 +346,17 @@ test("[§cli-inline-review] narrow and wide redraws retain safe Unicode text, mu
     h.key("\r");
     await setImmediate();
     assert.deepEqual(h.calls, [["int:1", { name: "multiline\nanswer" }]]);
+});
+
+// plurnk-service {§proposal-projection} and the interaction projection name the worker asking.
+test("[§cli-review-attribution] a descendant's gate names its worker; the bound worker's own names none", (t) => {
+    const h = fixture(t);
+    h.review.addProposal({ ...proposal(3), workerId: 4, worker: "helper" });
+    assert.match(h.review.render(100).join("\n"), /proposal sh .*· from helper/u, "a descendant's proposal, by the name it carries");
+    h.review.remove("proposal:3");
+    h.review.addProposal(proposal(5));
+    assert.doesNotMatch(h.review.render(100).join("\n"), /from main/u, "the bound worker's own");
+    h.review.remove("proposal:5");
+    h.review.addQuestion({ ...question(9), workerId: 6 });
+    assert.match(h.review.render(100).join("\n"), /question · from worker 6/u, "a question from a worker the session holds no name for");
 });

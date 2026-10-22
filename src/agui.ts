@@ -44,6 +44,12 @@ export const workerThreadId = ({ workspaceId, worker }: WorkerBinding): string =
     return `${workspaceId}#${worker}`;
 };
 
+// The worker a bound thread names after its workspace ID, or null for a thread that binds none.
+export const threadWorker = (threadId: string): string | null => {
+    const at = threadId.indexOf("#");
+    return at < 0 ? null : threadId.slice(at + 1);
+};
+
 export type ActionOutcome<T = unknown> =
     | { kind: string; ok: true; result?: T }
     | { kind: string; ok: false; problem: ProblemDetails };

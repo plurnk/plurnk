@@ -5,10 +5,9 @@ import type { Notice } from "./diagnostics.ts";
 import type { ProposalParams } from "./proposal.ts";
 
 const proposal = (op = "brave", target = "brave_web_search"): ProposalParams => ({
-    logEntryId: 1, loopId: 1, turnId: 1, op,
+    logEntryId: 1, workerId: 1, worker: "main", op,
     target: { scheme: "worker", pathname: "/output" },
     body: '{"query":"example"}', attrs: { runtime: op, target },
-    owner: "agui://anonymous/threads/client",
 });
 const policy = (environment: NodeJS.ProcessEnv) => new ToolAcceptance((notice) => assert.fail(notice.message ?? "Unexpected diagnostic"), environment);
 const manual = { yolo: false };

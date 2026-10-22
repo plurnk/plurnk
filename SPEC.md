@@ -1364,7 +1364,8 @@ states whether a person attends it.
 
 | Client mode | `interactive` | Advertised tools |
 |---|---|---|
-| Interactive terminal | `true` | `question`, `mcp_input_required` |
+| The TUI at a terminal | `true` | `question`, `mcp_input_required` |
+| A one-shot prompt at a terminal | `true` | none: it reviews, but presents no questions ({§cli-question-forms}) |
 | No terminal, or `--auto` | `false` | none |
 
 Review needs no declared tool: every AG-UI owner reviews (plurnk-service `{§agui-worker-owner}`), and
@@ -1401,17 +1402,22 @@ client reads these fields:
 ```ts
 proposal {
     logEntryId: number,           // pending log_entries row
-    loopId, turnId: number,
+    workerId: number,             // the worker asking
+    worker: string,
+    expiresAt?: string,           // the operator's decision deadline, ISO 8601; absent while it waits indefinitely
     op: "EDIT" | <runtime tag> | ...,
     target: { scheme: string | null, pathname: string | null },
     body: string,                 // udiff for EDIT; command summary for an execution
-    attrs: object,                // scheme-specific payload (opaque to client)
-    owner: string,                // workspace-scoped approval owner
-    disposition: { decision: "review" },
+    attrs: object,                // scheme-specific payload; configured acceptance reads an execution's ({§cli-tool-acceptance})
 }
 ```
 
 AG-UI routes review to the recorded owner. Server `accept` and `reject` dispositions settle in Core and never become client review work.
+
+{§cli-review-attribution} A gate names the worker asking when it is not the bound worker, by the name its proposal
+carries or, for a question, the name the session's delegation introduced (`worker <id>` when it holds none), and the
+deadline the operator set for the decision: `proposal EDIT a.ts · from helper · decide by 14:32`, the date added when
+the deadline is not today. The TUI's review titles and the one-shot menu say the same.
 
 ### §6.2 Review menu (interactive) {§cli-review-menu-interactive}
 
@@ -1519,6 +1525,8 @@ Redirection alone does not request review. This applies when review is explicitl
 
 ### §6.5 Questions {§cli-question-forms}
 
+The TUI presents questions; a one-shot prompt offers no question tools
+({§cli-worker-ownership}), and cancels through ordinary AG-UI resume one delivered anyway.
 AG-UI `request_user_input` interrupts present the message and the exact response
 contract. Independent, directly typed fields are collected individually; each
 shows its type, required/optional status, and description. String enums use

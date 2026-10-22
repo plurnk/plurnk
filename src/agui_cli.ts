@@ -28,7 +28,7 @@ import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget, type WorkspaceHandle } from "./agui.ts";
-import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, type ActionOutcome } from "./agui.ts";
+import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, threadWorker, type ActionOutcome } from "./agui.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
@@ -371,7 +371,8 @@ export const runCliViaAgui = async (
     const diagnostics: Notice[] = [];
     const acceptance = new ToolAcceptance((notice) => { diagnostics.push(notice); if (!opts.json) report(notice); });
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
-    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
+    // A one-shot prompt reviews but presents no questions ({§cli-question-forms}): it offers no clarification tools.
+    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true, false);
     const noReviewChannel = !capabilities.interactive;
     // Only per-run controls ride this bound Run. Workspace creation and durable worker
     // model selection have already completed ({§cli-workspaces-and-workers}, {§worker-model-selection}).
@@ -422,7 +423,7 @@ export const runCliViaAgui = async (
         noReviewChannel,
         acceptance,
         reviewRequested: opts.reviewRequested,
-        review: reviewProposal,
+        review: (params: ProposalParams, signal: AbortSignal) => reviewProposal(params, signal, threadWorker(opts.threadId) ?? undefined),
         onRow: (entry: LogEntryWire) => { drawn.add(drawnKey(entry)); },
     };
     // --timeout <s>: at the deadline, fire loop.cancel at the daemon (the loop
@@ -628,7 +629,8 @@ export const runScriptViaAgui = async (
     opts: { threadId: string; yolo: boolean; auto: boolean; json: boolean },
 ): Promise<number> => {
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
-    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
+    // A one-shot prompt reviews but presents no questions ({§cli-question-forms}): it offers no clarification tools.
+    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true, false);
     const noReviewChannel = !capabilities.interactive;
     const acceptance = new ToolAcceptance(report);
     let parse: { results: Array<{ status: number }> } | null = null;
@@ -638,7 +640,7 @@ export const runScriptViaAgui = async (
         notice: (notice) => report(notice),
         json: opts.json, yolo: opts.yolo, noReviewChannel, acceptance,
         readStream: (concluded) => readStream(target, opts, concluded),
-        review: reviewProposal,
+        review: (params: ProposalParams, signal: AbortSignal) => reviewProposal(params, signal, threadWorker(opts.threadId) ?? undefined),
         onActionResult: (v) => {
             if (v.kind !== "op.parse") return;
             if (!v.ok) throw new ProblemError(v.problem);
@@ -694,7 +696,8 @@ export const runExecViaAgui = async (
     opts: { threadId: string; yolo: boolean; auto: boolean },
 ): Promise<number> => {
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
-    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true);
+    // A one-shot prompt reviews but presents no questions ({§cli-question-forms}): it offers no clarification tools.
+    const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true, false);
     const seen = { result: null as ActionOutcome | null, stream: null as string | null, conclusions: new Map<string, StreamConcludedPayload>() };
     const io: CliRunSinks = {
         out: (s) => process.stdout.write(s),
@@ -702,7 +705,7 @@ export const runExecViaAgui = async (
         notice: (notice) => report(notice),
         json: false, yolo: opts.yolo, noReviewChannel: !capabilities.interactive,
         acceptance: new ToolAcceptance(report),
-        review: reviewProposal,
+        review: (params: ProposalParams, signal: AbortSignal) => reviewProposal(params, signal, threadWorker(opts.threadId) ?? undefined),
         onActionResult: (outcome) => { if (outcome.kind === "op.exec") seen.result = outcome; },
         // A started or queued receipt owns its stream; a refused one's proposed address opens nothing.
         onRow: (entry) => {

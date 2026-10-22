@@ -984,6 +984,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         resolveQuestion: (id, answer) => transport.resolveInteraction(id, answer),
         record: printAbove,
         error: (cause) => { printAlert(renderTuiFailure(cause)); },
+        // {§cli-review-attribution} a descendant's gate names its worker; the bound worker's own names none.
+        askedBy: (workerId, name) => workerId === boundWorkerId ? null : name ?? descendants.get(workerId)?.name ?? `worker ${workerId}`,
     });
     // The persistent run-plane handlers — one set, wired once. They render the
     // shared workspace's activity whether this REPL started the loop or a

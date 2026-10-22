@@ -52,6 +52,8 @@ export interface RunHandlers {
     onInterruptEnd?: (id: string) => void;
     onInteraction?: (i: {
         interactionId: number;
+        // {§cli-review-attribution} the worker asking (plurnk-service `{§agui-plurnk-metadata}` interaction projection).
+        workerId?: number;
         toolName: string;
         arguments: Record<string, unknown>;
         message: string;
@@ -201,7 +203,7 @@ export class AguiTransport implements Transport {
             threadId: this.threadId(),
             messages: [],
             forwardedProps: { action: { kind: method, ...(params ?? {}) } },
-            capabilities: clientCapabilities(this.#workspace.auto !== true),
+            capabilities: clientCapabilities(this.#workspace.auto !== true, true),
         }, signal)) {
             const end = runEnd(e);
             if (end?.problem !== undefined) problem = problemDetails(end.problem);
@@ -297,7 +299,7 @@ export class AguiTransport implements Transport {
                 let interactionArguments: Record<string, unknown> | null = null;
                 try {
                     const events = runViaAgui(this.#target, {
-                        ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true),
+                        ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true, true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
                     const synchronized = observing ? this.#synchronize(events, observation, ready.resolve, projection) : events;
@@ -343,8 +345,11 @@ export class AguiTransport implements Transport {
                                 joined = this.#pendingInteractions.get(interactionId)?.signal;
                                 if (joined !== undefined) continue;
                                 interactionResolution = this.#interrupt(this.#pendingInteractions, interactionId, ac.signal, "Interaction");
+                                // {§cli-review-attribution} The interaction projection names the worker asking.
+                                const asking = objectOf(objectOf(objectOf(interrupt.metadata)?.plurnk)?.interaction)?.workerId;
                                 this.#h?.onInteraction?.({
                                     interactionId,
+                                    ...(Number.isSafeInteger(asking) ? { workerId: asking as number } : {}),
                                     toolName,
                                     arguments: interactionArguments,
                                     message: typeof interrupt.message === "string"
@@ -521,7 +526,7 @@ export class AguiTransport implements Transport {
             let terminated: TerminatedInfo | null = null;
             for await (const e of runViaAgui(this.#target, {
                 ...binding, forwardedProps: { ...forwardedProps, interrupts: [interruptId] },
-                capabilities: clientCapabilities(this.#workspace.auto !== true), connect: true,
+                capabilities: clientCapabilities(this.#workspace.auto !== true, true), connect: true,
             }, AbortSignal.any([signal, hold.signal]))) {
                 const ended = this.#ended(e);
                 if (ended.terminated !== null) terminated = ended.terminated;

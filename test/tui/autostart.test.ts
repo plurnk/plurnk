@@ -54,8 +54,8 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
         if (ending === "cancel folder") await tui.waitFor(/Choose a project folder/, 25_000);
         else {
             await tui.waitFor(/plurnk.*\/help/s, 25_000);
-            await tui.waitFor(/No model selected\./);
-            assert.match(tui.output(), /\/models\b/u, "the notice names the listing command");
+            // The notice wraps at the terminal's width: wait for it whole, the listing command it names included.
+            await tui.waitFor(/No model selected\.[\s\S]*?\/models\b/u);
         }
         const pid = await servicePid();
         assert.match(tui.output(), new RegExp(`Started plurnk-service \\(pid ${pid}\\) at http://127\\.0\\.0\\.1:${port}/agui`, "u"));

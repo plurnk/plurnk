@@ -1384,6 +1384,27 @@ Native terminal features the client emits only where they cost nothing when unsu
   back; a terminal without the title stack keeps the last title until its shell sets the next, as
   with any program. The one-shot CLI sets no title.
 
+### §5.6.1 Attention {§cli-attention}
+
+The client raises one signal when the person is needed, and its sinks decide how to reach them. The
+terminal bell is the one sink: with `PLURNK_CLIENT_BELL=1` or `--bell`, each raise writes one BEL, to
+the TUI's terminal or a one-shot prompt's stderr, so a piped or `--json` stdout carries only its product.
+A stream that is not a terminal hears nothing, and the model's text never carries a bell
+({§cli-hyperlinks}).
+
+| Raised when | Reason |
+|---|---|
+| A loop of the bound worker concludes `200` | `reply` |
+| A loop concludes `499`, unless the person stopped it from this client while it ran | `stopped` |
+| A loop ends any other way, or at its turn budget | `failed` |
+| A proposal waits for review while nothing else did | `review` |
+| A question waits for an answer while nothing else did | `question` |
+
+A review or question raises the signal only when nothing was waiting, so a burst rings once, and the
+next one raises it again after every waiting item is decided. A one-shot prompt presents no questions
+({§cli-question-forms}): it raises for its review prompts and its loop's end. A person's own `!`
+commands and scripts raise nothing.
+
 ---
 
 ## §6 Proposal review {§cli-proposal-review}

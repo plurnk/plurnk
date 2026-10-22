@@ -21,6 +21,7 @@ import { paint } from "./color.ts";
 import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completeAddressPath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 import { admitWorkerEnv, commandEnv } from "./env.ts";
+import { attention, bell, concluded } from "./attention.ts";
 import type { WorkerBinding } from "./agui.ts";
 // The verb wire: a structural caller (AG-UI+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
@@ -642,6 +643,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     modelSelector?: string; modelExplicit?: boolean; effort?: string; effortExplicit?: boolean;
     workerEnv?: ReadonlyMap<string, string>;
     yolo: boolean;
+    bell?: boolean;
     maxTurns?: number;
     projectRoot?: string | null; versionNotice?: string;
     selectProjectRoot?: (name: string | undefined, surface: TuiSurface) => Promise<string | null | undefined>;
@@ -664,7 +666,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {plurnk#104} — an alert block stands apart: a blank row above and below it.
     const printAlert = (block: string): void => { printAbove(""); printAbove(block); printAbove(""); };
     const acceptance = new ToolAcceptance((notice) => printAbove(renderDiagnostic(notice)));
+    // {§cli-attention} The person is needed; the bell, when it is on, is the signal's one sink.
+    const attend = attention(opts.bell === true ? [bell(process.stdout)] : []);
+    // A stop this session asks for while a loop runs is the person's own act: its 499 raises nothing.
+    let stopRequested = false;
     const cancelLoop = async (reason: string): Promise<unknown> => {
+        if (inFlight) stopRequested = true;
         const run = activeRun;
         const result = await transport.rpc("loop.cancel", { reason });
         // {§cli-cancellation} The daemon's terminal record is the summary's truth: a streaming run keeps
@@ -1217,10 +1224,17 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 return;
             }
             flushFanout();
+            const awaited = review.waiting > 0;
             review.addProposal(p);
+            if (!awaited) attend("review");
         },
         onInterruptEnd: (id) => { review.remove(id); },
-        onInteraction: (question) => { flushFanout(); review.addQuestion(question); },
+        onInteraction: (question) => {
+            flushFanout();
+            const awaited = review.waiting > 0;
+            review.addQuestion(question);
+            if (!awaited) attend("question");
+        },
         // The summary is rendered from the run's own done below.
         onTerminated: flushFanout,
     });
@@ -1380,7 +1394,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     surface.archiveResponses();
                     printAbove(renderSummary(turnCount, wallMs, terminal.result, terminal.hitMaxTurns, terminal.usage));
                     tally = tallyOutcome(tally, { turns: turnCount ?? 0, wallMs });
+                    const reason = concluded(terminal.finalStatus, terminal.hitMaxTurns);
+                    if (reason !== "stopped" || !stopRequested) attend(reason);
                 }
+                stopRequested = false;
                 while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);
                 if (shuttingDown || detached || terminal !== null && terminal.loopId === undefined && terminal.finalStatus >= 400) break;
                 followAdmission = false;

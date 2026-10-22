@@ -38,6 +38,7 @@ import { withColorOutput } from "./color.ts";
 import type Lifetime from "./lifetime.ts";
 import { signalExitCode } from "./lifetime.ts";
 import { commandEnv } from "./env.ts";
+import { attention, bell, concluded } from "./attention.ts";
 
 // The terminal record a Run's end carries (plurnk-service {§agui-plurnk-metadata}): the loop/terminated
 // notification plus the daemon workspaceId.
@@ -365,12 +366,14 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
 export const runCliViaAgui = async (
     target: AguiTarget,
     prompt: string,
-    opts: { lifetime: Lifetime; threadId: string; workspace: WorkspaceHandle; worker: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean },
+    opts: { lifetime: Lifetime; threadId: string; workspace: WorkspaceHandle; worker: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; bell?: boolean },
 ): Promise<number> => {
     // {§cli-fail-closed-no-review-channel} With no local acceptance or review channel,
     // reject locally. A submitted message cannot change the worker's authority.
     const diagnostics: Notice[] = [];
     const acceptance = new ToolAcceptance((notice) => { diagnostics.push(notice); if (!opts.json) report(notice); });
+    // {§cli-attention} The bell rides stderr, so a piped or --json stdout carries only the product.
+    const attend = attention(opts.bell === true ? [bell(process.stderr)] : []);
     // {§cli-worker-ownership} A person attends an interactive terminal unless `--auto` says nobody does.
     // A one-shot prompt reviews but presents no questions ({§cli-question-forms}): it offers no clarification tools.
     const capabilities = clientCapabilities(!opts.auto && process.stdin.isTTY === true, false);
@@ -424,7 +427,10 @@ export const runCliViaAgui = async (
         noReviewChannel,
         acceptance,
         reviewRequested: opts.reviewRequested,
-        review: (params: ProposalParams, signal: AbortSignal) => reviewProposal(params, signal, threadWorker(opts.threadId) ?? undefined),
+        review: (params: ProposalParams, signal: AbortSignal) => {
+            attend("review");
+            return reviewProposal(params, signal, threadWorker(opts.threadId) ?? undefined);
+        },
         onRow: (entry: LogEntryWire) => { drawn.add(drawnKey(entry)); },
     };
     // --timeout <s>: at the deadline, fire loop.cancel at the daemon (the loop
@@ -595,6 +601,8 @@ export const runCliViaAgui = async (
             };
             if (!opts.json && interruption === undefined) io.err(`${renderDiagnostic(problem)}\n`);
         }
+        // {§cli-attention} The loop's end needs the person, unless their own interrupt ended it.
+        if (interruption === undefined) attend(concluded(runOutcome(result).status, result.terminated?.hitMaxTurns ?? false));
         await emitRecord(result);
     } finally {
         if (statusTick !== undefined) clearInterval(statusTick);

@@ -591,7 +591,8 @@ is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
 **Position.** The line below the composer names the place, `[<workspace>/<lineage>(<loop>/<turn>)]`:
 the lineage from the tree root to the bound worker with `~` marking the worker the session
 is in, a presentation marker rather than a URI alias, and the loop and turn beside
-the worker they belong to. `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
+the worker they belong to: the loop by its number among the worker's loops, the one `/loops` lists
+and `/loop` takes (plurnk-service `{§agui-status-loop-number}`). `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
 hops down, `[/~]` before the worker is named; an unknown loop or turn is elided. A child
 always shows that it is a child, so a session opened on a child reads its full lineage. The
 §1.2.1 footer includes the place after the project folder and before activity, so the composer has one line above it.

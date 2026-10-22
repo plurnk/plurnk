@@ -843,7 +843,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         worker: boundWorker,
         place: promptPrefix(
             workerPath(placeWorkers, boundWorker),
-            { workspace: current.name, loopId: placeLoop, turn: placeTurn },
+            { workspace: current.name, loop: placeLoop, turn: placeTurn },
         ),
         child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
         tally,
@@ -884,7 +884,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         return renderStatusLine({
             lifecycle: inFlight ? "running" : lifecycle,
             model: identity(),
-            loopId: placeLoop,
+            loopId: null,
+            loopSeq: placeLoop,
             packetCount: null,
             children: null,
             gated: null,
@@ -1180,7 +1181,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 }
             }
             // {plurnk#58} — the place the next prompt goes to, straight from the gauge.
-            placeLoop = authoritativeStatus.loopId;
+            placeLoop = authoritativeStatus.loopSeq;
             placeTurn = authoritativeStatus.packetCount;
             repromptPreserving();
         },

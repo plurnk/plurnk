@@ -352,7 +352,7 @@ test("consumeCliRun: indexing state is quiet and indexing failures remain diagno
     });
     await consumeCliRun(stream([
         { type: EventType.STATE_SNAPSHOT, snapshot: {
-            plurnk: { status: { ...STATUS, lifecycle: "running", model: null, loopId: 1, packetCount: 0 },
+            plurnk: { status: { ...STATUS, lifecycle: "running", model: null, loopId: 1, loopSeq: 1, packetCount: 0 },
                 workspace: { ...WORKSPACE, activity: { kind: "derivation", phase: "indexing", completed: 3, total: 10, percent: 30 } } }, budget: {},
         } },
         { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/workspace/activity", value: null }] },
@@ -375,7 +375,7 @@ test("[§cli-status-preparation] snapshots, progress, and clearing stay in statu
     const preparation = [{ family: "mcp", alias: "search", phase: "preparing", since: new Date(1000).toISOString() }];
     await consumeCliRun(stream([
         { type: EventType.STATE_SNAPSHOT, snapshot: { plurnk: { status: {
-            ...STATUS, lifecycle: "queued", model: null, loopId: 1, packetCount: 0,
+            ...STATUS, lifecycle: "queued", model: null, loopId: 1, loopSeq: 1, packetCount: 0,
         }, workspace: { ...WORKSPACE, preparation } }, budget: {} } },
         { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: "/plurnk/workspace/preparation", value: [] }] },
         terminated(),
@@ -394,7 +394,7 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
             snapshot: {
                 plurnk: {
                     workspace: { ...WORKSPACE, projectRoot: "/projects/client", projectLabel: "/projects/client" },
-                    status: { ...STATUS, lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, packetCount: 0 },
+                    status: { ...STATUS, lifecycle: "running", model: { alias: "deepdumb", provider: "deepseek", model: "deepseek-v4-flash" }, loopId: 7, loopSeq: 7, packetCount: 0 },
                 },
                 budget: {},
             },
@@ -403,8 +403,8 @@ test("[§cli-status-project-root] consumeCliRun projects the authoritative gauge
         terminated(),
     ]), io);
     assert.deepEqual(statuses, [
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 0, activity: null, children: 0, gated: 0, gates: {}, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
-        { lifecycle: "running", model: "deepdumb", loopId: 7, packetCount: 3, activity: null, children: 0, gated: 0, gates: {}, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, loopSeq: 7, packetCount: 0, activity: null, children: 0, gated: 0, gates: {}, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
+        { lifecycle: "running", model: "deepdumb", loopId: 7, loopSeq: 7, packetCount: 3, activity: null, children: 0, gated: 0, gates: {}, waitUntil: null, preparation: [], spend: null, claimedAt: null, terminatedAt: null, inbox: [], openStreams: [], projectRoot: "/projects/client", projectLabel: "/projects/client" },
     ]);
 });
 

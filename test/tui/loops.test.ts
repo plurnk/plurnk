@@ -34,6 +34,8 @@ test("[§cli-loops] /loops lists the worker's loops by their opening lines, and 
     await tui.waitFor(/ANSWER_1/);
     tui.write("No, you did it wrong!\r");
     await tui.waitFor(/ANSWER_2/);
+    // plurnk-service {§agui-status-loop-number}: the place names the loop by the number /loops lists.
+    await tui.waitForScreen(/\[loops\/~main\(2\/1\)\]/u);
 
     const plain = (since: number): string => stripVTControlCharacters(tui.output().slice(since));
     const listed = tui.output().length;

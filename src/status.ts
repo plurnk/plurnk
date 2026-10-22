@@ -135,8 +135,11 @@ export interface ClientStatus {
     // its label for that folder, the only spelling shown.
     projectRoot?: string | null;
     projectLabel?: string | null;
-    // {plurnk#58} — the prompt prefix names the place as workspace/loop/turn; the gauge owns both numbers.
+    // {plurnk#58} {§cli-workers-topology} — the prompt prefix names the place as workspace/loop/turn, the loop by its
+    // number among the worker's loops (`loopSeq`, the one `/loop` takes); the gauge owns both numbers. `loopId` is the
+    // same loop's durable id ({§cli-history-lost}).
     loopId: number | null;
+    loopSeq: number | null;
     packetCount: number | null;
     activity: StatusActivity | null;
     // {§cli-status-children} — the bound worker's alive direct children, counted in the daemon's tree
@@ -181,6 +184,7 @@ export interface RuntimeStatusGauge {
     lifecycle: string;
     model: ModelRoute | null;
     loopId: number | null;
+    loopSeq: unknown;
     packetCount: number;
     descendants: unknown;
     spend: unknown;
@@ -346,6 +350,10 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
     if (!Number.isSafeInteger(value.packetCount) || value.packetCount < 0) {
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
     }
+    // plurnk-service {§agui-status-loop-number}: the loop's number, null exactly when its id is.
+    if (value.loopSeq === null ? value.loopId !== null : !Number.isSafeInteger(value.loopSeq) || (value.loopSeq as number) <= 0 || value.loopId === null) {
+        throw new TypeError("Invalid runtime loop number.");
+    }
     const model = value.model === null ? null : Validator.assertModelRoute(value.model);
     if (value.waitUntil !== null && (typeof value.waitUntil !== "number" || !Number.isFinite(value.waitUntil) || value.waitUntil < 0)) {
         throw new TypeError("Invalid runtime wait deadline.");
@@ -358,6 +366,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
         lifecycle: value.lifecycle as StatusLifecycle,
         model: model === null ? null : formatRouteIdentity(model),
         loopId: value.loopId,
+        loopSeq: value.loopSeq as number | null,
         packetCount: value.packetCount,
         children,
         gated,

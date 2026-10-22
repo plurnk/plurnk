@@ -74,7 +74,7 @@ test("{§cli-worker-history}: startup and attach restore the bound worker's hist
     await quiet.waitFor(/plurnk.*\/help/s);
     quiet.write("/model\r");
     await quiet.waitFor(/model: historyfixture/);
-    assert.doesNotMatch(quiet.output(), /RESTORED_ANSWER|Remember the alpha question|earlier loops/);
+    assert.doesNotMatch(quiet.output(), /RESTORED_ANSWER|Remember the alpha question/);
     quiet.write("/quit\r");
     assert.equal(await quiet.exited, 0);
     assert.equal(requests, 2, "disabling backfill does not start work");

@@ -633,7 +633,7 @@ disconnecting never cancels work ({§agui-run-disconnect}).
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
 | Delegation | A descendant's rows the window holds, the delegation the TUI observes (plurnk-service `{§agui-history-window}`), are drawn as quietly as the bound worker's, a message or reply with its words whole and any other operation as its heading, in log order among them, marked `🐜 <name>` and stepped in per generation as §5.1 marks them live, by the bound worker's tree in the gauge (plurnk-service `{§agui-status-descendants}`). A descendant's reasoning and terminal never are. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
-| Past/live boundary | A window that begins after the first loop ends with `— earlier loops: /loops —`; `/loop <n>` prints any of them ({§cli-loops}). Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
+| Past/live boundary | Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
 | State/accounting | Replayed entries are not live activity, turns, terminal events, or fresh usage. Only the current gauge and subsequently observed events update status. Elapsed session time does not include time before attachment. |
 | Return visits | Each explicit binding restores its current bounded tail. Existing terminal scrollback stays intact. Input recall is separate. |
 

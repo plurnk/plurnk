@@ -188,6 +188,9 @@ options:
       --auto              nobody is attending: the daemon asks nothing, and a loop
                           that would wait for a person concludes instead. Approval
                           stays local (--yolo). Overrides PLURNK_CLIENT_AUTO.
+      --bell              ring the terminal bell when you are needed: the bound
+                          worker's loop replies, stops or fails, or a review or
+                          question waits for you. Overrides PLURNK_CLIENT_BELL.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -619,6 +622,7 @@ export const CLIENT_OPTIONS = {
     "project-root": { type: "string" },
     yolo: { type: "boolean" },
     auto: { type: "boolean" },
+    bell: { type: "boolean" },
     capabilities: { type: "string" },
     "max-turns": { type: "string" },
     timeout: { type: "string" },
@@ -798,6 +802,8 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
     // {§cli-worker-ownership} Nobody is attending: the client declares itself not interactive.
     const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
+    // {§cli-attention} The bell is the attention signal's sink while someone attends.
+    const bellOn = values.bell === true || switchOf("PLURNK_CLIENT_BELL", "live");
     const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
     const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
 
@@ -983,6 +989,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     reviewRequested,
                     json,
                     statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
+                    bell: bellOn,
                 });
             }
             if (shareTarget !== undefined) {
@@ -1031,6 +1038,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 effortExplicit: effort !== undefined,
                 workerEnv,
                 yolo,
+                bell: bellOn,
                 maxTurns,
                 projectRoot,
                 selectProjectRoot,

@@ -42,6 +42,8 @@ export default class Review extends Container implements Focusable {
     }
 
     get focused(): boolean { return this.#focused; }
+    // {§cli-attention} How many reviews and questions wait for the person.
+    get waiting(): number { return this.#requests.size; }
     set focused(value: boolean) {
         this.#focused = value;
         if (this.#control instanceof Editor) this.#control.focused = value;

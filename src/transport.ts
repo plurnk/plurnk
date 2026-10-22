@@ -103,7 +103,8 @@ export type LoopAdmission = OperationResult & {
 
 type ProposalResolution = Resolution & { logEntryId: number };
 type InteractionResolution = Record<string, unknown> | "cancel";
-type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents; rows: RowAssembler };
+// `windowed`: the Run already holds its first window of the conversation (plurnk-service {§agui-history-window}).
+type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents; rows: RowAssembler; windowed: boolean };
 interface PendingInterrupt<T> {
     readonly signal: AbortSignal;
     readonly settle: (value: T | undefined) => void;
@@ -182,7 +183,7 @@ export class AguiTransport implements Transport {
     // An action answers on its own Run and presents no interrupt: a client operation is the person's own
     // decision, never routed for review (plurnk/plurnk-service {§agui-client-operation}).
     async #action<T>(method: string, params: object | undefined, signal: AbortSignal): Promise<T> {
-        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
+        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler(), windowed: false };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
         let sawResult = false;
@@ -232,7 +233,7 @@ export class AguiTransport implements Transport {
     #run(prompt?: string, opts?: RunOpts, observation?: ObserveOpts): ObservationHandle {
         const binding = { threadId: this.threadId() };
         const ac = this.#controller();
-        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
+        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler(), windowed: false };
         this.#modelProjection = projection;
         const ready = Promise.withResolvers<void>();
         // Both promises report the same failed run. Consumers that only await done
@@ -289,7 +290,7 @@ export class AguiTransport implements Transport {
                         ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
-                    const synchronized = observing ? this.#synchronize(events, observation, ready.resolve, projection.rows) : events;
+                    const synchronized = observing ? this.#synchronize(events, observation, ready.resolve, projection) : events;
                     streaming = true;
                     for await (const e of synchronized) {
                         if (!observing) ready.resolve();
@@ -504,7 +505,7 @@ export class AguiTransport implements Transport {
         signal: AbortSignal, until: Promise<unknown>): Promise<{ readonly terminated: TerminatedInfo | null } | undefined> {
         const hold = new AbortController();
         // The hold's own conversation: its snapshot rebuilds the calls, the held one among them, that its settlement folds onto.
-        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler() };
+        const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler(), windowed: false };
         const observed = (async (): Promise<{ readonly terminated: TerminatedInfo | null } | undefined> => {
             let settled = false;
             let terminated: TerminatedInfo | null = null;
@@ -531,7 +532,7 @@ export class AguiTransport implements Transport {
 
     // {§cli-worker-history}: establish the historical prefix before releasing
     // live events. The snapshot owns no lifecycle or accounting.
-    async *#synchronize(events: AsyncIterable<AguiEvent>, opts: ObserveOpts | undefined, ready: () => void, rows: RowAssembler): AsyncGenerator<AguiEvent> {
+    async *#synchronize(events: AsyncIterable<AguiEvent>, opts: ObserveOpts | undefined, ready: () => void, projection: StreamProjection): AsyncGenerator<AguiEvent> {
         let restored = false;
         const pending: AguiEvent[] = [];
         for await (const event of events) {
@@ -544,11 +545,12 @@ export class AguiTransport implements Transport {
                 continue;
             }
             // The snapshot is the worker's whole conversation; an attachment draws its newest rows.
-            const entries = snapshotRows(event.messages, rows).filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
+            const entries = snapshotRows(event.messages, projection.rows).filter((entry) => this.#seenRows.get(entry.id) !== this.#rowVersion(entry));
             for (const entry of entries) this.#seenRows.set(entry.id, this.#rowVersion(entry));
             const limit = opts?.historyLimit;
             this.#h?.onHistory?.({ entries: limit === undefined ? entries : entries.slice(Math.max(0, entries.length - limit)), attachment: opts !== undefined });
             restored = true;
+            projection.windowed = true;
             ready();
             yield* pending;
             pending.length = 0;
@@ -693,6 +695,14 @@ export class AguiTransport implements Transport {
                 this.#lastLoopId = gauge.plurnk.status.loopId;
                 this.#h?.onStatus?.(structuredClone(gauge));
             }
+            return;
+        }
+        // {§cli-worker-history} A Run's first window is history, drawn when the Run synchronizes; a window the daemon sends
+        // again during the Run (plurnk-service {§agui-history-advance}) holds rows its live stream then skips, each drawn
+        // now unless already drawn.
+        if (e.type === "MESSAGES_SNAPSHOT") {
+            if (projection.windowed) for (const row of snapshotRows(e.messages, projection.rows)) this.#row(row);
+            projection.windowed = true;
             return;
         }
         // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.

@@ -28,6 +28,7 @@ import {
     clientTransportResultInvalid,
     ProblemError,
 } from "./diagnostics.ts";
+import { objectOf } from "./render.ts";
 
 export type AguiEvent = AGUIEvent;
 
@@ -177,7 +178,7 @@ export async function* runViaAgui(
         try {
             for await (const event of consumeRun(agent, input, signal)) {
                 yielded = true;
-                yield event;
+                yield await withWords(event, target, signal);
             }
             return;
         } catch (error) {
@@ -192,6 +193,55 @@ export async function* runViaAgui(
         }
     }
 }
+
+// plurnk-service {§agui-words-by-reference}: a sender's words past the ceiling travel as one document part at the address
+// that serves them. They are the message's words, so the client reads them there before anything draws the message; a
+// result's body beside its receipt stays where it is (plurnk-service {§agui-body-reference}).
+const wordsAddress = (content: unknown): string | null => {
+    if (!Array.isArray(content) || content.length !== 1) return null;
+    const part = objectOf(content[0]);
+    const source = objectOf(part?.source);
+    return part?.type === "document" && source?.type === "url" && typeof source.value === "string"
+        && (source.mimeType === "text/plain" || source.mimeType === "text/markdown") ? source.value : null;
+};
+
+// {§cli-credential} The words are read as the Run that carried them was posted: with the credential's access token,
+// renewed once when the daemon says it lapsed.
+const readWords = async (target: AguiTarget, url: string, signal?: AbortSignal): Promise<string> => {
+    for (let attempt = 0; ; attempt += 1) {
+        const headers = target.credential === undefined ? {} : await target.credential.headers(target.aguiUrl);
+        try {
+            const response = await problemFetch(url, { headers, ...(signal === undefined ? {} : { signal }) });
+            if (!response.ok) throw new ProblemError(clientTransportResultInvalid(`The words at ${url} answered HTTP ${response.status}.`));
+            return await response.text();
+        } catch (error) {
+            if (attempt === 0 && target.credential !== undefined
+                && error instanceof ProblemError && /\/bearer-token-(?:invalid|required)$/u.test(error.problem.type)) {
+                target.credential.invalidate();
+                continue;
+            }
+            throw error;
+        }
+    }
+};
+
+// An event whose words travel by reference, with its words in their place: a reply's result, or a snapshot's messages.
+const withWords = async (event: AguiEvent, target: AguiTarget, signal?: AbortSignal): Promise<AguiEvent> => {
+    const read = async (content: unknown): Promise<unknown> => {
+        const url = wordsAddress(content);
+        return url === null ? content : readWords(target, url, signal);
+    };
+    if (event.type === "TOOL_CALL_RESULT") {
+        const content = await read(event.content);
+        return content === event.content ? event : { ...event, content } as AguiEvent;
+    }
+    if (event.type !== "MESSAGES_SNAPSHOT") return event;
+    const messages = await Promise.all(event.messages.map(async (message) => {
+        const content = await read(objectOf(message)?.content);
+        return content === objectOf(message)?.content ? message : { ...message, content };
+    }));
+    return { ...event, messages } as AguiEvent;
+};
 
 async function* consumeRun(agent: HttpAgent, input: RunAgentInput, signal?: AbortSignal): AsyncGenerator<AguiEvent> {
     type QueueItem =

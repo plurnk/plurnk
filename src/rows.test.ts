@@ -110,6 +110,12 @@ test("[§cli-row-sources] a gated call awaiting its decision is no broken wire a
             const assembler = new RowAssembler();
             assert.deepEqual(snapshotRows(messagesOf(gated), assembler), [], "a snapshot holds the pending call without a row");
             return assembler;
+        })()], ["held live, then repeated by a window sent again", (() => {
+            // plurnk-service {§agui-history-advance}: the Run's stream built the call; a fresh window repeats its parts.
+            const assembler = new RowAssembler();
+            assert.deepEqual(drawn(callOf(gated), assembler), []);
+            assert.deepEqual(snapshotRows(messagesOf(gated), assembler), [], "the repeated pending call draws no row");
+            return assembler;
         })()]] as const) {
             const before = vantage === "live" ? drawn([...callOf(gated), ...callOf({ ...read, id: 5, sequence: 2 })], rows) : [];
             assert.deepEqual(before.map(({ id }) => id), vantage === "live" ? [5] : [], `${how}, ${vantage}: the pending call draws nothing and breaks nothing`);

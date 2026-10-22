@@ -463,3 +463,60 @@ test("[§cli-credential] runViaAgui acquires the access token through discovery 
         ).catch(() => undefined);
     } finally { await mock.close(); }
 });
+
+// plurnk-service {§agui-words-by-reference}: a sender's words past the ceiling travel as one document part at the address
+// that serves them; a receipt that holds a body keeps its text part beside the body's document (plurnk-service {§agui-body-reference}).
+test("[§cli-row-sources] runViaAgui reads words that travel by reference at their address, with the Run's credential, and leaves a receipt's body where it is", async () => {
+    const words: Record<string, string> = { "log:///1/1/1/SEND": "Pasted words, long past the ceiling.", "log:///1/2/1/SEND": "A reply's words, long past the ceiling." };
+    const mock = await bootMock((req, res) => {
+        const json = (status: number, body: unknown): void => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
+        if (req.url === "/.well-known/oauth-protected-resource") return json(200, { resource: `${mock.url}/agui`, authorization_servers: [mock.url] });
+        if (req.url === "/.well-known/oauth-authorization-server") return json(200, { issuer: mock.url, token_endpoint: `${mock.url}/oauth/token` });
+        if (req.url === "/oauth/token") return json(200, { access_token: "fresh", token_type: "Bearer", expires_in: 60, scope: "agui" });
+        if (req.method === "GET") {
+            const target = new URL(req.url ?? "/", mock.url).searchParams.get("target") ?? "";
+            res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+            return res.end(words[target]);
+        }
+        const at = (target: string, mimeType = "text/plain") => [{ type: "document", source: { type: "url", value: `${mock.url}/agui/3/7/entry?target=${encodeURIComponent(target)}`, mimeType } }];
+        const receipt = [{ type: "text", text: JSON.stringify({ status: 200 }) }, ...at("log:///1/1/3/READ", "text/markdown")];
+        sse(res, [
+            frame({ type: "RUN_STARTED" }),
+            frame({ type: "MESSAGES_SNAPSHOT", messages: [
+                { id: "1/1/1", role: "user", content: at("log:///1/1/1/SEND") },
+                { id: "1/1/3", role: "tool", toolCallId: "1/1/2", content: receipt },
+            ] }),
+            frame({ type: "TOOL_CALL_RESULT", toolCallId: "1/1/9", messageId: "1/2/1", content: at("log:///1/2/1/SEND") }),
+            frame({ type: "RUN_FINISHED" }),
+        ]);
+    });
+    try {
+        const events: Array<Record<string, unknown>> = [];
+        for await (const event of runViaAgui({ aguiUrl: `${mock.url}/agui`, credential: new Credential("s3cret") }, { threadId: "t", prompt: "hi" })) {
+            events.push(event as unknown as Record<string, unknown>);
+        }
+        const snapshot = events.find(({ type }) => type === "MESSAGES_SNAPSHOT") as { messages: Array<{ content: unknown }> } | undefined;
+        assert.equal(snapshot?.messages[0]?.content, words["log:///1/1/1/SEND"], "a snapshot's message carries its words");
+        assert.ok(Array.isArray(snapshot?.messages[1]?.content) && snapshot.messages[1].content.length === 2, "a receipt's body stays by reference");
+        assert.equal(events.find(({ type }) => type === "TOOL_CALL_RESULT")?.content, words["log:///1/2/1/SEND"], "a reply's result carries its words");
+        const reads = mock.captured.filter(({ method, url }) => method === "GET" && url?.startsWith("/agui/") === true);
+        assert.deepEqual(reads.map(({ url }) => new URL(url ?? "/", mock.url).searchParams.get("target")), ["log:///1/1/1/SEND", "log:///1/2/1/SEND"],
+            "each sender's words read once, and no body");
+        assert.ok(reads.every(({ auth }) => auth === "Bearer fresh"), "with the access token the Run was posted with");
+    } finally { await mock.close(); }
+});
+
+test("[§cli-row-sources] runViaAgui: words whose address answers a Problem end the Run with that exact Problem", async () => {
+    const mock = await bootMock((req, res) => {
+        if (req.method === "GET") {
+            res.writeHead(404, { "content-type": "application/problem+json" });
+            return res.end(JSON.stringify({ type: "https://problems.plurnk.xyz/agui/http/entry-not-found", title: "Entry not found", status: 404, detail: "No row holds those words.", retryable: false }));
+        }
+        sse(res, [frame({ type: "RUN_STARTED" }), frame({ type: "TOOL_CALL_RESULT", toolCallId: "1/1/9", messageId: "1/2/1",
+            content: [{ type: "document", source: { type: "url", value: `${mock.url}/agui/3/7/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2FSEND`, mimeType: "text/plain" } }] }), frame({ type: "RUN_FINISHED" })]);
+    });
+    try {
+        await assert.rejects(async () => { for await (const _e of runViaAgui({ aguiUrl: `${mock.url}/agui` }, { threadId: "t", prompt: "hi" })) void _e; },
+            (error: unknown) => error instanceof ProblemError && error.problem.type === "https://problems.plurnk.xyz/agui/http/entry-not-found");
+    } finally { await mock.close(); }
+});

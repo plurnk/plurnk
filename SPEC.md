@@ -587,7 +587,7 @@ disconnecting never cancels work ({§agui-run-disconnect}).
 
 | Surface | History behavior |
 |---|---|
-| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the window of the bound worker's conversation (plurnk-service `{§agui-history-window}`), supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A snapshot the daemon sends again during a Run (plurnk-service `{§agui-history-advance}`) changes nothing already drawn. |
+| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the window of the bound worker's conversation (plurnk-service `{§agui-history-window}`), supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A snapshot the daemon sends again during a Run (plurnk-service `{§agui-history-advance}`) draws each row it holds that the Run has not drawn, the rows its live stream then skips; nothing drawn changes, and a call the Run already holds keeps the arguments it was built with. |
 | Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
@@ -934,6 +934,12 @@ them; its own receipt repeats none.
 A row's `target` is the address it recorded; its heading shows the target as authored when its statement
 has one (§5.1). A call ended without its receipt, a receipt before its call ended, a result with no text, or
 row facts that are present but unreadable are a broken wire (`result-invalid`), never a row skipped.
+
+A sender's words past the daemon's ceiling travel by reference (plurnk-service `{§agui-words-by-reference}`): a
+reply's result, or a snapshot's message, whose content is one `document` part, `text/plain` or `text/markdown`, at
+the address that serves them. They are the message's words, so the client reads them there with the Run's credential
+before anything draws the message; a receipt's body beside its text part is never fetched. An address that answers
+a Problem ends the Run with that Problem.
 
 Text-message identity, role and optional sender name survive projection. The daemon owns whether a
 delivery is speech: the client does not reinterpret recorded reply addresses using its current thread

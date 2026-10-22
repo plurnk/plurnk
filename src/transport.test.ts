@@ -696,6 +696,33 @@ test("{§cli-summary-line-per-loop}: a dead sync stream is diagnosed as its orig
     } finally { await mock.close(); }
 });
 
+// plurnk-service {§agui-history-advance}: past the ceiling, the daemon sends the Run a fresh window at a turn boundary and
+// skips the live events of the rows it holds.
+test("{§cli-worker-history}: a window the daemon sends again during a Run draws the rows its live stream skipped, and nothing drawn twice", async () => {
+    const older = wire({ id: 8, op: "READ", tx: { body: "old output" } });
+    const answered = wire({ id: 9, op: "SEND", tx: { body: { raw: "live answer", json: null } } });
+    const skipped = wire({ id: 10, op: "READ", tx: { body: "landed while the window was read" } });
+    const after = wire({ id: 11, op: "SEND", tx: { body: { raw: "after the window", json: null } } });
+    const mock = await bootMock((_request, response) => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(frame({ type: "RUN_STARTED" }));
+        response.write(frame(snapshotOf(older)));
+        for (const event of live(answered)) response.write(frame(event));
+        response.write(frame(snapshotOf(answered, skipped)));
+        for (const event of live(after)) response.write(frame(event));
+        response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
+    });
+    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+    try {
+        const { h, seen } = collectingHandlers();
+        const histories: unknown[][] = [];
+        transport.subscribe({ ...h, onHistory: (history) => { histories.push(history.entries); } });
+        assert.equal(await transport.observe({ historyLimit: 10 }).done, null);
+        assert.deepEqual(histories.map(drawn), [["8 READ"]], "the first window is the history");
+        assert.deepEqual(drawn(seen.entries), ["9 SEND", "10 READ", "11 SEND"], "each row once: the skipped one from the window, in order");
+    } finally { transport.shutdown(); await mock.close(); }
+});
+
 for (const historyLimit of [0, 1, 2]) {
     test(`{§cli-worker-history}: bounded attachment restores before live rows (${historyLimit})`, async () => {
         const release = Promise.withResolvers<void>();

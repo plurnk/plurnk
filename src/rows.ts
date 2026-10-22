@@ -129,6 +129,9 @@ export default class RowAssembler {
         return [...this.#calls.values()].some(({ facts }) => awaitsDecision(facts) && objectOf(facts.attrs)?.stream === address);
     }
 
+    // Whether this Run's stream already built the call: a snapshot sent again repeats its parts.
+    holds(toolCallId: string): boolean { return this.#calls.has(toolCallId); }
+
     // One standard event in; the rows it completes out.
     consume(e: AguiEvent): LogEntryWire[] {
         switch (e.type) {
@@ -250,5 +253,9 @@ const eventsOf = (value: unknown): AguiEvent[] => {
 // snapshot rebuilds each row as the live stream built it.
 // A gated call the snapshot holds stays in the assembler that builds the live stream, so its settlement finds it.
 export const snapshotRows = (messages: readonly unknown[], rows = new RowAssembler()): LogEntryWire[] => {
-    return messages.flatMap(eventsOf).flatMap((event) => rows.consume(event)).toSorted((left, right) => left.id - right.id);
+    const events = messages.flatMap(eventsOf);
+    // A call the Run's stream already built, a gated one awaiting its decision, keeps the arguments it was built with.
+    const built = new Set(events.flatMap((event) => event.type === "TOOL_CALL_START" && rows.holds(event.toolCallId) ? [event.toolCallId] : []));
+    return events.filter((event) => !(event.type === "TOOL_CALL_ARGS" && built.has(event.toolCallId)))
+        .flatMap((event) => rows.consume(event)).toSorted((left, right) => left.id - right.id);
 };

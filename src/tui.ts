@@ -55,7 +55,7 @@ import {
     setWorkerEffort,
     type WorkerEffort,
 } from "./effort.ts";
-import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, changedElsewhere, renderStatusLine, tallyOutcome, unreadMessages, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
+import { EMPTY_TALLY, accrueTurnAccounting, turnAccountingFromNotice, formatRouteIdentity, observedClockStart, projectStatusGauge, projectWorkspaceState, historyLost, changedElsewhere, disconnection, renderStatusLine, tallyOutcome, unreadMessages, type ClientStatus, type SessionTally, type StatusLifecycle, type TurnAccounting, type WorkerDoing, type WorkspaceStatus } from "./status.ts";
 import {
     COMMANDS,
     commandSpec,
@@ -681,9 +681,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {plurnk#108} — the descendants the daemon introduced for this session's delegation observation.
     const descendants = new Map<number, Descendant>();
     const observedNames = new Set<string>();
-    // {§cli-workers-topology} — where the session is in the tree: the prompt's path prefix and the
-    // status line's sibling position, re-read from the directory on every hop or rebind.
-    let workerPosition: { index: number; count: number } | null = null;
     // {plurnk#58} — the prompt prefix names workspace/loop/turn; the gauge is the only authority
     // for both numbers, and an unknown one is elided rather than guessed.
     let placeLoop: number | null = null;
@@ -711,6 +708,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     // {§cli-identity-effort} — the route the latest gauge carried, and whether a readback it prompted is under way.
     let gaugeRoute: string | null = null;
     let policyRereading = false;
+    // {§cli-status-disconnected} — the last observation ended in a failure, and none has begun since.
+    let disconnected = false;
     // {§cli-workspaces-and-workers} — the name the latest workspace state carried, a readback it prompted, and the
     // generation of the session's own naming, which a readback begun before it cannot undo.
     let stateName: string | null = null;
@@ -825,7 +824,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             workerPath(placeWorkers, boundWorker),
             { workspace: current.name, loopId: placeLoop, turn: placeTurn },
         ),
-        position: workerPosition,
         child: workerSpawnModel === null ? null : resolvedModelLabel(workerSpawnModel),
         tally,
         runningSince,
@@ -848,7 +846,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         const { workers } = await transport.rpc("workspace.workers") as { workers: WorkerRow[] };
         if (threadId !== transport.threadId() || workspaceName !== current.name) return;
         boundWorkerId = workers.find((worker) => worker.name === boundWorker)?.id ?? null;
-        workerPosition = siblingPosition(workers, boundWorker);
         placeWorkers = workers;
         reprompt();
     };
@@ -861,7 +858,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             : opts.modelSelector ?? activeAlias ?? null;
     const buildStatus = (): string => {
         if (authoritativeStatus !== null) {
-            return renderStatusLine({ ...authoritativeStatus, ...workspaceStatus, model: identity() }, statusContext(), { yolo: opts.yolo });
+            return renderStatusLine({ ...authoritativeStatus, ...workspaceStatus, model: identity() }, statusContext(), { yolo: opts.yolo, disconnected });
         }
         return renderStatusLine({
             lifecycle: inFlight ? "running" : lifecycle,
@@ -872,7 +869,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             gated: null,
             ...workspaceStatus,
             activity: searchFetching ? { label: "search", percent: searchPercent } : workspaceStatus?.activity ?? null,
-        }, statusContext(), { yolo: opts.yolo });
+        }, statusContext(), { yolo: opts.yolo, disconnected });
     };
     const reprompt = (): void => surface.setStatus(buildStatus());
     reprompt();
@@ -1104,6 +1101,8 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         onNotice: handleNotice,
         onProblem: (problem) => printAbove(renderDiagnostic(problem)),
         onWorkspace: (workspace) => {
+            // {§cli-status-disconnected} Every Run bound to the workspace carries its state: one has begun.
+            disconnected = false;
             workspaceStatus = projectWorkspaceState(workspace);
             if (workspaceStatus.projectRoot !== undefined) boundProjectRoot = workspaceStatus.projectRoot;
             // {§cli-workspaces-and-workers} — a rename made elsewhere reaches the title, the place and the resume command.
@@ -1322,6 +1321,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                 flushFanout();
                 retireReasoning();
                 const detached = observing && failure !== null;
+                if (detached && disconnection(failure)) disconnected = true;
                 reviewRequested = false;
                 if (terminal !== null && !shuttingDown && !detached) {
                     // {§cli-cancellation} A run the client hung up on carries no turn ids: unknown, never zero.
@@ -1332,7 +1332,6 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                         const hit = workers.find((worker) => worker.id === boundWorkerId);
                         if (hit === undefined) throw new Error(`worker ${boundWorkerId} concluded a loop but workspace.workers does not list it`);
                         boundWorker = hit.name;
-                        workerPosition = siblingPosition(workers, boundWorker);
                         placeWorkers = workers;
                     }
                     const wallMs = Date.now() - start;
@@ -1359,6 +1358,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             // the first message creates it, and the session observes it from then on.
             if (!shuttingDown && !(observing && isAbsentWorker(cause))) {
                 lifecycle = "failed";
+                if (observing) disconnected = true;
                 printAlert(renderTuiFailure(cause));
             }
         } finally {

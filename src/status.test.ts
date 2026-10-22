@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import TerminalStatusLine, { changedElsewhere, historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, unreadMessages, type ClientStatus, type StatusContext } from "./status.ts";
+import TerminalStatusLine, { changedElsewhere, disconnection, historyLost, observedClockStart, turnAccountingFromNotice, accrueTurnAccounting, EMPTY_TALLY, projectStatusGauge, reduceStatusGauge, formatRouteIdentity, renderStatusLine, tallyOutcome, unreadMessages, type ClientStatus, type StatusContext } from "./status.ts";
 import { ProblemError } from "./diagnostics.ts";
 
 const CONTEXT: StatusContext = { workspace: "k3Zp9", worker: "model-1", child: null, tally: EMPTY_TALLY, runningSince: 1_000, now: 4_200 };
@@ -152,14 +152,12 @@ const treeCounts = (descendants: unknown): Pick<ClientStatus, "children" | "gate
     return { children, gated };
 };
 
-// {§cli-status-children} {§cli-workers-topology} — the ant is the tree's alive direct children, the child model
-// rides beside it, and the worker segment carries the sibling position.
-test("[§cli-status-children] the ant counts children from the gauge and the worker segment carries the sibling position", () => {
+// {§cli-status-children} — the ant is the tree's alive direct children, and the child model rides beside it.
+test("[§cli-status-children] the ant counts children from the gauge, the child model beside them", () => {
     assert.equal(renderStatusLine({ ...running, children: 0 }, CONTEXT), "⌛︎  · 🎲 deepdumb · 3.2s");
     assert.equal(renderStatusLine({ ...running, children: 0 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s", "a configured child model is not active child work");
     assert.equal(renderStatusLine({ ...running, children: 2 }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 2 dumbox");
     assert.equal(renderStatusLine({ ...running, children: null }, { ...CONTEXT, child: "dumbox" }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 dumbox", "no gauge, no count: the bare child model");
-    assert.equal(renderStatusLine({ ...running, children: 1 }, { ...CONTEXT, worker: "recheck", position: { index: 2, count: 3 } }), "⌛︎  · 🎲 deepdumb · 3.2s · 🐜 1", "the place is the prompt prefix's, not the status line's");
 });
 
 test("[§cli-status-children] the ant counts the tree's direct children that owe a result: every lifecycle, at every depth", () => {
@@ -374,4 +372,17 @@ test("[§cli-workspaces-and-workers] a name the workspace state newly carries pr
     assert.equal(changedElsewhere("notes", "notes", "journal"), false, "a Run that began before this session's own rename");
     assert.equal(changedElsewhere("journal", "notes", "journal"), false, "this session's own rename, now in the state");
     assert.equal(changedElsewhere("notes", null, "notes"), false, "the first state agrees");
+});
+
+// {§cli-status-disconnected} — plurnk-web shows its disconnection the same way.
+test("[§cli-status-disconnected] 🔌 leads the line while a failure has ended the observation; the client's own cancellation is none", () => {
+    assert.match(renderStatusLine(running, CONTEXT, { disconnected: true }), /^🔌 ⌛︎  · /u);
+    assert.match(renderStatusLine(running, CONTEXT, { disconnected: true, yolo: true }), /^🔌 🔥 ⌛︎  · /u, "beside YOLO, ahead of it");
+    assert.doesNotMatch(renderStatusLine(running, CONTEXT), /🔌/u);
+    const problem = (path: string) => ({ type: `https://problems.plurnk.xyz/${path}` });
+    assert.equal(disconnection(null), false, "an observation that simply completed");
+    assert.equal(disconnection(problem("client/transport/cancelled")), false, "the client's own cancellation");
+    assert.equal(disconnection(problem("agui/http/service-stopping")), true, "the daemon stopping");
+    assert.equal(disconnection(problem("agui/http/credential-revoked")), true, "a revoked credential");
+    assert.equal(disconnection(problem("client/connection/refused")), true, "a lost connection");
 });

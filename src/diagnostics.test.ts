@@ -111,7 +111,7 @@ test("{§cli-notice-rendering} Problems and notices share the operation-row glyp
     const [problem, error, warn, info] = colored(() => [
         renderDiagnostic(clientRuntimeError("failed")),
         renderDiagnostic({ source: "engine", kind: "fatal", level: "error", message: "stopped" }),
-        renderDiagnostic({ source: "client:connection", kind: "daemon_stale", level: "warn", message: "update available" }),
+        renderDiagnostic({ source: "client:worker", kind: "history_lost", level: "warn", message: "update available" }),
         renderDiagnostic({ source: "engine", kind: "graceful", level: "info", message: "done" }),
     ]);
     assert.match(problem, /^\x1b\[1;31m❌\x1b\[0m/u);

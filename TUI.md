@@ -31,11 +31,9 @@ left edge, with only the fields that identify their action and outcome.
 Runtimes and subsystems retain their names after ⚙️ ({§cli-operation-glyphs}).
 Delivered messages render as full response blocks rather than diagnostic rows.
 The status row projects standard AG-UI state in lifecycle → model → packet →
-activity order. An active loop replaces idle 🔥 with `⌛︎`; indexing and search
-progress update the activity field instead of appending an event for every
-milestone. Serialized branch batches use the same compact treatment: 🌿 plus
-aggregate progress while active, followed by one completion, failure, or
-recovery line.
+activity order. The lifecycle glyph is the daemon's word (`⌛︎` while a loop runs),
+and YOLO puts 🔥 beside it; indexing and search progress update the activity field
+instead of appending an event for every milestone.
 
 The renderer follows the shared
 [colour selection policy](SPEC.md#551-colour-selection-cli-color-policy), including

@@ -200,12 +200,17 @@ a workspace action, reports no gauge.
 Human status is the summary line's shape aggregated over the session:
 
 ```
-[<project folder> ] [<TUI place> ] [🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 📨 <waiting>] [· 🧮 <percent>%]
+[<project folder> ] [<TUI place> ] [🔌 ][🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 📨 <waiting>] [· 🧮 <percent>%]
 ```
 
-YOLO is a fireball beside the lifecycle glyph. The model sits next, ahead of
-everything that ticks, so the ticking never moves it; it is the client's last server-read route
-({§cli-identity-effort}), never the gauge's. The traffic counts precede the phrase that
+YOLO is a fireball beside the lifecycle glyph.
+{§cli-status-disconnected} 🔌 leads them while the session holds no observation of its worker because the
+last one ended in a failure: the daemon stopping, a revoked credential, a lost connection, as plurnk-web
+shows its own disconnection. It is absent while connecting, while observing, and after the client's own
+cancellation; the next command or prompt opens a new observation and clears it. The model sits next, ahead of
+everything that ticks, so the ticking never moves it. The TUI's is its last server-read route
+({§cli-identity-effort}), never the gauge's; a one-shot prompt's row begins with the route its
+admission read and then shows the gauge's. The traffic counts precede the phrase that
 says what the worker is doing. A glyph is two columns wide, so two spaces separate the last one from the first dot. Token counts are
 abbreviated (`582k`, `1.2M`; below a thousand the number itself) and spend is stated to the
 hundredth of a cent with grouped thousands (`$3,333.3333`).
@@ -228,8 +233,7 @@ override is set: `🐜 2 dumbox`. Zero hides the whole child segment, even with 
 configured child model. A transport without the gauge shows only the bare
 `🐜 <child>`. The count is the gauge's, never the directory's, and a gauge whose
 tree is not one worker's tree is refused; the user hops to a child (§3.1.2) rather
-than watching it. `(<i>/<n>)` after the worker is its sibling position, newest
-first, present only with siblings.
+than watching it.
 
 {§cli-status-gated} The traffic light counts the workers anywhere in that tree
 waiting on a gate, a proposal or a client interaction (`gates` above zero):
@@ -467,8 +471,8 @@ Triggered when `argv` has no positional prompt.
 1. Acquire the workspace and bind `AguiTransport` to its ID and worker name (§1.1). Its persistent handlers retain standard conversation meaning and add Plurnk waterfall details. Restore the bound worker's history under {§cli-worker-history}.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
    and §1.2.1's aggregate line on the place line below the composer. Before AG-UI
-   state arrives, derivation, search, and
-   branch activity share the fallback activity position. The
+   state arrives, derivation and search share the
+   fallback activity position. The
    lifecycle glyph, for the daemon's lifecycle word (plurnk-service `{§loop-lifecycle-vocabulary}`), is ⏳ while
    queued, `⌛︎` while running, 💤 while parked, `⏹️` when complete, 🛑 when cancelled and ❌ on failure;
    YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
@@ -590,8 +594,6 @@ the worker they belong to. `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck
 hops down, `[/~]` before the worker is named; an unknown loop or turn is elided. A child
 always shows that it is a child, so a session opened on a child reads its full lineage. The
 §1.2.1 footer includes the place after the project folder and before activity, so the composer has one line above it.
-The status line's worker segment carries the sibling position when there is one:
-`worker://recheck/ (2/3)`, newest first (§1.2.1).
 
 ### §cli-worker-history Worker history on attach
 
@@ -1761,7 +1763,7 @@ diagnostic Notices. `exec:*/search_progress` replaces search acquisition's
 activity position and its terminal phase clears it. Neither client appends
 progress ticks or live-renders durable `entry_materialized` narration.
 
-Client `daemon_stale`, `edits_blocked`, and `history_lost` observations are also Notices because
+Client `edits_blocked`, `history_lost` and `message_unread` observations are also Notices because
 they advise without terminating an operation. Client failures are Problems.
 
 ### §8.3 Rendering and channel posture {§cli-notice-rendering} {§cli-channel-posture}

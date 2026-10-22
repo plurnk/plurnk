@@ -39,8 +39,6 @@ export interface StatusContext {
     workspace: string | null;
     worker: string | null;
     place?: string;
-    // {§cli-workers-topology} — the bound worker's place among its siblings, newest first.
-    position?: { index: number; count: number } | null;
     child: string | null;
     tally: SessionTally;
     runningSince: number | null;
@@ -446,16 +444,21 @@ const activityText = ({ label, percent }: StatusActivity): string => {
 
 // The summary line's shape, aggregated over the session: the running loop adds
 // its packets as turns, elapsed time, and settled per-turn accounting.
+// {§cli-status-disconnected} — an observation that a failure ended, the daemon stopping, a revoked credential or a
+// lost connection, leaves the session disconnected; the client's own cancellation does not.
+export const disconnection = (failure: { readonly type: string } | null): boolean =>
+    failure !== null && !failure.type.endsWith("/client/transport/cancelled");
+
 export const renderStatusLine = (
     value: ClientStatus,
     context: StatusContext,
-    options: { yolo?: boolean } = {},
+    options: { yolo?: boolean; disconnected?: boolean } = {},
 ): string => {
     // {plurnk#58} — the glyph IS the lifecycle; the word beside it said the same thing twice, and
     // the turn count moved into the prompt prefix where the place is named.
     // {plurnk#104} — YOLO sits beside the lifecycle glyph, and the model precedes live counters.
     const glyph = lifecycleGlyph(value.lifecycle, "");
-    const glyphs = [...(options.yolo === true ? ["🔥"] : []), ...(glyph.length > 0 ? [glyph] : [])];
+    const glyphs = [...(options.disconnected === true ? ["🔌"] : []), ...(options.yolo === true ? ["🔥"] : []), ...(glyph.length > 0 ? [glyph] : [])];
     const head = glyphs.length > 0 ? glyphs.join(" ") : value.lifecycle;
     const parts: string[] = [];
     if (value.model !== null) parts.push(`🎲 ${value.model}`);

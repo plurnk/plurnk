@@ -734,8 +734,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
         if (name !== null) seenWorkerNames.add(name);
     };
     let liveReasoning: { messageId: string; rendered: string } | null = null;
-    // {§cli-status-inbox} — the unread messages already announced, and the words of those this terminal sent, by address.
+    // {§cli-status-inbox} — the unread messages already announced, the loops this session watched conclude, and the
+    // words of the messages this terminal sent, by address.
     const unreadAnnounced = new Set<string>();
+    const concludedHere = new Set<number>();
     const acceptedWords = new Map<string, string>();
     let historyArrived = false;
     // {§cli-identity-effort} — the route the latest gauge carried, and whether a readback it prompted is under way.
@@ -748,11 +750,12 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let stateName: string | null = null;
     let nameRereading = false;
     let nameEpoch = 0;
-    // {§cli-status-inbox} — once the history is drawn, each message a concluded loop left unread is said once.
+    // {§cli-status-inbox} — once the history is drawn, each message a loop left unread is said once, by the session that
+    // watched that loop conclude; an earlier loop's is its past.
     const announceUnread = (): void => {
         if (!historyArrived || authoritativeStatus === null) return;
         for (const message of unreadMessages(authoritativeStatus.inbox)) {
-            if (unreadAnnounced.has(message.path)) continue;
+            if (unreadAnnounced.has(message.path) || !concludedHere.has(message.loopId)) continue;
             unreadAnnounced.add(message.path);
             printAbove(renderDiagnostic(clientMessageUnread(message, acceptedWords.get(message.path))));
         }
@@ -1396,6 +1399,10 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
                     tally = tallyOutcome(tally, { turns: turnCount ?? 0, wallMs });
                     const reason = concluded(terminal.finalStatus, terminal.hitMaxTurns);
                     if (reason !== "stopped" || !stopRequested) attend(reason);
+                    if (terminal.loopId !== undefined) {
+                        concludedHere.add(terminal.loopId);
+                        announceUnread();
+                    }
                 }
                 stopRequested = false;
                 while (pendingInjections.size > 0) await Promise.allSettled([...pendingInjections]);

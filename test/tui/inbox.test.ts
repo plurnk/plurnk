@@ -7,7 +7,7 @@ import { spawnTui } from "./harness.ts";
 
 // plurnk-service {§agui-message-acceptance}: a message accepted while the worker's loop runs waits for its next turn; a
 // loop cancelled first leaves it accepted and unread, listed with that loop's lifecycle.
-test("[§cli-status-inbox] a message another client sent while the loop ran is said once to be unread when that loop is stopped", { timeout: 90_000 }, async (t) => {
+test("[§cli-status-inbox] a message another client sent while the loop ran is said once to be unread when that loop is stopped, and a later session says nothing", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed client test requires the sibling service");
     const incoming = Promise.withResolvers<ServerResponse>();
@@ -73,4 +73,16 @@ test("[§cli-status-inbox] a message another client sent while the loop ran is s
     assert.equal(stripVTControlCharacters(tui.output()).match(/was not read: the loop holding\s+it was cancelled first/gu)?.length, 1, "said once");
     tui.write("/quit\r");
     assert.equal(await tui.exited, 0);
+
+    // A later session attaches after that loop concluded: the unread message is the loop's past, said by no one again.
+    const later = spawnTui(daemon.url, ["--workspace", "inbox", "--worker", "main", "--project-root", ""], {
+        HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`, PLURNK_MODEL: "", PLURNK_CLIENT_YOLO: "0",
+    }, daemon.workspace);
+    t.after(() => later.kill());
+    await later.waitFor(/plurnk[\s\S]*\/help/);
+    later.write("/workers\r");
+    await later.waitFor(/● main/);
+    assert.doesNotMatch(stripVTControlCharacters(later.output()), /was not read/u);
+    later.write("/quit\r");
+    assert.equal(await later.exited, 0);
 });

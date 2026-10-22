@@ -244,8 +244,9 @@ owner as interrupts ({§cli-proposal-review}) and wait in its review.
 live loop still holds unread (`snapshot.plurnk.status.inbox`, plurnk-service
 `{§agui-message-acceptance}`): `📨 2`. None waiting, or no gauge, hides it. A message whose loop
 concluded without reading it, cancelled say, is never counted, since nothing will read it: once the
-history is drawn the session says so once, `client:message:message_unread`, naming the message by
-its words when this thread sent it (the snapshot carries them) and by its address otherwise.
+history is drawn, the session that watched that loop conclude says so once, `client:message:message_unread`,
+naming the message by its words when this thread sent it (the snapshot carries them) and by its address
+otherwise. A session attaching after the loop concluded says nothing: the message is that loop's past.
 
 {§cli-status-streams} `snapshot.plurnk.status.streams` names the streams the bound worker holds open
 (plurnk-service `{§agui-status-streams}`). On attach, the history's launch row of each one still open

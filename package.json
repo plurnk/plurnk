@@ -58,8 +58,8 @@
         "node-pty@1.1.0": true
     },
     "dependencies": {
-        "@ag-ui/client": "^1.0.0",
-        "@ag-ui/core": "^1.0.0",
+        "@ag-ui/client": "^1.0.3",
+        "@ag-ui/core": "^1.0.3",
         "@earendil-works/pi-tui": "1.1.0",
         "@plurnk/plurnk-contracts": "^5.0.0",
         "beautiful-mermaid": "^1.1.3",

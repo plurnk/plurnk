@@ -1,5 +1,18 @@
 # @plurnk/plurnk
 
+## 4.3.0
+
+- `/loops` lists the bound worker's loops with their sequence number, lifecycle, sender and opening
+  excerpt; `/loop [n]` prints a loop whole, and `/worker [name]` opens or creates a worker directly,
+  retiring `/log` and `/attach` (#208, #209, #210, #214).
+- One attention signal fires when a worker needs operator input, with `--bell` / `PLURNK_CLIENT_BELL`
+  ringing the terminal bell on it (#213).
+- Root workers admit the client's cascading `PLURNK_WORKER_ENV_*` environment and `PLURNK_CLIENT_MODEL`
+  default, and `!` shell commands execute with the worker's environment (#211, #212).
+- Attach and live observation read body and message references (`entry?target=`), negotiate reasoning
+  by link, track `status.descendants`, `status.streams` and `status.inbox`, and reconcile external
+  workspace renames and model changes (#193–#207, #215–#217).
+
 ## 4.2.0
 
 - TUI cancellation keeps the run's connection until the daemon's terminal record arrives, up to

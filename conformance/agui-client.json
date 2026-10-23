@@ -209,6 +209,28 @@
         "durability"
       ]
     },
+    "workspace.hidden.set": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
+    "worker.hidden.set": {
+      "posture": "generic",
+      "evidence": [
+        "src/agui.test.ts — arbitrary action round-trip"
+      ],
+      "dimensions": [
+        "projection",
+        "success",
+        "failure"
+      ]
+    },
     "workspace.rollback": {
       "posture": "native",
       "evidence": [

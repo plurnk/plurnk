@@ -214,7 +214,7 @@ test("[§cli-what-is-not-rendered] an execution's inline preview is followed by 
         "every channel with output, then one separator");
 });
 
-// {§cli-status-streams} — plurnk-service {§agui-status-streams}: an execution still open at attach concludes as its launch.
+// {§cli-status-streams} — plurnk-service {§acp-status-streams}: an execution still open at attach concludes as its launch.
 test("[§cli-status-streams] a history's launch rows of streams the worker still holds open are the ones adopted", () => {
     const launch = (id: number, stream: string | null) => ({ id, worker_id: 1, origin: "model", op: "sh", source: null, signal: null, status_rx: 200,
         attrs: stream === null ? {} : { stream }, tx: { runtime: "sh", body: "sleep 9" }, rx: null, target: null, lineMarker: null,

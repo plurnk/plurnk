@@ -41,7 +41,7 @@ const fixture = async (t: { after(fn: () => Promise<void>): void }, service: str
         XDG_CACHE_HOME: join(directory, "cache"),
         PLURNK_HOST: "127.0.0.1",
         PLURNK_PORT: String(port),
-        PLURNK_AGUI_URL: "",
+        PLURNK_ACP_URL: "",
         PLURNK_MODEL: "",
         PLURNK_CLIENT_SERVICE_BIN: service,
         NO_COLOR: "1",
@@ -101,7 +101,7 @@ test("[§cli-daemon-autostart] text mode names the service it started and how to
     const { port, servicePid, invoke } = await fixture(t, service);
     const first = await invoke(["workspace", "list"]);
     const pid = await servicePid();
-    assert.match(first.stderr, new RegExp(`client:daemon:started — Started plurnk-service \\(pid ${pid}\\) at http://127\\.0\\.0\\.1:${port}/agui`, "u"));
+    assert.match(first.stderr, new RegExp(`client:daemon:started — Started plurnk-service \\(pid ${pid}\\) at http://127\\.0\\.0\\.1:${port}/acp`, "u"));
     assert.match(first.stderr, /plurnk-service stop/u);
     const attached = await invoke(["workspace", "list"]);
     assert.doesNotMatch(attached.stderr, /client:daemon:started/u, "attaching reports no start");

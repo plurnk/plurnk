@@ -5,7 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { objectOf, type LogEntryWire } from "../../src/render.ts";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "./harness.ts";
 
@@ -41,7 +41,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     const environment = {
         ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_") && !key.endsWith("_API_KEY"))),
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), NO_COLOR: "1",
-        PLURNK_AGUI_URL: daemon.url, PLURNK_CLIENT_YOLO: "0",
+        PLURNK_ACP_URL: daemon.url, PLURNK_CLIENT_YOLO: "0",
         PLURNK_CLIENT_ACCEPT_fixture: "1", PLURNK_CLIENT_ACCEPT_fixture_TOOLS: '["where"]',
         PLURNK_CLIENT_ACCEPT_sh: "1",
     };
@@ -60,7 +60,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     assert.equal(calls, 2);
     assert.equal(await readFile(join(daemon.workspace, "accepted.txt"), "utf8"), "accepted");
     await assert.rejects(readFile(join(daemon.workspace, "rejected.txt")), { code: "ENOENT" });
-    const { entries } = await actionViaAgui<{ entries: LogEntryWire[] }>({ aguiUrl: daemon.url }, {
+    const { entries } = await actionViaAcp<{ entries: LogEntryWire[] }>({ acpUrl: daemon.url }, {
         kind: "log.read", workspace: "acceptance", threadId: "main", params: { workerId: record.workerId, limit: 100 },
     });
     const settled = entries.filter((row) => row.origin === "model" && ["fixture", "sh", "EDIT"].includes(row.op))
@@ -74,7 +74,7 @@ test("[§cli-tool-acceptance]: built CLI accepts configured tools, rejects unmat
     const reviewed = await run("explicit-review", ["? Do not automatically accept these."], { ...environment, PLURNK_CLIENT_YOLO: "1" });
     const reviewRecord = JSON.parse(reviewed.stdout) as { finalStatus: number; workerId: number };
     assert.equal(reviewRecord.finalStatus, 200, reviewed.stdout);
-    const history = await actionViaAgui<{ entries: LogEntryWire[] }>({ aguiUrl: daemon.url }, {
+    const history = await actionViaAcp<{ entries: LogEntryWire[] }>({ acpUrl: daemon.url }, {
         kind: "log.read", workspace: "explicit-review", threadId: "main", params: { workerId: reviewRecord.workerId, limit: 100 },
     });
     const rejected = history.entries.filter((row) => row.origin === "model" && ["fixture", "sh", "EDIT"].includes(row.op));

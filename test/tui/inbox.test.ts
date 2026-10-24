@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-// plurnk-service {§agui-message-acceptance}: a message accepted while the worker's loop runs waits for its next turn; a
+// plurnk-service {§acp-message-acceptance}: a message accepted while the worker's loop runs waits for its next turn; a
 // loop cancelled first leaves it accepted and unread, listed with that loop's lifecycle.
 test("[§cli-status-inbox] a message another client sent while the loop ran is said once to be unread when that loop is stopped, and a later session says nothing", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
@@ -67,7 +67,7 @@ test("[§cli-status-inbox] a message another client sent while the loop ran is s
     tui.write("/stop\r");
     await tui.waitFor(/cancelled|final 499/);
     // The notice wraps at the terminal's width; the message is named by its address, another client's words being its own.
-    await tui.waitFor(/was not read: the loop holding[\s\S]*?it was cancelled first[\s\S]*?agui:\/\/\S*\/messages\/follow-up/u, 20_000);
+    await tui.waitFor(/was not read: the loop holding[\s\S]*?it was cancelled first[\s\S]*?acp:\/\/\S*\/messages\/follow-up/u, 20_000);
     tui.write("/workers\r");
     await tui.waitFor(/● main/);
     assert.equal(stripVTControlCharacters(tui.output()).match(/was not read: the loop holding\s+it was cancelled first/gu)?.length, 1, "said once");

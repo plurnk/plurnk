@@ -1,7 +1,7 @@
 # plurnk terminal design
 
 `plurnk` is a thin terminal client for `plurnk-service`. Both one-shot and
-interactive modes use the daemon's AG-UI+ HTTP/SSE surface. The daemon owns
+interactive modes use the daemon's ACP+ HTTP/SSE surface. The daemon owns
 workspaces, workers, model execution, and durable state; the client submits
 actions and renders events.
 
@@ -22,7 +22,7 @@ client.
   turn's operations arrive and never enters the transcript; immutable history keeps every
   turn's reasoning at `reasoning://<worker>/L/T` for a READ, so a model with a fat reasoning
   habit costs a third of the screen, not the session.
-- Prompts, command verbs, and raw DSL use the same AG-UI+ action/run transport.
+- Prompts, command verbs, and raw DSL use the same ACP+ action/run transport.
 
 ## Rendering
 
@@ -30,7 +30,7 @@ The waterfall is intentionally compact: operation glyphs begin at the
 left edge, with only the fields that identify their action and outcome.
 Runtimes and subsystems retain their names after ⚙️ ({§cli-operation-glyphs}).
 Delivered messages render as full response blocks rather than diagnostic rows.
-The status row projects standard AG-UI state in lifecycle → model → packet →
+The status row projects standard ACP state in lifecycle → model → packet →
 activity order. The lifecycle glyph is the daemon's word (`⌛︎` while a loop runs),
 and YOLO puts 🔥 beside it; indexing and search progress update the activity field
 instead of appending an event for every milestone.

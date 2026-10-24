@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { ProblemError } from "../../src/diagnostics.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
@@ -20,7 +20,7 @@ test("[§cli-prompt-prefixes] the built one-shot `! command` runs through op.exe
             env: {
                 ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_") && !key.endsWith("_API_KEY"))),
                 HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), NO_COLOR: "1",
-                PLURNK_AGUI_URL: daemon.url,
+                PLURNK_ACP_URL: daemon.url,
             },
             stdio: ["ignore", "pipe", "pipe"],
             timeout: 30_000,
@@ -32,15 +32,15 @@ test("[§cli-prompt-prefixes] the built one-shot `! command` runs through op.exe
         child.once("error", reject);
         child.once("close", (code) => resolveRun({ code, stdout, stderr }));
     });
-    const workspaces = async (): Promise<string[]> => (await actionViaAgui<{ workspaces: Array<{ name: string }> }>(
-        { aguiUrl: daemon.url }, { threadId: "inspect", kind: "workspace.list" },
+    const workspaces = async (): Promise<string[]> => (await actionViaAcp<{ workspaces: Array<{ name: string }> }>(
+        { acpUrl: daemon.url }, { threadId: "inspect", kind: "workspace.list" },
     )).workspaces.map(({ name }) => name);
 
     await t.test("the command's stdout is the client's stdout, and success exits 0", async () => {
         const result = await run(["--workspace", "exec", "! echo hi"]);
         assert.equal(result.code, 0, result.stderr);
         assert.equal(result.stdout, "hi\n");
-        await assert.rejects(actionViaAgui({ aguiUrl: daemon.url }, { threadId: "exec", workspace: "exec", kind: "workspace.prompts" }),
+        await assert.rejects(actionViaAcp({ acpUrl: daemon.url }, { threadId: "exec", workspace: "exec", kind: "workspace.prompts" }),
             (error: unknown) => error instanceof ProblemError && error.problem.type.endsWith("/worker-not-found"),
             "the command created no model worker, so nothing became a prompt");
     });
@@ -49,7 +49,7 @@ test("[§cli-prompt-prefixes] the built one-shot `! command` runs through op.exe
         const carried = await run(["--workspace", "exec-env", "--env", "GREETING=Hello", "! printf %s \"$GREETING\""]);
         assert.equal(carried.code, 0, carried.stderr);
         assert.equal(carried.stdout, "Hello");
-        const { workers } = await actionViaAgui<{ workers: Array<{ origin: string }> }>({ aguiUrl: daemon.url }, { threadId: "inspect", workspace: "exec-env", kind: "workspace.workers" });
+        const { workers } = await actionViaAcp<{ workers: Array<{ origin: string }> }>({ acpUrl: daemon.url }, { threadId: "inspect", workspace: "exec-env", kind: "workspace.workers" });
         assert.deepEqual(workers.filter(({ origin }) => origin !== "_plurnk"), [], "a person's command runs in the workspace's runtime worker and writes no model worker");
         const refused = await run(["--workspace", "exec-env", "--env", "PLURNK_GREETING=Hello", "! echo ran"]);
         assert.equal(refused.code, 4, refused.stderr);

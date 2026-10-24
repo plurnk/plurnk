@@ -73,8 +73,8 @@ test("[§cli-active-command-admission] stopping a model run leaves the person's 
     const stopped = tui.output().length;
     tui.write("/review\r");
     await tui.waitFor(/\(no pending review\)/, 10_000, stopped);
-    const parent = await openTransport({ aguiUrl: daemon.url }, "main", { workspace: "proposal-controls" });
-    const child = await openTransport({ aguiUrl: daemon.url }, "background", { workspace: "proposal-controls" });
+    const parent = await openTransport({ acpUrl: daemon.url }, "main", { workspace: "proposal-controls" });
+    const child = await openTransport({ acpUrl: daemon.url }, "background", { workspace: "proposal-controls" });
     t.after(() => { parent.shutdown(); child.shutdown(); });
     await parent.rpc("run.fork", { name: "background" });
     const childReview = tui.output().length;

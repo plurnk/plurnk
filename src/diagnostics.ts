@@ -42,11 +42,11 @@ export interface Notice {
 
 export type Diagnostic = ProblemDetails | Notice;
 
-// plurnk-service {§agui-action-binding}: the daemon's answer for a thread whose worker no act has created
+// plurnk-service {§acp-action-binding}: the daemon's answer for a thread whose worker no act has created
 // yet, in a workspace that may not exist yet either. Nothing durable is there to read or observe.
 export const isAbsentWorker = (cause: unknown): boolean =>
-    cause instanceof ProblemError && (cause.problem.type === "https://problems.plurnk.xyz/agui/http/worker-not-found"
-        || cause.problem.type === "https://problems.plurnk.xyz/agui/http/workspace-not-found");
+    cause instanceof ProblemError && (cause.problem.type === "https://problems.plurnk.xyz/acp/http/worker-not-found"
+        || cause.problem.type === "https://problems.plurnk.xyz/acp/http/workspace-not-found");
 
 export class ProblemError extends Error {
     readonly problem: ProblemDetails;
@@ -208,10 +208,10 @@ export const isUnreachable = (cause: unknown): boolean => {
 export const clientRuntimeError = (cause: unknown): ProblemDetails =>
     clientProblem("runtime", "error", 500, cause instanceof Error ? cause.message : String(cause));
 
-export const clientAguiError = (url: string, cause: unknown): ProblemDetails =>
+export const clientAcpError = (url: string, cause: unknown): ProblemDetails =>
     cause instanceof ProblemError ? cause.problem
         : isUnreachable(cause) ? clientConnectionRefused(url, cause)
-            : clientProblem("agui", "error", 502, cause instanceof Error ? cause.message : String(cause), { url });
+            : clientProblem("acp", "error", 502, cause instanceof Error ? cause.message : String(cause), { url });
 
 export const clientTransportCancelled = (): ProblemDetails =>
     clientProblem("transport", "cancelled", 499, "The client cancelled the active run.", {
@@ -220,40 +220,40 @@ export const clientTransportCancelled = (): ProblemDetails =>
     });
 
 export const clientTransportTerminalMissing = (): ProblemDetails =>
-    clientProblem("transport", "terminal-missing", 502, "The AG-UI stream ended before reporting the run outcome.", {
+    clientProblem("transport", "terminal-missing", 502, "The ACP stream ended before reporting the run outcome.", {
         stage: "transport",
         retryable: false,
     });
 
 export const clientTransportProblemMissing = (): ProblemDetails =>
-    clientProblem("transport", "problem-missing", 502, "The AG-UI stream reported a failed run without its required Problem Details.", {
+    clientProblem("transport", "problem-missing", 502, "The ACP stream reported a failed run without its required Problem Details.", {
         stage: "transport",
         retryable: false,
     });
 
 export const clientTransportProblemInvalid = (cause: unknown): ProblemDetails =>
-    clientProblem("transport", "problem-invalid", 502, "The AG-UI stream contained invalid Problem Details.", {
+    clientProblem("transport", "problem-invalid", 502, "The ACP stream contained invalid Problem Details.", {
         stage: "transport",
         reason: cause instanceof Error ? cause.message : String(cause),
         retryable: false,
     });
 
 export const clientTransportResultInvalid = (cause: unknown): ProblemDetails =>
-    clientProblem("transport", "result-invalid", 502, "The AG-UI stream contained an invalid operation result.", {
+    clientProblem("transport", "result-invalid", 502, "The ACP stream contained an invalid operation result.", {
         stage: "transport",
         reason: cause instanceof Error ? cause.message : String(cause),
         retryable: false,
     });
 
 export const clientTransportStateInvalid = (reason: string): ProblemDetails =>
-    clientProblem("transport", "state-invalid", 502, "The AG-UI stream contained an invalid state delta.", {
+    clientProblem("transport", "state-invalid", 502, "The ACP stream contained an invalid state delta.", {
         stage: "transport",
         reason,
         retryable: false,
     });
 
 export const clientTransportInterruptMismatch = (interruptId: string): ProblemDetails =>
-    clientProblem("transport", "interrupt-mismatch", 502, `Tool call '${interruptId}' ended without its matching AG-UI interrupt outcome.`, {
+    clientProblem("transport", "interrupt-mismatch", 502, `Tool call '${interruptId}' ended without its matching ACP interrupt outcome.`, {
         stage: "interrupt-resolution",
         interruptId,
         retryable: false,
@@ -276,7 +276,7 @@ export const clientTransportProposalInvalid = (interruptId: string, reason: stri
     });
 
 export const clientActionResultInvalid = (reason: string): ProblemDetails =>
-    clientProblem("action", "result-invalid", 502, "The AG-UI action result did not satisfy the Plurnk action-result contract.", {
+    clientProblem("action", "result-invalid", 502, "The ACP action result did not satisfy the Plurnk action-result contract.", {
         stage: "action-result",
         reason,
         retryable: false,

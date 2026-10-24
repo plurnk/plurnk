@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { ProblemError } from "../../src/diagnostics.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
@@ -52,18 +52,18 @@ const assertDisposition = (name: string, value: Disposition): void => {
     }
 };
 
-test("[§cli-agui-conformance] the client accounts for the complete live AG-UI surface", { timeout: 60_000 }, async (t) => {
+test("[§cli-acp-conformance] the client accounts for the complete live ACP surface", { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
     const daemon = await bootDaemon(service, { readyTimeoutMs: 30_000 });
     t.after(daemon.cleanup);
 
     const manifest = JSON.parse(await readFile(
-        resolve(import.meta.dirname, "../../conformance/agui-client.json"),
+        resolve(import.meta.dirname, "../../conformance/acp-client.json"),
         "utf8",
     )) as Conformance;
-    const discovery = await actionViaAgui<Discovery>(
-        { aguiUrl: daemon.url },
+    const discovery = await actionViaAcp<Discovery>(
+        { acpUrl: daemon.url },
         { threadId: "terminal-conformance", kind: "discover" },
     );
 
@@ -79,8 +79,8 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
         assert.ok(object(contract.outputSchema), `${name} declares an output schema`);
         assertDisposition(`action ${name}`, manifest.actions[name]!);
         await assert.rejects(
-            () => actionViaAgui(
-                { aguiUrl: daemon.url },
+            () => actionViaAcp(
+                { acpUrl: daemon.url },
                 {
                     threadId: "terminal-conformance-invalid",
                     ...(contract.scope === "workspace"
@@ -91,7 +91,7 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
                 },
             ),
             (error: unknown) => error instanceof ProblemError
-                && error.problem.type === "https://problems.plurnk.xyz/agui/action/invalid-action-parameters"
+                && error.problem.type === "https://problems.plurnk.xyz/acp/action/invalid-action-parameters"
                 && error.problem.status === 400,
             `${name} preserves the exact admission Problem`,
         );
@@ -101,15 +101,15 @@ test("[§cli-agui-conformance] the client accounts for the complete live AG-UI s
         assertDisposition(`notification ${name}`, manifest.notifications[name]!);
     }
 
-    const temp = await mkdtemp(join(tmpdir(), "plurnk-agui-conformance-"));
+    const temp = await mkdtemp(join(tmpdir(), "plurnk-acp-conformance-"));
     t.after(() => rm(temp, { recursive: true, force: true }));
     const discoveryPath = join(temp, "discovery.json");
     await writeFile(discoveryPath, JSON.stringify(discovery));
     const report = await run("node", [
         "--conditions=plurnk-dev",
-        servicePath("plurnk-contracts/scriptify/agui-conformance-report.ts"),
+        servicePath("plurnk-contracts/scriptify/acp-conformance-report.ts"),
         discoveryPath,
-        resolve(import.meta.dirname, "../../conformance/agui-client.json"),
+        resolve(import.meta.dirname, "../../conformance/acp-client.json"),
         resolve(import.meta.dirname, "../.."),
     ]);
     const rows = report.stdout.trim().split("\n").map((line) => JSON.parse(line) as {

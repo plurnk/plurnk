@@ -27,7 +27,7 @@ test("[§cli-color-policy] built client separates terminal presentation from raw
     t.after(() => daemon.cleanup());
     const env = Object.fromEntries(Object.entries({
         ...process.env, HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"),
-        PLURNK_AGUI_URL: daemon.url, PLURNK_CLIENT_COLOR: "auto", PLURNK_CLIENT_JSON: "0",
+        PLURNK_ACP_URL: daemon.url, PLURNK_CLIENT_COLOR: "auto", PLURNK_CLIENT_JSON: "0",
         NO_COLOR: "", FORCE_COLOR: "", CLICOLOR_FORCE: "", CLICOLOR: "", TERM: "xterm-256color",
     }).filter(([, value]) => value !== undefined)) as Record<string, string>;
     const run = (args: string[]) => new Promise<{ code: number | null; out: string; err: string }>((resolveRun, reject) => {

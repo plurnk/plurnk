@@ -5,24 +5,24 @@ import { extractSendBody, isResponseMessage, type LogEntryWire } from "./render.
 import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSendBody } from "./render-message.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import RowAssembler from "./rows.ts";
-import { partsOf } from "../test/agui-parts.ts";
+import { partsOf } from "../test/acp-parts.ts";
 
 const row = (op: string, body: string | null, status: number, delivered = false): LogEntryWire => partsOf({
     id: 1, loop_seq: 1, turn_seq: 2, sequence: 1, op, origin: "model", signal: null,
     target: null, lineMarker: null,
     tx: { op, body, target: null, aside: null },
-    rx: { status, ...(delivered ? { answers: ["agui://anonymous/threads/user/messages/m1"] } : {}) }, status_rx: status,
+    rx: { status, ...(delivered ? { answers: ["acp://anonymous/threads/user/messages/m1"] } : {}) }, status_rx: status,
 }, "user").flatMap((event) => assembler.consume(event))[0]!;
 const assembler = new RowAssembler();
 
 test("{§cli-broadcast-send-rendering}: standard speech remains speech independently of its historical address spelling", () => {
     const entry = row("SEND", "**Authored response.**", 200, true);
-    entry.target = "agui:///threads/user/messages/m1";
-    entry.rx = { answers: ["agui://anonymous/threads/user/messages/m1"] };
+    entry.target = "acp:///threads/user/messages/m1";
+    entry.rx = { answers: ["acp://anonymous/threads/user/messages/m1"] };
     assert.equal(isResponseMessage(entry), true);
     assert.equal(extractSendBody(entry.tx), "**Authored response.**");
     assert.match(stripVTControlCharacters(renderLogEntry(entry, 80)), /Authored response\./);
-    assert.equal(isResponseMessage({ ...entry, rx: { answers: ["agui://operator/threads/old-alias/messages/m1"] } }), true);
+    assert.equal(isResponseMessage({ ...entry, rx: { answers: ["acp://operator/threads/old-alias/messages/m1"] } }), true);
     assert.equal(isResponseMessage({ ...entry, source: "worker://another", origin: "_plurnk", attrs: { kind: "reply" } }), true);
     assert.equal(isResponseMessage(row("SEND", "Not delivered", 200)), false);
 });
@@ -89,7 +89,7 @@ test("KILL without delivery is an operation, not speech or a task inventory", ()
 test("a WAIT body is the model's words to the user: rendered as model text, never counted as the reply (plurnk#161)", () => {
     const spoken = row("WAIT", "Pilot at 12 of 30; next read in ten minutes.", 200);
     assert.equal(isResponseMessage(spoken), false, "accounting unchanged: a WAIT body is communication, not the answer");
-    assert.equal(stripVTControlCharacters(renderLogEntry(spoken, 80)), "⏳\nPilot at 12 of 30; next read in ten minutes.", "the same body layout a delivered answer gets (plurnk-service {§agui-projection})");
+    assert.equal(stripVTControlCharacters(renderLogEntry(spoken, 80)), "⏳\nPilot at 12 of 30; next read in ten minutes.", "the same body layout a delivered answer gets (plurnk-service {§acp-projection})");
     const silent = row("WAIT", "", 200);
     assert.match(stripVTControlCharacters(renderLogEntry(silent, 80)), /^⏳/u, "a bodiless WAIT is still its operation row");
 });

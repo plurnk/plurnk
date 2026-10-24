@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 import type { LogEntryWire } from "../../src/render.ts";
-import { messagesOf, partsOf } from "../agui-parts.ts";
+import { messagesOf, partsOf } from "../acp-parts.ts";
 
 let daemon: Daemon;
 before(async () => {
@@ -57,7 +57,7 @@ const fixture = async (t: TestContext) => {
             }
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.write(frame({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId }));
-            // plurnk-service {§agui-run-input}: a Run that carries nothing new observes.
+            // plurnk-service {§acp-run-input}: a Run that carries nothing new observes.
             if (input.messages.length === 0 && input.resume === undefined) {
                 response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: entries.flatMap((entry) => messagesOf(entry)) }));
             } else {

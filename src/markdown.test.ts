@@ -55,7 +55,7 @@ test("{§cli-markdown-projection} pathological layout returns labeled source and
             message: { id: "1/1/1", role: "assistant" },
             id: 1, loop_seq: 1, turn_seq: 1, sequence: 1, op: "SEND", origin: "model",
             signal: null, target: null, lineMarker: null,
-            tx: { body: { raw } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] }, status_rx: 200, tags: [],
+            tx: { body: { raw } }, rx: { status: 200, answers: ["acp://anonymous/threads/t/messages/m1"] }, status_rx: 200, tags: [],
         });
         const view = new TurnDisplay();
         view.addResponse(row(source));
@@ -306,13 +306,13 @@ test("[§cli-markdown-projection] standard Mermaid edge labels render within the
     const out = renderMermaid([
         "flowchart LR",
         "    U[You at the terminal] --> C[plurnk client<br/>CLI · TUI · state commands]",
-        "    C -- \"AG-UI+ (sole client surface)\" --> D[plurnk-service daemon]",
+        "    C -- \"ACP+ (sole client surface)\" --> D[plurnk-service daemon]",
         "    D --> W[(real workspaces)]",
         "    D --> M[model loop]",
     ].join("\n"));
     assert.doesNotMatch(out.join("\n"), /💻 mermaid/, "valid standard Mermaid must not fall back to source");
     assert.match(out.join("\n"), /You at the terminal/);
-    assert.match(out.join("\n"), /AG-UI\+/);
+    assert.match(out.join("\n"), /ACP\+/);
     assert.ok(out.every((line) => displayWidth(line) <= 80), "the projected diagram fits the supplied viewport");
 });
 

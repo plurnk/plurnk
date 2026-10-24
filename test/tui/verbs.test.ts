@@ -9,7 +9,7 @@ import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootDaemon, completionsEndpoint, locateDaemon, type CompletionsEndpoint, type Daemon } from "../intg/harness.ts";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { spawnTui } from "./harness.ts";
 
 let daemon: Daemon | null = null;
@@ -41,7 +41,7 @@ before(async () => {
                 OPENAI_API_KEY: "client-control-plane-test",
             },
         });
-        const discovery = await actionViaAgui<{ actions: Record<string, unknown> }>({ aguiUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
+        const discovery = await actionViaAcp<{ actions: Record<string, unknown> }>({ acpUrl: daemon.url }, { threadId: "verbs-discovery", kind: "discover" });
         members = "workspace.members.list" in discovery.actions;
         env = "worker.env.list" in discovery.actions;
     }

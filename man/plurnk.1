@@ -223,15 +223,15 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         documents them all; the option wins when both are given.
   PLURNK_HOST, PLURNK_PORT
                         the daemon's address, under the daemon's own key names.
-  PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
-                        remote AG-UI portal.
+  PLURNK_ACP_URL       the whole URL instead, when the daemon is reached through a
+                        remote ACP portal.
   PLURNK_SECRET         the operator's client secret, exchanged at the daemon for access
                         tokens; unset, the client reads the secret a daemon running as
                         you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start the installed service on local
                         connection refusal and leave it running. 0: attach only.
-                        Explicit AG-UI URLs and remote hosts are always attach-only.
+                        Explicit ACP URLs and remote hosts are always attach-only.
 .fi
 .SH EXIT STATUS
 .TP

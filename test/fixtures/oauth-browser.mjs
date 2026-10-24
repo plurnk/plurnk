@@ -1,5 +1,5 @@
 // Controlled browser navigation for the built CLI's loopback OAuth tests: opens the authorization
-// URL, signs in at the daemon's sign-in page as the operator would ({§agui-oauth-login}) with
+// URL, signs in at the daemon's sign-in page as the operator would ({§acp-oauth-login}) with
 // OAUTH_BROWSER_PASS, and follows the redirect to the client's loopback callback.
 if (process.env.OAUTH_BROWSER_FAIL === "1") process.exit(7);
 const url = process.argv.at(-1);

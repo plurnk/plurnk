@@ -12,7 +12,7 @@ const entry = (overrides: Partial<LogEntryWire>): LogEntryWire => ({
 });
 
 test("{§cli-broadcast-send-rendering}: qualified attachment preserves standard speech addressed under earlier thread spellings", () => {
-    for (const source of ["agui://operator/threads/alice/messages/m1", "agui://operator/threads/opaque-uuid/messages/m1"]) {
+    for (const source of ["acp://operator/threads/alice/messages/m1", "acp://operator/threads/opaque-uuid/messages/m1"]) {
         const rows = snapshotRows([{ id: "1/1/1", role: "assistant", content: "Retained answer", metadata: { plurnk: {
             id: 1, coordinate: "1/1/1", worker: 7, origin: "model", op: "SEND", source: null, address: null,
             signal: 200, status: 200, attrs: {}, receipt: { status: 200, answers: [source], completion: 200 },
@@ -22,7 +22,7 @@ test("{§cli-broadcast-send-rendering}: qualified attachment preserves standard 
     }
 });
 
-// plurnk-service {§agui-status-descendants}: the bound worker's tree names each descendant and its generation.
+// plurnk-service {§acp-status-descendants}: the bound worker's tree names each descendant and its generation.
 test("[§cli-worker-history] a descendant's rows are drawn as quietly as the bound worker's, marked and stepped in by generation", () => {
     const tree = new Map([[8, { workerId: 8, name: "helper", parentWorkerId: 7, depth: 1 }], [9, { workerId: 9, name: "digger", parentWorkerId: 8, depth: 2 }]]);
     const rows = [
@@ -42,7 +42,7 @@ test("[§cli-worker-history] a descendant's rows are drawn as quietly as the bou
 });
 
 test("[§cli-worker-history] a snapshot's prompt, operation headings and speech keep their row order; its reasoning is never replayed", () => {
-    const source = "agui://anonymous/threads/alice/messages/prompt";
+    const source = "acp://anonymous/threads/alice/messages/prompt";
     const facts = (id: number, over: Record<string, unknown> = {}) => ({ plurnk: { id, coordinate: `1/1/${id}`, worker: 7, origin: "model", op: "READ",
         source: null, address: null, signal: null, status: 200, attrs: {}, ...over } });
     const rows = snapshotRows([
@@ -61,7 +61,7 @@ test("[§cli-worker-history] a snapshot's prompt, operation headings and speech 
 test("{§cli-worker-history}: another actor's message keeps its sender, an answer its words, and a materialization draws nothing", () => {
     assert.deepEqual(renderHistory({ attachment: false, accepted: new Map(), entries: [
         entry({ id: 1, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: "worker update" } }),
-        entry({ id: 2, op: "SEND", message: { id: "1/1/2", role: "assistant" }, rx: { answers: ["agui://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
+        entry({ id: 2, op: "SEND", message: { id: "1/1/2", role: "assistant" }, rx: { answers: ["acp://anonymous/threads/alice/messages/m1"], completion: 200 }, tx: { body: "recent answer" } }),
         entry({ id: 3, op: "EDIT", origin: "_plurnk", attrs: { kind: "entry_materialized" } }),
     ] }, "alice", 80), ["✉️ (worker://helper)\nworker update", "🐹\nrecent answer"]);
 });

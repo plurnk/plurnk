@@ -106,9 +106,9 @@ export const isArrivalEntry = (entry: LogEntryWire): boolean =>
 
 // The viewer's own messages: the typed line at the prompt is already their record, so the
 // arrivals the daemon sourced to this thread render nowhere else (#79).
-// {§agui-run-source} — the address names the principal the daemon admitted (operator, a declared
+// {§acp-run-source} — the address names the principal the daemon admitted (operator, a declared
 // client, or anonymous) and then the thread; the thread is the viewer's, whoever they signed in as.
-const ownThread = (threadId: string): RegExp => new RegExp(`^agui://[^/]+/threads/${encodeURIComponent(threadId).replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/`, "u");
+const ownThread = (threadId: string): RegExp => new RegExp(`^acp://[^/]+/threads/${encodeURIComponent(threadId).replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/`, "u");
 
 export const isOwnArrival = (entry: LogEntryWire, threadId: string): boolean =>
     isArrivalEntry(entry) && typeof entry.source === "string" && ownThread(threadId).test(entry.source);
@@ -125,7 +125,7 @@ export const lineageWorker = (entry: LogEntryWire): string | null => {
 };
 export const LINEAGE_OFFSET = "  ";
 
-// {plurnk#108} — a descendant as the daemon introduces it (plurnk-service `{§agui-delegation-observation}`).
+// {plurnk#108} — a descendant as the daemon introduces it (plurnk-service `{§acp-delegation-observation}`).
 export interface Descendant {
     readonly workerId: number;
     readonly name: string;
@@ -134,7 +134,7 @@ export interface Descendant {
 }
 
 // {§cli-outside-text} — a turn's text outside its fences as the daemon projects it once per turn
-// (plurnk-service `{§agui-outside-text}`): the log coordinate `<worker>-<loop>-<turn>`, the prose
+// (plurnk-service `{§acp-outside-text}`): the log coordinate `<worker>-<loop>-<turn>`, the prose
 // verbatim, and its packet weight.
 export interface OutsideText {
     readonly coordinate: string;

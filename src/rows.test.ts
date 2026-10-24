@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { AguiEvent } from "./agui.ts";
+import type { AcpEvent } from "./acp.ts";
 import { ProblemError } from "./diagnostics.ts";
 import type { LogEntryWire } from "./render.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
-import { arrivalOf, callOf, dischargeOf, messagesOf, partsOf, settlementOf, speechOf } from "../test/agui-parts.ts";
+import { arrivalOf, callOf, dischargeOf, messagesOf, partsOf, settlementOf, speechOf } from "../test/acp-parts.ts";
 
 // Every row an event completes, in the order the events arrive.
-const drawn = (events: readonly AguiEvent[], rows = new RowAssembler()): LogEntryWire[] => events.flatMap((event) => rows.consume(event));
+const drawn = (events: readonly AcpEvent[], rows = new RowAssembler()): LogEntryWire[] => events.flatMap((event) => rows.consume(event));
 
 const read = { id: 4, op: "READ", origin: "model", loop_seq: 2, turn_seq: 3, sequence: 1, worker_id: 7, target: "worker://helper/notes.md", status_rx: 200,
     tx: { aside: "look first", target: { kind: "url", raw: "worker://helper/notes.md" }, lineMarker: { marks: [1, 4] }, matcher: null, body: null },
@@ -34,7 +34,7 @@ test("[§cli-row-sources] a call and its receipt are one row, drawn when the rec
 });
 
 test("[§cli-row-sources] speech carries its heading's aside and its receipt; an arrival is the message it delivered", () => {
-    const receipt = { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] };
+    const receipt = { status: 200, answers: ["acp://anonymous/threads/t/messages/m1"] };
     const [reply] = drawn(speechOf({ id: 8, op: "SEND", sequence: 3, tx: { aside: "the answer", body: { raw: "{\"planet\":\"Jupiter\"}", json: null } }, rx: receipt }));
     assert.equal((reply?.tx as { aside?: string }).aside, "the answer");
     assert.deepEqual((reply?.tx as { body?: unknown }).body, { raw: "{\"planet\":\"Jupiter\"}", json: { planet: "Jupiter" } }, "a SEND's body is its words and their JSON reading");
@@ -46,14 +46,14 @@ test("[§cli-row-sources] speech carries its heading's aside and its receipt; an
     const [arrival] = drawn(arrivalOf({ id: 10, op: "SEND", origin: "_plurnk", source: "worker://helper", attrs: { kind: "message" }, tx: { body: { raw: "Done." } } }));
     assert.deepEqual([arrival?.origin, arrival?.source, (arrival?.tx as { body: { raw: string } }).body.raw], ["_plurnk", "worker://helper", "Done."]);
     assert.deepEqual(arrival?.message, { id: "1/1/1", role: "user", name: "worker://helper" });
-    const [own] = drawn(arrivalOf({ id: 11, op: "SEND", origin: "_plurnk", source: "agui://anonymous/threads/t/messages/m1", attrs: { kind: "message" }, tx: { body: { raw: "" } } }, "m1"));
+    const [own] = drawn(arrivalOf({ id: 11, op: "SEND", origin: "_plurnk", source: "acp://anonymous/threads/t/messages/m1", attrs: { kind: "message" }, tx: { body: { raw: "" } } }, "m1"));
     assert.deepEqual([own?.id, own?.sequence], [11, 1], "the client's own message, which it holds, still names its row");
 });
 
 test("[§cli-row-sources] an accepted message the Worker has not observed is no row; its arrival draws it", () => {
-    // plurnk-service `{§agui-message-acceptance}`: the snapshot lists the client's own accepted message after every row, its
+    // plurnk-service `{§acp-message-acceptance}`: the snapshot lists the client's own accepted message after every row, its
     // metadata the message's lifecycle rather than row facts; a loop cancelled before observing it leaves it listed.
-    const source = "agui://anonymous/threads/t/messages/m1";
+    const source = "acp://anonymous/threads/t/messages/m1";
     const accepted = { id: "m1", role: "user", content: "added while streaming", metadata: { plurnk: { message: source, loop: 2, lifecycle: "failed", source, published: false } } };
     const rows = new RowAssembler();
     assert.deepEqual(snapshotRows([...messagesOf(read), accepted], rows).map(({ id }) => id), [4], "the snapshot's rows, and nothing for the message");
@@ -70,34 +70,34 @@ test("[§cli-row-sources] a result that answers another row's call is that row: 
 });
 
 test("[§cli-row-sources] a call ended without its receipt, a receipt before its call ended, a result with no text, or unreadable facts are a broken wire; an interrupt's call is no row", () => {
-    const broken = (events: AguiEvent[]): void => assert.throws(() => drawn(events),
+    const broken = (events: AcpEvent[]): void => assert.throws(() => drawn(events),
         (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
     const [start, args, end] = callOf(read);
     broken([start!, args!, end!, ...callOf({ ...read, id: 5, sequence: 2 })]);
-    broken([{ ...start!, metadata: { plurnk: { id: 4, op: "READ" } } } as AguiEvent]);
+    broken([{ ...start!, metadata: { plurnk: { id: 4, op: "READ" } } } as AcpEvent]);
     const [, , , result] = callOf(read);
-    broken([start!, args!, end!, { ...result!, content: [{ type: "document", source: { type: "url", value: "http://agui.test/agui/3/1/entry?target=log%3A%2F%2F%2F1%2F1%2F4%2FREAD" } }] } as unknown as AguiEvent]);
-    broken([start!, args!, end!, { ...result!, content: 5 } as unknown as AguiEvent]);
+    broken([start!, args!, end!, { ...result!, content: [{ type: "document", source: { type: "url", value: "http://acp.test/acp/3/1/entry?target=log%3A%2F%2F%2F1%2F1%2F4%2FREAD" } }] } as unknown as AcpEvent]);
+    broken([start!, args!, end!, { ...result!, content: 5 } as unknown as AcpEvent]);
     broken([start!, args!, result!]);
     assert.deepEqual(drawn([
         { type: "TOOL_CALL_START", toolCallId: "int:43", toolCallName: "request_user_input" },
         { type: "TOOL_CALL_ARGS", toolCallId: "int:43", delta: "{}" },
         { type: "TOOL_CALL_END", toolCallId: "int:43" },
         { type: "TOOL_CALL_RESULT", toolCallId: "int:43", messageId: "int:43/result", content: "{\"status\":\"resolved\",\"payload\":null}" },
-    ] as AguiEvent[]), [], "a client interaction's call and its answer build no row");
+    ] as AcpEvent[]), [], "a client interaction's call and its answer build no row");
 });
 
-// plurnk-service {§agui-body-reference}: a receipt that holds a body arrives as its text part beside the body's document part.
+// plurnk-service {§acp-body-reference}: a receipt that holds a body arrives as its text part beside the body's document part.
 test("[§cli-row-sources] a receipt whose body travels by reference draws its row from the receipt's text part", () => {
     const [start, args, end, result] = callOf(read);
     const [row] = drawn([start!, args!, end!, { ...result!, content: [
         { type: "text", text: JSON.stringify(read.rx) },
-        { type: "document", source: { type: "url", value: "http://agui.test/agui/3/7/entry?target=log%3A%2F%2F%2F2%2F3%2F1%2FREAD", mimeType: "text/markdown" } },
-    ] } as unknown as AguiEvent]);
+        { type: "document", source: { type: "url", value: "http://acp.test/acp/3/7/entry?target=log%3A%2F%2F%2F2%2F3%2F1%2FREAD", mimeType: "text/markdown" } },
+    ] } as unknown as AcpEvent]);
     assert.deepEqual([row?.op, row?.rx], ["READ", read.rx], "the receipt draws the row; its body is not needed to draw it");
 });
 
-// plurnk-service {§agui-proposal-resolve}: the gated call awaits its decision, then settles with a receipt or opening an obligation.
+// plurnk-service {§acp-proposal-resolve}: the gated call awaits its decision, then settles with a receipt or opening an obligation.
 test("[§cli-row-sources] a gated call awaiting its decision is no broken wire and draws nothing; its settlement draws it once, with its statement", () => {
     const gated = { ...read, state: "proposed", status_rx: 202, rx: { status: 202 } };
     const settlements = [
@@ -111,7 +111,7 @@ test("[§cli-row-sources] a gated call awaiting its decision is no broken wire a
             assert.deepEqual(snapshotRows(messagesOf(gated), assembler), [], "a snapshot holds the pending call without a row");
             return assembler;
         })()], ["held live, then repeated by a window sent again", (() => {
-            // plurnk-service {§agui-history-advance}: the Run's stream built the call; a fresh window repeats its parts.
+            // plurnk-service {§acp-history-advance}: the Run's stream built the call; a fresh window repeats its parts.
             const assembler = new RowAssembler();
             assert.deepEqual(drawn(callOf(gated), assembler), []);
             assert.deepEqual(snapshotRows(messagesOf(gated), assembler), [], "the repeated pending call draws no row");
@@ -156,16 +156,16 @@ test("[§cli-row-sources] a whole row draws as its parts do: the address it reco
 test("[§cli-worker-history] a snapshot rebuilds every row its live parts built, in log order, a subagent's in its own worker's; reasoning builds none", () => {
     const exec = { id: 5, op: "sh", sequence: 1, attrs: { stream: "sh:///ab3d5678" }, tx: { runtime: "sh", body: "ls" }, rx: { status: 200, outcome: "started" } };
     const look = { id: 6, op: "READ", sequence: 2, target: "notes.md", tx: { target: { kind: "local", raw: "notes.md" } }, rx: { status: 200 } };
-    const reply = { id: 7, op: "SEND", sequence: 3, tx: { aside: "the answer", body: { raw: "Done." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } };
+    const reply = { id: 7, op: "SEND", sequence: 3, tx: { aside: "the answer", body: { raw: "Done." } }, rx: { status: 200, answers: ["acp://anonymous/threads/t/messages/m1"] } };
     const concluded = { id: 8, op: "READ", origin: "_plurnk", source: "sh:///ab3d5678", sequence: 4, target: "sh:///ab3d5678", invocation: "log:///1/1/1/sh", rx: { status: 200, content: "a.ts" } };
     const arrival = { id: 9, op: "SEND", origin: "_plurnk", source: "worker://helper", sequence: 5, attrs: { kind: "message" }, tx: { body: { raw: "Thanks." } } };
     const again = { ...arrival, id: 10, sequence: 6, tx: { body: { raw: "One more thing." } } };
     const live = drawn([exec, look, reply, concluded, arrival, again].flatMap((row) => partsOf(row)));
     assert.deepEqual(live.map(({ id }) => id), [5, 6, 7, 8, 9, 10], "every part kind builds its row; two messages from one source are two rows");
-    // plurnk-service `{§agui-snapshot}`: a discharge follows the call it answers, ahead of the rows between them.
+    // plurnk-service `{§acp-snapshot}`: a discharge follows the call it answers, ahead of the rows between them.
     const messages = [exec, concluded, look, reply, arrival, again].flatMap((row) => messagesOf(row));
     assert.deepEqual(snapshotRows(messages), live, "the snapshot draws what the live stream drew, in log order");
-    // plurnk-service `{§agui-subagents}`: a subagent's messages are its own worker's, attributed by its run.
+    // plurnk-service `{§acp-subagents}`: a subagent's messages are its own worker's, attributed by its run.
     const child = { ...look, id: 11, sequence: 7, worker_id: 4 };
     const subagent = messagesOf(child).map((message) => ({ ...message, subagentRunId: "ops://helper/1" }));
     const reasoning = { id: "1/1/8/reasoning", role: "reasoning", content: "thinking" };

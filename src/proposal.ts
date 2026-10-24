@@ -1,6 +1,6 @@
-// Proposal review — presents a client-owned proposal (an AG-UI interrupt carrying the daemon's
+// Proposal review — presents a client-owned proposal (an ACP interrupt carrying the daemon's
 // proposal projection) with an accept/edit/reject/cancel choice and returns the resolution
-// the caller sends back as a standard AG-UI resume (proposalResume). Shared
+// the caller sends back as a standard ACP resume (proposalResume). Shared
 // between CLI (one-shot) and TUI modes; mode-specific terminal handoff lives in
 // the caller.
 //
@@ -14,7 +14,7 @@ import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProposalResolution } from "@plurnk/plurnk-contracts";
-import type { ResumeEntry } from "@ag-ui/core";
+import type { ResumeEntry } from "./acp.ts";
 import { clientTransportProposalInvalid, ProblemError } from "./diagnostics.ts";
 import { objectOf } from "./render.ts";
 
@@ -35,7 +35,7 @@ export interface ProposalParams {
 
 export type Resolution = ProposalResolution;
 
-// plurnk-service `{§agui-proposal-resolve}`: a proposal is an interrupt carrying the daemon's projection as
+// plurnk-service `{§acp-proposal-resolve}`: a proposal is an interrupt carrying the daemon's projection as
 // metadata.plurnk.proposal, whether or not it names the operation's call; any other interrupt carries none.
 export const proposalOf = (interrupt: { readonly id: string; readonly metadata?: unknown }): ProposalParams | null => {
     const plurnk = objectOf(objectOf(interrupt.metadata)?.plurnk);
@@ -180,7 +180,7 @@ export const keyToResolution = async (key: string, params: ProposalParams): Prom
 // Interactively review a proposal (CLI mode — blocking, owns stdin). Writes the
 // diff + menu to stderr, reads one keypress, returns the resolution. The TUI
 // uses the non-blocking renderProposalMenu + keyToResolution instead.
-// plurnk-service {§agui-held-interrupts}: null when `signal` withdraws the menu before a key, its gate settled elsewhere.
+// plurnk-service {§acp-held-interrupts}: null when `signal` withdraws the menu before a key, its gate settled elsewhere.
 export const reviewProposal = async (params: ProposalParams, signal?: AbortSignal, boundWorker?: string): Promise<Resolution | null> => {
     process.stderr.write(withColorOutput(process.stderr, () => renderProposalMenu(params, boundWorker)));
     const pressed = await readSingleKey(signal);
@@ -194,7 +194,7 @@ export const reviewProposal = async (params: ProposalParams, signal?: AbortSigna
     return (await keyToResolution(key, params)) ?? { decision: "cancel", outcome: "unknown_key" };
 };
 
-// plurnk-service {§agui-held-interrupts}: a resume refused because its gate no longer waits, settled by another client or
+// plurnk-service {§acp-held-interrupts}: a resume refused because its gate no longer waits, settled by another client or
 // the daemon.
 export const isUnpending = (problem: { readonly status: number; readonly type: string }): boolean =>
     problem.status === 409 && /\/(?:interrupt|proposal|interaction)-not-pending$/u.test(problem.type);

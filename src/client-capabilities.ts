@@ -1,8 +1,8 @@
-import type { RunAgentInput } from "@ag-ui/core";
+import type { RunAgentInput } from "./acp.ts";
 
 // {§cli-worker-ownership} The client's capability set, declared on every Run: the client tools it
-// implements, and whether a person attends it. Review is every AG-UI owner's (plurnk-service
-// `{§agui-worker-owner}`) and always has a resolver here (a person, --yolo, or fail-closed headless
+// implements, and whether a person attends it. Review is every ACP owner's (plurnk-service
+// `{§acp-worker-owner}`) and always has a resolver here (a person, --yolo, or fail-closed headless
 // review); clarification needs a person and a client that presents questions ({§cli-question-forms}).
 export type ClientCapabilities = { readonly tools: RunAgentInput["tools"]; readonly interactive: boolean };
 

@@ -22,8 +22,8 @@ import { extractOpenPaths } from "./openpaths.ts";
 import { pathPartial, completeAddressPath, dslOpPartial, completeOps, dslStatement } from "./completion.ts";
 import { admitWorkerEnv, commandEnv } from "./env.ts";
 import { attention, bell, concluded } from "./attention.ts";
-import type { WorkerBinding } from "./agui.ts";
-// The verb wire: a structural caller (AG-UI+ actions underneath).
+import { acpDiscovery, type WorkerBinding } from "./acp.ts";
+// The verb wire: a structural caller (ACP+ actions underneath).
 export interface VerbCaller { call(method: string, params?: object): Promise<unknown> }
 import { renderReasoning, renderSummary, isOwnArrival, isResponseMessage, isEntryMaterialization, isEmission, FanoutCollapse, renderPendingRow, operationIdentity } from "./render.ts";
 import { renderDescendantBlock, renderLogEntry, renderOutsideText, renderSubmittedInput } from "./render-message.ts";
@@ -34,7 +34,7 @@ import type { ReasoningUpdate } from "./reasoning-events.ts";
 import type { LogEntryWire } from "./render.ts";
 import { keyToResolution, editInEditor } from "./proposal.ts";
 import Review from "./Review.ts";
-import { AguiTransport, type ObservationHandle, type Transport } from "./transport.ts";
+import { AcpTransport, type ObservationHandle, type Transport } from "./transport.ts";
 import { ProblemError, isAbsentWorker, renderDiagnostic, report, clientSubcommandUnknownVerb, clientHistoryLost, clientMessageUnread, clientModelUnselected, NO_MODEL_HINT } from "./diagnostics.ts";
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineOutput, openLaunches, renderInline } from "./stream.ts";
@@ -782,7 +782,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     let aliasCache: string[] = [];
     const providerModelCache = new Map<string, string[]>();
     let activeAlias: string | undefined;
-    // plurnk-service {§agui-provider-routes} — the route a worker seeded from the active alias gets: what a worker no act
+    // plurnk-service {§acp-provider-routes} — the route a worker seeded from the active alias gets: what a worker no act
     // has created yet will read back.
     let defaultRoute: ModelRoute | null = null;
     // Alias list for completion + the header's active default. Both terminal gauges
@@ -920,7 +920,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
     void refreshTopology().catch((cause: unknown) => { printAlert(renderTuiFailure(cause)); });
     const repromptPreserving = reprompt;
     const getActions = async (): Promise<ReadonlySet<string>> =>
-        new Set(Object.keys(Validator.assertAguiDiscovery(await transport.rpc("discover")).actions));
+        new Set(Object.keys(acpDiscovery(await transport.rpc("discover")).actions));
     surface.setAutocompleteProvider(makeAutocompleteProvider({
             getActions,
             getAliases: () => aliasCache,
@@ -1420,7 +1420,7 @@ export const runTui = async (transport: Transport, workspace: WorkspaceResult, o
             }
         } catch (cause) {
             retireReasoning();
-            // plurnk-service {§agui-action-binding}: a worker no message has created yet has nothing to observe:
+            // plurnk-service {§acp-action-binding}: a worker no message has created yet has nothing to observe:
             // the first message creates it, and the session observes it from then on.
             if (!shuttingDown && !(observing && isAbsentWorker(cause))) {
                 lifecycle = "failed";

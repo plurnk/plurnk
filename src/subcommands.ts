@@ -19,7 +19,7 @@ import {
     clientSubcommandEntryNotFound,
 } from "./diagnostics.ts";
 
-// The minimal action surface a subcommand needs; the AG-UI action caller satisfies it.
+// The minimal action surface a subcommand needs; the ACP action caller satisfies it.
 export interface Caller { call(method: string, params?: object): Promise<unknown> }
 
 // ─── Shared rendering helpers ─────────────────────────────────────────

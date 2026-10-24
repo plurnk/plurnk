@@ -15,7 +15,7 @@ const OWNED = /^PLURNK_CLIENT_[A-Z0-9_]+$/u;
 // Keys the client names and does not own. The daemon's address is shared with it, so the package
 // both depend on declares it and the client folds that panel beneath its own: a shared key has a
 // shared owner, and nobody holds anybody else's default.
-const SHARED = ["PLURNK_HOST", "PLURNK_PORT", "PLURNK_AGUI_URL"];
+const SHARED = ["PLURNK_HOST", "PLURNK_PORT", "PLURNK_ACP_URL"];
 const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     // Joins SHARED when the contracts release that declares it on the shared panel is the one installed here.

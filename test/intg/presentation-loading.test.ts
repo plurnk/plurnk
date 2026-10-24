@@ -43,7 +43,7 @@ const trace = async (entry: string, mode = "import", args: string[] = [], stdin 
 
 const rich = (urls: string[]) => urls.filter((url) => /node_modules\/(?:@earendil-works\/pi-tui|beautiful-mermaid|elkjs|marked)\//u.test(url));
 
-for (const entry of ["dispatcher", "cli", "agui_cli", "subcommands", "render"]) {
+for (const entry of ["dispatcher", "cli", "acp_cli", "subcommands", "render"]) {
     test(`[§cli-presentation-loading] built ${entry} has no graphical import graph`, async () => {
         const result = await trace(entry);
         assert.equal(result.code, 0, result.stderr);

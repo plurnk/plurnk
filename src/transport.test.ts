@@ -1,4 +1,4 @@
-// Unit tests for the transport seam: AguiTransport against a mock AG-UI endpoint
+// Unit tests for the transport seam: AcpTransport against a mock ACP endpoint
 // (un-projection + done from the Run's end). No live daemon.
 
 import { servicePath } from "../test/service-checkout.ts";
@@ -9,13 +9,13 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AguiTransport, type RunHandlers } from "./transport.ts";
+import { AcpTransport, type RunHandlers } from "./transport.ts";
 import { ProblemError } from "./diagnostics.ts";
 
-import { runViaAgui } from "./agui.ts";
+import { runViaAcp } from "./acp.ts";
 import { wholeRow } from "./rows.ts";
 import type { LogEntryWire } from "./render.ts";
-import { ambientOf, messagesOf, partsOf, settlementOf } from "../test/agui-parts.ts";
+import { ambientOf, messagesOf, partsOf, settlementOf } from "../test/acp-parts.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
 
 interface ConformanceKit {
@@ -40,10 +40,10 @@ interface ConformanceKit {
 }
 
 const loadConformanceKit = async (): Promise<ConformanceKit> => {
-    const sibling = servicePath("plurnk-contracts/conformance/agui-v1.json");
+    const sibling = servicePath("plurnk-contracts/conformance/acp-v2.json");
     const path = existsSync(sibling)
         ? sibling
-        : fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/conformance/agui-v1.json"));
+        : fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/conformance/acp-v2.json"));
     return JSON.parse(await readFile(path, "utf8")) as ConformanceKit;
 };
 
@@ -65,27 +65,27 @@ const collectingHandlers = () => {
     return { h, seen };
 };
 
-// ── AguiTransport ──────────────────────────────────────────────────
+// ── AcpTransport ──────────────────────────────────────────────────
 
 // A row as the daemon records it, whole (log.read answers these), and the parts it builds live
-// (plurnk-service `{§agui-projection}`).
+// (plurnk-service `{§acp-projection}`).
 type WireRow = Record<string, unknown> & { id: number; op: string };
 const wire = (over: WireRow): WireRow => ({
     worker_id: 1, loop_seq: 1, turn_seq: 1, sequence: over.id, origin: "model", source: null, signal: null,
     scheme: null, hostname: null, pathname: null, fragment: null, lineMarker: null, tx: null, rx: { status: 200 }, status_rx: 200, attrs: {}, ...over,
 });
 const live = (row: WireRow): Array<Record<string, unknown>> => partsOf(wholeRow(row)!) as unknown as Array<Record<string, unknown>>;
-// The snapshot a sync Run sends for those rows: the same parts, as messages (plurnk-service `{§agui-snapshot}`).
+// The snapshot a sync Run sends for those rows: the same parts, as messages (plurnk-service `{§acp-snapshot}`).
 const snapshotOf = (...rows: WireRow[]): Record<string, unknown> => ({ type: "MESSAGES_SNAPSHOT", messages: rows.flatMap((row) => messagesOf(wholeRow(row)!)) });
 type RunInput = { threadId: string; messages: unknown[]; resume?: unknown; forwardedProps: { plurnk: { workspace?: string; action?: { kind: string } } } };
-// plurnk-service `{§agui-run-input}`: a Run that carries no new message, action or resume observes.
+// plurnk-service `{§acp-run-input}`: a Run that carries no new message, action or resume observes.
 const observes = (input: RunInput): boolean => input.messages.length === 0 && input.forwardedProps.plurnk.action === undefined && input.resume === undefined;
 // The rows a handler observed, by durable identity and operation.
 const drawn = (entries: readonly unknown[]): string[] => (entries as LogEntryWire[]).map(({ id, op }) => `${id} ${op}`);
-// plurnk-service `{§agui-proposal-resolve}`: Core's projection of a proposal, which its interrupt carries.
+// plurnk-service `{§acp-proposal-resolve}`: Core's projection of a proposal, which its interrupt carries.
 const projection = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
     logEntryId: 42, workerId: 1, worker: "th", loopId: 3, turnId: 5, coordinate: "1/1/42", op: "EDIT",
-    target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {}, owner: "agui://anonymous/threads/th",
+    target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {}, owner: "acp://anonymous/threads/th",
     disposition: { decision: "review" }, ...over,
 });
 // A gate: the operation's own call awaiting its decision, unanswered, then the interrupt naming it.
@@ -110,7 +110,7 @@ const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse, bod
     const port = (server.address() as { port: number }).port;
     return { url: `http://127.0.0.1:${port}`, captured, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
 };
-// plurnk-service {§agui-held-interrupts}: the interrupts a request names its client as holding, when it names any.
+// plurnk-service {§acp-held-interrupts}: the interrupts a request names its client as holding, when it names any.
 const heldBy = (body: unknown): unknown => (body as { forwardedProps?: { plurnk?: { interrupts?: unknown } } } | null)?.forwardedProps?.plurnk?.interrupts;
 const resumeOf = (body: unknown): unknown => (body as { resume?: unknown } | null)?.resume;
 // A held connection whose gate nothing settles: it stays open, bringing nothing new, until its client closes it.
@@ -128,7 +128,7 @@ const frame = (event: Record<string, unknown>): string => {
     return `data: ${JSON.stringify(lifecycle)}\n\n`;
 };
 
-test("{§cli-agui-conformance}: the official AG-UI transport consumes every shared SSE specimen", async (t) => {
+test("{§cli-acp-conformance}: the official ACP transport consumes every shared SSE specimen", async (t) => {
     const kit = await loadConformanceKit();
     assert.equal(kit.schemaVersion, 1);
     for (const specimen of kit.transport) {
@@ -147,8 +147,8 @@ test("{§cli-agui-conformance}: the official AG-UI transport consumes every shar
             try {
                 const events: unknown[] = [];
                 const consume = async (): Promise<void> => {
-                    for await (const event of runViaAgui(
-                        { aguiUrl: mock.url },
+                    for await (const event of runViaAcp(
+                        { acpUrl: mock.url },
                         { threadId: "fixture", messages: [] },
                     )) events.push(event);
                 };
@@ -165,7 +165,7 @@ test("{§cli-agui-conformance}: the official AG-UI transport consumes every shar
     }
 });
 
-test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle specimen", async (t) => {
+test("{§cli-acp-conformance}: AcpTransport consumes every shared lifecycle specimen", async (t) => {
     const kit = await loadConformanceKit();
     const terminalContinuation = kit.lifecycles
         .find(({ name }) => name === "ordinary-run")!
@@ -182,7 +182,7 @@ test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle sp
                 res.end();
             });
             try {
-                const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
+                const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
                 const { h, seen } = collectingHandlers();
                 transport.subscribe({
                     ...h,
@@ -241,7 +241,7 @@ test("{§cli-agui-conformance}: AguiTransport consumes every shared lifecycle sp
     }
 });
 
-test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each STATE_DELTA", async () => {
+test("{§cli-acp-conformance}: the status gauge is the snapshot patched by each STATE_DELTA", async () => {
     const kit = await loadConformanceKit();
     const ordinary = kit.lifecycles.find(({ name }) => name === "ordinary-run")!;
     const mock = await bootMock((_req, res) => {
@@ -250,7 +250,7 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         const result = await transport.run("fixture", {}).done;
@@ -267,7 +267,7 @@ test("{§cli-agui-conformance}: the status gauge is the snapshot patched by each
     }
 });
 
-test("{§cli-agui-conformance}: a Run that binds no worker carries its workspace and reports no gauge", async () => {
+test("{§cli-acp-conformance}: a Run that binds no worker carries its workspace and reports no gauge", async () => {
     const specimen = (await loadConformanceKit()).lifecycles.find(({ name }) => name === "action-problem")!;
     assert.ok(specimen.events.some((event) => event.type === "STATE_SNAPSHOT"), "the specimen's Run binds a workspace");
     const mock = await bootMock((_req, res) => {
@@ -276,7 +276,7 @@ test("{§cli-agui-conformance}: a Run that binds no worker carries its workspace
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         await assert.rejects(() => transport.rpc(specimen.expect.action!.kind),
@@ -287,7 +287,7 @@ test("{§cli-agui-conformance}: a Run that binds no worker carries its workspace
     }
 });
 
-test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state-invalid Problem", async () => {
+test("{§cli-acp-conformance}: a STATE_DELTA before any snapshot is a 502 state-invalid Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED", threadId: "fixture", runId: "r1" }));
@@ -295,7 +295,7 @@ test("{§cli-agui-conformance}: a STATE_DELTA before any snapshot is a 502 state
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "fixture" });
         transport.subscribe(collectingHandlers().h);
         await assert.rejects(
             () => transport.run("fixture", {}).done,
@@ -325,7 +325,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
         response.write(frame(ownSnapshot));
         response.end(frame({ type: "RUN_FINISHED", result: { kind: "providers.list", ok: true, result: { aliases: [] } } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "thread" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "thread" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe({ ...h, onStatus: (status) => { seen.status.push(status); ready.resolve(); } });
@@ -344,7 +344,7 @@ test("{§cli-active-command-admission}: an action cannot replace or lend state t
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon shapes; done resolves from the Run's end", async () => {
+test("[§cli-conformance] AcpTransport: run() un-projects plurnk.* to daemon shapes; done resolves from the Run's end", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TEXT_MESSAGE_CONTENT", messageId: "generic", delta: "generic-ignored" }));
@@ -362,7 +362,7 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, { settings: { questions: true } });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" }, { settings: { questions: true } });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const t = await bt.run("largest planet?", {}).done;
@@ -388,7 +388,7 @@ test("[§cli-conformance] AguiTransport: run() un-projects plurnk.* to daemon sh
     } finally { await mock.close(); }
 });
 
-test("{plurnk#108} AguiTransport: a session that observes its delegation asks for descendants on every run and learns each one's worker", async () => {
+test("{plurnk#108} AcpTransport: a session that observes its delegation asks for descendants on every run and learns each one's worker", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
@@ -411,7 +411,7 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, { descendants: true });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" }, { descendants: true });
         const { h, seen } = collectingHandlers();
         const introduced: unknown[] = [];
         bt.subscribe({ ...h, onDescendant: (descendant) => introduced.push(descendant) });
@@ -424,7 +424,7 @@ test("{plurnk#108} AguiTransport: a session that observes its delegation asks fo
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: the Run error's Problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
+test("AcpTransport: the Run error's Problem supplies the exact terminal status instead of parsing RUN_ERROR.code", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/engine/rails/max-turns",
         title: "Max turns",
@@ -439,7 +439,7 @@ test("AguiTransport: the Run error's Problem supplies the exact terminal status 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -448,14 +448,14 @@ test("AguiTransport: the Run error's Problem supplies the exact terminal status 
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: RUN_ERROR without the exact Problem returns a client contract Problem", async () => {
+test("AcpTransport: RUN_ERROR without the exact Problem returns a client contract Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_ERROR", message: "loop terminated 429", code: "429" }));
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -464,7 +464,7 @@ test("AguiTransport: RUN_ERROR without the exact Problem returns a client contra
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: the terminal record's result is the ordinary terminal truth", async () => {
+test("AcpTransport: the terminal record's result is the ordinary terminal truth", async () => {
     const problem = {
         type: "https://problems.plurnk.xyz/lifecycle/cancel/loop-cancelled",
         title: "Loop cancelled",
@@ -484,7 +484,7 @@ test("AguiTransport: the terminal record's result is the ordinary terminal truth
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("go", {}).done;
@@ -494,9 +494,9 @@ test("AguiTransport: the terminal record's result is the ordinary terminal truth
     } finally { await mock.close(); }
 });
 
-test("AguiTransport.rpc: an action failure throws its exact Problem", async () => {
+test("AcpTransport.rpc: an action failure throws its exact Problem", async () => {
     const problem = {
-        type: "https://problems.plurnk.xyz/agui/action/unknown-action",
+        type: "https://problems.plurnk.xyz/acp/action/unknown-action",
         title: "Unknown action",
         status: 404,
         detail: "Unknown action 'missing'.",
@@ -508,7 +508,7 @@ test("AguiTransport.rpc: an action failure throws its exact Problem", async () =
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         await assert.rejects(
             () => bt.rpc("missing"),
             (error: unknown) => error instanceof ProblemError && error.problem.type === problem.type,
@@ -516,14 +516,14 @@ test("AguiTransport.rpc: an action failure throws its exact Problem", async () =
     } finally { await mock.close(); }
 });
 
-test("AguiTransport.rpc: an action stream without a result fails explicitly", async () => {
+test("AcpTransport.rpc: an action stream without a result fails explicitly", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_FINISHED" }));
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         await assert.rejects(
             () => bt.rpc("op.exec", { command: "printf done" }),
             (error: unknown) => error instanceof ProblemError
@@ -538,7 +538,7 @@ test("[§cli-workspaces-and-workers] a rename leaves the transport identity unch
         res.end(frame({ type: "RUN_FINISHED", result: { kind: "worker.env.list", ok: true, result: {} } }));
     });
     try {
-        const split = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "second" });
+        const split = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "second" });
         await split.rpc("workspace.rename", { name: "new label/#second" });
         await split.rpc("worker.env.list");
         const bindings = mock.captured.map(({ body }) => {
@@ -550,7 +550,7 @@ test("[§cli-workspaces-and-workers] a rename leaves the transport identity unch
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: inject + rpc ride §3 action runs", async () => {
+test("AcpTransport: inject + rpc ride §3 action runs", async () => {
     const mock = await bootMock((req, res) => {
         // An action run answers on its own SSE: result custom + RUN_FINISHED.
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -558,7 +558,7 @@ test("AguiTransport: inject + rpc ride §3 action runs", async () => {
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         assert.deepEqual(await bt.inject("steer mid-run"), { status: 100, action: "injected_next_turn", loopId: 7 });
         const providers = await bt.rpc<{ action: string }>("providers.list");
         assert.equal(providers.action, "injected_next_turn", "the action result returns verbatim");
@@ -593,7 +593,7 @@ test("{§cli-active-command-admission}: sync restores the admission gap without 
         response.write(frame(snapshotOf(early, late)));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "alice" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "alice" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -632,7 +632,7 @@ test("{§cli-active-command-admission}: a client operation's row hides nothing t
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         }
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -649,7 +649,7 @@ test("{§cli-active-command-admission}: injection refuses missing admission iden
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" }, result: { kind: "loop.inject", ok: true, result: { status: 100 } } }));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         await assert.rejects(transport.inject("next"), (error: unknown) =>
             error instanceof ProblemError && error.problem.kind === "result-invalid"
                 && String(error.problem.reason).includes("admission disposition"));
@@ -668,7 +668,7 @@ for (const [snapshot, events] of [
             response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
         });
         try {
-            const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+            const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
             const { h, seen } = collectingHandlers();
             transport.subscribe(h);
             await assert.rejects(transport.observe().done, (error: unknown) => error instanceof ProblemError && error.problem.kind === "result-invalid");
@@ -684,7 +684,7 @@ test("{§cli-summary-line-per-loop}: a dead sync stream is diagnosed as its orig
         response.end(frame({ type: "RUN_STARTED" }));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         const observation = transport.observe();
@@ -696,11 +696,11 @@ test("{§cli-summary-line-per-loop}: a dead sync stream is diagnosed as its orig
     } finally { await mock.close(); }
 });
 
-// plurnk-service {§agui-message-acceptance}: a sync Run's snapshot carries this thread's accepted, unread messages after every row.
+// plurnk-service {§acp-message-acceptance}: a sync Run's snapshot carries this thread's accepted, unread messages after every row.
 test("[§cli-status-inbox]: the history carries the words of this thread's accepted, unread messages by their address, and draws none", async () => {
     const older = wire({ id: 8, op: "READ", tx: { body: "old output" } });
     const pending = { id: "m1", role: "user", content: "Also check the tests.",
-        metadata: { plurnk: { message: "agui://anonymous/threads/th/messages/m1", loop: 3, lifecycle: "cancelled", source: "agui://anonymous/threads/th/messages/m1", published: false } } };
+        metadata: { plurnk: { message: "acp://anonymous/threads/th/messages/m1", loop: 3, lifecycle: "cancelled", source: "acp://anonymous/threads/th/messages/m1", published: false } } };
     const mock = await bootMock((_request, response) => {
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(frame({ type: "RUN_STARTED" }));
@@ -708,18 +708,18 @@ test("[§cli-status-inbox]: the history carries the words of this thread's accep
         response.write(frame({ type: "MESSAGES_SNAPSHOT", messages: [...snapshot.messages, pending] }));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
     try {
         const { h } = collectingHandlers();
         const histories: Array<{ entries: unknown[]; accepted: ReadonlyMap<string, string> }> = [];
         transport.subscribe({ ...h, onHistory: (history) => { histories.push(history); } });
         assert.equal(await transport.observe({ historyLimit: 10 }).done, null);
         assert.deepEqual(histories.map(({ entries }) => drawn(entries)), [["8 READ"]], "an accepted message is no row");
-        assert.deepEqual([...histories[0]!.accepted], [["agui://anonymous/threads/th/messages/m1", "Also check the tests."]]);
+        assert.deepEqual([...histories[0]!.accepted], [["acp://anonymous/threads/th/messages/m1", "Also check the tests."]]);
     } finally { transport.shutdown(); await mock.close(); }
 });
 
-// plurnk-service {§agui-history-advance}: past the ceiling, the daemon sends the Run a fresh window at a turn boundary and
+// plurnk-service {§acp-history-advance}: past the ceiling, the daemon sends the Run a fresh window at a turn boundary and
 // skips the live events of the rows it holds.
 test("{§cli-worker-history}: a window the daemon sends again during a Run draws the rows its live stream skipped, and nothing drawn twice", async () => {
     const older = wire({ id: 8, op: "READ", tx: { body: "old output" } });
@@ -735,7 +735,7 @@ test("{§cli-worker-history}: a window the daemon sends again during a Run draws
         for (const event of live(after)) response.write(frame(event));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
     try {
         const { h, seen } = collectingHandlers();
         const histories: unknown[][] = [];
@@ -763,7 +763,7 @@ for (const historyLimit of [0, 1, 2]) {
                 response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
             });
         });
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         try {
             const { h, seen } = collectingHandlers();
             const histories: Array<{ entries: unknown[]; attachment: boolean }> = [];
@@ -788,7 +788,7 @@ test("{§cli-worker-history}: successful sync without a message snapshot is a pr
         response.write(frame({ type: "RUN_STARTED" }));
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
     try {
         await assert.rejects(transport.observe({ historyLimit: 10 }).done,
             (cause: unknown) => cause instanceof ProblemError && cause.problem.kind === "result-invalid"
@@ -817,7 +817,7 @@ test("{§cli-worker-history}: a recreated worker resets replay identities", asyn
         }
         response.end(frame({ type: "RUN_FINISHED", outcome: { type: "success" } }));
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "thread" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "thread" });
     try {
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
@@ -837,7 +837,7 @@ test("[§cli-conformance] run preserves explicitly requested file paths", async 
     });
     try {
         const paths = ["src/main.ts", "docs/use.md"];
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "workspace" });
         await transport.run("inspect the referenced files", { openPaths: paths }).done;
         const input = mock.captured[0].body as { forwardedProps: { plurnk: { control: boolean; openPaths: unknown; reasoning: unknown } } };
         assert.deepEqual(input.forwardedProps.plurnk.openPaths, paths);
@@ -846,10 +846,10 @@ test("[§cli-conformance] run preserves explicitly requested file paths", async 
     } finally { await mock.close(); }
 });
 
-test("[§cli-cancellation] AguiTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
+test("[§cli-cancellation] AcpTransport: cancel() aborts the SSE and done resolves (499), not a throw", async () => {
     const mock = await bootMock((_req, res) => { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(frame({ type: "RUN_STARTED" })); });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         bt.subscribe(collectingHandlers().h);
         const handle = bt.run("go", {});
         await new Promise((r) => setTimeout(r, 50));
@@ -867,7 +867,7 @@ test("{§cli-daemon-autostart}: disposing the TUI transport releases its open ob
         res.once("close", disconnected.resolve);
         connected.resolve();
     });
-    const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+    const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
     try {
         const observation = transport.observe();
         await connected.promise;
@@ -891,7 +891,7 @@ test("{§cli-workspaces-and-workers}: workspace acquisition precedes binding, pr
         } else res.end(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, result: { status: 200 } } } } }));
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "old" }, { settings: { client: "plurnk-tui" } });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "old" }, { settings: { client: "plurnk-tui" } });
         const s = await bt.useWorkspace(undefined, { projectRoot: "/chosen", worker: "user" });
         assert.deepEqual(s, { id: 81, name: "~/chosen" });
         assert.equal(bt.threadId(), "81#user");
@@ -918,7 +918,7 @@ test("{§cli-environment}: a switch admits its target before rebinding, so a ref
             result: action?.kind === "workspace.create" ? { id: 81, name: action.name ?? "chosen" } : { workers: [] } } }));
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "old" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "old" });
         await bt.rpcAt({ workspaceId: 42, worker: "other" }, "workspace.workers");
         assert.equal((mock.captured.at(-1)!.body as RunInput).threadId, "42#other", "the action speaks for the thread it names");
         assert.equal(bt.threadId(), "42#old", "and the session's binding is unchanged");
@@ -932,7 +932,7 @@ test("{§cli-environment}: a switch admits its target before rebinding, so a ref
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: terminate-resume — a gate pauses done on the operation's call; resolve() resumes and its settlement draws it once", async () => {
+test("AcpTransport: terminate-resume — a gate pauses done on the operation's call; resolve() resumes and its settlement draws it once", async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     let call = 0;
     let closedHolds = 0;
@@ -948,7 +948,7 @@ test("AguiTransport: terminate-resume — a gate pauses done on the operation's 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("edit it", {});
@@ -960,7 +960,7 @@ test("AguiTransport: terminate-resume — a gate pauses done on the operation's 
         const t = await handle.done;
         assert.equal(t.finalStatus, 200, "done spans the pause/resume chain");
         assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["proposal-presentation"]],
-            "plurnk-service {§agui-held-interrupts}: while the review was open, a connection held its interrupt");
+            "plurnk-service {§acp-held-interrupts}: while the review was open, a connection held its interrupt");
         assert.equal(closedHolds, 1, "and closed once the review was answered here");
         const resume = mock.captured.find(({ body }) => resumeOf(body) !== undefined)!.body as { resume: Array<{ interruptId: string; status: string; payload: unknown }> };
         assert.deepEqual(resume.resume, [{ interruptId: "proposal-presentation", status: "resolved", payload: { decision: "accept", body: "edited", outcome: "reviewed" } }], "the standard resume carries the decision, edited body, and resolution reason");
@@ -979,7 +979,7 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
         response.end(parts.at(-1));
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "worker" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "worker" });
         transport.subscribe({ ...collectingHandlers().h, onProposal: () => ready.resolve() });
         const run = transport.run("review", {});
         await ready.promise;
@@ -991,7 +991,7 @@ test("cancelling a model run waiting for a proposal settles it and retires its r
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: a client interaction uses interrupt guidance and resumes with the answer", async () => {
+test("AcpTransport: a client interaction uses interrupt guidance and resumes with the answer", async () => {
     let call = 0;
     const responseSchema = {
         type: "object",
@@ -1025,7 +1025,7 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("choose", {});
@@ -1037,7 +1037,7 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
             message: "Choose one repository.",
             responseSchema,
         }]);
-        await assert.rejects(bt.resolveInteraction(7, { repository: "wrong-request" }), /Interaction 7 has no pending AG-UI interrupt\./u);
+        await assert.rejects(bt.resolveInteraction(7, { repository: "wrong-request" }), /Interaction 7 has no pending ACP interrupt\./u);
         assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "a stale UI callback cannot answer the active interrupt");
         await bt.resolveInteraction(8, { repository: "plurnk-service" });
         assert.equal((await handle.done).finalStatus, 200);
@@ -1051,9 +1051,9 @@ test("AguiTransport: a client interaction uses interrupt guidance and resumes wi
 });
 
 // When the other client's answer lands: while the hold is open, or before it connects, so that its snapshot already holds
-// the settled call and its Run finishes at once (plurnk-service {§agui-held-interrupts}).
+// the settled call and its Run finishes at once (plurnk-service {§acp-held-interrupts}).
 for (const answered of ["while the hold is open", "before the hold connects"] as const) {
-    test(`plurnk-service {§agui-held-interrupts}: a review is withdrawn when another client settles its gate ${answered}, never answered here, and the run follows the work`, async () => {
+    test(`plurnk-service {§acp-held-interrupts}: a review is withdrawn when another client settles its gate ${answered}, never answered here, and the run follows the work`, async () => {
         const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
         const mock = await bootMock((_req, res, body) => {
             res.writeHead(200, { "content-type": "text/event-stream" });
@@ -1075,7 +1075,7 @@ for (const answered of ["while the hold is open", "before the hold connects"] as
             res.end();
         });
         try {
-            const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+            const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
             const { h, seen } = collectingHandlers();
             const ended: string[] = [];
             bt.subscribe({ ...h, onInterruptEnd: (id) => ended.push(id) });
@@ -1083,7 +1083,7 @@ for (const answered of ["while the hold is open", "before the hold connects"] as
             assert.equal(t.finalStatus, 200, "the run follows the work that continues to its end");
             assert.equal(seen.proposals.length, 1);
             assert.deepEqual(ended, ["proposal:42"], "the review was withdrawn");
-            await assert.rejects(bt.resolve({ logEntryId: 42, decision: "accept" }), /Proposal 42 has no pending AG-UI interrupt/u, "and cannot be answered here");
+            await assert.rejects(bt.resolve({ logEntryId: 42, decision: "accept" }), /Proposal 42 has no pending ACP interrupt/u, "and cannot be answered here");
             assert.equal(mock.captured.some(({ body }) => resumeOf(body) !== undefined), false, "this client never answered");
             assert.deepEqual(mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined), [["held-presentation"]], "the hold named its interrupt");
             assert.deepEqual(drawn(seen.entries), ["42 EDIT"], "the settled operation is drawn once");
@@ -1091,7 +1091,7 @@ for (const answered of ["while the hold is open", "before the hold connects"] as
     });
 }
 
-test("plurnk-service {§agui-held-interrupts}: a hold whose Run presents a gate, its interrupt no longer pending, withdraws the review, and the gate is reviewed where the work is followed", { timeout: 10_000 }, async () => {
+test("plurnk-service {§acp-held-interrupts}: a hold whose Run presents a gate, its interrupt no longer pending, withdraws the review, and the gate is reviewed where the work is followed", { timeout: 10_000 }, async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     const mock = await bootMock((_req, res, body) => {
         const held = heldBy(body);
@@ -1109,7 +1109,7 @@ test("plurnk-service {§agui-held-interrupts}: a hold whose Run presents a gate,
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         const ended: string[] = [];
         bt.subscribe({ ...h, onInterruptEnd: (id) => ended.push(id),
@@ -1124,7 +1124,7 @@ test("plurnk-service {§agui-held-interrupts}: a hold whose Run presents a gate,
     } finally { await mock.close(); }
 });
 
-test("plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits is shown, and the run follows the work", async () => {
+test("plurnk-service {§acp-held-interrupts}: an answer refused because its gate no longer waits is shown, and the run follows the work", async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     const problem = { type: "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending", title: "Proposal not pending", status: 409,
         detail: "Proposal 42 is not pending.", retryable: false };
@@ -1141,7 +1141,7 @@ test("plurnk-service {§agui-held-interrupts}: an answer refused because its gat
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const handle = bt.run("edit it", {});
@@ -1154,7 +1154,7 @@ test("plurnk-service {§agui-held-interrupts}: an answer refused because its gat
     } finally { await mock.close(); }
 });
 
-test("plurnk-service {§agui-held-interrupts}: a review answered before its Run ended holds nothing", async () => {
+test("plurnk-service {§acp-held-interrupts}: a review answered before its Run ended holds nothing", async () => {
     const edit = wire({ id: 42, op: "EDIT", pathname: "a.ts", tx: { target: { raw: "a.ts" }, body: "after" } });
     const mock = await bootMock((_req, res, body) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -1166,7 +1166,7 @@ test("plurnk-service {§agui-held-interrupts}: a review answered before its Run 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h } = collectingHandlers();
         // An automatic acceptance answers as the proposal is presented.
         bt.subscribe({ ...h, onProposal: (p) => { void bt.resolve({ logEntryId: p.logEntryId, decision: "accept" }); } });
@@ -1191,7 +1191,7 @@ const plurnkOf = (body: unknown): Record<string, unknown> => (body as { forwarde
 const resumedIds = (captured: ReadonlyArray<{ body: unknown }>): unknown[] => captured.flatMap(({ body }) =>
     (resumeOf(body) as Array<{ interruptId: string }> | undefined)?.map(({ interruptId }) => interruptId) ?? []);
 // A session that answers every gate as it is presented, recording each review it opens.
-const answering = (bt: AguiTransport, h: RunHandlers, reviews: string[]): RunHandlers => ({ ...h,
+const answering = (bt: AcpTransport, h: RunHandlers, reviews: string[]): RunHandlers => ({ ...h,
     onProposal: (p) => { reviews.push(`proposal:${p.logEntryId}`); void bt.resolve({ logEntryId: p.logEntryId, decision: "accept" }); },
     onInteraction: (q) => { reviews.push(`int:${q.interactionId}`); void bt.resolveInteraction(q.interactionId, { answer: "one" }); } });
 
@@ -1207,7 +1207,7 @@ for (const kind of kinds) {
                 res.end();
             });
             try {
-                const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, { descendants });
+                const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" }, { descendants });
                 const { h } = collectingHandlers();
                 bt.subscribe(answering(bt, h, []));
                 assert.equal((await bt.run("go", { maxTurns: 3, openPaths: ["a.ts"] }).done).finalStatus, 200);
@@ -1235,8 +1235,8 @@ for (const kind of kinds) {
             script: [presentation(kind, first, "p1"), presentation(kind, other, "q1"), presentation(kind, first, "p2"), [frame(settled)]],
             reviews: [first, other, first], resumes: ["p1", "q1", "p2"] },
         "is refused": { failed: 400,
-            script: [presentation(kind, first, "p1"), [frame({ type: "RUN_ERROR", code: "https://problems.plurnk.xyz/agui/interrupt/interrupt-binding-invalid",
-                message: "The resume does not match its interrupt's binding.", metadata: { plurnk: { problem: { type: "https://problems.plurnk.xyz/agui/interrupt/interrupt-binding-invalid",
+            script: [presentation(kind, first, "p1"), [frame({ type: "RUN_ERROR", code: "https://problems.plurnk.xyz/acp/interrupt/interrupt-binding-invalid",
+                message: "The resume does not match its interrupt's binding.", metadata: { plurnk: { problem: { type: "https://problems.plurnk.xyz/acp/interrupt/interrupt-binding-invalid",
                     title: "Interrupt binding invalid", status: 400, detail: "The resume does not match its interrupt's binding." } } } })],
                 [frame({ type: "RUN_STARTED" }), frame(snapshotOf()), ...presentation(kind, first, "p2")], [frame(settled)]],
             reviews: [first, first], resumes: ["p1", "p2"] },
@@ -1254,7 +1254,7 @@ for (const kind of kinds) {
                 res.end();
             });
             try {
-                const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+                const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
                 const { h } = collectingHandlers();
                 const reviews: string[] = [];
                 bt.subscribe(answering(bt, h, reviews));
@@ -1293,7 +1293,7 @@ for (const kind of kinds) {
             res.end();
         });
         try {
-            const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+            const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
             const { h, seen } = collectingHandlers();
             bt.subscribe(h);
             const holds = (): unknown[] => mock.captured.map(({ body }) => heldBy(body)).filter((held) => held !== undefined);
@@ -1313,7 +1313,7 @@ for (const kind of kinds) {
     });
 }
 
-test("AguiTransport: an interaction's call without its matching interrupt outcome returns an exact Problem", async () => {
+test("AcpTransport: an interaction's call without its matching interrupt outcome returns an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "TOOL_CALL_START", toolCallId: "int:43", toolCallName: "request_user_input" }));
@@ -1322,7 +1322,7 @@ test("AguiTransport: an interaction's call without its matching interrupt outcom
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("ask", {}).done;
@@ -1332,13 +1332,13 @@ test("AguiTransport: an interaction's call without its matching interrupt outcom
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: a proposal interrupt whose projection is malformed returns an exact Problem", async () => {
+test("AcpTransport: a proposal interrupt whose projection is malformed returns an exact Problem", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.end(frame({ type: "RUN_FINISHED", outcome: { type: "interrupt", interrupts: [{ id: "gate", reason: "tool_call", metadata: { plurnk: { proposal: { op: "EDIT" } } } }] } }));
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         bt.subscribe(h);
         const result = await bt.run("edit it", {}).done;
@@ -1348,7 +1348,7 @@ test("AguiTransport: a proposal interrupt whose projection is malformed returns 
     } finally { await mock.close(); }
 });
 
-test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously from onProposal", async () => {
+test("[§cli-yolo-plurnkyolo] AcpTransport: proposal can resolve synchronously from onProposal", async () => {
     let call = 0;
     const mock = await bootMock((_req, res) => {
         call += 1;
@@ -1362,7 +1362,7 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h } = collectingHandlers();
         bt.subscribe({
             ...h,
@@ -1376,12 +1376,12 @@ test("[§cli-yolo-plurnkyolo] AguiTransport: proposal can resolve synchronously 
     } finally { await mock.close(); }
 });
 
-test("AguiTransport: resolve without a delivered interrupt fails hard", async () => {
-    const bt = new AguiTransport({ aguiUrl: "http://127.0.0.1:1" }, { workspaceId: 42, worker: "th" });
-    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /Proposal 1 has no pending AG-UI interrupt\./);
+test("AcpTransport: resolve without a delivered interrupt fails hard", async () => {
+    const bt = new AcpTransport({ acpUrl: "http://127.0.0.1:1" }, { workspaceId: 42, worker: "th" });
+    await assert.rejects(() => bt.resolve({ logEntryId: 1, decision: "accept" }), /Proposal 1 has no pending ACP interrupt\./);
 });
 
-test("AguiTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {
+test("AcpTransport: a stream that dies without terminal truth is an ERROR, never a fabricated 200", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_STARTED" }));
@@ -1389,7 +1389,7 @@ test("AguiTransport: a stream that dies without terminal truth is an ERROR, neve
         res.end();   // no Run end, no RUN_ERROR — the stream just dies
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         bt.subscribe(collectingHandlers().h);
         const t = await bt.run("go", {}).done;
         assert.equal(t.finalStatus, 502, "silent stream death surfaces as 502, not success");
@@ -1407,7 +1407,7 @@ test("[§cli-workspaces-and-workers] rooted, headless and unspecified options be
     try {
         for (const projectRoot of ["/home/user/repo", null, undefined]) {
             mock.captured.length = 0;
-            const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" }, {
+            const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" }, {
                 settings: { capabilities: { deny: [{ runtime: "sh" }] } },
             });
             await bt.useWorkspace("selected", { projectRoot, worker: "th" });
@@ -1432,7 +1432,7 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
         res.end();
     });
     try {
-        const bt = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const bt = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         bt.subscribe(collectingHandlers().h);
         await bt.run("first", {}).done;
         await bt.run("second", {}).done;
@@ -1453,7 +1453,7 @@ test("[§cli-model-selection] model policy never rides an individual loop", asyn
 
 test("{§cli-summary-line-per-loop}: an observation the daemon ends with a Problem is diagnosed once and is no loop outcome", async () => {
     const problem = {
-        type: "https://problems.plurnk.xyz/agui/lifecycle/service-stopping",
+        type: "https://problems.plurnk.xyz/acp/lifecycle/service-stopping",
         title: "Service stopping",
         status: 503,
         detail: "The PLURNK service is shutting down.",
@@ -1467,7 +1467,7 @@ test("{§cli-summary-line-per-loop}: an observation the daemon ends with a Probl
         res.end();
     });
     try {
-        const transport = new AguiTransport({ aguiUrl: mock.url }, { workspaceId: 42, worker: "th" });
+        const transport = new AcpTransport({ acpUrl: mock.url }, { workspaceId: 42, worker: "th" });
         const { h, seen } = collectingHandlers();
         transport.subscribe(h);
         const observation = transport.observe();

@@ -32,7 +32,7 @@ const {
 } = await import("./render.ts");
 const { renderLogEntry, renderSendBody } = await import("./render-message.ts");
 import type { LogEntryWire } from "./render.ts";
-import { presentedRow } from "../test/agui-parts.ts";
+import { presentedRow } from "../test/acp-parts.ts";
 
 // Minimal entry factory — fills in plausible defaults; callers override what matters.
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => presentedRow({
@@ -44,7 +44,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => presented
     lineMarker: null,
     status_rx: 200,
     tx: null,
-    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
+    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["acp://anonymous/threads/t/messages/m1"] } : null,
     loop_seq: 1,
     turn_seq: 1,
     sequence: 1,
@@ -61,7 +61,7 @@ test("a model WAIT with a body renders as the model's message: Markdown at full 
     assert.match(plain, /12 of 30/u);
     assert.match(plain, /9 passes/u);
     assert.doesNotMatch(plain, /\*\*12 of 30\*\*/u, "the body went through the Markdown layout, not the literal preview");
-    assert.equal(spoken, renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: body }, aside: "park while the poll runs" }, rx: { answers: ["agui://anonymous/threads/t/messages/m1"] } })).replace(/^[^\n]*\n/u, spoken.split("\n")[0] + "\n"), "the body is painted exactly as a reply's body is");
+    assert.equal(spoken, renderLogEntry(entry({ op: "SEND", origin: "model", signal: 200, status_rx: 200, tx: { body: { raw: body }, aside: "park while the poll runs" }, rx: { answers: ["acp://anonymous/threads/t/messages/m1"] } })).replace(/^[^\n]*\n/u, spoken.split("\n")[0] + "\n"), "the body is painted exactly as a reply's body is");
     const silent = stripVTControlCharacters(renderLogEntry(entry({ op: "WAIT", origin: "model", signal: 202, status_rx: 202, lineMarker: { marks: [600] }, tx: { body: null, aside: "park while the poll runs" }, rx: { status: 202, attrs: { waiting: 600 } } })));
     assert.match(silent, /^⏳/u, "a bodiless WAIT is still its operation row");
 });
@@ -154,9 +154,9 @@ test("[§cli-markdown-projection] broadcast GFM uses the current screen width af
 // ─── message arrivals ────────────────────────────────────────────────
 
 test("[§cli-what-is-not-rendered] an arrival is the daemon's inbound SEND row; only the viewer's own is withheld", () => {
-    const own = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/my%20thread/messages/m-1", tx: { body: { raw: "hi" } } });
+    const own = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "acp://anonymous/threads/my%20thread/messages/m-1", tx: { body: { raw: "hi" } } });
     const peer = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "worker://reviewer", tx: { body: { raw: "done" } } });
-    const other = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "agui://anonymous/threads/elsewhere/messages/m-2", tx: { body: { raw: "hey" } } });
+    const other = entry({ op: "SEND", origin: "_plurnk", attrs: { kind: "message" }, source: "acp://anonymous/threads/elsewhere/messages/m-2", tx: { body: { raw: "hey" } } });
     assert.equal(isArrivalEntry(own), true);
     assert.equal(isArrivalEntry(peer), true);
     assert.equal(isArrivalEntry(entry({ op: "SEND", origin: "model", tx: { body: { raw: "reply" } } })), false, "the model's own SEND is not an arrival");

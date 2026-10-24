@@ -1,6 +1,6 @@
 // Packed client/service composition gate (#630). The client candidate and its
 // optional backend are installed into an empty consumer directory,
-// then exercised through the public CLI and AG-UI listener. A deterministic
+// then exercised through the public CLI and ACP listener. A deterministic
 // local OpenAI-compatible endpoint supplies grammar-valid model turns.
 import { randomBytes } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
@@ -321,7 +321,7 @@ try {
     const free = createServer();
     const sharedPort = await listen(free);
     await new Promise((accept) => free.close(accept));
-    const sharedEnv = { ...serviceEnv, PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(sharedPort), PLURNK_AGUI_URL: "" };
+    const sharedEnv = { ...serviceEnv, PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(sharedPort), PLURNK_ACP_URL: "" };
     const sharedRun = await runClient(clientBin, ["--json", "--workspace", "shared-composition", "--worker", "primary", "--project-root", "", "Confirm shared startup."], {
         cwd: install, env: sharedEnv, timeout: 30_000,
     });
@@ -352,7 +352,7 @@ try {
         "plurnk-contracts",
         "dist",
         "conformance",
-        "agui-v1.json",
+        "acp-v2.json",
     ), "utf8"));
     console.log(`packed composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${servicePackage.name}@${servicePackage.version}`);
     passed = true;

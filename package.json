@@ -1,7 +1,7 @@
 {
     "name": "@plurnk/plurnk",
     "version": "4.3.0",
-    "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive AG-UI client.",
+    "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive ACP client.",
     "type": "module",
     "license": "MIT",
     "publishConfig": {
@@ -16,7 +16,7 @@
     "files": [
         "bin/plurnk.js",
         "dist/**/*",
-        "conformance/agui-client.json",
+        "conformance/acp-client.json",
         ".env.defaults",
         "README.md",
         "man/",
@@ -58,8 +58,6 @@
         "node-pty@1.1.0": true
     },
     "dependencies": {
-        "@ag-ui/client": "^1.0.3",
-        "@ag-ui/core": "^1.0.3",
         "@earendil-works/pi-tui": "1.4.0",
         "@plurnk/plurnk-contracts": "^6.0.1",
         "beautiful-mermaid": "^1.1.3",

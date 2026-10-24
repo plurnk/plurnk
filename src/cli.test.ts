@@ -9,7 +9,7 @@ import { clientFlagInvalid } from "./diagnostics.ts";
 import type { FunctionalityFamily } from "./commands.ts";
 import type { LogEntryWire, LoopUsage } from "./render.ts";
 import RowAssembler from "./rows.ts";
-import { partsOf } from "../test/agui-parts.ts";
+import { partsOf } from "../test/acp-parts.ts";
 
 const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => {
     const row: LogEntryWire = {
@@ -25,7 +25,7 @@ const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => {
     lineMarker: null,
     status_rx: 200,
     tx: overrides.op === "SEND" ? { body: "Fixture reply." } : null,
-    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null,
+    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["acp://anonymous/threads/t/messages/m1"] } : null,
     ...overrides,
     };
     const assembler = new RowAssembler();

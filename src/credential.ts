@@ -17,13 +17,13 @@ import { readGrant, writeGrant } from "./grants.ts";
 import { receiveAuthorization } from "./oauth.ts";
 
 const OPERATOR = "operator";
-const SCOPE = "agui";
+const SCOPE = "acp";
 const SECRET_FILE = "secret";
 const CLIENT_NAME = "plurnk";
 
 /** What a target presents: one request's headers, and a way to forget a token the daemon refused. */
 export interface ClientCredential {
-    headers(aguiUrl: string, now?: number): Promise<Record<string, string>>;
+    headers(acpUrl: string, now?: number): Promise<Record<string, string>>;
     invalidate(): void;
 }
 
@@ -62,12 +62,12 @@ const document = async (url: string): Promise<Record<string, unknown> | null> =>
 
 // RFC 9728: the resource names its authorization servers; RFC 8414: the server names its endpoints.
 // Null: the daemon publishes no resource metadata and authenticates nothing.
-const discover = async (aguiUrl: string): Promise<Metadata | null> => {
-    const resource = await document(`${new URL(aguiUrl).origin}/.well-known/oauth-protected-resource`);
+const discover = async (acpUrl: string): Promise<Metadata | null> => {
+    const resource = await document(`${new URL(acpUrl).origin}/.well-known/oauth-protected-resource`);
     if (resource === null) return null;
     const servers = resource.authorization_servers;
     const issuer = Array.isArray(servers) && typeof servers[0] === "string" ? servers[0].replace(/\/$/u, "") : null;
-    if (issuer === null) throw new ProblemError(clientProblem("credential", "discovery-failed", 502, "The resource metadata names no authorization server.", { url: aguiUrl }));
+    if (issuer === null) throw new ProblemError(clientProblem("credential", "discovery-failed", 502, "The resource metadata names no authorization server.", { url: acpUrl }));
     const metadata = await document(`${issuer}/.well-known/oauth-authorization-server`);
     const endpoint = (name: string): string | null => typeof metadata?.[name] === "string" ? metadata[name] as string : null;
     const tokenEndpoint = endpoint("token_endpoint");
@@ -151,10 +151,10 @@ export default class Credential implements ClientCredential {
         return join(data !== undefined && isAbsolute(data) ? data : join(homedir(), ".local", "share"), "plurnk", SECRET_FILE);
     }
 
-    /** The headers one request to `aguiUrl` presents, acquiring an access token on first use. */
-    async headers(aguiUrl: string, now = Date.now()): Promise<Record<string, string>> {
+    /** The headers one request to `acpUrl` presents, acquiring an access token on first use. */
+    async headers(acpUrl: string, now = Date.now()): Promise<Record<string, string>> {
         if (this.#access !== null && this.#access.expiresAt > now) return { authorization: `Bearer ${this.#access.token}` };
-        this.#acquiring ??= this.#acquire(aguiUrl, now).finally(() => { this.#acquiring = null; });
+        this.#acquiring ??= this.#acquire(acpUrl, now).finally(() => { this.#acquiring = null; });
         const access = await this.#acquiring;
         return access === null ? {} : { authorization: `Bearer ${access.token}` };
     }
@@ -164,8 +164,8 @@ export default class Credential implements ClientCredential {
         this.#access = null;
     }
 
-    async #acquire(aguiUrl: string, now: number, reread = false): Promise<Access | null> {
-        if (this.#tokenEndpoint === undefined) this.#tokenEndpoint = (await discover(aguiUrl))?.tokenEndpoint ?? null;
+    async #acquire(acpUrl: string, now: number, reread = false): Promise<Access | null> {
+        if (this.#tokenEndpoint === undefined) this.#tokenEndpoint = (await discover(acpUrl))?.tokenEndpoint ?? null;
         if (this.#tokenEndpoint === null) return null;
         const answer = await tokenRequest(this.#tokenEndpoint, { grant_type: "client_credentials", client_id: OPERATOR, client_secret: this.#secret, scope: SCOPE });
         if (!answer.ok) {
@@ -174,7 +174,7 @@ export default class Credential implements ClientCredential {
                 const current = readSecret(this.#file);
                 if (current !== null && current !== this.#secret) {
                     this.#secret = current;
-                    return this.#acquire(aguiUrl, now, true);
+                    return this.#acquire(acpUrl, now, true);
                 }
             }
             throw refusedProblem("the operator's secret", answer.error, answer.description, this.#file === null
@@ -214,9 +214,9 @@ export class SignInCredential implements ClientCredential {
         this.#env = options.env ?? process.env;
     }
 
-    async headers(aguiUrl: string, now = Date.now()): Promise<Record<string, string>> {
+    async headers(acpUrl: string, now = Date.now()): Promise<Record<string, string>> {
         if (this.#access !== null && this.#access.expiresAt > now) return { authorization: `Bearer ${this.#access.token}` };
-        this.#acquiring ??= this.#acquire(aguiUrl, now).finally(() => { this.#acquiring = null; });
+        this.#acquiring ??= this.#acquire(acpUrl, now).finally(() => { this.#acquiring = null; });
         const access = await this.#acquiring;
         return access === null ? {} : { authorization: `Bearer ${access.token}` };
     }
@@ -228,18 +228,18 @@ export class SignInCredential implements ClientCredential {
     }
 
     /** Signs in through the browser now, whatever grant stands, and keeps the new one. Answers the issuer. */
-    async login(aguiUrl: string, now = Date.now()): Promise<string | null> {
-        const metadata = await discover(aguiUrl);
+    async login(acpUrl: string, now = Date.now()): Promise<string | null> {
+        const metadata = await discover(acpUrl);
         if (metadata === null) return null;
-        const origin = new URL(aguiUrl).origin;
+        const origin = new URL(acpUrl).origin;
         writeGrant(origin, null, this.#env);
         this.#access = await this.#signIn(metadata, origin, now);
         return metadata.issuer;
     }
 
     /** Revokes the kept grant at the daemon and forgets it. Answers the issuer, or null when no grant stood. */
-    async logout(aguiUrl: string): Promise<string | null> {
-        const origin = new URL(aguiUrl).origin;
+    async logout(acpUrl: string): Promise<string | null> {
+        const origin = new URL(acpUrl).origin;
         const grant = readGrant(origin, this.#env);
         if (grant === null) return null;
         if (grant.revocationEndpoint !== null) {
@@ -254,8 +254,8 @@ export class SignInCredential implements ClientCredential {
         return grant.issuer;
     }
 
-    async #acquire(aguiUrl: string, now: number): Promise<Access | null> {
-        const origin = new URL(aguiUrl).origin;
+    async #acquire(acpUrl: string, now: number): Promise<Access | null> {
+        const origin = new URL(acpUrl).origin;
         const grant = readGrant(origin, this.#env);
         if (grant !== null) {
             // A kept grant proves the daemon authenticates; it renews with no discovery.
@@ -273,7 +273,7 @@ export class SignInCredential implements ClientCredential {
             writeGrant(origin, null, this.#env);
         }
         if (!this.#required) return null;
-        const metadata = await discover(aguiUrl);
+        const metadata = await discover(acpUrl);
         if (metadata === null) return null;
         if (!this.#options.interactive) {
             throw new ProblemError(clientProblem("credential", "sign-in-required", 401,
@@ -310,7 +310,7 @@ export class SignInCredential implements ClientCredential {
                 const url = new URL(authorizationEndpoint);
                 for (const [key, value] of Object.entries({
                     client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: SCOPE,
-                    code_challenge: challenge, code_challenge_method: "S256", state, resource: `${issuer}/agui`,
+                    code_challenge: challenge, code_challenge_method: "S256", state, resource: `${issuer}/acp`,
                 })) url.searchParams.set(key, value);
                 return { authorization: { url: url.href } };
             },

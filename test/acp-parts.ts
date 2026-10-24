@@ -1,8 +1,8 @@
-// What the daemon sends for one row (plurnk-service {§agui-projection}, {§agui-plurnk-metadata}): the standard part
+// What the daemon sends for one row (plurnk-service {§acp-projection}, {§acp-plurnk-metadata}): the standard part
 // the row builds, carrying the row's facts once, never on a call's own receipt, or the whole row as CUSTOM plurnk.ambient
 // when it builds none.
 
-import type { AguiEvent } from "../src/agui.ts";
+import type { AcpEvent } from "../src/acp.ts";
 import { objectOf, type LogEntryWire } from "../src/render.ts";
 import RowAssembler from "../src/rows.ts";
 
@@ -30,11 +30,11 @@ const answeredLater = (row: PartRow): boolean => {
 };
 
 // A call's own receipt: its call holds the row's facts.
-const receiptOf = (row: PartRow, id: string): AguiEvent =>
-    ({ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}/result`, content: row.rx === undefined || row.rx === null ? "" : JSON.stringify(row.rx) }) as AguiEvent;
+const receiptOf = (row: PartRow, id: string): AcpEvent =>
+    ({ type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `${id}/result`, content: row.rx === undefined || row.rx === null ? "" : JSON.stringify(row.rx) }) as AcpEvent;
 
 // A tool call and its receipt; a call answered later ends without one.
-export const callOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
+export const callOf = (row: PartRow, id = coordinate(row)): AcpEvent[] => {
     const metadata = { plurnk: factsOf(row) };
     const { op: _op, position: _position, ...operands } = objectOf(row.tx) ?? {};
     return [
@@ -42,48 +42,48 @@ export const callOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
         { type: "TOOL_CALL_ARGS", toolCallId: id, delta: JSON.stringify(operands) },
         { type: "TOOL_CALL_END", toolCallId: id },
         ...(answeredLater(row) ? [] : [receiptOf(row, id)]),
-    ] as AguiEvent[];
+    ] as AcpEvent[];
 };
 
-// plurnk-service {§agui-proposal-resolve}: a gated call's settlement, on the Run whose client holds the call: its start
+// plurnk-service {§acp-proposal-resolve}: a gated call's settlement, on the Run whose client holds the call: its start
 // repeated with the settled facts and no arguments, then its receipt unless something later answers it.
-export const settlementOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
+export const settlementOf = (row: PartRow, id = coordinate(row)): AcpEvent[] => {
     const metadata = { plurnk: factsOf(row) };
     return [
         { type: "TOOL_CALL_START", toolCallId: id, toolCallName: row.op, metadata },
         { type: "TOOL_CALL_END", toolCallId: id },
         ...(answeredLater(row) ? [] : [receiptOf(row, id)]),
-    ] as AguiEvent[];
+    ] as AcpEvent[];
 };
 
 // Speech: the body, with the heading's aside and the receipt beside the row's facts.
-export const speechOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
+export const speechOf = (row: PartRow, id = coordinate(row)): AcpEvent[] => {
     const aside = objectOf(row.tx)?.aside;
     const metadata = { plurnk: { ...factsOf(row), aside: typeof aside === "string" ? aside : null, receipt: row.rx ?? null } };
     return [
         { type: "TEXT_MESSAGE_START", messageId: id, role: "assistant", metadata },
         { type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: body(row.tx) },
         { type: "TEXT_MESSAGE_END", messageId: id },
-    ] as AguiEvent[];
+    ] as AcpEvent[];
 };
 
 // An arrival: the message it delivered, named by its source.
-export const arrivalOf = (row: PartRow, id = coordinate(row)): AguiEvent[] => {
+export const arrivalOf = (row: PartRow, id = coordinate(row)): AcpEvent[] => {
     const text = body(row.tx);
     return [
         { type: "TEXT_MESSAGE_START", messageId: id, role: "user", ...(typeof row.source === "string" ? { name: row.source } : {}), metadata: { plurnk: factsOf(row) } },
         ...(text.length === 0 ? [] : [{ type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: text }]),
         { type: "TEXT_MESSAGE_END", messageId: id },
-    ] as AguiEvent[];
+    ] as AcpEvent[];
 };
 
 // What a row that answers another row's call delivered: a reply's words, or what it received.
 const answer = (row: PartRow): string => row.op === "SEND" ? body(row.tx) : JSON.stringify(row.rx ?? null);
 
 // A row that answers another row's call: what it delivered, under its own coordinate.
-export const dischargeOf = (row: PartRow, call: string): AguiEvent[] => [
+export const dischargeOf = (row: PartRow, call: string): AcpEvent[] => [
     { type: "TOOL_CALL_RESULT", toolCallId: call, messageId: coordinate(row), content: answer(row), metadata: { plurnk: factsOf(row) } },
-] as AguiEvent[];
+] as AcpEvent[];
 
 // The call a row answers: the coordinate its invocation, an operation's log address, names; null when it answers none.
 const answered = (row: PartRow): string | null => {
@@ -94,7 +94,7 @@ const answered = (row: PartRow): string | null => {
 };
 
 // A row that builds nothing in the conversation, whole: its target is the path the daemon's row records.
-export const ambientOf = (row: PartRow): AguiEvent => ({
+export const ambientOf = (row: PartRow): AcpEvent => ({
     type: "CUSTOM", name: "plurnk.ambient",
     value: {
         id: row.id ?? 1, worker_id: row.worker_id ?? 1, loop_seq: row.loop_seq ?? 1, turn_seq: row.turn_seq ?? 1, sequence: row.sequence ?? 1,
@@ -102,11 +102,11 @@ export const ambientOf = (row: PartRow): AguiEvent => ({
         scheme: null, hostname: null, pathname: row.target ?? null, fragment: null,
         lineMarker: row.lineMarker ?? null, tx: row.tx ?? null, rx: row.rx ?? null, status_rx: row.status_rx ?? 200, attrs: row.attrs ?? {},
     },
-} as AguiEvent);
+} as AcpEvent);
 
-// {§message-arrival} A message address on the thread: agui://<principal>/threads/<thread>/messages/<id>.
+// {§message-arrival} A message address on the thread: acp://<principal>/threads/<thread>/messages/<id>.
 const onThread = (address: unknown, thread: string): boolean =>
-    typeof address === "string" && new RegExp(`^agui://[^/]+/threads/${encodeURIComponent(thread)}/messages/[^/]+$`, "u").test(address);
+    typeof address === "string" && new RegExp(`^acp://[^/]+/threads/${encodeURIComponent(thread)}/messages/[^/]+$`, "u").test(address);
 
 // A SEND or KILL that delivered words to the thread is the worker's speech; a WAIT's body is too.
 const speaks = (row: PartRow, thread: string): boolean => {
@@ -120,8 +120,8 @@ const speaks = (row: PartRow, thread: string): boolean => {
     return Array.isArray(answers) && answers.some((address) => onThread(address, thread));
 };
 
-// The events the daemon sends for one row on a Run of `thread` (plurnk-service {§agui-projection}).
-export const partsOf = (row: PartRow, thread = "t"): AguiEvent[] => {
+// The events the daemon sends for one row on a Run of `thread` (plurnk-service {§acp-projection}).
+export const partsOf = (row: PartRow, thread = "t"): AcpEvent[] => {
     if (speaks(row, thread)) return speechOf(row);
     const origin = row.origin ?? "model";
     if (origin === "model") return callOf(row);
@@ -136,7 +136,7 @@ export const presentedRow = (row: LogEntryWire, thread = "t"): LogEntryWire => {
     return { ...row, message: partsOf(row, thread).flatMap((event) => assembler.consume(event))[0]?.message };
 };
 
-// The snapshot messages the daemon sends for one row (plurnk-service `{§agui-snapshot}`): the same parts, with the row's
+// The snapshot messages the daemon sends for one row (plurnk-service `{§acp-snapshot}`): the same parts, with the row's
 // facts as they carry them live; a row that builds none has no message.
 export const messagesOf = (row: PartRow, thread = "t"): Array<Record<string, unknown>> => {
     const id = coordinate(row);

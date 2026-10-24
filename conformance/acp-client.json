@@ -5,7 +5,7 @@
     "ping": {
       "posture": "generic",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/acp.test.ts — arbitrary action round-trip"
       ],
       "dimensions": [
         "projection",
@@ -16,7 +16,7 @@
     "discover": {
       "posture": "generic",
       "evidence": [
-        "test/intg/agui-conformance.test.ts — live discovery"
+        "test/intg/acp-conformance.test.ts — live discovery"
       ],
       "dimensions": [
         "projection",
@@ -66,7 +66,7 @@
     "workspace.create": {
       "posture": "native",
       "evidence": [
-        "src/agui.test.ts — workspace creation",
+        "src/acp.test.ts — workspace creation",
         "test/intg/durable-controls.test.ts — separate-connection durable controls",
         "scripts/test-composition.mjs — packed client and installed candidate service"
       ],
@@ -212,7 +212,7 @@
     "workspace.hidden.set": {
       "posture": "generic",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/acp.test.ts — arbitrary action round-trip"
       ],
       "dimensions": [
         "projection",
@@ -223,7 +223,7 @@
     "worker.hidden.set": {
       "posture": "generic",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/acp.test.ts — arbitrary action round-trip"
       ],
       "dimensions": [
         "projection",
@@ -381,7 +381,7 @@
     "workspace.capabilities.get": {
       "posture": "generic",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip",
+        "src/acp.test.ts — arbitrary action round-trip",
         "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
       ],
       "dimensions": [
@@ -394,7 +394,7 @@
     "workspace.capabilities.set": {
       "posture": "generic",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip",
+        "src/acp.test.ts — arbitrary action round-trip",
         "test/intg/durable-controls.test.ts — separate-connection durable controls",
         "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
       ],
@@ -1139,7 +1139,7 @@
     "workspace.mcp.complete": {
       "posture": "generic",
       "evidence": [
-        "src/agui.test.ts — arbitrary action round-trip"
+        "src/acp.test.ts — arbitrary action round-trip"
       ],
       "dimensions": [
         "projection",
@@ -1242,7 +1242,7 @@
       "posture": "native",
       "evidence": [
         "src/reasoning-events.test.ts — ordered live lifecycle",
-        "src/agui_cli.test.ts — streaming stderr presentation",
+        "src/acp_cli.test.ts — streaming stderr presentation",
         "src/transport.test.ts — shared lifecycle corpus"
       ],
       "dimensions": [
@@ -1257,7 +1257,7 @@
       "posture": "native",
       "evidence": [
         "src/lifecycle-render.test.ts — rendered as a model NOTE's block, never speech",
-        "src/agui_cli.test.ts — stderr trace, absent from the run record's response",
+        "src/acp_cli.test.ts — stderr trace, absent from the run record's response",
         "src/transport.test.ts — un-projected as plurnk.outside, never an entry"
       ],
       "dimensions": [
@@ -1287,7 +1287,7 @@
       "evidence": [
         "src/stream.test.ts — concluded stream rendering",
         "src/transport.test.ts — shared lifecycle corpus",
-        "src/agui_cli.test.ts — one-shot ! command settlement"
+        "src/acp_cli.test.ts — one-shot ! command settlement"
       ],
       "dimensions": [
         "admission",

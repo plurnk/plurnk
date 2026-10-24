@@ -1,14 +1,14 @@
-// Unit tests for the AG-UI consumer. A mock HTTP endpoint scripts the SSE run and
+// Unit tests for the ACP consumer. A mock HTTP endpoint scripts the SSE run and
 // captures the request shapes — no daemon.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Lifetime from "./lifetime.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { runViaAgui, actionViaAgui, operationResult, problemDetails } from "./agui.ts";
+import { runViaAcp, actionViaAcp, operationResult, problemDetails } from "./acp.ts";
 import { ProblemError } from "./diagnostics.ts";
 import Credential from "./credential.ts";
-import { callOf } from "../test/agui-parts.ts";
+import { callOf } from "../test/acp-parts.ts";
 
 const bootMock = async (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
     const captured: Array<{ url: string | undefined; method: string | undefined; auth: string | undefined; body: unknown }> = [];
@@ -38,7 +38,7 @@ const frame = (event: Record<string, unknown>): string => {
     return `data: ${JSON.stringify(lifecycle)}\n\n`;
 };
 
-test("AG-UI validators map invalid Problems and results to exact client Problems", () => {
+test("ACP validators map invalid Problems and results to exact client Problems", () => {
     assert.throws(
         () => problemDetails({ status: 500 }),
         (error: unknown) => error instanceof ProblemError
@@ -51,7 +51,7 @@ test("AG-UI validators map invalid Problems and results to exact client Problems
     );
 });
 
-test("runViaAgui: yields AG-UI events in order, reassembling frames split across chunks", async () => {
+test("runViaAcp: yields ACP events in order, reassembling frames split across chunks", async () => {
     const tm = frame({ type: "TEXT_MESSAGE_START", messageId: "1", role: "assistant" });
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -65,7 +65,7 @@ test("runViaAgui: yields AG-UI events in order, reassembling frames split across
     try {
         const types: string[] = [];
         let text = "";
-        for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "largest planet?" })) {
+        for await (const e of runViaAcp({ acpUrl: mock.url }, { threadId: "t", prompt: "largest planet?" })) {
             types.push(e.type);
             if (e.type === "TEXT_MESSAGE_CONTENT") text += String(e.delta);
         }
@@ -84,11 +84,11 @@ test("runViaAgui: yields AG-UI events in order, reassembling frames split across
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: forwardedProps.plurnk carries the selected workspace and its options", async () => {
+test("runViaAcp: forwardedProps.plurnk carries the selected workspace and its options", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         const seen: string[] = [];
-        for await (const e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", workspace: "selected", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
+        for await (const e of runViaAcp({ acpUrl: mock.url }, { threadId: "t", workspace: "selected", prompt: "hi", forwardedProps: { projectRoot: "/x" } })) seen.push(e.type);
         assert.deepEqual(seen, ["RUN_FINISHED"]);
         assert.deepEqual((mock.captured[0].body as { forwardedProps: unknown }).forwardedProps, { plurnk: { workspace: "selected", projectRoot: "/x" } });
     } finally { await mock.close(); }
@@ -98,15 +98,15 @@ test("{§cli-workspaces-and-workers}: thread identity never fabricates a workspa
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         for (const threadId of ["opaque-uuid", "42#user"]) {
-            for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId, prompt: "hi" })) void _e;
+            for await (const _e of runViaAcp({ acpUrl: mock.url }, { threadId, prompt: "hi" })) void _e;
             assert.deepEqual((mock.captured.at(-1)!.body as { forwardedProps: unknown }).forwardedProps, { plurnk: {} });
         }
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: a PLURNK HTTP failure preserves exact Problem Details", async () => {
+test("runViaAcp: a PLURNK HTTP failure preserves exact Problem Details", async () => {
     const problem = {
-        type: "https://problems.plurnk.xyz/agui/http/bearer-token-required",
+        type: "https://problems.plurnk.xyz/acp/http/bearer-token-required",
         title: "Bearer token required",
         status: 401,
         detail: "A bearer token is required.",
@@ -115,7 +115,7 @@ test("runViaAgui: a PLURNK HTTP failure preserves exact Problem Details", async 
     const mock = await bootMock((_req, res) => res.writeHead(401, { "content-type": "application/problem+json" }).end(JSON.stringify(problem)));
     try {
         await assert.rejects(
-            async () => { for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
+            async () => { for await (const _e of runViaAcp({ acpUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === problem.type
                 && error.problem.retryable === problem.retryable,
@@ -123,17 +123,17 @@ test("runViaAgui: a PLURNK HTTP failure preserves exact Problem Details", async 
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: a foreign non-Problem HTTP failure remains an AG-UI transport error", async () => {
+test("runViaAcp: a foreign non-Problem HTTP failure remains an ACP transport error", async () => {
     const mock = await bootMock((_req, res) => res.writeHead(502, { "content-type": "text/plain" }).end("relay failed"));
     try {
         await assert.rejects(
-            async () => { for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
+            async () => { for await (const _e of runViaAcp({ acpUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _e; },
             /HTTP 502:.*relay failed/,
         );
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: the standard transport handles comments, CRLF, split chunks, and multiline data", async () => {
+test("runViaAcp: the standard transport handles comments, CRLF, split chunks, and multiline data", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(": keepalive\r\n\r");
@@ -143,12 +143,12 @@ test("runViaAgui: the standard transport handles comments, CRLF, split chunks, a
     });
     try {
         const seen: string[] = [];
-        for await (const event of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) seen.push(event.type);
+        for await (const event of runViaAcp({ acpUrl: mock.url }, { threadId: "t", prompt: "hi" })) seen.push(event.type);
         assert.deepEqual(seen, ["RUN_STARTED"]);
     } finally { await mock.close(); }
 });
 
-test("runViaAgui: malformed AG-UI events fail at the standard client boundary", async () => {
+test("runViaAcp: malformed ACP events fail at the standard client boundary", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(`data: ${JSON.stringify({ type: "RUN_FINISHED" })}\n\n`);
@@ -157,21 +157,21 @@ test("runViaAgui: malformed AG-UI events fail at the standard client boundary", 
     try {
         await assert.rejects(
             async () => {
-                for await (const _event of runViaAgui({ aguiUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _event;
+                for await (const _event of runViaAcp({ acpUrl: mock.url }, { threadId: "t", prompt: "hi" })) void _event;
             },
             /threadId|runId/,
         );
     } finally { await mock.close(); }
 });
 
-test("actionViaAgui: a verb rides its own run and returns its result verbatim", async () => {
+test("actionViaAcp: a verb rides its own run and returns its result verbatim", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: " + JSON.stringify({ type: "RUN_FINISHED", threadId: "t", runId: "r", result: { kind: "workspace.list", ok: true, result: { workspaces: [{ id: 1, name: "s" }] } } }) + "\n\n");
         res.end();
     });
     try {
-        const out = await actionViaAgui<{ workspaces: Array<{ id: number }> }>({ aguiUrl: mock.url }, { threadId: "t", workspace: "workspace", kind: "workspace.list" });
+        const out = await actionViaAcp<{ workspaces: Array<{ id: number }> }>({ acpUrl: mock.url }, { threadId: "t", workspace: "workspace", kind: "workspace.list" });
         assert.equal(out.workspaces[0].id, 1);
         const sent = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string; action: { kind: string } } } };
         assert.equal(sent.threadId, "t", "the thread continues to name the worker");
@@ -180,14 +180,14 @@ test("actionViaAgui: a verb rides its own run and returns its result verbatim", 
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] actionViaAgui carries workspace options beside the action", async () => {
+test("[§cli-workspaces-and-workers] actionViaAcp carries workspace options beside the action", async () => {
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: " + JSON.stringify({ type: "RUN_FINISHED", threadId: "t", runId: "r", result: { kind: "worker.model.get", ok: true, result: { model: null } } }) + "\n\n");
         res.end();
     });
     try {
-        await actionViaAgui({ aguiUrl: mock.url }, {
+        await actionViaAcp({ acpUrl: mock.url }, {
             threadId: "worker",
             workspace: "workspace",
             workspaceOptions: { projectRoot: "/repo", settings: { filesItems: 16 } },
@@ -202,9 +202,9 @@ test("[§cli-workspaces-and-workers] actionViaAgui carries workspace options bes
     } finally { await mock.close(); }
 });
 
-test("actionViaAgui: an action failure throws the exact validated Problem", async () => {
+test("actionViaAcp: an action failure throws the exact validated Problem", async () => {
     const problem = {
-        type: "https://problems.plurnk.xyz/agui/action/unknown-action",
+        type: "https://problems.plurnk.xyz/acp/action/unknown-action",
         title: "Unknown action",
         status: 404,
         detail: "Unknown action 'missing'.",
@@ -216,7 +216,7 @@ test("actionViaAgui: an action failure throws the exact validated Problem", asyn
     ]));
     try {
         await assert.rejects(
-            () => actionViaAgui({ aguiUrl: mock.url }, { threadId: "t", kind: "missing" }),
+            () => actionViaAcp({ acpUrl: mock.url }, { threadId: "t", kind: "missing" }),
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === problem.type
                 && error.problem.recovery === problem.recovery,
@@ -224,11 +224,11 @@ test("actionViaAgui: an action failure throws the exact validated Problem", asyn
     } finally { await mock.close(); }
 });
 
-test("actionViaAgui: a missing action result throws an exact client Problem", async () => {
+test("actionViaAcp: a missing action result throws an exact client Problem", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
         await assert.rejects(
-            () => actionViaAgui({ aguiUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
+            () => actionViaAcp({ acpUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === "https://problems.plurnk.xyz/client/action/result-missing"
                 && error.problem.action === "workspace.list",
@@ -236,32 +236,32 @@ test("actionViaAgui: a missing action result throws an exact client Problem", as
     } finally { await mock.close(); }
 });
 
-test("actionViaAgui: a malformed action result throws an exact client Problem", async () => {
+test("actionViaAcp: a malformed action result throws an exact client Problem", async () => {
     const mock = await bootMock((_req, res) => sse(res, [
         frame({ type: "RUN_FINISHED", result: { kind: "workspace.list" } }),
     ]));
     try {
         await assert.rejects(
-            () => actionViaAgui({ aguiUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
+            () => actionViaAcp({ acpUrl: mock.url }, { threadId: "t", kind: "workspace.list" }),
             (error: unknown) => error instanceof ProblemError
                 && error.problem.type === "https://problems.plurnk.xyz/client/action/result-invalid",
         );
     } finally { await mock.close(); }
 });
 
-test("[§cli-workspaces-and-workers] runViaAgui: an explicit workspace rides with a DIFFERENT threadId", async () => {
+test("[§cli-workspaces-and-workers] runViaAcp: an explicit workspace rides with a DIFFERENT threadId", async () => {
     const mock = await bootMock((_req, res) => sse(res, [frame({ type: "RUN_FINISHED" })]));
     try {
-        for await (const _e of runViaAgui({ aguiUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
+        for await (const _e of runViaAcp({ acpUrl: mock.url }, { threadId: "chat-2", workspace: "workspace", prompt: "hi" })) void _e;
         const body = mock.captured[0].body as { threadId: string; forwardedProps: { plurnk: { workspace: string } } };
         assert.equal(body.threadId, "chat-2", "the thread names the worker");
         assert.equal(body.forwardedProps.plurnk.workspace, "workspace", "the workspace names the workspace — independently");
     } finally { await mock.close(); }
 });
 
-test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and --auto declares nobody", async () => {
+test("{§cli-worker-ownership} runCliViaAcp: a terminal declares a person, and --auto declares nobody", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaAgui } = await import("./agui_cli.ts");
+    const { runCliViaAcp } = await import("./acp_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
@@ -271,7 +271,7 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     try {
         for (const auto of [false, true]) {
-            await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", yolo: true, auto, json: true, statusStream: false });
+            await runCliViaAcp({ acpUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", yolo: true, auto, json: true, statusStream: false });
         }
         const declared = mock.captured.map(({ body }) => {
             const run = body as { tools: { name: string }[]; forwardedProps: { plurnk: { interactive?: boolean } } };
@@ -288,16 +288,16 @@ test("{§cli-worker-ownership} runCliViaAgui: a terminal declares a person, and 
     }
 });
 
-test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgui: bound runs carry per-run controls and owner capabilities, not workspace selection", async () => {
+test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAcp: bound runs carry per-run controls and owner capabilities, not workspace selection", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaAgui } = await import("./agui_cli.ts");
+    const { runCliViaAcp } = await import("./acp_cli.ts");
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: { hitMaxTurns: false, turnIds: [1], result: { status: 200 } } } } }));
         res.end();
     });
     try {
-        await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
+        await runCliViaAcp({ acpUrl: mock.url }, "hi", {
             lifetime,
             threadId: "7#w",
             workspace: { id: 7, name: "w" },
@@ -326,7 +326,7 @@ test("[§cli-model-selection][§cli-what-one-shot-mode-does-not-do] runCliViaAgu
 
 test("[§cli-workspaces-and-workers] a worker's JSON record retains its workspace identity", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaAgui } = await import("./agui_cli.ts");
+    const { runCliViaAcp } = await import("./acp_cli.ts");
     const mock = await bootMock((_req, res) => sse(res, [
         frame({ type: "RUN_FINISHED", metadata: { plurnk: { terminal: {
                 workspaceId: 7,
@@ -345,7 +345,7 @@ test("[§cli-workspaces-and-workers] a worker's JSON record retains its workspac
         return true;
     };
     try {
-        await runCliViaAgui({ aguiUrl: mock.url }, "hi", {
+        await runCliViaAcp({ acpUrl: mock.url }, "hi", {
             lifetime,
             threadId: "user",
             workspace: { id: 7, name: "workspace" },
@@ -367,7 +367,7 @@ test("[§cli-workspaces-and-workers] a worker's JSON record retains its workspac
 
 test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the record says timedOut, exit is 3", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaAgui } = await import("./agui_cli.ts");
+    const { runCliViaAcp } = await import("./acp_cli.ts");
     let cancelSeen = false;
     let holdOpen: (() => void) | null = null;
     const mock = await bootMock((req, res) => {
@@ -397,7 +397,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
         return true;
     };
     try {
-        const code = await runCliViaAgui({ aguiUrl: mock.url }, "spin forever", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false });
+        const code = await runCliViaAcp({ acpUrl: mock.url }, "spin forever", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", timeoutSec: 1, yolo: true, auto: false, json: true, statusStream: false });
         assert.equal(cancelSeen, true, "the deadline fired loop.cancel at the daemon");
         assert.equal(code, 3, "timeout exits 3 (cancellation)");
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { timedOut: boolean; finalStatus: number };
@@ -411,7 +411,7 @@ test("[§cli-invocation] --timeout fires: the deadline cancels the loop, the rec
 
 test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in the json record", async () => {
     await using lifetime = new Lifetime();
-    const { runCliViaAgui } = await import("./agui_cli.ts");
+    const { runCliViaAcp } = await import("./acp_cli.ts");
     // The stream dies without terminal truth: no terminated, no RUN_FINISHED.
     const mock = await bootMock((_req, res) => {
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -426,7 +426,7 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
         return true;
     };
     try {
-        const code = await runCliViaAgui({ aguiUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", yolo: true, auto: false, json: true, statusStream: false });
+        const code = await runCliViaAcp({ acpUrl: mock.url }, "hi", { lifetime, threadId: "7#w", workspace: { id: 7, name: "w" }, worker: "w", yolo: true, auto: false, json: true, statusStream: false });
         const doc = JSON.parse(outs.map(String).find((w) => w.startsWith('{"schemaVersion"')) ?? "{}") as { finalStatus: number };
         assert.notEqual(doc.finalStatus, 200, "no fabricated success on a dead stream");
         assert.notEqual(code, 0, "the exit code is not success either");
@@ -436,49 +436,49 @@ test("[§cli-output-channels] a dead stream never fabricates finalStatus 200 in 
     }
 });
 
-test("[§cli-credential] runViaAgui acquires the access token through discovery and renews it once when the daemon says invalid_token", async () => {
-    let agui = 0;
+test("[§cli-credential] runViaAcp acquires the access token through discovery and renews it once when the daemon says invalid_token", async () => {
+    let acp = 0;
     const mock = await bootMock((req, res) => {
         const json = (status: number, body: unknown, type = "application/json"): void => { res.writeHead(status, { "content-type": type }); res.end(JSON.stringify(body)); };
-        if (req.url === "/.well-known/oauth-protected-resource") return json(200, { resource: `${mock.url}/agui`, authorization_servers: [mock.url] });
+        if (req.url === "/.well-known/oauth-protected-resource") return json(200, { resource: `${mock.url}/acp`, authorization_servers: [mock.url] });
         if (req.url === "/.well-known/oauth-authorization-server") return json(200, { issuer: mock.url, token_endpoint: `${mock.url}/oauth/token` });
-        if (req.url === "/oauth/token") return json(200, { access_token: "fresh", token_type: "Bearer", expires_in: 60, scope: "agui" });
-        agui += 1;
-        if (agui === 1) return json(401, { type: "https://problems.plurnk.xyz/agui/http/bearer-token-invalid", title: "Bearer token invalid", status: 401, detail: "The access token is unknown, expired or revoked.", retryable: false }, "application/problem+json");
+        if (req.url === "/oauth/token") return json(200, { access_token: "fresh", token_type: "Bearer", expires_in: 60, scope: "acp" });
+        acp += 1;
+        if (acp === 1) return json(401, { type: "https://problems.plurnk.xyz/acp/http/bearer-token-invalid", title: "Bearer token invalid", status: 401, detail: "The access token is unknown, expired or revoked.", retryable: false }, "application/problem+json");
         return sse(res, [frame({ type: "RUN_STARTED" }), frame({ type: "RUN_FINISHED" })]);
     });
     try {
         const credential = new Credential("s3cret");
         const events: string[] = [];
-        for await (const event of runViaAgui({ aguiUrl: `${mock.url}/agui`, credential }, { threadId: "t", prompt: "hi" })) events.push(event.type);
+        for await (const event of runViaAcp({ acpUrl: `${mock.url}/acp`, credential }, { threadId: "t", prompt: "hi" })) events.push(event.type);
         assert.deepEqual(events, ["RUN_STARTED", "RUN_FINISHED"]);
         assert.deepEqual(mock.captured.map(({ url }) => url), [
-            "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/oauth/token", "/agui", "/oauth/token", "/agui",
+            "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/oauth/token", "/acp", "/oauth/token", "/acp",
         ], "discover, mint, refused once, mint again, admitted");
-        assert.ok(mock.captured.filter(({ url }) => url === "/agui").every(({ auth }) => auth === "Bearer fresh"));
+        assert.ok(mock.captured.filter(({ url }) => url === "/acp").every(({ auth }) => auth === "Bearer fresh"));
         await assert.rejects(
-            async () => { for await (const _e of runViaAgui({ aguiUrl: `${mock.url}/agui`, credential }, { threadId: "t", prompt: "hi" })) void _e; },
+            async () => { for await (const _e of runViaAcp({ acpUrl: `${mock.url}/acp`, credential }, { threadId: "t", prompt: "hi" })) void _e; },
             (error: unknown) => error instanceof ProblemError && /\/bearer-token-invalid$/u.test(error.problem.type),
             "a second refusal in one run is the caller's",
         ).catch(() => undefined);
     } finally { await mock.close(); }
 });
 
-// plurnk-service {§agui-words-by-reference}: a sender's words past the ceiling travel as one document part at the address
-// that serves them; a receipt that holds a body keeps its text part beside the body's document (plurnk-service {§agui-body-reference}).
-test("[§cli-row-sources] runViaAgui reads words that travel by reference at their address, with the Run's credential, and leaves a receipt's body where it is", async () => {
+// plurnk-service {§acp-words-by-reference}: a sender's words past the ceiling travel as one document part at the address
+// that serves them; a receipt that holds a body keeps its text part beside the body's document (plurnk-service {§acp-body-reference}).
+test("[§cli-row-sources] runViaAcp reads words that travel by reference at their address, with the Run's credential, and leaves a receipt's body where it is", async () => {
     const words: Record<string, string> = { "log:///1/1/1/SEND": "Pasted words, long past the ceiling.", "log:///1/2/1/SEND": "A reply's words, long past the ceiling." };
     const mock = await bootMock((req, res) => {
         const json = (status: number, body: unknown): void => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
-        if (req.url === "/.well-known/oauth-protected-resource") return json(200, { resource: `${mock.url}/agui`, authorization_servers: [mock.url] });
+        if (req.url === "/.well-known/oauth-protected-resource") return json(200, { resource: `${mock.url}/acp`, authorization_servers: [mock.url] });
         if (req.url === "/.well-known/oauth-authorization-server") return json(200, { issuer: mock.url, token_endpoint: `${mock.url}/oauth/token` });
-        if (req.url === "/oauth/token") return json(200, { access_token: "fresh", token_type: "Bearer", expires_in: 60, scope: "agui" });
+        if (req.url === "/oauth/token") return json(200, { access_token: "fresh", token_type: "Bearer", expires_in: 60, scope: "acp" });
         if (req.method === "GET") {
             const target = new URL(req.url ?? "/", mock.url).searchParams.get("target") ?? "";
             res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
             return res.end(words[target]);
         }
-        const at = (target: string, mimeType = "text/plain") => [{ type: "document", source: { type: "url", value: `${mock.url}/agui/3/7/entry?target=${encodeURIComponent(target)}`, mimeType } }];
+        const at = (target: string, mimeType = "text/plain") => [{ type: "document", source: { type: "url", value: `${mock.url}/acp/3/7/entry?target=${encodeURIComponent(target)}`, mimeType } }];
         const receipt = [{ type: "text", text: JSON.stringify({ status: 200 }) }, ...at("log:///1/1/3/READ", "text/markdown")];
         sse(res, [
             frame({ type: "RUN_STARTED" }),
@@ -492,31 +492,31 @@ test("[§cli-row-sources] runViaAgui reads words that travel by reference at the
     });
     try {
         const events: Array<Record<string, unknown>> = [];
-        for await (const event of runViaAgui({ aguiUrl: `${mock.url}/agui`, credential: new Credential("s3cret") }, { threadId: "t", prompt: "hi" })) {
+        for await (const event of runViaAcp({ acpUrl: `${mock.url}/acp`, credential: new Credential("s3cret") }, { threadId: "t", prompt: "hi" })) {
             events.push(event as unknown as Record<string, unknown>);
         }
         const snapshot = events.find(({ type }) => type === "MESSAGES_SNAPSHOT") as { messages: Array<{ content: unknown }> } | undefined;
         assert.equal(snapshot?.messages[0]?.content, words["log:///1/1/1/SEND"], "a snapshot's message carries its words");
         assert.ok(Array.isArray(snapshot?.messages[1]?.content) && snapshot.messages[1].content.length === 2, "a receipt's body stays by reference");
         assert.equal(events.find(({ type }) => type === "TOOL_CALL_RESULT")?.content, words["log:///1/2/1/SEND"], "a reply's result carries its words");
-        const reads = mock.captured.filter(({ method, url }) => method === "GET" && url?.startsWith("/agui/") === true);
+        const reads = mock.captured.filter(({ method, url }) => method === "GET" && url?.startsWith("/acp/") === true);
         assert.deepEqual(reads.map(({ url }) => new URL(url ?? "/", mock.url).searchParams.get("target")), ["log:///1/1/1/SEND", "log:///1/2/1/SEND"],
             "each sender's words read once, and no body");
         assert.ok(reads.every(({ auth }) => auth === "Bearer fresh"), "with the access token the Run was posted with");
     } finally { await mock.close(); }
 });
 
-test("[§cli-row-sources] runViaAgui: words whose address answers a Problem end the Run with that exact Problem", async () => {
+test("[§cli-row-sources] runViaAcp: words whose address answers a Problem end the Run with that exact Problem", async () => {
     const mock = await bootMock((req, res) => {
         if (req.method === "GET") {
             res.writeHead(404, { "content-type": "application/problem+json" });
-            return res.end(JSON.stringify({ type: "https://problems.plurnk.xyz/agui/http/entry-not-found", title: "Entry not found", status: 404, detail: "No row holds those words.", retryable: false }));
+            return res.end(JSON.stringify({ type: "https://problems.plurnk.xyz/acp/http/entry-not-found", title: "Entry not found", status: 404, detail: "No row holds those words.", retryable: false }));
         }
         sse(res, [frame({ type: "RUN_STARTED" }), frame({ type: "TOOL_CALL_RESULT", toolCallId: "1/1/9", messageId: "1/2/1",
-            content: [{ type: "document", source: { type: "url", value: `${mock.url}/agui/3/7/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2FSEND`, mimeType: "text/plain" } }] }), frame({ type: "RUN_FINISHED" })]);
+            content: [{ type: "document", source: { type: "url", value: `${mock.url}/acp/3/7/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2FSEND`, mimeType: "text/plain" } }] }), frame({ type: "RUN_FINISHED" })]);
     });
     try {
-        await assert.rejects(async () => { for await (const _e of runViaAgui({ aguiUrl: `${mock.url}/agui` }, { threadId: "t", prompt: "hi" })) void _e; },
-            (error: unknown) => error instanceof ProblemError && error.problem.type === "https://problems.plurnk.xyz/agui/http/entry-not-found");
+        await assert.rejects(async () => { for await (const _e of runViaAcp({ acpUrl: `${mock.url}/acp` }, { threadId: "t", prompt: "hi" })) void _e; },
+            (error: unknown) => error instanceof ProblemError && error.problem.type === "https://problems.plurnk.xyz/acp/http/entry-not-found");
     } finally { await mock.close(); }
 });

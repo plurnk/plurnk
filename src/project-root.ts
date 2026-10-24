@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
-import { actionViaAgui, type AguiTarget } from "./agui.ts";
+import { actionViaAcp, type AcpTarget } from "./acp.ts";
 import { clientFlagInvalid, clientProblem, ProblemError } from "./diagnostics.ts";
 
 export const resolveProjectRoot = (raw: string | undefined, cwd = process.cwd()): string | null => {
@@ -18,13 +18,13 @@ type ChooseProjectRoot = (home: string) => Promise<string | null | undefined>;
 
 /** {§cli-project-root}: a creation default, not authority over an existing workspace. */
 export default class ProjectRoot {
-    readonly #target: AguiTarget;
+    readonly #target: AcpTarget;
     readonly #cwd: string;
     readonly #home: string;
     #explicit: boolean;
     #root: string | null;
 
-    constructor(target: AguiTarget, raw: string | undefined, cwd = process.cwd(), home = homedir()) {
+    constructor(target: AcpTarget, raw: string | undefined, cwd = process.cwd(), home = homedir()) {
         this.#target = target;
         this.#cwd = cwd;
         this.#home = home;
@@ -34,7 +34,7 @@ export default class ProjectRoot {
 
     /** The stored root of the named workspace, or `undefined` when the daemon holds no workspace of that name. */
     async saved(workspace: string): Promise<string | null | undefined> {
-        const { workspaces } = await actionViaAgui<{ workspaces: { name: string; project_root: string | null }[] }>(
+        const { workspaces } = await actionViaAcp<{ workspaces: { name: string; project_root: string | null }[] }>(
             this.#target, { threadId: "bootstrap", kind: "workspace.list" },
         );
         const existing = workspaces.find(({ name }) => name === workspace);

@@ -1,35 +1,35 @@
-// Unit tests for the CLI's AG-UI consumer. Scripted AG-UI events + capturing
+// Unit tests for the CLI's ACP consumer. Scripted ACP events + capturing
 // sinks — no daemon. Asserts the rendering of the parts rows build ({§cli-row-sources} →
-// trace/answer), proposal settlement through AG-UI resumes, and the exit code
+// trace/answer), proposal settlement through ACP resumes, and the exit code
 // from RUN_FINISHED/RUN_ERROR.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EventType } from "@ag-ui/core";
-import { consumeCliRun, exitCodeForExec, settleExec, type CliRunSinks } from "./agui_cli.ts";
-import type { AguiEvent } from "./agui.ts";
+import { EventType } from "./acp.ts";
+import { consumeCliRun, exitCodeForExec, settleExec, type CliRunSinks } from "./acp_cli.ts";
+import type { AcpEvent } from "./acp.ts";
 import type { LogEntryWire } from "./render.ts";
 import { proposalResume, type Resolution } from "./proposal.ts";
 import ToolAcceptance from "./tool-acceptance.ts";
 import { ProblemError, renderDiagnostic } from "./diagnostics.ts";
-import { callOf, messagesOf, partsOf } from "../test/agui-parts.ts";
+import { callOf, messagesOf, partsOf } from "../test/acp-parts.ts";
 
 const entry = (o: Partial<LogEntryWire> = {}): LogEntryWire => ({
     id: 1, op: "READ", origin: "model", signal: null,
     loop_seq: 1, turn_seq: 1, sequence: 1,
     target: null,
     lineMarker: null, status_rx: 200, tx: null,
-    rx: o.op === "SEND" && o.target == null ? { answers: ["agui://anonymous/threads/t/messages/m1"] } : null, ...o,
+    rx: o.op === "SEND" && o.target == null ? { answers: ["acp://anonymous/threads/t/messages/m1"] } : null, ...o,
 });
 
-// What the daemon sends for a row: the part it builds, or the row whole (plurnk-service `{§agui-projection}`).
-const row = (e: Partial<LogEntryWire>): AguiEvent[] => partsOf(entry(e));
-const workerRow = (e: Partial<LogEntryWire>, workerId: number): AguiEvent[] => partsOf({ ...entry(e), worker_id: workerId });
+// What the daemon sends for a row: the part it builds, or the row whole (plurnk-service `{§acp-projection}`).
+const row = (e: Partial<LogEntryWire>): AcpEvent[] => partsOf(entry(e));
+const workerRow = (e: Partial<LogEntryWire>, workerId: number): AcpEvent[] => partsOf({ ...entry(e), worker_id: workerId });
 // A whole status gauge as the daemon sends it; each specimen overrides what it is about.
 const STATUS = { waitUntil: null, claimedAt: null, terminatedAt: null, descendants: [], inbox: [], streams: [], spend: { requests: 0, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } };
 // The bound workspace as the daemon sends it beside the gauge: no folder, nothing preparing or indexing.
 const WORKSPACE = { id: 1, name: "work", projectRoot: null, projectLabel: null, preparation: [], activity: null };
-const terminalSend = (text: string): AguiEvent[] => row({ op: "SEND", target: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
+const terminalSend = (text: string): AcpEvent[] => row({ op: "SEND", target: null, signal: 200, status_rx: 200, tx: { body: { raw: text } } });
 const loopUsage = (costUsd: string | null = "0.0042") => ({
     accounting: {
         requests: [{
@@ -55,15 +55,15 @@ const loopUsage = (costUsd: string | null = "0.0042") => ({
     meta: {},
 });
 // A Run's end as the daemon sends it: the bound loop's terminal record rides its metadata.
-const terminated = (over: Record<string, unknown> = {}): AguiEvent => ({ type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" },
+const terminated = (over: Record<string, unknown> = {}): AcpEvent => ({ type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" },
     metadata: { plurnk: { terminal: { workspaceId: 7, workerId: 11, loopId: 3, hitMaxTurns: false, turnIds: [1, 2], usage: loopUsage(), result: { status: 200 }, ...over } } } });
 
-async function* stream(events: Array<AguiEvent | AguiEvent[]>): AsyncGenerator<AguiEvent> { for (const e of events.flat()) yield e; }
-// plurnk-service {§agui-proposal-resolve}: a client-owned proposal is the operation's own call, unanswered, and an interrupt
+async function* stream(events: Array<AcpEvent | AcpEvent[]>): AsyncGenerator<AcpEvent> { for (const e of events.flat()) yield e; }
+// plurnk-service {§acp-proposal-resolve}: a client-owned proposal is the operation's own call, unanswered, and an interrupt
 // naming it that carries Core's projection.
-const proposalCall = (logEntryId: number, over: Record<string, unknown> = {}, interruptId = `gate-${logEntryId}`): AguiEvent[] => {
+const proposalCall = (logEntryId: number, over: Record<string, unknown> = {}, interruptId = `gate-${logEntryId}`): AcpEvent[] => {
     const proposal = { logEntryId, workerId: 11, worker: "t", loopId: 3, turnId: 1, coordinate: `1/1/${logEntryId}`, op: "EDIT",
-        target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {}, owner: "agui://anonymous/threads/t",
+        target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {}, owner: "acp://anonymous/threads/t",
         disposition: { decision: "review" }, ...over };
     return [
         ...callOf({ id: logEntryId, worker_id: 11, sequence: logEntryId, op: proposal.op as string, state: "proposed", status_rx: 202, rx: { status: 202 }, tx: { body: "after" } }),
@@ -140,7 +140,7 @@ test("consumeCliRun: RUN_ERROR without the exact Problem is a transport contract
     assert.doesNotMatch(err.join(""), /maxTurns/, "the client does not reconstruct failure truth from lossy RUN_ERROR fields");
 });
 
-test("[§cli-log-entry-line-format] the AG-UI CLI trace displays a server's tool failure explanation", async () => {
+test("[§cli-log-entry-line-format] the ACP CLI trace displays a server's tool failure explanation", async () => {
     const { io, err, out } = sink();
     const result = await consumeCliRun(stream([
         row({ op: "brave", tx: { runtime: "brave", target: { kind: "local", raw: "brave_web_search" } },
@@ -197,14 +197,14 @@ test("[§cli-proposal-review] CLI resumes the supplied interrupt identity, not i
     assert.deepEqual(proposalResume(gate.interruptId, { decision: "accept" }), { interruptId: "presentation-opaque", status: "resolved", payload: { decision: "accept" } });
 });
 
-test("plurnk-service {§agui-sync} {§agui-held-interrupts}: an observation after a gate draws the rows from the gate's on it has not drawn; its Run's end is no dead stream", async () => {
+test("plurnk-service {§acp-sync} {§acp-held-interrupts}: an observation after a gate draws the rows from the gate's on it has not drawn; its Run's end is no dead stream", async () => {
     const { io, err } = sink();
     const older = entry({ id: 5, sequence: 5, op: "READ", target: "file:///older" });
     const settled = entry({ id: 9, sequence: 9, op: "EDIT", target: "file:///a.ts" });
     const drawnAlready = entry({ id: 10, sequence: 10, op: "READ", target: "file:///drawn" });
     const r = await consumeCliRun(stream([
         { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
-        { type: EventType.MESSAGES_SNAPSHOT, messages: [older, settled, drawnAlready].flatMap((row) => messagesOf(row)) } as unknown as AguiEvent,
+        { type: EventType.MESSAGES_SNAPSHOT, messages: [older, settled, drawnAlready].flatMap((row) => messagesOf(row)) } as unknown as AcpEvent,
         { type: EventType.RUN_FINISHED, threadId: "t", runId: "r", outcome: { type: "success" } },
     ]), io, { since: 9, drawn: new Set(["10/200"]) });
     const trace = err.join("");
@@ -287,7 +287,7 @@ test("consumeCliRun: one-shot input requests return ordinary cancelled resumes, 
     assert.equal(r.problem, null, "a supported interruption is not a missing terminal outcome");
 });
 
-const outside = (text: string): AguiEvent => ({ type: EventType.CUSTOM, name: "plurnk.outside", value: { coordinate: "alice-1-2", text, tokens: 7 } });
+const outside = (text: string): AcpEvent => ({ type: EventType.CUSTOM, name: "plurnk.outside", value: { coordinate: "alice-1-2", text, tokens: 7 } });
 
 test("[§cli-outside-text] consumeCliRun: plurnk.outside is trace on stderr, never the answer on stdout", async () => {
     const { io, out, err } = sink();
@@ -314,7 +314,7 @@ test("[§cli-outside-text] consumeCliRun --json: plurnk.outside is silent and ab
     assert.deepEqual(result.entries.map((entry) => entry.op), ["SEND"], "outside text is not an entry");
 });
 
-test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice sink; generic AG-UI events are ignored", async () => {
+test("[§cli-channel-posture] consumeCliRun: plurnk.notice routes to the Notice sink; generic ACP events are ignored", async () => {
     const notices: unknown[] = [];
     const { io, out, err } = sink({ notice: (notice) => notices.push(notice) });
     await consumeCliRun(stream([
@@ -493,7 +493,7 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
         workerRow({ id: 11, op: "SEND", target: "worker://child/", tx: { body: { raw: "Instructions." } } }, 11),
         workerRow({ id: 12, op: "SEND", status_rx: 400, tx: { body: { raw: "Undelivered." } } }, 11),
         workerRow({ id: 13, op: "SEND", tx: { body: { raw: "Second." } } }, 11),
-        workerRow({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } }, 11),
+        workerRow({ id: 14, op: "SEND", status_rx: 200, tx: { body: { raw: "Verification failed." } }, rx: { status: 200, answers: ["acp://anonymous/threads/t/messages/m1"] } }, 11),
         terminated({ workerId: 11, result: { status: 499, problem: {
             type: "https://problems.plurnk.xyz/lifecycle/failed", title: "Task failed", status: 499, detail: "Verification failed.",
         } } }),
@@ -506,10 +506,10 @@ for (const json of [false, true]) test(`consumeCliRun: ordered response messages
 
 test("consumeCliRun: exact and foreign-worker replies reach stdout only for this thread", async () => {
     const { io, out } = sink();
-    const receipt = (thread: string) => ({ answers: [`agui://anonymous/threads/${thread}/messages/m1`] });
+    const receipt = (thread: string) => ({ answers: [`acp://anonymous/threads/${thread}/messages/m1`] });
     const result = await consumeCliRun(stream([
         { type: EventType.RUN_STARTED, threadId: "t", runId: "r" },
-        workerRow({ op: "SEND", target: "agui:///threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
+        workerRow({ op: "SEND", target: "acp:///threads/t/messages/m1", tx: { body: { raw: "Direct answer." } }, rx: receipt("t") }, 11),
         workerRow({ op: "SEND", origin: "_plurnk", source: "worker://peer", attrs: { kind: "reply" }, tx: { body: { raw: "Peer answer." } }, rx: receipt("t") }, 11),
         workerRow({ op: "SEND", tx: { body: { raw: "Other thread." } }, rx: receipt("other") }, 11),
         workerRow({ op: "SEND", tx: { body: { raw: "Peer work." } }, rx: { answers: ["worker://peer/?message=abcdef01"] } }, 11),
@@ -575,7 +575,7 @@ test("[§cli-stream-event-and-stream-concluded] a refused preview preserves the 
 
 test("runScript segments: a run with NO parse result must not report success", async () => {
     // consumeCliRun sees a stream that ends without an action outcome — the
-    // caller (runScriptViaAgui) must treat a missing parse as failure, so the
+    // caller (runScriptViaAcp) must treat a missing parse as failure, so the
     // sink-level contract here: no onActionResult fired, pendingResume null,
     // and the CALLER-visible marker (parse missing) is testable via the sink.
     let fired = false;
@@ -585,7 +585,7 @@ test("runScript segments: a run with NO parse result must not report success", a
     assert.equal(r.pendingResume, null);
 });
 
-// A `! command`'s op.exec Run, as the daemon delivers it ({§agui-broadcast-fan}).
+// A `! command`'s op.exec Run, as the daemon delivers it ({§acp-broadcast-fan}).
 const execConclusion = (target: string, status = 200) => ({
     entryId: 52, workerId: 7, target, subscriptionId: 1, scheme: "sh", loop_seq: 1, turn_seq: 1, sequence: 1,
     result: status === 200
@@ -643,6 +643,6 @@ test("[§cli-prompt-prefixes] settleExec: without its stream's conclusion the Ru
         "https://problems.plurnk.xyz/client/transport/terminal-missing", "no started row announced a stream");
     assert.equal(type(settleExec({ result: null, stream: null, conclusions: new Map(), problem: null })),
         "https://problems.plurnk.xyz/client/action/result-missing");
-    const broken = { type: "https://problems.plurnk.xyz/client/transport/problem-missing", title: "Problem missing", status: 502, detail: "The AG-UI stream reported a failed run without its required Problem Details." };
+    const broken = { type: "https://problems.plurnk.xyz/client/transport/problem-missing", title: "Problem missing", status: 502, detail: "The ACP stream reported a failed run without its required Problem Details." };
     assert.deepEqual(settleExec({ result: null, stream: null, conclusions: new Map(), problem: broken }), { problem: broken });
 });

@@ -1,4 +1,4 @@
-// {§cli-loops} A worker's loops as the daemon lists them (plurnk-service `{§agui-worker-loops}`), and one loop read
+// {§cli-loops} A worker's loops as the daemon lists them (plurnk-service `{§acp-worker-loops}`), and one loop read
 // whole: the list a person navigates a conversation by, and the loop it names, printed as history is.
 
 import { paint } from "./color.ts";
@@ -46,7 +46,7 @@ export const readLoops = async (rpc: Caller, workerId: number): Promise<LoopEntr
 
 // A person's message reaches a worker through a client's thread; any other sender, a worker, a schedule, a peer, is named.
 const sender = (source: string | null): string | null =>
-    source === null || /^agui:\/\/[^/]*\/threads\//u.test(source) ? null : ModelText.plain(source);
+    source === null || /^acp:\/\/[^/]*\/threads\//u.test(source) ? null : ModelText.plain(source);
 
 // One line per loop, oldest first: its number, the sender when it was no person, its opening line, and a mark for a
 // loop under way or ended early; each line fits the terminal's width.

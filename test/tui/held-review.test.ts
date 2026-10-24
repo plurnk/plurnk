@@ -1,4 +1,4 @@
-// [§cli-inline-review] [§cli-review-menu-interactive] plurnk-service {§agui-held-interrupts} — two views of one worker on the
+// [§cli-inline-review] [§cli-review-menu-interactive] plurnk-service {§acp-held-interrupts} — two views of one worker on the
 // real daemon: the built TUI or the one-shot CLI with manual review, and a second client of the same thread. Whichever
 // answers the gate, the other's review is withdrawn, never answered there, and it follows the work that continues; the
 // command runs once.
@@ -59,7 +59,7 @@ const boot = async (t: TestContext, workspace: string, prompt?: string) => {
     t.after(() => { if (!t.passed) t.diagnostic(stripVTControlCharacters(tui.output())); });
     // The client acquires the workspace, its project root among its options; the second view then joins it.
     await tui.waitFor(prompt === undefined ? /plurnk[\s\S]*\/help/ : /\[a\]ccept · \[e\]dit · \[r\]eject · \[c\]ancel/);
-    const other = await openTransport({ aguiUrl: daemon.url }, "main", { workspace });
+    const other = await openTransport({ acpUrl: daemon.url }, "main", { workspace });
     t.after(() => other.shutdown());
     const ran = async (): Promise<string> => await readFile(join(daemon.workspace, "ran.txt"), "utf8").catch(() => "");
     return { tui, other, ran, requests: () => requests };

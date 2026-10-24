@@ -82,7 +82,7 @@ export const resolveClientWorkerEnv = (
 
 // {§cli-environment} Persist each resolved entry onto `worker` at admission when it has no parent: a child's
 // environment is the one its parent handed down. A name the directory does not list yet is a worker of the
-// client's own, which the first write creates (plurnk-service {§agui-action-binding}).
+// client's own, which the first write creates (plurnk-service {§acp-action-binding}).
 export const admitWorkerEnv = async (
     rpc: ActionCaller,
     worker: string,

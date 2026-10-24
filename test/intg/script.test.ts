@@ -6,10 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import type { RunAgentInput } from "@ag-ui/core";
-// AG-UI 1.0 ships its runtime validators on the schemas subpath; the root export is types only.
-import { RunAgentInputSchema } from "@ag-ui/core/schemas";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp, RunAgentInputSchema, type RunAgentInput } from "../../src/acp.ts";
 import { CLIENT_ID_CLI } from "../../src/dispatcher.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
@@ -28,7 +25,7 @@ const run = async (url: string, directory: string, args: string[]) => {
             ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
             HOME: home,
             XDG_CONFIG_HOME: join(home, ".config"),
-            PLURNK_AGUI_URL: url,
+            PLURNK_ACP_URL: url,
             NO_COLOR: "1",
         },
     });
@@ -130,14 +127,14 @@ test("[§cli-script-binding] the built client mutates only its selected real wor
     ]);
     assert.equal(JSON.parse(result.stdout).exitCode, 0, result.stderr);
     assert.equal(await readFile(join(daemon.workspace, "witness.txt"), "utf8"), "script witness");
-    const target = { aguiUrl: daemon.url };
-    const { workspaces } = await actionViaAgui<{ workspaces: Array<{ name: string; project_root: string }> }>(
+    const target = { acpUrl: daemon.url };
+    const { workspaces } = await actionViaAcp<{ workspaces: Array<{ name: string; project_root: string }> }>(
         target, { threadId: "inspect", kind: "workspace.list" },
     );
     assert.deepEqual(workspaces.map(({ name, project_root }) => ({ name, project_root })), [
         { name: "script-workspace", project_root: daemon.workspace },
     ], "the worker name never becomes a second workspace");
-    const policy = await actionViaAgui<{ workspace: unknown }>(target, {
+    const policy = await actionViaAcp<{ workspace: unknown }>(target, {
         threadId: "script-actor", workspace: "script-workspace", kind: "workspace.capabilities.get",
     });
     assert.deepEqual(policy.workspace, { deny: [{ runtime: "sh" }] }, "creation policy is durable");

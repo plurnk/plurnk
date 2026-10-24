@@ -2,7 +2,7 @@ import { unreachableUrl } from "../ports.ts";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -12,7 +12,7 @@ for (const enabled of [false, true]) {
         assert.ok(service);
         const daemon = await bootDaemon(service, { extraEnv: { PLURNK_MCP_REGISTRY_URL: enabled ? await unreachableUrl() : "" } });
         t.after(daemon.cleanup);
-        const advertised = await actionViaAgui<{ actions: Record<string, unknown> }>({ aguiUrl: daemon.url }, { threadId: "discovery", kind: "discover" });
+        const advertised = await actionViaAcp<{ actions: Record<string, unknown> }>({ acpUrl: daemon.url }, { threadId: "discovery", kind: "discover" });
         assert.equal(Object.hasOwn(advertised.actions, "workspace.mcp.discover"), enabled);
         const tui = spawnTui(daemon.url, ["--workspace", "discovery"], {
             HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",

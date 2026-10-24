@@ -96,7 +96,7 @@ test("[§cli-status-spend] the footer shows the worker's spend with its children
     await tui.waitFor(/⌛︎[^\r\n]*↓3k ↑310[^\r\n]*\$0\.3100(?![^\r\n]*🐜)/);
     // Usage settles before the child's operations and lifecycle. Observe actual
     // completion before asking the parent to exercise the unreviewed-result guard.
-    const observer = await openTransport({ aguiUrl: daemon.url }, "main", { workspace: "tree-status" });
+    const observer = await openTransport({ acpUrl: daemon.url }, "main", { workspace: "tree-status" });
     const deadline = Date.now() + 10_000;
     for (;;) {
         const { workers } = await observer.rpc<{ workers: Array<{ name: string; lifecycle: string }> }>("workspace.workers");

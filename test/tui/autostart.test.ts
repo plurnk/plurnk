@@ -31,7 +31,7 @@ const session = async (resources: AsyncDisposableStack, prefix: string) => {
     const env = {
         ...Object.fromEntries(Object.keys(process.env).filter((key) => /^PLURNK_|_(API_KEY|BASE_URL)$/u.test(key)).map((key) => [key, undefined])),
         HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
-        PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(port), PLURNK_AGUI_URL: "",
+        PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(port), PLURNK_ACP_URL: "",
         PLURNK_CLIENT_SERVICE_BIN: service, PLURNK_MODEL: "", PLURNK_CLIENT_DAEMON_TIMEOUT_MS: "15000",
     };
     const database = join(root, "data", "plurnk", "plurnk.db");
@@ -58,7 +58,7 @@ for (const [ending, code] of [["quit", 0], ["cancel folder", 130], ["SIGINT", 13
             await tui.waitFor(/No model selected\.[\s\S]*?\/models\b/u);
         }
         const pid = await servicePid();
-        assert.match(tui.output(), new RegExp(`Started plurnk-service \\(pid ${pid}\\) at http://127\\.0\\.0\\.1:${port}/agui`, "u"));
+        assert.match(tui.output(), new RegExp(`Started plurnk-service \\(pid ${pid}\\) at http://127\\.0\\.0\\.1:${port}/acp`, "u"));
         if (ending === "quit") tui.write("/quit\r");
         else if (ending === "cancel folder") tui.write("\x1b");
         else tui.kill(ending);

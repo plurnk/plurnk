@@ -26,7 +26,7 @@ const running: ClientStatus = {
     gated: null,
 };
 
-// plurnk-service {§agui-status-loop-number}: the place names a loop by its number, beside the durable id it travels with.
+// plurnk-service {§acp-status-loop-number}: the place names a loop by its number, beside the durable id it travels with.
 test("[§cli-workers-topology] the gauge's loop is projected by its number beside its id, null exactly when the id is", () => {
     const status = projectStatusGauge({ ...GAUGE, lifecycle: "running", loopId: 8, loopSeq: 2, packetCount: 1 }, PLACE);
     assert.deepEqual([status.loopId, status.loopSeq], [8, 2], "the number /loops lists, never the durable id");
@@ -154,7 +154,7 @@ test("[§cli-status-project-root] the folder is the daemon's label as given, omi
     assert.equal(renderStatusLine({ ...status, projectRoot: null, projectLabel: null }, { ...CONTEXT, place }), `${place} ${activity}`);
 });
 
-// {§cli-status-children} {§cli-status-gated} — plurnk-service {§agui-status-descendants}: one worker of the tree
+// {§cli-status-children} {§cli-status-gated} — plurnk-service {§acp-status-descendants}: one worker of the tree
 // beneath the bound worker (here worker 1), as the gauge carries it.
 const descendant = (id: number, parentWorkerId: number, lifecycle: string, gates = 0) =>
     ({ id, name: `worker-${id}`, parentWorkerId, kind: "work", lifecycle, gates });
@@ -231,7 +231,7 @@ test("[§cli-status-children] [§cli-status-gated] the live indicators disappear
     assert.doesNotMatch(writes.at(-1)!, /🐜|dumbox/);
 });
 
-test("{§cli-agui-conformance} the worker's gauge is its status and budget together, or neither, beside an ever-present workspace", () => {
+test("{§cli-acp-conformance} the worker's gauge is its status and budget together, or neither, beside an ever-present workspace", () => {
     const workspace = { id: 1, name: "w", projectRoot: null, projectLabel: null, ...PLACE };
     const snapshot = (plurnk: object, budget?: object) => ({ type: "STATE_SNAPSHOT", snapshot: { plurnk, ...(budget === undefined ? {} : { budget }) } });
     assert.equal(reduceStatusGauge(null, snapshot({ workspace })).handled, true, "a Run that binds no worker");
@@ -351,9 +351,9 @@ test("[§cli-history-lost] a gauge without a loop after one with a loop marks th
     assert.equal(historyLost(null, 1), false, "the first loop arriving is not a loss");
 });
 
-// {§cli-status-inbox} — plurnk-service {§agui-message-acceptance}: the accepted messages the bound worker has not read.
+// {§cli-status-inbox} — plurnk-service {§acp-message-acceptance}: the accepted messages the bound worker has not read.
 test("[§cli-status-inbox] the status line counts the messages waiting to be read; a concluded loop's unread ones are said, never counted", () => {
-    const message = (lifecycle: string, n: number) => ({ path: `agui://anonymous/threads/t/messages/m${n}`, id: `m${n}`, loopId: 3, lifecycle });
+    const message = (lifecycle: string, n: number) => ({ path: `acp://anonymous/threads/t/messages/m${n}`, id: `m${n}`, loopId: 3, lifecycle });
     const inbox = [message("running", 1), message("queued", 2), message("parked", 3), message("cancelled", 4), message("completed", 5), message("failed", 6)];
     const status = projectStatusGauge({ ...GAUGE, lifecycle: "running", inbox }, PLACE);
     assert.match(renderStatusLine(status, CONTEXT), / · 📨 3(?: ·|$)/u, "the three a live loop holds are waiting");
@@ -365,7 +365,7 @@ test("[§cli-status-inbox] the status line counts the messages waiting to be rea
     }
 });
 
-// {§cli-status-streams} — plurnk-service {§agui-status-streams}: the streams the bound worker holds open, by address.
+// {§cli-status-streams} — plurnk-service {§acp-status-streams}: the streams the bound worker holds open, by address.
 test("[§cli-status-streams] the gauge names the streams the worker holds open by address; an unreadable census is a broken gauge", () => {
     const stream = (target: string) => ({ entryId: 9, workerId: 1, target, lifetime: null, channels: [{ channel: 1, state: "open", mimetype: "text/plain" }] });
     assert.deepEqual(projectStatusGauge({ ...GAUGE, streams: [stream("sh:///ab3d5678"), stream("node:///c0ffee00")] }, PLACE).openStreams, ["sh:///ab3d5678", "node:///c0ffee00"]);
@@ -390,7 +390,7 @@ test("[§cli-identity-effort] only a route the gauge newly carries, unlike the o
     for (const [carried, previous, read, changed, why] of rows) assert.equal(changedElsewhere(carried, previous, read), changed, why);
 });
 
-// {§cli-workspaces-and-workers} — plurnk-service {§agui-workspace-state}: a Run's workspace state is its start's.
+// {§cli-workspaces-and-workers} — plurnk-service {§acp-workspace-state}: a Run's workspace state is its start's.
 test("[§cli-workspaces-and-workers] a name the workspace state newly carries prompts a readback; the session's own rename outlasts a stale one", () => {
     assert.equal(changedElsewhere("journal", "notes", "notes"), true, "another client renamed it");
     assert.equal(changedElsewhere("notes", "notes", "journal"), false, "a Run that began before this session's own rename");
@@ -406,7 +406,7 @@ test("[§cli-status-disconnected] 🔌 leads the line while a failure has ended 
     const problem = (path: string) => ({ type: `https://problems.plurnk.xyz/${path}` });
     assert.equal(disconnection(null), false, "an observation that simply completed");
     assert.equal(disconnection(problem("client/transport/cancelled")), false, "the client's own cancellation");
-    assert.equal(disconnection(problem("agui/http/service-stopping")), true, "the daemon stopping");
-    assert.equal(disconnection(problem("agui/http/credential-revoked")), true, "a revoked credential");
+    assert.equal(disconnection(problem("acp/http/service-stopping")), true, "the daemon stopping");
+    assert.equal(disconnection(problem("acp/http/credential-revoked")), true, "a revoked credential");
     assert.equal(disconnection(problem("client/connection/refused")), true, "a lost connection");
 });

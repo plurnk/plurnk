@@ -10,7 +10,7 @@ process.env.NO_COLOR = "1";
 
 const { renderBody, formatTarget, gateTitle, proposalOf, renderProposalMenu, keyToResolution, questionChoices, proposalResume } = await import("./proposal.ts");
 
-test("[§cli-proposal-review]: resolution bodies and outcomes survive standard AG-UI resume", () => {
+test("[§cli-proposal-review]: resolution bodies and outcomes survive standard ACP resume", () => {
     for (const decision of ["accept", "reject"] as const) {
         assert.deepEqual(proposalResume("gate-7", { decision }), {
             interruptId: "gate-7", status: "resolved", payload: { decision },

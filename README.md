@@ -103,7 +103,7 @@ for local endpoints and tuning.
 
 ## Service
 
-`plurnk` attaches to the service at `http://127.0.0.1:1066/agui` (`PLURNK_HOST`
+`plurnk` attaches to the service at `http://127.0.0.1:1066/acp` (`PLURNK_HOST`
 and `PLURNK_PORT` move it), starting the installed `plurnk-service` there when
 nothing listens. The service keeps running after the client exits and serves
 every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
@@ -179,7 +179,7 @@ agent has bulk operations over its own context, not just over your code.
 
 ## Extend and configure
 
-Plurnk uses **AG-UI** for clients, **MCP** for external tools, **Agent Skills**
+Plurnk uses **ACP** for clients, **MCP** for external tools, **Agent Skills**
 for reusable instructions, and **A2A** for remote agents. Tools, skills, and
 agents can be discovered, added, and enabled per workspace without restarting
 the daemon: `/mcp discover <query>` searches the MCP Registry, and

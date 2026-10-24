@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { actionViaAgui } from "../../src/agui.ts";
-import { AguiTransport } from "../../src/transport.ts";
+import { actionViaAcp } from "../../src/acp.ts";
+import { AcpTransport } from "../../src/transport.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 import { servicePath } from "../service-checkout.ts";
 
-test("{§cli-agui-conformance}: separate client connections observe every exposed durable control", { timeout: 120_000 }, async (t) => {
+test("{§cli-acp-conformance}: separate client connections observe every exposed durable control", { timeout: 120_000 }, async (t) => {
     const service = await locateDaemon();
     if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
     const { startDemoAgent } = await import(servicePath("plurnk-a2a/test/fixtures/DemoAgent.ts")) as { startDemoAgent: () => Promise<{ baseUrl: string; close(): Promise<void> }> };
@@ -35,28 +35,28 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
     await writeFile(join(daemon.home, ".agents", "skills", "durable-skill", "SKILL.md"), "---\nname: durable-skill\ndescription: Durable skill\n---\nUse it.\n");
 
     const original = `terminal-durable-${crypto.randomUUID()}`;
-    const created = await actionViaAgui<{ id: number; name: string; workerId: number }>(
-        { aguiUrl: daemon.url },
+    const created = await actionViaAcp<{ id: number; name: string; workerId: number }>(
+        { acpUrl: daemon.url },
         { threadId: "terminal-control", kind: "workspace.create", params: { name: original, projectRoot: null } },
     );
-    const connectionA = new AguiTransport(
-        { aguiUrl: daemon.url },
+    const connectionA = new AcpTransport(
+        { acpUrl: daemon.url },
         { workspaceId: created.id, worker: "terminal-durable-worker" },
     );
-    const connectionB = new AguiTransport(
-        { aguiUrl: daemon.url },
+    const connectionB = new AcpTransport(
+        { acpUrl: daemon.url },
         { workspaceId: created.id, worker: "terminal-durable-worker" },
     );
     const from = <T>(connection: "a" | "b", kind: string, params: object = {}): Promise<T> =>
         (connection === "a" ? connectionA : connectionB).rpc<T>(kind, params);
 
-    const listed = await actionViaAgui<{ workspaces: Array<{ id: number; name: string }> }>(
-        { aguiUrl: daemon.url },
+    const listed = await actionViaAcp<{ workspaces: Array<{ id: number; name: string }> }>(
+        { acpUrl: daemon.url },
         { threadId: "terminal-observer", kind: "workspace.list" },
     );
     assert.ok(listed.workspaces.some(({ id, name }) => id === created.id && name === original));
 
-    // Only an act addressed to the worker creates it (plurnk-service {§agui-action-binding}).
+    // Only an act addressed to the worker creates it (plurnk-service {§acp-action-binding}).
     await from("a", "worker.model.set", { selector: "controlfixture" });
     const child = await from<{ workerId: number }>("a", "run.fork", { name: "durable-child" });
     const workers = await from<{ workers: Array<{ id: number; name: string }> }>(
@@ -130,8 +130,8 @@ test("{§cli-agui-conformance}: separate client connections observe every expose
 
     const renamed = `${original}-renamed`;
     await from("a", "workspace.rename", { name: renamed });
-    const afterRename = await actionViaAgui<{ workspaces: Array<{ id: number; name: string }> }>(
-        { aguiUrl: daemon.url },
+    const afterRename = await actionViaAcp<{ workspaces: Array<{ id: number; name: string }> }>(
+        { acpUrl: daemon.url },
         { threadId: "terminal-observer-after-rename", kind: "workspace.list" },
     );
     assert.ok(afterRename.workspaces.some(({ id, name }) => id === created.id && name === renamed));
@@ -148,8 +148,8 @@ test("[§cli-file-members] separate client connections observe the durable file 
         extraEnv: { PLURNK_MEMBERS_docs: "docs/**", PLURNK_MEMBERS_ENABLED: "1" },
     });
     t.after(daemon.cleanup);
-    const target = { aguiUrl: daemon.url };
-    const discovery = await actionViaAgui<{ actions: Record<string, unknown> }>(target, { threadId: "terminal-members-discovery", kind: "discover" });
+    const target = { acpUrl: daemon.url };
+    const discovery = await actionViaAcp<{ actions: Record<string, unknown> }>(target, { threadId: "terminal-members-discovery", kind: "discover" });
     if (!("workspace.members.list" in discovery.actions)) { t.skip("the daemon does not serve the members family"); return; }
 
     const project = await mkdtemp(join(tmpdir(), "plurnk-members-durable-"));
@@ -158,9 +158,9 @@ test("[§cli-file-members] separate client connections observe the durable file 
     await writeFile(join(project, "docs", "guide.md"), "# guide\n");
     await writeFile(join(project, "note.md"), "# note\n");
     const name = `terminal-members-${crypto.randomUUID()}`;
-    const created = await actionViaAgui<{ id: number }>(target, { threadId: "terminal-members-control", kind: "workspace.create", params: { name, projectRoot: project } });
-    const connectionA = new AguiTransport(target, { workspaceId: created.id, worker: "terminal-members-worker" });
-    const connectionB = new AguiTransport(target, { workspaceId: created.id, worker: "terminal-members-worker" });
+    const created = await actionViaAcp<{ id: number }>(target, { threadId: "terminal-members-control", kind: "workspace.create", params: { name, projectRoot: project } });
+    const connectionA = new AcpTransport(target, { workspaceId: created.id, worker: "terminal-members-worker" });
+    const connectionB = new AcpTransport(target, { workspaceId: created.id, worker: "terminal-members-worker" });
     type Definition = { alias: string; origin: string; state: string; detail?: { effect: string; pattern: string; matched: number; files: string[]; ignored: number } };
     const members = async (): Promise<Definition[]> =>
         (await connectionB.rpc<{ definitions: Definition[] }>("workspace.members.list", {})).definitions;

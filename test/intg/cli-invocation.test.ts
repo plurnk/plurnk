@@ -26,7 +26,7 @@ test("[§cli-invocation] local CLI surfaces never contact the daemon", async (t)
             env: {
                 ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), NO_COLOR: "1",
                 PLURNK_CLIENT_COLOR: undefined, FORCE_COLOR: undefined, CLICOLOR_FORCE: undefined, CLICOLOR: undefined,
-                PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}`, PLURNK_CLIENT_JSON: "0", ...env,
+                PLURNK_ACP_URL: `http://127.0.0.1:${address.port}`, PLURNK_CLIENT_JSON: "0", ...env,
             },
             stdio: ["pipe", "pipe", "pipe"],
         });

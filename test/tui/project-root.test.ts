@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { BIN, spawnTui } from "./harness.ts";
 
@@ -15,12 +15,12 @@ test("[§cli-project-root] home launch requires a choice before workspace creati
     const env = {
         ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), NO_COLOR: "1",
-        PLURNK_AGUI_URL: daemon.url, PLURNK_CLIENT_AUTOSTART: "0", PLURNK_MODEL: "",
+        PLURNK_ACP_URL: daemon.url, PLURNK_CLIENT_AUTOSTART: "0", PLURNK_MODEL: "",
         PLURNK_CLIENT_WORKSPACE: undefined, PLURNK_CLIENT_WORKER: undefined,
         PLURNK_CLIENT_PROJECT_ROOT: undefined,
     };
-    const rows = async () => (await actionViaAgui<{ workspaces: { name: string; project_root: string | null }[] }>(
-        { aguiUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.list" },
+    const rows = async () => (await actionViaAcp<{ workspaces: { name: string; project_root: string | null }[] }>(
+        { acpUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.list" },
     )).workspaces;
     const run = (args: string[]) => new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
         const child = spawn(process.execPath, [BIN, ...args], { cwd: daemon.home, env, timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] });

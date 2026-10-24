@@ -5,7 +5,7 @@ import { bootDaemon, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
 for (const action of ["accept", "cancel", "stop", "fixed", "free"]) {
-    test(`[§cli-question-forms]: ${action} resumes a question's WAIT through the TUI and AG-UI`, { timeout: 90_000 }, async (t) => {
+    test(`[§cli-question-forms]: ${action} resumes a question's WAIT through the TUI and ACP`, { timeout: 90_000 }, async (t) => {
         const service = await locateDaemon();
         if (service === null) { t.skip("no plurnk-service binary reachable"); return; }
         const requests: string[] = [];

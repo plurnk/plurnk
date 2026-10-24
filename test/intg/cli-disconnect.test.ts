@@ -6,9 +6,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { RunAgentInputSchema } from "@ag-ui/core/schemas";
+import { RunAgentInputSchema } from "../../src/acp.ts";
 import type { LoopUsage } from "../../src/render.ts";
-import { callOf, speechOf } from "../agui-parts.ts";
+import { callOf, speechOf } from "../acp-parts.ts";
 
 const usage: LoopUsage = {
     accounting: {
@@ -51,10 +51,10 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             runs += 1;
             for (const event of speechOf({
                 id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1, op: "SEND", origin: "model", status_rx: 200,
-                tx: { body: { raw: `observed segment ${runs}` } }, rx: { answers: ["agui://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
+                tx: { body: { raw: `observed segment ${runs}` } }, rx: { answers: ["acp://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
             })) frame(event);
             if (resumed && runs === 1) {
-                // plurnk-service {§agui-proposal-resolve}: the operation's own call awaiting its decision, and an interrupt naming
+                // plurnk-service {§acp-proposal-resolve}: the operation's own call awaiting its decision, and an interrupt naming
                 // it that carries Core's projection.
                 for (const event of callOf({ id: 9, worker_id: 11, loop_seq: 1, turn_seq: 1, sequence: 9, op: "EDIT", origin: "model",
                     state: "proposed", status_rx: 202, rx: { status: 202 }, tx: { body: "after" } })) frame(event);
@@ -62,7 +62,7 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
                     type: "interrupt", interrupts: [{ id: "gate-9", reason: "tool_call", toolCallId: "1/1/9", metadata: { plurnk: { proposal: {
                         logEntryId: 9, workerId: 11, worker: input.threadId, loopId: 1, turnId: 1, coordinate: "1/1/9", op: "EDIT",
                         target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {},
-                        owner: `agui://anonymous/threads/${encodeURIComponent(input.threadId)}`, disposition: { decision: "review" },
+                        owner: `acp://anonymous/threads/${encodeURIComponent(input.threadId)}`, disposition: { decision: "review" },
                     } } } }],
                 } });
                 response.end();
@@ -94,7 +94,7 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             "--json", "--yolo", "--status-stream", "--workspace", "workspace", "--worker", "actor", "test prompt",
         ], {
             cwd: directory,
-            env: { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: directory, NO_COLOR: "1", PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}` },
+            env: { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: directory, NO_COLOR: "1", PLURNK_ACP_URL: `http://127.0.0.1:${address.port}` },
             stdio: ["ignore", "pipe", "pipe"],
         });
         t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); });
@@ -137,7 +137,7 @@ for (const failure of ["socket", "eof", "invalid-frame", "reported-problem", "te
             ? record.notices.at(-1).problem : record.problem;
         assert.equal(fault.type, failure === "eof"
             ? "https://problems.plurnk.xyz/client/transport/terminal-missing"
-            : "https://problems.plurnk.xyz/client/agui/error");
+            : "https://problems.plurnk.xyz/client/acp/error");
         if (failure === "invalid-frame") assert.match(fault.detail, /broken-frame/u);
         else if (failure !== "eof") assert.equal(fault.detail, "terminated");
         assert.equal(runs, resumed ? 2 : 1, "no automatic prompt replay");

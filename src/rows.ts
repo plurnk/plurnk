@@ -1,11 +1,11 @@
 // {§cli-row-sources} The rows the waterfall draws, rebuilt from the standard parts a row builds: a tool call and its
 // receipt, a result that answers another row's call, speech, or an arrival, the row's facts riding once as the metadata
-// of its call, result, speech or arrival, never of a call's own receipt (plurnk-service `{§agui-plurnk-metadata}`). A sync
+// of its call, result, speech or arrival, never of a call's own receipt (plurnk-service `{§acp-plurnk-metadata}`). A sync
 // Run's `MESSAGES_SNAPSHOT` holds the same parts as messages.
 // A row that builds nothing in the conversation arrives whole as `CUSTOM plurnk.ambient`, as `log.read` returns every
 // row; each becomes the same row.
 
-import type { AguiEvent } from "./agui.ts";
+import type { AcpEvent } from "./acp.ts";
 import { clientTransportResultInvalid, ProblemError } from "./diagnostics.ts";
 import { objectOf, type LogEntryWire } from "./render.ts";
 
@@ -29,7 +29,7 @@ interface Facts {
 const COORDINATE = /^(\d+)\/(\d+)\/(\d+)$/u;
 
 // A part's row facts, or null for a part no row built: a client-owned interrupt's call, or an accepted message the
-// Worker has not observed, which its arrival draws (plurnk-service `{§agui-message-acceptance}`: `published: false`).
+// Worker has not observed, which its arrival draws (plurnk-service `{§acp-message-acceptance}`: `published: false`).
 // Facts that are present but unreadable are a broken wire, never a part to skip.
 const factsOf = (metadata: unknown): Facts | null => {
     const plurnk = objectOf(metadata)?.plurnk;
@@ -51,7 +51,7 @@ const valueOf = (text: string): unknown => {
     try { return JSON.parse(text) as unknown; } catch { return text; }
 };
 
-// plurnk-service {§agui-body-reference}: a result is text, or its receipt's text part beside the document part its body
+// plurnk-service {§acp-body-reference}: a result is text, or its receipt's text part beside the document part its body
 // travels by; the body is never fetched to draw the row.
 const textOf = (content: unknown, toolCallId: string): string => {
     if (typeof content === "string") return content;
@@ -81,16 +81,16 @@ const rowOf = (facts: Facts, tx: unknown, rx: unknown): LogEntryWire => {
     };
 };
 
-// plurnk-service `{§agui-proposal-resolve}`: a gated call awaiting its decision has no row yet; its settlement builds it.
+// plurnk-service `{§acp-proposal-resolve}`: a gated call awaiting its decision has no row yet; its settlement builds it.
 const awaitsDecision = (facts: Facts): boolean => facts.state === "proposed";
 
-// plurnk-service `{§agui-call-result}`: a call that opened an obligation is answered by what discharges it, never its receipt.
+// plurnk-service `{§acp-call-result}`: a call that opened an obligation is answered by what discharges it, never its receipt.
 const opensObligation = (facts: Facts): boolean => {
     const attrs = objectOf(facts.attrs);
     return (typeof attrs?.stream === "string" || typeof attrs?.message === "string") && facts.status < 400;
 };
 
-// The address a whole row recorded, composed as its parts' facts name it (plurnk-service `{§agui-plurnk-metadata}`):
+// The address a whole row recorded, composed as its parts' facts name it (plurnk-service `{§acp-plurnk-metadata}`):
 // `scheme://host[:port]path[?query][#fragment]`, or the bare path a file target records, with its channel.
 const addressOf = (row: Record<string, unknown>): string | null => {
     const text = (value: unknown): string | null => typeof value === "string" ? value : null;
@@ -123,7 +123,7 @@ export default class RowAssembler {
     #calls = new Map<string, { facts: Facts; args: string; ended: boolean }>();
     #texts = new Map<string, { facts: Facts; content: string; message: NonNullable<LogEntryWire["message"]> }>();
 
-    // plurnk-service `{§agui-proposal-resolve}`: whether a gated call still awaiting its decision streams at this address.
+    // plurnk-service `{§acp-proposal-resolve}`: whether a gated call still awaiting its decision streams at this address.
     // Its settled row is still to come, so a conclusion that arrives first waits for it ({§cli-stream-event-and-stream-concluded}).
     awaitsReceipt(address: string): boolean {
         return [...this.#calls.values()].some(({ facts }) => awaitsDecision(facts) && objectOf(facts.attrs)?.stream === address);
@@ -133,12 +133,12 @@ export default class RowAssembler {
     holds(toolCallId: string): boolean { return this.#calls.has(toolCallId); }
 
     // One standard event in; the rows it completes out.
-    consume(e: AguiEvent): LogEntryWire[] {
+    consume(e: AcpEvent): LogEntryWire[] {
         switch (e.type) {
             case "TOOL_CALL_START": {
                 this.#unanswered();
                 const facts = factsOf(e.metadata);
-                // plurnk-service `{§agui-proposal-resolve}`: a gated call's settlement repeats its start with the settled facts,
+                // plurnk-service `{§acp-proposal-resolve}`: a gated call's settlement repeats its start with the settled facts,
                 // which fold onto the call as it was built.
                 if (facts !== null) this.#calls.set(e.toolCallId, { facts, args: this.#calls.get(e.toolCallId)?.args ?? "", ended: false });
                 return [];
@@ -171,7 +171,7 @@ export default class RowAssembler {
                 // Or the words a reply delivered, or what another row received.
                 const content = textOf(e.content, e.toolCallId);
                 this.#unanswered();
-                // plurnk-service `{§agui-call-result}`: what another row delivered for the call, a reply's words or what was observed.
+                // plurnk-service `{§acp-call-result}`: what another row delivered for the call, a reply's words or what was observed.
                 return [facts.op === "SEND" ? rowOf(facts, { body: bodyOf("SEND", content) }, null) : rowOf(facts, null, valueOf(content))];
             }
             case "TEXT_MESSAGE_START": {
@@ -201,7 +201,7 @@ export default class RowAssembler {
         }
     }
 
-    // A call's arguments are its statement as authored, without the verb its name carries (plurnk-service `{§agui-projection}`).
+    // A call's arguments are its statement as authored, without the verb its name carries (plurnk-service `{§acp-projection}`).
     #statement(args: string): unknown {
         try {
             return JSON.parse(args.length === 0 ? "{}" : args) as unknown;
@@ -210,7 +210,7 @@ export default class RowAssembler {
         }
     }
 
-    // plurnk-service `{§agui-call-result}`: a call that opened no obligation is answered by its receipt before anything else is
+    // plurnk-service `{§acp-call-result}`: a call that opened no obligation is answered by its receipt before anything else is
     // built; a gated one by its settlement.
     #unanswered(): void {
         for (const [id, call] of this.#calls) {
@@ -220,13 +220,13 @@ export default class RowAssembler {
 }
 
 // {§cli-worker-history} A snapshot message as the events that build it live: the same parts, with the same facts.
-const eventsOf = (value: unknown): AguiEvent[] => {
+const eventsOf = (value: unknown): AcpEvent[] => {
     const message = objectOf(value);
     if (message === null) return [];
     const id = message.id as string;
     const text = typeof message.content === "string" ? message.content : "";
     if (message.role === "tool") {
-        return [{ type: "TOOL_CALL_RESULT", toolCallId: message.toolCallId, messageId: id, content: message.content, metadata: message.metadata } as AguiEvent];
+        return [{ type: "TOOL_CALL_RESULT", toolCallId: message.toolCallId, messageId: id, content: message.content, metadata: message.metadata } as AcpEvent];
     }
     if (message.role === "assistant" && Array.isArray(message.toolCalls)) {
         return message.toolCalls.flatMap((value) => {
@@ -237,7 +237,7 @@ const eventsOf = (value: unknown): AguiEvent[] => {
                 { type: "TOOL_CALL_START", toolCallId: call.id, toolCallName: fn.name, metadata: call.metadata },
                 { type: "TOOL_CALL_ARGS", toolCallId: call.id, delta: fn.arguments },
                 { type: "TOOL_CALL_END", toolCallId: call.id },
-            ] as AguiEvent[];
+            ] as AcpEvent[];
         });
     }
     if (message.role !== "assistant" && message.role !== "user") return [];
@@ -245,7 +245,7 @@ const eventsOf = (value: unknown): AguiEvent[] => {
         { type: "TEXT_MESSAGE_START", messageId: id, role: message.role, ...(typeof message.name === "string" ? { name: message.name } : {}), metadata: message.metadata },
         ...(text.length === 0 ? [] : [{ type: "TEXT_MESSAGE_CONTENT", messageId: id, delta: text }]),
         { type: "TEXT_MESSAGE_END", messageId: id },
-    ] as AguiEvent[];
+    ] as AcpEvent[];
 };
 
 // {§cli-worker-history} The rows a MESSAGES_SNAPSHOT holds, in log order: every part carries its row's facts, so the

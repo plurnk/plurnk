@@ -12,7 +12,7 @@ import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { bootDaemon, locateDaemon, type Daemon } from "../intg/harness.ts";
 import { BIN, spawnTui } from "./harness.ts";
 
@@ -171,13 +171,13 @@ describe("TUI workspace MCP dogfood", () => {
     test("[§cli-workspace-mcp-controls] the positional form retains server arguments after --", { timeout: 60_000 }, async (t) => {
         if (daemon === null) { t.skip("service checkout with MCP fixtures is not reachable"); return; }
         const workspace = "mcp-positional";
-        await actionViaAgui({ aguiUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        await actionViaAcp({ acpUrl: daemon.url }, { threadId: workspace, kind: "workspace.create", params: { name: workspace, projectRoot: null } });
         const home = await mkdtemp(join(scratch, "home-"));
         const env = {
             ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
             HOME: home,
             XDG_CONFIG_HOME: join(home, ".config"),
-            PLURNK_AGUI_URL: daemon.url,
+            PLURNK_ACP_URL: daemon.url,
             NO_COLOR: "1",
         };
         const plurnk = async <T>(...args: string[]): Promise<T> =>

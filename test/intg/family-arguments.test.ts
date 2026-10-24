@@ -6,11 +6,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { RunAgentInputSchema } from "@ag-ui/core/schemas";
+import { RunAgentInputSchema } from "../../src/acp.ts";
 
 const exec = promisify(execFile);
 
-test("[§cli-family-arguments] built family commands preserve their arguments at the AG-UI boundary", { timeout: 30_000 }, async (t) => {
+test("[§cli-family-arguments] built family commands preserve their arguments at the ACP boundary", { timeout: 30_000 }, async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-family-arguments-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const actions: Record<string, unknown>[] = [];
@@ -79,7 +79,7 @@ test("[§cli-family-arguments] built family commands preserve their arguments at
                 env: {
                     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
                     HOME: directory, XDG_CONFIG_HOME: join(directory, ".config"), NO_COLOR: "1",
-                    PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}`,
+                    PLURNK_ACP_URL: `http://127.0.0.1:${address.port}`,
                 },
             });
             assert.equal(result.stderr, "");

@@ -1,6 +1,6 @@
 // Off-hot-path e2e: install the built CLIENT into a clean sandbox as a consumer
 // would (client only), then prove the client side of the boundary —
-// the bin runs, the AG-UI client composition is present, and the no-daemon + --json
+// the bin runs, the ACP client composition is present, and the no-daemon + --json
 // structured-error paths fire. Self-contained: no daemon, no model, no sibling
 // repo. test:composition covers attachment and private startup with an installed service.
 //
@@ -25,7 +25,7 @@ const runBin = (args, env = {}) => {
     try {
         const stdout = execFileSync(process.execPath, [bin, ...args], {
             cwd: sandbox, encoding: "utf8", input: "",
-            env: { ...process.env, PLURNK_AGUI_URL: noDaemon, ...env },
+            env: { ...process.env, PLURNK_ACP_URL: noDaemon, ...env },
         });
         return { code: 0, stdout, stderr: "" };
     } catch (e) {
@@ -38,11 +38,11 @@ process.stdout.write("-- local sandbox install (--omit=optional, client alone) -
 installSandbox();
 
 ok(existsSync(bin), "plurnk bin linked in the sandbox");
-// Our boundary: the client carries the standard AG-UI transport, not the optional
+// Our boundary: the client carries the standard ACP contracts, not the optional
 // daemon composition.
 ok(
-    existsSync(resolve(mods, "@ag-ui", "client")) && existsSync(resolve(mods, "@ag-ui", "core")),
-    "standard AG-UI client dependencies are installed",
+    existsSync(resolve(mods, "@plurnk", "plurnk-contracts")),
+    "standard ACP client dependencies are installed",
 );
 ok(!existsSync(resolve(mods, "@plurnk", "plurnk-service")), "optional daemon NOT pulled (--omit=optional; the service's install is its own)");
 ok(!existsSync(resolve(mods, "onnxruntime-node")) && !existsSync(resolve(mods, "sharp")), "no native onnxruntime/sharp in the client tree");
@@ -70,7 +70,7 @@ ok(
 ok(refusedJson.stderr.trim() === "", "--json keeps stderr silent even on failure");
 
 const missing = runBin(["--json", "hello"], {
-    PLURNK_AGUI_URL: "", PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0",
+    PLURNK_ACP_URL: "", PLURNK_HOST: "127.0.0.1", PLURNK_PORT: "0",
     PLURNK_CLIENT_AUTOSTART: "1", PLURNK_CLIENT_SERVICE_BIN: "", PATH: "",
 });
 ok(missing.code === 127, "private startup without an installed service exits 127");

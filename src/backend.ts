@@ -5,7 +5,7 @@ import { connect, isIP } from "node:net";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AguiTarget } from "./agui.ts";
+import type { AcpTarget } from "./acp.ts";
 import Credential from "./credential.ts";
 import { clientProblem, ProblemError } from "./diagnostics.ts";
 import Knobs, { KnobError } from "./knobs.ts";
@@ -101,7 +101,7 @@ export const isLoopback = (hostname: string): boolean => {
 
 // Only ECONNREFUSED means there is no listener. A slow, unavailable, foreign, or rejecting
 // endpoint is not permission to substitute an unrelated environment. A live listener still
-// has to satisfy the ordinary AG-UI protocol; this probe establishes no identity or authority.
+// has to satisfy the ordinary ACP protocol; this probe establishes no identity or authority.
 export const listenerPresent = (url: URL, timeoutMs: number): Promise<boolean> => new Promise<boolean>((accept, reject) => {
     const socket = connect({ host: url.hostname.replace(/^\[|\]$/gu, ""), port: Number(url.port || (url.protocol === "https:" ? 443 : 80)) });
     socket.once("connect", () => { socket.destroy(); accept(true); });
@@ -115,9 +115,9 @@ const ADMISSION_POLL_MS = 100;
 // {§cli-daemon-autostart} A service owns its listener before it admits clients, answering 503
 // `service-starting` until then; an attach waits for admission within the startup deadline. The probe is
 // one OPTIONS on its own connection, which an admitted service answers before any authentication. Any
-// other answer, or none (a listener that is not HTTP), is the AG-UI caller's to judge.
-const starting = (aguiUrl: string, timeoutMs: number): Promise<boolean> => new Promise((accept) => {
-    const probe = request(aguiUrl, { method: "OPTIONS", agent: false, timeout: timeoutMs }, (response) => {
+// other answer, or none (a listener that is not HTTP), is the ACP caller's to judge.
+const starting = (acpUrl: string, timeoutMs: number): Promise<boolean> => new Promise((accept) => {
+    const probe = request(acpUrl, { method: "OPTIONS", agent: false, timeout: timeoutMs }, (response) => {
         let text = "";
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => { text += chunk; });
@@ -136,16 +136,16 @@ const starting = (aguiUrl: string, timeoutMs: number): Promise<boolean> => new P
     probe.end();
 });
 
-const admitted = async (aguiUrl: string, timeoutMs: number): Promise<void> => {
+const admitted = async (acpUrl: string, timeoutMs: number): Promise<void> => {
     const deadline = Date.now() + timeoutMs;
-    while (await starting(aguiUrl, timeoutMs) && Date.now() < deadline) {
+    while (await starting(acpUrl, timeoutMs) && Date.now() < deadline) {
         await new Promise((accept) => setTimeout(accept, ADMISSION_POLL_MS));
     }
 };
 
 const unshareablePort = (): ProblemError => new ProblemError(clientProblem(
     "daemon", "port-unshareable", 400, "Autostart needs the service's port; PLURNK_PORT is 0.",
-    { hints: ["Set PLURNK_PORT to the port the service listens on, or PLURNK_AGUI_URL to attach to a running one."] },
+    { hints: ["Set PLURNK_PORT to the port the service listens on, or PLURNK_ACP_URL to attach to a running one."] },
 ), 64);
 
 // What a failed start said: its stderr, or the shared log's lines when that is where both streams went.
@@ -156,24 +156,24 @@ const startOutput = (cause: unknown): string => cause instanceof Error && "stder
 // its address, or starts it once with the launcher's shared lifetime and leaves it running for every
 // later client; it never stops a service.
 export default class Backend {
-    readonly target: AguiTarget;
+    readonly target: AcpTarget;
     // The service this invocation started, for its notice; null when it attached to one already running.
     readonly started: StartedService | null;
 
-    private constructor(target: AguiTarget, started: StartedService | null = null) {
+    private constructor(target: AcpTarget, started: StartedService | null = null) {
         this.target = target;
         this.started = started;
     }
 
-    static async open(target: AguiTarget, env: NodeJS.ProcessEnv = process.env): Promise<Backend> {
-        const url = new URL(target.aguiUrl);
-        if ((env.PLURNK_AGUI_URL ?? "").length > 0 || !isLoopback(url.hostname)
+    static async open(target: AcpTarget, env: NodeJS.ProcessEnv = process.env): Promise<Backend> {
+        const url = new URL(target.acpUrl);
+        if ((env.PLURNK_ACP_URL ?? "").length > 0 || !isLoopback(url.hostname)
             || !Knobs.flag("PLURNK_CLIENT_AUTOSTART", "live", env)) return new Backend(target);
         const timeout = Knobs.count("PLURNK_CLIENT_DAEMON_TIMEOUT_MS", env);
         if (timeout === 0) throw new KnobError("PLURNK_CLIENT_DAEMON_TIMEOUT_MS", String(timeout), "must be positive.");
         if (url.port === "0") throw unshareablePort();
         if (await listenerPresent(url, timeout)) {
-            await admitted(target.aguiUrl, timeout);
+            await admitted(target.acpUrl, timeout);
             return new Backend(target);
         }
         const { command, launch } = await serviceInstallation(env);
@@ -186,7 +186,7 @@ export default class Backend {
         } catch (cause) {
             // A concurrent first launch that won the address serves this client too.
             if (await listenerPresent(url, timeout)) {
-                await admitted(target.aguiUrl, timeout);
+                await admitted(target.acpUrl, timeout);
                 return new Backend({ ...target, credential: Credential.fromEnvironment(env) ?? target.credential });
             }
             const said = startOutput(cause);
@@ -195,6 +195,6 @@ export default class Backend {
         }
         // {§cli-credential} — the secret the started service minted beside its database.
         const credential = Credential.fromFile(join(dirname(daemon.dbPath), "secret")) ?? target.credential;
-        return new Backend({ aguiUrl: daemon.url, credential }, { pid: daemon.child.pid ?? null, url: daemon.url, logFile: daemon.logFile });
+        return new Backend({ acpUrl: daemon.url, credential }, { pid: daemon.child.pid ?? null, url: daemon.url, logFile: daemon.logFile });
     }
 }

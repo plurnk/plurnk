@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-// plurnk-service {§agui-history-window} {§agui-status-descendants}: the window holds the delegation's messages, and the
+// plurnk-service {§acp-history-window} {§acp-status-descendants}: the window holds the delegation's messages, and the
 // gauge names each descendant and its generation.
 test("[§cli-worker-history] a session attached after a delegation draws the child's rows marked and stepped in, in history and in /loop", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();

@@ -29,7 +29,7 @@ const runClient = async (
                 ...process.env,
                 HOME: resolve(import.meta.dirname, "../.client-test-home"),
                 XDG_CONFIG_HOME: resolve(import.meta.dirname, "../.client-test-config"),
-                PLURNK_AGUI_URL: "",
+                PLURNK_ACP_URL: "",
                 PLURNK_HOST: address.hostname,
                 PLURNK_PORT: address.port,
                 NO_COLOR: "1",

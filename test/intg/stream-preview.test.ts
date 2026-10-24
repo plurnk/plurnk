@@ -25,7 +25,7 @@ test("[§cli-stream-event-and-stream-concluded] built one-shot and script client
     t.after(() => { if (!t.passed) t.diagnostic(daemon.output()); });
     const env = {
         ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_") && !key.endsWith("_API_KEY"))),
-        HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), NO_COLOR: "1", PLURNK_AGUI_URL: daemon.url,
+        HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), NO_COLOR: "1", PLURNK_ACP_URL: daemon.url,
     };
     const run = (...args: string[]) => {
         const result = exec(process.execPath, [bin, "--yolo", "--no-git", "--max-turns", "5", ...args], { env, cwd: daemon.workspace, timeout: 25_000 });

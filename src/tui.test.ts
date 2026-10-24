@@ -426,7 +426,7 @@ test("[§cli-workers-topology] handleVerb /worker without a name shows where the
     assert.equal(ctx.out.join(""), "  worker: sess [/main/~sess]\n");
 });
 
-// ─── /members (file members Functionality family through AG-UI+) ─────
+// ─── /members (file members Functionality family through ACP+) ─────
 
 test("[§cli-file-members] handleVerb /members lists this workspace's file members", async () => {
     const ctx = makeCtx({
@@ -795,7 +795,7 @@ test("handleVerb /script on a missing file → throws (fail-hard, surfaced by th
     assert.equal(ctx.calls.length, 0);   // never reaches op.parse
 });
 
-// ─── /mcp (workspace MCP lifecycle through AG-UI+) ───────────────────
+// ─── /mcp (workspace MCP lifecycle through ACP+) ───────────────────
 
 test("[§cli-workspace-mcp-controls] handleVerb /mcp lists workspace servers", async () => {
     const ctx = makeCtx({
@@ -897,10 +897,10 @@ test("[§cli-effort] handleVerb /model <selector> <effort> chooses both in one w
     assert.deepEqual(ctx.calls.filter(({ method }) => method === "worker.model.set").at(-1), { method: "worker.model.set", params: { selector: "qmax" } });
 });
 
-// ─── /loops and /loop (plurnk-service {§agui-worker-loops}) ─────────────
+// ─── /loops and /loop (plurnk-service {§acp-worker-loops}) ─────────────
 const LOOPS = { loops: [
-    { id: 11, sequence: 1, lifecycle: "completed", source: "agui://anonymous/threads/1%23sess/messages/a", opening: "Let's build an app! Make no mistakes.", continued: false },
-    { id: 12, sequence: 2, lifecycle: "cancelled", source: "agui://anonymous/threads/1%23sess/messages/b", opening: "No, you did it wrong!", continued: true },
+    { id: 11, sequence: 1, lifecycle: "completed", source: "acp://anonymous/threads/1%23sess/messages/a", opening: "Let's build an app! Make no mistakes.", continued: false },
+    { id: 12, sequence: 2, lifecycle: "cancelled", source: "acp://anonymous/threads/1%23sess/messages/b", opening: "No, you did it wrong!", continued: true },
     { id: 13, sequence: 3, lifecycle: "running", source: "worker://helper", opening: "Check the tests.", continued: false },
 ] };
 

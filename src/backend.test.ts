@@ -26,34 +26,34 @@ test("[§cli-daemon-autostart] only loopback destinations are eligible", () => {
 
 test("[§cli-daemon-autostart] remote, portal and attach-only targets do not resolve or start a package", async () => {
     const port = await refusedPort();
-    for (const [aguiUrl, overrides] of [
+    for (const [acpUrl, overrides] of [
         ["https://example.invalid", {}],
-        [`http://127.0.0.1:${port}`, { PLURNK_AGUI_URL: `http://127.0.0.1:${port}` }],
+        [`http://127.0.0.1:${port}`, { PLURNK_ACP_URL: `http://127.0.0.1:${port}` }],
         [`http://127.0.0.1:${port}`, { PLURNK_CLIENT_AUTOSTART: "0" }],
     ] as const) {
-        const target = { aguiUrl, token: "existing-token" };
+        const target = { acpUrl, token: "existing-token" };
         const backend = await Backend.open(target, { ...env, ...overrides });
         assert.deepEqual(backend.target, target);
         assert.equal(backend.started, null, "attaching starts nothing");
     }
 });
 
-test("[§cli-daemon-autostart] a live listener is attached even when it is not an AG-UI server", async () => {
+test("[§cli-daemon-autostart] a live listener is attached even when it is not an ACP server", async () => {
     // It drains what it is sent, as any listener does, then hangs up.
     const server = createServer((socket) => { socket.resume(); socket.end(); });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
         const address = server.address();
         assert.ok(address !== null && typeof address === "object");
-        const target = { aguiUrl: `http://127.0.0.1:${address.port}` };
+        const target = { acpUrl: `http://127.0.0.1:${address.port}` };
         const backend = await Backend.open(target, env);
-        assert.deepEqual(backend.target, target, "protocol/authentication remain the AG-UI caller's decision");
+        assert.deepEqual(backend.target, target, "protocol/authentication remain the ACP caller's decision");
         assert.equal(backend.started, null);
     } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
 });
 
 test("[§cli-daemon-autostart] autostart refuses port 0, which no later client could reach", async () => {
-    await assert.rejects(Backend.open({ aguiUrl: "http://127.0.0.1:0" }, env), (cause) => cause instanceof ProblemError
+    await assert.rejects(Backend.open({ acpUrl: "http://127.0.0.1:0" }, env), (cause) => cause instanceof ProblemError
         && cause.exitCode === 64 && cause.problem.kind === "port-unshareable");
 });
 

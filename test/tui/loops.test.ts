@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
-// plurnk-service {§agui-worker-loops}: the loops a worker's conversation is made of, listed and read whole.
+// plurnk-service {§acp-worker-loops}: the loops a worker's conversation is made of, listed and read whole.
 test("[§cli-loops] /loops lists the worker's loops by their opening lines, and /loop prints one whole, the current one without a number", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed client test requires the sibling service");
@@ -34,7 +34,7 @@ test("[§cli-loops] /loops lists the worker's loops by their opening lines, and 
     await tui.waitFor(/ANSWER_1/);
     tui.write("No, you did it wrong!\r");
     await tui.waitFor(/ANSWER_2/);
-    // plurnk-service {§agui-status-loop-number}: the place names the loop by the number /loops lists.
+    // plurnk-service {§acp-status-loop-number}: the place names the loop by the number /loops lists.
     await tui.waitForScreen(/\[loops\/~main\(2\/1\)\]/u);
 
     const plain = (since: number): string => stripVTControlCharacters(tui.output().slice(since));

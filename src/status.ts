@@ -163,7 +163,7 @@ export interface ClientStatus {
     openStreams?: readonly string[];
 }
 
-// {§cli-status-inbox} — plurnk-service {§agui-message-acceptance}: a message the daemon accepted for the bound worker,
+// {§cli-status-inbox} — plurnk-service {§acp-message-acceptance}: a message the daemon accepted for the bound worker,
 // by its address, the id this client gave it when it sent it, and the lifecycle of the loop holding it.
 export interface InboxMessage {
     readonly path: string;
@@ -220,7 +220,7 @@ const spendAccounting = (value: unknown): TurnAccounting | null => {
         knownInputTokens: known?.inputTokens ?? null, knownOutputTokens: known?.outputTokens ?? null, knownCostUsd };
 };
 
-// plurnk-service {§agui-action-binding}: `status` and `budget` are the bound worker's gauge, and a Run that
+// plurnk-service {§acp-action-binding}: `status` and `budget` are the bound worker's gauge, and a Run that
 // binds no worker carries neither; every Run carries its workspace.
 export interface StatusGaugeEnvelope {
     plurnk: { status?: RuntimeStatusGauge; workspace: WorkspaceState };
@@ -242,7 +242,7 @@ const LIFECYCLES: ReadonlySet<string> = new Set<StatusLifecycle>([
 // {§cli-status-children} — a child that still owes a result is alive; a parked one still owes it.
 const ALIVE: ReadonlySet<string> = new Set<StatusLifecycle>(["queued", "running", "parked"]);
 
-// {§cli-status-children} {§cli-status-gated} — plurnk-service {§agui-status-descendants}: the daemon's tree beneath
+// {§cli-status-children} {§cli-status-gated} — plurnk-service {§acp-status-descendants}: the daemon's tree beneath
 // the bound worker, read for the two counts the status line shows. A direct child is one whose parent is not in the
 // tree: every other parent is the one worker the tree hangs from.
 const treeCounts = (value: unknown): { children: number; gated: number; gates: Record<number, number>; descendants: Descendant[] } => {
@@ -286,7 +286,7 @@ const inboxMessages = (value: unknown): InboxMessage[] => {
     });
 };
 
-// {§cli-status-streams} — plurnk-service {§agui-status-streams}: the streams the bound worker holds open, by address.
+// {§cli-status-streams} — plurnk-service {§acp-status-streams}: the streams the bound worker holds open, by address.
 const openStreamAddresses = (value: unknown): string[] => {
     const fail = (): never => { throw new TypeError("Invalid runtime streams."); };
     if (!Array.isArray(value)) return fail();
@@ -309,7 +309,7 @@ export const changedElsewhere = (carried: string | null, previous: string | null
 // {§cli-status-project-root} {§cli-status-preparation} — the bound workspace's folder, a path the client uses,
 // the daemon's label, and the activity that belongs to the workspace rather than to its worker.
 export interface WorkspaceState {
-    // plurnk-service {§agui-workspace-state}: the bound workspace's identity and its current name.
+    // plurnk-service {§acp-workspace-state}: the bound workspace's identity and its current name.
     readonly id?: number;
     readonly name?: string;
     readonly projectRoot?: string | null;
@@ -359,7 +359,7 @@ export const projectStatusGauge = (value: RuntimeStatusGauge, workspace: Workspa
     if (!Number.isSafeInteger(value.packetCount) || value.packetCount < 0) {
         throw new TypeError(`Invalid runtime packet count '${value.packetCount}'.`);
     }
-    // plurnk-service {§agui-status-loop-number}: the loop's number, null exactly when its id is.
+    // plurnk-service {§acp-status-loop-number}: the loop's number, null exactly when its id is.
     if (value.loopSeq === null ? value.loopId !== null : !Number.isSafeInteger(value.loopSeq) || (value.loopSeq as number) <= 0 || value.loopId === null) {
         throw new TypeError("Invalid runtime loop number.");
     }
@@ -429,7 +429,7 @@ export const reduceStatusGauge = (
     if (next.plurnk?.workspace === null || typeof next.plurnk?.workspace !== "object") {
         throw new ProblemError(clientTransportStateInvalid("STATE is missing plurnk.workspace"));
     }
-    // plurnk-service {§agui-action-binding}: the worker's gauge is its status and budget together, or neither.
+    // plurnk-service {§acp-action-binding}: the worker's gauge is its status and budget together, or neither.
     const worker = next.plurnk.status !== undefined;
     if (worker !== (next.budget !== undefined) || (worker && (next.budget === null || typeof next.budget !== "object"))) {
         throw new ProblemError(clientTransportStateInvalid("STATE carries plurnk.status without budget, or budget without plurnk.status"));

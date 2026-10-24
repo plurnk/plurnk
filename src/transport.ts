@@ -1,4 +1,4 @@
-// The TUI's AG-UI transport. Model and action runs share presentation handlers,
+// The TUI's ACP transport. Model and action runs share presentation handlers,
 // not stream state or interrupt ownership ({§cli-active-command-admission}).
 
 import { objectOf, type Descendant, type OutsideText } from "./render.ts";
@@ -21,12 +21,12 @@ import {
 import type { OperationResult } from "@plurnk/plurnk-contracts";
 import { clientCapabilities } from "./client-capabilities.ts";
 import { createHash } from "node:crypto";
-import { runViaAgui, actionOutcome, operationResult, problemDetails, readLoopPage, runEnd, workerThreadId, type AguiEvent, type AguiTarget, type WorkerBinding, type WorkspaceHandle } from "./agui.ts";
+import { runViaAcp, actionOutcome, operationResult, problemDetails, readLoopPage, runEnd, workerThreadId, type AcpEvent, type AcpTarget, type WorkerBinding, type WorkspaceHandle } from "./acp.ts";
 import ReasoningEvents, { type ReasoningUpdate } from "./reasoning-events.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
 import { isWorkerGauge, reduceStatusGauge, type StatusGaugeEnvelope, type WorkerGauge, type WorkspaceState } from "./status.ts";
 
-// The terminal outcome a Run's end carries (plurnk-service {§agui-plurnk-metadata}).
+// The terminal outcome a Run's end carries (plurnk-service {§acp-plurnk-metadata}).
 export interface TerminatedInfo {
     loopId?: number;
     workerId?: number;
@@ -39,8 +39,8 @@ export interface TerminatedInfo {
 }
 
 
-// The run's status gauge — the AG-UI state the daemon snapshots on RUN_STARTED and
-// patches per packet, termination, and derivation (plurnk-agui SPEC, `loop/packet`).
+// The run's status gauge — the ACP state the daemon snapshots on RUN_STARTED and
+// patches per packet, termination, and derivation (plurnk-acp SPEC, `loop/packet`).
 export type StatusGauge = StatusGaugeEnvelope;
 
 // Run-plane events projected into the client's presentation shapes.
@@ -52,7 +52,7 @@ export interface RunHandlers {
     onInterruptEnd?: (id: string) => void;
     onInteraction?: (i: {
         interactionId: number;
-        // {§cli-review-attribution} the worker asking (plurnk-service `{§agui-plurnk-metadata}` interaction projection).
+        // {§cli-review-attribution} the worker asking (plurnk-service `{§acp-plurnk-metadata}` interaction projection).
         workerId?: number;
         toolName: string;
         arguments: Record<string, unknown>;
@@ -95,11 +95,11 @@ export interface WorkerHistory {
     entries: LogEntryWire[];
     attachment: boolean;
     // {§cli-status-inbox} The words of the accepted messages this thread sent that the worker has not read, by address
-    // (plurnk-service {§agui-message-acceptance}).
+    // (plurnk-service {§acp-message-acceptance}).
     accepted: ReadonlyMap<string, string>;
 }
 
-// plurnk-service {§agui-message-acceptance}: the snapshot carries this thread's accepted, unread messages after every row.
+// plurnk-service {§acp-message-acceptance}: the snapshot carries this thread's accepted, unread messages after every row.
 const acceptedWords = (messages: readonly unknown[]): Map<string, string> => new Map(messages.flatMap((message) => {
     const value = message !== null && typeof message === "object" ? message as { content?: unknown; metadata?: { plurnk?: { published?: unknown; message?: unknown } } } : null;
     const plurnk = value?.metadata?.plurnk;
@@ -115,13 +115,13 @@ export type LoopAdmission = OperationResult & {
 
 type ProposalResolution = Resolution & { logEntryId: number };
 type InteractionResolution = Record<string, unknown> | "cancel";
-// `windowed`: the Run already holds its first window of the conversation (plurnk-service {§agui-history-window}).
+// `windowed`: the Run already holds its first window of the conversation (plurnk-service {§acp-history-window}).
 type StreamProjection = { gauge: StatusGauge | null; reasoning: ReasoningEvents; rows: RowAssembler; windowed: boolean };
 interface PendingInterrupt<T> {
     readonly signal: AbortSignal;
     readonly settle: (value: T | undefined) => void;
     readonly release: () => void;
-    // plurnk-service {§agui-held-interrupts}: the gate settled elsewhere; the review retires without an answer of ours.
+    // plurnk-service {§acp-held-interrupts}: the gate settled elsewhere; the review retires without an answer of ours.
     readonly withdraw: () => void;
     decided: boolean;
 }
@@ -154,22 +154,22 @@ export interface Transport {
     // the daemon binds an existing worker or mints a new one on the next
     // run — the same path `--worker` takes at invocation ({§cli-workers-topology}).
     useWorker(name: string): void;
-    // The thread this transport speaks for: the AG-UI threadId the daemon sources this
+    // The thread this transport speaks for: the ACP threadId the daemon sources this
     // client's arrivals to (plurnk-service #706), so the TUI can tell its own messages apart.
     threadId(): string;
-    // {§cli-loops} The worker's loop `sequence`, whole, as the rows its messages build (plurnk-service {§agui-loop-page}).
+    // {§cli-loops} The worker's loop `sequence`, whole, as the rows its messages build (plurnk-service {§acp-loop-page}).
     loop(workerId: number, sequence: number): Promise<LogEntryWire[]>;
 }
 
 // Model and sync Runs share event projection and interrupt handling. An idle sync
 // can finish without a loop terminal; it cannot manufacture accounting evidence.
 // Settings apply to explicit workspace creation, not to already-bound Runs.
-export interface AguiTransportOpts { settings?: object; descendants?: boolean; auto?: boolean }
+export interface AcpTransportOpts { settings?: object; descendants?: boolean; auto?: boolean }
 
-export class AguiTransport implements Transport {
-    #target: AguiTarget;
+export class AcpTransport implements Transport {
+    #target: AcpTarget;
     #binding: WorkerBinding;
-    #workspace: AguiTransportOpts;
+    #workspace: AcpTransportOpts;
     #h: RunHandlers | null = null;
     #modelProjection: StreamProjection | null = null;
     #pendingProposals = new Map<number, PendingInterrupt<ProposalResolution>>();
@@ -179,7 +179,7 @@ export class AguiTransport implements Transport {
     #seenRows = new Map<number, string>();
     #lastLoopId: number | null = null;
 
-    constructor(target: AguiTarget, binding: WorkerBinding, workspace: AguiTransportOpts = {}) {
+    constructor(target: AcpTarget, binding: WorkerBinding, workspace: AcpTransportOpts = {}) {
         this.#target = target;
         this.#binding = binding;
         this.#workspace = workspace;
@@ -198,7 +198,7 @@ export class AguiTransport implements Transport {
         }
     }
 
-    // PLURNK verbs ride namespaced actions inside standard AG-UI runs.
+    // PLURNK verbs ride namespaced actions inside standard ACP runs.
     // A verb is a §3 action run — and its stream ALSO carries whatever the dispatch
     // emitted (a raw-DSL op's rows, notices, streams). Feed those through the same
     // persistent handlers a run uses (e.g. /worker completion harvests worker
@@ -218,13 +218,13 @@ export class AguiTransport implements Transport {
     }
 
     // An action answers on its own Run and presents no interrupt: a client operation is the person's own
-    // decision, never routed for review (plurnk/plurnk-service {§agui-client-operation}).
+    // decision, never routed for review (plurnk/plurnk-service {§acp-client-operation}).
     async #action<T>(threadId: string, method: string, params: object | undefined, signal: AbortSignal): Promise<T> {
         const projection: StreamProjection = { gauge: null, reasoning: new ReasoningEvents(), rows: new RowAssembler(), windowed: false };
         let result: T | undefined;
         let problem: ProblemDetails | undefined;
         let sawResult = false;
-        for await (const e of runViaAgui(this.#target, {
+        for await (const e of runViaAcp(this.#target, {
             threadId,
             messages: [],
             forwardedProps: { action: { kind: method, ...(params ?? {}) } },
@@ -286,7 +286,7 @@ export class AguiTransport implements Transport {
             ...(opts?.openPaths !== undefined ? { openPaths: opts.openPaths } : {}),
         };
         const forwardedProps = Object.keys(fwd).length > 0 ? fwd : undefined;
-        // AG-UI interrupt/resume: a stopped-world ends the run with an interrupt, a proposal's
+        // ACP interrupt/resume: a stopped-world ends the run with an interrupt, a proposal's
         // carrying the daemon's projection, an interaction's naming its request_user_input
         // TOOL_CALL (the loop stays paused in-engine). resolve() supplies the decision; we POST a
         // standard resume as the resume run and keep consuming — done spans the whole pause/resume
@@ -305,7 +305,7 @@ export class AguiTransport implements Transport {
             let runProblem: ProblemDetails | null = null;
             let next: { prompt?: string; resume?: Array<{ interruptId: string; status: "resolved" | "cancelled"; payload?: unknown }> } = { prompt };
             let fp = forwardedProps;
-            // plurnk-service {§agui-run-input}: a Run that carries nothing new synchronizes.
+            // plurnk-service {§acp-run-input}: a Run that carries nothing new synchronizes.
             let observing = prompt === undefined;
             // {§cli-gate-answer-lifetime} The gate whose answer the next Run carries, held until that Run ends.
             let answered: { readonly release: () => void } | undefined;
@@ -323,7 +323,7 @@ export class AguiTransport implements Transport {
                 let toolArgs = "";
                 let interactionArguments: Record<string, unknown> | null = null;
                 try {
-                    const events = runViaAgui(this.#target, {
+                    const events = runViaAcp(this.#target, {
                         ...binding, ...next, forwardedProps: fp, capabilities: clientCapabilities(this.#workspace.auto !== true, true),
                         connect: prompt === undefined && next.resume === undefined,
                     }, ac.signal);
@@ -342,7 +342,7 @@ export class AguiTransport implements Transport {
                             const outcome = e.outcome;
                             observed = outcome?.type === "success";
                             const interrupts = outcome?.type === "interrupt" ? outcome.interrupts : [];
-                            // plurnk-service {§agui-proposal-resolve}: a proposal is its interrupt, carrying the daemon's projection.
+                            // plurnk-service {§acp-proposal-resolve}: a proposal is its interrupt, carrying the daemon's projection.
                             let gate: { readonly interrupt: (typeof interrupts)[number]; readonly proposal: ProposalParams } | undefined;
                             try {
                                 for (const candidate of interrupts) {
@@ -422,7 +422,7 @@ export class AguiTransport implements Transport {
                     return failed(problem);
                 }
                 if (pausedProp === null && pausedInteraction === null) {
-                    // plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits, settled by
+                    // plurnk-service {§acp-held-interrupts}: an answer refused because its gate no longer waits, settled by
                     // another client or the daemon, ends nothing: the refusal is shown and the work is followed.
                     if (next.resume !== undefined && runProblem !== null && isUnpending(runProblem)) {
                         sawRunError = false;
@@ -467,7 +467,7 @@ export class AguiTransport implements Transport {
                 const decision = interactionResolution ?? proposalResolution;
                 if (decision === null) throw new Error("paused run ended without a resolution channel");
                 if (interruptId === undefined) throw new Error("paused run ended without an interrupt identity");
-                // plurnk-service {§agui-held-interrupts}: while the review is open, a connection holding its interrupt observes
+                // plurnk-service {§acp-held-interrupts}: while the review is open, a connection holding its interrupt observes
                 // the worker; a gate another client's answer or the daemon settles withdraws the review, and the work that
                 // continues is followed.
                 const review = pausedInteraction !== null ? this.#pendingInteractions.get(pausedInteraction)
@@ -510,7 +510,7 @@ export class AguiTransport implements Transport {
             ready.resolve();
             return terminal;
         }).catch((cause: unknown): TerminatedInfo => {
-            // plurnk-service {§agui-action-binding}: the binding stands when its worker, or its workspace, does not
+            // plurnk-service {§acp-action-binding}: the binding stands when its worker, or its workspace, does not
             // exist yet; only the observation fails.
             if (prompt === undefined && isAbsentWorker(cause)) ready.resolve();
             else ready.reject(cause);
@@ -524,7 +524,7 @@ export class AguiTransport implements Transport {
         return { done, ready: ready.promise, cancel: () => ac.abort(), streaming: () => streaming, failure: () => ending };
     }
 
-    // plurnk-service {§agui-held-interrupts}: while this client's review of a gate is open, a connection holds its interrupt.
+    // plurnk-service {§acp-held-interrupts}: while this client's review of a gate is open, a connection holds its interrupt.
     // Undefined when the review is answered here first, or the hold ends without the gate settling; otherwise the gate
     // settled elsewhere and the review is withdrawn: the loop's terminal when the hold carried it, else null.
     async #holdReview(binding: { threadId: string }, forwardedProps: Record<string, unknown> | undefined, interruptId: string,
@@ -537,7 +537,7 @@ export class AguiTransport implements Transport {
         return held.terminated;
     }
 
-    // plurnk-service {§agui-held-interrupts}: a connection naming a gate's interrupt observes the worker, drawing what it brings
+    // plurnk-service {§acp-held-interrupts}: a connection naming a gate's interrupt observes the worker, drawing what it brings
     // as live rows, until the gate settles or `until` does. The settlement, with the loop's terminal when the hold carried
     // it; undefined when `until` came first or the stream ended unfinished. A Run holding the interrupt presents no gate, so
     // one that presents a gate finishes because the held interrupt is no longer pending: that too is its settlement.
@@ -549,7 +549,7 @@ export class AguiTransport implements Transport {
         const observed = (async (): Promise<{ readonly terminated: TerminatedInfo | null } | undefined> => {
             let settled = false;
             let terminated: TerminatedInfo | null = null;
-            for await (const e of runViaAgui(this.#target, {
+            for await (const e of runViaAcp(this.#target, {
                 ...binding, forwardedProps: { ...forwardedProps, interrupts: [interruptId] },
                 capabilities: clientCapabilities(this.#workspace.auto !== true, true), connect: true,
             }, AbortSignal.any([signal, hold.signal]))) {
@@ -572,9 +572,9 @@ export class AguiTransport implements Transport {
 
     // {§cli-worker-history}: establish the historical prefix before releasing
     // live events. The snapshot owns no lifecycle or accounting.
-    async *#synchronize(events: AsyncIterable<AguiEvent>, opts: ObserveOpts | undefined, ready: () => void, projection: StreamProjection): AsyncGenerator<AguiEvent> {
+    async *#synchronize(events: AsyncIterable<AcpEvent>, opts: ObserveOpts | undefined, ready: () => void, projection: StreamProjection): AsyncGenerator<AcpEvent> {
         let restored = false;
-        const pending: AguiEvent[] = [];
+        const pending: AcpEvent[] = [];
         for await (const event of events) {
             if (restored || event.type === "RUN_STARTED" || event.type === "STATE_SNAPSHOT") {
                 yield event;
@@ -617,11 +617,11 @@ export class AguiTransport implements Transport {
         // Terminate-resume: the decision releases the paused run loop, which POSTs the
         // standard resume. No paused run = a contract violation — fail hard.
         const pending = this.#pendingProposals.get(r.logEntryId);
-        if (pending === undefined || pending.decided) throw new Error(`Proposal ${r.logEntryId} has no pending AG-UI interrupt.`);
+        if (pending === undefined || pending.decided) throw new Error(`Proposal ${r.logEntryId} has no pending ACP interrupt.`);
         pending.settle(r);
     }
     #interrupt<T>(pending: Map<number, PendingInterrupt<T>>, id: number, signal: AbortSignal, kind: string): Promise<T | undefined> {
-        if (pending.has(id)) throw new Error(`${kind} ${id} already has a pending AG-UI interrupt.`);
+        if (pending.has(id)) throw new Error(`${kind} ${id} already has a pending ACP interrupt.`);
         return new Promise((resolve) => {
             const completed = new AbortController();
             const settle = (value: T | undefined): void => {
@@ -651,7 +651,7 @@ export class AguiTransport implements Transport {
     }
     async resolveInteraction(interactionId: number, payload: Record<string, unknown> | "cancel"): Promise<void> {
         const pending = this.#pendingInteractions.get(interactionId);
-        if (pending === undefined || pending.decided) throw new Error(`Interaction ${interactionId} has no pending AG-UI interrupt.`);
+        if (pending === undefined || pending.decided) throw new Error(`Interaction ${interactionId} has no pending ACP interrupt.`);
         pending.settle(payload);
     }
     async useWorkspace(name: string | undefined, params: Parameters<Transport["useWorkspace"]>[1]): Promise<WorkspaceHandle> {
@@ -679,7 +679,7 @@ export class AguiTransport implements Transport {
     }
 
     #row(entry: LogEntryWire): void {
-        // plurnk-service {§agui-proposal-resolve}: a proposal is settled when its row is.
+        // plurnk-service {§acp-proposal-resolve}: a proposal is settled when its row is.
         if (entry.state !== "proposed") this.#pendingProposals.get(entry.id)?.release();
         const version = this.#rowVersion(entry);
         if (this.#seenRows.get(entry.id) === version) return;
@@ -694,8 +694,8 @@ export class AguiTransport implements Transport {
     }
 
     // A Run's end: the bound loop's terminal record, or the exact Problem of a Run that failed without one
-    // (plurnk-service {§agui-plurnk-metadata}).
-    #ended(e: AguiEvent): { terminated: TerminatedInfo | null; problem: ProblemDetails | null } {
+    // (plurnk-service {§acp-plurnk-metadata}).
+    #ended(e: AcpEvent): { terminated: TerminatedInfo | null; problem: ProblemDetails | null } {
         const end = runEnd(e);
         if (end?.terminal !== undefined) {
             const raw = end.terminal as Omit<TerminatedInfo, "finalStatus"> & { finalStatus?: unknown };
@@ -715,7 +715,7 @@ export class AguiTransport implements Transport {
 
     // Project one standard reasoning, state or conversation event, or un-project one CUSTOM plurnk.* event, into the
     // family handlers.
-    #dispatch(e: AguiEvent, projection: StreamProjection): void {
+    #dispatch(e: AcpEvent, projection: StreamProjection): void {
         if (e.type === "TOOL_CALL_RESULT") {
             const interaction = /^int:(\d+)$/u.exec(e.toolCallId);
             if (interaction !== null) this.#pendingInteractions.get(Number(interaction[1]))?.release();
@@ -741,7 +741,7 @@ export class AguiTransport implements Transport {
             return;
         }
         // {§cli-worker-history} A Run's first window is history, drawn when the Run synchronizes; a window the daemon sends
-        // again during the Run (plurnk-service {§agui-history-advance}) holds rows its live stream then skips, each drawn
+        // again during the Run (plurnk-service {§acp-history-advance}) holds rows its live stream then skips, each drawn
         // now unless already drawn.
         if (e.type === "MESSAGES_SNAPSHOT") {
             if (projection.windowed) for (const row of snapshotRows(e.messages, projection.rows)) this.#row(row);
@@ -750,7 +750,7 @@ export class AguiTransport implements Transport {
         }
         // {§cli-row-sources} A row arrives as the part it built, or whole when it built none.
         for (const row of projection.rows.consume(e)) this.#row(row);
-        // {§cli-workers-topology} A subagent's start introduces its worker (plurnk-service `{§agui-delegation-observation}`).
+        // {§cli-workers-topology} A subagent's start introduces its worker (plurnk-service `{§acp-delegation-observation}`).
         if (e.type === "SUBAGENT_STARTED") {
             const descendant = descendantOf(e.metadata);
             if (descendant !== null) this.#h?.onDescendant?.(descendant);

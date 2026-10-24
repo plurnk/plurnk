@@ -1,4 +1,4 @@
-// The lockstep, ported from plurnk-agui (itself from plurnk-service): every SPEC
+// The lockstep, ported from plurnk-acp (itself from plurnk-service): every SPEC
 // promise is cited by a test, every citation resolves to a SPEC anchor, and every
 // §cli-* ref in a code comment resolves to a live anchor. Namespaced {§cli-...} so
 // the client's legitimate references to the SERVICE spec's anchors (§machine-processes,

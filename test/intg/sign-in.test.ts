@@ -27,7 +27,7 @@ test("[§cli-sign-in] built CLI: refused headless, signed in through the browser
         XDG_CONFIG_HOME: join(daemon.home, ".config"),
         XDG_DATA_HOME: join(daemon.home, ".local", "share"),
         XDG_STATE_HOME: join(daemon.home, ".local", "state"),
-        PLURNK_AGUI_URL: daemon.url,
+        PLURNK_ACP_URL: daemon.url,
         PLURNK_CLIENT_AUTOSTART: "0",
         PLURNK_CLIENT_OAUTH_TIMEOUT_MS: "20000",
         BROWSER: `${process.execPath} ${resolve("test/fixtures/oauth-browser.mjs")}`,

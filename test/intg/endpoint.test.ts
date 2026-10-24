@@ -6,11 +6,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { RunAgentInputSchema } from "@ag-ui/core/schemas";
+import { RunAgentInputSchema } from "../../src/acp.ts";
 
 const run = promisify(execFile);
 
-test("[§cli-invocation] host/port selects /agui; an explicit endpoint remains exact", async (t) => {
+test("[§cli-invocation] host/port selects /acp; an explicit endpoint remains exact", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-endpoint-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const requests: Array<{ method: string | undefined; path: string | undefined }> = [];
@@ -35,7 +35,7 @@ test("[§cli-invocation] host/port selects /agui; an explicit endpoint remains e
     const address = server.address();
     assert.ok(address !== null && typeof address !== "string");
     const origin = `http://127.0.0.1:${address.port}`;
-    const cases = [["", "/agui"], [`${origin}/custom/agent`, "/custom/agent"], [origin, "/"]] as const;
+    const cases = [["", "/acp"], [`${origin}/custom/agent`, "/custom/agent"], [origin, "/"]] as const;
     for (const [url, path] of cases) {
         requests.length = 0;
         const result: { stdout: string; stderr: string } = await run(process.execPath, [
@@ -45,7 +45,7 @@ test("[§cli-invocation] host/port selects /agui; an explicit endpoint remains e
             env: {
                 ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PLURNK_"))),
                 HOME: directory, XDG_CONFIG_HOME: join(directory, ".config"), NO_COLOR: "1",
-                PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(address.port), PLURNK_AGUI_URL: url,
+                PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(address.port), PLURNK_ACP_URL: url,
             },
         });
         assert.equal(result.stderr, "");

@@ -1,7 +1,7 @@
 # @plurnk/plurnk — Client SPEC
 
 Specifies what the `plurnk` CLI/TUI client does. The external protocol is
-defined by [`@plurnk/plurnk-agui`](https://github.com/plurnk/plurnk-service/tree/main/plurnk-agui);
+defined by [`@plurnk/plurnk-acp`](https://github.com/plurnk/plurnk-service/tree/main/plurnk-acp);
 this document does not redefine it.
 
 `TUI.md` records terminal design rationale. This file is the client contract:
@@ -13,11 +13,11 @@ what it guarantees, what its exit codes mean, and what it renders.
 
 | Term | Meaning |
 |---|---|
-| **daemon** | A running `plurnk-service` process whose in-process AG-UI+ module (`@plurnk/plurnk-agui`) serves HTTP/SSE. The client connects to it; it owns all state. |
+| **daemon** | A running `plurnk-service` process whose in-process ACP+ module (`@plurnk/plurnk-acp`) serves HTTP/SSE. The client connects to it; it owns all state. |
 | **workspace** | Daemon-owned shared environment, selected by name or folder at acquisition and addressed by its immutable ID thereafter; see {§cli-workspaces-and-workers}. |
 | **worker** | An actor within a workspace, with its own log. `--worker` selects the worker the thread binds; client operations have their own actor. |
-| **AG-UI Run** | One protocol exchange on a thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
-| **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; the Run's end carries the authoritative terminal record as `metadata.plurnk.terminal` (plurnk-service `{§agui-plurnk-metadata}`). |
+| **ACP Run** | One protocol exchange on a thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
+| **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; the Run's end carries the authoritative terminal record as `metadata.plurnk.terminal` (plurnk-service `{§acp-plurnk-metadata}`). |
 | **log/entry notification** | A durable operation row or its update; the client draws it from the standard part it builds, or whole when it builds none ({§cli-row-sources}). Rendering follows §5. |
 | **one-shot mode** | `plurnk "prompt"` — one prompt's loop, rendered, then exit. Unix-tool posture. |
 | **TUI mode** | `plurnk` (no args) — interactive REPL; many prompts per workspace. |
@@ -89,11 +89,11 @@ The client also reads keys it does not own:
 
 | Var | Owner | Meaning |
 |---|---|---|
-| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's bind address and port; the client dials `http://$PLURNK_HOST:$PLURNK_PORT/agui`. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
-| `PLURNK_AGUI_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
+| `PLURNK_HOST` / `PLURNK_PORT` | `@plurnk/plurnk-contracts` | The daemon's bind address and port; the client dials `http://$PLURNK_HOST:$PLURNK_PORT/acp`. A key the daemon and its clients share has a shared owner: contracts declares it once, the daemon folds that panel into its floor and the client folds it beneath its own, so one line in a shared `.env` moves both and neither side holds the other's default. |
+| `PLURNK_ACP_URL` | `@plurnk/plurnk-contracts` | The whole URL instead: a remote portal, or a daemon bound to an address no client can dial. |
 | `PLURNK_SECRET` | `@plurnk/plurnk-contracts` | The operator's client secret, exchanged for access tokens ({§cli-credential}); unset, the client reads the secret a daemon running as the operator minted beside its database. |
 
-**Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. A project's variables reach its commands through the workspace environment (`/env import .env`). The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_AGUI_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
+**Cascading env.** Highest precedence first: shell exports → repeated `--env-file` / `--env-file-if-exists` flags (node-native; the last occurrence wins; `--env-file` requires the file, while the other skips a missing one) → `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env` → the client's own packaged floor (below). All layers are optional; the client works with no configuration. A project's variables reach its commands through the workspace environment (`/env import .env`). The client reads the daemon address (`PLURNK_HOST`/`PLURNK_PORT`, or `PLURNK_ACP_URL`) from the shared XDG file. There is no generated aggregate defaults file; `plurnk-service config defaults` renders the complete owner-labelled catalog on demand.
 
 **The self-serve floor** {§cli-env-defaults} — per the ecosystem standard (one owner per key, the file IS the docs), the client ships `.env.defaults` at its package root declaring only the `PLURNK_CLIENT_*` prefix and loads it SET-IF-UNSET beneath every operator layer. A knob the operator set is never overridden; a commented knob is documentation, not a value.
 
@@ -110,12 +110,12 @@ and implements no second daemon supervisor.
 
 | Connection/configuration | Behavior |
 |---|---|
-| The configured loopback host/port has a listener | Attach; ordinary AG-UI validation still applies. |
+| The configured loopback host/port has a listener | Attach; ordinary ACP validation still applies. |
 | That listener answers 503 `service-starting` | The service owns its address but has not admitted clients yet; wait for admission within `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`, then attach. |
 | The configured loopback connection is refused; `PLURNK_CLIENT_AUTOSTART=1` | Start the installed service on that address with the launcher's `shared` lifetime and the service's own storage, then attach. It keeps running after the client exits; `plurnk-service stop` ends it. |
 | A start that loses the address to a concurrent first launch | Attach to the service that won it. |
 | The configured port is `0` with autostart on | Usage Problem `client/daemon/port-unshareable` (exit 64): a service on an allocated port is unreachable by a later client. |
-| Explicit `PLURNK_AGUI_URL`, remote host, or autostart disabled | Attach only. Failure never creates a substitute environment. |
+| Explicit `PLURNK_ACP_URL`, remote host, or autostart disabled | Attach only. Failure never creates a substitute environment. |
 | Timeout, DNS/routing failure, authentication rejection, or invalid protocol | Preserve the failure; do not interpret it as an absent service. |
 
 Configuration comes from the ordinary cascade, and the started service reads its
@@ -141,8 +141,8 @@ Workspaces and workers are daemon-owned. Names select; IDs identify.
 |---|---|
 | Workspace acquisition | `workspace.create` receives the literal selected label, if any, with projectRoot/settings. It returns `{id, name}` before bound work begins. |
 | Directory default | Without a label, the invocation designates a folder ({§cli-project-root}); the daemon names/selects its workspace ({§workspace-name}). The client invents neither a label nor an ID. |
-| Bound requests | `threadId` is `<workspace ID>#<worker name>` ({§agui-thread-binding}); no workspace label or creation options are resent. |
-| Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. A name the workspace state newly carries for the bound workspace's ID (plurnk-service `{§agui-workspace-state}`), unlike the session's, is a rename made elsewhere: the session reads it back (`workspace.list`), and only that readback gives the title, the place and the resume command the new name. A Run's state is taken when the Run started, so it never undoes the session's own rename. |
+| Bound requests | `threadId` is `<workspace ID>#<worker name>` ({§acp-thread-binding}); no workspace label or creation options are resent. |
+| Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. A name the workspace state newly carries for the bound workspace's ID (plurnk-service `{§acp-workspace-state}`), unlike the session's, is a rename made elsewhere: the session reads it back (`workspace.list`), and only that readback gives the title, the place and the resume command the new name. A Run's state is taken when the Run started, so it never undoes the session's own rename. |
 | Workspace switch | Acquire first, then replace the binding. A failed acquisition preserves the previous conversation. |
 | Worker selection | `--worker` overrides `PLURNK_CLIENT_WORKER`, the worker an invocation binds in either mode, which ships unset. Unset, the TUI (workspace switches included), scripts and subcommands bind `PLURNK_CLIENT_TUI_WORKER` (`--tui-worker`, shipped `user`), and a one-shot prompt binds a new worker of its own: twelve random lowercase hexadecimal characters, which text mode reports as `client:worker:new` and the JSON record carries as `worker`, so `--worker` can continue it. A worker selection needs no explicit workspace. |
 | Worker switch/fork | Change the worker name within the same workspace ID. No client-side thread alias table. |
@@ -152,7 +152,7 @@ Workspace identity, mutable label and saved project root are independent. Creati
 an existing root. `--project-root=` without `--workspace` exits 64 with `client/flag/missing-dependency`:
 a folderless workspace needs a label. IDs are not selection flags or environment settings.
 
-{§cli-history-lost} **A bound name answered with no history is a new worker, and the client says so.** The daemon mints a worker anew under its old name when it no longer holds it ({§agui-thread-binding}: a fresh database, a deleted worker), and the name cannot tell the client. The run-start gauge can: `snapshot.plurnk.status.loopId` is `null` only for a worker with no loop at all, so a `STATE_SNAPSHOT` reporting `null` after a gauge on the same binding that carried a loop raises the `history_lost` warning Notice, naming the workspace and worker, ahead of the run's rows. The transcript above the alert is the terminal's memory, not the model's. Switching workspace or worker starts a fresh watch.
+{§cli-history-lost} **A bound name answered with no history is a new worker, and the client says so.** The daemon mints a worker anew under its old name when it no longer holds it ({§acp-thread-binding}: a fresh database, a deleted worker), and the name cannot tell the client. The run-start gauge can: `snapshot.plurnk.status.loopId` is `null` only for a worker with no loop at all, so a `STATE_SNAPSHOT` reporting `null` after a gauge on the same binding that carried a loop raises the `history_lost` warning Notice, naming the workspace and worker, ahead of the run's rows. The transcript above the alert is the terminal's memory, not the model's. Switching workspace or worker starts a fresh watch.
 
 ### §1.2 Model selection {§cli-model-selection}
 
@@ -228,7 +228,7 @@ The TUI footer uses the muted color role, subject to {§cli-color-policy}.
 {§cli-status-children} The ant counts the bound worker's alive direct children
 (queued, running, or parked — a parked child still owes a result) in the daemon's
 tree beneath it (`snapshot.plurnk.status.descendants`, plurnk-service
-`{§agui-status-descendants}`), followed by the child model while a spawn
+`{§acp-status-descendants}`), followed by the child model while a spawn
 override is set: `🐜 2 dumbox`. Zero hides the whole child segment, even with a
 configured child model. A transport without the gauge shows only the bare
 `🐜 <child>`. The count is the gauge's, never the directory's, and a gauge whose
@@ -242,22 +242,22 @@ owner as interrupts ({§cli-proposal-review}) and wait in its review.
 
 {§cli-status-inbox} The envelope counts the messages the daemon accepted for the bound worker that a
 live loop still holds unread (`snapshot.plurnk.status.inbox`, plurnk-service
-`{§agui-message-acceptance}`): `📨 2`. None waiting, or no gauge, hides it. A message whose loop
+`{§acp-message-acceptance}`): `📨 2`. None waiting, or no gauge, hides it. A message whose loop
 concluded without reading it, cancelled say, is never counted, since nothing will read it: once the
 history is drawn, the session that watched that loop conclude says so once, `client:message:message_unread`,
 naming the message by its words when this thread sent it (the snapshot carries them) and by its address
 otherwise. A session attaching after the loop concluded says nothing: the message is that loop's past.
 
 {§cli-status-streams} `snapshot.plurnk.status.streams` names the streams the bound worker holds open
-(plurnk-service `{§agui-status-streams}`). On attach, the history's launch row of each one still open
+(plurnk-service `{§acp-status-streams}`). On attach, the history's launch row of each one still open
 is held as a live launch is ({§cli-what-is-not-rendered}): its conclusion draws the launch with its
 outcome, never the stream's bare address.
 
 {§cli-status-clock} Turns and wall time include the running loop — its packet count from the
-authoritative AG-UI `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time, ticking once a
+authoritative ACP `STATE_SNAPSHOT`/`STATE_DELTA` gauge and its elapsed time, ticking once a
 second throughout an unfinished run, including queued and parked intervals. A loop this client
 started runs from when it sent the prompt; one it attached to runs from the daemon's
-`status.claimedAt`, when the loop first ran ({§agui-status-timing}), or from the attachment while
+`status.claimedAt`, when the loop first ran ({§acp-status-timing}), or from the attachment while
 the loop has not run yet. Waiting and resumption neither pause nor reset that clock; completion,
 cancellation or failure freezes it. A missing start time is not invented.
 The turns/wall group appears once a loop has
@@ -267,7 +267,7 @@ not infer provider packets from operation rows or turn coordinates.
 
 {§cli-status-spend} Tokens and cost are the daemon's spend for the bound worker,
 `snapshot.plurnk.status.spend`: every settled provider request of the worker and
-its descendants since the worker began ({§agui-status-spend}). Each snapshot or
+its descendants since the worker began ({§acp-status-spend}). Each snapshot or
 delta replaces the figure and the client adds nothing to it, so a reattached
 client shows the same spend and a concluded loop charges nothing again. Complete
 `usage`/`costUsd` and `knownUsage`/`knownCostUsd` stay distinct: an unknown total
@@ -313,7 +313,7 @@ says the same in words. The client never infers provenance (plurnk#41 ask 2).
 
 The identity is the client's last server-read route. A worker no act has created yet has no
 route of its own: its identity is the route the daemon lists for the active alias, which that
-worker reads back once created (plurnk-service `{§agui-provider-routes}`). Every durable-policy change
+worker reads back once created (plurnk-service `{§acp-provider-routes}`). Every durable-policy change
 (`/model`, `/child` including `inherit`, `/effort`, a rebind or hop, and an explicit
 `--model` or `--effort` at admission) ends in one readback, `worker.effort.get` then
 `worker.model.get` for both routes, collected whole, applied together and repainted
@@ -446,12 +446,12 @@ Consequence:
 
 ### §2.2 Flow {§cli-one-shot-flow}
 
-1. Read the worker's durable model, then `POST /agui` (RunAgentInput) with the workspace and thread selected under §1.1, the prompt as a user message, and per-loop options on `forwardedProps.plurnk`.
+1. Read the worker's durable model, then `POST /acp` (RunAgentInput) with the workspace and thread selected under §1.1, the prompt as a user message, and per-loop options on `forwardedProps.plurnk`.
 2. Consume the SSE: rows ({§cli-row-sources}) advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
    Delivered responses go to stdout ({§cli-broadcast-send-rendering}).
-3. A proposal arrives as a standard AG-UI interrupt carrying the daemon's proposal projection, naming the operation's own call when the run holds it, and terminates run A (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. The terminal record its Run ends with is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
+3. A proposal arrives as a standard ACP interrupt carrying the daemon's proposal projection, naming the operation's own call when the run holds it, and terminates run A (the internal loop stays paused). Run B on the same thread returns the decision through `RunAgentInput.resume`, and the continued loop streams there. The terminal record its Run ends with is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
 4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the complete record document on stdout (§2.1); stderr stays silent.
 5. Exit with the appropriate code (§4).
 
@@ -469,9 +469,9 @@ Triggered when `argv` has no positional prompt.
 
 ### §3.1 Flow {§cli-tui-flow}
 
-1. Acquire the workspace and bind `AguiTransport` to its ID and worker name (§1.1). Its persistent handlers retain standard conversation meaning and add Plurnk waterfall details. Restore the bound worker's history under {§cli-worker-history}.
+1. Acquire the workspace and bind `AcpTransport` to its ID and worker name (§1.1). Its persistent handlers retain standard conversation meaning and add Plurnk waterfall details. Restore the bound worker's history under {§cli-worker-history}.
 2. Print the banner; start pi-tui's main-screen renderer with a multiline editor
-   and §1.2.1's aggregate line on the place line below the composer. Before AG-UI
+   and §1.2.1's aggregate line on the place line below the composer. Before ACP
    state arrives, derivation and search share the
    fallback activity position. The
    lifecycle glyph, for the daemon's lifecycle word (plurnk-service `{§loop-lifecycle-vocabulary}`), is ⏳ while
@@ -485,7 +485,7 @@ Triggered when `argv` has no positional prompt.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a message Run (the prompt as the user message). Standard prompt-driven loop.
-    (Verbs and injections ride §3 action runs on the same AG-UI+ surface.)
+    (Verbs and injections ride §3 action runs on the same ACP+ surface.)
 4. Input remains available during a run under {§cli-active-command-admission}; typed commands and shortcuts share admission.
 5. `Ctrl-C`, `EOF`, and `/quit` exit cleanly. The resume command identifies the
    current workspace and worker with shell-safe arguments, including after rebinding.
@@ -544,17 +544,17 @@ Filesystem suggestions follow the address owner; completion never changes the pr
 The TUI uses the daemon's reported workspace root for both completion and prompt references. Rebinding clears it until the new binding's state arrives; a headless or not-yet-known root yields no workspace-file suggestions. Local-file commands remain available in either case. Completion preserves the authored URI prefix and surrounding editor text. A suggested path is not a membership grant; the daemon still owns operation admission.
 
 ### §3.1.2 Worker topology and attach {§cli-workers-topology}
-One AG-UI stream binds one worker. Descendants of that worker reach
+One ACP stream binds one worker. Descendants of that worker reach
 a client only through the daemon's correlated projection (plurnk-service#440, the
 lane presentation of #38), never by inference; unrelated workspace workers never
 render inside a session. What the daemon correlates (a direct child's mutations, messages,
 executions, launches and conclusion) renders in the session as lineage rows (§5.1). The
 TUI also asks the daemon to observe its delegation (`forwardedProps.plurnk.descendants`,
-plurnk-service `{§agui-delegation-observation}`) on every Run that observes its worker, a resume
+plurnk-service `{§acp-delegation-observation}`) on every Run that observes its worker, a resume
 included ({§cli-resume-observation}): every descendant's own rows and executions
 arrive introduced by `plurnk.descendant` and render as §5.1 says; a descendant's reasoning,
 steps and terminal never do, including those the daemon attributes to a subagent run
-(plurnk-service `{§agui-subagents}`). Navigation between workers is explicit.
+(plurnk-service `{§acp-subagents}`). Navigation between workers is explicit.
 `/worker <name>` rebinds the session's thread to that name with the workspace
 unchanged: an existing worker is bound, and a new name's worker is created as
 the session goes to it, exactly as with `--worker <name>` at invocation and as `/workspace <name>`
@@ -593,7 +593,7 @@ is inferred from row coordinates. `/help` moves to `Alt-?` to free `h`.
 the lineage from the tree root to the bound worker with `~` marking the worker the session
 is in, a presentation marker rather than a URI alias, and the loop and turn beside
 the worker they belong to: the loop by its number among the worker's loops, the one `/loops` lists
-and `/loop` takes (plurnk-service `{§agui-status-loop-number}`). `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
+and `/loop` takes (plurnk-service `{§acp-status-loop-number}`). `[w/~main(3/12)]` at a root, `[w/main/fork-1/~recheck(1/0)]` two
 hops down, `[/~]` before the worker is named; an unknown loop or turn is elided. A child
 always shows that it is a child, so a session opened on a child reads its full lineage. The
 §1.2.1 footer includes the place after the project folder and before activity, so the composer has one line above it.
@@ -601,7 +601,7 @@ always shows that it is a child, so a session opened on a child reads its full l
 ### §3.1.3 Loops {§cli-loops}
 
 A worker's conversation is its loops. `/loops` lists the bound worker's loops oldest first, one line
-each, from the daemon's list (`worker.loops`, plurnk-service `{§agui-worker-loops}`): the loop's number,
+each, from the daemon's list (`worker.loops`, plurnk-service `{§acp-worker-loops}`): the loop's number,
 the sender of its opening message when no person sent it (a worker, a schedule, a peer), that message's
 first line with `…` when it holds more, and the lifecycle mark of a loop under way or ended early, each
 line cut to the terminal's width:
@@ -614,7 +614,7 @@ line cut to the terminal's width:
 
 `/loop <n>` prints loop `n` whole, oldest first, as history draws it ({§cli-worker-history}): the person's
 prompts, replies whole, operations as their headings, its delegation's rows marked and stepped in, reasoning never. It reads the loop's page
-(plurnk-service `{§agui-loop-page}`) under the view the session's Runs negotiate, its delegation
+(plurnk-service `{§acp-loop-page}`) under the view the session's Runs negotiate, its delegation
 observed and reasoning by link, reads each sender's words that travel by reference in their place,
 rebuilds its rows from the parts that build them live ({§cli-row-sources}), and prints them below
 everything already on the screen under `── loop n ──`. `/loop` alone prints the current loop. A worker
@@ -623,16 +623,16 @@ no act has created yet has no loops.
 ### §cli-worker-history Worker history on attach
 
 Startup and successful workspace/worker navigation synchronize through the existing
-AG-UI Run `{§agui-sync}` before admitting new bound work. Synchronization
+ACP Run `{§acp-sync}` before admitting new bound work. Synchronization
 submits no prompt and performs no inference. An attached live loop remains observable;
-disconnecting never cancels work ({§agui-run-disconnect}).
+disconnecting never cancels work ({§acp-run-disconnect}).
 
 | Surface | History behavior |
 |---|---|
-| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the window of the bound worker's conversation (plurnk-service `{§agui-history-window}`), supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A snapshot the daemon sends again during a Run (plurnk-service `{§agui-history-advance}`) draws each row it holds that the Run has not drawn, the rows its live stream then skips; nothing drawn changes, and a call the Run already holds keeps the arguments it was built with. |
+| Bound recent tail | The sync Run's `MESSAGES_SNAPSHOT`, the window of the bound worker's conversation (plurnk-service `{§acp-history-window}`), supplies every row, rebuilt from the parts that build it live ({§cli-row-sources}). `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A snapshot the daemon sends again during a Run (plurnk-service `{§acp-history-advance}`) draws each row it holds that the Run has not drawn, the rows its live stream then skips; nothing drawn changes, and a call the Run already holds keeps the arguments it was built with. |
 | Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Existing one-line operation headings, including failures; no historical output fetching. |
-| Delegation | A descendant's rows the window holds, the delegation the TUI observes (plurnk-service `{§agui-history-window}`), are drawn as quietly as the bound worker's, a message or reply with its words whole and any other operation as its heading, in log order among them, marked `🐜 <name>` and stepped in per generation as §5.1 marks them live, by the bound worker's tree in the gauge (plurnk-service `{§agui-status-descendants}`). A descendant's reasoning and terminal never are. |
+| Delegation | A descendant's rows the window holds, the delegation the TUI observes (plurnk-service `{§acp-history-window}`), are drawn as quietly as the bound worker's, a message or reply with its words whole and any other operation as its heading, in log order among them, marked `🐜 <name>` and stepped in per generation as §5.1 marks them live, by the bound worker's tree in the gauge (plurnk-service `{§acp-status-descendants}`). A descendant's reasoning and terminal never are. |
 | Reasoning | Never backfilled into the live reasoning lane or scrollback. |
 | Past/live boundary | Unchanged overlapping receipts are shown once by durable identity; an update to the same receipt, a change of its status, signal or attributes, remains visible. Identical text at different identities is not deduplicated. |
 | State/accounting | Replayed entries are not live activity, turns, terminal events, or fresh usage. Only the current gauge and subsequently observed events update status. Elapsed session time does not include time before attachment. |
@@ -645,7 +645,7 @@ as an empty history.
 
 ### §cli-active-command-admission Commands during an active run
 
-Model inference and client actions are independent AG-UI runs. A command is not
+Model inference and client actions are independent ACP runs. A command is not
 refused merely because inference is active. The daemon owns admission of model,
 reasoning, capability, and Functionality changes; its exact Problem is shown
 without changing the client's selected policy after a refusal.
@@ -673,7 +673,7 @@ local waits, including when its SSE has already ended at a question or proposal.
 Pending injection acknowledgements keep the worker bound through terminal
 observation. `injected_next_turn` stays on the existing stream;
 `enqueued_new_loop` requests one successor observer, not a replayed prompt. Sync
-uses {§agui-sync} and restores the snapshot's unseen durable rows before releasing
+uses {§acp-sync} and restores the snapshot's unseen durable rows before releasing
 live rows. Rows are seen by durable identity, so a row drawn out of order, such as an
 independent client operation's, hides no row the snapshot holds. A successful
 observation without a new terminal record adds no loop summary, usage, or tally, whether it
@@ -697,7 +697,7 @@ fires `loop.cancel` (reason `user_escape`) through the identical cancel path;
 while idle it clears the composed value. Esc never exits.
 pi-tui owns escape-sequence reassembly and keyboard-protocol negotiation.
 
-`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `loop.cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits the client; work the daemon admitted runs on, since dropping a Run's connection ends only its delivery ({§agui-run-disconnect}) — `loop.cancel` is the one cancellation.
+`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `loop.cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits the client; work the daemon admitted runs on, since dropping a Run's connection ends only its delivery ({§acp-run-disconnect}) — `loop.cancel` is the one cancellation.
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 
@@ -739,7 +739,7 @@ handler. `plurnk mcp …` uses the workspace selected under §1.1;
 `--json` emits the unmodified successful action
 result.
 
-| TUI / CLI input | AG-UI+ action |
+| TUI / CLI input | ACP+ action |
 |---|---|
 | `/mcp` / `plurnk mcp` | `workspace.mcp.list {}` — one row per server: alias, state, `type`, command or URL, active tool count, and `(workspace)` for a locally added definition |
 | `/mcp discover <query>` | `workspace.mcp.discover {query}` — one row per MCP Registry candidate: alias, `type`, command or URL, and the daemon's summary of how it launches and what it needs |
@@ -802,7 +802,7 @@ tool is admitted by the daemon at the next turn. These roots are configuration
 inputs, never installation targets of `/skills`. Removing a workspace binding
 preserves its source and restores any inherited definition and enabledness.
 
-| TUI input | AG-UI+ action |
+| TUI input | ACP+ action |
 |---|---|
 | `/skills` | `workspace.skills.list {}` |
 | `/skills discover <source>` | `workspace.skills.discover {source}`; a source is a git remote as a full https or ssh URL, a folder, a lone `SKILL.md`, or a zip or tar archive |
@@ -825,7 +825,7 @@ client composes one exact `A2aAgentDefinition` and renders the daemon's
 states; the remote Agent Card, connection, and enablement policy live in the
 service, and the model addresses an enabled agent as `a2a://<alias>`.
 
-| TUI input | AG-UI+ action |
+| TUI input | ACP+ action |
 |---|---|
 | `/a2a` | `workspace.a2a.list {}` |
 | `/a2a discover <url>` | `workspace.a2a.discover {source}` — one inert card-derived candidate |
@@ -851,7 +851,7 @@ untracked files or, with a leading `!`, excludes matching members — an
 exclusion wins over every inclusion. The glob is one argument, tokenized
 exactly as the sibling families tokenize theirs (quote it to keep whitespace).
 
-| TUI input | AG-UI+ action |
+| TUI input | ACP+ action |
 |---|---|
 | `/members` | `workspace.members.list {}` — one line per definition, named by its glob, with what it resolved to: `docs/**  service  active → 12 files (3 ignored)`, `!**/tokenizer.json  worker  active → 4 members` |
 | `/members discover <path>` | `workspace.members.discover {query}` — one candidate explaining why the file is or is not a member |
@@ -878,7 +878,7 @@ shell's name grammar, never plurnk's own names), the operator's ceiling, and
 the composition at the spawn live in the service. A value is used verbatim by
 the daemon, so `add` hands over the rest of the line as typed, never tokenized.
 
-| TUI input | AG-UI+ action |
+| TUI input | ACP+ action |
 |---|---|
 | `/env` | `worker.env.list {}` — one line per name with origin, state, value, and the worker it was inherited from: `PATH  service  active  /usr/bin:/bin`, `TOOLCHAIN  worker  active  stable  (from alice)` |
 | `/env discover [query]` | `worker.env.discover {query?}` — the names this worker may set, each with its owning package and the declaration's comment; an empty query is the whole catalog |
@@ -930,7 +930,7 @@ and renders the daemon's states; the clock, the rule's canonical
 form, the timers and the delivery live in the service, and an occurrence
 reaches its worker as an ordinary message from `schedule://<alias>`.
 
-| TUI input | AG-UI+ action |
+| TUI input | ACP+ action |
 |---|---|
 | `/schedule` | `workspace.schedule.list {}` — each rule with its state, wording, next occurrence or `exhausted`, and target |
 | `/schedule discover <rule>` | `workspace.schedule.discover {source}` — one inert candidate whose summary opens with the current time in the effective zone |
@@ -980,17 +980,17 @@ failures remain causal errors, never a silent replacement rendering mode.
 
 ### §5.0.1 Row sources {§cli-row-sources}
 
-The client draws each row from the standard AG-UI part the row builds, the row's facts riding once as that
-part's `metadata.plurnk` (plurnk-service `{§agui-plurnk-metadata}`): its durable `id`, log `coordinate`,
+The client draws each row from the standard ACP part the row builds, the row's facts riding once as that
+part's `metadata.plurnk` (plurnk-service `{§acp-plurnk-metadata}`): its durable `id`, log `coordinate`,
 `worker`, `origin`, `op`, `source`, the `address` it recorded, `signal`, `status` and `attrs`. A call holds
 them; its own receipt repeats none.
 
 | The row | Arrives as | Drawn |
 |---|---|---|
-| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt and no facts: text, or a receipt that holds a body as its text part beside the body's document part (plurnk-service `{§agui-body-reference}`), the body never fetched to draw it | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
+| A model operation | `TOOL_CALL_START/ARGS/END`, its statement the arguments, then `TOOL_CALL_RESULT` with its receipt and no facts: text, or a receipt that holds a body as its text part beside the body's document part (plurnk-service `{§acp-body-reference}`), the body never fetched to draw it | When its receipt arrives; a call that opened an obligation (`attrs.stream` or `attrs.message`, below 400) has none and is drawn at its end |
 | A delivered reply, or a WAIT that carries a body | `TEXT_MESSAGE_START/CONTENT/END`, the metadata adding its heading's `aside` and its `receipt` | When the message ends |
 | An arrival | A user `TEXT_MESSAGE_*`, named by its source | When the message ends; the client's own message, which it already holds, carries no content |
-| An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§agui-message-acceptance}`) | Never as a row: its arrival, when the Worker observes it, draws it; one its loop left unread is said once ({§cli-status-inbox}) |
+| An accepted message the Worker has not observed | A user message in a sync Run's snapshot, after every row, its `metadata.plurnk` the message's lifecycle with `published: false` (plurnk-service `{§acp-message-acceptance}`) | Never as a row: its arrival, when the Worker observes it, draws it; one its loop left unread is said once ({§cli-status-inbox}) |
 | A row that answers another row's call | `TOOL_CALL_RESULT` under its own coordinate, with its own facts | On arrival: a reply's words as its body, any other answer as its receipt |
 | A row that builds no part | `CUSTOM plurnk.ambient`, the whole row | On arrival; an actionless row draws nothing |
 | History | A sync Run's `MESSAGES_SNAPSHOT`: the same parts, as messages | {§cli-worker-history} |
@@ -999,7 +999,7 @@ A row's `target` is the address it recorded; its heading shows the target as aut
 has one (§5.1). A call ended without its receipt, a receipt before its call ended, a result with no text, or
 row facts that are present but unreadable are a broken wire (`result-invalid`), never a row skipped.
 
-A sender's words past the daemon's ceiling travel by reference (plurnk-service `{§agui-words-by-reference}`): a
+A sender's words past the daemon's ceiling travel by reference (plurnk-service `{§acp-words-by-reference}`): a
 reply's result, or a snapshot's message, whose content is one `document` part, `text/plain` or `text/markdown`, at
 the address that serves them. They are the message's words, so the client reads them there with the Run's credential
 before anything draws the message; a receipt's body beside its text part is never fetched. An address that answers
@@ -1200,9 +1200,9 @@ must not send semantic content to an unproven executable.
 #### §5.1.1 Provider reasoning {§cli-provider-reasoning}
 
 Readable provider reasoning is neither working memory nor assistant speech. Every Run negotiates
-reasoning by link (plurnk-service `{§agui-reasoning-link}`, `forwardedProps.plurnk.reasoning: "link"`):
+reasoning by link (plurnk-service `{§acp-reasoning-link}`, `forwardedProps.plurnk.reasoning: "link"`):
 the live text arrives as the `plurnk.reasoning` preview of the reasoning message it belongs to, and each
-turn's reasoning travels by its link, a message that draws nothing. AG-UI's standard
+turn's reasoning travels by its link, a message that draws nothing. ACP's standard
 `REASONING_MESSAGE_START/CONTENT/END` text stays a preview source when the text rides the message itself.
 The TUI shows a dim `💭` tail, at most one third of the terminal, below operation
 history and above delivered responses. It disappears when reasoning ends, and the tail belongs to the Run streaming it: when that Run settles
@@ -1228,7 +1228,7 @@ refreshes and archival; only a width or presentation invalidation rerenders them
 | Operation | Waterfall projection |
 |---|---|
 | NOTE | {§cli-note-rendering} A model NOTE renders its whole body in the Markdown layout at the current width, stripped of every weight and painted dim — the status line's weight — beneath its glyph and aside ({§cli-operation-glyphs}), with a reply's column-zero layout. Its log identity and failure visibility remain; it is not a delivered message and does not enter CLI response stdout. A harness NOTE retains its operation heading and whole plain, dim, four-column-indented body. |
-| Outside text (`plurnk.outside`) | {§cli-outside-text} A turn's prose outside its fences arrives once per turn as `CUSTOM plurnk.outside` ({§agui-outside-text}: its log coordinate, the text verbatim, its packet weight), never as a row. It renders with a reply's layout — blank lead line, full Markdown body at column zero at the current width — where the turn's rows are, in arrival order. It is not speech: never the response surface, never a delivered reply, never CLI stdout. The one-shot CLI traces the text verbatim to stderr, and the `--json` record's `response` excludes it. |
+| Outside text (`plurnk.outside`) | {§cli-outside-text} A turn's prose outside its fences arrives once per turn as `CUSTOM plurnk.outside` ({§acp-outside-text}: its log coordinate, the text verbatim, its packet weight), never as a row. It renders with a reply's layout — blank lead line, full Markdown body at column zero at the current width — where the turn's rows are, in arrival order. It is not speech: never the response surface, never a delivered reply, never CLI stdout. The one-shot CLI traces the text verbatim to stderr, and the `--json` record's `response` excludes it. |
 | WAIT | Ordinary heading, aside and any receipt detail; never assistant speech. |
 | Delivered SEND | Message block per §5.4. |
 | Other SEND | Operation heading and actual receipt detail or Problem. |
@@ -1410,8 +1410,8 @@ commands and scripts raise nothing.
 
 ## §6 Proposal review {§cli-proposal-review}
 
-Client-owned proposals arrive as standard AG-UI interrupts under plurnk-service
-`{§agui-proposal-resolve}`: each carries the daemon's proposal projection as
+Client-owned proposals arrive as standard ACP interrupts under plurnk-service
+`{§acp-proposal-resolve}`: each carries the daemon's proposal projection as
 `metadata.plurnk.proposal`, and names the operation's own call as `toolCallId` when the
 Run holds that worker's conversation. The client presents the proposal and resumes the
 Run with the selected decision, echoing the supplied opaque `Interrupt.id`; it never
@@ -1425,7 +1425,7 @@ and claim (`forwardedProps.plurnk.descendants` when the session observes its del
 
 ### §6.0 Worker ownership {§cli-worker-ownership}
 
-The thread's workspace-scoped AG-UI identity owns approvals. Prompt submission,
+The thread's workspace-scoped ACP identity owns approvals. Prompt submission,
 client operations, and explicit TUI attachment claim only runtime-owned workers
 and their runtime-owned descendants; observing another owner never transfers authority.
 Every Run declares the client's capability set: `RunAgentInput.tools` advertises the
@@ -1438,7 +1438,7 @@ states whether a person attends it.
 | A one-shot prompt at a terminal | `true` | none: it reviews, but presents no questions ({§cli-question-forms}) |
 | No terminal, or `--auto` | `false` | none |
 
-Review needs no declared tool: every AG-UI owner reviews (plurnk-service `{§agui-worker-owner}`), and
+Review needs no declared tool: every ACP owner reviews (plurnk-service `{§acp-worker-owner}`), and
 this client always resolves it, by a person, `--yolo`, configured acceptance, or fail-closed headless review.
 
 `--auto` (`PLURNK_CLIENT_AUTO`) states that nobody is attending, even at a terminal: the
@@ -1447,16 +1447,16 @@ wait for a person concludes instead. It removes
 the person, not the approver: `--yolo`, configured acceptance, or fail-closed review still
 settle what the daemon routes to this client.
 
-The TUI maintains `/agui/connect` while idle and reconnects after a terminal or
+The TUI maintains `/acp/connect` while idle and reconnects after a terminal or
 resolved interrupt. That owner connection creates the session's worker when there is none
-(plurnk-service `{§agui-action-binding}`); verbs wait for it. Inspection and direct operations do not
+(plurnk-service `{§acp-action-binding}`); verbs wait for it. Inspection and direct operations do not
 detach that owner connection. Future owned work, including independently active children, can request
 review without a new user prompt. Disconnect changes neither ownership nor pending gates.
 
 {§cli-gate-answer-lifetime} Concurrent Runs share one local resolver per interrupt, and an answer
 holds its gate only while the Run that carries it lasts. A gate presented to a Run while another of
 the client's Runs holds it opens no second review and submits no second decision: that Run holds
-the gate's interrupt on a connection (plurnk-service `{§agui-held-interrupts}`) and follows the
+the gate's interrupt on a connection (plurnk-service `{§acp-held-interrupts}`) and follows the
 work once the gate settles or the other Run lets it go. Once the Run carrying an answer ends, the
 answer applied, refused or lost with its connection, the gate is no longer held: a later
 presentation of it is reviewed again.
@@ -1482,7 +1482,7 @@ proposal {
 }
 ```
 
-AG-UI routes review to the recorded owner. Server `accept` and `reject` dispositions settle in Core and never become client review work.
+ACP routes review to the recorded owner. Server `accept` and `reject` dispositions settle in Core and never become client review work.
 
 {§cli-review-attribution} A gate names the worker asking when it is not the bound worker, by the name its proposal
 carries or, for a question, the name the session's delegation introduced (`worker <id>` when it holds none), and the
@@ -1502,7 +1502,7 @@ reject, and cancel. The one-shot menu is:
 [a]ccept · [e]dit · [r]eject · [c]ancel
 ```
 
-Resolutions use the originating AG-UI interrupt identity:
+Resolutions use the originating ACP interrupt identity:
 
 | Key | Action |
 |---|---|
@@ -1516,7 +1516,7 @@ commands and the `/accept`, `/edit`, `/reject`, `/cancel` spellings under
 {§cli-active-command-admission}.
 
 While the one-shot menu waits, the CLI holds the proposal's interrupt on a connection (plurnk-service
-`{§agui-held-interrupts}`). When another client's answer or the daemon settles it first, the menu withdraws with
+`{§acp-held-interrupts}`). When another client's answer or the daemon settles it first, the menu withdraws with
 `settled elsewhere` and sends no decision; a decision already under way, such as an open editor, finishes unsent. The CLI
 then follows the work to its end. An answer refused because its gate no longer waits is shown, never retried, and the CLI
 follows the work.
@@ -1526,7 +1526,7 @@ Udiff coloring for EDIT bodies: `+` lines green, `-` lines red, `@@` hunks cyan,
 #### Inline review {§cli-inline-review}
 
 One arrival-ordered queue projects pending proposal and question interrupts by
-their AG-UI identity. pi-tui controls replace the composer in the normal main
+their ACP identity. pi-tui controls replace the composer in the normal main
 buffer; there are no overlays, alternate screen, or captured mouse gestures.
 
 | Event | Presentation and input |
@@ -1537,7 +1537,7 @@ buffer; there are no overlays, alternate screen, or captured mouse gestures.
 | Input in review | pi-tui owns selection, multiline editing, paste and cursor/IME placement. Enter confirms/submits; slash-prefixed answers are literal data. |
 | Input in composer | Normal commands, inspection and prompt injection; proposal keys do not intercept ordinary letters. |
 | Resolution or withdrawal | Remove only that interrupt. Show the next queued request if reviewing, otherwise retain composer focus. Restore the composer when no reviews remain. |
-| Settled elsewhere | While a request is pending, the client holds its interrupt on a connection (plurnk-service `{§agui-held-interrupts}`). When another client's answer or the daemon settles it, before the connection or while it holds, the connection finishes and the request is withdrawn, never answered by this client; the client follows the work that continues. An answer refused because its gate no longer waits is shown, and the client follows the work. |
+| Settled elsewhere | While a request is pending, the client holds its interrupt on a connection (plurnk-service `{§acp-held-interrupts}`). When another client's answer or the daemon settles it, before the connection or while it holds, the connection finishes and the request is withdrawn, never answered by this client; the client follows the work that continues. An answer refused because its gate no longer waits is shown, and the client follows the work. |
 
 Reasoning, transcript and status updates continue while reviewing. A pending
 submission cannot be submitted twice. An external-editor result belongs only
@@ -1576,7 +1576,7 @@ the switch accepts all proposals from that runtime.
 
 These settings answer ordinary proposals; they do not grant capabilities,
 change operation effects, or override server dispositions. Each automatic
-resolution carries its reason through {§agui-proposal-resolve} into the durable
+resolution carries its reason through {§acp-proposal-resolve} into the durable
 result. Invalid acceptance configuration emits a diagnostic and disables
 selective acceptance, without blocking startup or changing YOLO.
 
@@ -1585,19 +1585,19 @@ selective acceptance, without blocking startup or changing YOLO.
 When stdin is not a TTY, client-owned proposals are accepted by YOLO or matching
 configured rules and otherwise rejected with `client_no_review_channel`.
 Explicit `?` requests cannot be auto-accepted. Resolution still crosses the normal
-owner-checked AG-UI resume boundary; the client does not change server policy.
+owner-checked ACP resume boundary; the client does not change server policy.
 
 A headless client advertises no clarification tools. Unsupported requests fail in
 Core without parking or inventing an answer. If an already-pending interaction is
-delivered after a mode change, the client cancels it through ordinary AG-UI resume.
+delivered after a mode change, the client cancels it through ordinary ACP resume.
 
 Redirection alone does not request review. This applies when review is explicitly selected, such as `PLURNK_CLIENT_YOLO=0 plurnk "X" > answer.txt` or a prompt starting with `?`.
 
 ### §6.5 Questions {§cli-question-forms}
 
 The TUI presents questions; a one-shot prompt offers no question tools
-({§cli-worker-ownership}), and cancels through ordinary AG-UI resume one delivered anyway.
-AG-UI `request_user_input` interrupts present the message and the exact response
+({§cli-worker-ownership}), and cancels through ordinary ACP resume one delivered anyway.
+ACP `request_user_input` interrupts present the message and the exact response
 contract. Independent, directly typed fields are collected individually; each
 shows its type, required/optional status, and description. String enums use
 pi-tui selection lists; optional enums include a Skip choice. Other fields use
@@ -1722,7 +1722,7 @@ envelope:
 - Incoming Problems remain exact. The client accepts them from
   `application/problem+json`, a Run end's metadata (the terminal record's `result.problem`, or `problem` for a Run
   that failed without its loop's end), a failed action outcome in `RUN_FINISHED.result`, and `CUSTOM plurnk.problem`
-  for a Problem that ends no Run (plurnk-service `{§agui-plurnk-metadata}`). The terminal record's `result` is the
+  for a Problem that ends no Run (plurnk-service `{§acp-plurnk-metadata}`). The terminal record's `result` is the
   terminal wire truth; the client's
   `finalStatus` JSON field is its projection of `result.status`, not a daemon
   field. `RUN_ERROR`'s `code` and `message` are the standard terminal signal, not a source from which
@@ -1756,7 +1756,7 @@ throws become `client/runtime/error` Problems.
 
 In JSON output, a failure is
 `{"schemaVersion":6,"problem":<ProblemDetails>}`. Text mode renders the same
-Problem's title, detail, and optional recovery to stderr. An AG-UI endpoint that answered with a failure surfaces that failure;
+Problem's title, detail, and optional recovery to stderr. An ACP endpoint that answered with a failure surfaces that failure;
 only connection-level failures receive service address/availability hints.
 {§cli-connection-onboarding}
 
@@ -1766,14 +1766,14 @@ bound; omitting `--workspace` must not turn the same failure into an uncaught ex
 ### §8.2 Credential {§cli-credential}
 
 The operator's secret is a client secret at the daemon's authorization server
-({§agui-oauth-clients}), never a bearer: the shared `PLURNK_SECRET` when set, else the one line of
+({§acp-oauth-clients}), never a bearer: the shared `PLURNK_SECRET` when set, else the one line of
 the file a daemon running as the operator minted beside its database ({§credential-authority}),
 `secret` beside `PLURNK_SERVICE_DB_PATH` when the environment names a database and otherwise
 `$XDG_DATA_HOME/plurnk/secret` (`~/.local/share/plurnk/secret`); with neither, the client presents
 nothing. On the first request of an invocation the client discovers
 that server from the resource it dials, `<origin>/.well-known/oauth-protected-resource` (RFC 9728)
 and the issuer's `/.well-known/oauth-authorization-server` (RFC 8414), and exchanges the secret for an
-access token with the `client_credentials` grant as the client `operator` with the scope `agui`; every
+access token with the `client_credentials` grant as the client `operator` with the scope `acp`; every
 request then presents `Authorization: Bearer <access token>`. A token is renewed when it lapses, and
 once more when the daemon answers `bearer-token-invalid` before any event of a run was seen. A secret
 read from the file is read once more when the daemon answers `invalid_client`, since a restarted
@@ -1789,7 +1789,7 @@ Problem does. With no secret at hand, the client signs in ({§cli-sign-in}).
 With neither `PLURNK_SECRET` nor a minted file, the client's credential at an authenticating daemon is
 the grant a browser sign-in left: on first use it registers itself as a public client (RFC 7591),
 opens the browser at the daemon's authorization endpoint with PKCE (`S256`), a fresh `state` and the
-`agui` scope, receives the code through the loopback callback it binds for MCP
+`acp` scope, receives the code through the loopback callback it binds for MCP
 ({§cli-mcp-oauth-callback}, the page then saying "Signed in to Plurnk"), exchanges the code itself,
 and keeps the refresh token with the client id, the issuer and its token and revocation endpoints
 under `$XDG_STATE_HOME/plurnk/grants.json` (`~/.local/state/plurnk/grants.json`, 0600, one entry per
@@ -1803,8 +1803,8 @@ recovery names `plurnk login` and `PLURNK_SECRET`. `plurnk login` signs in now, 
 and keeps the new one; `plurnk logout` revokes the kept grant at the daemon's revocation endpoint and
 forgets it; either says so on stderr and exits 0, and both do nothing when a secret is at hand or the
 daemon authenticates nothing. In that browser the operator signs in with the daemon's
-`PLURNK_PASS` ({§agui-oauth-login}), or answers its consent page when the browser
-already holds the daemon's session ({§agui-oauth-session}); the deadline is
+`PLURNK_PASS` ({§acp-oauth-login}), or answers its consent page when the browser
+already holds the daemon's session ({§acp-oauth-session}); the deadline is
 `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. Callback codes are neither printed nor kept.
 
 ### §8.2 Notice shape and transport
@@ -1823,7 +1823,7 @@ interface Notice {
 Diagnostic Notices arrive as `CUSTOM plurnk.notice`, interleave with trace
 lines in text mode and accumulate under `notices` in the JSON record (§2.1).
 
-Indexing activity arrives only through the ordinary AG-UI status snapshot/delta
+Indexing activity arrives only through the ordinary ACP status snapshot/delta
 stream; clients do not poll or interpret a second progress Notice. The one-shot
 TTY repaints routine activity changes no more than once per 15 seconds;
 non-TTY stderr omits them. Indexing warnings and failures remain explicit
@@ -1906,7 +1906,7 @@ through `entry.read`, not stream telemetry.
 
 ## §9 Conformance {§cli-conformance}
 
-{§cli-agui-conformance} `conformance/agui-client.json` exhaustively classifies
+{§cli-acp-conformance} `conformance/acp-client.json` exhaustively classifies
 every action and notification in the daemon's live schema-bearing discovery as
 dedicated client behavior, lossless generic transport, or explicitly
 unsupported behavior. It records evidence by conformance dimension; the shared
@@ -1918,15 +1918,15 @@ remain an implicit client assumption.
 
 A conforming `plurnk` client:
 
-1. Speaks AG-UI+ (RunAgentInput over HTTP, AG-UI events + `CUSTOM plurnk.*` over SSE) per the plurnk-agui SPEC.
-2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT/agui` (or the exact `PLURNK_AGUI_URL`), presenting an access token acquired with the operator's secret, `PLURNK_SECRET` or the daemon's minted file, when there is one ({§cli-credential}).
+1. Speaks ACP+ (RunAgentInput over HTTP, ACP events + `CUSTOM plurnk.*` over SSE) per the plurnk-acp SPEC.
+2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT/acp` (or the exact `PLURNK_ACP_URL`), presenting an access token acquired with the operator's secret, `PLURNK_SECRET` or the daemon's minted file, when there is one ({§cli-credential}).
 3. Resolves the workspace and worker separately under §1.1, retaining their binding for subsequent requests until an explicit navigation command changes it.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
-5. Consumes client-owned proposal interrupts and resolves each through standard AG-UI resume per §6; loop-owned dispositions are absent from that surface.
+5. Consumes client-owned proposal interrupts and resolves each through standard ACP resume per §6; loop-owned dispositions are absent from that surface.
 6. Consumes `CUSTOM plurnk.notice` and renders each Notice per §8.
 7. Maps each loop's terminal result to exit codes per §4.
 8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.
-9. Projects `STATE_SNAPSHOT` and each `STATE_DELTA` into the run's status gauge (`loop/packet`, plurnk-agui SPEC); a delta before a snapshot or a patch op other than `replace` is a 502 `state-invalid` Problem.
+9. Projects `STATE_SNAPSHOT` and each `STATE_DELTA` into the run's status gauge (`loop/packet`, plurnk-acp SPEC); a delta before a snapshot or a patch op other than `replace` is a 502 `state-invalid` Problem.
 
 ### Test daemon ownership {§cli-test-daemon-lifecycle}
 

@@ -21,7 +21,7 @@ const runClient = async (args: string[], source: string = "", env: NodeJS.Proces
         env: {
             ...process.env,
             NO_COLOR: "",
-            PLURNK_AGUI_URL: noDaemon,
+            PLURNK_ACP_URL: noDaemon,
             PLURNK_CLIENT_MERMAID_TIMEOUT_MS: undefined,
             ...env,
         },

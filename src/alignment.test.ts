@@ -7,7 +7,7 @@ import { renderReasoning } from "./render.ts";
 import { renderLogEntry } from "./render-message.ts";
 import type { LogEntryWire } from "./render.ts";
 import StreamTrace from "./stream.ts";
-import { presentedRow } from "../test/agui-parts.ts";
+import { presentedRow } from "../test/acp-parts.ts";
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -26,7 +26,7 @@ test("[§cli-rendering] [§cli-log-entry-line-format] every waterfall row shares
         ["operation failure", renderLogEntry(entry({ op: "FIND", status_rx: 404, rx: { status: 404, problem: { type: "x", title: "Entry not found", status: 404 } } }))],
         ["NOTE", renderLogEntry(entry({ op: "NOTE", target: null, signal: 102, status_rx: 102, tx: { body: "Inspect." } }))],
         ["reasoning", renderReasoning("Inspect the contract.")],
-        ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", target: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } }, rx: { answers: ["agui://anonymous/threads/t/messages/m1"] } }))],
+        ["model SEND 200", renderLogEntry(entry({ op: "SEND", origin: "model", target: null, signal: 200, status_rx: 200, tx: { body: { raw: "done" } }, rx: { answers: ["acp://anonymous/threads/t/messages/m1"] } }))],
         ["client SEND", renderLogEntry(entry({ op: "SEND", origin: "client", target: null, signal: 201, status_rx: 201, tx: { body: { raw: "hello" } } }))],
         ["directed SEND failure", renderLogEntry(entry({ op: "SEND", origin: "model", target: "worker:///gone", signal: 410, status_rx: 410, tx: { target: { raw: "worker:///gone" } }, rx: { status: 410, problem: { type: "x", title: "Worker gone", status: 410 } } }))],
         ["execution", streams.concluded({ entryId: 8, workerId: 7, target: "sh:///1a2b3c4d", subscriptionId: 1, scheme: "sh", result: { status: 200 }, summary: "sh:///1a2b3c4d completed (exit 0)", wakeAction: "no-op-active-loop" }, 80)],

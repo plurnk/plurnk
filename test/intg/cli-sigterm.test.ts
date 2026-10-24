@@ -6,11 +6,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { RunAgentInputSchema } from "@ag-ui/core/schemas";
+import { RunAgentInputSchema } from "../../src/acp.ts";
 import { Validator } from "@plurnk/plurnk-contracts";
 import { clientTransportTerminalMissing } from "../../src/diagnostics.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
-import { callOf, speechOf } from "../agui-parts.ts";
+import { callOf, speechOf } from "../acp-parts.ts";
 
 for (const [interrupt, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
 for (const [resumed, reportedFailure, cancelMode] of [
@@ -72,10 +72,10 @@ for (const [resumed, reportedFailure, cancelMode] of [
             runs++;
             for (const event of speechOf({
                 id: runs, worker_id: 11, loop_seq: 1, turn_seq: runs, sequence: 1, op: "SEND", origin: "model", status_rx: 200,
-                tx: { body: { raw: resumed && runs === 1 ? "before proposal" : body } }, rx: { answers: ["agui://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
+                tx: { body: { raw: resumed && runs === 1 ? "before proposal" : body } }, rx: { answers: ["acp://anonymous/threads/" + encodeURIComponent(input.threadId) + "/messages/m1"] },
             })) frame(event);
             if (resumed && runs === 1) {
-                // plurnk-service {§agui-proposal-resolve}: the operation's own call awaiting its decision, and an interrupt naming
+                // plurnk-service {§acp-proposal-resolve}: the operation's own call awaiting its decision, and an interrupt naming
                 // it that carries Core's projection.
                 for (const event of callOf({ id: 9, worker_id: 11, loop_seq: 1, turn_seq: 1, sequence: 9, op: "EDIT", origin: "model",
                     state: "proposed", status_rx: 202, rx: { status: 202 }, tx: { body: "after" } })) frame(event);
@@ -83,7 +83,7 @@ for (const [resumed, reportedFailure, cancelMode] of [
                     type: "interrupt", interrupts: [{ id: "gate-9", reason: "tool_call", toolCallId: "1/1/9", metadata: { plurnk: { proposal: {
                         logEntryId: 9, workerId: 11, worker: input.threadId, loopId: 1, turnId: 1, coordinate: "1/1/9", op: "EDIT",
                         target: { scheme: "file", authority: null, pathname: "a.ts" }, body: "diff", attrs: {},
-                        owner: `agui://anonymous/threads/${encodeURIComponent(input.threadId)}`, disposition: { decision: "review" },
+                        owner: `acp://anonymous/threads/${encodeURIComponent(input.threadId)}`, disposition: { decision: "review" },
                     } } } }],
                 } });
                 response.end();
@@ -110,7 +110,7 @@ for (const [resumed, reportedFailure, cancelMode] of [
             "--json", "--yolo", "--status-stream", "--workspace", "workspace", "--worker", "actor", "test prompt",
         ], {
             cwd: directory,
-            env: { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: directory, NO_COLOR: "1", PLURNK_AGUI_URL: `http://127.0.0.1:${address.port}` },
+            env: { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: directory, NO_COLOR: "1", PLURNK_ACP_URL: `http://127.0.0.1:${address.port}` },
             stdio: ["ignore", "pipe", "pipe"],
         });
         t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); });
@@ -189,7 +189,7 @@ test("[§cli-interrupted-record] SIGINT stops real daemon inference after a prop
     ], {
         cwd: daemon.workspace, env: {
             PATH: process.env.PATH, HOME: daemon.home, XDG_CONFIG_HOME: `${daemon.home}/.config`,
-            PLURNK_AGUI_URL: daemon.url, NO_COLOR: "1",
+            PLURNK_ACP_URL: daemon.url, NO_COLOR: "1",
         }, stdio: ["ignore", "pipe", "pipe"],
     });
     t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); });

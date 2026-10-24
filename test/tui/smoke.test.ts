@@ -121,7 +121,7 @@ describe("TUI pty harness", () => {
         } finally { tui.kill(); }
     });
 
-    // plurnk-service {§agui-workspace-state}: a Run that begins after another client's rename carries the new name.
+    // plurnk-service {§acp-workspace-state}: a Run that begins after another client's rename carries the new name.
     test("[§cli-workspaces-and-workers] a rename made elsewhere reaches the title and the resume command", async (t) => {
         if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
         const tui = spawnTui(daemon.url, ["--workspace", "elsewhere-start"]);

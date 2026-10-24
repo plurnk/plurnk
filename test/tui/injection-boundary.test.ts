@@ -81,7 +81,7 @@ test(`[§cli-active-command-admission] injected input stays visible without an a
         const properties = body.forwardedProps?.plurnk;
         const injecting = properties?.action?.kind === "loop.inject";
         const originating = !properties?.action && body.messages?.length > 0;
-        // plurnk-service {§agui-run-input}: a Run that carries nothing new observes.
+        // plurnk-service {§acp-run-input}: a Run that carries nothing new observes.
         if (!properties?.action && body.resume === undefined && !(body.messages?.length > 0)) {
             observers += 1;
             for (const waiter of observerWaiters) if (observers >= waiter.count) waiter.resolve();

@@ -22,19 +22,19 @@ const {
     clientSubcommandEntryNotFound,
     clientProposalEditsBlocked,
     clientRuntimeError,
-    clientAguiError,
+    clientAcpError,
     clientTransportTerminalMissing,
     clientModelUnselected,
 } = await import("./diagnostics.ts");
 
-test("[§cli-partial-record] AG-UI failures preserve exact Problems and distinguish connection refusal from a broken exchange", () => {
-    const url = "http://127.0.0.1:1066/agui";
+test("[§cli-partial-record] ACP failures preserve exact Problems and distinguish connection refusal from a broken exchange", () => {
+    const url = "http://127.0.0.1:1066/acp";
     const problem = clientTransportTerminalMissing();
-    assert.strictEqual(clientAguiError(url, new ProblemError(problem)), problem);
+    assert.strictEqual(clientAcpError(url, new ProblemError(problem)), problem);
     const refused = new TypeError("fetch failed", { cause: Object.assign(new Error("refused"), { code: "ECONNREFUSED" }) });
-    assert.deepEqual(clientAguiError(url, refused), clientConnectionRefused(url, refused));
-    assert.equal(clientAguiError(url, new TypeError("terminated")).type, "https://problems.plurnk.xyz/client/agui/error");
-    assert.equal(clientAguiError(url, new TypeError("terminated")).detail, "terminated");
+    assert.deepEqual(clientAcpError(url, refused), clientConnectionRefused(url, refused));
+    assert.equal(clientAcpError(url, new TypeError("terminated")).type, "https://problems.plurnk.xyz/client/acp/error");
+    assert.equal(clientAcpError(url, new TypeError("terminated")).detail, "terminated");
 });
 
 test("{§cli-model-selection} missing-model guidance names the key the backend needs, then the selection commands", () => {
@@ -188,7 +188,7 @@ test("[§cli-connection-onboarding] isUnreachable only classifies connection-lev
     (refused as { cause?: unknown }).cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:1066"), { code: "ECONNREFUSED" });
     assert.equal(isUnreachable(refused), true);
     assert.equal(isUnreachable(new TypeError("fetch failed")), true);
-    assert.equal(isUnreachable(new Error("AG-UI run failed: 500 — runLoop exploded")), false);
+    assert.equal(isUnreachable(new Error("ACP run failed: 500 — runLoop exploded")), false);
     assert.equal(isUnreachable("not even an error"), false);
 });
 

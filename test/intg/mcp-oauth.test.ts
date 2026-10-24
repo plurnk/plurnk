@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import type { FunctionalityListResult, FunctionalityMutationResult } from "@plurnk/plurnk-contracts";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { bootDaemon, locateDaemon } from "./harness.ts";
 
 for (const { browserFails, fixedRedirect } of [
@@ -110,9 +110,9 @@ for (const { browserFails, fixedRedirect } of [
         const daemon = await bootDaemon(bin);
         t.after(daemon.cleanup);
         const workspace = "oauth-client";
-        const created = await actionViaAgui<{ id: number }>({ aguiUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.create", params: { name: workspace, projectRoot: null } });
+        const created = await actionViaAcp<{ id: number }>({ acpUrl: daemon.url }, { threadId: "bootstrap", kind: "workspace.create", params: { name: workspace, projectRoot: null } });
         const threadId = `${created.id}#user`;
-        const added = await actionViaAgui({ aguiUrl: daemon.url }, {
+        const added = await actionViaAcp({ acpUrl: daemon.url }, {
             threadId, kind: "workspace.mcp.add", params: { definition },
         }) as FunctionalityMutationResult;
         assert.equal(added.status, 202);
@@ -126,7 +126,7 @@ for (const { browserFails, fixedRedirect } of [
             cwd: daemon.workspace,
             env: {
                 ...env, HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"),
-                PLURNK_AGUI_URL: daemon.url, PLURNK_CLIENT_OAUTH_TIMEOUT_MS: browserFails ? "0" : "5000",
+                PLURNK_ACP_URL: daemon.url, PLURNK_CLIENT_OAUTH_TIMEOUT_MS: browserFails ? "0" : "5000",
                 BROWSER: `${process.execPath} ${resolve("test/fixtures/oauth-browser.mjs")}`,
                 OAUTH_BROWSER_FAIL: browserFails ? "1" : "0",
                 DISPLAY: "", WAYLAND_DISPLAY: "", XDG_CURRENT_DESKTOP: "", DE: "", SSH_CONNECTION: "", SSH_CLIENT: "", SSH_TTY: "", NO_COLOR: "1",
@@ -150,7 +150,7 @@ for (const { browserFails, fixedRedirect } of [
         assert.deepEqual(JSON.parse(stdout), { status: 202, alias: "oauth" });
         assert.match(stderr, /Sign-in accepted; tools awaiting activation/);
         assert.equal(tokenRequests.length, 1);
-        const list = () => actionViaAgui({ aguiUrl: daemon.url }, { threadId, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
+        const list = () => actionViaAcp({ acpUrl: daemon.url }, { threadId, kind: "workspace.mcp.list" }) as Promise<FunctionalityListResult>;
         let listed = await list();
         for (let attempt = 0; attempt < 100 && listed.definitions.find(({ alias }) => alias === "oauth")?.state !== "active"; attempt++) {
             await delay(20);
@@ -161,7 +161,7 @@ for (const { browserFails, fixedRedirect } of [
         assert.deepEqual((active?.detail as { tools?: unknown } | undefined)?.tools, ["inspect"]);
         assert.deepEqual(listed.definitions.find(({ alias }) => alias === "oauth")?.definition, definition,
             "the callback binding and tokens never become persisted MCP configuration");
-        const invocation = await actionViaAgui({ aguiUrl: daemon.url }, {
+        const invocation = await actionViaAcp({ acpUrl: daemon.url }, {
             threadId, kind: "op.parse", params: { text: "````oauth (inspect)\n{}\n````" },
         }) as { results: { status: number }[] };
         assert.equal(invocation.results.length, 1);

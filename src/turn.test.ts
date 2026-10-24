@@ -9,13 +9,13 @@ import type { LogEntryWire } from "./render.ts";
 const row = (loop: number, turn: number, op = "READ"): LogEntryWire => ({
     ...(op === "SEND" ? { message: { id: `${loop}/${turn}/1`, role: "assistant" as const } } : {}),
     id: 1, loop_seq: loop, turn_seq: turn, sequence: 1, op, origin: "model", signal: null, target: null,
-    lineMarker: null, tx: {}, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] }, status_rx: 200,
+    lineMarker: null, tx: {}, rx: { status: 200, answers: ["acp://anonymous/threads/t/messages/m1"] }, status_rx: 200,
 });
 
 test("[§cli-response-order] deliberate and addressed SEND responses retain delivery order", () => {
     const view = new TurnDisplay();
     view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "Here is the response.", json: null } } });
-    view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "Finished." } }, rx: { status: 200, answers: ["agui://anonymous/threads/t/messages/m1"] } });
+    view.addResponse({ ...row(1, 1, "SEND"), tx: { body: { raw: "Finished." } }, rx: { status: 200, answers: ["acp://anonymous/threads/t/messages/m1"] } });
     const rendered = view.render(100).join("\n");
     assert.match(rendered, /Here is the response\.[\s\S]*Finished\./);
 });

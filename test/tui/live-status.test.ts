@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 
 test("[§cli-status-wait] built TUI counts down a bounded park and retains its deadline on reattachment", { timeout: 60_000 }, async (t) => {
     const service = await locateDaemon();
@@ -107,7 +107,7 @@ test("[§cli-status-project-root] startup and workspace changes show the daemon'
     const second = join(daemon.workspace, "second project");
     await Promise.all([mkdir(first), mkdir(second)]);
     for (const [name, projectRoot] of [["project-first", first], ["project-second", second], ["project-headless", null]] as const) {
-        await actionViaAgui({ aguiUrl: daemon.url }, { threadId: name, kind: "workspace.create", params: { name, projectRoot } });
+        await actionViaAcp({ acpUrl: daemon.url }, { threadId: name, kind: "workspace.create", params: { name, projectRoot } });
     }
     const tui = spawnTui(daemon.url, ["--workspace", "project-first"], {
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
@@ -143,7 +143,7 @@ test("[§cli-status-project-root] the built one-shot CLI status uses the resumed
         PLURNK_PROVIDERS_CONTEXT_WINDOW: "32768", PLURNK_PROVIDERS_RETRY_ATTEMPTS: "0",
     } });
     t.after(() => daemon.cleanup());
-    await actionViaAgui({ aguiUrl: daemon.url }, { threadId: "project-cli", kind: "workspace.create", params: { name: "project-cli", projectRoot: daemon.workspace } });
+    await actionViaAcp({ acpUrl: daemon.url }, { threadId: "project-cli", kind: "workspace.create", params: { name: "project-cli", projectRoot: daemon.workspace } });
     const cli = spawnTui(daemon.url, ["--workspace", "project-cli", "--max-turns", "2", "--timeout", "15", "Answer briefly."], {
         HOME: daemon.home, XDG_CONFIG_HOME: join(daemon.home, ".config"), PLURNK_MODEL: "",
     }, daemon.home);
@@ -308,7 +308,7 @@ test("[§cli-worker-status] the built TUI accrues each turn while reasoning is l
     assert.equal(await tui.exited, 0);
 });
 
-test("[§cli-worker-status] the built TUI clock advances through parked and resumed AG-UI gauges", { timeout: 90_000 }, async (t) => {
+test("[§cli-worker-status] the built TUI clock advances through parked and resumed ACP gauges", { timeout: 90_000 }, async (t) => {
     const service = await locateDaemon();
     assert.ok(service, "the composed test requires the sibling service");
     const childRelease = Promise.withResolvers<void>();

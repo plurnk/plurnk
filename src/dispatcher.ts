@@ -11,9 +11,9 @@ import { loadFloor } from "./envdefaults.ts";
 import { randomBytes } from "node:crypto";
 import Knobs, { KnobError } from "./knobs.ts";
 import { isColorMode } from "./color.ts";
-import { runCliViaAgui, runExecViaAgui, runScriptViaAgui } from "./agui_cli.ts";
-import { AguiTransport } from "./transport.ts";
-import { actionViaAgui, workerThreadId, type WorkspaceHandle } from "./agui.ts";
+import { runCliViaAcp, runExecViaAcp, runScriptViaAcp } from "./acp_cli.ts";
+import { AcpTransport } from "./transport.ts";
+import { actionViaAcp, workerThreadId, type WorkspaceHandle } from "./acp.ts";
 import Credential, { SignInCredential } from "./credential.ts";
 import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
 import { admitWorkerEnv, resolveClientWorkerEnv } from "./env.ts";
@@ -35,7 +35,7 @@ import {
     clientFlagInvalid,
     clientFlagMissingDependency,
     clientRuntimeError,
-    clientAguiError,
+    clientAcpError,
     clientSubcommandMissingArgument,
     clientSubcommandUnknownVerb,
     clientWorkerNotFound,
@@ -122,15 +122,15 @@ env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.en
                         documents them all; the option wins when both are given.
   PLURNK_HOST, PLURNK_PORT
                         the daemon's address, under the daemon's own key names.
-  PLURNK_AGUI_URL       the whole URL instead, when the daemon is reached through a
-                        remote AG-UI portal.
+  PLURNK_ACP_URL       the whole URL instead, when the daemon is reached through a
+                        remote ACP portal.
   PLURNK_SECRET         the operator's client secret, exchanged at the daemon for access
                         tokens; unset, the client reads the secret a daemon running as
                         you minted beside its database, or signs in through the browser.
   PLURNK_CLIENT_AUTOSTART
                         1 (default): start the installed service on local
                         connection refusal and leave it running. 0: attach only.
-                        Explicit AG-UI URLs and remote hosts are always attach-only.
+                        Explicit ACP URLs and remote hosts are always attach-only.
 
 options:
   -h, --help              print this message and exit
@@ -835,12 +835,12 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         dieWith(64, problem);
     }
 
-    const configuredUrl = stated("PLURNK_AGUI_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/agui`;
+    const configuredUrl = stated("PLURNK_ACP_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/acp`;
     let backend: Backend;
     try {
         // {§cli-credential} {§cli-sign-in} — the operator's secret when one is at hand; otherwise the
         // browser sign-in's grant, with a browser only when a person is at the terminal.
-        backend = await Backend.open({ aguiUrl: configuredUrl, credential: Credential.fromEnvironment() ?? new SignInCredential({
+        backend = await Backend.open({ acpUrl: configuredUrl, credential: Credential.fromEnvironment() ?? new SignInCredential({
             write: (text) => { process.stderr.write(text); },
             interactive: !json && process.stdin.isTTY === true && process.stderr.isTTY === true,
             timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS"),
@@ -855,7 +855,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         if (json) dieJson(code, problem);
         return dieWith(code, problem);
     }
-    const { aguiUrl, credential } = backend.target;
+    const { acpUrl, credential } = backend.target;
     const projectRoots = new ProjectRoot(backend.target, projectRootRaw);
     const chooser = (surface?: TuiSurface) => !json && process.stdin.isTTY === true && process.stdout.isTTY === true
         ? async (home: string) => {
@@ -901,7 +901,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     const openWorkspace = (): Promise<WorkspaceHandle> => {
         workspacePromise ??= (async () => {
             const options = await workspaceOptions();
-            const bound = await actionViaAgui<WorkspaceHandle>({ aguiUrl, credential }, {
+            const bound = await actionViaAcp<WorkspaceHandle>({ acpUrl, credential }, {
                 threadId: "bootstrap",
                 kind: "workspace.create",
                 params: { ...(configuredWorkspace === undefined ? {} : { name: configuredWorkspace }), ...options },
@@ -913,7 +913,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         })();
         return workspacePromise;
     };
-    if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
+    if (acpUrl !== undefined && acpUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
         try {
             const w = await openWorkspace();
             const oneShotWorker = selectedWorker ?? randomBytes(6).toString("hex");
@@ -924,7 +924,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             let code: number;
             if (command !== null) {
                 // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
-                code = await runExecViaAgui({ aguiUrl, credential }, command, {
+                code = await runExecViaAcp({ acpUrl, credential }, command, {
                     threadId,
                     env: workerEnv,
                     yolo,
@@ -936,8 +936,8 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 // a per-loop model selector (the worker owns the model).
                 let activeModel: ModelRoute | null;
                 if (modelSelector !== undefined) {
-                    activeModel = Validator.assertModelRoute(await actionViaAgui(
-                        { aguiUrl, credential },
+                    activeModel = Validator.assertModelRoute(await actionViaAcp(
+                        { acpUrl, credential },
                         {
                             threadId,
                             kind: "worker.model.set",
@@ -946,9 +946,9 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     ));
                 } else {
                     // A worker no act has created yet has no durable route: the message creates it with the
-                    // daemon's defaults (plurnk-service {§agui-action-binding}).
-                    const projection = await actionViaAgui<{ model: unknown }>(
-                        { aguiUrl, credential },
+                    // daemon's defaults (plurnk-service {§acp-action-binding}).
+                    const projection = await actionViaAcp<{ model: unknown }>(
+                        { acpUrl, credential },
                         {
                             threadId,
                             kind: "worker.model.get",
@@ -960,14 +960,14 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                     activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
                 }
                 if (effort !== undefined && modelSelector === undefined) {
-                    await actionViaAgui({ aguiUrl, credential }, {
+                    await actionViaAcp({ acpUrl, credential }, {
                         threadId,
                         kind: "worker.effort.set",
                         params: { effort },
                     });
                 }
                 await admitWorkerEnv(
-                    { call: (kind, params) => actionViaAgui({ aguiUrl, credential }, { threadId, kind, params }) },
+                    { call: (kind, params) => actionViaAcp({ acpUrl, credential }, { threadId, kind, params }) },
                     oneShotWorker,
                     workerEnv,
                 );
@@ -975,7 +975,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 const openPaths = extractOpenPaths(projected.prompt, projectRoot);
                 // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
                 const reviewRequested = /^\s*\?/u.test(prompt);
-                code = await runCliViaAgui({ aguiUrl, credential }, projected.prompt, {
+                code = await runCliViaAcp({ acpUrl, credential }, projected.prompt, {
                     lifetime,
                     threadId,
                     workspace: w,
@@ -993,7 +993,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 });
             }
             if (shareTarget !== undefined) {
-                const shared = await actionViaAgui<ShareResult>({ aguiUrl, credential }, {
+                const shared = await actionViaAcp<ShareResult>({ acpUrl, credential }, {
                     threadId,
                     kind: "workspace.share",
                     params: { folder: shareTarget },
@@ -1010,7 +1010,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             // an endpoint that ANSWERED with an error surfaces its real cause — claiming
             // "no daemon running" over a 500 would lie. json mode still emits ONE
             // valid document on stdout either way.
-            const problem = clientAguiError(aguiUrl, cause);
+            const problem = clientAcpError(acpUrl, cause);
             const code = cause instanceof ProblemError ? cause.exitCode : 1;
             if (json) dieJson(code, problem);
             dieWith(code, problem);
@@ -1018,13 +1018,13 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
     }
 
     // The transport binds the daemon-returned identity; the TUI displays its mutable label.
-    if (aguiUrl !== undefined && aguiUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
-        let transport: AguiTransport | undefined;
+    if (acpUrl !== undefined && acpUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
+        let transport: AcpTransport | undefined;
         try {
             const w = await openWorkspace();
             const binding = { workspaceId: w.id, worker: workerName };
             const { settings } = await workspaceOptions();
-            transport = await lifetime.own(Promise.resolve(new AguiTransport({ aguiUrl, credential }, binding, {
+            transport = await lifetime.own(Promise.resolve(new AcpTransport({ acpUrl, credential }, binding, {
                 settings,
                 descendants: true,   // {plurnk#108} — the TUI observes its delegation
                 auto,
@@ -1045,7 +1045,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
                 workerName,
             });
             if (shareTarget !== undefined) {
-                const shared = await actionViaAgui<ShareResult>({ aguiUrl, credential }, {
+                const shared = await actionViaAcp<ShareResult>({ acpUrl, credential }, {
                     threadId: transport.threadId(),
                     kind: "workspace.share",
                     params: { folder: shareTarget },
@@ -1057,21 +1057,21 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         } catch (cause) {
             transport?.shutdown();
             if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(aguiUrl, cause));
+            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(acpUrl, cause));
             dieWith(1, clientRuntimeError(cause));
         }
     }
 
     // Subcommands + script speak the action surface through a structural Caller bound to the
     // workspace a verb addresses; a daemon verb binds nothing.
-    const target = { aguiUrl, credential };
+    const target = { acpUrl, credential };
     const callerFor = (selection?: WorkspaceSelection): Caller => {
         let binding: Promise<WorkspaceHandle> | undefined;
         return { call: async (method: string, params?: object) => {
-            if (selection !== undefined) binding ??= actionViaAgui<WorkspaceHandle>(target, {
+            if (selection !== undefined) binding ??= actionViaAcp<WorkspaceHandle>(target, {
                 threadId: "bootstrap", kind: "workspace.attach", params: selection,
             });
-            return actionViaAgui<unknown>(target, {
+            return actionViaAcp<unknown>(target, {
                 threadId: binding === undefined ? "bootstrap" : workerThreadId({ workspaceId: (await binding).id, worker: workerName }),
                 kind: method,
                 params,
@@ -1091,11 +1091,11 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             }
             if (subcommand === "login") {
                 const signIn = new SignInCredential({ write: (text) => { process.stderr.write(text); }, interactive: true, timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS") });
-                const issuer = await signIn.login(aguiUrl);
-                process.stderr.write(issuer === null ? `The daemon at ${aguiUrl} authenticates nothing; no sign-in is needed.\n` : `Signed in to ${issuer}.\n`);
+                const issuer = await signIn.login(acpUrl);
+                process.stderr.write(issuer === null ? `The daemon at ${acpUrl} authenticates nothing; no sign-in is needed.\n` : `Signed in to ${issuer}.\n`);
             } else {
-                const issuer = await credential.logout(aguiUrl);
-                process.stderr.write(issuer === null ? `No grant is kept for ${aguiUrl}.\n` : `Signed out of ${issuer}.\n`);
+                const issuer = await credential.logout(acpUrl);
+                process.stderr.write(issuer === null ? `No grant is kept for ${acpUrl}.\n` : `Signed out of ${issuer}.\n`);
             }
             process.exitCode = 0;
             return;
@@ -1113,7 +1113,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             }
             const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
             const workspace = await openWorkspace();
-            const exitCode = await runScriptViaAgui(target, text, {
+            const exitCode = await runScriptViaAcp(target, text, {
                 threadId: workerThreadId({ workspaceId: workspace.id, worker: workerName }),
                 yolo,
                 auto,
@@ -1136,9 +1136,9 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
             return;
         }
 
-        // Reaching here is a dispatcher bug: prompts + the TUI ride the AG-UI
+        // Reaching here is a dispatcher bug: prompts + the TUI ride the ACP
         // branches above; script + subcommands returned above. Fail hard.
-        throw new Error("dispatcher fell through every AG-UI+ path — unreachable");
+        throw new Error("dispatcher fell through every ACP+ path — unreachable");
     } catch (cause) {
         // json mode: a structured error document on stdout (valid JSON even on
         // failure), paired with the right exit code. Text mode narrates to stderr.
@@ -1152,7 +1152,7 @@ const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
         }
         // Nothing listening at all (subcommands, the TUI boot) gets the onboarding
         // block; any other genuine throw is the generic runtime fallback.
-        if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(aguiUrl, cause));
+        if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(acpUrl, cause));
         dieWith(1, clientRuntimeError(cause));
     }
 };

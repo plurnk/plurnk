@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { openTransport } from "../transport.ts";
-import { runViaAgui, runEnd } from "../../src/agui.ts";
+import { runViaAcp, runEnd } from "../../src/acp.ts";
 import { spawnTui } from "./harness.ts";
 
 const historyDaemon = async (t: TestContext, url: string, extraEnv: Record<string, string> = {}) => {
@@ -35,7 +35,7 @@ test("{§cli-worker-history}: startup and attach restore the bound worker's hist
     for (const name of ["alpha", "beta"]) {
         // Seed the old name-addressed form, then reopen it through the terminal's qualified thread.
         let status: number | undefined;
-        for await (const event of runViaAgui({ aguiUrl: daemon.url }, { threadId: name, workspace: "history",
+        for await (const event of runViaAcp({ acpUrl: daemon.url }, { threadId: name, workspace: "history",
             prompt: `Remember the ${name} question.`, forwardedProps: { projectRoot: null } })) {
             const terminal = runEnd(event)?.terminal as { result: { status: number } } | undefined;
             if (terminal !== undefined) status = terminal.result.status;
@@ -104,7 +104,7 @@ test("{§cli-worker-history}: quitting an attached live observer leaves the orig
     const address = provider.address();
     assert.ok(address !== null && typeof address !== "string");
     const daemon = await historyDaemon(t, `http://127.0.0.1:${address.port}/v1`);
-    const owner = await openTransport({ aguiUrl: daemon.url }, "main", { workspace: "observed", projectRoot: null });
+    const owner = await openTransport({ acpUrl: daemon.url }, "main", { workspace: "observed", projectRoot: null });
     t.after(() => owner.shutdown());
     const run = owner.run("Finish the independent work.", {});
     await waiting.promise;
@@ -133,7 +133,7 @@ test("{§cli-worker-history}: reattachment presents a durable unanswered questio
     });
     t.after(() => provider.close());
     const daemon = await historyDaemon(t, provider.url, { PLURNK_SERVICE_OPTIMISTIC_WAIT_MS: "0" });
-    const owner = await openTransport({ aguiUrl: daemon.url }, "main", { workspace: "question-history", projectRoot: null });
+    const owner = await openTransport({ acpUrl: daemon.url }, "main", { workspace: "question-history", projectRoot: null });
     t.after(() => owner.shutdown());
     const question = Promise.withResolvers<void>();
     owner.subscribe({

@@ -1,4 +1,4 @@
-// Proves the explicit AG-UI URL overrides the assembled daemon host and port.
+// Proves the explicit ACP URL overrides the assembled daemon host and port.
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -15,12 +15,12 @@ before(async () => {
 
 after(async () => { await daemon?.cleanup(); });
 
-test("PLURNK_AGUI_URL reaches the in-process module despite an unusable host and port", async (t) => {
+test("PLURNK_ACP_URL reaches the in-process module despite an unusable host and port", async (t) => {
     if (daemon === null) { t.skip("no plurnk-service binary reachable"); return; }
     const tui = spawnTui(daemon.url, [], {
         PLURNK_HOST: "127.0.0.1",
         PLURNK_PORT: "1",
-        PLURNK_AGUI_URL: daemon.url,
+        PLURNK_ACP_URL: daemon.url,
     });
     try {
         await tui.waitFor(/plurnk.*\/help/s);

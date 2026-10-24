@@ -1,14 +1,13 @@
-// CLI one-shot through the daemon's AG-UI endpoint: we POST the run and render the
-// AG-UI SSE projection. Operations render from the standard parts their rows build,
+// CLI one-shot through the daemon's ACP endpoint: we POST the run and render the
+// ACP SSE projection. Operations render from the standard parts their rows build,
 // with the rows' facts as metadata ({§cli-row-sources}), and provider reasoning from
-// AG-UI's standard reasoning lifecycle.
+// ACP's standard reasoning lifecycle.
 // Text mode: stdout = delivered response messages, stderr = the per-row trace.
 //
 // JSON mode uses the terminal projection's complete loop identity and usage.
 
 import Knobs from "./knobs.ts";
 import process from "node:process";
-import type { ResumeEntry } from "@ag-ui/core";
 import { formatPlain, exitCodeForLoop, buildJsonRecord } from "./cli.ts";
 import { extractSendBody, isEmission, isResponseMessage } from "./render.ts";
 import type { LogEntryWire, LoopUsage, OutsideText } from "./render.ts";
@@ -16,7 +15,7 @@ import { isUnpending, proposalOf, proposalResume, reviewProposal, type Resolutio
 import ToolAcceptance from "./tool-acceptance.ts";
 import {
     ProblemError,
-    clientAguiError,
+    clientAcpError,
     clientActionResultMissing,
     clientTransportInterruptMismatch,
     clientTransportProblemMissing,
@@ -27,8 +26,8 @@ import {
 import type { Notice } from "./diagnostics.ts";
 import StreamTrace, { inlineable, renderInline, streamAddress, type StreamConcludedPayload, type StreamEventPayload } from "./stream.ts";
 import { clientCapabilities } from "./client-capabilities.ts";
-import { actionViaAgui, runViaAgui, type AguiEvent, type AguiTarget, type WorkspaceHandle } from "./agui.ts";
-import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, threadWorker, type ActionOutcome } from "./agui.ts";
+import { actionViaAcp, runViaAcp, type AcpEvent, type AcpTarget, type ResumeEntry, type WorkspaceHandle } from "./acp.ts";
+import { actionOutcome, entryReadResult, operationResult, problemDetails, runEnd, threadWorker, type ActionOutcome } from "./acp.ts";
 import type { EntryReadResult, OperationResult, ProblemDetails } from "@plurnk/plurnk-contracts";
 import ReasoningEvents from "./reasoning-events.ts";
 import RowAssembler, { snapshotRows, wholeRow } from "./rows.ts";
@@ -40,7 +39,7 @@ import { signalExitCode } from "./lifetime.ts";
 import { commandEnv } from "./env.ts";
 import { attention, bell, concluded } from "./attention.ts";
 
-// The terminal record a Run's end carries (plurnk-service {§agui-plurnk-metadata}): the loop/terminated
+// The terminal record a Run's end carries (plurnk-service {§acp-plurnk-metadata}): the loop/terminated
 // notification plus the daemon workspaceId.
 interface TerminatedValue {
     workspaceId: number | null;
@@ -78,7 +77,7 @@ export interface CliRunSinks {
     noReviewChannel: boolean;
     acceptance: ToolAcceptance;
     reviewRequested?: boolean;
-    // plurnk-service {§agui-held-interrupts}: null when `signal` withdraws the review, its gate settled elsewhere.
+    // plurnk-service {§acp-held-interrupts}: null when `signal` withdraws the review, its gate settled elsewhere.
     review: (p: ProposalParams, signal: AbortSignal) => Promise<Resolution | null>;
     onActionResult?: (v: ActionOutcome) => void;
     onRow?: (entry: LogEntryWire) => void;
@@ -107,7 +106,7 @@ const runOutcome = (result: CliRunResult): OperationResult => {
 // A row as this invocation drew it: a later version of the same row is drawn again.
 const drawnKey = (entry: LogEntryWire): string => `${entry.id}/${String(entry.status_rx ?? "")}`;
 
-// plurnk-service {§agui-sync}: an observation of the work that follows a gate draws, from its snapshot, the rows from that
+// plurnk-service {§acp-sync}: an observation of the work that follows a gate draws, from its snapshot, the rows from that
 // gate's row on that this invocation has not drawn.
 export interface CliObservation {
     readonly since: number;
@@ -115,12 +114,12 @@ export interface CliObservation {
 }
 
 const readStream = async (
-    target: AguiTarget,
+    target: AcpTarget,
     binding: { threadId: string },
     concluded: StreamConcludedPayload,
     signal?: AbortSignal,
 ): Promise<Readonly<Record<string, { content: string }>>> => {
-    const result = entryReadResult(await actionViaAgui(target, {
+    const result = entryReadResult(await actionViaAcp(target, {
         threadId: binding.threadId,
         kind: "entry.read", params: { target: concluded.target, workerId: concluded.workerId },
     }, signal));
@@ -128,13 +127,13 @@ const readStream = async (
     return result.entry.channels;
 };
 
-// Drive one AG-UI run's event stream. Text mode renders to the sinks
+// Drive one ACP run's event stream. Text mode renders to the sinks
 // (stdout = answer, stderr = trace); json mode stays silent and accumulates the
 // full record (entries/notices/response/terminated/modelWorkerId) for the caller
 // to emit as ONE document. The Run end's terminal record is the authoritative outcome (its
 // result.status/hitMaxTurns win over the RUN_ERROR-inferred code). Event source
 // injected so it's testable without a live daemon.
-export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks, observation?: CliObservation): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
+export const consumeCliRun = (events: AsyncIterable<AcpEvent>, io: CliRunSinks, observation?: CliObservation): Promise<CliRunResult> => withColorOutput(process.stderr, async () => {
     let finalStatus = 200;
     let hitMaxTurns = false;
     let response = "";
@@ -211,7 +210,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
         try {
             if (e.type === "RUN_STARTED") continue;
             // A Run's end carries the bound loop's terminal record, the Problem of a Run that failed without one, or an
-            // action's outcome (plurnk-service {§agui-plurnk-metadata}).
+            // action's outcome (plurnk-service {§acp-plurnk-metadata}).
             const end = runEnd(e);
             if (end !== null) {
                 if (e.type === "RUN_ERROR") sawRunError = true;
@@ -220,7 +219,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
                     for (const interrupt of e.outcome.interrupts) {
                         interrupts.set(interrupt.id, interrupt.id);
                         if (interrupt.toolCallId !== undefined) interrupts.set(interrupt.toolCallId, interrupt.id);
-                        // plurnk-service {§agui-proposal-resolve}: a proposal is its interrupt, carrying the daemon's projection.
+                        // plurnk-service {§acp-proposal-resolve}: a proposal is its interrupt, carrying the daemon's projection.
                         let proposal: ProposalParams | null;
                         try {
                             proposal = proposalOf(interrupt);
@@ -232,7 +231,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
                         }
                         if (proposal === null) continue;
                         // A proposal reaching the client is client-owned. A decision no person makes resumes it at once; a
-                        // person's review is the caller's, held meanwhile (plurnk-service {§agui-held-interrupts}).
+                        // person's review is the caller's, held meanwhile (plurnk-service {§acp-held-interrupts}).
                         gate = { interruptId: interrupt.id, proposal };
                         const automatic = io.acceptance.resolve(proposal, io);
                         if (automatic !== null) pendingResume = proposalResume(interrupt.id, automatic);
@@ -256,7 +255,7 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
                 }
                 continue;
             }
-            // plurnk-service {§agui-sync}: a snapshot seeds the calls this Run's live events fold onto; an observation of the
+            // plurnk-service {§acp-sync}: a snapshot seeds the calls this Run's live events fold onto; an observation of the
             // work after a gate draws the rows from that gate's on that this invocation has not drawn.
             if (e.type === "MESSAGES_SNAPSHOT") {
                 for (const entry of snapshotRows(e.messages, rows)) {
@@ -359,12 +358,12 @@ export const consumeCliRun = (events: AsyncIterable<AguiEvent>, io: CliRunSinks,
     return snapshot();
 });
 
-// Wire the live AG-UI endpoint + terminal for one CLI prompt. text: stdout=answer,
+// Wire the live ACP endpoint + terminal for one CLI prompt. text: stdout=answer,
 // stderr=trace. json: silent, then ONE buildJsonRecord document on stdout —
 // identical schema in both CLI modes (the terminal record carries workspaceId/loopId/
 // turnIds/cost; modelWorkerId derived from the rows).
-export const runCliViaAgui = async (
-    target: AguiTarget,
+export const runCliViaAcp = async (
+    target: AcpTarget,
     prompt: string,
     opts: { lifetime: Lifetime; threadId: string; workspace: WorkspaceHandle; worker: string; modelLabel?: string; maxTurns?: number; openPaths?: string[]; timeoutSec?: number; yolo: boolean; auto: boolean; reviewRequested?: boolean; json: boolean; statusStream: boolean; bell?: boolean },
 ): Promise<number> => {
@@ -436,10 +435,10 @@ export const runCliViaAgui = async (
     // --timeout <s>: at the deadline, fire loop.cancel at the daemon (the loop
     // resolves 499) and, if the stream still hasn't ended after a grace, abort the
     // SSE locally: that ends delivery only, the cancel was already sent
-    // ({§agui-run-disconnect}). Exit 3 with timedOut:true in the record, per SPEC §1.
+    // ({§acp-run-disconnect}). Exit 3 with timedOut:true in the record, per SPEC §1.
     let timedOut = false;
     const cancellationGraceMs = Knobs.cancelGraceMs();
-    const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAgui(target, {
+    const cancelLoop = (reason: string, signal: AbortSignal): Promise<unknown> => actionViaAcp(target, {
         threadId: opts.threadId,
         kind: "loop.cancel", params: { reason },
     }, signal);
@@ -520,18 +519,18 @@ export const runCliViaAgui = async (
     try {
         try {
             const segment = async (input: typeof next, observation?: CliObservation): Promise<CliRunResult> => {
-                const run = await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, ...input }, ac.signal), io, observation);
+                const run = await consumeCliRun(runViaAcp(target, { threadId: opts.threadId, capabilities, ...input }, ac.signal), io, observation);
                 activeSegment = null;
                 return run;
             };
-            // plurnk-service {§agui-held-interrupts}: the person reviews a proposal while a connection holds its interrupt. When
+            // plurnk-service {§acp-held-interrupts}: the person reviews a proposal while a connection holds its interrupt. When
             // another client's answer or the daemon settles it first, the menu withdraws, a decision already under way (an
             // editor) finishes and is not sent, and what the hold observed stands.
             const heldReview = async (gate: NonNullable<CliRunResult["gate"]>, observation: CliObservation): Promise<{ readonly resume: ResumeEntry } | { readonly held: CliRunResult }> => {
                 const menu = new AbortController();
                 const hold = new AbortController();
                 const reviewing = io.review(gate.proposal, menu.signal);
-                const holding = consumeCliRun(runViaAgui(target, {
+                const holding = consumeCliRun(runViaAcp(target, {
                     threadId: opts.threadId, capabilities, forwardedProps: { ...forwardedProps, interrupts: [gate.interruptId] },
                 }, AbortSignal.any([ac.signal, hold.signal])), io, observation).then(
                     (held) => held.observedEnd || held.terminated !== null ? held : null,
@@ -556,12 +555,12 @@ export const runCliViaAgui = async (
                 const following = gate === null ? undefined : { since: gate.proposal.logEntryId, drawn };
                 if (result.pendingResume !== null) {
                     const resumed = await segment({ resume: [result.pendingResume] });
-                    // plurnk-service {§agui-held-interrupts}: an answer refused because its gate no longer waits ends nothing:
+                    // plurnk-service {§acp-held-interrupts}: an answer refused because its gate no longer waits ends nothing:
                     // the refusal stands as a notice, and the CLI follows the work.
                     const refused = resumed.terminated === null ? resumed.problem : null;
                     if (refused !== null && isUnpending(refused)) {
                         result = mergeRunSegments(result, { ...resumed, problem: null,
-                            notices: [...resumed.notices, { source: "client:agui", kind: "refused", level: "warn", message: refused.detail, problem: refused }] });
+                            notices: [...resumed.notices, { source: "client:acp", kind: "refused", level: "warn", message: refused.detail, problem: refused }] });
                         result = mergeRunSegments(result, await segment({}, following));
                     } else result = mergeRunSegments(result, resumed);
                     continue;
@@ -586,7 +585,7 @@ export const runCliViaAgui = async (
         } catch (cause) {
             // {§cli-partial-record} The invocation owns received evidence even when
             // its event iterator throws. Neither a retry nor a fabricated terminal.
-            const problem = clientAguiError(target.aguiUrl, cause);
+            const problem = clientAcpError(target.acpUrl, cause);
             const partial = activeSegment === null ? result : mergeRunSegments(result, activeSegment);
             result = {
                 ...partial,
@@ -596,7 +595,7 @@ export const runCliViaAgui = async (
                 problem: partial.problem ?? problem,
                 notices: partial.terminated === null && partial.problem === null ? partial.notices : [
                     ...partial.notices,
-                    { source: "client:agui", kind: "error", level: "error", message: problem.detail, problem },
+                    { source: "client:acp", kind: "error", level: "error", message: problem.detail, problem },
                 ],
             };
             if (!opts.json && interruption === undefined) io.err(`${renderDiagnostic(problem)}\n`);
@@ -630,10 +629,10 @@ export const runCliViaAgui = async (
     return timedOut ? 3 : result.exitCode;
 };
 
-// Script mode over AG-UI+: one op.parse action, the person's own operation, never paused for review.
+// Script mode over ACP+: one op.parse action, the person's own operation, never paused for review.
 // Exit honesty: worst op status ≥400 → 4, else 0.
-export const runScriptViaAgui = async (
-    target: AguiTarget,
+export const runScriptViaAcp = async (
+    target: AcpTarget,
     text: string,
     opts: { threadId: string; yolo: boolean; auto: boolean; json: boolean },
 ): Promise<number> => {
@@ -660,7 +659,7 @@ export const runScriptViaAgui = async (
     const forwardedProps: Record<string, unknown> = {
         action: { kind: "op.parse", text },
     };
-    await consumeCliRun(runViaAgui(target, { threadId: opts.threadId, capabilities, forwardedProps }), io);
+    await consumeCliRun(runViaAcp(target, { threadId: opts.threadId, capabilities, forwardedProps }), io);
     // NO fabricated success (fabrication audit, 2026-07-11): a script whose parse
     // result never arrived did NOT succeed — fail hard, loudly.
     if (parse === null) throw new ProblemError(clientActionResultMissing("op.parse"));
@@ -681,7 +680,7 @@ export const exitCodeForExec = (status: number, exitCode?: number): number =>
 
 // What a `! command`'s op.exec Run chain settled. A failed action result is the daemon refusing the
 // execution. An admitted execution settles with the conclusion of the stream its started row
-// announced, which the Run carries before its result ({§agui-broadcast-fan}). Without that
+// announced, which the Run carries before its result ({§acp-broadcast-fan}). Without that
 // conclusion the Run failed: with its own Problem when it reported one.
 export const settleExec = (run: {
     result: ActionOutcome | null;
@@ -697,10 +696,10 @@ export const settleExec = (run: {
 
 // One-shot `! command`. op.exec rides its own action Run: the daemon binds that Run to the operation it
 // dispatches, delivers the execution's row and stream lifecycle on it, and holds the result until the
-// stream concludes ({§agui-broadcast-fan}), so a command cannot conclude unseen. It is the person's own
+// stream concludes ({§acp-broadcast-fan}), so a command cannot conclude unseen. It is the person's own
 // operation, so nothing pauses it for review.
-export const runExecViaAgui = async (
-    target: AguiTarget,
+export const runExecViaAcp = async (
+    target: AcpTarget,
     command: string,
     opts: { threadId: string; yolo: boolean; auto: boolean; env?: ReadonlyMap<string, string> },
 ): Promise<number> => {
@@ -723,7 +722,7 @@ export const runExecViaAgui = async (
         onStreamConcluded: (concluded) => { seen.conclusions.set(concluded.target, { ...concluded, result: operationResult(concluded.result) }); },
     };
     const binding = { threadId: opts.threadId, capabilities };
-    const run = await consumeCliRun(runViaAgui(target, { ...binding, forwardedProps: {
+    const run = await consumeCliRun(runViaAcp(target, { ...binding, forwardedProps: {
         action: { kind: "op.exec", command, ...commandEnv(opts.env ?? new Map()) },
     } }), io);
     const settled = settleExec({ ...seen, problem: run.problem });
@@ -736,7 +735,7 @@ export const runExecViaAgui = async (
     // The channels are the command's product: written whole and verbatim, never previewed.
     let read: EntryReadResult;
     try {
-        read = entryReadResult(await actionViaAgui(target, {
+        read = entryReadResult(await actionViaAcp(target, {
             threadId: opts.threadId,
             kind: "entry.read", params: { target: conclusion.target, workerId: conclusion.workerId },
         }));

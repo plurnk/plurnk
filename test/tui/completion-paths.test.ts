@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { actionViaAgui } from "../../src/agui.ts";
+import { actionViaAcp } from "../../src/acp.ts";
 import { bootDaemon, completionsEndpoint, locateDaemon } from "../intg/harness.ts";
 import { spawnTui } from "./harness.ts";
 
@@ -30,8 +30,8 @@ test("[§cli-path-completion] the built editor completes and opens files from th
         writeFile(join(second, "pick-second.txt"), "SECOND_WORKSPACE_SELECTED"),
     ]);
     for (const [name, projectRoot] of [["first", first], ["second", second], ["headless", null]] as const) {
-        await actionViaAgui({ aguiUrl: daemon.url }, { threadId: name, kind: "workspace.create", params: { name, projectRoot } });
-        if (projectRoot !== null) await actionViaAgui({ aguiUrl: daemon.url }, {
+        await actionViaAcp({ acpUrl: daemon.url }, { threadId: name, kind: "workspace.create", params: { name, projectRoot } });
+        if (projectRoot !== null) await actionViaAcp({ acpUrl: daemon.url }, {
             threadId: name, workspace: name, kind: "workspace.members.add", params: { files: ["*.txt"] },
         });
     }

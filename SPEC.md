@@ -66,7 +66,7 @@ Options:
 | `--autostart <0\|1>` | string | Override `PLURNK_CLIENT_AUTOSTART`: start the installed service when nothing listens, or require attachment. See {§cli-daemon-autostart}. |
 | `--daemon-timeout-ms <n>` | string | Positive connection/startup limit; overrides `PLURNK_CLIENT_DAEMON_TIMEOUT_MS`. |
 | `--oauth-timeout-ms <n>` | string | Positive browser OAuth callback deadline; overrides `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. See {§cli-mcp-oauth-callback}. |
-| `--cancel-grace-ms <n>` | string | Positive grace after `loop.cancel` is acknowledged before the client hangs up on the run; overrides `PLURNK_CLIENT_CANCEL_GRACE_MS`. See {§cli-cancellation}. |
+| `--cancel-grace-ms <n>` | string | Positive grace after `session/cancel` is acknowledged before the client hangs up on the run; overrides `PLURNK_CLIENT_CANCEL_GRACE_MS`. See {§cli-cancellation}. |
 | `--service-bin <path>` | string | Explicit installed service entrypoint; overrides `PLURNK_CLIENT_SERVICE_BIN`. |
 | `--project-root <path>` | string | Absolute path passed as `projectRoot` on `workspace.create`. See §1.3. Overrides `PLURNK_CLIENT_PROJECT_ROOT`. |
 | `--yolo` | flag | Auto-accept every proposal locally without prompting (the default). See §6. Forces `PLURNK_CLIENT_YOLO` on. |
@@ -76,7 +76,7 @@ Options:
 | `--preview-lines <n>` | string | Lines of every operation body and concluded execution output shown beneath its row (§5.1); the rest is named with `… +N lines · <address>`. Overrides `PLURNK_CLIENT_PREVIEW_LINES`. |
 | `--history-entries <n>` | string | Non-negative recent entry count restored on TUI attachment; zero disables history. Overrides `PLURNK_CLIENT_HISTORY_ENTRIES`. See {§cli-worker-history}. |
 | `--color <when>` | string | `always`, `auto`, or `never`; overrides `PLURNK_CLIENT_COLOR`. See {§cli-color-policy}. |
-| `--timeout <s>` | string | Cancel each prompt loop via `loop.cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`. Overrides `PLURNK_CLIENT_TIMEOUT`. |
+| `--timeout <s>` | string | Cancel each prompt loop via `session/cancel` after `<s>` seconds. CLI exits 3 with `"timedOut":true`. Overrides `PLURNK_CLIENT_TIMEOUT`. |
 | `--status-stream` | flag | Also print one greppable accounting row per turn on stderr. Overrides `PLURNK_CLIENT_STATUS_STREAM`. |
 | `--share <folder>` | string | When the one-shot prompt or the interactive session ends, ask the daemon for the workspace's share (`workspace.share`): written into `<folder>`, unredacted, refused rather than overwritten. A leading `~/` expands and a relative folder resolves against the working directory. Text mode prints the folder and the disclosure on stderr. `/share <folder>` writes one mid-session. Overrides `PLURNK_CLIENT_SHARE`. |
 | `--files-items <n>` | string | Workspace-open preview: `-1` full / `0` off / `N` first-N tracked files at turn 0. Create-time only. See §1.4. Overrides `PLURNK_CLIENT_FILES_ITEMS`. |
@@ -144,7 +144,7 @@ Workspaces and workers are daemon-owned. Names select; IDs identify.
 |---|---|
 | Workspace acquisition | `workspace.create` receives the literal selected label, if any, with projectRoot/settings. It returns `{id, name}` before bound work begins. |
 | Directory default | Without a label, the invocation designates a folder ({§cli-project-root}); the daemon names/selects its workspace (`§workspace-name`). The client invents neither a label nor an ID. |
-| Bound requests | `threadId` is `<workspace ID>#<worker name>` (`§acp-thread-binding`); no workspace label or creation options are resent. |
+| Bound requests | `sessionId` is `<workspace ID>#<worker name>` (`§acp-thread-binding`); no workspace label or creation options are resent. |
 | Rename | Changes display/selection only. Existing connections, actions, observation and interrupt resumes retain their identity. A name the workspace state newly carries for the bound workspace's ID (plurnk-service ``§acp-workspace-state``), unlike the session's, is a rename made elsewhere: the session reads it back (`workspace.list`), and only that readback gives the title, the place and the resume command the new name. A Run's state is taken when the Run started, so it never undoes the session's own rename. |
 | Workspace switch | Acquire first, then replace the binding. A failed acquisition preserves the previous conversation. |
 | Worker selection | `--worker` overrides `PLURNK_CLIENT_WORKER`, the worker an invocation binds in either mode, which ships unset. Unset, the TUI (workspace switches included), scripts and subcommands bind `PLURNK_CLIENT_TUI_WORKER` (`--tui-worker`, shipped `user`), and a one-shot prompt binds a new worker of its own: twelve random lowercase hexadecimal characters, which text mode reports as `client:worker:new` and the JSON record carries as `worker`, so `--worker` can continue it. A worker selection needs no explicit workspace. |
@@ -164,7 +164,7 @@ The worker owns its model route (`§worker-model-selection`); the client persist
 
 Resolution at the client:
 
-- `--model <selector>` or `PLURNK_CLIENT_MODEL` set → one `worker.model.set` before the first loop of this invocation, then no per-loop selector.
+- `--model <selector>` or `PLURNK_CLIENT_MODEL` set → one `session/set_config_option` (`configId: "model"`) before the first loop of this invocation, then no per-loop selector.
 - `--model` and `PLURNK_CLIENT_MODEL` unset → send nothing; the worker's durable route (or the daemon's `PLURNK_MODEL` default when the worker is first created) runs.
 
 An explicit model or reasoning selection is invocation admission: rejection fails
@@ -178,7 +178,7 @@ that names the provider API key the backend needs, then `/models` and
 `/model <selector>`, and links README's Models section. It does not choose a
 model or fetch the catalog automatically.
 
-The TUI's `/model` verb reads and writes `worker.model.set`/`worker.model.get`; the header displays the resolved durable route. `providers.list` remains the small declared-alias directory used for bare-fragment completion; a `/model` or `/child` fragment holding a provider prefix (`openai/…`) completes lazily from one bounded provider-scoped `models.list` page, cached per provider for the session — the client never preloads or owns the catalog. `/models [search]` and `plurnk models` lazily query `models.list`; no model catalog is fetched at startup or injected into a model packet.
+The TUI's `/model` verb reads and writes the `model` session `configOptions` entry (`session/set_config_option`); the header displays the resolved durable route. `providers/list` remains the small declared-alias directory used for bare-fragment completion; a `/model` or `/child` fragment holding a provider prefix (`openai/…`) completes lazily from one bounded provider-scoped `models.list` page, cached per provider for the session — the client never preloads or owns the catalog. `/models [search]` and `plurnk models` lazily query `models.list`; no model catalog is fetched at startup or injected into a model packet.
 
 ### §cli-worker-status Worker status
 
@@ -193,13 +193,13 @@ untimed recovery and review receive no invented deadline.
 
 
 §cli-status-preparation Workspace capability preparation is rendered from
-`STATE /plurnk/workspace/preparation`: family, current alias when present, phase,
+`_meta.plurnk.workspace.preparation`: family, current alias when present, phase,
 and elapsed time since the daemon's timestamp. The status clock advances while
 preparation is present, including before model inference and during inspection.
 An empty array clears the activity. Reattachment uses the same snapshot; the
 client neither starts capabilities nor polls for progress. This state adds no
 transcript rows and does not replace the loop lifecycle or indexing activity
-(`STATE /plurnk/workspace/activity`). Both are the workspace's, carried by every Run bound to it;
+(`_meta.plurnk.workspace.activity`). Both are the workspace's, carried by every Run bound to it;
 the gauge (`plurnk.status` and `budget`) is the bound worker's, and a Run that binds none, such as
 a workspace action, reports no gauge.
 
@@ -297,8 +297,8 @@ startup fallback.
 Child selection is the same durable posture for WORK, FORK, and BARE calls.
 `PLURNK_MODEL_CHILD` seeds the worker's spawn override (the daemon reads its own
 env); otherwise the policy is inherit. Bare `/child` reports the worker's
-persisted override, `/child <selector>` persists it via `worker.child.set`, and
-`/child inherit` sends `selector: null` (clearing the override). The client sends
+persisted override, `/child <selector>` persists it via `session/set_config_option` (`configId: "spawn_model"`), and
+`/child inherit` sends `value: ""` (clearing the override). The client sends
 no child selector on loops.
 
 ### §cli-effort Effort
@@ -308,7 +308,7 @@ Effort is a durable worker setting owned and validated by the daemon.
 and the daemon-supported choices; supplying an effort to either form persists
 it. `--effort <level>` sets it before the invocation's first loop. A model and
 its effort are chosen together: with `--model`, or `/model <selector> <effort>`,
-the effort rides in `worker.model.set` and the daemon validates the pair once, so
+the effort rides in `session/set_config_option` (`configId: "model"`) and the daemon validates the pair once, so
 switching to a model that lacks the worker's current effort never strands it.
 The client forwards the value without maintaining a provider capability catalog,
 uses `supportedEfforts` for completion, and never encodes effort in an alias or
@@ -320,7 +320,7 @@ daemon's snapshot inheritance.
 Effort is identity-grade. Wherever the client names a route (status line, model
 and child labels, loop headers) one formatter renders the daemon's durable effort
 with the identity, and the daemon's stated provenance decides the marker:
-`deepdumb[low]` is a chosen level (`worker.effort.set`), `deepdumb(low)` a
+`deepdumb[low]` is a chosen level (`session/set_config_option` on `thought_level`), `deepdumb(low)` a
 provider default the daemon seeded from the alias; brackets read as chosen,
 parentheses as given. A route without an effort dimension renders bare. `/effort`
 says the same in words. The client never infers provenance (#41 ask 2).
@@ -329,8 +329,8 @@ The identity is the client's last server-read route. A worker no act has created
 route of its own: its identity is the route the daemon lists for the active alias, which that
 worker reads back once created (plurnk-service ``§acp-provider-routes``). Every durable-policy change
 (`/model`, `/child` including `inherit`, `/effort`, a rebind or hop, and an explicit
-`--model` or `--effort` at admission) ends in one readback, `worker.effort.get` then
-`worker.model.get` for both routes, collected whole, applied together and repainted
+`--model` or `--effort` at admission) ends in one readback of the session `configOptions`
+(`thought_level`, `model`, and `spawn_model`), collected whole, applied together and repainted
 before the change is confirmed; a setter's echo is never spliced into a label. A
 persisted change whose readback fails is reported as a readback failure, distinct
 from a refused change: it neither shows the requested value as read back nor rolls
@@ -440,7 +440,7 @@ known daemon evidence. Failures before Run consumption use the problem-only form
 
 
 §cli-interrupted-record During the initial request or any proposal-resume segment,
-`SIGINT` and `SIGTERM` explicitly request `loop.cancel` for the bound worker and
+`SIGINT` and `SIGTERM` explicitly request `session/cancel` for the bound worker and
 flush one JSON document containing all rows, notices, and response text observed
 at interruption, then exit 130 and 143 respectively. Cancellation uses the same
 grace as the run timeout (`PLURNK_CLIENT_CANCEL_GRACE_MS`); another signal stops waiting for its reply.
@@ -463,7 +463,7 @@ Consequence:
 ### §cli-one-shot-flow Flow
 
 1. Read the worker's durable model, then `POST /acp` (`session/prompt`) with the workspace and thread selected under §1.1, the prompt as a user text content block, and per-loop options on `_meta.plurnk`.
-2. Consume the SSE: rows ({§cli-row-sources}) advance observed turn status and
+2. Consume the `session/update` notifications: rows ({§cli-row-sources}) advance observed turn status and
    render as durable action trace lines on stderr; derivation Notices update the
    replaceable activity row without becoming trace history.
    Delivered responses go to stdout ({§cli-broadcast-send-rendering}).
@@ -685,7 +685,7 @@ submission. Overlapping proposals resolve by proposal ID. This single-view
 restriction is TUI-owned, not a daemon restriction on independent threads.
 Each stream reduces its own state; action snapshots do not replace the active
 model's status. Cancellation retires only the cancelled run's interrupts and
-local waits, including when its SSE has already ended at a question or proposal.
+local waits, including when its stream has already paused at a question or proposal.
 
 Pending injection acknowledgements keep the worker bound through terminal
 observation. `injected_next_turn` stays on the existing stream;
@@ -710,11 +710,11 @@ reclaims terminal custody for the bounded editor process.
 
 In an inline review, `Esc` returns to the composer without resolving or
 cancelling the interrupt. In the composer, while a dispatch is in flight it
-fires `loop.cancel` (reason `user_escape`) through the identical cancel path;
+fires `session/cancel` (reason `user_escape`) through the identical cancel path;
 while idle it clears the composed value. Esc never exits.
 pi-tui owns escape-sequence reassembly and keyboard-protocol negotiation.
 
-`Ctrl-C` during an in-flight dispatch fires the `loop.cancel` action — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `loop.cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits the client; work the daemon admitted runs on, since dropping a Run's connection ends only its delivery (`§acp-run-disconnect`) — `loop.cancel` is the one cancellation.
+`Ctrl-C` during an in-flight dispatch fires `session/cancel` — the daemon aborts the model run's active drain, the pending loop resolves with `finalStatus: 499`, and the editor continues. The acknowledgement of `session/cancel` is not the loop's end: the client keeps the run's connection until the daemon's terminal record arrives, up to `PLURNK_CLIENT_CANCEL_GRACE_MS`, so the summary carries the loop's own turn count and accounting; past the grace it hangs up, and a summary without that record says `turns unknown`, never `0 turns`. A run paused on a client-side interrupt — a review, a question — has no stream to carry the record: the client settles it locally, and the observation that follows presents the daemon's terminal. The one-shot client's `--timeout` cancellation hangs up by the same grace, and its summary says `turns unknown` by the same rule. A failed cancel SURFACES on the terminal. A second `Ctrl-C` (or `Ctrl-C` while idle) exits the client; work the daemon admitted runs on, since dropping a Run's connection ends only its delivery (`§acp-run-disconnect`) — `session/cancel` is the one cancellation.
 
 CLI mode mirrors this: first `Ctrl-C` cancels (the loop resolves 499 → exit 3 per §4); second `Ctrl-C` force-exits 3.
 
@@ -1249,7 +1249,7 @@ Input and output are the conventional aggregate fields from the daemon's account
 
 - The full packet (`turn.packet`). The client never displays the rendered index or model-facing log sections.
 - Whole bodies. Every body but a NOTE's is a preview (§5.1); `plurnk read` retrieves a complete log entry.
-- Raw SSE frames.
+- Raw JSON-RPC frames.
 - Emission rows. A `_plurnk` READ whose `attrs.kind` is `emission` is the daemon's announcement of the worker's own admitted emission, whose operations already render as their own rows. The TUI waterfall, history replay and CLI trace skip it; `--json` and `plurnk read` keep it.
 - Stream telemetry. A `stream/event` (start, growth, per-channel close) writes nothing to the waterfall. An admitted execution appears when its outcome is known: the conclusion renders the launching fence's row (§5.1), colored by result, which succeeds below `400`, with the Problem title or daemon summary on failure. A conclusion that arrives before the gated call that launched its stream has settled waits for the settled row and renders with it (§8.4). A stream whose launch is unknown renders as its scheme and address. Activity belongs to the status line; wake bookkeeping is never a row.
 
@@ -1684,8 +1684,8 @@ Default output: one trace line per entry, same format as CLI-mode trace (`[<stat
 ### §cli-plurnk-effort `plurnk effort [level]`
 
 Uses the workspace selected under §1.1; `--worker` selects a named worker. With no
-level, calls `worker.effort.get`. With one level, calls
-`worker.effort.set`. Text mode prints the effective effort and supported
+level, reads the `thought_level` session `configOptions` entry. With one level, calls
+`session/set_config_option` (`configId: "thought_level"`). Text mode prints the effective effort and supported
 choices; JSON mode emits the daemon result unchanged.
 
 ### §7.6 What subcommands do NOT do
@@ -1765,7 +1765,7 @@ bound; omitting `--workspace` must not turn the same failure into an uncaught ex
 ### §cli-credential Credential
 
 The operator's secret is a client secret at the daemon's authorization server
-(`§acp-oauth-clients`), never a bearer: the shared `PLURNK_SECRET` when set, else the one line of
+(`§auth-oauth-clients`), never a bearer: the shared `PLURNK_SECRET` when set, else the one line of
 the file a daemon running as the operator minted beside its database (`§credential-authority`),
 `secret` beside `PLURNK_SERVICE_DB_PATH` when the environment names a database and otherwise
 `$XDG_DATA_HOME/plurnk/secret` (`~/.local/share/plurnk/secret`); with neither, the client presents
@@ -1802,8 +1802,8 @@ recovery names `plurnk login` and `PLURNK_SECRET`. `plurnk login` signs in now, 
 and keeps the new one; `plurnk logout` revokes the kept grant at the daemon's revocation endpoint and
 forgets it; either says so on stderr and exits 0, and both do nothing when a secret is at hand or the
 daemon authenticates nothing. In that browser the operator signs in with the daemon's
-`PLURNK_PASS` (`§acp-oauth-login`), or answers its consent page when the browser
-already holds the daemon's session (`§acp-oauth-session`); the deadline is
+`PLURNK_PASS` (`§auth-oauth-login`), or answers its consent page when the browser
+already holds the daemon's session (`§auth-oauth-session`); the deadline is
 `PLURNK_CLIENT_OAUTH_TIMEOUT_MS`. Callback codes are neither printed nor kept.
 
 ### §8.2 Notice shape and transport
@@ -1822,7 +1822,7 @@ interface Notice {
 Diagnostic Notices arrive as `notice`, interleave with trace
 lines in text mode and accumulate under `notices` in the JSON record (§2.1).
 
-Indexing activity arrives only through the ordinary ACP status snapshot/delta
+Indexing activity arrives only through the ordinary ACP `session/update`
 stream; clients do not poll or interpret a second progress Notice. The one-shot
 TTY repaints routine activity changes no more than once per 15 seconds;
 non-TTY stderr omits them. Indexing warnings and failures remain explicit
@@ -1913,7 +1913,7 @@ every action and notification in the daemon's live schema-bearing discovery as
 dedicated client behavior, lossless generic transport, or explicitly
 unsupported behavior. It records evidence by conformance dimension; the shared
 contracts reporter rejects missing members, dimensions, and evidence files and
-emits one record per member. The client feeds the contracts-owned SSE and
+emits one record per member. The client feeds the contracts-owned ACP stream and
 lifecycle corpus through its production transport, and durable controls are
 observed through a second client instance. A changed public surface cannot
 remain an implicit client assumption.

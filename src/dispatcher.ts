@@ -131,7 +131,7 @@ options:
       --tui-worker <name>  the worker the TUI binds when no worker is selected.
                           Overrides PLURNK_CLIENT_TUI_WORKER (user).
       --model <selector>  persistently select the worker's model
-                          before the first loop (worker.model.set). A selector is
+                          before the first loop (session/set_config_option). A selector is
                           a declared alias or exact provider/model route. Without
                           this, the worker's durable model or the daemon's
                           boot-time default runs.
@@ -155,7 +155,7 @@ options:
                           configured address (1), or require attachment (0).
       --daemon-timeout-ms <n> positive connection/startup deadline in milliseconds.
       --oauth-timeout-ms <n> positive browser OAuth callback deadline in milliseconds.
-      --cancel-grace-ms <n> positive grace after loop.cancel before hanging up on the run, in milliseconds.
+      --cancel-grace-ms <n> positive grace after session/cancel before hanging up on the run, in milliseconds.
       --service-bin <p>   select an installed service entrypoint instead of discovery.
       --project-root <p>  absolute path. Sent on workspace.create only; ignored
                           on --workspace attach (daemon preserves stored value).
@@ -178,7 +178,7 @@ options:
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
       --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
                           descendants' turns and every BARE call (else the daemon's ceiling).
-      --timeout <s>       cancel each prompt loop (loop.cancel) after <s> seconds;
+      --timeout <s>       cancel each prompt loop (session/cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true.
       --files-items <n>   turn-0 tracked-file preview: -1 full / 0 off / N first-N.
                           Create-time workspace setting.

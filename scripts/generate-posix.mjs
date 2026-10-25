@@ -1,4 +1,4 @@
-// POSIX surface generator (plurnk#29 / plurnk-service#343): emits man/plurnk.1
+// POSIX surface generator (#29 / https://github.com/plurnk/plurnk-service/issues/343): emits man/plurnk.1
 // and completions/{plurnk.bash,_plurnk,plurnk.fish} from the ONE source of
 // truth — the exported USAGE text. Deterministic; run via npm run build:posix.
 import { mkdir, writeFile, readFile } from "node:fs/promises";

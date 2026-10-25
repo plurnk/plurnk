@@ -11,10 +11,13 @@ contract and does not absorb daemon or provider responsibilities.
 one landing: types, schema, methods, Problems, knobs, wire actions, spec tags, tests, fixtures and docs.
 A surface-only rename, a new flag over old internals, is a defect, not a first step.
 
-**Retired forms are erased.** A retired name, syntax, knob or behaviour leaves no trace in the living
-tree: no code, spec, doc, test, comment or diagnostic refers to it, and nothing recognizes it to refuse
-or translate it. Any record of it invites its resurrection. History lives in git, issues and published
-changelogs.
+**Retired forms are erased.** A retired name, syntax, knob, dependency, protocol or behaviour leaves no
+trace in the living tree: no code, spec, doc, test, comment or diagnostic refers to it, and nothing
+recognizes it to refuse, shim or translate it. Never vendor or inline a retired dependency or protocol
+under local names, run dual protocols on one endpoint, or relabel an old wire contract as the new one;
+when an adopted standard has an official SDK, build on that SDK rather than hand-rolling its wire or
+transport layer. Any record of a retired form invites its resurrection. History lives in git, issues and
+published changelogs.
 
 ## Verification
 

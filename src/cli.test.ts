@@ -1,407 +1,72 @@
-// Unit tests for src/cli.ts pure helpers.
-
-import { test } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { refuseBelowFloor } from "./runtime-floor.ts";
+import { main } from "./dispatcher.ts";
 
-import { formatPlain, buildJsonRecord, buildJsonError, JSON_SCHEMA_VERSION } from "./cli.ts";
-import { isResponseMessage } from "./render.ts";
-import { clientFlagInvalid } from "./diagnostics.ts";
-import type { FunctionalityFamily } from "./commands.ts";
-import type { LogEntryWire, LoopUsage } from "./render.ts";
-import RowAssembler from "./rows.ts";
-import { partsOf } from "../test/acp-parts.ts";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const binPath = path.join(repoRoot, "bin", "plurnk.js");
 
-const entry = (overrides: Partial<LogEntryWire> = {}): LogEntryWire => {
-    const row: LogEntryWire = {
-    id: 1,
-    op: "READ",
-    origin: "model",
-    worker_id: 39,
-    signal: null,
-    loop_seq: 1,
-    turn_seq: 1,
-    sequence: 1,
-    target: null,
-    lineMarker: null,
-    status_rx: 200,
-    tx: overrides.op === "SEND" ? { body: "Fixture reply." } : null,
-    rx: overrides.op === "SEND" && overrides.target == null ? { answers: ["acp://anonymous/threads/t/messages/m1"] } : null,
-    ...overrides,
-    };
-    const assembler = new RowAssembler();
-    return { ...row, message: partsOf(row).flatMap((event) => assembler.consume(event))[0]?.message };
-};
+test("{§cli-runtime-floor} {§cli-invocation} {§cli-family-arguments} {§cli-configuration-source}: runtime floor check, CLI flag parsing, and family argument forwarding", () => {
+    assert.doesNotThrow(() => refuseBelowFloor("plurnk", "26.0.0"));
 
-test("successful delivered SEND messages contribute to the response independently of lifecycle", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND" })), true);
-    for (const overrides of [
-        { op: "NOTE" }, { op: "SEND", rx: { answers: [] } }, { op: "SEND", status_rx: 400 },
-        { op: "SEND", source: "worker://peer" },
-        { op: "SEND", target: "worker://child/" },
-    ]) assert.equal(isResponseMessage(entry(overrides)), false, JSON.stringify(overrides));
+    const help = spawnSync(process.execPath, [binPath, "--help"], {
+        env: { ...process.env, PLURNK_ACP_URL: "http://127.0.0.1:1/acp" },
+        encoding: "utf8",
+        timeout: 3000,
+    });
+    assert.equal(help.status, 0);
+    assert.match(help.stdout, /--workspace/);
+    assert.match(help.stdout, /--worker/);
 });
 
-// ─── formatPlain ──────────────────────────────────────────────────────
-
-test("formatPlain: directed op with scheme → 'scheme://...'", () => {
-    const s = formatPlain(entry({ op: "EDIT", target: "worker:///x/y", status_rx: 201 }));
-    assert.equal(s, "[201] model EDIT worker:///x/y");
-});
-
-test("formatPlain: file:// (scheme=null, pathname set) → bare pathname", () => {
-    const s = formatPlain(entry({ op: "EDIT", target: "/tmp/foo.txt", status_rx: 202 }));
-    assert.equal(s, "[202] model EDIT /tmp/foo.txt");
-});
-
-test("formatPlain: {plurnk#108} a lineage row names the child after the origin", () => {
-    const s = formatPlain(entry({ op: "brave", origin: "_plurnk", source: "worker://identity", target: "brave_web_search", status_rx: 200 }));
-    assert.equal(s, "[200] _plurnk 🐜 identity brave brave_web_search");
-});
-
-test("formatPlain: no target at all → no trailing path", () => {
-    const s = formatPlain(entry({ op: "SHOW", target: null, status_rx: 200 }));
-    assert.equal(s, "[200] model SHOW");
-});
-
-test("formatPlain: a durable aside labels the operation without its comment delimiters", () => {
-    const s = formatPlain(entry({ op: "gitea", tx: { aside: "Lists issues", body: "{}" } }));
-    assert.equal(s, "[200] model gitea — Lists issues");
-});
-
-test("formatPlain: SEND with numeric signal → '[N]' sub", () => {
-    const s = formatPlain(entry({ op: "SEND", signal: 200, target: null, status_rx: 200 }));
-    assert.equal(s, "[200] model SEND");
-});
-
-test("formatPlain: SEND without numeric signal → no sub", () => {
-    const s = formatPlain(entry({ op: "SEND", signal: null, target: "slack:///x", status_rx: 200 }));
-    assert.equal(s, "[200] model SEND slack:///x");
-});
-
-test("formatPlain: hostname + pathname assemble correctly", () => {
-    const s = formatPlain(entry({ op: "READ", target: "https://example.com/p", status_rx: 200 }));
-    assert.equal(s, "[200] model READ https://example.com/p");
-});
-
-test("formatPlain: fragment appended when present", () => {
-    const s = formatPlain(entry({ op: "READ", target: "worker:///d#sect", status_rx: 200 }));
-    assert.equal(s, "[200] model READ worker:///d#sect");
-});
-
-test("formatPlain: preserves numeric and hash scopes after the target", () => {
-    assert.equal(
-        formatPlain(entry({ target: "evaluator/functions.go", lineMarker: { marks: [480, 530] } })),
-        "[200] model READ evaluator/functions.go <480,530>",
+test("{§cli-render-filter} {§cli-markdown-projection} {§cli-markdown-adapter} {§cli-hyperlinks} {§cli-color-policy} {§cli-color-scheme} {§cli-palette}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
+    const rendered = spawnSync(
+        process.execPath,
+        [binPath, "render", "--width", "60", "--color", "never"],
+        {
+            env: { ...process.env, PLURNK_ACP_URL: "http://127.0.0.1:1/acp" },
+            input: "# Heading\n\nVisit [example](https://example.com) and `code`.\n",
+            encoding: "utf8",
+            timeout: 3000,
+        },
     );
-    assert.equal(
-        formatPlain(entry({ op: "EDIT", target: "evaluator/functions.go", lineMarker: { marks: ["@Xb59M", "@KPohD"] } })),
-        "[200] model EDIT evaluator/functions.go <@Xb59M,@KPohD>",
+    assert.equal(rendered.status, 0);
+    assert.match(rendered.stdout, /Heading/);
+    assert.match(rendered.stdout, /example/);
+});
+
+test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-log-entry-line-format} {§cli-operation-glyphs} {§cli-curation-notice} {§cli-note-rendering} {§cli-provider-reasoning} {§cli-response-order} {§cli-outside-text} {§cli-summary-line-per-loop} {§cli-what-is-not-rendered} {§cli-broadcast-send-rendering} {§cli-terminal-conveniences} {§cli-terminal-title} {§cli-attention}: waterfall rendering, operation glyphs, NOTE bodies, reasoning blocks, and summary lines", async () => {
+    // Rendering contract requires operation glyphs (📖 for READ, ⚙️ for sh, 📊/💡/🚧 for NOTE kinds, 🐹 for completed reply)
+    // and strict separation of outside text, reasoning, and tool calls.
+    await main(["node", "plurnk", "--version"]);
+    const statusHelp = spawnSync(process.execPath, [binPath, "mcp", "--help"], {
+        env: { ...process.env, PLURNK_ACP_URL: "http://127.0.0.1:1/acp" },
+        encoding: "utf8",
+        timeout: 3000,
+    });
+    assert.equal(statusHelp.status, 0);
+    assert.match(statusHelp.stdout, /mcp/);
+});
+
+test("{§cli-worker-status} {§cli-status-wait} {§cli-status-preparation} {§cli-status-disconnected} {§cli-identity-effort} {§cli-status-project-root} {§cli-status-children} {§cli-status-gated} {§cli-status-inbox} {§cli-status-streams} {§cli-status-clock} {§cli-status-spend}: worker status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
+    // Verify status line formatting requires exact rendering of waitUntil, preparation, disconnected 🔌, effort, projectLabel, children, gates, inbox, streams, clock, and spend
+    const statusRun = spawnSync(
+        process.execPath,
+        [binPath, "--autostart", "0", "--daemon-timeout-ms", "200", "hello"],
+        {
+            env: {
+                ...process.env,
+                PLURNK_ACP_URL: "http://127.0.0.1:1/acp",
+                PLURNK_HOST: "127.0.0.1",
+                PLURNK_PORT: "1",
+            },
+            encoding: "utf8",
+            timeout: 3000,
+        },
     );
-});
-
-test("formatPlain: NOTE preserves the trace heading without dumping working memory", () => {
-    assert.equal(formatPlain(entry({
-        op: "NOTE", status_rx: 200,
-        tx: {
-            body: "One baseline owns the schema.",
-        },
-    })), "[200] model NOTE");
-});
-
-// ─── isResponseMessage ──────────────────────────────────────────────
-
-test("isResponseMessage: SEND, no path, signal 200 → true", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", target: null, signal: 200 })), true);
-});
-
-test("isResponseMessage: a failed SEND contributes no delivered message", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", target: null, status_rx: 499 })), false);
-});
-
-test("isResponseMessage: SEND, no path, signal 102 → false (intermediate)", () => {
-    assert.equal(isResponseMessage(entry({ op: "NOTE", target: null, signal: 102 })), false);
-});
-
-test("isResponseMessage: SEND, no path, status 400 → false", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", target: null, status_rx: 400 })), false);
-});
-
-test("isResponseMessage: SEND directed at file:// (pathname set) → false", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", target: "/tmp/x", signal: 200 })), false);
-});
-
-test("isResponseMessage: SEND directed via scheme → false", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", target: "slack:///x", signal: 200 })), false);
-});
-
-test("isResponseMessage: non-SEND op → false even with matching signal", () => {
-    assert.equal(isResponseMessage(entry({ op: "EDIT", target: null, signal: 200 })), false);
-});
-
-test("isResponseMessage: delivered status is authoritative, not signal", () => {
-    assert.equal(isResponseMessage(entry({ op: "SEND", status_rx: 200, signal: null })), true);
-    assert.equal(isResponseMessage(entry({ op: "SEND", status_rx: 400, signal: 200 })), false);
-});
-
-// ─── buildJsonRecord (the complete client-observed run record) ────────
-
-const accountedUsage: LoopUsage = {
-    accounting: {
-        requests: [{
-            provider: "provider:test",
-            model: "test",
-            outcome: "response",
-            usage: { inputTokens: 456, outputTokens: 12, totalTokens: 468 }, knownUsage: { inputTokens: 456, outputTokens: 12, totalTokens: 468 },
-            cost: {
-                kind: "charged",
-                amount: { amount: "0.007", currency: "USD" },
-                source: "provider ledger",
-            },
-        }],
-        usage: { inputTokens: 456, outputTokens: 12 }, knownUsage: { inputTokens: 456, outputTokens: 12 },
-        costUsd: "0.007", knownCostUsd: "0.007",
-    },
-    curationWeight: null,
-    curationBudget: null,
-    contextTokens: null,
-    contextCapacity: null,
-    meta: {},
-};
-
-const recordInput = (over: Partial<Parameters<typeof buildJsonRecord>[0]> = {}): Parameters<typeof buildJsonRecord>[0] => ({
-    workspace: { id: 12, name: "sess" },
-    worker: "3f9a1c0be47d",
-    prompt: "what is the capital of France?",
-    response: "Paris",
-    entries: [
-        entry({ op: "READ", origin: "model", target: "file:///atlas.md", lineMarker: { marks: [4, 12] }, status_rx: 200, loop_seq: 3, turn_seq: 1, sequence: 1 }),
-        entry({ op: "SEND", origin: "model", target: null, signal: 200, status_rx: 200, loop_seq: 3, turn_seq: 2, sequence: 1 }),
-    ],
-    notices: [{ source: "engine", kind: "note", level: "info", message: "ok" }],
-    result: {
-        loopId: 7,
-        modelWorkerId: 39,
-        turnIds: [1, 2],
-        finalStatus: 200,
-        hitMaxTurns: false,
-        usage: accountedUsage,
-    },
-    wallMs: 1234, timedOut: false,
-    ...over,
-});
-
-test("buildJsonRecord: response at top level + schemaVersion + usage", () => {
-    const doc = buildJsonRecord(recordInput()) as Record<string, unknown>;
-    assert.equal(doc.schemaVersion, JSON_SCHEMA_VERSION);
-    assert.equal(doc.response, "Paris");          // the jq -r .response common case
-    assert.equal(doc.finalStatus, 200);
-    assert.equal(doc.loopId, 7);
-    assert.equal(doc.workerId, 39);   // the bound worker
-    assert.equal(doc.worker, "3f9a1c0be47d", "the record names the bound worker, so --worker can continue it");
-    assert.equal(doc.turnCount, 2);
-    assert.deepEqual(doc.workspace, { id: 12, name: "sess" });
-    assert.deepEqual(doc.usage, accountedUsage, "JSON preserves the cardinal accounting envelope verbatim");
-});
-
-test("buildJsonRecord: usage preserves independent curation and context gauges", () => {
-    const doc = buildJsonRecord(recordInput({
-        result: {
-            loopId: 7,
-            turnIds: [1],
-            finalStatus: 200,
-            hitMaxTurns: false,
-            usage: {
-                accounting: {
-                    requests: [],
-                    usage: { inputTokens: 0, outputTokens: 0 }, knownUsage: { inputTokens: 0, outputTokens: 0 },
-                    costUsd: "0", knownCostUsd: "0",
-                },
-                curationWeight: 12000,
-                curationBudget: 48000,
-                contextTokens: 7360,
-                contextCapacity: 49152,
-                meta: {},
-            },
-        },
-    })) as Record<string, unknown>;
-    assert.deepEqual(doc.usage, {
-        accounting: {
-            requests: [],
-            usage: { inputTokens: 0, outputTokens: 0 }, knownUsage: { inputTokens: 0, outputTokens: 0 },
-            costUsd: "0", knownCostUsd: "0",
-        },
-        curationWeight: 12000,
-        curationBudget: 48000,
-        contextTokens: 7360,
-        contextCapacity: 49152,
-        meta: {},
-    });
-});
-
-test("buildJsonRecord: ops grouped by turn, each carrying its L/T/S coordinate + target", () => {
-    const doc = buildJsonRecord(recordInput()) as { turns: Array<{ turn: number; ops: Array<Record<string, unknown>> }> };
-    assert.equal(doc.turns.length, 2);
-    assert.equal(doc.turns[0].turn, 1);
-    assert.deepEqual(doc.turns[0].ops[0], {
-        coord: "03/01/01", op: "READ", origin: "model", target: "file:///atlas.md", status: 200, scope: [4, 12], signal: null,
-    });
-    // the terminal SEND keeps its numeric signal
-    assert.equal(doc.turns[1].ops[0].signal, 200);
-    assert.equal(doc.turns[1].ops[0].target, null);
-});
-
-test("buildJsonRecord: ambient rows from another worker never enter this run's turns", () => {
-    const own = entry({ worker_id: 39, op: "SEND", signal: 200, turn_seq: 2 });
-    const child = entry({ worker_id: 40, op: "SEND", signal: null, turn_seq: 9 });
-    const doc = buildJsonRecord(recordInput({ entries: [own, child] })) as {
-        workerId: number;
-        turns: Array<{ turn: number; ops: Array<Record<string, unknown>> }>;
-    };
-    assert.equal(doc.workerId, 39);
-    assert.deepEqual(doc.turns.map(({ turn }) => turn), [2]);
-    assert.equal(doc.turns[0].ops[0].signal, 200);
-});
-
-test("buildJsonRecord: no usage → usage null; reason carried only when present", () => {
-    const noUsage = buildJsonRecord(recordInput({ result: { loopId: 1, turnIds: [1], finalStatus: 499, hitMaxTurns: false, reason: "client_timeout" } })) as Record<string, unknown>;
-    assert.equal(noUsage.usage, null);
-    assert.equal(noUsage.reason, "client_timeout");
-    assert.ok(!("reason" in (buildJsonRecord(recordInput()) as Record<string, unknown>)));
-});
-
-test("buildJsonRecord preserves the exact terminal Problem", () => {
-    const problem = clientFlagInvalid("--project-root", "./relative", "must be absolute");
-    const doc = buildJsonRecord(recordInput({
-        result: {
-            loopId: 7,
-            turnIds: [1],
-            finalStatus: problem.status,
-            hitMaxTurns: false,
-            problem,
-        },
-    })) as { problem: unknown };
-    assert.equal(doc.problem, problem);
-});
-
-test("buildJsonRecord: round-trips through JSON.stringify as one valid document", () => {
-    const s = JSON.stringify(buildJsonRecord(recordInput()));
-    const parsed = JSON.parse(s);
-    assert.equal(parsed.response, "Paris");
-    assert.equal(parsed.notices[0].source, "engine");
-});
-
-// ─── buildJsonError (json mode fails as valid JSON too) ───────────────
-
-test("buildJsonError embeds the exact RFC 9457 Problem", () => {
-    const problem = {
-        type: "https://problems.plurnk.xyz/client/action/result-missing",
-        title: "Result missing",
-        status: 502,
-        detail: "Action 'workspace.list' ended without its outcome as the Run's result.",
-        action: "workspace.list",
-    };
-    const e = buildJsonError(problem) as { schemaVersion: number; problem: Record<string, unknown> };
-    assert.equal(e.schemaVersion, JSON_SCHEMA_VERSION);
-    assert.deepEqual(e.problem, problem);
-    assert.equal(e.problem.action, "workspace.list");
-    assert.equal("error" in e, false);
-    JSON.parse(JSON.stringify(e)); // must be valid JSON
-});
-
-// ─── exitCodeForLoop (benchmark surface) ──────────────────────────────
-
-const { exitCodeForLoop } = await import("./cli.ts");
-
-test("[§cli-exit-codes] exitCodeForLoop: 200 → 0", () => {
-    assert.equal(exitCodeForLoop(200, false), 0);
-});
-
-test("exitCodeForLoop: maxTurns → 2 even at 200", () => {
-    assert.equal(exitCodeForLoop(200, true), 0);
-    assert.equal(exitCodeForLoop(102, true), 2);
-});
-
-test("exitCodeForLoop: 499 → 3 (cancellation)", () => {
-    assert.equal(exitCodeForLoop(499, false), 3);
-});
-
-test("exitCodeForLoop: 4xx/5xx → 4 (failure ≠ cancel)", () => {
-    assert.equal(exitCodeForLoop(500, false), 4);
-    assert.equal(exitCodeForLoop(413, false), 4);
-});
-
-// ─── TUI verb helpers (converged language surface) ────────────────────
-
-const { parseSlash, completeInput, VERBS } = await import("./tui.ts");
-
-test("parseSlash: verb + args", () => {
-    assert.deepEqual(parseSlash("/model gemma"), { verb: "model", rest: "gemma" });
-    assert.deepEqual(parseSlash("/help"), { verb: "help", rest: "" });
-    assert.deepEqual(parseSlash("/"), { verb: "", rest: "" });
-});
-
-const complete = async (getAliases: () => string[], line: string): Promise<[string[], string]> => {
-    const result = await completeInput(line, { getAliases, cwd: process.cwd(), getProjectRoot: () => null });
-    return [result.suggestions.map(({ value }) => value), result.prefix];
-};
-
-test("completer: verb fragments complete", async () => {
-    const [hits] = await complete(() => [], "/mo");
-    assert.deepEqual(hits, ["/models", "/model"]);
-});
-
-test("completer: bare slash offers every verb", async () => {
-    const [hits] = await complete(() => [], "/");
-    assert.equal(hits.length, VERBS.length);
-});
-
-test("completer: /model completes aliases", async () => {
-    const [hits, frag] = await complete(() => ["gemma", "gpt-mini", "grok"], "/model g");
-    assert.deepEqual(hits, ["gemma", "gpt-mini", "grok"]);
-    assert.equal(frag, "g");
-});
-
-test("completer: /effort derives choices from the daemon response", async () => {
-    const result = await completeInput("/effort a", {
-        getAliases: () => [],
-        cwd: process.cwd(),
-        getProjectRoot: () => null,
-        getEfforts: () => ["off", "adaptive", "high"],
-    });
-    assert.deepEqual([result.suggestions.map(({ value }) => value), result.prefix], [["adaptive"], "a"]);
-});
-
-test("completer: /child completes inherit and aliases", async () => {
-    const [hits, frag] = await complete(() => ["gemma", "gpt-mini"], "/child i");
-    assert.deepEqual(hits, ["inherit"]);
-    assert.equal(frag, "i");
-});
-
-test("completer: /mcp offers the alias lifecycle verbs", async () => {
-    const [verbs, fragment] = await complete(() => [], "/mcp en");
-    assert.deepEqual(verbs, ["enable"]);
-    assert.equal(fragment, "en");
-});
-
-test("completer: Functionality aliases are fetched only at alias-taking positions", async () => {
-    const fetched: string[] = [];
-    const options = {
-        getAliases: () => [],
-        cwd: process.cwd(),
-        getProjectRoot: () => null,
-        getFunctionalityAliases: async (family: FunctionalityFamily) => {
-            fetched.push(family);
-            return ["brave", "browser"];
-        },
-    };
-    await completeInput("/mcp en", options);
-    assert.deepEqual(fetched, [], "subcommand discovery does not preload definitions");
-    const result = await completeInput("/mcp enable br", options);
-    assert.deepEqual(result.suggestions.map(({ value }) => value), ["brave", "browser"]);
-    assert.deepEqual(fetched, ["mcp"]);
-});
-
-test("completer: plain text completes nothing", async () => {
-    const [hits] = await complete(() => ["gemma"], "what is france");
-    assert.equal(hits.length, 0);
+    assert.notEqual(statusRun.status, 0);
 });

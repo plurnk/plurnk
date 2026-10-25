@@ -1,93 +1,76 @@
-// plurnk client entrypoint. Dispatches argv to CLI mode (positional args or
-// piped stdin) or TUI REPL mode (no positionals, TTY stdin). Per SPEC.md
-// §2 (CLI mode) and §3 (TUI mode).
+// CLI entrypoint, option catalog, USAGE authority, and subcommand dispatcher ({§cli-invocation}, {§cli-env-defaults}).
 
-import { parseArgs } from "node:util";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
-import { createRequire } from "node:module";
-import { buildJsonError } from "./cli.ts";
-import { loadFloor } from "./envdefaults.ts";
-import { randomBytes } from "node:crypto";
-import Knobs, { KnobError } from "./knobs.ts";
-import { isColorMode } from "./color.ts";
-import { runCliViaAcp, runExecViaAcp, runScriptViaAcp } from "./acp_cli.ts";
-import { AcpTransport } from "./transport.ts";
-import { actionViaAcp, workerThreadId, type WorkspaceHandle } from "./acp.ts";
-import Credential, { SignInCredential } from "./credential.ts";
-import { FAMILY_HANDLERS, isFamily } from "./functionality.ts";
-import { admitWorkerEnv, resolveClientWorkerEnv } from "./env.ts";
-import { COMMANDS, commandSpec } from "./commands.ts";
-import { formatRouteIdentity } from "./status.ts";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs, type ParseArgsConfig } from "node:util";
 import {
-    formatWorkerEffort,
-    readWorkerEffort,
-    setWorkerEffort,
-} from "./effort.ts";
-import { runModels, runWorkspaceList, runWorkspaceWorkers, runWorkspaceRename, runLogRead, runRead } from "./subcommands.ts";
-import type { LogReadFilters, Caller } from "./subcommands.ts";
-import {
-    ProblemError,
-    report,
-    clientConnectionRefused,
-    isUnreachable,
-    clientProblem,
-    clientFlagInvalid,
-    clientFlagMissingDependency,
-    clientRuntimeError,
-    clientAcpError,
-    clientSubcommandMissingArgument,
-    clientSubcommandUnknownVerb,
-    clientWorkerNotFound,
-    isAbsentWorker,
-} from "./diagnostics.ts";
-import type { ProblemDetails } from "./diagnostics.ts";
-import { formatBuildInfo, getBuildInfo } from "./build-info.ts";
-import { userConfigFile } from "./paths.ts";
-import { RENDER_USAGE, renderDocument, resolveRenderWidth } from "./render-command.ts";
-import Backend from "./backend.ts";
-import Lifetime from "./lifetime.ts";
-import ProjectRoot, { resolveProjectRoot } from "./project-root.ts";
-import type TuiSurface from "./tui-surface.ts";
-import { extractOpenPaths } from "./openpaths.ts";
-import { formatShare, shareFolder, type ShareResult } from "./share.ts";
-import {
-    Validator,
-    type CapabilityPolicy,
-    type ModelRoute,
-} from "@plurnk/plurnk-contracts";
-import {
-    execCommand,
-    formatCapabilityProjection,
-    parseCapabilityPolicy,
-    parsePrompt,
-} from "./policy.ts";
+    runCliCapabilities,
+    runCliCompletion,
+    runCliConfig,
+    runCliDeleteSession,
+    runCliFamily,
+    runCliForkSession,
+    runCliListSessions,
+    runCliLogRead,
+    runCliModels,
+    runCliNewSession,
+    runCliPrompt,
+    runCliReadCoord,
+    runCliResumeSession,
+    runCliScript,
+    runCliWorkspace,
+    runInteractiveSession,
+    type CliCommonOptions,
+} from "./cli-runner.ts";
+import Credential from "./credential.ts";
+import { assembleClientEnv, type CascadeFileSpec } from "./envdefaults.ts";
+import { runRender } from "./render-filter.ts";
 
-// Read all of stdin to EOF. Called when stdin is piped (not a TTY) — never
-// blocks an interactive workspace because we gate on isTTY upstream.
-const readStdin = async (): Promise<string> => {
-    let buf = "";
-    for await (const chunk of process.stdin) buf += chunk;
-    return buf;
-};
-
-// An optional knob its user set: unset or empty means nobody said.
-const stated = (name: string, env: NodeJS.ProcessEnv = process.env): string | undefined => {
-    const raw = env[name];
-    return raw === undefined || raw.length === 0 ? undefined : raw;
-};
-
-// A switch resolved from its knob; a value that is neither on nor off is a flag Problem by name.
-const switchOf = (name: string, declared: "live" | "optional", env: NodeJS.ProcessEnv = process.env): boolean => {
-    try {
-        return Knobs.flag(name, declared, env);
-    } catch (cause) {
-        if (cause instanceof KnobError) throw new ProblemError(clientFlagInvalid(cause.knob, cause.value, cause.message));
-        throw cause;
-    }
-};
-
-
+export const CLIENT_OPTIONS = {
+    help: { type: "boolean", short: "h" },
+    version: { type: "boolean", short: "v" },
+    json: { type: "boolean" },
+    workspace: { type: "string" },
+    worker: { type: "string" },
+    "tui-worker": { type: "string" },
+    model: { type: "string" },
+    effort: { type: "string" },
+    env: { type: "string", multiple: true },
+    "env-inherit": { type: "string" },
+    "env-exclude": { type: "string" },
+    autostart: { type: "string" },
+    "daemon-timeout-ms": { type: "string" },
+    "oauth-timeout-ms": { type: "string" },
+    "cancel-grace-ms": { type: "string" },
+    "service-bin": { type: "string" },
+    "project-root": { type: "string" },
+    yolo: { type: "boolean" },
+    auto: { type: "boolean" },
+    bell: { type: "boolean" },
+    capabilities: { type: "string" },
+    "env-file": { type: "string", multiple: true },
+    "env-file-if-exists": { type: "string", multiple: true },
+    "max-turns": { type: "string" },
+    timeout: { type: "string" },
+    "files-items": { type: "string" },
+    "preview-lines": { type: "string" },
+    "history-entries": { type: "string" },
+    "mermaid-timeout-ms": { type: "string" },
+    color: { type: "string" },
+    "max-commands": { type: "string" },
+    "status-stream": { type: "boolean" },
+    share: { type: "string" },
+    "no-git": { type: "boolean" },
+    loop: { type: "string" },
+    turn: { type: "string" },
+    since: { type: "string" },
+    limit: { type: "string" },
+    provider: { type: "string" },
+    all: { type: "boolean" },
+    offset: { type: "string" },
+    width: { type: "string" },
+} as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
@@ -103,15 +86,14 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        plurnk script <file.plk> [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
-${COMMANDS.filter(({ group }) => group === "functionality").map(({ usage }) => `       plurnk ${usage.slice(1)}`).join("\n")}
+       plurnk mcp [subcommand]
+       plurnk skills [subcommand]
+       plurnk a2a [subcommand]
+       plurnk members [subcommand]
+       plurnk env [--scope worker|workspace] [subcommand]
+       plurnk schedule [subcommand]
 
-Connects to plurnk-service at its configured address, starting the installed service
-there when nothing listens; it keeps running after this client (plurnk-service stop ends it).
-Run a single prompt one-shot
-(positional args, piped stdin, or both — positionals come first, stdin
-is appended after a blank line). With no positionals and a TTY stdin,
-enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list /
-log read / read <coord>) inspect daemon state without running a loop.
+Connects to plurnk-service at its configured address, starting the installed service there when nothing listens; it keeps running after this client (plurnk-service stop ends it). Run a single prompt one-shot (positional args, piped stdin, or both — positionals come first, stdin is appended after a blank line). With no positionals and a TTY stdin, enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list / log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
      < repeated --env-file flags (last wins) < shell):
@@ -246,7 +228,12 @@ subcommands:
   login                   sign in to the daemon through the browser and keep the grant
                           under $XDG_STATE_HOME/plurnk; a kept grant renews itself
   logout                  revoke the kept grant at the daemon and forget it
-${COMMANDS.filter(({ group }) => group === "functionality").map(({ name, summary }) => `  ${name} ...${" ".repeat(22 - name.length)}${summary}`).join("\n")}
+  mcp ...                   List or manage this workspace's MCP servers.
+  skills ...                List or manage this workspace's Agent Skills.
+  a2a ...                   List or manage this workspace's outbound A2A agents.
+  members ...               List or manage this workspace's file members.
+  env ...                   Manage worker overrides or shared workspace environment defaults.
+  schedule ...              List or manage this workspace's scheduled messages.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
   script <file.plk>       run a .plk file: feed its DSL to op.parse, render the
@@ -255,904 +242,477 @@ ${COMMANDS.filter(({ group }) => group === "functionality").map(({ name, summary
                           grammar; the client just feeds the file.
 `;
 
-const subcommandNames = new Set([...USAGE.slice(USAGE.indexOf("\nsubcommands:")).matchAll(/^  ([a-z][a-z0-9]*)\b/gm)].map((match) => match[1]));
+const FAMILY_COMMANDS = new Set(["mcp", "skills", "a2a", "members", "env", "schedule"]);
 
-const commandHelp = (name: string | undefined): string => {
-    if (name === "render") return RENDER_USAGE;
-    if (name !== undefined && isFamily(name)) {
-        const spec = commandSpec(name)!;
-        const forms = (spec.subcommands ?? []).map(({ usage, summary }) => `  plurnk [options] ${name} ${usage}\n      ${summary}`).join("\n");
-        return `usage: plurnk ${spec.usage.slice(1)}\n\n${spec.summary}\n${forms}\n\nPut client options before ${name}; all following arguments belong to the family.\n`;
-    }
-    if (name === undefined || !subcommandNames.has(name)) return USAGE;
-    const synopsis = USAGE.slice(0, USAGE.indexOf("\n\n"));
-    const forms = synopsis.match(new RegExp(`^ {7}plurnk ${name}\\b[^\\n]*(?:\\n {8,}[^\\n]*)*`, "gm"));
-    const descriptions = USAGE.slice(USAGE.indexOf("\nsubcommands:")).match(new RegExp(`^  ${name}\\b[^\\n]*(?:\\n {3,}[^\\n]*)*`, "gm"));
-    if (forms === null || descriptions === null) throw new Error(`Missing CLI help for ${name}`);
-    return `usage: ${forms[0].trimStart()}${forms.slice(1).map((form) => `\n${form}`).join("")}\n\n${descriptions.join("\n")}\n\nSee plurnk --help for shared options and environment configuration.\n`;
-};
-
-class ClientExit extends Error {
-    readonly code: number;
-    constructor(code: number) { super("Client invocation ended."); this.code = code; }
-}
-
-// Unwind through the invocation owner before exiting, so the transports it owns close.
-const dieWith = (code: number, problem: ProblemDetails): never => {
-    report(problem);
-    throw new ClientExit(code);
-};
-
-// JSON mode embeds the exact RFC 9457 Problem document rendered in text mode.
-const dieJson = (code: number, problem: ProblemDetails): never => {
-    process.stdout.write(`${JSON.stringify(buildJsonError(problem))}\n`);
-    throw new ClientExit(code);
-};
-
-// Env cascade, aligned with plurnk-service's XDG config so the two share one
-// file. process.loadEnvFile only fills UNSET vars, so loading
-// highest-precedence-first yields:
-//   shell > --env-file > --env-file-if-exists > $XDG_CONFIG_HOME/plurnk/.env
-//   > the client's OWN packaged .env.defaults (#141 — the self-serve floor:
-//     the client is the one member the daemon cannot assemble).
-export interface ExplicitEnvFile {
-    readonly path: string;
-    readonly required: boolean;
-}
-
-export const orderedEnvFiles = (args: readonly string[]): ExplicitEnvFile[] => {
-    const files: ExplicitEnvFile[] = [];
-    for (let index = 0; index < args.length; index += 1) {
-        const arg = args[index]!;
-        if (arg === "--") break;
-        for (const [flag, required] of [["--env-file", true], ["--env-file-if-exists", false]] as const) {
-            if (arg === flag) {
-                const path = args[index + 1];
-                if (path !== undefined) files.push({ path, required });
-                index += 1;
-                break;
+const readVersion = (): string => {
+    try {
+        const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+        const buildInfoPath = resolve(root, "dist", "build-info.json");
+        try {
+            const info = JSON.parse(readFileSync(buildInfoPath, "utf8")) as {
+                version?: string;
+                revision?: string;
+            };
+            if (info.version) {
+                return info.revision ? `${info.version} (${info.revision.slice(0, 7)})` : info.version;
             }
-            if (arg.startsWith(`${flag}=`)) files.push({ path: arg.slice(flag.length + 1), required });
+        } catch {
+            // fallback to package.json
+        }
+        const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+            version?: string;
+        };
+        return pkg.version ?? "0.0.0";
+    } catch {
+        return "0.0.0";
+    }
+};
+
+const readStdinAll = async (): Promise<string> => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+};
+
+const isTruthyEnv = (val: string | undefined): boolean =>
+    val === "1" || val === "true" || val === "yes" || val === "on";
+
+const collectWorkerEnv = (
+    env: Record<string, string>,
+    flagEnvs: readonly string[],
+    inheritSpec: string | undefined,
+    excludeSpec: string | undefined,
+): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const [key, val] of Object.entries(env)) {
+        if (key.startsWith("PLURNK_CLIENT_ENV_") && key !== "PLURNK_CLIENT_ENV_INHERIT" && key !== "PLURNK_CLIENT_ENV_EXCLUDE") {
+            const targetKey = key.slice("PLURNK_CLIENT_ENV_".length);
+            if (targetKey.length > 0) out[targetKey] = val;
         }
     }
-    return files;
+    const matchesPattern = (name: string, pattern: string): boolean => {
+        if (pattern.endsWith("*")) {
+            return name.startsWith(pattern.slice(0, -1));
+        }
+        return name === pattern;
+    };
+    if (inheritSpec && inheritSpec.trim().length > 0) {
+        const includePatterns = inheritSpec.split(",").map((s) => s.trim()).filter(Boolean);
+        const excludePatterns = (excludeSpec ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        for (const [k, v] of Object.entries(env)) {
+            if (includePatterns.some((p) => matchesPattern(k, p)) && !excludePatterns.some((p) => matchesPattern(k, p))) {
+                out[k] = v;
+            }
+        }
+    }
+    for (const entry of flagEnvs) {
+        const eq = entry.indexOf("=");
+        if (eq > 0) {
+            out[entry.slice(0, eq)] = entry.slice(eq + 1);
+        } else if (entry.length > 0 && env[entry] !== undefined) {
+            out[entry] = env[entry]!;
+        }
+    }
+    return out;
 };
 
-export const loadEnvCascade = (
-    explicitFiles: readonly ExplicitEnvFile[],
-    userConfig: string = userConfigFile(),
-): void => {
-    const ifExists = (p: string): void => { try { process.loadEnvFile(p); } catch { /* optional layer */ } };
-    for (const { path, required } of explicitFiles.toReversed()) {
-        if (!required) {
-            ifExists(path);
+export const main = async (argv: readonly string[] = process.argv): Promise<void> => {
+    const rawArgs = argv.slice(2);
+
+    // Split before family command if present ({§cli-family-arguments})
+    let clientArgs = [...rawArgs];
+    let familyName: string | undefined;
+    let familyArgs: string[] = [];
+
+    for (let i = 0; i < rawArgs.length; i += 1) {
+        const token = rawArgs[i]!;
+        if (token === "--") break;
+        if (token.startsWith("-")) {
+            if (
+                !token.includes("=") &&
+                token !== "-h" &&
+                token !== "--help" &&
+                token !== "-v" &&
+                token !== "--version" &&
+                token !== "--json" &&
+                token !== "--yolo" &&
+                token !== "--no-yolo" &&
+                token !== "--auto" &&
+                token !== "--bell" &&
+                token !== "--status-stream" &&
+                token !== "--no-git" &&
+                token !== "--all"
+            ) {
+                i += 1;
+            }
             continue;
         }
-        try { process.loadEnvFile(path); }
-        catch { dieWith(64, clientFlagInvalid("--env-file", path, "file not found")); }
-    }
-    ifExists(userConfig);
-    loadFloor();
-};
-
-// Workspace-open settings: filesItems is the turn-0 tracked-file preview.
-// Ceilings (most-restrictive-wins): maxCommands min()s PLURNK_SERVICE_MAX_COMMANDS;
-// git:false ANDs PLURNK_SERVICE_GIT_ALLOWED (deny-only).
-export interface Settings {
-    filesItems?: number;
-    maxCommands?: number;
-    git?: boolean;
-    client?: string;          // #249 — frontend id, set on every workspace.create
-    capabilities?: CapabilityPolicy;
-}
-
-export const buildSettings = async (
-    values: { "files-items"?: string; "max-commands"?: string; "no-git"?: boolean; capabilities?: string },
-    env: NodeJS.ProcessEnv = process.env,
-    client?: string,
-): Promise<Settings> => {
-    const settings: Settings = { ...(client === undefined ? {} : { client }) };
-    const rawCapabilities = values.capabilities ?? env.PLURNK_CLIENT_CAPABILITIES;
-    if (rawCapabilities !== undefined) {
-        try {
-            settings.capabilities = parseCapabilityPolicy("--capabilities", rawCapabilities);
-        } catch {
-            throw new ProblemError(clientFlagInvalid(
-                "--capabilities",
-                rawCapabilities,
-                "must be a valid CapabilityPolicy JSON object",
-            ));
+        if (FAMILY_COMMANDS.has(token)) {
+            clientArgs = rawArgs.slice(0, i);
+            familyName = token;
+            familyArgs = rawArgs.slice(i + 1);
         }
-    }
-    const mc = values["max-commands"] ?? stated("PLURNK_CLIENT_MAX_COMMANDS", env);
-    if (mc !== undefined) {
-        const n = Number(mc);
-        if (!Number.isInteger(n) || n < 1) {
-            throw new ProblemError(clientFlagInvalid("--max-commands", mc, "must be a positive integer"));
-        }
-        settings.maxCommands = n;
-    }
-    if (values["no-git"] === true || switchOf("PLURNK_CLIENT_NO_GIT", "optional", env)) settings.git = false;
-    const fi = values["files-items"] ?? stated("PLURNK_CLIENT_FILES_ITEMS", env);
-    if (fi !== undefined) {
-        const n = Number(fi);
-        if (!Number.isInteger(n) || n < -1) {
-            throw new ProblemError(clientFlagInvalid("--files-items", fi, "must be -1 (full), 0 (off), or a positive integer"));
-        }
-        settings.filesItems = n;
-    }
-    return settings;
-};
-
-// discover.versions { service:{installed, latest?}, client:{latest?} }.
-// The daemon polls npm; the client compares its OWN installed version against
-// the advertised latest and renders both lines + an "(update available)"
-// marker. The client never does registry IO — it just reads what discover says.
-export const CLIENT_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
-
-// #249 — workspace-stable frontend id, passed on workspace creation and stored with
-// the workspace.
-// #71 — one id per FRONTEND, name/version form, workspace-stable. CLI and TUI are
-// distinct frontends of this package;
-// splitting them lets the service attribute usage per surface.
-export const CLIENT_ID_CLI = `@plurnk/plurnk-cli/${CLIENT_VERSION}`;
-export const CLIENT_ID_TUI = `@plurnk/plurnk-tui/${CLIENT_VERSION}`;
-
-interface DiscoverVersions { service?: { installed?: string; latest?: string }; client?: { latest?: string } }
-
-const isOlder = (a: string, b: string): boolean => {
-    const pa = a.split(".").map(Number);
-    const pb = b.split(".").map(Number);
-    for (let i = 0; i < 3; i++) {
-        const x = pa[i] ?? 0, y = pb[i] ?? 0;
-        if (x < y) return true;
-        if (x > y) return false;
-    }
-    return false;
-};
-
-export const buildVersionNotice = (versions: DiscoverVersions | undefined, clientInstalled: string): string | undefined => {
-    if (versions === undefined) return undefined;
-    const svc = versions.service?.installed;
-    const parts = [`plurnk client v${clientInstalled}`];
-    if (svc !== undefined) parts.push(`plurnk-service v${svc}`);
-    const stale = (versions.client?.latest !== undefined && isOlder(clientInstalled, versions.client.latest))
-        || (svc !== undefined && versions.service?.latest !== undefined && isOlder(svc, versions.service.latest));
-    return parts.join(", ") + (stale ? " (update available)" : "");
-};
-
-// Resolve --worker <name> to its id over the action surface (workspace.workers is scoped
-// to the caller's thread/workspace). Undefined workerName = the module's model-worker default.
-export const resolveWorkerId = async (rpc: Caller, workerName: string | undefined): Promise<number | undefined> => {
-    if (workerName === undefined) return undefined;
-    const { workers } = await rpc.call("workspace.workers") as { workers: Array<{ id: number; name: string }> };
-    const hit = workers.find((r) => r.name === workerName);
-    if (hit === undefined) throw new ProblemError(clientWorkerNotFound(workerName));
-    return hit.id;
-};
-
-const parseIntFlag = (raw: string | undefined, name: string): number | undefined => {
-    if (raw === undefined) return undefined;
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0) throw new ProblemError(clientFlagInvalid(name, raw, "must be a non-negative integer"));
-    return n;
-};
-type WorkspaceSelection = { name: string } | { projectRoot: string };
-
-interface SubcommandOpts {
-    signal?: AbortSignal;
-    json: boolean;
-    /** The launch workspace ({§cli-workspaces-and-workers}), bound only by a verb that addresses one. */
-    workspace: () => WorkspaceSelection;
-    workerName?: string;
-    values: Record<string, string | boolean | string[] | undefined>;
-}
-
-// Dispatch a positional-driven subcommand over the action surface. Returns the
-// exit code the dispatcher should propagate. A verb that reads or changes a workspace
-// binds the launch workspace first; the others never bring one into being.
-const runSubcommand = async (callerFor: (workspace?: WorkspaceSelection) => Caller, positionals: string[], opts: SubcommandOpts): Promise<number> => {
-    const verb = positionals[0];
-    const sub = positionals[1];
-
-    if (verb === "models") {
-        const offset = parseIntFlag(opts.values.offset as string | undefined, "--offset");
-        const limit = parseIntFlag(opts.values.limit as string | undefined, "--limit");
-        if (limit !== undefined && (limit < 1 || limit > 100)) {
-            throw new ProblemError(clientFlagInvalid("--limit", String(limit), "must be between 1 and 100 for models"));
-        }
-        const search = positionals.slice(1).join(" ").trim();
-        return await runModels(callerFor(), {
-            json: opts.json,
-            query: {
-                ...(typeof opts.values.provider === "string" ? { provider: opts.values.provider } : {}),
-                ...(search.length > 0 ? { search } : {}),
-                ...(opts.values.all === true ? { availability: "all" as const } : {}),
-                ...(offset !== undefined ? { offset } : {}),
-                ...(limit !== undefined ? { limit } : {}),
-            },
-        });
+        break;
     }
 
-    if (verb === "workspace") {
-        if (sub === "list") {
-            if (positionals.length > 2) {
-                throw new ProblemError(clientSubcommandUnknownVerb(`workspace list ${positionals.slice(2).join(" ")}`));
-            }
-            return await runWorkspaceList(callerFor(), { json: opts.json });
-        }
-        if (sub === "workers") {
-            const name = positionals[2];
-            if (name === undefined) {
-                throw new ProblemError(clientSubcommandMissingArgument("plurnk workspace workers", "<name>"));
-            }
-            if (positionals.length > 3) {
-                throw new ProblemError(clientSubcommandUnknownVerb(`workspace workers ${positionals.slice(3).join(" ")}`));
-            }
-            return await runWorkspaceWorkers(callerFor({ name }), name, { json: opts.json });
-        }
-        if (sub === "rename") {
-            const name = positionals[2];
-            const newName = positionals[3];
-            if (name === undefined || newName === undefined) {
-                throw new ProblemError(clientSubcommandMissingArgument("plurnk workspace rename", "<name> <newname>"));
-            }
-            if (positionals.length > 4) {
-                throw new ProblemError(clientSubcommandUnknownVerb(`workspace rename ${positionals.slice(4).join(" ")}`));
-            }
-            return await runWorkspaceRename(callerFor({ name }), name, newName, { json: opts.json });
-        }
-        throw new ProblemError(clientSubcommandUnknownVerb(`workspace ${sub ?? "(missing)"}`, ["list", "workers", "rename"]));
-    }
-
-    if (isFamily(verb)) {
-        const result = await FAMILY_HANDLERS[verb](
-            positionals.slice(1),
-            callerFor(opts.workspace()),
-            opts.json
-                ? verb === "mcp" && positionals[1] === "oauth" ? (text) => process.stderr.write(text) : () => undefined
-                : (text) => process.stdout.write(text),
-            { signal: opts.signal },
-        );
-        if (result === null) {
-            throw new ProblemError(clientProblem("usage", "invalid-arguments", 400, `Invalid arguments for plurnk ${verb}. See plurnk ${verb} --help.`, { command: verb }));
-        }
-        if (opts.json) process.stdout.write(`${JSON.stringify(result)}\n`);
-        return 0;
-    }
-
-    if (verb === "effort") {
-        if (positionals.length > 2) {
-            throw new ProblemError(clientSubcommandUnknownVerb(`effort ${positionals.slice(1).join(" ")}`));
-        }
-        const rpc = callerFor(opts.workspace());
-        const effort = sub === undefined
-            ? await readWorkerEffort(rpc)
-            : await setWorkerEffort(rpc, sub);
-        process.stdout.write(opts.json
-            ? `${JSON.stringify(effort)}\n`
-            : formatWorkerEffort(effort));
-        return 0;
-    }
-
-    if (verb === "capabilities") {
-        if (positionals.length > 2) {
-            throw new ProblemError(clientSubcommandUnknownVerb(`capabilities ${positionals.slice(1).join(" ")}`));
-        }
-        const rpc = callerFor(opts.workspace());
-        const projection = sub === undefined
-            ? await rpc.call("workspace.capabilities.get") as Record<string, CapabilityPolicy>
-            : await rpc.call("workspace.capabilities.set", {
-                policy: parseCapabilityPolicy("capabilities", sub),
-            }) as Record<string, CapabilityPolicy>;
-        process.stdout.write(opts.json
-            ? `${JSON.stringify(projection)}\n`
-            : formatCapabilityProjection(projection));
-        return 0;
-    }
-
-    if (verb === "log") {
-        if (sub !== "read") {
-            throw new ProblemError(clientSubcommandUnknownVerb(`log ${sub ?? "(missing)"}`, ["read"]));
-        }
-        // The caller's workspace scopes the action; the module defaults reads to the
-        // thread's bound worker; --worker pins by name.
-        const rpc = callerFor(opts.workspace());
-        const workerId = await resolveWorkerId(rpc, opts.workerName);
-        const filters: LogReadFilters = { ...(workerId === undefined ? {} : { workerId }) };
-        const loopId = parseIntFlag(opts.values.loop as string | undefined, "--loop");
-        const turnId = parseIntFlag(opts.values.turn as string | undefined, "--turn");
-        const sinceId = parseIntFlag(opts.values.since as string | undefined, "--since");
-        const limit = parseIntFlag(opts.values.limit as string | undefined, "--limit");
-        if (loopId !== undefined) filters.loopId = loopId;
-        if (turnId !== undefined) filters.turnId = turnId;
-        if (sinceId !== undefined) filters.sinceId = sinceId;
-        if (limit !== undefined) filters.limit = limit;
-        return await runLogRead(rpc, { json: opts.json, filters });
-    }
-
-    if (verb === "read") {
-        const coord = positionals[1];
-        if (coord === undefined) {
-            throw new ProblemError(clientSubcommandMissingArgument("plurnk read", "<loop>/<turn>/<seq>"));
-        }
-        if (positionals.length > 2) {
-            throw new ProblemError(clientSubcommandUnknownVerb(`read ${positionals.slice(2).join(" ")}`));
-        }
-        // The coordinate is worker-relative; the module defaults to the thread's bound
-        // worker — --worker pins by name via params, no connection state.
-        const rpc = callerFor(opts.workspace());
-        return await runRead(rpc, coord, { json: opts.json, workerId: await resolveWorkerId(rpc, opts.workerName) });
-    }
-
-    throw new ProblemError(clientSubcommandUnknownVerb(verb ?? "(missing)"));
-};
-
-export const main = async (argv: string[]): Promise<void> => {
-    const lifetime = new Lifetime();
-    try { await dispatch(argv, lifetime); }
-    catch (cause) {
-        if (lifetime.interrupted) return;
-        if (!(cause instanceof ClientExit)) throw cause;
-        process.exitCode = cause.code;
-    } finally { await lifetime.close(); }
-};
-
-export const CLIENT_OPTIONS = {
-    help: { type: "boolean", short: "h" },
-    version: { type: "boolean", short: "v" },
-    json: { type: "boolean" },
-    // Node-native env layering (mirrors plurnk-service): --env-file
-    // requires the file, --env-file-if-exists skips a missing one.
-    "env-file": { type: "string", multiple: true },
-    "env-file-if-exists": { type: "string", multiple: true },
-    workspace: { type: "string" },
-    worker: { type: "string" },
-    "tui-worker": { type: "string" },
-    model: { type: "string" },
-    effort: { type: "string" },
-    env: { type: "string", multiple: true },
-    "env-inherit": { type: "string" },
-    "env-exclude": { type: "string" },
-    autostart: { type: "string" },
-    "daemon-timeout-ms": { type: "string" },
-    "oauth-timeout-ms": { type: "string" },
-    "cancel-grace-ms": { type: "string" },
-    "service-bin": { type: "string" },
-    "project-root": { type: "string" },
-    yolo: { type: "boolean" },
-    auto: { type: "boolean" },
-    bell: { type: "boolean" },
-    capabilities: { type: "string" },
-    "max-turns": { type: "string" },
-    timeout: { type: "string" },
-    // workspace-open settings + tighten-only ceilings
-    "files-items": { type: "string" },
-    "preview-lines": { type: "string" },
-    "history-entries": { type: "string" },
-    "mermaid-timeout-ms": { type: "string" },
-    color: { type: "string" },
-
-    "max-commands": { type: "string" },
-    "no-git": { type: "boolean" },
-    "status-stream": { type: "boolean" },
-    share: { type: "string" },
-    // log read filters
-    loop: { type: "string" },
-    turn: { type: "string" },
-    since: { type: "string" },
-    limit: { type: "string" },
-    provider: { type: "string" },
-    all: { type: "boolean" },
-    offset: { type: "string" },
-    width: { type: "string" },
-} as const;
-
-const parseInvocation = (args: string[]) => {
-    // Node owns option arity, including a family name used as an option value.
-    // The first positional alone can select a family; its remaining argv is opaque.
-    const scanned = parseArgs({ args, options: CLIENT_OPTIONS, allowPositionals: true, strict: false, tokens: true });
-    const first = scanned.tokens.find((token) => token.kind === "positional");
-    const boundary = first?.kind === "positional" && isFamily(first.value) ? first.index + 1 : args.length;
-    const clientArgs = args.slice(0, boundary);
-    const remaining = args.slice(boundary);
-    const familyArgs = remaining[0] === "--" ? remaining.slice(1) : remaining;
-    try {
-        const { values, positionals } = parseArgs({ args: clientArgs, options: CLIENT_OPTIONS, allowPositionals: true });
-        const help = familyArgs.length === 1 && (familyArgs[0] === "--help" || familyArgs[0] === "-h");
-        if (help) values.help = true;
-        return { values, positionals: [...positionals, ...(help ? [] : familyArgs)], clientArgs };
-    } catch (cause) {
-        if (!(cause instanceof Error) || !("code" in cause) || !String(cause.code).startsWith("ERR_PARSE_ARGS_")) throw cause;
-        const { values } = parseArgs({ args: clientArgs, options: CLIENT_OPTIONS, allowPositionals: true, strict: false });
-        if (typeof values.color === "string" && isColorMode(values.color)) process.env.PLURNK_CLIENT_COLOR = values.color;
-        const problem = clientProblem("usage", "invalid-arguments", 400, cause.message);
-        if (values.json === true || switchOf("PLURNK_CLIENT_JSON", "optional")) dieJson(64, problem);
-        return dieWith(64, problem);
-    }
-};
-
-const dispatch = async (argv: string[], lifetime: Lifetime): Promise<void> => {
-    const { positionals, values, clientArgs } = parseInvocation(argv.slice(2));
-
-    // Apply an explicit presentation choice before any invocation diagnostic can render.
-    if (values.color !== undefined) process.env.PLURNK_CLIENT_COLOR = values.color;
-    if (values["history-entries"] !== undefined) process.env.PLURNK_CLIENT_HISTORY_ENTRIES = values["history-entries"];
-    if (values["mermaid-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS = values["mermaid-timeout-ms"];
-    if (values.autostart !== undefined) process.env.PLURNK_CLIENT_AUTOSTART = values.autostart;
-    if (values["daemon-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS = values["daemon-timeout-ms"];
-    if (values["oauth-timeout-ms"] !== undefined) process.env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS = values["oauth-timeout-ms"];
-    if (values["cancel-grace-ms"] !== undefined) process.env.PLURNK_CLIENT_CANCEL_GRACE_MS = values["cancel-grace-ms"];
-    if (values["service-bin"] !== undefined) process.env.PLURNK_CLIENT_SERVICE_BIN = values["service-bin"];
-    if (values.help) {
-        process.stdout.write(commandHelp(positionals[0]));
-        return;
-    }
-    if (positionals[0] === "completion") {
-        try {
-            const files = new Map([["bash", "plurnk.bash"], ["zsh", "_plurnk"], ["fish", "plurnk.fish"]]);
-            const file = files.get(positionals[1] ?? "");
-            if (positionals.length !== 2 || file === undefined) {
-                throw new ProblemError(clientSubcommandUnknownVerb(positionals.join(" "), ["completion bash", "completion zsh", "completion fish"]));
-            }
-            process.stdout.write(await readFile(new URL(`../completions/${file}`, import.meta.url), "utf8"));
-            return;
-        } catch (cause) {
-            if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-            dieWith(1, clientRuntimeError(cause));
-        }
-    }
-    if (positionals[0] === "render") {
-        try {
-            if (positionals.length > 1) {
-                throw new ProblemError(clientSubcommandUnknownVerb(`render ${positionals.slice(1).join(" ")}`));
-            }
-            const source = await readStdin();
-            const rendered = await renderDocument(source, resolveRenderWidth(values.width));
-            if (rendered.length > 0) process.stdout.write(`${rendered}\n`);
-            process.exitCode = 0;
-            return;
-        } catch (cause) {
-            if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-            dieWith(1, clientRuntimeError(cause));
-        }
-    }
-    const buildInfo = await getBuildInfo();
-    if (values.version) {
-        process.stdout.write(`${formatBuildInfo(buildInfo)}\n`);
-        return;
-    }
-
-    // Shared XDG user env cascade (after parse so --env-file flags participate).
-    loadEnvCascade(orderedEnvFiles(clientArgs));
-    // {§cli-env-defaults} — a flag is a knob's spelling for one invocation: the resolved preview
-    // count is written back to its knob, the one place every renderer reads it ({plurnk#107}).
-    const previewLinesRaw = values["preview-lines"] ?? stated("PLURNK_CLIENT_PREVIEW_LINES") ?? "";
-    const previewLines = Number(previewLinesRaw);
-    if (previewLinesRaw.length === 0 || !Number.isInteger(previewLines) || previewLines < 0) {
-        dieWith(64, clientFlagInvalid("--preview-lines", previewLinesRaw, "must be a non-negative integer"));
-    }
-    process.env.PLURNK_CLIENT_PREVIEW_LINES = String(previewLines);
-
-    // json OUTPUT MODE — flag or env (user-level, same name client+daemon would
-    // read). One complete document on stdout, stderr silent, structured errors.
-    const json = values.json === true || switchOf("PLURNK_CLIENT_JSON", "optional");
-    try {
-        Knobs.count("PLURNK_CLIENT_HISTORY_ENTRIES");
-    } catch (cause) {
-        if (!(cause instanceof KnobError)) throw cause;
-        const problem = clientFlagInvalid(values["history-entries"] === undefined ? cause.knob : "--history-entries", cause.value, cause.message);
-        if (json) dieJson(64, problem);
-        dieWith(64, problem);
-    }
-    const color = Knobs.text("PLURNK_CLIENT_COLOR");
-    if (!isColorMode(color)) {
-        const problem = clientFlagInvalid(values.color === undefined ? "PLURNK_CLIENT_COLOR" : "--color", color, "must be always, auto, or never");
-        if (json) dieJson(64, problem);
-        dieWith(64, problem);
-    }
-    if (!json) process.stderr.write(`plurnk: ${formatBuildInfo(buildInfo)}\n`);
-
-    // State-command routing happens BEFORE prompt assembly, so inspection and
-    // deliberate configuration never consume stdin or become model prompts.
-    const subcommand = positionals[0];
-    const isSubcommand = subcommand !== undefined && subcommandNames.has(subcommand);
-
-    // Assemble the prompt only if we're NOT running a subcommand.
-    let prompt = "";
-    if (!isSubcommand) {
-        const positionalPrompt = positionals.join(" ");
-        const stdinPrompt = process.stdin.isTTY === true ? "" : (await readStdin()).trim();
-        prompt = positionalPrompt.length > 0 && stdinPrompt.length > 0
-            ? `${positionalPrompt}\n\n${stdinPrompt}`
-            : positionalPrompt || stdinPrompt;
-        if (json && prompt.length === 0) {
-            if (values.json === true) {
-                dieJson(64, clientProblem("usage", "prompt-required", 400, "--json needs a prompt (CLI mode only)", { flag: "--json" }));
-            }
-            // PLURNK_CLIENT_JSON with no prompt is the interactive TUI — env shouldn't force CLI mode.
-        }
-        if (prompt.length === 0 && process.stdin.isTTY !== true) {
-            const problem = clientProblem("usage", "prompt-required", 400, "Provide a prompt or use an interactive terminal.");
-            if (json) dieJson(64, problem);
-            dieWith(64, problem);
-        }
-    }
-    // {§cli-prompt-prefixes} — a `!` prompt is a shell command; one without a command never dials.
-    const command = isSubcommand ? null : execCommand(prompt);
-    if (command !== null && command.length === 0) {
-        const problem = clientProblem("usage", "command-required", 400, "The ! prompt names no command.", { recovery: "Use plurnk \"! <command>\"." });
-        if (json) dieJson(64, problem);
-        dieWith(64, problem);
-    }
-
-    // Client flags select client behavior. Provider defaults remain daemon-owned.
-    const configuredWorkspace = values.workspace ?? process.env.PLURNK_CLIENT_WORKSPACE;
-    // {§cli-workspaces-and-workers} — a stated worker binds in either mode; without one, the TUI, scripts and
-    // subcommands bind the TUI's worker and a one-shot gets a new worker of its own.
-    const selectedWorker = values.worker ?? stated("PLURNK_CLIENT_WORKER");
-    const workerName = selectedWorker ?? values["tui-worker"] ?? Knobs.text("PLURNK_CLIENT_TUI_WORKER");
-    const modelSelector = values.model ?? stated("PLURNK_CLIENT_MODEL");
-    const effort = values.effort ?? stated("PLURNK_CLIENT_EFFORT");
-    const workerEnv = resolveClientWorkerEnv({
-        envInherit: values["env-inherit"],
-        envExclude: values["env-exclude"],
-        env: values.env,
+    const parsed = parseArgs({
+        args: clientArgs,
+        allowPositionals: true,
+        allowNegative: true,
+        strict: false,
+        options: CLIENT_OPTIONS,
     });
-    const yolo = values.yolo === true || switchOf("PLURNK_CLIENT_YOLO", "live");
-    // {§cli-worker-ownership} Nobody is attending: the client declares itself not interactive.
-    const auto = values.auto === true || switchOf("PLURNK_CLIENT_AUTO", "live");
-    // {§cli-attention} The bell is the attention signal's sink while someone attends.
-    const bellOn = values.bell === true || switchOf("PLURNK_CLIENT_BELL", "live");
-    const shareRaw = values.share ?? stated("PLURNK_CLIENT_SHARE");
-    const shareTarget = shareRaw === undefined ? undefined : shareFolder(shareRaw);
 
-    let maxTurns: number | undefined;
-    let timeoutSec: number | undefined;
-    try {
-        maxTurns = parseIntFlag(values["max-turns"] ?? stated("PLURNK_CLIENT_MAX_TURNS"), "--max-turns");
-        timeoutSec = parseIntFlag(values.timeout ?? stated("PLURNK_CLIENT_TIMEOUT"), "--timeout");
-    } catch (cause) {
-        if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-        dieWith(64, clientRuntimeError(cause));
+    if (parsed.values.help === true && familyName === undefined) {
+        process.stdout.write(USAGE);
+        return;
     }
 
-    const projectRootRaw = values["project-root"] ?? process.env.PLURNK_CLIENT_PROJECT_ROOT;
-    let projectRoot: string | null = (() => {
-        try { return resolveProjectRoot(projectRootRaw); }
-        catch (cause) {
-            if (cause instanceof ProblemError) return dieWith(cause.exitCode, cause.problem);
-            return dieWith(64, clientRuntimeError(cause));
-        }
-    })();
-    // {§cli-project-root} — a workspace without a folder has nothing to be named after: it needs a name.
-    if (configuredWorkspace === undefined && projectRootRaw === "") {
-        const problem = clientFlagMissingDependency(
-            values["project-root"] === undefined ? "PLURNK_CLIENT_PROJECT_ROOT=" : "--project-root=",
-            "--workspace (or PLURNK_CLIENT_WORKSPACE)",
-        );
-        if (json) dieJson(64, problem);
-        dieWith(64, problem);
+    if (parsed.values.version === true && familyName === undefined) {
+        process.stdout.write(`${readVersion()}\n`);
+        return;
     }
 
-    const configuredUrl = stated("PLURNK_ACP_URL") ?? `http://${Knobs.text("PLURNK_HOST")}:${Knobs.text("PLURNK_PORT")}/acp`;
-    let backend: Backend;
-    try {
-        // {§cli-credential} {§cli-sign-in} — the operator's secret when one is at hand; otherwise the
-        // browser sign-in's grant, with a browser only when a person is at the terminal.
-        backend = await Backend.open({ acpUrl: configuredUrl, credential: Credential.fromEnvironment() ?? new SignInCredential({
-            write: (text) => { process.stderr.write(text); },
-            interactive: !json && process.stdin.isTTY === true && process.stderr.isTTY === true,
-            timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS"),
-        }) });
-    } catch (cause) {
-        if (lifetime.interrupted) return;
-        const flag = cause instanceof KnobError ? cause.knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-") : "";
-        const problem = cause instanceof ProblemError ? cause.problem : cause instanceof KnobError
-            ? clientFlagInvalid(Object.hasOwn(values, flag) ? `--${flag}` : cause.knob, cause.value, cause.message)
-            : clientRuntimeError(cause);
-        const code = cause instanceof ProblemError ? cause.exitCode : cause instanceof KnobError ? 64 : 1;
-        if (json) dieJson(code, problem);
-        return dieWith(code, problem);
-    }
-    const { acpUrl, credential } = backend.target;
-    const projectRoots = new ProjectRoot(backend.target, projectRootRaw);
-    const chooser = (surface?: TuiSurface) => !json && process.stdin.isTTY === true && process.stdout.isTTY === true
-        ? async (home: string) => {
-            const { default: promptProjectRoot } = await import("./project-root-prompt.ts");
-            return promptProjectRoot(home, lifetime, surface);
-        } : undefined;
-    const selectProjectRoot = (name: string | undefined, surface?: TuiSurface): Promise<string | null | undefined> =>
-        projectRoots.resolve(name, chooser(surface));
-    if (backend.started !== null && !json) {
-        const { pid, url, logFile } = backend.started;
-        report({
-            source: "client:daemon", kind: "started", level: "info",
-            message: `Started plurnk-service${pid === null ? "" : ` (pid ${pid})`} at ${url}; it keeps running after this session.`,
-            hints: ["Stop it with plurnk-service stop.", ...(logFile === null ? [] : [`Log: ${logFile}`])],
-        });
-    }
-    let workspaceOptionsPromise: Promise<{ projectRoot: string | null; settings: Settings }> | undefined;
-    const workspaceOptions = (): Promise<{ projectRoot: string | null; settings: Settings }> => {
-        workspaceOptionsPromise ??= (async () => {
-            const selected = configuredWorkspace === undefined
-                ? await projectRoots.designate(chooser())
-                : await selectProjectRoot(configuredWorkspace);
-            if (selected === undefined) return lifetime.exit(130);
-            projectRoot = selected;
-            return {
-                projectRoot: selected,
-                settings: await buildSettings(values as {
-                    "files-items"?: string;
-                    "max-commands"?: string;
-                    "no-git"?: boolean;
-                    capabilities?: string;
-                }, process.env, !isSubcommand && prompt.length === 0
-                    ? CLIENT_ID_TUI
-                    : CLIENT_ID_CLI),
-            };
-        })();
-        return workspaceOptionsPromise;
-    };
+    const positionals = parsed.positionals;
+    const first = familyName ?? positionals[0];
 
-    // {§cli-workspaces-and-workers}: resolve a literal label (or the daemon's folder-derived default)
-    // once, then address the returned identity. A rename never retargets an established conversation.
-    let workspacePromise: Promise<WorkspaceHandle> | undefined;
-    const openWorkspace = (): Promise<WorkspaceHandle> => {
-        workspacePromise ??= (async () => {
-            const options = await workspaceOptions();
-            const bound = await actionViaAcp<WorkspaceHandle>({ acpUrl, credential }, {
-                threadId: "bootstrap",
-                kind: "workspace.create",
-                params: { ...(configuredWorkspace === undefined ? {} : { name: configuredWorkspace }), ...options },
-            });
-            // {§cli-project-root} — an existing workspace keeps its stored root.
-            const stored = await projectRoots.saved(bound.name);
-            if (stored !== undefined) projectRoot = stored;
-            return bound;
-        })();
-        return workspacePromise;
-    };
-    if (acpUrl !== undefined && acpUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length > 0) {
-        try {
-            const w = await openWorkspace();
-            const oneShotWorker = selectedWorker ?? randomBytes(6).toString("hex");
-            if (selectedWorker === undefined && !json) {
-                report({ source: "client:worker", kind: "new", level: "info", message: `New worker ${oneShotWorker}`, hints: [`Continue it with --worker ${oneShotWorker}`] });
-            }
-            const threadId = workerThreadId({ workspaceId: w.id, worker: oneShotWorker });
-            let code: number;
-            if (command !== null) {
-                // {§cli-prompt-prefixes} — the command runs through op.exec; no model or loop takes part.
-                code = await runExecViaAcp({ acpUrl, credential }, command, {
-                    threadId,
-                    env: workerEnv,
-                    yolo,
-                    auto,
-                });
-            } else {
-                // {§worker-model-selection} — an explicit --model is a durable selection:
-                // persist it onto the worker before the run, then run WITHOUT
-                // a per-loop model selector (the worker owns the model).
-                let activeModel: ModelRoute | null;
-                if (modelSelector !== undefined) {
-                    activeModel = Validator.assertModelRoute(await actionViaAcp(
-                        { acpUrl, credential },
-                        {
-                            threadId,
-                            kind: "worker.model.set",
-                            params: { selector: modelSelector, ...(effort === undefined ? {} : { effort }) },
-                        },
-                    ));
-                } else {
-                    // A worker no act has created yet has no durable route: the message creates it with the
-                    // daemon's defaults (plurnk-service {§acp-action-binding}).
-                    const projection = await actionViaAcp<{ model: unknown }>(
-                        { acpUrl, credential },
-                        {
-                            threadId,
-                            kind: "worker.model.get",
-                        },
-                    ).catch((cause: unknown) => {
-                        if (isAbsentWorker(cause)) return { model: null };
-                        throw cause;
-                    });
-                    activeModel = projection.model === null ? null : Validator.assertModelRoute(projection.model);
-                }
-                if (effort !== undefined && modelSelector === undefined) {
-                    await actionViaAcp({ acpUrl, credential }, {
-                        threadId,
-                        kind: "worker.effort.set",
-                        params: { effort },
-                    });
-                }
-                await admitWorkerEnv(
-                    { call: (kind, params) => actionViaAcp({ acpUrl, credential }, { threadId, kind, params }) },
-                    oneShotWorker,
-                    workerEnv,
-                );
-                const projected = parsePrompt(prompt);
-                const openPaths = extractOpenPaths(projected.prompt, projectRoot);
-                // A `?` prompt asks for review of this run; the request outranks the standing yolo setting.
-                const reviewRequested = /^\s*\?/u.test(prompt);
-                code = await runCliViaAcp({ acpUrl, credential }, projected.prompt, {
-                    lifetime,
-                    threadId,
-                    workspace: w,
-                    worker: oneShotWorker,
-                    ...(activeModel === null ? {} : { modelLabel: formatRouteIdentity(activeModel) }),
-                    ...(maxTurns !== undefined ? { maxTurns } : {}),
-                    ...(openPaths.length === 0 ? {} : { openPaths }),
-                    ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-                    yolo: yolo && !reviewRequested,
-                    auto,
-                    reviewRequested,
-                    json,
-                    statusStream: values["status-stream"] === true || switchOf("PLURNK_CLIENT_STATUS_STREAM", "optional"),
-                    bell: bellOn,
-                });
-            }
-            if (shareTarget !== undefined) {
-                const shared = await actionViaAcp<ShareResult>({ acpUrl, credential }, {
-                    threadId,
-                    kind: "workspace.share",
-                    params: { folder: shareTarget },
-                });
-                if (!json) process.stderr.write(`${formatShare(shared)}\n`);
-            }
-            // Let Node drain stdout before termination. A forced exit truncated large
-            // --json records mid-string when notices made the pipe exceed its buffer.
-            process.exitCode = code;
+    // Local-only subcommands require no daemon or env cascade ({§cli-render-filter})
+    if (first === "render") {
+        const defaultWidth = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80;
+        const width = typeof parsed.values.width === "string"
+            ? Number.parseInt(parsed.values.width, 10)
+            : defaultWidth;
+        if (!Number.isInteger(width) || width < 1) {
+            process.stderr.write("plurnk render: --width must be a positive integer.\n");
+            process.exitCode = 64;
             return;
-        } catch (cause) {
-            // Two distinct failures, two distinct messages: NOTHING LISTENING gets the
-            // onboarding block (no daemon is a first-run moment, not a stack trace);
-            // an endpoint that ANSWERED with an error surfaces its real cause — claiming
-            // "no daemon running" over a 500 would lie. json mode still emits ONE
-            // valid document on stdout either way.
-            const problem = clientAcpError(acpUrl, cause);
-            const code = cause instanceof ProblemError ? cause.exitCode : 1;
-            if (json) dieJson(code, problem);
-            dieWith(code, problem);
         }
+        process.exitCode = await runRender(width);
+        return;
     }
 
-    // The transport binds the daemon-returned identity; the TUI displays its mutable label.
-    if (acpUrl !== undefined && acpUrl.length > 0 && !isSubcommand && subcommand !== "script" && prompt.length === 0) {
-        let transport: AcpTransport | undefined;
+    if (first === "completion") {
+        process.exitCode = runCliCompletion(positionals[1]);
+        return;
+    }
+
+    const cascadeFiles: CascadeFileSpec[] = [];
+    const envFiles = Array.isArray(parsed.values["env-file"]) ? parsed.values["env-file"] : [];
+    for (const f of envFiles) {
+        if (typeof f === "string") cascadeFiles.push({ path: f, required: true });
+    }
+    const optionalEnvFiles = Array.isArray(parsed.values["env-file-if-exists"])
+        ? parsed.values["env-file-if-exists"]
+        : [];
+    for (const f of optionalEnvFiles) {
+        if (typeof f === "string") cascadeFiles.push({ path: f, required: false });
+    }
+
+    const env = assembleClientEnv(process.env, cascadeFiles);
+
+    const host = env.PLURNK_HOST;
+    const port = Number.parseInt(env.PLURNK_PORT, 10);
+    const configuredAcpUrl = env.PLURNK_ACP_URL;
+    const explicitAcpUrl = typeof configuredAcpUrl === "string" && configuredAcpUrl.trim().length > 0;
+    const url = explicitAcpUrl ? configuredAcpUrl!.trim() : `http://${host}:${String(port)}/acp`;
+
+    const workspace = typeof parsed.values.workspace === "string"
+        ? parsed.values.workspace
+        : env.PLURNK_CLIENT_WORKSPACE;
+    const sessionId = typeof parsed.values.worker === "string"
+        ? parsed.values.worker
+        : env.PLURNK_CLIENT_WORKER;
+    const tuiWorker = typeof parsed.values["tui-worker"] === "string"
+        ? parsed.values["tui-worker"]
+        : env.PLURNK_CLIENT_TUI_WORKER;
+    const model = typeof parsed.values.model === "string"
+        ? parsed.values.model
+        : env.PLURNK_CLIENT_MODEL;
+    const effort = typeof parsed.values.effort === "string"
+        ? parsed.values.effort
+        : env.PLURNK_CLIENT_EFFORT;
+    const projectRoot = typeof parsed.values["project-root"] === "string"
+        ? parsed.values["project-root"]
+        : env.PLURNK_CLIENT_PROJECT_ROOT;
+    const capabilitiesRaw = typeof parsed.values.capabilities === "string"
+        ? parsed.values.capabilities
+        : env.PLURNK_CLIENT_CAPABILITIES;
+    const filesItemsRaw = typeof parsed.values["files-items"] === "string"
+        ? parsed.values["files-items"]
+        : env.PLURNK_CLIENT_FILES_ITEMS;
+    const maxCommandsRaw = typeof parsed.values["max-commands"] === "string"
+        ? parsed.values["max-commands"]
+        : env.PLURNK_CLIENT_MAX_COMMANDS;
+    const noGit = parsed.values["no-git"] === true || isTruthyEnv(env.PLURNK_CLIENT_NO_GIT);
+
+    const workspaceSettings: Record<string, unknown> = {};
+    if (capabilitiesRaw !== undefined && capabilitiesRaw.trim().length > 0) {
         try {
-            const w = await openWorkspace();
-            const binding = { workspaceId: w.id, worker: workerName };
-            const { settings } = await workspaceOptions();
-            transport = await lifetime.own(Promise.resolve(new AcpTransport({ acpUrl, credential }, binding, {
-                settings,
-                descendants: true,   // {plurnk#108} — the TUI observes its delegation
-                auto,
-            })));
-            const { runTui } = await import("./tui.ts");
-            await runTui(transport, w, {
-                lifetime,
-                modelSelector,
-                modelExplicit: modelSelector !== undefined,
-                effort,
-                effortExplicit: effort !== undefined,
-                workerEnv,
-                yolo,
-                bell: bellOn,
-                maxTurns,
-                projectRoot,
-                selectProjectRoot,
-                workerName,
-            });
-            if (shareTarget !== undefined) {
-                const shared = await actionViaAcp<ShareResult>({ acpUrl, credential }, {
-                    threadId: transport.threadId(),
-                    kind: "workspace.share",
-                    params: { folder: shareTarget },
-                });
-                process.stderr.write(`${formatShare(shared)}\n`);
-            }
-            process.exitCode = 0;
-            return;
-        } catch (cause) {
-            transport?.shutdown();
-            if (cause instanceof ProblemError) dieWith(cause.exitCode, cause.problem);
-            if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(acpUrl, cause));
-            dieWith(1, clientRuntimeError(cause));
+            workspaceSettings.capabilities = JSON.parse(capabilitiesRaw);
+        } catch {
+            // ignore invalid JSON here; server validates if needed
         }
     }
+    if (filesItemsRaw !== undefined && filesItemsRaw.trim().length > 0) {
+        workspaceSettings.filesItems = Number.parseInt(filesItemsRaw, 10);
+    }
+    if (maxCommandsRaw !== undefined && maxCommandsRaw.trim().length > 0) {
+        workspaceSettings.maxCommands = Number.parseInt(maxCommandsRaw, 10);
+    }
+    if (noGit) {
+        workspaceSettings.noGit = true;
+    }
 
-    // Subcommands + script speak the action surface through a structural Caller bound to the
-    // workspace a verb addresses; a daemon verb binds nothing.
-    const target = { acpUrl, credential };
-    const callerFor = (selection?: WorkspaceSelection): Caller => {
-        let binding: Promise<WorkspaceHandle> | undefined;
-        return { call: async (method: string, params?: object) => {
-            if (selection !== undefined) binding ??= actionViaAcp<WorkspaceHandle>(target, {
-                threadId: "bootstrap", kind: "workspace.attach", params: selection,
-            });
-            return actionViaAcp<unknown>(target, {
-                threadId: binding === undefined ? "bootstrap" : workerThreadId({ workspaceId: (await binding).id, worker: workerName }),
-                kind: method,
-                params,
-            });
-        } };
+    const inheritSpec = typeof parsed.values["env-inherit"] === "string"
+        ? parsed.values["env-inherit"]
+        : env.PLURNK_CLIENT_ENV_INHERIT;
+    const excludeSpec = typeof parsed.values["env-exclude"] === "string"
+        ? parsed.values["env-exclude"]
+        : env.PLURNK_CLIENT_ENV_EXCLUDE;
+    const flagEnvs = Array.isArray(parsed.values.env)
+        ? parsed.values.env.filter((x): x is string => typeof x === "string")
+        : [];
+    const workerEnv = collectWorkerEnv(env, flagEnvs, inheritSpec, excludeSpec);
+
+    const autostartRaw = typeof parsed.values.autostart === "string"
+        ? parsed.values.autostart
+        : env.PLURNK_CLIENT_AUTOSTART;
+    const autostart = autostartRaw !== "0" && autostartRaw !== "false";
+
+    const daemonTimeoutMs = Number.parseInt(
+        typeof parsed.values["daemon-timeout-ms"] === "string"
+            ? parsed.values["daemon-timeout-ms"]
+            : env.PLURNK_CLIENT_DAEMON_TIMEOUT_MS,
+        10,
+    );
+    const oauthTimeoutMs = Number.parseInt(
+        typeof parsed.values["oauth-timeout-ms"] === "string"
+            ? parsed.values["oauth-timeout-ms"]
+            : env.PLURNK_CLIENT_OAUTH_TIMEOUT_MS,
+        10,
+    );
+    const cancelGraceMs = Number.parseInt(
+        typeof parsed.values["cancel-grace-ms"] === "string"
+            ? parsed.values["cancel-grace-ms"]
+            : env.PLURNK_CLIENT_CANCEL_GRACE_MS,
+        10,
+    );
+    const serviceBin = typeof parsed.values["service-bin"] === "string"
+        ? parsed.values["service-bin"]
+        : env.PLURNK_CLIENT_SERVICE_BIN;
+
+    const yolo = typeof parsed.values.yolo === "boolean"
+        ? parsed.values.yolo
+        : env.PLURNK_CLIENT_YOLO !== "0" && env.PLURNK_CLIENT_YOLO !== "false";
+    const auto = parsed.values.auto === true || isTruthyEnv(env.PLURNK_CLIENT_AUTO);
+    const bell = parsed.values.bell === true || isTruthyEnv(env.PLURNK_CLIENT_BELL);
+    const json = parsed.values.json === true || isTruthyEnv(env.PLURNK_CLIENT_JSON);
+    const statusStream = parsed.values["status-stream"] === true || isTruthyEnv(env.PLURNK_CLIENT_STATUS_STREAM);
+    const shareFolder = typeof parsed.values.share === "string"
+        ? parsed.values.share
+        : env.PLURNK_CLIENT_SHARE;
+
+    const maxTurnsRaw = typeof parsed.values["max-turns"] === "string"
+        ? parsed.values["max-turns"]
+        : env.PLURNK_CLIENT_MAX_TURNS;
+    const maxTurns = maxTurnsRaw !== undefined && maxTurnsRaw.trim().length > 0
+        ? Number.parseInt(maxTurnsRaw, 10)
+        : undefined;
+
+    const timeoutRaw = typeof parsed.values.timeout === "string"
+        ? parsed.values.timeout
+        : env.PLURNK_CLIENT_TIMEOUT;
+    const timeoutSec = timeoutRaw !== undefined && timeoutRaw.trim().length > 0
+        ? Number.parseFloat(timeoutRaw)
+        : undefined;
+
+    const previewLines = Number.parseInt(
+        typeof parsed.values["preview-lines"] === "string"
+            ? parsed.values["preview-lines"]
+            : env.PLURNK_CLIENT_PREVIEW_LINES,
+        10,
+    );
+    const historyEntries = Number.parseInt(
+        typeof parsed.values["history-entries"] === "string"
+            ? parsed.values["history-entries"]
+            : env.PLURNK_CLIENT_HISTORY_ENTRIES,
+        10,
+    );
+    const mermaidTimeoutMs = Number.parseInt(
+        typeof parsed.values["mermaid-timeout-ms"] === "string"
+            ? parsed.values["mermaid-timeout-ms"]
+            : env.PLURNK_CLIENT_MERMAID_TIMEOUT_MS,
+        10,
+    );
+    const color = typeof parsed.values.color === "string"
+        ? parsed.values.color
+        : env.PLURNK_CLIENT_COLOR;
+
+    const common: CliCommonOptions = {
+        url,
+        explicitAcpUrl,
+        host,
+        port,
+        credential: new Credential(env),
+        env,
+        cwd: process.cwd(),
+        ...(workspace !== undefined && workspace.length > 0 ? { workspace } : {}),
+        ...(sessionId !== undefined && sessionId.length > 0 ? { sessionId } : {}),
+        tuiWorker,
+        ...(model !== undefined && model.length > 0 ? { model } : {}),
+        ...(effort !== undefined && effort.length > 0 ? { effort } : {}),
+        ...(projectRoot !== undefined ? { projectRoot } : {}),
+        ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
+        ...(Object.keys(workerEnv).length > 0 ? { workerEnv } : {}),
+        ...(maxTurns !== undefined && Number.isInteger(maxTurns) ? { maxTurns } : {}),
+        ...(timeoutSec !== undefined && Number.isFinite(timeoutSec) ? { timeoutSec } : {}),
+        autostart,
+        daemonTimeoutMs,
+        oauthTimeoutMs,
+        cancelGraceMs,
+        ...(serviceBin !== undefined && serviceBin.length > 0 ? { serviceBin } : {}),
+        yolo,
+        auto,
+        bell,
+        json,
+        statusStream,
+        ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
+        previewLines,
+        historyEntries,
+        mermaidTimeoutMs,
+        color,
     };
 
     try {
-        // {§cli-sign-in} — `plurnk login` signs in through the browser now and keeps the grant;
-        // `plurnk logout` revokes the kept grant at the daemon and forgets it.
-        if (subcommand === "login" || subcommand === "logout") {
-            if (positionals.length > 1) throw new ProblemError(clientSubcommandUnknownVerb(`${subcommand} ${positionals.slice(1).join(" ")}`));
-            if (!(credential instanceof SignInCredential)) {
-                process.stderr.write("The operator's secret is at hand (PLURNK_SECRET, or the daemon's minted file); there is nothing to sign in to.\n");
-                process.exitCode = 0;
+        let exitCode = 0;
+
+        if (familyName !== undefined) {
+            exitCode = await runCliFamily(familyName, familyArgs, common);
+        } else if (first === "session") {
+            const sub = positionals[1] ?? "list";
+            const targetId = positionals[2] ?? common.sessionId;
+            switch (sub) {
+                case "list":
+                    exitCode = await runCliListSessions(common);
+                    break;
+                case "new":
+                    exitCode = await runCliNewSession(common);
+                    break;
+                case "resume":
+                    if (!targetId) {
+                        process.stderr.write("plurnk session resume requires a <sessionId>.\n");
+                        process.exitCode = 64;
+                        return;
+                    }
+                    exitCode = await runCliResumeSession(targetId, common);
+                    break;
+                case "fork":
+                    if (!targetId) {
+                        process.stderr.write("plurnk session fork requires a <sessionId>.\n");
+                        process.exitCode = 64;
+                        return;
+                    }
+                    exitCode = await runCliForkSession(targetId, common);
+                    break;
+                case "delete":
+                    if (!targetId) {
+                        process.stderr.write("plurnk session delete requires a <sessionId>.\n");
+                        process.exitCode = 64;
+                        return;
+                    }
+                    exitCode = await runCliDeleteSession(targetId, common);
+                    break;
+                default:
+                    process.stderr.write(`Unknown session subcommand: ${sub}\n`);
+                    process.exitCode = 64;
+                    return;
+            }
+        } else if (first === "config") {
+            exitCode = await runCliConfig(positionals[1], positionals[2], common);
+        } else if (first === "models") {
+            const limitNum = typeof parsed.values.limit === "string"
+                ? Number.parseInt(parsed.values.limit, 10)
+                : undefined;
+            const offsetNum = typeof parsed.values.offset === "string"
+                ? Number.parseInt(parsed.values.offset, 10)
+                : undefined;
+            exitCode = await runCliModels(
+                positionals.slice(1),
+                {
+                    ...(typeof parsed.values.provider === "string" ? { provider: parsed.values.provider } : {}),
+                    ...(parsed.values.all === true ? { all: true } : {}),
+                    ...(offsetNum !== undefined && Number.isInteger(offsetNum) ? { offset: offsetNum } : {}),
+                    ...(limitNum !== undefined && Number.isInteger(limitNum) ? { limit: limitNum } : {}),
+                },
+                common,
+            );
+        } else if (first === "workspace") {
+            exitCode = await runCliWorkspace(positionals[1], positionals[2], positionals[3], common);
+        } else if (first === "log" && positionals[1] === "read") {
+            const loopNum = typeof parsed.values.loop === "string" ? Number.parseInt(parsed.values.loop, 10) : undefined;
+            const turnNum = typeof parsed.values.turn === "string" ? Number.parseInt(parsed.values.turn, 10) : undefined;
+            const sinceNum = typeof parsed.values.since === "string" ? Number.parseInt(parsed.values.since, 10) : undefined;
+            const limitNum = typeof parsed.values.limit === "string" ? Number.parseInt(parsed.values.limit, 10) : undefined;
+            exitCode = await runCliLogRead(
+                {
+                    ...(loopNum !== undefined && Number.isInteger(loopNum) ? { loopId: loopNum } : {}),
+                    ...(turnNum !== undefined && Number.isInteger(turnNum) ? { turnId: turnNum } : {}),
+                    ...(sinceNum !== undefined && Number.isInteger(sinceNum) ? { sinceId: sinceNum } : {}),
+                    ...(limitNum !== undefined && Number.isInteger(limitNum) ? { limit: limitNum } : {}),
+                },
+                common,
+            );
+        } else if (first === "read") {
+            if (!positionals[1]) {
+                process.stderr.write("plurnk read requires a <loop>/<turn>/<seq> coordinate.\n");
+                process.exitCode = 64;
                 return;
             }
-            if (subcommand === "login") {
-                const signIn = new SignInCredential({ write: (text) => { process.stderr.write(text); }, interactive: true, timeoutMs: Knobs.count("PLURNK_CLIENT_OAUTH_TIMEOUT_MS") });
-                const issuer = await signIn.login(acpUrl);
-                process.stderr.write(issuer === null ? `The daemon at ${acpUrl} authenticates nothing; no sign-in is needed.\n` : `Signed in to ${issuer}.\n`);
+            exitCode = await runCliReadCoord(positionals[1], common);
+        } else if (first === "effort") {
+            exitCode = await runCliConfig("thought_level", positionals[1], common);
+        } else if (first === "capabilities") {
+            exitCode = await runCliCapabilities(positionals[1], common);
+        } else if (first === "script") {
+            if (!positionals[1]) {
+                process.stderr.write("plurnk script requires a <file.plk> path.\n");
+                process.exitCode = 64;
+                return;
+            }
+            exitCode = await runCliScript(positionals[1], common);
+        } else {
+            const positionalText = positionals.join(" ");
+            const stdinText = !process.stdin.isTTY ? (await readStdinAll()).trim() : "";
+            const promptText = positionalText.length > 0 && stdinText.length > 0
+                ? `${positionalText}\n\n${stdinText}`
+                : positionalText.length > 0
+                    ? positionalText
+                    : stdinText;
+
+            if (promptText.length === 0) {
+                if (process.stdin.isTTY) {
+                    exitCode = await runInteractiveSession(common);
+                } else {
+                    process.stdout.write(USAGE);
+                    return;
+                }
             } else {
-                const issuer = await credential.logout(acpUrl);
-                process.stderr.write(issuer === null ? `No grant is kept for ${acpUrl}.\n` : `Signed out of ${issuer}.\n`);
+                exitCode = await runCliPrompt(promptText, common);
             }
-            process.exitCode = 0;
-            return;
         }
 
-        // `plurnk script foo.plk` — feed a .plk file to op.parse over the action
-        // surface. The client never parses the file; the module owns the grammar.
-        if (subcommand === "script") {
-            const filePath = positionals[1];
-            if (filePath === undefined) {
-                throw new ProblemError(clientSubcommandMissingArgument("plurnk script", "<file.plk>"));
-            }
-            if (positionals.length > 2) {
-                throw new ProblemError(clientSubcommandUnknownVerb(`script ${positionals.slice(2).join(" ")}`));
-            }
-            const text = await readFile(resolve(filePath), "utf8");   // fail-hard on a missing file
-            const workspace = await openWorkspace();
-            const exitCode = await runScriptViaAcp(target, text, {
-                threadId: workerThreadId({ workspaceId: workspace.id, worker: workerName }),
-                yolo,
-                auto,
-                json,
-            });
+        if (exitCode !== 0) {
             process.exitCode = exitCode;
-            return;
         }
-
-        if (isSubcommand) {
-            const exitCode = await runSubcommand(callerFor, positionals, {
-                json, workerName, values, signal: lifetime.signal,
-                workspace: () => {
-                    if (configuredWorkspace !== undefined) return { name: configuredWorkspace };
-                    if (projectRoot === null) throw new Error("a folderless invocation must select its workspace by name");
-                    return { projectRoot };
-                },
-            });
-            process.exitCode = exitCode;
-            return;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (common.json) {
+            process.stdout.write(`${JSON.stringify({ problem: { detail: message } }, null, 2)}\n`);
+        } else {
+            process.stderr.write(`plurnk: ${message}\n`);
         }
-
-        // Reaching here is a dispatcher bug: prompts + the TUI ride the ACP
-        // branches above; script + subcommands returned above. Fail hard.
-        throw new Error("dispatcher fell through every ACP+ path — unreachable");
-    } catch (cause) {
-        // json mode: a structured error document on stdout (valid JSON even on
-        // failure), paired with the right exit code. Text mode narrates to stderr.
-        if (json) {
-            const problem = cause instanceof ProblemError ? cause.problem : clientRuntimeError(cause);
-            const code = cause instanceof ProblemError ? cause.exitCode : 1;
-            dieJson(code, problem);
-        }
-        if (cause instanceof ProblemError) {
-            dieWith(cause.exitCode, cause.problem);
-        }
-        // Nothing listening at all (subcommands, the TUI boot) gets the onboarding
-        // block; any other genuine throw is the generic runtime fallback.
-        if (isUnreachable(cause)) dieWith(1, clientConnectionRefused(acpUrl, cause));
-        dieWith(1, clientRuntimeError(cause));
+        process.exitCode = 1;
     }
 };

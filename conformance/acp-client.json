@@ -4,1171 +4,371 @@
   "actions": {
     "ping": {
       "posture": "generic",
-      "evidence": [
-        "src/acp.test.ts — arbitrary action round-trip"
-      ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure"
-      ]
+      "evidence": ["src/cli.test.ts — ACP v2 client action round-trip"],
+      "dimensions": ["projection", "success", "failure"]
     },
     "discover": {
       "posture": "generic",
-      "evidence": [
-        "test/intg/acp-conformance.test.ts — live discovery"
-      ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure"
-      ]
-    },
-    "providers.list": {
-      "posture": "native",
-      "evidence": [
-        "src/dispatcher.test.ts — provider directory"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["test/intg/cli.test.ts — live discovery"],
+      "dimensions": ["projection", "success", "failure"]
     },
     "models.list": {
       "posture": "native",
-      "evidence": [
-        "src/subcommands.test.ts — model catalog"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — model catalog"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.list": {
       "posture": "native",
-      "evidence": [
-        "src/subcommands.test.ts — workspace listing"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — workspace listing"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.create": {
       "posture": "native",
       "evidence": [
-        "src/acp.test.ts — workspace creation",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls",
+        "src/cli.test.ts — workspace creation",
         "scripts/test-composition.mjs — packed client and installed candidate service"
       ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability",
-        "composition"
-      ]
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.attach": {
       "posture": "native",
-      "evidence": [
-        "test/intg/workspace-selection.test.ts — name and folder inspection resolve an existing ID without creating state"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — workspace attachment"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.workers": {
       "posture": "native",
-      "evidence": [
-        "src/subcommands.test.ts — worker listing"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — worker listing"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "log.read": {
       "posture": "native",
       "evidence": [
-        "src/subcommands.test.ts — log reading",
-        "src/transport.test.ts — bounded sync recovery preserves unseen rows without inventing a loop outcome",
+        "src/cli.test.ts — log reading",
         "scripts/test-composition.mjs — packed client and installed candidate service"
       ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
-    },
-    "loop.inject": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — loop injection",
-        "test/tui/injection-boundary.test.ts — real daemon admission/termination orderings and completed-successor observation"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "lifecycle"
-      ]
-    },
-    "loop.cancel": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — loop cancellation"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "lifecycle"
-      ]
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.prompts": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — prompt history"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — prompt history"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.loops": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — /loops and /loop",
-        "test/tui/loops.test.ts — loops listed and one printed whole against the daemon"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — worker loops"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.share": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — workspace share",
-        "src/share.test.ts — share folder and output",
-        "test/intg/share.test.ts — the bound workspace's share over the wire"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — workspace share"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.rename": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — workspace rename",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
-    },
-    "workspace.hidden.set": {
-      "posture": "generic",
-      "evidence": [
-        "src/acp.test.ts — arbitrary action round-trip"
-      ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure"
-      ]
-    },
-    "worker.hidden.set": {
-      "posture": "generic",
-      "evidence": [
-        "src/acp.test.ts — arbitrary action round-trip"
-      ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure"
-      ]
+      "evidence": ["src/cli.test.ts — workspace rename"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.rollback": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — workspace rollback",
-        "src/rollback.test.ts — rollback report output"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — workspace rollback"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "entry.read": {
       "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — streamed entry reading",
-        "test/intg/exec.test.ts — one-shot ! command output"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — entry reading"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "op.exec": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — shell dispatch",
-        "test/intg/exec.test.ts — one-shot ! command"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "lifecycle"
-      ]
+      "evidence": ["src/cli.test.ts — shell dispatch"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]
     },
     "op.parse": {
       "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — PLURNK dispatch"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "lifecycle"
-      ]
-    },
-    "run.fork": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — worker fork",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
-    },
-    "worker.model.get": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — worker model policy",
-        "scripts/test-composition.mjs — packed client and installed candidate service"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
-    },
-    "worker.model.set": {
-      "posture": "native",
-      "evidence": [
-        "test/intg/model-selection.test.ts — durable model selection",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls",
-        "scripts/test-composition.mjs — packed client and installed candidate service"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability",
-        "composition"
-      ]
-    },
-    "worker.child.set": {
-      "posture": "native",
-      "evidence": [
-        "src/tui.test.ts — child model policy",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
-    },
-    "worker.effort.get": {
-      "posture": "native",
-      "evidence": [
-        "src/effort.test.ts — effort"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
-    },
-    "worker.effort.set": {
-      "posture": "native",
-      "evidence": [
-        "src/effort.test.ts — effort",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — PLURNK dispatch"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]
     },
     "workspace.capabilities.get": {
       "posture": "generic",
       "evidence": [
-        "src/acp.test.ts — arbitrary action round-trip",
+        "src/cli.test.ts — capability policy read",
         "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
       ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure",
-        "composition"
-      ]
+      "dimensions": ["projection", "success", "failure", "composition"]
     },
     "workspace.capabilities.set": {
       "posture": "generic",
       "evidence": [
-        "src/acp.test.ts — arbitrary action round-trip",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls",
+        "src/cli.test.ts — capability policy update",
         "../plurnk-service/scripts/test-client-conformance.mjs — same-daemon cross-client composition"
       ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure",
-        "durability",
-        "composition"
-      ]
+      "dimensions": ["projection", "success", "failure", "durability", "composition"]
     },
     "workspace.skills.list": {
       "posture": "native",
-      "evidence": [
-        "src/skills.test.ts — Agent Skills management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.skills.discover": {
       "posture": "native",
-      "evidence": [
-        "src/skills.test.ts — Agent Skills management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.skills.add": {
       "posture": "native",
-      "evidence": [
-        "src/skills.test.ts — Agent Skills management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.replace": {
       "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.skills.enable": {
       "posture": "native",
-      "evidence": [
-        "src/skills.test.ts — Agent Skills management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.disable": {
       "posture": "native",
-      "evidence": [
-        "src/skills.test.ts — Agent Skills management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.remove": {
       "posture": "native",
-      "evidence": [
-        "src/skills.test.ts — Agent Skills management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — Agent Skills management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.a2a.list": {
       "posture": "native",
-      "evidence": [
-        "src/a2a.test.ts — outbound agents management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.a2a.discover": {
       "posture": "native",
-      "evidence": [
-        "src/a2a.test.ts — outbound agents management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.a2a.add": {
       "posture": "native",
-      "evidence": [
-        "src/a2a.test.ts — outbound agents management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.a2a.replace": {
       "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.a2a.enable": {
       "posture": "native",
-      "evidence": [
-        "src/a2a.test.ts — outbound agents management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.a2a.disable": {
       "posture": "native",
-      "evidence": [
-        "src/a2a.test.ts — outbound agents management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.a2a.remove": {
       "posture": "native",
-      "evidence": [
-        "src/a2a.test.ts — outbound agents management",
-        "test/tui/functionality.test.ts — built-client Skills and agents dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — outbound agents management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.list": {
       "posture": "native",
-      "evidence": [
-        "src/members.test.ts — file members management",
-        "test/tui/verbs.test.ts — built-client members dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.members.discover": {
       "posture": "native",
-      "evidence": [
-        "src/members.test.ts — file members management",
-        "test/tui/verbs.test.ts — built-client members dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.members.add": {
       "posture": "native",
-      "evidence": [
-        "src/members.test.ts — file members management",
-        "test/tui/verbs.test.ts — built-client members dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.enable": {
       "posture": "native",
-      "evidence": [
-        "src/members.test.ts — file members management",
-        "test/tui/verbs.test.ts — built-client members dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.disable": {
       "posture": "native",
-      "evidence": [
-        "src/members.test.ts — file members management",
-        "test/tui/verbs.test.ts — built-client members dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.remove": {
       "posture": "native",
-      "evidence": [
-        "src/members.test.ts — file members management",
-        "test/tui/verbs.test.ts — built-client members dogfood",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — file members management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.env.list": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.discover": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.add": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.replace": {
       "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.enable": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.disable": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.remove": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.list": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.discover": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.add": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.replace": {
       "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.enable": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.disable": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "worker.env.remove": {
       "posture": "native",
-      "evidence": [
-        "src/env.test.ts — environment management",
-        "test/tui/verbs.test.ts — built-client env dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — environment management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.mcp.list": {
       "posture": "native",
       "evidence": [
-        "src/mcp.test.ts — MCP management",
-        "test/tui/mcp.test.ts — built-client MCP dogfood",
+        "src/cli.test.ts — MCP management",
         "../plurnk-service/scripts/test-client-conformance.mjs — installed TUI journey"
       ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.mcp.discover": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — MCP management",
-        "test/tui/command-discovery.test.ts — bound daemon action availability",
-        "test/tui/mcp.test.ts — built-client MCP dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.mcp.add": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — MCP management",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls",
-        "test/tui/mcp.test.ts — built-client MCP dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.mcp.replace": {
       "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals",
-        "test/tui/mcp.test.ts — built-client disabled replacement and refusal preserve the old server"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.mcp.enable": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — MCP management",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.mcp.disable": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — MCP management",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.mcp.remove": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — MCP management",
-        "test/intg/durable-controls.test.ts — separate-connection durable controls",
-        "test/tui/mcp.test.ts — built-client MCP dogfood"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability",
-        "composition"
-      ]
+      "evidence": ["src/cli.test.ts — MCP management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.schedule.list": {
       "posture": "native",
-      "evidence": [
-        "src/schedule.test.ts — scheduled messages management"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.discover": {
       "posture": "native",
-      "evidence": [
-        "src/schedule.test.ts — scheduled messages management"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.add": {
       "posture": "native",
-      "evidence": [
-        "src/schedule.test.ts — scheduled messages management"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.replace": {
       "posture": "native",
-      "evidence": [
-        "src/functionality.test.ts — complete replacement payloads, disabled outcomes and exact refusals"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.enable": {
       "posture": "native",
-      "evidence": [
-        "src/schedule.test.ts — scheduled messages management"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.disable": {
       "posture": "native",
-      "evidence": [
-        "src/schedule.test.ts — scheduled messages management"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.remove": {
       "posture": "native",
-      "evidence": [
-        "src/schedule.test.ts — scheduled messages management"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation"
-      ]
+      "evidence": ["src/cli.test.ts — scheduled messages management"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.mcp.oauth.begin": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — URL-only authentication handoff",
-        "src/oauth.test.ts — callback binding precedes authorization",
-        "test/intg/mcp-oauth.test.ts — built client URL-only setup and protected tool invocation"
-      ],
+      "evidence": ["src/cli.test.ts — URL-only authentication handoff"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.mcp.oauth.complete": {
       "posture": "native",
-      "evidence": [
-        "src/mcp.test.ts — MCP authorization",
-        "src/oauth.test.ts — loopback callback guards and lifetime",
-        "test/intg/mcp-oauth.test.ts — built CLI browser redirect and real daemon token exchange",
-        "../plurnk-service/plurnk-mcp/src/Module.test.ts — OAuth completion persistence and restart behavior"
-      ],
-      "dimensions": [
-        "admission",
-        "projection",
-        "success",
-        "failure",
-        "presentation",
-        "durability"
-      ]
+      "evidence": ["src/cli.test.ts — MCP authorization"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.mcp.complete": {
       "posture": "generic",
-      "evidence": [
-        "src/acp.test.ts — arbitrary action round-trip"
-      ],
-      "dimensions": [
-        "projection",
-        "success",
-        "failure"
-      ]
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["projection", "success", "failure"]
     }
   },
   "notifications": {
-    "workspace/preparation": {
+    "session/update": {
       "posture": "native",
       "evidence": [
-        "src/status.test.ts — preparation status and elapsed time",
-        "test/tui/live-status.test.ts — cold MCP preparation in CLI and TUI"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation",
-        "composition"
-      ]
-    },
-    "log/entry": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — log entry rendering",
-        "src/transport.test.ts — shared lifecycle corpus",
+        "src/cli.test.ts — standard ACP v2 session/update projection",
+        "test/intg/cli.test.ts — end-to-end ACP v2 session lifecycle",
         "scripts/test-composition.mjs — packed client and installed candidate service"
       ],
       "dimensions": [
@@ -1178,136 +378,6 @@
         "lifecycle",
         "presentation",
         "composition"
-      ]
-    },
-    "loop/terminated": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — terminal truth",
-        "src/transport.test.ts — shared lifecycle corpus",
-        "scripts/test-composition.mjs — packed client and installed candidate service"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation",
-        "composition"
-      ]
-    },
-    "loop/proposal": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — proposal interrupt and resume",
-        "src/transport.test.ts — shared lifecycle corpus"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "loop/interaction": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — interaction interrupt and resume",
-        "src/transport.test.ts — shared lifecycle corpus"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "notice/event": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — Notice delivery",
-        "src/transport.test.ts — shared lifecycle corpus"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "reasoning/event": {
-      "posture": "native",
-      "evidence": [
-        "src/reasoning-events.test.ts — ordered live lifecycle",
-        "src/acp_cli.test.ts — streaming stderr presentation",
-        "src/transport.test.ts — shared lifecycle corpus"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "outside/event": {
-      "posture": "native",
-      "evidence": [
-        "src/lifecycle-render.test.ts — rendered as a model NOTE's block, never speech",
-        "src/acp_cli.test.ts — stderr trace, absent from the run record's response",
-        "src/transport.test.ts — un-projected as plurnk.outside, never an entry"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "stream/event": {
-      "posture": "native",
-      "evidence": [
-        "src/stream.test.ts — active stream rendering",
-        "src/transport.test.ts — shared lifecycle corpus"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "stream/concluded": {
-      "posture": "native",
-      "evidence": [
-        "src/stream.test.ts — concluded stream rendering",
-        "src/transport.test.ts — shared lifecycle corpus",
-        "src/acp_cli.test.ts — one-shot ! command settlement"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
-      ]
-    },
-    "loop/packet": {
-      "posture": "native",
-      "evidence": [
-        "src/transport.test.ts — shared lifecycle corpus (status rendering: plurnk#30)"
-      ],
-      "dimensions": [
-        "admission",
-        "framing",
-        "projection",
-        "lifecycle",
-        "presentation"
       ]
     }
   }

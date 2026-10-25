@@ -15,10 +15,11 @@ const OWNED = /^PLURNK_CLIENT_[A-Z0-9_]+$/u;
 // Keys the client names and does not own. The daemon's address is shared with it, so the package
 // both depend on declares it and the client folds that panel beneath its own: a shared key has a
 // shared owner, and nobody holds anybody else's default.
-const SHARED = ["PLURNK_HOST", "PLURNK_PORT", "PLURNK_ACP_URL"];
+const SHARED = ["PLURNK_HOST", "PLURNK_PORT"];
 const FOREIGN = new Map([
     ...SHARED.map((key) => [key, "@plurnk/plurnk-contracts — the daemon's address, folded into the client's floor"]),
     // Joins SHARED when the contracts release that declares it on the shared panel is the one installed here.
+    ["PLURNK_ACP_URL", "@plurnk/plurnk-contracts — the daemon's ACP URL on the shared panel"],
     ["PLURNK_SECRET", "@plurnk/plurnk-contracts — the operator's client secret on the shared panel; unset, the client reads the daemon's minted file"],
     ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, beside which the client reads the secret it minted"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
@@ -63,12 +64,12 @@ for (const { code } of sources) {
     for (const match of code.matchAll(/\b(PLURNK_[A-Z0-9_]*[A-Z0-9])(?:_<[A-Z0-9_]+>|\b)/gu)) read.add(match[1]);
 }
 
-test("[§cli-env-defaults] the client's panel declares only its own prefix: one owner per key", () => {
+test("[{§cli-env-defaults}] the client's panel declares only its own prefix: one owner per key", () => {
     const strays = [...declared].filter((key) => !OWNED.test(key));
     assert.deepEqual(strays, [], `declared outside PLURNK_CLIENT_*: ${strays.join(", ")}`);
 });
 
-test("[§cli-env-defaults] every key the client names is declared or has a stated owner, and every declaration is read", () => {
+test("[{§cli-env-defaults}] every key the client names is declared or has a stated owner, and every declaration is read", () => {
     const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key)).toSorted();
     assert.deepEqual(undeclared, [], `named by src but declared on no panel the client knows: ${undeclared.join(", ")}`);
     const dead = [...declared].filter((key) => !read.has(key)).toSorted();
@@ -77,7 +78,7 @@ test("[§cli-env-defaults] every key the client names is declared or has a state
     assert.deepEqual(unread, [], `listed as a foreign key but no longer named: ${unread.join(", ")}`);
 });
 
-test("[§cli-env-defaults] a knob read never carries a value of its own", () => {
+test("[{§cli-env-defaults}] a knob read never carries a value of its own", () => {
     const found = new Map();
     for (const { name, code } of sources) {
         const count = [...code.matchAll(/(?:\.PLURNK_[A-Z0-9_]+|\[\s*["'`]PLURNK_[A-Z0-9_]+["'`]\s*\])\s*(?:\?\?|\|\|)\s*(?:["'`][^"'`]|-?\d|true\b|false\b)/gu)].length;
@@ -86,7 +87,7 @@ test("[§cli-env-defaults] a knob read never carries a value of its own", () => 
     assert.deepEqual([...found], [], "a default beside a read is a second home for a choice");
 });
 
-test("[§cli-env-defaults] a flag is a knob's spelling: every option mirrors one, or says why it is an argument", () => {
+test("[{§cli-env-defaults}] a flag is a knob's spelling: every option mirrors one, or says why it is an argument", () => {
     const options = Object.keys(CLIENT_OPTIONS);
     assert.ok(options.length > 20, `declared ${options.length} options`);
     const flagOf = (knob) => knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-");
@@ -101,7 +102,7 @@ test("[§cli-env-defaults] a flag is a knob's spelling: every option mirrors one
     assert.deepEqual(both, [], `an option cannot be both a knob's flag and an argument: ${both.join(", ")}`);
 });
 
-test("[§cli-env-defaults] a key shared with the daemon is declared by the package both depend on, and the floor folds it", async () => {
+test("[{§cli-env-defaults}] a key shared with the daemon is declared by the package both depend on, and the floor folds it", async () => {
     const { SHARED_DEFAULTS_PATH, parseDefaults } = await import("../src/envdefaults.ts");
     const shared = readFileSync(SHARED_DEFAULTS_PATH, "utf8");
     const declaredThere = new Set([...shared.matchAll(/^(?:# )?([A-Z][A-Z0-9_]*)=/gmu)].map((match) => match[1]));

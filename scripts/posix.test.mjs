@@ -10,20 +10,20 @@ const root = resolve(import.meta.dirname, "..");
 const bash = resolve(root, "completions/plurnk.bash");
 const checks = checkPosix();
 
-test("[§cli-posix-artifacts] the shipped manual has a dated section-one title", async () => {
+test("[{§cli-posix-artifacts}] the shipped manual has a dated section-one title", async () => {
     const manual = await readFile(resolve(root, "man/plurnk.1"), "utf8");
     assert.match(manual, /^\.TH PLURNK 1 "\d{4}-\d{2}-\d{2}" "plurnk [^"]+" "User Commands"\n/u);
 });
 
 for (const result of checks) {
-    test(`[§cli-posix-artifacts] generated artifacts pass ${result.command}`, {
+    test(`[{§cli-posix-artifacts}] generated artifacts pass ${result.command}`, {
         skip: result.missing ? `${result.command} is not installed; npm run test:posix requires every checker` : false,
     }, () => {
         assert.equal(result.status, 0, result.output);
     });
 }
 
-test("[§cli-posix-artifacts] the explicit native check fails if checkers are unavailable", () => {
+test("[{§cli-posix-artifacts}] the explicit native check fails if checkers are unavailable", () => {
     const result = spawnSync(process.execPath, [resolve(root, "scripts/check-posix.mjs")], {
         env: { ...process.env, PATH: "" }, encoding: "utf8",
     });
@@ -31,7 +31,7 @@ test("[§cli-posix-artifacts] the explicit native check fails if checkers are un
     for (const { command } of checks) assert.ok(result.stdout.includes(`${command}: missing executable`));
 });
 
-test("[§cli-posix-artifacts] bash completion preserves spaces and glob characters in filenames", {
+test("[{§cli-posix-artifacts}] bash completion preserves spaces and glob characters in filenames", {
     skip: checks.find(({ command }) => command === "bash").missing ? "bash is not installed" : false,
 }, async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-completion-"));

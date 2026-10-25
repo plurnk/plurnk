@@ -1,36 +1,87 @@
-// The client's self-serve env floor ({§cli-env-defaults}): the packaged
-// .env.defaults is both the documentation and the defaults for PLURNK_CLIENT_*.
-// The client loads its own file SET-IF-UNSET beneath operator configuration
-// (shell > env-files > this floor). A commented knob is documentation only.
+// Cascading environment loader for @plurnk/plurnk ({§cli-env-defaults}, {§cli-configuration-source}).
 
-import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const DEFAULTS_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../.env.defaults");
-// The keys the daemon and every client share — the daemon's address — belong to the package both
-// sides depend on, which declares them once. The client folds that panel beneath its own, so it
-// holds no default of the daemon's and its own panel stays its own prefix.
-export const SHARED_DEFAULTS_PATH = resolve(dirname(fileURLToPath(import.meta.resolve("@plurnk/plurnk-contracts/package.json"))), ".env.defaults");
+const require = createRequire(import.meta.url);
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const parseDefaults = (text: string): Record<string, string> => {
+export const SHARED_DEFAULTS_PATH = resolve(
+    dirname(require.resolve("@plurnk/plurnk-contracts/package.json")),
+    ".env.defaults",
+);
+
+export const CLIENT_DEFAULTS_PATH = resolve(ROOT, ".env.defaults");
+
+export const parseDefaults = (content: string): Record<string, string> => {
     const out: Record<string, string> = {};
-    for (const line of text.split("\n")) {
-        const m = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim());
-        if (m !== null) out[m[1]] = m[2];
+    for (const line of content.split(/\r?\n/u)) {
+        const trimmed = line.trim();
+        if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq <= 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let val = trimmed.slice(eq + 1).trim();
+        if (
+            (val.startsWith('"') && val.endsWith('"')) ||
+            (val.startsWith("'") && val.endsWith("'"))
+        ) {
+            val = val.slice(1, -1);
+        }
+        out[key] = val;
     }
     return out;
 };
 
-export const applyFloor = (defaults: Record<string, string>, env: Record<string, string | undefined> = process.env): void => {
-    for (const [key, value] of Object.entries(defaults)) {
-        if (env[key] === undefined) env[key] = value;
-    }
-};
+export interface CascadeFileSpec {
+    readonly path: string;
+    readonly required: boolean;
+}
 
-// Boot-time entry: read the shipped file (fail-hard — a package without its own
-// floor file is a broken install) and floor the process env.
-export const loadFloor = (): void => {
-    applyFloor(parseDefaults(readFileSync(DEFAULTS_PATH, "utf8")));
-    applyFloor(parseDefaults(readFileSync(SHARED_DEFAULTS_PATH, "utf8")));
+export const assembleClientEnv = (
+    shellEnv: NodeJS.ProcessEnv = process.env,
+    explicitFiles: readonly CascadeFileSpec[] = [],
+): Record<string, string> => {
+    const sharedFloor = existsSync(SHARED_DEFAULTS_PATH)
+        ? parseDefaults(readFileSync(SHARED_DEFAULTS_PATH, "utf8"))
+        : {};
+    const clientFloor = existsSync(CLIENT_DEFAULTS_PATH)
+        ? parseDefaults(readFileSync(CLIENT_DEFAULTS_PATH, "utf8"))
+        : {};
+
+    const xdgConfig = shellEnv.XDG_CONFIG_HOME ?? join(shellEnv.HOME ?? homedir(), ".config");
+    const operatorEnvPath = join(xdgConfig, "plurnk", ".env");
+    const operatorEnv = existsSync(operatorEnvPath)
+        ? parseDefaults(readFileSync(operatorEnvPath, "utf8"))
+        : {};
+
+    const fileLayer: Record<string, string> = {};
+    for (const spec of explicitFiles) {
+        const resolved = resolve(spec.path);
+        if (!existsSync(resolved)) {
+            if (spec.required) {
+                throw new Error(`Environment file not found: ${spec.path}`);
+            }
+            continue;
+        }
+        Object.assign(fileLayer, parseDefaults(readFileSync(resolved, "utf8")));
+    }
+
+    const shellLayer: Record<string, string> = {};
+    for (const [k, v] of Object.entries(shellEnv)) {
+        if (typeof v === "string") {
+            shellLayer[k] = v;
+        }
+    }
+
+    return {
+        ...sharedFloor,
+        ...clientFloor,
+        ...operatorEnv,
+        ...fileLayer,
+        ...shellLayer,
+    };
 };

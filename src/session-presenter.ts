@@ -119,7 +119,6 @@ export type PresentationFrame =
           readonly target: string;
           readonly rawData: string;
           readonly decodedText: string;
-          readonly parkedWaitHint?: string;
       }
     | {
           readonly kind: "subagent";
@@ -139,7 +138,6 @@ export type PresentationFrame =
           readonly kind: "reply_chunk";
           readonly messageId?: string | null;
           readonly text: string;
-          readonly parkedWaitHint?: string;
       }
     | {
           readonly kind: "notice";
@@ -193,7 +191,6 @@ export class SessionPresenter {
     #reasoningBuffer = "";
     #reasoningLines: string[] = [];
     #lastStreamTarget = "";
-    #parkedInWait = false;
     #turnStartedAt = Date.now();
 
     constructor(options: SessionPresenterOptions = {}) {
@@ -415,7 +412,6 @@ export class SessionPresenter {
                 target,
                 rawData: update.data,
                 decodedText,
-                ...(this.#parkedInWait && target.length > 0 ? { parkedWaitHint: `updates in ${target}` } : {}),
             });
             return frames;
         }
@@ -450,24 +446,39 @@ export class SessionPresenter {
         if (SessionUpdate.isAgentMessageChunk(update)) {
             this.#retireReasoning(frames);
             const text = contentBlockToText(update.content);
-            const metaOp = (update._meta as { plurnk?: { op?: string } } | undefined)?.plurnk?.op;
-            let parkedWaitHint: string | undefined;
-            if (metaOp === "WAIT") {
-                this.#parkedInWait = true;
-                if (this.#lastStreamTarget.length > 0) {
-                    parkedWaitHint = `updates in ${this.#lastStreamTarget}`;
-                }
-            }
             frames.push({
                 kind: "reply_chunk",
                 messageId: update.messageId,
                 text,
-                ...(parkedWaitHint !== undefined ? { parkedWaitHint } : {}),
             });
             return frames;
         }
 
         if (SessionUpdate.isNotice(update)) {
+            const rawNotice = (update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined)?.plurnk
+                ?.notice;
+            if (rawNotice?.kind === "loop_status") {
+                if (rawNotice.status === 202) {
+                    this.lifecycle = "parked";
+                    this.waitUntil = typeof rawNotice.waitUntil === "number" ? rawNotice.waitUntil : null;
+                    const waitSuffix =
+                        this.waitUntil !== null
+                            ? `updates in ${Math.max(1, Math.ceil((this.waitUntil - Date.now()) / 1000))}s`
+                            : `updates in ${this.#lastStreamTarget || "stream"}`;
+                    frames.push({
+                        kind: "notice",
+                        severity: update.severity,
+                        title: update.title,
+                        description: update.description,
+                        formatted: `${update.title}: ${waitSuffix}`,
+                    });
+                    return frames;
+                }
+                if (rawNotice.status === 100 || rawNotice.status === 102) {
+                    this.waitUntil = null;
+                    this.lifecycle = rawNotice.status === 102 ? "running" : "queued";
+                }
+            }
             const formatted = `${update.title}${update.description ? `: ${update.description}` : ""}`;
             frames.push({
                 kind: "notice",
@@ -492,7 +503,6 @@ export class SessionPresenter {
             }
             if (update.state === "idle") {
                 this.#retireReasoning(frames);
-                this.#parkedInWait = false;
                 this.#lastStreamTarget = "";
                 const termMeta = (
                     update._meta as

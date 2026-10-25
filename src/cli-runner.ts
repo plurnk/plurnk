@@ -1144,15 +1144,9 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                     break;
                 case "reply_chunk":
                     process.stdout.write(`${frame.text}\n`);
-                    if (frame.parkedWaitHint) {
-                        process.stdout.write(`${frame.parkedWaitHint}\n`);
-                    }
                     break;
                 case "terminal_output":
                     process.stdout.write(`${frame.rawData}\n`);
-                    if (frame.parkedWaitHint) {
-                        process.stdout.write(`${frame.parkedWaitHint}\n`);
-                    }
                     break;
                 case "subagent":
                     break;

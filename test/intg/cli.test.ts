@@ -213,8 +213,10 @@ const createMockAcpServer = async () => {
                         cwd: "/tmp",
                     },
                     options: [
-                        { optionId: "approve", name: "Allow once", kind: "allow_once" },
-                        { optionId: "deny", name: "Reject", kind: "reject_once" },
+                        { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
+                        { optionId: "allow_always", name: "Allow always", kind: "allow_always" },
+                        { optionId: "reject_once", name: "Reject once", kind: "reject_once" },
+                        { optionId: "reject_always", name: "Reject always", kind: "reject_always" },
                     ],
                 });
                 const outcome = perm.outcome.outcome === "selected" ? perm.outcome.optionId : "cancelled";
@@ -330,7 +332,7 @@ test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {�
             },
         );
         assert.equal(yoloRes.status, 0, `stderr was: ${yoloRes.stderr}`);
-        assert.match(yoloRes.stdout, /Permission outcome: approve/);
+        assert.match(yoloRes.stdout, /Permission outcome: allow_once/);
 
         // With PLURNK_CLIENT_YOLO=0 and non-TTY stdin, permission request fails closed (denies/rejects) ({§cli-fail-closed-no-review-channel})
         const noYoloRes = await runCli(

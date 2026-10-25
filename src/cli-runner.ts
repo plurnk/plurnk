@@ -21,6 +21,7 @@ import {
 import { AcpClient } from "./acp-client.ts";
 import { AcpSession, contentBlockToText, type AcpMessageItem } from "./acp-session.ts";
 import Credential from "./credential.ts";
+import { SessionPresenter } from "./session-presenter.ts";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -228,7 +229,21 @@ export const createCliElicitationHandler = () =>
         if (signal.aborted) {
             return { action: "cancel" };
         }
-        if (!CreateElicitationRequest.isForm(request) || !process.stdin.isTTY) {
+        if (!process.stdin.isTTY) {
+            return { action: "decline" };
+        }
+        if (CreateElicitationRequest.isUrl(request)) {
+            process.stderr.write(`\n[elicitation] ${request.message}\n  URL: ${request.url}\n`);
+            const answer = await promptLineWithAbort("  Open/Confirm [y/N]: ", signal);
+            if (answer === null || signal.aborted) {
+                return { action: "cancel" };
+            }
+            const normalized = answer.trim().toLowerCase();
+            return normalized === "y" || normalized === "yes"
+                ? { action: "accept" }
+                : { action: "decline" };
+        }
+        if (!CreateElicitationRequest.isForm(request)) {
             return { action: "decline" };
         }
 
@@ -1103,85 +1118,59 @@ export const runCliFamily = async (
 };
 
 export const runInteractiveSession = async (options: CliCommonOptions): Promise<number> => {
-    let lastLifecycleGlyph = "";
-    let lastStatusLine = "";
-    let lastStreamTarget = "";
-    let parkedInWait = false;
-    let turnStartedAt = Date.now();
-    let wsName = options.workspace ?? "default";
-    let workerName = options.sessionId ?? options.tuiWorker ?? "user";
+    const presenter = new SessionPresenter({
+        workspaceName: options.workspace ?? "default",
+        workerName: options.sessionId ?? options.tuiWorker ?? "user",
+        model: options.model ?? "default",
+        yolo: options.yolo,
+    });
 
     const onUpdate = (update: SessionUpdate): void => {
-        if (SessionUpdate.isAgentThoughtChunk(update)) {
-            process.stdout.write(`${contentBlockToText(update.content)}\n`);
-        } else if (SessionUpdate.isToolCallUpdate(update)) {
-            if (update.title) {
-                process.stdout.write(`${update.title}\n`);
+        const frames = presenter.apply(update);
+        for (const frame of frames) {
+            switch (frame.kind) {
+                case "reasoning_tail":
+                    process.stdout.write(`${frame.deltaText}\n`);
+                    break;
+                case "reasoning_retired":
+                    break;
+                case "tool_call":
+                    if (frame.title) {
+                        process.stdout.write(`${frame.title}\n`);
+                    }
+                    for (const line of frame.contentLines) {
+                        process.stdout.write(`${line}\n`);
+                    }
+                    break;
+                case "reply_chunk":
+                    process.stdout.write(`${frame.text}\n`);
+                    if (frame.parkedWaitHint) {
+                        process.stdout.write(`${frame.parkedWaitHint}\n`);
+                    }
+                    break;
+                case "terminal_output":
+                    process.stdout.write(`${frame.rawData}\n`);
+                    if (frame.parkedWaitHint) {
+                        process.stdout.write(`${frame.parkedWaitHint}\n`);
+                    }
+                    break;
+                case "subagent":
+                    break;
+                case "session_message":
+                    process.stdout.write(`🐜 ${frame.senderSessionId}: ${frame.text}\n`);
+                    break;
+                case "notice":
+                    process.stdout.write(`${frame.formatted}\n`);
+                    break;
+                case "status_bar":
+                    if (frame.terminalDetail) {
+                        process.stdout.write(`${frame.terminalDetail}\n`);
+                    }
+                    process.stdout.write(
+                        `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.workerName}(1/${frame.turns})] `,
+                    );
+                    break;
             }
-            for (const c of update.content ?? []) {
-                if (ToolCallContent.isContent(c)) {
-                    process.stdout.write(`${contentBlockToText(c.content)}\n`);
-                }
-            }
-        } else if (SessionUpdate.isAgentMessageChunk(update)) {
-            process.stdout.write(`${contentBlockToText(update.content)}\n`);
-            const metaOp = (update as unknown as { _meta?: { plurnk?: { op?: string } } })._meta?.plurnk?.op;
-            if (metaOp === "WAIT") {
-                parkedInWait = true;
-                if (lastStreamTarget.length > 0) {
-                    process.stdout.write(`updates in ${lastStreamTarget}\n`);
-                }
-            }
-        } else if (SessionUpdate.isTerminalOutputChunk(update)) {
-            const metaPlurnk = (update as unknown as { _meta?: { plurnk?: { target?: string } } })._meta?.plurnk;
-            const target = metaPlurnk?.target ?? update.terminalId;
-            lastStreamTarget = target;
-            process.stdout.write(`${update.data}\n`);
-            if (parkedInWait && target.length > 0) {
-                process.stdout.write(`updates in ${target}\n`);
-            }
-        } else if (SessionUpdate.isNotice(update)) {
-            process.stdout.write(`${update.title}${update.description ? `: ${update.description}` : ""}\n`);
-        } else if (SessionUpdate.isStateUpdate(update) && update.state === "idle") {
-            parkedInWait = false;
-            lastStreamTarget = "";
-            const termMeta = (update as unknown as {
-                _meta?: {
-                    plurnk?: {
-                        terminal?: {
-                            status?: number;
-                            turns?: number;
-                            problem?: { detail?: string };
-                            usage?: {
-                                accounting?: {
-                                    usage?: { inputTokens?: number; outputTokens?: number };
-                                };
-                            };
-                        };
-                    };
-                };
-            })._meta?.plurnk?.terminal;
-            const status = typeof termMeta?.status === "number"
-                ? termMeta.status
-                : update.stopReason === "error"
-                    ? 500
-                    : 200;
-            if (typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0) {
-                process.stdout.write(`${termMeta.problem.detail}\n`);
-            }
-            const glyph = status >= 400 ? "❌" : "⏹️";
-            const modelLabel = options.model ?? "default";
-            const elapsedMs = Math.max(1, Date.now() - turnStartedAt);
-            const usage = termMeta?.usage?.accounting?.usage;
-            const inTok = typeof usage?.inputTokens === "number" ? usage.inputTokens : 0;
-            const outTok = typeof usage?.outputTokens === "number" ? usage.outputTokens : 0;
-            const statusLine = status >= 400
-                ? `${glyph}  · 🎲 ${modelLabel} · ${elapsedMs}ms`
-                : `${glyph}  · 🎲 ${modelLabel} · ${elapsedMs}ms · ↓${inTok} ↑${outTok}`;
-            lastLifecycleGlyph = glyph;
-            lastStatusLine = statusLine;
-            const turns = typeof termMeta?.turns === "number" && termMeta.turns > 0 ? termMeta.turns : 1;
-            process.stdout.write(`${statusLine}\n[${wsName}/~${workerName}(1/${turns})] `);
         }
     };
 
@@ -1203,19 +1192,12 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
         onUpdate,
     );
 
-    const plurnkMeta = (session.meta as Record<string, unknown> | undefined)?.plurnk as
-        | { workspace?: { name?: string }; workerName?: string }
-        | undefined;
-    if (typeof plurnkMeta?.workspace?.name === "string" && plurnkMeta.workspace.name.length > 0) {
-        wsName = plurnkMeta.workspace.name;
-    }
-    if (typeof plurnkMeta?.workerName === "string" && plurnkMeta.workerName.length > 0) {
-        workerName = plurnkMeta.workerName;
-    } else if (session.sessionId.includes("#")) {
-        workerName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
+    presenter.ingestMeta(session.meta);
+    if (session.sessionId.includes("#") && presenter.workerName === (options.sessionId ?? options.tuiWorker ?? "user")) {
+        presenter.workerName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
     }
 
-    process.stdout.write(`workspace: ${wsName}\n[${wsName}/~${workerName}] `);
+    process.stdout.write(`workspace: ${presenter.workspaceName}\n[${presenter.workspaceName}/~${presenter.workerName}] `);
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
     return await new Promise<number>((resolvePromise) => {
@@ -1247,13 +1229,47 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                 return;
             }
             if (line === "/workers") {
-                const glyphPart = lastLifecycleGlyph.length > 0 ? ` ${lastLifecycleGlyph}` : "";
-                const statusPart = lastStatusLine.length > 0 ? `\n${lastStatusLine}` : "";
-                process.stdout.write(`● ${workerName}${glyphPart}${statusPart}\n`);
+                const glyphPart = presenter.lifecycleGlyph.length > 0 ? ` ${presenter.lifecycleGlyph}` : "";
+                const statusPart = presenter.lastStatusLine.length > 0 ? `\n${presenter.lastStatusLine}` : "";
+                process.stdout.write(`● ${presenter.workerName}${glyphPart}${statusPart}\n`);
                 return;
             }
             if (line.startsWith("/")) {
-                const cmd = line.slice(1).split(/\s+/u)[0]?.toLowerCase() ?? "";
+                const parts = line.slice(1).split(/\s+/u);
+                const cmd = parts[0]?.toLowerCase() ?? "";
+                const arg = parts[1];
+                const configMap: Record<string, string> = {
+                    model: "model",
+                    effort: "thought_level",
+                    child: "spawn_model",
+                    mode: "mode",
+                };
+                const mappedConfigId = configMap[cmd];
+                if (mappedConfigId !== undefined) {
+                    if (arg === undefined || arg.length === 0) {
+                        const opt = session.configOptions.find((o) => o.configId === mappedConfigId);
+                        if (opt !== undefined) {
+                            process.stdout.write(`${formatConfigOption(opt)}\n`);
+                        }
+                        return;
+                    }
+                    void client
+                        .setConfigOption(session.sessionId, mappedConfigId, arg)
+                        .then((res) => {
+                            session.configOptions = [...res.configOptions];
+                            if (mappedConfigId === "model") {
+                                presenter.model = arg;
+                            }
+                            const opt = session.configOptions.find((o) => o.configId === mappedConfigId);
+                            if (opt !== undefined) {
+                                process.stdout.write(`${formatConfigOption(opt)}\n`);
+                            }
+                        })
+                        .catch((err) => {
+                            process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+                        });
+                    return;
+                }
                 if (["mcp", "skills", "a2a", "members", "env", "schedule"].includes(cmd)) {
                     void client
                         .action<Record<string, unknown>>(
@@ -1261,8 +1277,8 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                             {},
                             {
                                 sessionId: session.sessionId,
-                                workspace: wsName,
-                                worker: workerName,
+                                workspace: presenter.workspaceName,
+                                worker: presenter.workerName,
                             },
                         )
                         .then((result) => {
@@ -1285,8 +1301,8 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                                 const commandStr = typeof def.command === "string" ? def.command : typeof def.url === "string" ? def.url : "";
                                 const prov = (d.provenance ?? {}) as Record<string, unknown>;
                                 const source = typeof prov.source === "string" ? `source=${prov.source}` : "";
-                                const parts = [alias, state, type, commandStr, source].filter((p) => p.length > 0);
-                                process.stdout.write(`${parts.join("  ")}\n`);
+                                const rowParts = [alias, state, type, commandStr, source].filter((p) => p.length > 0);
+                                process.stdout.write(`${rowParts.join("  ")}\n`);
                             }
                         })
                         .catch((err) => {
@@ -1296,11 +1312,10 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                 }
             }
 
-            turnStartedAt = Date.now();
+            presenter.markTurnStart();
             void client
                 .prompt(session.sessionId, [{ type: "text", text: line }], {
                     plurnk: {
-                        ...(options.model !== undefined ? { selector: options.model } : {}),
                         ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
                     },
                 })

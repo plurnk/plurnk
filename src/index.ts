@@ -22,6 +22,14 @@ export {
     type MetaRecord,
 } from "./acp-session.ts";
 export {
+    lifecycleGlyphFor,
+    operationGlyphFor,
+    SessionPresenter,
+    type PresentationFrame,
+    type SessionPresenterOptions,
+    type StatusBarModel,
+} from "./session-presenter.ts";
+export {
     createCliElicitationHandler,
     createCliPermissionHandler,
     openCliSession,

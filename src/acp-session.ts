@@ -106,6 +106,7 @@ export interface AcpSubagentState {
     readonly sessionId: string;
     title?: string | null;
     description?: string | null;
+    state?: string | null;
     meta?: MetaRecord;
 }
 
@@ -336,6 +337,9 @@ export class AcpSession {
             }
             if (update.title !== undefined) sub.title = update.title;
             if (update.description !== undefined) sub.description = update.description;
+            if (update.state !== undefined) {
+                sub.state = update.state === null ? null : update.state.state;
+            }
             sub.meta = patchMeta(sub.meta, update._meta);
         } else if (SessionUpdate.isConfigOptionUpdate(update)) {
             this.configOptions = [...update.configOptions];

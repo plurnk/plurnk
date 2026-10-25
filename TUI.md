@@ -1,7 +1,7 @@
 # plurnk terminal design
 
 `plurnk` is a thin terminal client for `plurnk-service`. Both one-shot and
-interactive modes use the daemon's ACP+ HTTP/SSE surface. The daemon owns
+interactive modes use the daemon's ACP v2 surface. The daemon owns
 workspaces, workers, model execution, and durable state; the client submits
 actions and renders events.
 
@@ -22,7 +22,7 @@ client.
   turn's operations arrive and never enters the transcript; immutable history keeps every
   turn's reasoning at `reasoning://<worker>/L/T` for a READ, so a model with a fat reasoning
   habit costs a third of the screen, not the session.
-- Prompts, command verbs, and raw DSL use the same ACP+ action/run transport.
+- Prompts, command verbs, and raw DSL use the same ACP v2 session and action transport.
 
 ## Rendering
 

@@ -13,7 +13,7 @@ what it guarantees, what its exit codes mean, and what it renders.
 
 | Term | Meaning |
 |---|---|
-| **daemon** | A running `plurnk-service` process whose in-process ACP+ module (`@plurnk/plurnk-acp`) serves HTTP/SSE. The client connects to it; it owns all state. |
+| **daemon** | A running `plurnk-service` process whose in-process ACP v2 module (`@plurnk/plurnk-acp`) serves Streamable HTTP and WebSocket at `/acp`. The client connects to it; it owns all state. |
 | **workspace** | Daemon-owned shared environment, selected by name or folder at acquisition and addressed by its immutable ID thereafter; see {§cli-workspaces-and-workers}. |
 | **worker** | An actor within a workspace, with its own log. `--worker` selects the worker the thread binds; client operations have their own actor. |
 | **ACP Run** | One protocol exchange on a thread. Proposal interrupts and their resumes may span multiple Runs for one daemon loop. |
@@ -156,7 +156,7 @@ an existing root. `--project-root=` without `--workspace` exits 64 with `client/
 a folderless workspace needs a label. IDs are not selection flags or environment settings.
 
 
-§cli-history-lost **A bound name answered with no history is a new worker, and the client says so.** The daemon mints a worker anew under its old name when it no longer holds it (`§acp-thread-binding`: a fresh database, a deleted worker), and the name cannot tell the client. The run-start gauge can: `snapshot.plurnk.status.loopId` is `null` only for a worker with no loop at all, so a `_plurnk/state` reporting `null` after a gauge on the same binding that carried a loop raises the `history_lost` warning Notice, naming the workspace and worker, ahead of the run's rows. The transcript above the alert is the terminal's memory, not the model's. Switching workspace or worker starts a fresh watch.
+§cli-history-lost **A bound name answered with no history is a new worker, and the client says so.** The daemon mints a worker anew under its old name when it no longer holds it (`§acp-thread-binding`: a fresh database, a deleted worker), and the name cannot tell the client. The run-start gauge can: `snapshot.plurnk.status.loopId` is `null` only for a worker with no loop at all, so a `usage_update` or session `_meta.plurnk` reporting `null` after a gauge on the same binding that carried a loop raises the `history_lost` warning Notice, naming the workspace and worker, ahead of the run's rows. The transcript above the alert is the terminal's memory, not the model's. Switching workspace or worker starts a fresh watch.
 
 ### §cli-model-selection Model selection
 
@@ -267,7 +267,7 @@ outcome, never the stream's bare address.
 
 
 §cli-status-clock Turns and wall time include the running loop — its packet count from the
-authoritative ACP `_plurnk/state`/`_plurnk/state_delta` gauge and its elapsed time, ticking once a
+authoritative ACP `usage_update` and session `_meta.plurnk` gauge and its elapsed time, ticking once a
 second throughout an unfinished run, including queued and parked intervals. A loop this client
 started runs from when it sent the prompt; one it attached to runs from the daemon's
 `status.claimedAt`, when the loop first ran (`§acp-status-timing`), or from the attachment while
@@ -390,13 +390,13 @@ Triggered when a prompt is present from positionals, piped stdin, or both.
 
 ### §cli-prompt-prefixes Prompt prefixes
 
-The prompt's first non-blank character has the same meaning in the CLI and TUI. `plurnk "? question"` states proposal `review` for that loop without changing workspace capabilities; `": text"` states nothing new. `plurnk "! command"` execs via the daemon—op.exec, stream to conclusion, exec stdout→stdout / stderr→stderr, exit by the conclusion's `result.status` and `exitCode`; no model or loop takes part. Core has no named ask/act mode.
+The prompt's first non-blank character has the same meaning in the CLI and TUI. `plurnk "? question"` states proposal `review` for that loop without changing workspace capabilities; `": text"` states nothing new. `plurnk "! command"` execs via the daemon—`op.parse` (`sh`), stream to conclusion, exec stdout→stdout / stderr→stderr, exit by the conclusion's `result.status` and `exitCode`; no model or loop takes part. Core has no named ask/act mode.
 
 | `! command` | Exit |
 |---|---|
 | Its execution concludes `200` with no nonzero `exitCode` | `0` |
 | Its execution concludes `499` | `3` |
-| Its execution concludes `200` with a nonzero `exitCode` or with any other status, or `op.exec` refuses it and its Problem is reported | `4` |
+| Its execution concludes `200` with a nonzero `exitCode` or with any other status, or `op.parse` refuses it and its Problem is reported | `4` |
 | No command follows the leading `!`s | `64`, before contacting the daemon |
 
 ### §cli-prompt-open-paths Prompt file references
@@ -497,11 +497,11 @@ Triggered when `argv` has no positional prompt.
 3. Each line entered is dispatched:
     - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /loops /loop [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /fork [name] /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). `/workspace [name]` selects or creates a workspace, then binds its shared-default worker under §1.1; `/workspaces` lists. The plural lists and the singular opens one: `/workers` lists the workspace's workers as a tree, `/worker [name]` shows the bound worker or goes to the named one, creating it when the workspace holds no worker by that name, and `/fork [name]` branches the bound worker (`run.fork`) and goes there (all §3.1.2); `/loops` lists the bound worker's loops and `/loop [n]` prints one whole ({§cli-loops}). `/rename <name>` changes the workspace's display name without changing its ID, worker or thread. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/worker` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`. Help and tab-completion derive the canonical fence from the published contract (`§operation-fences`); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
-    - Lines starting with `!` → the `op.exec` action. Daemon-owned shell; the person's own command, so it runs at once: the daemon never routes it for review, though its server policy can still refuse it.
+    - Lines starting with `!` → the `op.parse` action (`sh`). Daemon-owned shell; the person's own command, so it runs at once: the daemon never routes it for review, though its server policy can still refuse it.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
     - Lines starting with `...` → the `loop.inject` action — speak into a running loop without starting a new one (the "btw" steering case).
     - Anything else → a message Run (the prompt as the user message). Standard prompt-driven loop.
-    (Verbs and injections ride §3 action runs on the same ACP+ surface.)
+    (Verbs and injections ride §3 action runs on the same ACP v2 surface.)
 4. Input remains available during a run under {§cli-active-command-admission}; typed commands and shortcuts share admission.
 5. `Ctrl-C`, `EOF`, and `/quit` exit cleanly. The resume command identifies the
    current workspace and worker with shell-safe arguments, including after rebinding.
@@ -646,7 +646,7 @@ disconnecting never cancels work (`§acp-run-disconnect`).
 
 | Surface | History behavior |
 |---|---|
-| Bound recent tail | The sync Run's replay updates ending in `_plurnk/history_end`, the window of the bound worker's conversation (plurnk-service ``§acp-history-window``), supply every row, rebuilt from the parts that build it live ({§cli-row-sources}) and rendered through the same pipeline as live rows so a resumed session is indistinguishable from a continuing one. `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A history window the daemon sends again during a Run (plurnk-service ``§acp-history-advance``) draws each row it holds that the Run has not drawn, the rows its live stream then skips; nothing drawn changes, and a call the Run already holds keeps the arguments it was built with. |
+| Bound recent tail | The `session/resume` replay updates, the window of the bound worker's conversation (plurnk-service ``§acp-history-window``), supply every row, rebuilt from the parts that build it live ({§cli-row-sources}) and rendered through the same pipeline as live rows so a resumed session is indistinguishable from a continuing one. `PLURNK_CLIENT_HISTORY_ENTRIES` bounds the tail; zero hides history without disabling synchronization. A history window the daemon sends again during a Run (plurnk-service ``§acp-history-advance``) draws each row it holds that the Run has not drawn, the rows its live stream then skips; nothing drawn changes, and a call the Run already holds keeps the arguments it was built with. |
 | Prompts and replies | Full text, in chronological order, with actor attribution. |
 | Operations | Same one-line operation headings, body previews, and contiguous fan-out collapsing as live turns, including failures; no historical execution stream output fetching. |
 | Delegation | A descendant's rows the window holds, the delegation the TUI observes (plurnk-service ``§acp-history-window``), are drawn as quietly as the bound worker's, a message or reply with its words whole and any other operation as its heading, in log order among them, marked `🐜 <name>` and stepped in per generation as §5.1 marks them live, by the bound worker's tree in the gauge (plurnk-service ``§acp-status-descendants``). A descendant's reasoning and terminal never are. |
@@ -758,7 +758,7 @@ handler. `plurnk mcp …` uses the workspace selected under §1.1;
 `--json` emits the unmodified successful action
 result.
 
-| TUI / CLI input | ACP+ action |
+| TUI / CLI input | ACP v2 action |
 |---|---|
 | `/mcp` / `plurnk mcp` | `workspace.mcp.list {}` — one row per server: alias, state, `type`, command or URL, active tool count, and `(workspace)` for a locally added definition |
 | `/mcp discover <query>` | `workspace.mcp.discover {query}` — one row per MCP Registry candidate: alias, `type`, command or URL, and the daemon's summary of how it launches and what it needs |
@@ -821,7 +821,7 @@ tool is admitted by the daemon at the next turn. These roots are configuration
 inputs, never installation targets of `/skills`. Removing a workspace binding
 preserves its source and restores any inherited definition and enabledness.
 
-| TUI input | ACP+ action |
+| TUI input | ACP v2 action |
 |---|---|
 | `/skills` | `workspace.skills.list {}` |
 | `/skills discover <source>` | `workspace.skills.discover {source}`; a source is a git remote as a full https or ssh URL, a folder, a lone `SKILL.md`, or a zip or tar archive |
@@ -844,7 +844,7 @@ client composes one exact `A2aAgentDefinition` and renders the daemon's
 states; the remote Agent Card, connection, and enablement policy live in the
 service, and the model addresses an enabled agent as `a2a://<alias>`.
 
-| TUI input | ACP+ action |
+| TUI input | ACP v2 action |
 |---|---|
 | `/a2a` | `workspace.a2a.list {}` |
 | `/a2a discover <url>` | `workspace.a2a.discover {source}` — one inert card-derived candidate |
@@ -870,7 +870,7 @@ untracked files or, with a leading `!`, excludes matching members — an
 exclusion wins over every inclusion. The glob is one argument, tokenized
 exactly as the sibling families tokenize theirs (quote it to keep whitespace).
 
-| TUI input | ACP+ action |
+| TUI input | ACP v2 action |
 |---|---|
 | `/members` | `workspace.members.list {}` — one line per definition, named by its glob, with what it resolved to: `docs/**  service  active → 12 files (3 ignored)`, `!**/tokenizer.json  worker  active → 4 members` |
 | `/members discover <path>` | `workspace.members.discover {query}` — one candidate explaining why the file is or is not a member |
@@ -897,7 +897,7 @@ shell's name grammar, never plurnk's own names), the operator's ceiling, and
 the composition at the spawn live in the service. A value is used verbatim by
 the daemon, so `add` hands over the rest of the line as typed, never tokenized.
 
-| TUI input | ACP+ action |
+| TUI input | ACP v2 action |
 |---|---|
 | `/env` | `worker.env.list {}` — one line per name with origin, state, value, and the worker it was inherited from: `PATH  service  active  /usr/bin:/bin`, `TOOLCHAIN  worker  active  stable  (from alice)` |
 | `/env discover [query]` | `worker.env.discover {query?}` — the names this worker may set, each with its owning package and the declaration's comment; an empty query is the whole catalog |
@@ -922,7 +922,7 @@ client persists its configured worker environment onto the bound worker via
 `worker.env.replace` (and `worker.env.enable` if the entry was disabled) when that
 worker has no parent: a child's environment is the one its parent handed down. A
 person's own `! command`, in the CLI and the TUI, carries the same entries as the
-command's own environment (`op.exec`'s `env`) instead: it runs as the workspace's,
+command's own environment (`op.parse`'s `env`) instead: it runs as the workspace's,
 which no worker's layer reaches. A script's statements carry their own
 `[{"env": …}]`.
 
@@ -949,7 +949,7 @@ and renders the daemon's states; the clock, the rule's canonical
 form, the timers and the delivery live in the service, and an occurrence
 reaches its worker as an ordinary message from `schedule://<alias>`.
 
-| TUI input | ACP+ action |
+| TUI input | ACP v2 action |
 |---|---|
 | `/schedule` | `workspace.schedule.list {}` — each rule with its state, wording, next occurrence or `exhausted`, and target |
 | `/schedule discover <rule>` | `workspace.schedule.discover {source}` — one inert candidate whose summary opens with the current time in the effective zone |
@@ -1012,7 +1012,7 @@ them; its own receipt repeats none.
 | An accepted message the Worker has not observed | A `user_message_chunk` in a sync Run's replay, after every row, its `_meta.plurnk` the message's lifecycle with `published: false` (plurnk-service ``§acp-message-acceptance``) | Never as a row: its arrival, when the Worker observes it, draws it; one its loop left unread is said once ({§cli-status-inbox}) |
 | A row that answers another row's call | `tool_call_update` under its own coordinate, with its own facts | On arrival: a reply's words as its body, any other answer as its receipt |
 | A row that builds no part | `notice`, the whole row | On arrival; an actionless row draws nothing |
-| History | A sync Run's replay updates ending in `_plurnk/history_end`: the same parts | {§cli-worker-history} |
+| History | A `session/resume` replay window: the same parts | {§cli-worker-history} |
 
 A row's `target` is the address it recorded; its heading shows the target as authored when its statement
 has one (§5.1). A call ended without its receipt, a receipt before its call ended, a result with no text, or
@@ -1220,11 +1220,7 @@ must not send semantic content to an unproven executable.
 
 #### §cli-provider-reasoning Provider reasoning
 
-Readable provider reasoning is neither working memory nor assistant speech. Every Run negotiates
-reasoning by link (plurnk-service ``§acp-reasoning-link``, `_meta.plurnk.reasoning: "link"`):
-the live text arrives as the `_plurnk/reasoning` preview of the reasoning message it belongs to, and each
-turn's reasoning travels by its link, a message that draws nothing. ACP's standard
-`agent_thought_chunk` text stays a preview source when the text rides the message itself.
+Readable provider reasoning is neither working memory nor assistant speech. Live reasoning arrives as standard ACP v2 `agent_thought_chunk` updates (`§acp-readable-reasoning`), or as a `resource_link` when the session negotiates reasoning by link (plurnk-service ``§acp-reasoning-link``, `_meta.plurnk.reasoning: "link"`).
 The TUI shows a dim `💭` tail, at most one third of the terminal, below operation
 history and above delivered responses. It disappears when reasoning ends, and the tail belongs to the Run streaming it: when that Run settles
 — by its terminal, by cancellation, or by a lost connection — the tail is retired whether or not its end
@@ -1431,12 +1427,11 @@ commands and scripts raise nothing.
 
 ## §cli-proposal-review Proposal review
 
-Client-owned proposals arrive as standard ACP interrupts under plurnk-service
-``§acp-proposal-resolve``: each carries the daemon's proposal projection as
-`proposal` (`_plurnk/proposal`), and names the operation's own call as `toolCallId` when the
-Run holds that worker's conversation. The client presents the proposal and resumes the
-Run with the selected decision, echoing the supplied opaque `interruptId`; it never
-derives a resume identity from the call or from a proposal number. The gated call awaits
+Client-owned proposals arrive as standard ACP v2 `session/request_permission` requests under plurnk-service
+``§acp-proposal-resolve``: each carries the daemon's proposal projection in
+`_meta.plurnk.proposal`, and names the operation's own call as `toolCall.toolCallId` when the
+Run holds that worker's conversation. The client presents the proposal and responds to
+`session/request_permission` with the selected `optionId` (`allow_once`, `allow_always`, `reject_once`, `reject_always`) or `cancelled`. The gated call awaits
 its decision without a row; its settlement folds the settled facts onto the call and draws
 the operation once ({§cli-row-sources}). The following sections describe its local review projection.
 
@@ -1469,7 +1464,7 @@ wait for a person concludes instead. It removes
 the person, not the approver: `--yolo`, configured acceptance, or fail-closed review still
 settle what the daemon routes to this client.
 
-The TUI maintains an owner attachment (`_plurnk/session/attach` on `/acp`) while idle and reconnects after a terminal or
+The TUI maintains an owner attachment (`session/resume` on `/acp`) while idle and reconnects after a terminal or
 resolved interrupt. That owner connection creates the session's worker when there is none
 (plurnk-service ``§acp-action-binding``); verbs wait for it. Inspection and direct operations do not
 detach that owner connection. Future owned work, including independently active children, can request
@@ -1746,11 +1741,11 @@ envelope:
   client does not recreate them as push events.
 - Incoming Problems remain exact. The client accepts them from
   `application/problem+json`, a Run end's metadata (the terminal record's `result.problem`, or `problem` for a Run
-  that failed without its loop's end), a failed action outcome in `_plurnk/action`'s response, and `_plurnk/problem`
+  that failed without its loop's end), a failed action outcome in `_plurnk/action`'s response, and `notice` (`severity: "error"`) with `_meta.plurnk.problem`
   for a Problem that ends no Run (plurnk-service ``§acp-plurnk-metadata``). The terminal record's `result` is the
   terminal wire truth; the client's
   `finalStatus` JSON field is its projection of `result.status`, not a daemon
-  field. `_plurnk/error` and JSON-RPC error `data.problem` carry structured Problems, never a plain message from which
+  field. JSON-RPC error `data.problem` carries structured Problems, never a plain message from which
   to reconstruct a Problem.
 - A Notice is a transient, nonterminal observation. It may describe progress or
   a non-fatal degradation, but it cannot determine success, failure, scheduling,
@@ -1947,15 +1942,15 @@ remain an implicit client assumption.
 
 A conforming `plurnk` client:
 
-1. Speaks ACP v2 + ACP+ (JSON-RPC 2.0 over HTTP, `session/update` notifications over SSE) per the plurnk-acp SPEC.
+1. Speaks ACP v2 (JSON-RPC 2.0 over Streamable HTTP and WebSocket, `session/update` notifications) per the plurnk-acp SPEC.
 2. Connects to the module at `http://$PLURNK_HOST:$PLURNK_PORT/acp` (or the exact `PLURNK_ACP_URL`), presenting an access token acquired with the operator's secret, `PLURNK_SECRET` or the daemon's minted file, when there is one ({§cli-credential}).
 3. Resolves the workspace and worker separately under §1.1, retaining their binding for subsequent requests until an explicit navigation command changes it.
 4. Subscribes to `log/entry` notifications and renders each per §5.1.
-5. Consumes client-owned proposal interrupts and resolves each through standard ACP resume per §6; loop-owned dispositions are absent from that surface.
+5. Consumes client-owned proposal interrupts via `session/request_permission` per §6; loop-owned dispositions are absent from that surface.
 6. Consumes `notice` and renders each Notice per §8.
 7. Maps each loop's terminal result to exit codes per §4.
 8. Emits client-owned failures as RFC 9457 Problems and advisories as Notices per §8.
-9. Projects `_plurnk/state` and each `_plurnk/state_delta` into the run's status gauge (`loop/packet`, plurnk-acp SPEC); a delta before a snapshot or a patch op other than `replace` is a 502 `state-invalid` Problem.
+9. Projects `usage_update` and session `_meta.plurnk` into the run's status gauge (`loop/packet`, plurnk-acp SPEC).
 
 ### §cli-test-daemon-lifecycle Test daemon ownership
 

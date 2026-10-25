@@ -4,7 +4,7 @@ Read `../POSSUMTECH.md` before working in this repository. Stop if it is
 unavailable.
 
 This repository owns the open-source PLURNK terminal client. Preserve the
-client boundary: it consumes `plurnk-service` through the public ACP+
+client boundary: it consumes `plurnk-service` through the public ACP v2
 contract and does not absorb daemon or provider responsibilities.
 
 **A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in

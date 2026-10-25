@@ -78,11 +78,6 @@
       "evidence": ["src/cli.test.ts — entry reading"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "op.exec": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — shell dispatch"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]
-    },
     "op.parse": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — PLURNK dispatch"],

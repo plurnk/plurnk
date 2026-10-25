@@ -24,7 +24,6 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/newer", summary: "Hop to the next newer sibling worker, wrapping (Alt-k)." },
     { usage: "/mcp [subcommand]", summary: "List or manage this workspace's MCP servers." },
     { usage: "/skills [subcommand]", summary: "List or manage this workspace's Agent Skills." },
-    { usage: "/a2a [subcommand]", summary: "List or manage this workspace's outbound A2A agents." },
     { usage: "/members [subcommand]", summary: "List or manage this workspace's file members." },
     { usage: "/env [--scope worker|workspace] [subcommand]", summary: "Manage worker overrides or shared workspace environment defaults." },
     { usage: "/schedule [subcommand]", summary: "List or manage this workspace's scheduled messages." },

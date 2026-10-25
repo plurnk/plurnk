@@ -1095,8 +1095,7 @@ export const runCliFamily = async (
                 ? result.items
                 : [];
         if (definitions.length === 0) {
-            const label = family === "a2a" ? "A2A agents" : family;
-            process.stdout.write(`${label}: none\n`);
+            process.stdout.write(`${family}: none\n`);
             return 0;
         }
         for (const item of definitions) {
@@ -1264,7 +1263,7 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                         });
                     return;
                 }
-                if (["mcp", "skills", "a2a", "members", "env", "schedule"].includes(cmd)) {
+                if (["mcp", "skills", "members", "env", "schedule"].includes(cmd)) {
                     void client
                         .action<Record<string, unknown>>(
                             `workspace.${cmd}.list`,
@@ -1282,8 +1281,7 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                                     ? result.items
                                     : [];
                             if (definitions.length === 0) {
-                                const label = cmd === "a2a" ? "A2A agents" : cmd;
-                                process.stdout.write(`${label}: none\n`);
+                                process.stdout.write(`${cmd}: none\n`);
                                 return;
                             }
                             for (const item of definitions) {

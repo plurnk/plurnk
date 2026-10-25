@@ -134,41 +134,6 @@
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
-    "workspace.a2a.list": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
-    },
-    "workspace.a2a.discover": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
-    },
-    "workspace.a2a.add": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
-    },
-    "workspace.a2a.replace": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
-    },
-    "workspace.a2a.enable": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
-    },
-    "workspace.a2a.disable": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
-    },
-    "workspace.a2a.remove": {
-      "posture": "native",
-      "evidence": ["src/cli.test.ts — outbound agents management"],
-      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
-    },
     "workspace.members.list": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — file members management"],

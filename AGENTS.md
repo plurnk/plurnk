@@ -23,7 +23,7 @@ published changelogs.
 
 `npm test` runs lint, unit, integration, and TUI checks. The integration and
 TUI tiers boot the service from the checkout `PLURNK_SERVICE_CHECKOUT` names
-(`../plurnk-service` by default) and borrow its MCP and A2A fixtures from there;
+(`../plurnk-service` by default) and borrow its MCP fixtures from there;
 `test/service-checkout.ts` is the one place that path is resolved. Each integration and
 TUI file can start a real daemon and terminal fixtures, so those tiers run as many files
 at once as the host holds: its available cores, bounded by its available memory over a

@@ -140,7 +140,6 @@ const createMockAcpServer = async () => {
                 availableCommands: [
                     { name: "mcp", description: "Manage MCP servers" },
                     { name: "skills", description: "Manage Agent Skills" },
-                    { name: "a2a", description: "Manage A2A agents" },
                     { name: "members", description: "Manage file members" },
                     { name: "env", description: "Manage environment" },
                     { name: "schedule", description: "Manage scheduled messages" },
@@ -350,7 +349,7 @@ test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {�
     }
 });
 
-test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-workers-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-outbound-agents} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
+test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-workers-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
     const server = await createMockAcpServer();
     try {
         const modelsRes = await runCli(

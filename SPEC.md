@@ -43,7 +43,7 @@ The prompt is assembled from positional args + piped stdin. If both are present,
 from the same inventory as global help, without contacting the daemon.
 
 
-§cli-family-arguments The CLI configuration families `mcp`, `skills`, `a2a`,
+§cli-family-arguments The CLI configuration families `mcp`, `skills`,
 `members`, `env`, and `schedule` use the same handlers and command inventory as
 their TUI counterparts. Client options precede the family name; everything after
 that first positional belongs to the family, without re-tokenizing shell arguments
@@ -495,7 +495,7 @@ Triggered when `argv` has no positional prompt.
    YOLO puts 🔥 beside the lifecycle glyph. The main-screen renderer preserves
    ordinary terminal scrollback rather than replacing it with an alternate screen.
 3. Each line entered is dispatched:
-    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /loops /loop [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /fork [name] /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/a2a` (§3.6), `/members` (§3.7), `/env` (§3.8), and `/schedule` (§3.9). `/workspace [name]` selects or creates a workspace, then binds its shared-default worker under §1.1; `/workspaces` lists. The plural lists and the singular opens one: `/workers` lists the workspace's workers as a tree, `/worker [name]` shows the bound worker or goes to the named one, creating it when the workspace holds no worker by that name, and `/fork [name]` branches the bound worker (`run.fork`) and goes there (all §3.1.2); `/loops` lists the bound worker's loops and `/loop [n]` prints one whole ({§cli-loops}). `/rename <name>` changes the workspace's display name without changing its ID, worker or thread. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/worker` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
+    - Lines starting with `/` → command verbs: `/help /models [search] /workspaces /workers /loops /loop [n] /model <selector> /child <selector|inherit> /effort [policy] /capabilities [json] /yolo /workspace [name] /worker [name] /fork [name] /parent /enter /older /newer /rename <name> /share <folder> /rollback <loop>/<turn>/<item> /stop /quit`, plus `/import <path>` (§3.3) and the Functionality families `/mcp` (§3.4), `/skills` (§3.5), `/members` (§3.6), `/env` (§3.7), and `/schedule` (§3.8). `/workspace [name]` selects or creates a workspace, then binds its shared-default worker under §1.1; `/workspaces` lists. The plural lists and the singular opens one: `/workers` lists the workspace's workers as a tree, `/worker [name]` shows the bound worker or goes to the named one, creating it when the workspace holds no worker by that name, and `/fork [name]` branches the bound worker (`run.fork`) and goes there (all §3.1.2); `/loops` lists the bound worker's loops and `/loop [n]` prints one whole ({§cli-loops}). `/rename <name>` changes the workspace's display name without changing its ID, worker or thread. `/rollback <loop>/<turn>/<item>` asks the daemon (`workspace.rollback {to}`) to reverse the bound worker's settled file mutations after that log coordinate, latest first, as this client's own operations, and prints each reversal, the rows it skipped, and where drift or a refusal stopped it; a coordinate that is not one of the worker's rows renders the daemon's Problem. `/capabilities` reads or replaces the workspace's durable CapabilityPolicy. Verbs never start a loop; inspect verbs reuse the §7 subcommand tables; `/stop` and `/help` stay reachable while a loop is in flight. Editor completion covers verbs, declared aliases, daemon-supported efforts, worker names after `/worker` (the directory plus the `worker://<name>` references the waterfall has shown, §3.1.2), **file paths** (after `/import`/`/script`, the `/members discover` position and every `/members add` argument, the `/env import` position, and bare `@file` tokens), **executable fence names** (READ, NOTE, and the other native OPs), and PLURNK target paths.
     - Named executable backtick fences → `op.parse`. Help and tab-completion derive the canonical fence from the published contract (`§operation-fences`); completion preserves longer authored fences and submitted operations pass through unchanged. Native OPs and executor/MCP names share this entry point; the daemon owns parsing, resolution, and diagnostics. Prefix `: ` to force prompt treatment for a literal fenced example.
     - Lines starting with `!` → the `op.parse` action (`sh`). Daemon-owned shell; the person's own command, so it runs at once: the daemon never routes it for review, though its server policy can still refuse it.
     - Lines starting with `? ` → local proposal review for that run, bypassing client auto-acceptance. `: ` uses ordinary client acceptance. Neither prefix changes the worker's owner or server policy.
@@ -533,7 +533,7 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 | Inspect | `/help /models /workspaces /workers /loops /loop` |
 | Policy | `/model /child /effort /capabilities /yolo` |
 | Workspace | `/workspace /rename /share /rollback /worker /fork /parent /enter /older /newer` |
-| Functionality | `/mcp /skills /a2a /members /env /schedule` |
+| Functionality | `/mcp /skills /members /env /schedule` |
 | Compose | `/import /script /editor` |
 | Review | `/review /accept /reject /cancel /edit` |
 | Session | `/stop /quit` |
@@ -737,7 +737,7 @@ preserves the preceding publication on refusal. Both forms use the same argument
 parsing, help, completion and exact failure presentation.
 
 
-§cli-configuration-source Subsystem listings (`mcp`, `skills`, `a2a`, `schedule`,
+§cli-configuration-source Subsystem listings (`mcp`, `skills`, `schedule`,
 `members`, `env`) append `source=<provenance.source>` when the daemon supplies
 that field. The client does not infer a source, open its path, or resolve a
 configuration cascade. Ownership and readiness remain separate; absent provenance
@@ -836,32 +836,10 @@ service-owned skill that cannot be removed — cross the existing diagnostic
 path without rewriting or retry. The list shows a git source's ref and the
 commit it was added at.
 
-### §cli-outbound-agents Outbound A2A agents
-
-Outbound A2A agents are a thin projection of the daemon's `a2a`
-Functionality family — the same common lifecycle as `/mcp` and `/skills`. The
-client composes one exact `A2aAgentDefinition` and renders the daemon's
-states; the remote Agent Card, connection, and enablement policy live in the
-service, and the model addresses an enabled agent as `a2a://<alias>`.
-
-| TUI input | ACP v2 action |
-|---|---|
-| `/a2a` | `workspace.a2a.list {}` |
-| `/a2a discover <url>` | `workspace.a2a.discover {source}` — one inert card-derived candidate |
-| `/a2a add <alias> <url> [options.json]` | `workspace.a2a.add {alias, definition: {name: alias, url, ...options}}`; `options.json` supplies `cardPath`, `headers`, `authorization` |
-| `/a2a replace <alias> <url> [options.json]` | `workspace.a2a.replace {alias, definition}` — {§cli-functionality-replacement} |
-| `/a2a enable <alias>` | `workspace.a2a.enable {alias}` |
-| `/a2a disable <alias>` | `workspace.a2a.disable {alias}` |
-| `/a2a remove <alias>` | `workspace.a2a.remove {alias}` |
-
-Invalid or unreadable local JSON fails before dispatch; daemon Problems — an
-unreachable card, an unsupported interface, an unresolved symbolic credential —
-cross the existing diagnostic path without rewriting or retry.
-
 ### §cli-file-members File members
 
 File membership is a thin projection of the daemon's `members` Functionality
-family — the common lifecycle of `/mcp`, `/skills`, and `/a2a`, except that a
+family — the common lifecycle of `/mcp` and `/skills`, except that a
 definition is its glob: nothing is aliased and nothing is replaced. The client
 passes the globs through and renders the daemon's states; resolution, the
 model's ceiling, and enablement policy live in the service. Git-tracked files are members on their own. A definition is one
@@ -887,7 +865,7 @@ rewriting or retry.
 ### §cli-environment Environment
 
 The environment is a thin projection of the daemon's `env` Functionality
-family — the same common lifecycle as `/mcp`, `/skills`, `/a2a`, and
+family — the same common lifecycle as `/mcp`, `/skills`, and
 `/members`. Unqualified commands use `worker.env.*`; `--scope workspace` before
 the verb selects `workspace.env.*` for shared defaults. `--scope worker` is
 explicitly local; both space-separated and `--scope=workspace` forms are accepted.
@@ -943,7 +921,7 @@ where it was.
 ### §cli-schedule Scheduled messages
 
 Scheduled messages are a thin projection of the daemon's `schedule`
-Functionality family — the same common lifecycle as `/mcp` and `/a2a`. The
+Functionality family — the same common lifecycle as `/mcp` and `/skills`. The
 client composes one exact definition (`rule`, `target`, `prompt`)
 and renders the daemon's states; the clock, the rule's canonical
 form, the timers and the delivery live in the service, and an occurrence

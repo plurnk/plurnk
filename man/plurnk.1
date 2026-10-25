@@ -1,4 +1,4 @@
-.TH PLURNK 1 "2026-10-23" "plurnk 4.3.0" "User Commands"
+.TH PLURNK 1 "2026-10-25" "plurnk 4.3.0" "User Commands"
 .SH NAME
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
@@ -19,28 +19,19 @@ plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--e
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [subcommand]
        plurnk skills [subcommand]
-       plurnk a2a [subcommand]
        plurnk members [subcommand]
        plurnk env [--scope worker|workspace] [subcommand]
        plurnk schedule [subcommand]
 .fi
 .SH DESCRIPTION
 Connects to plurnk-service at its configured address, starting the
-installed
-service
-there when nothing listens; it keeps running after this client
-(plurnk-service stop ends
-it).
-Run a single prompt
-one-shot
-(positional args, piped stdin, or both — positionals come first,
-stdin
-is appended after a blank line). With no positionals and a TTY
-stdin,
+installed service there when nothing listens; it keeps running after
+this client (plurnk-service stop ends it). Run a single prompt one-shot
+(positional args, piped stdin, or both — positionals come first, stdin
+is appended after a blank line). With no positionals and a TTY stdin,
 enters the scrollback-native interactive terminal. Read-only subcommands
-(models / workspace list
-/
-log read / read <coord>) inspect daemon state without running a
+(models / workspace list / log read / read <coord>) inspect daemon state
+without running a
 loop.
 .SH OPTIONS
 .nf
@@ -160,7 +151,6 @@ loop.
   logout                  revoke the kept grant at the daemon and forget it
   mcp ...                   List or manage this workspace's MCP servers.
   skills ...                List or manage this workspace's Agent Skills.
-  a2a ...                   List or manage this workspace's outbound A2A agents.
   members ...               List or manage this workspace's file members.
   env ...                   Manage worker overrides or shared workspace environment defaults.
   schedule ...              List or manage this workspace's scheduled messages.
@@ -197,7 +187,6 @@ The no-argument interactive terminal accepts these slash commands:
 /newer                         Hop to the next newer sibling worker, wrapping (Alt-k).
 /mcp [subcommand]              List or manage this workspace's MCP servers.
 /skills [subcommand]           List or manage this workspace's Agent Skills.
-/a2a [subcommand]              List or manage this workspace's outbound A2A agents.
 /members [subcommand]          List or manage this workspace's file members.
 /env [--scope worker|workspace] [subcommand] Manage worker overrides or shared workspace environment defaults.
 /schedule [subcommand]         List or manage this workspace's scheduled messages.

@@ -11,7 +11,6 @@ complete -c plurnk -n __fish_use_subcommand -a login
 complete -c plurnk -n __fish_use_subcommand -a logout
 complete -c plurnk -n __fish_use_subcommand -a mcp
 complete -c plurnk -n __fish_use_subcommand -a skills
-complete -c plurnk -n __fish_use_subcommand -a a2a
 complete -c plurnk -n __fish_use_subcommand -a members
 complete -c plurnk -n __fish_use_subcommand -a env
 complete -c plurnk -n __fish_use_subcommand -a schedule

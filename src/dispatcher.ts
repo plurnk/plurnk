@@ -88,7 +88,6 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <nam
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [subcommand]
        plurnk skills [subcommand]
-       plurnk a2a [subcommand]
        plurnk members [subcommand]
        plurnk env [--scope worker|workspace] [subcommand]
        plurnk schedule [subcommand]
@@ -230,7 +229,6 @@ subcommands:
   logout                  revoke the kept grant at the daemon and forget it
   mcp ...                   List or manage this workspace's MCP servers.
   skills ...                List or manage this workspace's Agent Skills.
-  a2a ...                   List or manage this workspace's outbound A2A agents.
   members ...               List or manage this workspace's file members.
   env ...                   Manage worker overrides or shared workspace environment defaults.
   schedule ...              List or manage this workspace's scheduled messages.
@@ -242,7 +240,7 @@ subcommands:
                           grammar; the client just feeds the file.
 `;
 
-const FAMILY_COMMANDS = new Set(["mcp", "skills", "a2a", "members", "env", "schedule"]);
+const FAMILY_COMMANDS = new Set(["mcp", "skills", "members", "env", "schedule"]);
 
 const readVersion = (): string => {
     try {

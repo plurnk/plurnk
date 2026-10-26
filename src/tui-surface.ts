@@ -241,8 +241,9 @@ export const renderNoteBlock = (opts: {
     readonly columns?: number;
 }): string => {
     const cleanAside = opts.aside ? ModelText.plain(opts.aside).trim() : "";
+    const sep = opts.glyph.endsWith("\uFE0F") ? "  " : " ";
     const lead = `${paint(opts.glyph, "dim")}${
-        cleanAside.length > 0 ? ` ${paint(cleanAside, "dim", "italic")}` : ""
+        cleanAside.length > 0 ? `${sep}${paint(cleanAside, "dim", "italic")}` : ""
     }`;
     const rendered = renderMarkdownDocument(opts.body, opts.columns ?? 80);
     if (rendered.trim().length === 0) {
@@ -322,6 +323,7 @@ export const renderOperationBlock = (opts: {
     readonly statusCode?: number | null;
     readonly outcome?: string | null;
     readonly contentLines?: readonly string[];
+    readonly outputLines?: readonly string[];
     readonly coordinate?: string | null;
     readonly previewLimit?: number;
     readonly columns?: number;
@@ -363,15 +365,23 @@ export const renderOperationBlock = (opts: {
         headParts.push(`— ${paint(ModelText.plain(opts.outcome), failed ? "failure" : "dim")}`);
     }
 
+    const cols = opts.columns ?? 80;
+    const limit = opts.previewLimit ?? 5;
     const bodyText = (opts.contentLines ?? []).join("\n");
-    const preview = previewLines(
+    const bodyPreview = previewLines(
         bodyText,
-        opts.previewLimit ?? 5,
-        opts.columns ?? 80,
+        op === "NOTE" ? Number.MAX_SAFE_INTEGER : limit,
+        cols,
         opts.coordinate,
         op,
     );
-    return [headParts.join(" "), ...preview].join("\n");
+    const outText = (opts.outputLines ?? []).join("\n");
+    const outPreview = previewLines(outText, limit, cols);
+    const headLine =
+        headParts.length > 1 && opts.glyph.endsWith("\uFE0F")
+            ? `${headParts[0]!}  ${headParts.slice(1).join(" ")}`
+            : headParts.join(" ");
+    return [headLine, ...bodyPreview, ...outPreview].join("\n");
 };
 
 export const formatCompactCount = (n: number): string => {
@@ -525,6 +535,7 @@ export default class TuiSurface {
     #dialog: Component | null = null;
     #started = false;
     #titled = false;
+    #lastWasSpacer = false;
 
     constructor(terminal: Terminal = new ProcessTerminal()) {
         this.#terminal = terminal;
@@ -685,9 +696,12 @@ export default class TuiSurface {
     append(text: string): void {
         const normalized = text.replace(/\n$/u, "");
         if (normalized.length === 0) {
+            if (this.#lastWasSpacer) return;
             this.#transcript.addChild(new Spacer(1));
+            this.#lastWasSpacer = true;
         } else {
             this.#transcript.addChild(new Text(normalized, 0, 0));
+            this.#lastWasSpacer = false;
         }
         this.#status.invalidate();
         this.#tui.requestRender();
@@ -698,7 +712,6 @@ export default class TuiSurface {
         const normalized = text.replace(/\n$/u, "");
         if (normalized.length === 0) return;
         this.#turnResponses.push(normalized);
-        this.#turn.addChild(new Spacer(1));
         this.#turn.addChild(new Text(normalized, 0, 0));
         this.#status.invalidate();
         this.#tui.requestRender();
@@ -710,8 +723,8 @@ export default class TuiSurface {
         this.#turnResponses = [];
         this.#turn.clear();
         for (const text of responses) {
-            this.#transcript.addChild(new Spacer(1));
             this.#transcript.addChild(new Text(text, 0, 0));
+            this.#lastWasSpacer = false;
         }
         this.#status.invalidate();
         this.#tui.requestRender();

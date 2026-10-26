@@ -233,8 +233,48 @@ export const runReplSession = async (
         } else if (session.sessionId.includes("#")) {
             currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
         }
+        const visibleItems = session.items.filter((item) => {
+            if (item.kind === "user_message" || item.kind === "agent_message") {
+                return item.text.length > 0;
+            }
+            if (item.kind === "tool_call") {
+                const itemPlurnk = (item.meta?.plurnk ?? undefined) as
+                    | { op?: string; origin?: string; attrs?: { kind?: string } }
+                    | undefined;
+                const op = itemPlurnk?.op ?? item.name ?? "";
+                const target = item.locations[0]?.path ?? "";
+                if (
+                    itemPlurnk?.origin === "_plurnk" &&
+                    op === "READ" &&
+                    (itemPlurnk.attrs?.kind === "emission" || target.startsWith("ops://"))
+                ) {
+                    return false;
+                }
+                if (
+                    itemPlurnk?.origin === "_plurnk" &&
+                    op === "EDIT" &&
+                    itemPlurnk.attrs?.kind === "entry_materialized"
+                ) {
+                    return false;
+                }
+                return true;
+            }
+            return false;
+        });
+        const idOf = (item: (typeof visibleItems)[number]): number | undefined => {
+            const id = (item.meta?.plurnk as { id?: unknown } | undefined)?.id;
+            return typeof id === "number" ? id : undefined;
+        };
+        const firstId = visibleItems.map(idOf).find((id): id is number => id !== undefined);
+        const lastId = visibleItems
+            .map(idOf)
+            .findLast((id): id is number => id !== undefined);
+        const chronologicalItems =
+            firstId !== undefined && lastId !== undefined && firstId > lastId
+                ? visibleItems.toReversed()
+                : visibleItems;
         const historyLimit = options.historyEntries > 0 ? options.historyEntries : 0;
-        const history = historyLimit > 0 ? session.items.slice(-historyLimit) : [];
+        const history = historyLimit > 0 ? chronologicalItems.slice(-historyLimit) : [];
         const mergedMeta =
             session.usage?.meta !== undefined
                 ? {
@@ -1747,37 +1787,41 @@ export const runTuiViewport = async (
 
     const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
         if (surface === null) return;
-        surface.append("");
-        if (frame.op === "NOTE") {
-            surface.append(
-                renderNoteBlock({
-                    glyph: frame.glyph,
-                    aside: frame.aside,
-                    body: frame.noteBody ?? frame.contentLines.join("\n"),
-                    columns: surface.columns,
-                }),
-            );
+        if (frame.op === "NOTE" && frame.origin === "model") {
+            const rendered = renderNoteBlock({
+                glyph: frame.glyph,
+                aside: frame.aside,
+                body: frame.noteBody ?? frame.contentLines.join("\n"),
+                columns: surface.columns,
+            });
+            surface.append(rendered);
+            if (rendered.includes("\n")) {
+                surface.append("");
+            }
         } else {
-            surface.append(
-                renderOperationBlock({
-                    glyph: frame.glyph,
-                    op: frame.op,
-                    title: frame.title,
-                    target: frame.target,
-                    scope: frame.scope,
-                    destination: frame.destination,
-                    pattern: frame.pattern,
-                    count: frame.count,
-                    aside: frame.aside,
-                    status: frame.status,
-                    statusCode: frame.statusCode,
-                    outcome: frame.outcome,
-                    contentLines: frame.contentLines,
-                    coordinate: frame.toolCallId,
-                    previewLimit: options.previewLines,
-                    columns: surface.columns,
-                }),
-            );
+            const rendered = renderOperationBlock({
+                glyph: frame.glyph,
+                op: frame.op,
+                title: frame.title,
+                target: frame.target,
+                scope: frame.scope,
+                destination: frame.destination,
+                pattern: frame.pattern,
+                count: frame.count,
+                aside: frame.aside,
+                status: frame.status,
+                statusCode: frame.statusCode,
+                outcome: frame.outcome,
+                contentLines: frame.contentLines,
+                outputLines: frame.outputLines,
+                coordinate: frame.toolCallId,
+                previewLimit: options.previewLines,
+                columns: surface.columns,
+            });
+            surface.append(rendered);
+            if (rendered.includes("\n")) {
+                surface.append("");
+            }
         }
     };
 
@@ -2117,13 +2161,20 @@ export const runTuiViewport = async (
                                 surface.editor.addToHistory(rec.text);
                                 surface.append("");
                                 surface.append(renderSubmittedInput(rec.text));
+                                surface.append("");
                             } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
+                                const effectiveStatus =
+                                    rec.status === "in_progress" || rec.status === "pending"
+                                        ? "completed"
+                                        : typeof rec.status === "string"
+                                          ? rec.status
+                                          : "completed";
                                 const tcFrames = presenter.apply({
                                     sessionUpdate: "tool_call_update",
                                     toolCallId: rec.toolCallId,
                                     ...(typeof rec.name === "string" ? { name: rec.name } : {}),
                                     ...(typeof rec.title === "string" ? { title: rec.title } : {}),
-                                    ...(typeof rec.status === "string" ? { status: rec.status } : {}),
+                                    status: effectiveStatus,
                                     ...(Array.isArray(rec.locations) ? { locations: rec.locations } : {}),
                                     ...(Array.isArray(rec.content) ? { content: rec.content } : {}),
                                     ...(rec.rawInput !== undefined ? { rawInput: rec.rawInput } : {}),
@@ -2151,7 +2202,6 @@ export const runTuiViewport = async (
                                           }
                                         | undefined
                                 )?.plurnk;
-                                surface.append("");
                                 surface.append(
                                     renderModelReply(rec.text, surface.columns, {
                                         op: plurnkMeta?.op ?? "SEND",
@@ -2161,7 +2211,6 @@ export const runTuiViewport = async (
                                 );
                             }
                         }
-                        surface.append("");
                     }
                     if (wasStarted && (presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession)) {
                         currentTurns = 0;
@@ -2257,9 +2306,9 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "terminal_output":
-                        if (surface !== null) {
-                            surface.append(ModelText.plain(frame.decodedText || frame.rawData));
-                        } else {
+                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-what-is-not-rendered});
+                        // concluded output is previewed beneath the launching operation row when it finishes.
+                        if (surface === null) {
                             termOut.write(`${frame.rawData}\n`);
                         }
                         break;
@@ -2272,7 +2321,8 @@ export const runTuiViewport = async (
                         break;
                     case "notice":
                         if (surface !== null) {
-                            surface.append(ModelText.plain(frame.formatted));
+                            const accent = frame.severity === "info" ? "dim" : "failure";
+                            surface.append(paint(ModelText.plain(frame.formatted), accent));
                         } else {
                             termOut.write(`${frame.formatted}\n`);
                         }
@@ -2283,10 +2333,8 @@ export const runTuiViewport = async (
                         if (surface !== null) {
                             surface.archiveTurn();
                             if (frame.terminalDetail) {
-                                surface.append("");
                                 surface.append(paint(ModelText.plain(frame.terminalDetail), "failure"));
                             }
-                            surface.append("");
                             surface.append(
                                 renderLoopSummary({
                                     status: frame.statusCode,
@@ -2302,7 +2350,6 @@ export const runTuiViewport = async (
                                     costUsd: frame.status.costUsd,
                                 }),
                             );
-                            surface.append("");
                             updateSurfaceStatus();
                             attend(concluded(frame.statusCode, frame.hitMaxTurns));
                         } else {

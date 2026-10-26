@@ -252,7 +252,15 @@ export class AcpSession {
             if (update.name !== undefined) tc.name = update.name;
             if (update.title !== undefined) tc.title = update.title;
             if (update.kind !== undefined) tc.toolKind = update.kind;
-            if (update.status !== undefined) tc.status = update.status;
+            if (
+                update.status !== undefined &&
+                !(
+                    (tc.status === "completed" || tc.status === "failed") &&
+                    (update.status === "in_progress" || update.status === "pending")
+                )
+            ) {
+                tc.status = update.status;
+            }
             if (update.locations !== undefined && update.locations !== null) {
                 tc.locations = [...update.locations];
             }

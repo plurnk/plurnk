@@ -326,6 +326,7 @@ export class AcpClient {
             readonly workspaceId?: number;
             readonly session?: string;
             readonly sessionId?: string;
+            readonly cwd?: string;
         },
     ): Promise<T> {
         if (this.#connection === null) {
@@ -339,6 +340,7 @@ export class AcpClient {
             ...(context?.workspaceId !== undefined ? { workspaceId: context.workspaceId } : {}),
             ...(context?.session !== undefined ? { session: context.session } : {}),
             ...(context?.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+            ...(context?.cwd !== undefined ? { cwd: context.cwd } : {}),
         });
     }
 

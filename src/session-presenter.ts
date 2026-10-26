@@ -43,7 +43,7 @@ export const operationGlyphFor = (op: string | undefined, aside?: string | null)
         return OPERATION_GLYPH_MAP[op]!;
     }
     if (typeof op === "string" && op.length > 0) {
-        return `⚙️ ${op}`;
+        return `⚙️  ${op}`;
     }
     return "⚙️";
 };
@@ -147,6 +147,7 @@ export type PresentationFrame =
           readonly toolCallId: string;
           readonly glyph: string;
           readonly op: string;
+          readonly origin: string;
           readonly title: string;
           readonly target: string | null;
           readonly scope: string | null;
@@ -159,6 +160,7 @@ export type PresentationFrame =
           readonly statusCode: number;
           readonly outcome: string | null;
           readonly contentLines: readonly string[];
+          readonly outputLines: readonly string[];
       }
     | {
           readonly kind: "terminal_output";
@@ -328,6 +330,7 @@ interface PendingToolCallState {
     readonly locations?: ReadonlyArray<{ readonly path: string }>;
     readonly rawInput?: Record<string, unknown>;
     readonly metaPlurnk?: Record<string, unknown>;
+    readonly terminalIds?: readonly string[];
 }
 
 export class SessionPresenter {
@@ -364,6 +367,8 @@ export class SessionPresenter {
     #lastStreamTarget = "";
     #turnStartedAt = Date.now();
     readonly #pendingToolCalls = new Map<string, PendingToolCallState>();
+    readonly #renderedToolCalls = new Set<string>();
+    readonly #terminalOutputs = new Map<string, string>();
 
     constructor(options: SessionPresenterOptions = {}) {
         this.workspaceName = options.workspaceName ?? "default";
@@ -624,6 +629,7 @@ export class SessionPresenter {
                 update._meta as
                     | {
                           plurnk?: {
+                              id?: number;
                               op?: string;
                               origin?: string;
                               status?: number;
@@ -633,10 +639,18 @@ export class SessionPresenter {
                     | undefined
             )?.plurnk;
             const prior = this.#pendingToolCalls.get(update.toolCallId);
+            if (
+                this.#renderedToolCalls.has(update.toolCallId) &&
+                update.status !== "in_progress" &&
+                update.status !== "pending"
+            ) {
+                return frames;
+            }
             const metaPlurnk = {
                 ...(prior?.metaPlurnk ?? {}),
                 ...(incomingMetaPlurnk ?? {}),
             } as {
+                id?: number;
                 op?: string;
                 origin?: string;
                 status?: number;
@@ -656,6 +670,22 @@ export class SessionPresenter {
             const effectiveLocations = update.locations ?? prior?.locations;
             const opName =
                 metaPlurnk.op ?? effectiveName ?? effectiveTitle?.split(/[\s(—]/u)[0] ?? "tool";
+            const origin = metaPlurnk.origin ?? "model";
+
+            const incomingTerminalIds = (update.content ?? [])
+                .filter(
+                    (c): c is { readonly type: "terminal"; readonly terminalId: string } =>
+                        c.type === "terminal" && typeof (c as { terminalId?: unknown }).terminalId === "string",
+                )
+                .map((c) => c.terminalId);
+            const terminalIds =
+                incomingTerminalIds.length > 0
+                    ? incomingTerminalIds
+                    : prior?.terminalIds && prior.terminalIds.length > 0
+                      ? prior.terminalIds
+                      : typeof metaPlurnk.id === "number"
+                        ? [`term:${String(metaPlurnk.id)}`]
+                        : [];
 
             const authoredTarget =
                 opName === "COPY" || opName === "MOVE"
@@ -690,6 +720,7 @@ export class SessionPresenter {
                     ...(effectiveLocations !== undefined ? { locations: effectiveLocations } : {}),
                     ...(rawInput !== undefined ? { rawInput } : {}),
                     metaPlurnk: metaPlurnk as Record<string, unknown>,
+                    ...(terminalIds.length > 0 ? { terminalIds } : {}),
                 });
                 if (this.lifecycle === "running") {
                     this.doing = {
@@ -706,6 +737,7 @@ export class SessionPresenter {
                 return frames;
             }
             this.#pendingToolCalls.delete(update.toolCallId);
+            this.#renderedToolCalls.add(update.toolCallId);
 
             const problemRec =
                 rawOutput?.problem && typeof rawOutput.problem === "object"
@@ -727,6 +759,7 @@ export class SessionPresenter {
                     toolCallId: update.toolCallId,
                     glyph: "📌",
                     op: "INFO",
+                    origin,
                     title: "INFO — curating context",
                     target: null,
                     scope: null,
@@ -739,6 +772,7 @@ export class SessionPresenter {
                     statusCode: 200,
                     outcome: "curating context",
                     contentLines: [],
+                    outputLines: [],
                 });
                 return frames;
             }
@@ -782,21 +816,25 @@ export class SessionPresenter {
                 }
             }
 
-            // Only authored request bodies (EDIT, WORK, FORK, undelivered SEND, runtime execs) and
-            // runtime execution outputs receive a preview beneath the row ({§cli-log-entry-line-format}).
-            // READ and FIND receipts never render a body beneath the row.
+            // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, runtime execs, harness NOTEs)
+            // and concluded runtime execution stream outputs receive a preview beneath the row
+            // ({§cli-log-entry-line-format}, {§cli-what-is-not-rendered}).
             const contentLines: string[] = [];
-            if (!NO_PREVIEW_VERBS.has(opName)) {
-                if (authoredBody !== null) {
-                    contentLines.push(authoredBody);
-                }
-                const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
-                if (isRuntimeExec || authoredBody === null) {
-                    for (const line of receiptLines) {
-                        if (line.trim().length > 0 && line !== authoredBody) {
-                            contentLines.push(line);
-                        }
-                    }
+            if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
+                contentLines.push(noteBody);
+            } else if (!NO_PREVIEW_VERBS.has(opName) && authoredBody !== null) {
+                contentLines.push(authoredBody);
+            }
+
+            const outputLines: string[] = [];
+            const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
+            if (isRuntimeExec) {
+                const streamed = terminalIds
+                    .map((id) => this.#terminalOutputs.get(id) ?? "")
+                    .join("")
+                    .trimEnd();
+                if (streamed.length > 0) {
+                    outputLines.push(streamed);
                 }
             }
 
@@ -806,6 +844,7 @@ export class SessionPresenter {
                     : update.status === "failed"
                       ? 500
                       : 200;
+            const failed = statusCode >= 400 || update.status === "failed";
             const problemTitle =
                 typeof problemRec?.title === "string" && problemRec.title.length > 0
                     ? problemRec.title
@@ -818,16 +857,22 @@ export class SessionPresenter {
                 problemRec.diagnostic.trim() !== problemTitle
                     ? problemRec.diagnostic.trim()
                     : null;
-            const outcome =
-                problemTitle !== null
+            const outcome = failed
+                ? problemTitle !== null
                     ? problemDiagnostic !== null
                         ? `${problemTitle}: ${problemDiagnostic}`
                         : problemTitle
                     : typeof rawOutput?.detail === "string" && rawOutput.detail.length > 0
                       ? rawOutput.detail
-                      : update.status === "failed" && typeof rawOutput?.message === "string"
+                      : typeof rawOutput?.message === "string" && rawOutput.message.length > 0
                         ? rawOutput.message
-                        : null;
+                        : String(statusCode)
+                : statusCode === 204 &&
+                    count === null &&
+                    typeof rawOutput?.detail === "string" &&
+                    rawOutput.detail.length > 0
+                  ? rawOutput.detail
+                  : null;
 
             if (this.lifecycle === "running") {
                 this.doing = {
@@ -844,6 +889,7 @@ export class SessionPresenter {
                 toolCallId: update.toolCallId,
                 glyph,
                 op: opName,
+                origin,
                 title: effectiveTitle ?? effectiveName ?? update.toolCallId,
                 target,
                 scope,
@@ -856,12 +902,28 @@ export class SessionPresenter {
                 statusCode,
                 outcome,
                 contentLines,
+                outputLines,
             });
             return frames;
         }
 
+        if (SessionUpdate.isTerminalUpdate(update)) {
+            if (update.output !== undefined) {
+                const text =
+                    update.output === null
+                        ? ""
+                        : Buffer.from(update.output.data, "base64").toString("utf8");
+                this.#terminalOutputs.set(update.terminalId, text);
+                const opId = (update._meta as { plurnk?: { opId?: number } } | undefined)?.plurnk?.opId;
+                if (typeof opId === "number") {
+                    this.#terminalOutputs.set(`term:${String(opId)}`, text);
+                }
+            }
+            return frames;
+        }
+
         if (SessionUpdate.isTerminalOutputChunk(update)) {
-            const metaPlurnk = (update._meta as { plurnk?: { target?: string } } | undefined)?.plurnk;
+            const metaPlurnk = (update._meta as { plurnk?: { target?: string; opId?: number } } | undefined)?.plurnk;
             const target = metaPlurnk?.target ?? update.terminalId;
             this.#lastStreamTarget = target;
             let decodedText = update.data;
@@ -869,6 +931,11 @@ export class SessionPresenter {
                 decodedText = Buffer.from(update.data, "base64").toString("utf8");
             } catch {
                 decodedText = update.data;
+            }
+            const nextText = (this.#terminalOutputs.get(update.terminalId) ?? "") + decodedText;
+            this.#terminalOutputs.set(update.terminalId, nextText);
+            if (typeof metaPlurnk?.opId === "number") {
+                this.#terminalOutputs.set(`term:${String(metaPlurnk.opId)}`, nextText);
             }
             frames.push({
                 kind: "terminal_output",
@@ -944,12 +1011,15 @@ export class SessionPresenter {
                 return frames;
             }
 
-            const rawNotice = (
-                update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined
-            )?.plurnk?.notice;
+            const plurnkMeta = (
+                update._meta as
+                    | { plurnk?: { notice?: Record<string, unknown>; problem?: Record<string, unknown> } }
+                    | undefined
+            )?.plurnk;
+            const rawNotice = plurnkMeta?.notice;
 
-            if (rawNotice?.source === "engine:turn") {
-                if (rawNotice.kind === "turn_awaiting_model") {
+            if (rawNotice?.source === "engine:turn" || update.title?.startsWith("engine:turn:")) {
+                if (rawNotice?.kind === "turn_awaiting_model" || update.title === "engine:turn:turn_awaiting_model") {
                     this.lifecycle = "running";
                     this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
                     frames.push({
@@ -959,10 +1029,10 @@ export class SessionPresenter {
                     });
                     return frames;
                 }
-                if (rawNotice.kind === "turn_generated") {
+                if (rawNotice?.kind === "turn_generated" || update.title === "engine:turn:turn_generated") {
                     this.lifecycle = "running";
                     this.doing = { phase: "working", since: Date.now(), op: null, target: null };
-                    const acc = rawNotice.accounting as
+                    const acc = rawNotice?.accounting as
                         | {
                               usage?: { inputTokens?: number; outputTokens?: number };
                               costUsd?: string;
@@ -1029,7 +1099,19 @@ export class SessionPresenter {
                 return frames;
             }
 
-            const formatted = `${update.title}${update.description ? `: ${update.description}` : ""}`;
+            const noticeGlyph =
+                plurnkMeta?.problem !== undefined
+                    ? "❌"
+                    : update.severity === "error"
+                      ? "⛔"
+                      : update.severity === "warning"
+                        ? "⚠️ "
+                        : "📌";
+            const noticeText =
+                typeof update.description === "string" && update.description.trim().length > 0
+                    ? update.description.trim()
+                    : update.title;
+            const formatted = `${noticeGlyph} ${noticeText}`;
             frames.push({
                 kind: "notice",
                 severity: update.severity,
@@ -1076,11 +1158,18 @@ export class SessionPresenter {
                                   terminal?: {
                                       status?: number;
                                       turns?: number;
+                                      turnCount?: number;
                                       problem?: { detail?: string };
                                       usage?: {
+                                          curationWeight?: number;
+                                          curationBudget?: number;
+                                          contextTokens?: number | null;
+                                          contextCapacity?: number | null;
                                           accounting?: {
                                               usage?: { inputTokens?: number; outputTokens?: number };
+                                              knownUsage?: { inputTokens?: number; outputTokens?: number };
                                               costUsd?: string;
+                                              knownCostUsd?: string;
                                           };
                                       };
                                   };
@@ -1098,15 +1187,29 @@ export class SessionPresenter {
                             : 200;
                 this.lastLoopStatus = status;
                 this.lifecycle = status >= 400 ? (status === 499 ? "cancelled" : "failed") : "idle";
-                const usage = termMeta?.usage?.accounting?.usage;
+                const usage = termMeta?.usage?.accounting?.usage ?? termMeta?.usage?.accounting?.knownUsage;
                 if (typeof usage?.inputTokens === "number") this.inputTokens = usage.inputTokens;
                 if (typeof usage?.outputTokens === "number") this.outputTokens = usage.outputTokens;
-                if (typeof termMeta?.usage?.accounting?.costUsd === "string") {
-                    this.costUsd = termMeta.usage.accounting.costUsd;
+                const costStr = termMeta?.usage?.accounting?.costUsd ?? termMeta?.usage?.accounting?.knownCostUsd;
+                if (typeof costStr === "string") {
+                    this.costUsd = costStr;
+                }
+                if (typeof termMeta?.usage?.curationWeight === "number") {
+                    this.curationWeight = termMeta.usage.curationWeight;
+                }
+                if (typeof termMeta?.usage?.curationBudget === "number") {
+                    this.curationBudget = termMeta.usage.curationBudget;
+                }
+                if (termMeta?.usage?.contextTokens !== undefined) {
+                    this.contextTokens = termMeta.usage.contextTokens;
+                }
+                if (termMeta?.usage?.contextCapacity !== undefined) {
+                    this.contextCapacity = termMeta.usage.contextCapacity;
                 }
                 const elapsedMs = Math.max(1, Date.now() - this.#turnStartedAt);
                 const statusBar = this.buildStatusBar(elapsedMs, status);
-                const turns = typeof termMeta?.turns === "number" && termMeta.turns > 0 ? termMeta.turns : 1;
+                const rawTurns = termMeta?.turnCount ?? termMeta?.turns;
+                const turns = typeof rawTurns === "number" && rawTurns > 0 ? rawTurns : 1;
                 const hitMaxTurns = update.stopReason === "max_turn_requests" || status === 429;
                 const terminalDetail =
                     typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0

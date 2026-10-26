@@ -6,7 +6,10 @@ import path from "node:path";
 import * as readline from "node:readline";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import pty from "node-pty";
+import xtermPkg from "@xterm/headless";
 import { AcpServer } from "@agentclientprotocol/sdk/experimental/server";
+const { Terminal } = xtermPkg;
 import { createNodeHttpHandler } from "@agentclientprotocol/sdk/experimental/node";
 import {
     agent as createAcpAgent,
@@ -25,6 +28,7 @@ const runCli = (
 ): Promise<{ status: number | null; stdout: string; stderr: string; events: string; reasoning: string }> =>
     new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [binPath, ...args], {
+            cwd: repoRoot,
             env,
             stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
         });
@@ -261,6 +265,65 @@ const createMockAcpServer = async () => {
                     },
                 },
             });
+            if (text.includes("TUI_WATERFALL_CHECK")) {
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: "tc-find",
+                        title: "FIND",
+                        status: "completed",
+                        rawInput: { target: { raw: "workspace:///*" }, aside: "entries" },
+                        rawOutput: { matches: [1, 2, 3] },
+                        content: [{ type: "content", content: { type: "text", text: '[{"path":"workspace:///_plurnk/**"}]' } }],
+                        _meta: { plurnk: { id: 2, turnId: 1, op: "FIND", origin: "model", status: 200, coordinate: "1/1/2" } },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: "tc-note",
+                        title: "NOTE — plan",
+                        status: "completed",
+                        rawInput: { aside: "plan", body: "Check waterfall spacing." },
+                        _meta: { plurnk: { id: 3, turnId: 1, op: "NOTE", origin: "model", status: 200, coordinate: "1/1/3" } },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: "tc-exec",
+                        title: "brave",
+                        status: "in_progress",
+                        rawInput: { target: { raw: "brave_web_search" }, body: '{"query":"yemen"}' },
+                        content: [{ type: "terminal", terminalId: "term:4" }],
+                        _meta: { plurnk: { id: 4, turnId: 1, op: "brave", origin: "model", coordinate: "1/1/4" } },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "terminal_output_chunk",
+                        terminalId: "term:4",
+                        data: Buffer.from("Sana'a result 1\nSana'a result 2\n", "utf8").toString("base64"),
+                        _meta: { plurnk: { opId: 4, target: "brave_web_search" } },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: "tc-exec",
+                        title: "brave",
+                        status: "completed",
+                        rawInput: { target: { raw: "brave_web_search" }, body: '{"query":"yemen"}' },
+                        content: [{ type: "terminal", terminalId: "term:4" }],
+                        _meta: { plurnk: { id: 4, turnId: 1, op: "brave", origin: "model", status: 200, coordinate: "1/1/4" } },
+                    },
+                });
+            }
             if (text.includes("ASK_PERMISSION")) {
                 const perm = await client.request(methods.client.session.requestPermission, {
                     sessionId: params.sessionId,
@@ -342,6 +405,7 @@ const createMockAcpServer = async () => {
         port: address.port,
         async close() {
             await acpServer.close();
+            server.closeAllConnections();
             await new Promise<void>((resolve) => server.close(() => resolve()));
         },
     };
@@ -467,6 +531,7 @@ test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-com
             process.execPath,
             [binPath, "--repl", "--session=repl01"],
             {
+                cwd: repoRoot,
                 env: {
                     ...process.env,
                     PLURNK_ACP_URL: server.url,
@@ -607,6 +672,93 @@ test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-com
         replChild.stdin!.write("/quit\n");
         const exitCode = await new Promise<number | null>((resolve) => replChild.on("close", resolve));
         assert.equal(exitCode, 0);
+
+        // Exercise interactive TUI mode in a real PTY + headless xterm and verify waterfall spacing and previews
+        const xterm = new Terminal({ cols: 100, rows: 45, allowProposedApi: true });
+        let rawPty = "";
+        const tuiPty = pty.spawn(
+            process.execPath,
+            [binPath, "--session=tui01"],
+            {
+                name: "xterm-256color",
+                cols: 100,
+                rows: 45,
+                cwd: repoRoot,
+                env: {
+                    ...process.env,
+                    PLURNK_ACP_URL: server.url,
+                    PLURNK_CLIENT_AUTOSTART: "0",
+                    NO_COLOR: "1",
+                } as Record<string, string>,
+            },
+        );
+        try {
+            tuiPty.onData((chunk) => {
+                rawPty += chunk;
+                xterm.write(chunk);
+            });
+            const waitPty = (re: RegExp, timeoutMs = 5000): Promise<void> =>
+                new Promise((resolveWait, rejectWait) => {
+                    if (re.test(rawPty)) {
+                        resolveWait();
+                        return;
+                    }
+                    const start = Date.now();
+                    const iv = setInterval(() => {
+                        if (re.test(rawPty)) {
+                            clearInterval(iv);
+                            resolveWait();
+                        } else if (Date.now() - start > timeoutMs) {
+                            clearInterval(iv);
+                            rejectWait(new Error(`Timed out waiting for ${String(re)} in TUI PTY:\n${rawPty}`));
+                        }
+                    }, 25);
+                });
+            await waitPty(/workspace: test-ws/u);
+            await new Promise((r) => setTimeout(r, 100));
+            tuiPty.write("TUI_WATERFALL_CHECK\r");
+            await waitPty(/Answered: TUI_WATERFALL_CHECK/u);
+            await new Promise((r) => setTimeout(r, 150));
+
+            const buf = xterm.buffer.active;
+            const screenLines: string[] = [];
+            for (let i = 0; i < buf.length; i += 1) {
+                const line = (buf.getLine(i)?.translateToString(true) ?? "").trimEnd();
+                screenLines.push(line);
+            }
+            const readIdx = screenLines.findIndex((l) => l.startsWith("📖 (file:///tmp/test.txt)"));
+            const findIdx = screenLines.findIndex((l) => l.startsWith("🔎 (workspace:///*)"));
+            assert.ok(readIdx >= 0 && findIdx >= 0, `Expected READ and FIND rows on screen:\n${screenLines.join("\n")}`);
+            assert.equal(findIdx, readIdx + 1, "Consecutive READ and FIND rows must have zero blank lines between them");
+            assert.ok(!screenLines.some((l) => l.includes('[{"path":"workspace:///_plurnk/**"}]')), "FIND result body must not be shown");
+            assert.ok(screenLines.some((l) => l === "🚧"), `Model plan NOTE must render glyph without category word:\n${screenLines.join("\n")}`);
+            assert.ok(screenLines.some((l) => l.startsWith("⚙️  brave (brave_web_search)")), `Runtime execution row must render with two spaces after gear:\n${screenLines.join("\n")}`);
+            assert.ok(screenLines.some((l) => l === "    Sana'a result 1"), "Concluded execution output must preview indented 4 spaces");
+            assert.ok(screenLines.some((l) => l === "🐹"), "Model reply must render with hamster glyph");
+        } finally {
+            await new Promise<void>((resolveExit) => {
+                const timer = setTimeout(() => {
+                    try {
+                        tuiPty.kill();
+                    } catch {
+                        // ignore
+                    }
+                    resolveExit();
+                }, 500);
+                tuiPty.onExit(() => {
+                    clearTimeout(timer);
+                    resolveExit();
+                });
+                try {
+                    tuiPty.write("/quit\r");
+                    tuiPty.kill();
+                } catch {
+                    clearTimeout(timer);
+                    resolveExit();
+                }
+            });
+            xterm.dispose();
+        }
     } finally {
         await server.close();
     }

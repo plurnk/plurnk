@@ -1048,6 +1048,7 @@ export const runCliLogRead = async (
             {
                 workspace: options.workspace,
                 session: options.sessionId ?? options.tuiSession,
+                cwd: options.cwd,
             },
         );
         if (options.json) {
@@ -1083,6 +1084,7 @@ export const runCliReadCoord = async (
             {
                 workspace: options.workspace,
                 session: options.sessionId ?? options.tuiSession,
+                cwd: options.cwd,
             },
         );
         if (options.json) {
@@ -1115,9 +1117,9 @@ export const runCliCapabilities = async (
             ? await client.action(
                   "workspace.capabilities.set",
                   { policy: JSON.parse(policyJson) as unknown },
-                  { workspace: options.workspace },
+                  { workspace: options.workspace, cwd: options.cwd },
               )
-            : await client.action("workspace.capabilities.get", {}, { workspace: options.workspace });
+            : await client.action("workspace.capabilities.get", {}, { workspace: options.workspace, cwd: options.cwd });
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return 0;
     } finally {
@@ -1140,7 +1142,7 @@ export const runCliScript = async (
         const res = await client.action<{ readonly results?: Array<{ readonly status?: number; readonly content?: string; readonly message?: string }> }>(
             "op.parse",
             { text },
-            { workspace: options.workspace, session: options.sessionId ?? options.tuiSession },
+            { workspace: options.workspace, session: options.sessionId ?? options.tuiSession, cwd: options.cwd },
         );
         if (options.json) {
             process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);

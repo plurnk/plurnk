@@ -81,7 +81,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(operationGlyphFor("FORK"), "🔱");
     assert.equal(operationGlyphFor("WAIT"), "⏳");
     assert.equal(operationGlyphFor("SEND"), "✉️");
-    assert.equal(operationGlyphFor("sh"), "⚙️ sh");
+    assert.equal(operationGlyphFor("sh"), "⚙️  sh");
 
     // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-provider-reasoning}, {§cli-response-order})
     const presenter = new SessionPresenter({
@@ -144,9 +144,104 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(notePlan[0]?.kind, "tool_call");
     if (notePlan[0]?.kind === "tool_call") {
         assert.equal(notePlan[0].glyph, "🚧");
+        assert.equal(notePlan[0].origin, "model");
         assert.equal(notePlan[0].aside, null);
         assert.equal(notePlan[0].noteBody, "Evaluate and react to the Open Message.");
     }
+
+    // Harness NOTE (_plurnk origin) sets contentLines and renders all lines indented 4 spaces ({§cli-note-rendering})
+    const harnessNote = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/3",
+        title: "NOTE — review",
+        status: "completed",
+        rawInput: { aside: "review", body: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6" },
+        _meta: { plurnk: { op: "NOTE", origin: "_plurnk" } },
+    });
+    assert.equal(harnessNote[0]?.kind, "tool_call");
+    if (harnessNote[0]?.kind === "tool_call") {
+        assert.equal(harnessNote[0].origin, "_plurnk");
+        assert.equal(harnessNote[0].noteBody, "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6");
+        assert.deepEqual(harnessNote[0].contentLines, ["Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6"]);
+        const renderedHarnessNote = renderOperationBlock({
+            glyph: harnessNote[0].glyph,
+            op: harnessNote[0].op,
+            target: harnessNote[0].target,
+            scope: harnessNote[0].scope,
+            aside: harnessNote[0].aside,
+            count: harnessNote[0].count,
+            outcome: harnessNote[0].outcome,
+            contentLines: harnessNote[0].contentLines,
+            outputLines: harnessNote[0].outputLines,
+            coordinate: harnessNote[0].toolCallId,
+            previewLimit: 2,
+            columns: 80,
+        });
+        assert.match(renderedHarnessNote, /    Line 6/u);
+        assert.doesNotMatch(renderedHarnessNote, /\+\d+ line/u);
+    }
+
+    // Concluded runtime execution previews streamed output under the operation row and suppresses duplicate obligation READ ({§cli-log-entry-line-format}, {§cli-stream-event-and-stream-concluded})
+    assert.equal(
+        presenter.apply({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "1/1/4",
+            title: "brave",
+            status: "in_progress",
+            rawInput: { target: { raw: "brave_web_search" }, body: '{"query":"weather"}' },
+            _meta: { plurnk: { id: 4, op: "brave", origin: "model", coordinate: "1/1/4" } },
+        }).length,
+        0,
+    );
+    presenter.apply({
+        sessionUpdate: "terminal_output_chunk",
+        terminalId: "stream:4",
+        data: Buffer.from("Result line 1\nResult line 2\nResult line 3\n", "utf8").toString("base64"),
+        _meta: { plurnk: { opId: 4 } },
+    });
+    presenter.apply({
+        sessionUpdate: "terminal_update",
+        terminalId: "stream:4",
+        status: "completed",
+        exitStatus: { exitCode: 0, signal: null },
+        _meta: { plurnk: { opId: 4 } },
+    });
+    const execDone = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/4",
+        title: "brave",
+        status: "completed",
+        rawInput: { target: { raw: "brave_web_search" }, body: '{"query":"weather"}' },
+        _meta: { plurnk: { id: 4, op: "brave", origin: "model", status: 200, coordinate: "1/1/4" } },
+    });
+    assert.equal(execDone.length, 1);
+    if (execDone[0]?.kind === "tool_call") {
+        assert.deepEqual(execDone[0].contentLines, ['{"query":"weather"}']);
+        assert.deepEqual(execDone[0].outputLines, ["Result line 1\nResult line 2\nResult line 3"]);
+        const renderedExec = renderOperationBlock({
+            glyph: execDone[0].glyph,
+            op: execDone[0].op,
+            target: execDone[0].target,
+            scope: execDone[0].scope,
+            aside: execDone[0].aside,
+            count: execDone[0].count,
+            outcome: execDone[0].outcome,
+            contentLines: execDone[0].contentLines,
+            outputLines: execDone[0].outputLines,
+            coordinate: execDone[0].toolCallId,
+            previewLimit: 2,
+            columns: 80,
+        });
+        assert.match(renderedExec, /⚙️\s+brave[\s\S]*\{"query":"weather"\}[\s\S]*Result line 1[\s\S]*Result line 2[\s\S]*\+1 line/u);
+    }
+    const dupDischarge = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/4",
+        title: "brave",
+        status: "completed",
+        _meta: { plurnk: { id: 4, op: "brave", origin: "model", status: 200, coordinate: "1/1/4" } },
+    });
+    assert.equal(dupDischarge.length, 0, "duplicate tool_call_update after obligation discharge must be suppressed");
 
     // Subagent and session_message projection ({§cli-sessions-topology})
     const sub = presenter.apply({
@@ -204,7 +299,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         /🎯 done · 1 turn · 1\.25s · ↓1\.2k ↑300 · cur 10%\/4k · ctx 10%\/8k · loop \$0\.02/,
     );
 
-    // Engine turn and workspace notices route to status_update, never waterfall notice ({§cli-what-is-not-rendered})
+    // Engine turn and workspace notices route to status_update or are suppressed, never waterfall notice ({§cli-what-is-not-rendered})
     const turnAwait = presenter.apply({
         sessionUpdate: "notice",
         severity: "info",
@@ -213,6 +308,30 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     });
     assert.equal(turnAwait[0]?.kind, "status_update");
     assert.match(presenter.lastStatusLine, /awaiting model/);
+
+    const continuedWithoutNote = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "warning",
+        title: "engine:turn:continued_without_note",
+        description: "The turn continued without a NOTE.",
+        _meta: { plurnk: { notice: { source: "engine:turn", kind: "continued_without_note", level: "warn" } } },
+    });
+    assert.equal(continuedWithoutNote[0]?.kind, "notice");
+    if (continuedWithoutNote[0]?.kind === "notice") {
+        assert.equal(continuedWithoutNote[0].formatted, "⚠️  The turn continued without a NOTE.");
+    }
+
+    const warnNotice = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "warning",
+        title: "client:session:history_lost",
+        description: "The daemon holds no history for this session.",
+        _meta: { plurnk: { notice: { source: "client:session", kind: "history_lost", level: "warn" } } },
+    });
+    assert.equal(warnNotice[0]?.kind, "notice");
+    if (warnNotice[0]?.kind === "notice") {
+        assert.equal(warnNotice[0].formatted, "⚠️  The daemon holds no history for this session.");
+    }
 });
 
 test("{§cli-session-status} {§cli-status-wait} {§cli-status-preparation} {§cli-status-disconnected} {§cli-identity-effort} {§cli-status-project-root} {§cli-status-children} {§cli-status-gated} {§cli-status-inbox} {§cli-status-streams} {§cli-status-clock} {§cli-status-spend}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {

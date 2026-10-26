@@ -361,7 +361,13 @@ export const openCliSession = async (
             session.configOptions = [...resumed.configOptions];
         }
         if (resumed._meta !== undefined && resumed._meta !== null) {
-            session.meta = resumed._meta as Record<string, unknown>;
+            const prevPlurnk = (session.meta?.plurnk ?? {}) as Record<string, unknown>;
+            const nextPlurnk = ((resumed._meta as Record<string, unknown>).plurnk ?? {}) as Record<string, unknown>;
+            session.meta = {
+                ...(session.meta ?? {}),
+                ...(resumed._meta as Record<string, unknown>),
+                plurnk: { ...prevPlurnk, ...nextPlurnk },
+            };
         }
     }
 

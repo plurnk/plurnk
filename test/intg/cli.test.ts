@@ -120,6 +120,24 @@ const createMockAcpServer = async () => {
                         ],
                     };
                 }
+                if (params.kind === "workspace.sessions") {
+                    return {
+                        sessions: [
+                            { id: 1, name: "repl01", lifecycle: "idle" },
+                        ],
+                    };
+                }
+                if (params.kind === "op.parse") {
+                    const rawText = String(params.params?.text ?? "");
+                    return {
+                        results: [
+                            {
+                                status: 200,
+                                content: `OP_PARSE_OK: ${rawText.replace(/\r?\n/gu, "\\n")}`,
+                            },
+                        ],
+                    };
+                }
                 return { ok: true };
             },
         )
@@ -260,12 +278,14 @@ const createMockAcpServer = async () => {
                     ],
                 });
                 const outcome = perm.outcome.outcome === "selected" ? perm.outcome.optionId : "cancelled";
+                const editedBody = (perm as { _meta?: { plurnk?: { body?: string } } })._meta?.plurnk?.body;
+                const bodySuffix = editedBody !== undefined ? ` | body=${JSON.stringify(editedBody)}` : "";
                 await client.notify(methods.client.session.update, {
                     sessionId: params.sessionId,
                     update: {
                         sessionUpdate: "agent_message_chunk",
                         messageId: "m-1",
-                        content: { type: "text", text: `Permission outcome: ${outcome}` },
+                        content: { type: "text", text: `Permission outcome: ${outcome}${bodySuffix}` },
                     },
                 });
             } else {
@@ -274,7 +294,7 @@ const createMockAcpServer = async () => {
                     update: {
                         sessionUpdate: "agent_message_chunk",
                         messageId: "m-1",
-                        content: { type: "text", text: `Answered: ${text}` },
+                        content: { type: "text", text: `Answered: ${text.replace(/\r?\n/gu, "\\n")}` },
                     },
                 });
             }
@@ -521,7 +541,10 @@ test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-com
             return new Promise((resolve) => eventWaiters.push({ pred, resolve }));
         };
 
-        await waitEvent((e) => e.sessionUpdate === "session_bound");
+        const boundEvent = await waitEvent((e) => e.sessionUpdate === "session_bound");
+        assert.ok(Array.isArray(boundEvent.history), "session_bound carries history array");
+        assert.ok(Array.isArray(boundEvent.sessions), "session_bound carries sessions array");
+        assert.ok(Array.isArray(boundEvent.workspaces), "session_bound carries workspaces array");
         await waitStdout((l) => l === "workspace: test-ws");
 
         // Slash commands on fd 0 -> output on fd 1
@@ -532,6 +555,27 @@ test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-com
         replChild.stdin!.write("/nonexistent\n");
         const errObj = await waitStderr((e) => e.type === "https://problems.plurnk.xyz/client/unknown-command");
         assert.equal(errObj.status, 400);
+
+        // Multiline executable backtick fence on fd 0 -> routes to op.parse
+        replChild.stdin!.write("```READ file:///tmp/test.txt\n```\n");
+        await waitStdout((l) => l === "OP_PARSE_OK: ```READ file:///tmp/test.txt\\n```");
+
+        // Bracketed paste multiline submission on fd 0 -> single prompt with preserved newlines
+        replChild.stdin!.write("\x1b[200~Bracketed line 1\nBracketed line 2\x1b[201~\n");
+        await waitStdout((l) => l === "Answered: Bracketed line 1\\nBracketed line 2");
+
+        // Backslash line continuation on fd 0 -> single prompt with preserved newline
+        replChild.stdin!.write("Continued line 1 \\\nContinued line 2\n");
+        await waitStdout((l) => l === "Answered: Continued line 1 \\nContinued line 2");
+
+        // /import <path> stages local file and emits composer_updated on fd 3, then prepends to next prompt
+        replChild.stdin!.write("/import package.json\n");
+        const composerEvent = await waitEvent(
+            (e) => e.sessionUpdate === "composer_updated" && e.source === "import" && e.path === "package.json",
+        );
+        assert.match(String(composerEvent.text ?? ""), /"@plurnk\/plurnk"/u);
+        replChild.stdin!.write("Summarize imported package\n");
+        await waitStdout((l) => l.includes("Answered:") && l.includes("@plurnk/plurnk") && l.includes("Summarize imported package"));
 
         // Prompt that triggers a permission gate while yolo is off
         replChild.stdin!.write("ASK_PERMISSION\n");
@@ -550,12 +594,12 @@ test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-com
         );
         assert.equal(missingIdErr.status, 400);
 
-        // /approve @<id> allow_always resolves the specific gate by hash; receipt is gate_resolved on fd 3 (events)
-        replChild.stdin!.write(`/approve @${gateId} allow_always\n`);
+        // /edit @<id> with bracketed-paste multiline body preserves embedded newlines
+        replChild.stdin!.write(`\x1b[200~/edit @${gateId} edited line 1\nedited line 2\x1b[201~\n`);
         const resolvedEvent = await waitEvent((e) => e.sessionUpdate === "gate_resolved" && e.id === gateId);
-        assert.deepEqual(resolvedEvent.outcome, { outcome: "selected", optionId: "allow_always" });
+        assert.deepEqual(resolvedEvent.outcome, { outcome: "selected", optionId: "allow_once" });
 
-        await waitStdout((l) => l === "Permission outcome: allow_always");
+        await waitStdout((l) => l === 'Permission outcome: allow_once | body="edited line 1\\nedited line 2"');
         assert.ok(!stdoutLines.some((l) => l.startsWith("approved ")), "stdout must stay free of gate resolution acks");
         await waitEvent((e) => e.sessionUpdate === "state_update" && e.state === "idle");
         assert.match(reasoningText, /Thinking about: ASK_PERMISSION/);

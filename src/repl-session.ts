@@ -1,12 +1,14 @@
 // Five-stream contract ([stdin, stdout, stderr, events, reasoning], fd 0..4) and
 // interactive REPL engine ({§cli-output-channels}, {§cli-repl-mode}, {§cli-tui-mode}).
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, fstatSync, readFileSync, statSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, fstatSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import * as readline from "node:readline";
 import { PassThrough, Writable } from "node:stream";
+import { parseEnv } from "node:util";
 import {
     CreateElicitationRequest,
     SessionConfigOption,
@@ -183,6 +185,7 @@ export const runReplSession = async (
     let gateSeq = 0;
     let reasoningOpenOnLine = false;
     let currentLifecycle = "idle";
+    let stagedComposerText = "";
     const pendingGates = new Map<string, PendingGate>();
 
     const flushReasoningNewline = (): void => {
@@ -192,7 +195,13 @@ export const runReplSession = async (
         }
     };
 
-    const emitSessionBound = (session: AcpSession): void => {
+    const emitSessionBound = (
+        session: AcpSession,
+        extra?: {
+            readonly sessions?: ReadonlyArray<Record<string, unknown>>;
+            readonly workspaces?: ReadonlyArray<Record<string, unknown>>;
+        },
+    ): void => {
         const plurnk = (session.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
         const ws = (plurnk?.workspace ?? undefined) as Record<string, unknown> | undefined;
         if (typeof ws?.name === "string" && ws.name.length > 0) {
@@ -206,6 +215,8 @@ export const runReplSession = async (
         } else if (session.sessionId.includes("#")) {
             currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
         }
+        const historyLimit = options.historyEntries > 0 ? options.historyEntries : 0;
+        const history = historyLimit > 0 ? session.items.slice(-historyLimit) : [];
         writeEventJsonl(streams.events, {
             sessionUpdate: "session_bound",
             sessionId: session.sessionId,
@@ -213,6 +224,9 @@ export const runReplSession = async (
             session: currentSessionName,
             cwd: currentProjectRoot,
             configOptions: session.configOptions,
+            history,
+            ...(extra?.sessions !== undefined ? { sessions: extra.sessions } : {}),
+            ...(extra?.workspaces !== undefined ? { workspaces: extra.workspaces } : {}),
             ...(session.meta !== undefined ? { _meta: session.meta } : {}),
         });
     };
@@ -432,10 +446,44 @@ export const runReplSession = async (
                 ...(workspaceName !== undefined ? { workspace: workspaceName } : {}),
                 sessionId: sessionName,
             },
-            handleSessionUpdate,
+            (update, s) => {
+                if (s === activeSession) {
+                    handleSessionUpdate(update);
+                }
+            },
+            options.historyEntries > 0,
         );
         activeSession = nextSession;
-        emitSessionBound(nextSession);
+        const plurnk = (nextSession.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+        const ws = (plurnk?.workspace ?? undefined) as Record<string, unknown> | undefined;
+        const resolvedWorkspace =
+            typeof ws?.name === "string" && ws.name.length > 0 ? ws.name : (workspaceName ?? currentWorkspace);
+        const resolvedSession =
+            typeof plurnk?.sessionName === "string" && plurnk.sessionName.length > 0
+                ? plurnk.sessionName
+                : nextSession.sessionId.includes("#")
+                  ? nextSession.sessionId.slice(nextSession.sessionId.indexOf("#") + 1)
+                  : sessionName;
+        const [sessionsRes, workspacesRes] = await Promise.all([
+            client
+                .action<{ readonly sessions?: ReadonlyArray<Record<string, unknown>> }>(
+                    "workspace.sessions",
+                    {},
+                    {
+                        sessionId: nextSession.sessionId,
+                        workspace: resolvedWorkspace,
+                        session: resolvedSession,
+                    },
+                )
+                .catch(() => undefined),
+            client
+                .action<{ readonly workspaces?: ReadonlyArray<Record<string, unknown>> }>("workspace.list", {})
+                .catch(() => undefined),
+        ]);
+        emitSessionBound(nextSession, {
+            sessions: Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [],
+            workspaces: Array.isArray(workspacesRes?.workspaces) ? workspacesRes.workspaces : [],
+        });
         return nextSession;
     };
 
@@ -578,6 +626,55 @@ export const runReplSession = async (
             const result = await client.action<Record<string, unknown>>(
                 `${scopePrefix}.env.${sub}`,
                 { alias, definition: { value } },
+                bindingContext(),
+            );
+            streams.stdout.write(`${JSON.stringify(result)}\n`);
+            return;
+        }
+        if (sub === "import" && family === "env") {
+            const filePath = rest[0];
+            if (!filePath) {
+                writeErrorJsonl(streams.stderr, {
+                    type: "https://problems.plurnk.xyz/client/usage",
+                    title: "Missing env import path",
+                    status: 400,
+                    detail: "usage: /env import <path>",
+                });
+                return;
+            }
+            const parsed = parseEnv(readFileSync(resolve(options.cwd, filePath), "utf8"));
+            const entries = Object.entries(parsed);
+            let landed = 0;
+            for (const [alias, val] of entries) {
+                try {
+                    await client.action(
+                        `${scopePrefix}.env.add`,
+                        { alias, definition: { value: String(val ?? "") } },
+                        bindingContext(),
+                    );
+                    landed += 1;
+                } catch (err) {
+                    writeErrorJsonl(streams.stderr, {
+                        type: "https://problems.plurnk.xyz/client/command-failed",
+                        title: "Env import entry failed",
+                        status: 400,
+                        detail: err instanceof Error ? err.message : String(err),
+                    });
+                }
+            }
+            const scopeDesc = scopePrefix === "workspace" ? "workspace defaults" : "this session only";
+            streams.stdout.write(`imported ${String(landed)} of ${String(entries.length)} into ${scopeDesc}\n`);
+            return;
+        }
+        if ((sub === "add" || sub === "replace") && family === "schedule") {
+            const alias = rest[0] ?? "";
+            const sessionArg = rest[1] ?? "";
+            const rule = rest[2] ?? "";
+            const prompt = rest.slice(3).join(" ");
+            const target = sessionArg.startsWith("session://") ? sessionArg : `session://${sessionArg}`;
+            const result = await client.action<Record<string, unknown>>(
+                `workspace.schedule.${sub}`,
+                { alias, definition: { rule, target, prompt } },
                 bindingContext(),
             );
             streams.stdout.write(`${JSON.stringify(result)}\n`);
@@ -794,7 +891,8 @@ export const runReplSession = async (
                         });
                         return "continue";
                     }
-                    const editedBody = args.slice(1).join(" ");
+                    const afterTargetMatch = line.match(/^\/\S+\s+\S+(?:\r?\n|[ \t])([\s\S]*)$/u);
+                    const editedBody = afterTargetMatch?.[1] ?? "";
                     const allowOpt =
                         gate.request.options.find(
                             (o) => o.kind === "allow_once" || o.kind === "allow_always",
@@ -822,7 +920,8 @@ export const runReplSession = async (
                         });
                         return "continue";
                     }
-                    const rawPayload = args.slice(1).join(" ").trim();
+                    const afterTargetMatch = line.match(/^\/\S+\s+\S+(?:\r?\n|[ \t])([\s\S]*)$/u);
+                    const rawPayload = (afterTargetMatch?.[1] ?? "").trim();
                     let content: Record<string, unknown> = {};
                     if (rawPayload.length > 0) {
                         try {
@@ -1069,7 +1168,53 @@ export const runReplSession = async (
                         return "continue";
                     }
                     const content = readFileSync(resolve(options.cwd, filePath), "utf8");
+                    stagedComposerText =
+                        stagedComposerText.length > 0 ? `${stagedComposerText}\n${content}` : content;
+                    writeEventJsonl(streams.events, {
+                        sessionUpdate: "composer_updated",
+                        source: "import",
+                        path: filePath,
+                        text: stagedComposerText,
+                    });
                     streams.stdout.write(content.endsWith("\n") ? content : `${content}\n`);
+                    return "continue";
+                }
+
+                if (cmd === "editor") {
+                    const editorCmd = options.env.VISUAL || options.env.EDITOR || (process.stdin.isTTY ? "vi" : "");
+                    if (!editorCmd) {
+                        writeErrorJsonl(streams.stderr, {
+                            type: "https://problems.plurnk.xyz/client/editor-unavailable",
+                            title: "Editor unavailable",
+                            status: 400,
+                            detail: "Set $VISUAL or $EDITOR to use /editor in non-TTY mode.",
+                        });
+                        return "continue";
+                    }
+                    const tmpDir = mkdtempSync(join(tmpdir(), "plurnk-editor-"));
+                    const tmpFile = join(tmpDir, "prompt.md");
+                    try {
+                        writeFileSync(tmpFile, stagedComposerText, "utf8");
+                        const res = spawnSync(editorCmd, [tmpFile], {
+                            stdio: "inherit",
+                            shell: true,
+                            env: options.env as NodeJS.ProcessEnv,
+                        });
+                        if (res.status === 0) {
+                            const edited = readFileSync(tmpFile, "utf8").trim();
+                            stagedComposerText = "";
+                            writeEventJsonl(streams.events, {
+                                sessionUpdate: "composer_updated",
+                                source: "editor",
+                                text: edited,
+                            });
+                            if (edited.length > 0) {
+                                return await dispatchLine(edited);
+                            }
+                        }
+                    } finally {
+                        rmSync(tmpDir, { recursive: true, force: true });
+                    }
                     return "continue";
                 }
 
@@ -1194,6 +1339,33 @@ export const runReplSession = async (
             return "continue";
         }
 
+        const isExecFence =
+            !rawLine.trimStart().startsWith(": ") &&
+            /^(`{3,}|~{3,})([^\s`~].*)\r?\n[\s\S]*$/u.test(line);
+        if (isExecFence) {
+            try {
+                const res = await client.action<{
+                    readonly results?: ReadonlyArray<{
+                        readonly status?: number;
+                        readonly content?: string;
+                        readonly message?: string;
+                    }>;
+                }>("op.parse", { text: line }, bindingContext());
+                for (const r of res.results ?? []) {
+                    const out = r.content ?? r.message ?? String(r.status ?? 200);
+                    streams.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
+                }
+            } catch (err) {
+                writeErrorJsonl(streams.stderr, {
+                    type: "https://problems.plurnk.xyz/client/exec-failed",
+                    title: "Execution failed",
+                    status: 500,
+                    detail: err instanceof Error ? err.message : String(err),
+                });
+            }
+            return "continue";
+        }
+
         if (line.startsWith("...")) {
             const injected = line.slice(3).trimStart();
             if (injected.length === 0) return "continue";
@@ -1216,8 +1388,15 @@ export const runReplSession = async (
         if (line.startsWith("?")) {
             forceReviewNextRun = true;
             promptText = line.slice(1).trimStart();
-        } else if (line.startsWith(": ")) {
-            promptText = line.slice(2);
+        } else if (rawLine.trimStart().startsWith(": ")) {
+            promptText = rawLine.trimStart().slice(2);
+        }
+
+        if (stagedComposerText.length > 0) {
+            promptText = promptText.startsWith(stagedComposerText)
+                ? promptText
+                : `${stagedComposerText}\n${promptText}`;
+            stagedComposerText = "";
         }
 
         const openPaths = extractOpenPaths(promptText, currentProjectRoot);
@@ -1249,10 +1428,43 @@ export const runReplSession = async (
     return await new Promise<number>((resolvePromise) => {
         let settled = false;
         let queue = Promise.resolve();
+        let inBracketedPaste = false;
+        let pasteLines: string[] = [];
+        let activeFenceClosing: RegExp | null = null;
+        let fenceLines: string[] = [];
+        let continuationLines: string[] = [];
+
+        const onSigInt = (): void => {
+            if (currentLifecycle === "running" || currentLifecycle === "parked" || pendingGates.size > 0) {
+                for (const gate of [...pendingGates.values()]) {
+                    if (gate.kind === "permission") {
+                        gate.resolveGate({ outcome: { outcome: "cancelled" } });
+                    } else {
+                        gate.resolveGate({ action: "cancel" });
+                    }
+                }
+                void client.cancel(session.sessionId).catch(() => {});
+                streams.stdout.write("cancelled (final 499)\n");
+                return;
+            }
+            if (stagedComposerText.length > 0) {
+                stagedComposerText = "";
+                writeEventJsonl(streams.events, {
+                    sessionUpdate: "composer_updated",
+                    source: "clear",
+                    text: "",
+                });
+                return;
+            }
+            finish(0);
+        };
+
+        process.on("SIGINT", onSigInt);
 
         const finish = (code: number): void => {
             if (settled) return;
             settled = true;
+            process.removeListener("SIGINT", onSigInt);
             flushReasoningNewline();
             rl.close();
             if (streams.stdin === process.stdin) {
@@ -1262,17 +1474,101 @@ export const runReplSession = async (
             resolvePromise(code);
         };
 
-        rl.on("line", (rawLine: string) => {
+        const enqueueSubmission = (submission: string): void => {
             queue = queue.then(async () => {
                 if (settled) return;
-                const action = await dispatchLine(rawLine);
+                const action = await dispatchLine(submission);
                 if (action === "quit") {
                     finish(0);
                 }
             });
+        };
+
+        rl.on("line", (rawLine: string) => {
+            if (inBracketedPaste) {
+                const endIdx = rawLine.indexOf("\x1b[201~");
+                if (endIdx >= 0) {
+                    pasteLines.push(rawLine.slice(0, endIdx) + rawLine.slice(endIdx + "\x1b[201~".length));
+                    const submission = pasteLines.join("\n");
+                    pasteLines = [];
+                    inBracketedPaste = false;
+                    enqueueSubmission(submission);
+                } else {
+                    pasteLines.push(rawLine);
+                }
+                return;
+            }
+
+            const pasteStartIdx = rawLine.indexOf("\x1b[200~");
+            if (pasteStartIdx >= 0) {
+                const prefix = rawLine.slice(0, pasteStartIdx);
+                const afterStart = rawLine.slice(pasteStartIdx + "\x1b[200~".length);
+                const endIdx = afterStart.indexOf("\x1b[201~");
+                if (endIdx >= 0) {
+                    const combined =
+                        prefix + afterStart.slice(0, endIdx) + afterStart.slice(endIdx + "\x1b[201~".length);
+                    enqueueSubmission(combined);
+                } else {
+                    inBracketedPaste = true;
+                    pasteLines = [prefix + afterStart];
+                }
+                return;
+            }
+
+            if (activeFenceClosing !== null) {
+                fenceLines.push(rawLine);
+                if (activeFenceClosing.test(rawLine)) {
+                    const submission = fenceLines.join("\n");
+                    fenceLines = [];
+                    activeFenceClosing = null;
+                    enqueueSubmission(submission);
+                }
+                return;
+            }
+
+            if (continuationLines.length === 0) {
+                const candidate = rawLine.trimStart().startsWith(": ")
+                    ? rawLine.trimStart().slice(2)
+                    : rawLine.trimStart();
+                const fenceMatch = candidate.match(/^(`{3,}|~{3,})([^\s`~].*)$/u);
+                if (fenceMatch) {
+                    const fenceSeq = fenceMatch[1]!;
+                    const fenceChar = fenceSeq[0]!;
+                    activeFenceClosing = new RegExp(`^\\s*${fenceChar}{${String(fenceSeq.length)},}\\s*$`, "u");
+                    fenceLines = [rawLine];
+                    return;
+                }
+            }
+
+            if (rawLine.endsWith("\\")) {
+                continuationLines.push(rawLine.slice(0, -1));
+                return;
+            }
+
+            if (continuationLines.length > 0) {
+                continuationLines.push(rawLine);
+                const submission = continuationLines.join("\n");
+                continuationLines = [];
+                enqueueSubmission(submission);
+                return;
+            }
+
+            enqueueSubmission(rawLine);
         });
 
         rl.on("close", () => {
+            if (pasteLines.length > 0) {
+                enqueueSubmission(pasteLines.join("\n"));
+                pasteLines = [];
+            }
+            if (fenceLines.length > 0) {
+                enqueueSubmission(fenceLines.join("\n"));
+                fenceLines = [];
+            }
+            if (continuationLines.length > 0) {
+                enqueueSubmission(continuationLines.join("\n"));
+                continuationLines = [];
+            }
             void queue.then(() => {
                 finish(0);
             });

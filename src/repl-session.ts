@@ -1764,6 +1764,8 @@ export const runTuiViewport = async (
                     op: frame.op,
                     title: frame.title,
                     target: frame.target,
+                    scope: frame.scope,
+                    destination: frame.destination,
                     pattern: frame.pattern,
                     count: frame.count,
                     aside: frame.aside,

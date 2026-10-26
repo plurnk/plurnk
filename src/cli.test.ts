@@ -98,12 +98,26 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(r1[0]?.kind, "reasoning_tail");
     assert.deepEqual(presenter.reasoningLines, ["line 2", "line 3"]);
 
-    // Tool call retires reasoning tail and emits operation glyph ({§cli-response-order})
+    // Internal _plurnk emission READ (ops://...) and entry materialization EDIT are never rendered ({§cli-what-is-not-rendered})
+    const emittedAnnouncement = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/0",
+        title: "READ (ops://x3/1/2)",
+        status: "completed",
+        locations: [{ path: "ops://x3/1/2" }],
+        content: [{ type: "content", content: { type: "text", text: "```SEND [200]\nHello\n```" } }],
+        _meta: { plurnk: { op: "READ", origin: "_plurnk", attrs: { kind: "emission" } } },
+    });
+    assert.equal(emittedAnnouncement.length, 0);
+
+    // Tool call retires reasoning tail and emits operation glyph; READ and FIND show {count} and no receipt body ({§cli-response-order}, {§cli-log-entry-line-format})
     const t1 = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/1",
         title: "READ",
         status: "completed",
+        rawInput: { target: { raw: "workspace:///_plurnk/plurnk/session.md" }, lineMarker: { marks: [1, -1] } },
+        rawOutput: { range: { returned: [1, 78] } },
         content: [{ type: "content", content: { type: "text", text: "file contents" } }],
         _meta: { plurnk: { op: "READ" } },
     });
@@ -112,7 +126,26 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(t1[1]?.kind, "tool_call");
     if (t1[1]?.kind === "tool_call") {
         assert.equal(t1[1].glyph, "📖");
-        assert.deepEqual(t1[1].contentLines, ["file contents"]);
+        assert.equal(t1[1].target, "workspace:///_plurnk/plurnk/session.md");
+        assert.equal(t1[1].scope, "<1,-1>");
+        assert.equal(t1[1].count, 78);
+        assert.deepEqual(t1[1].contentLines, []);
+    }
+
+    // NOTE category asides (plan/idea/fact/note) use category glyph and consume the category word ({§cli-operation-glyphs})
+    const notePlan = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/2",
+        title: "NOTE — plan",
+        status: "completed",
+        rawInput: { aside: "plan", body: "Evaluate and react to the Open Message." },
+        _meta: { plurnk: { op: "NOTE" } },
+    });
+    assert.equal(notePlan[0]?.kind, "tool_call");
+    if (notePlan[0]?.kind === "tool_call") {
+        assert.equal(notePlan[0].glyph, "🚧");
+        assert.equal(notePlan[0].aside, null);
+        assert.equal(notePlan[0].noteBody, "Evaluate and react to the Open Message.");
     }
 
     // Subagent and session_message projection ({§cli-sessions-topology})
@@ -137,22 +170,22 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.match(renderModelReply("Cancelled", 80, { op: "SEND", status: 499 }), /❌/);
     assert.match(renderModelReply("Waiting", 80, { op: "WAIT", status: 200 }), /⏳/);
     assert.match(
-        renderNoteBlock({ glyph: "💡", aside: "IDEA", body: "Full note markdown body", columns: 80 }),
-        /💡[\s\S]*IDEA[\s\S]*Full note markdown body/,
+        renderNoteBlock({ glyph: "💡", aside: null, body: "Full note markdown body", columns: 80 }),
+        /💡\n[\s\S]*Full note markdown body/,
     );
     assert.match(
         renderOperationBlock({
-            glyph: "📖",
-            op: "READ",
+            glyph: "📝",
+            op: "EDIT",
             target: "file:///tmp/a.ts",
-            count: 10,
+            scope: "<1,10>",
             aside: "check",
             contentLines: ["l1\nl2\nl3\nl4\nl5\nl6"],
             coordinate: "1/1/1",
             previewLimit: 5,
             columns: 80,
         }),
-        /📖[\s\S]*\(file:\/\/\/tmp\/a\.ts\) \{10\}[\s\S]*1 more line — \/peek 1\/1\/1/,
+        /📝[\s\S]*\(file:\/\/\/tmp\/a\.ts\) <1,10>[\s\S]*\+1 line · log:\/\/\/1\/1\/1\/EDIT/,
     );
     assert.match(renderReasoning("step 1\nstep 2"), /💭 step 1[\s\S]*   step 2/);
     assert.match(

@@ -35,7 +35,7 @@ const OPERATION_GLYPH_MAP: Readonly<Record<string, string>> = {
 export const operationGlyphFor = (op: string | undefined, aside?: string | null): string => {
     if (op === "NOTE" && typeof aside === "string") {
         const clean = aside.trim().toUpperCase();
-        if (clean === "FACT" || clean === "IDEA" || clean === "PLAN") {
+        if (clean === "FACT" || clean === "IDEA" || clean === "PLAN" || clean === "NOTE") {
             return OPERATION_GLYPH_MAP[clean]!;
         }
     }
@@ -46,6 +46,25 @@ export const operationGlyphFor = (op: string | undefined, aside?: string | null)
         return `⚙️ ${op}`;
     }
     return "⚙️";
+};
+
+export const normalizeNoteHeading = (
+    op: string,
+    rawAside: string | null,
+): { readonly glyph: string; readonly aside: string | null } => {
+    if (op === "NOTE" && typeof rawAside === "string") {
+        const trimmed = rawAside.trim();
+        const upper = trimmed.toUpperCase();
+        if (upper === "FACT" || upper === "IDEA" || upper === "PLAN" || upper === "NOTE") {
+            return { glyph: OPERATION_GLYPH_MAP[upper]!, aside: null };
+        }
+        const prefixed = trimmed.match(/^(FACT|IDEA|PLAN|NOTE)\s*[:—-]\s*(.+)$/iu);
+        if (prefixed?.[1] && prefixed[2]) {
+            const cat = prefixed[1].toUpperCase();
+            return { glyph: OPERATION_GLYPH_MAP[cat] ?? "🗒️", aside: prefixed[2].trim() };
+        }
+    }
+    return { glyph: operationGlyphFor(op, rawAside), aside: rawAside };
 };
 
 export const lifecycleGlyphFor = (lifecycle: string | undefined, status?: number): string => {
@@ -130,6 +149,8 @@ export type PresentationFrame =
           readonly op: string;
           readonly title: string;
           readonly target: string | null;
+          readonly scope: string | null;
+          readonly destination: string | null;
           readonly pattern: string | null;
           readonly count: number | null;
           readonly aside: string | null;
@@ -229,6 +250,86 @@ const formatLiveWait = (ms: number): string => {
     return `${(ms / 1000).toFixed(1)}s`;
 };
 
+const extractRawString = (val: unknown): string | null => {
+    if (typeof val === "string" && val.length > 0) return val;
+    if (val && typeof val === "object" && typeof (val as { raw?: unknown }).raw === "string") {
+        const raw = (val as { raw: string }).raw;
+        return raw.length > 0 ? raw : null;
+    }
+    return null;
+};
+
+const extractScopeToken = (lineMarker: unknown): string | null => {
+    if (!lineMarker || typeof lineMarker !== "object") return null;
+    const marks = (lineMarker as { marks?: unknown }).marks;
+    if (!Array.isArray(marks) || marks.length === 0) return null;
+    const tokens = marks.filter((m): m is number | string => typeof m === "number" || typeof m === "string");
+    return tokens.length > 0 ? `<${tokens.map(String).join(",")}>` : null;
+};
+
+const spanLength = (span: unknown): number | null => {
+    if (!Array.isArray(span) || span.length !== 2) return null;
+    const [start, end] = span;
+    if (typeof start !== "number" || typeof end !== "number") return null;
+    return Math.max(0, end - start + 1);
+};
+
+const receiptCountFor = (op: string, rawOutput: Record<string, unknown> | undefined): number | null => {
+    if (!rawOutput) return null;
+    const range =
+        rawOutput.range && typeof rawOutput.range === "object"
+            ? (rawOutput.range as { returned?: unknown; total?: unknown })
+            : undefined;
+    if (op === "READ") {
+        if (Array.isArray(rawOutput.lineOrdinals)) {
+            return rawOutput.lineOrdinals.length;
+        }
+        return (
+            spanLength(range?.returned) ??
+            (typeof rawOutput.count === "number" ? rawOutput.count : null)
+        );
+    }
+    if (op === "FIND") {
+        return (
+            spanLength(range?.returned) ??
+            (typeof range?.total === "number" ? range.total : null) ??
+            (typeof rawOutput.count === "number" ? rawOutput.count : null) ??
+            (typeof rawOutput.matches === "number" ? rawOutput.matches : null)
+        );
+    }
+    return typeof rawOutput.count === "number"
+        ? rawOutput.count
+        : typeof rawOutput.matches === "number"
+          ? rawOutput.matches
+          : null;
+};
+
+const NO_PREVIEW_VERBS = new Set([
+    "READ",
+    "FIND",
+    "COPY",
+    "MOVE",
+    "KILL",
+    "BARE",
+    "WAIT",
+    "NOTE",
+    "KEEP",
+    "DROP",
+    "FOLD",
+    "OPEN",
+    "SHUT",
+    "VIEW",
+    "META",
+]);
+
+interface PendingToolCallState {
+    readonly name?: string;
+    readonly title?: string;
+    readonly locations?: ReadonlyArray<{ readonly path: string }>;
+    readonly rawInput?: Record<string, unknown>;
+    readonly metaPlurnk?: Record<string, unknown>;
+}
+
 export class SessionPresenter {
     workspaceName: string;
     sessionName: string;
@@ -262,6 +363,7 @@ export class SessionPresenter {
     #reasoningLines: string[] = [];
     #lastStreamTarget = "";
     #turnStartedAt = Date.now();
+    readonly #pendingToolCalls = new Map<string, PendingToolCallState>();
 
     constructor(options: SessionPresenterOptions = {}) {
         this.workspaceName = options.workspaceName ?? "default";
@@ -518,93 +620,211 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isToolCallUpdate(update)) {
-            this.#retireReasoning(frames);
-            const metaPlurnk = (
+            const incomingMetaPlurnk = (
                 update._meta as
                     | {
                           plurnk?: {
                               op?: string;
+                              origin?: string;
                               status?: number;
-                              attrs?: { aside?: string };
+                              attrs?: { aside?: string; kind?: string; stream?: string };
                           };
                       }
                     | undefined
             )?.plurnk;
-            const rawInput =
+            const prior = this.#pendingToolCalls.get(update.toolCallId);
+            const metaPlurnk = {
+                ...(prior?.metaPlurnk ?? {}),
+                ...(incomingMetaPlurnk ?? {}),
+            } as {
+                op?: string;
+                origin?: string;
+                status?: number;
+                attrs?: { aside?: string; kind?: string; stream?: string };
+            };
+            const incomingRawInput =
                 update.rawInput && typeof update.rawInput === "object"
                     ? (update.rawInput as Record<string, unknown>)
                     : undefined;
+            const rawInput = incomingRawInput ?? prior?.rawInput;
             const rawOutput =
                 update.rawOutput && typeof update.rawOutput === "object"
                     ? (update.rawOutput as Record<string, unknown>)
                     : undefined;
-            const opName = metaPlurnk?.op ?? update.name ?? update.title?.split(/[\s(—]/u)[0] ?? "tool";
-            const aside =
+            const effectiveName = update.name ?? prior?.name;
+            const effectiveTitle = update.title ?? prior?.title;
+            const effectiveLocations = update.locations ?? prior?.locations;
+            const opName =
+                metaPlurnk.op ?? effectiveName ?? effectiveTitle?.split(/[\s(—]/u)[0] ?? "tool";
+
+            const authoredTarget =
+                opName === "COPY" || opName === "MOVE"
+                    ? extractRawString(rawInput?.source)
+                    : extractRawString(rawInput?.target);
+            const target =
+                authoredTarget ?? effectiveLocations?.[0]?.path ?? extractTitleTarget(effectiveTitle);
+
+            // Suppress internal _plurnk emission announcements and entry materializations ({§cli-what-is-not-rendered}).
+            if (
+                metaPlurnk.origin === "_plurnk" &&
+                opName === "READ" &&
+                (metaPlurnk.attrs?.kind === "emission" ||
+                    (typeof target === "string" && target.startsWith("ops://")))
+            ) {
+                return frames;
+            }
+            if (
+                metaPlurnk.origin === "_plurnk" &&
+                opName === "EDIT" &&
+                metaPlurnk.attrs?.kind === "entry_materialized"
+            ) {
+                return frames;
+            }
+
+            this.#retireReasoning(frames);
+
+            if (update.status === "in_progress" || update.status === "pending") {
+                this.#pendingToolCalls.set(update.toolCallId, {
+                    ...(effectiveName !== undefined ? { name: effectiveName } : {}),
+                    ...(effectiveTitle !== undefined ? { title: effectiveTitle } : {}),
+                    ...(effectiveLocations !== undefined ? { locations: effectiveLocations } : {}),
+                    ...(rawInput !== undefined ? { rawInput } : {}),
+                    metaPlurnk: metaPlurnk as Record<string, unknown>,
+                });
+                if (this.lifecycle === "running") {
+                    this.doing = {
+                        phase: "working",
+                        since: Date.now(),
+                        op: opName,
+                        target,
+                    };
+                    frames.push({
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
+                    });
+                }
+                return frames;
+            }
+            this.#pendingToolCalls.delete(update.toolCallId);
+
+            const problemRec =
+                rawOutput?.problem && typeof rawOutput.problem === "object"
+                    ? (rawOutput.problem as {
+                          type?: unknown;
+                          detail?: unknown;
+                          title?: unknown;
+                          diagnostic?: unknown;
+                      })
+                    : undefined;
+
+            // Over-budget curation moment ({§cli-curation-notice}): render as `📌 — curating context`.
+            if (
+                (opName === "error" || opName === "ERROR" || opName === "FAIL") &&
+                problemRec?.type === "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget"
+            ) {
+                frames.push({
+                    kind: "tool_call",
+                    toolCallId: update.toolCallId,
+                    glyph: "📌",
+                    op: "INFO",
+                    title: "INFO — curating context",
+                    target: null,
+                    scope: null,
+                    destination: null,
+                    pattern: null,
+                    count: null,
+                    aside: null,
+                    noteBody: null,
+                    status: "completed",
+                    statusCode: 200,
+                    outcome: "curating context",
+                    contentLines: [],
+                });
+                return frames;
+            }
+
+            const rawAside =
                 typeof rawInput?.aside === "string" && rawInput.aside.trim().length > 0
                     ? rawInput.aside.trim()
                     : typeof rawInput?.comment === "string" && rawInput.comment.trim().length > 0
                       ? rawInput.comment.trim()
-                      : typeof metaPlurnk?.attrs?.aside === "string" && metaPlurnk.attrs.aside.trim().length > 0
+                      : typeof metaPlurnk.attrs?.aside === "string" && metaPlurnk.attrs.aside.trim().length > 0
                         ? metaPlurnk.attrs.aside.trim()
-                        : extractTitleAside(update.title);
-            const glyph = operationGlyphFor(opName, aside);
-            const target = update.locations?.[0]?.path ?? extractTitleTarget(update.title);
-            const rawPattern = rawInput?.pattern;
+                        : extractTitleAside(effectiveTitle);
+            const { glyph, aside } = normalizeNoteHeading(opName, rawAside);
+            const scope = extractScopeToken(rawInput?.lineMarker);
+            const destination =
+                opName === "COPY" || opName === "MOVE"
+                    ? extractRawString(rawInput?.destination)
+                    : null;
             const pattern =
-                typeof rawPattern === "string"
-                    ? rawPattern
-                    : rawPattern && typeof rawPattern === "object" && typeof (rawPattern as { raw?: unknown }).raw === "string"
-                      ? (rawPattern as { raw: string }).raw
-                      : null;
-            const count =
-                typeof rawOutput?.count === "number"
-                    ? rawOutput.count
-                    : typeof rawOutput?.matches === "number"
-                      ? rawOutput.matches
-                      : null;
+                extractRawString(rawInput?.matcher) ?? extractRawString(rawInput?.pattern);
+            const count = receiptCountFor(opName, rawOutput);
 
-            const contentLines: string[] = [];
+            const receiptLines: string[] = [];
             for (const c of update.content ?? []) {
                 if (ToolCallContent.isContent(c)) {
-                    contentLines.push(contentBlockToText(c.content));
+                    receiptLines.push(contentBlockToText(c.content));
                 } else if (ToolCallContent.isDiff(c) && typeof c.patch?.text === "string") {
-                    contentLines.push(c.patch.text);
+                    receiptLines.push(c.patch.text);
                 }
             }
 
+            const authoredBody = extractRawString(rawInput?.body);
             let noteBody: string | null = null;
             if (opName === "NOTE") {
-                const rawBody = rawInput?.body;
-                if (typeof rawBody === "string") {
-                    noteBody = rawBody;
-                } else if (
-                    rawBody &&
-                    typeof rawBody === "object" &&
-                    typeof (rawBody as { raw?: unknown }).raw === "string"
-                ) {
-                    noteBody = (rawBody as { raw: string }).raw;
-                } else if (contentLines.length > 0) {
-                    noteBody = contentLines.join("\n");
+                if (authoredBody !== null) {
+                    noteBody = authoredBody;
+                } else if (receiptLines.length > 0) {
+                    noteBody = receiptLines.join("\n");
                 } else {
                     noteBody = "";
                 }
             }
 
+            // Only authored request bodies (EDIT, WORK, FORK, undelivered SEND, runtime execs) and
+            // runtime execution outputs receive a preview beneath the row ({§cli-log-entry-line-format}).
+            // READ and FIND receipts never render a body beneath the row.
+            const contentLines: string[] = [];
+            if (!NO_PREVIEW_VERBS.has(opName)) {
+                if (authoredBody !== null) {
+                    contentLines.push(authoredBody);
+                }
+                const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
+                if (isRuntimeExec || authoredBody === null) {
+                    for (const line of receiptLines) {
+                        if (line.trim().length > 0 && line !== authoredBody) {
+                            contentLines.push(line);
+                        }
+                    }
+                }
+            }
+
             const statusCode =
-                typeof metaPlurnk?.status === "number"
+                typeof metaPlurnk.status === "number"
                     ? metaPlurnk.status
                     : update.status === "failed"
                       ? 500
                       : 200;
-            const problemRec =
-                rawOutput?.problem && typeof rawOutput.problem === "object"
-                    ? (rawOutput.problem as { detail?: unknown; title?: unknown })
-                    : undefined;
+            const problemTitle =
+                typeof problemRec?.title === "string" && problemRec.title.length > 0
+                    ? problemRec.title
+                    : typeof problemRec?.detail === "string" && problemRec.detail.length > 0
+                      ? problemRec.detail
+                      : null;
+            const problemDiagnostic =
+                typeof problemRec?.diagnostic === "string" &&
+                problemRec.diagnostic.trim().length > 0 &&
+                problemRec.diagnostic.trim() !== problemTitle
+                    ? problemRec.diagnostic.trim()
+                    : null;
             const outcome =
-                typeof problemRec?.detail === "string" && problemRec.detail.length > 0
-                    ? problemRec.detail
-                    : typeof problemRec?.title === "string" && problemRec.title.length > 0
-                      ? problemRec.title
+                problemTitle !== null
+                    ? problemDiagnostic !== null
+                        ? `${problemTitle}: ${problemDiagnostic}`
+                        : problemTitle
+                    : typeof rawOutput?.detail === "string" && rawOutput.detail.length > 0
+                      ? rawOutput.detail
                       : update.status === "failed" && typeof rawOutput?.message === "string"
                         ? rawOutput.message
                         : null;
@@ -624,13 +844,15 @@ export class SessionPresenter {
                 toolCallId: update.toolCallId,
                 glyph,
                 op: opName,
-                title: update.title ?? update.name ?? update.toolCallId,
+                title: effectiveTitle ?? effectiveName ?? update.toolCallId,
                 target,
+                scope,
+                destination,
                 pattern,
                 count,
                 aside,
                 noteBody,
-                status: update.status ?? "in_progress",
+                status: update.status ?? "completed",
                 statusCode,
                 outcome,
                 contentLines,

@@ -268,12 +268,13 @@ const truncateToColumns = (line: string, maxCols: number): string => {
     return `${out}…`;
 };
 
-// {§cli-log-entry-line-format} — 4-space indented dim preview lines with /peek coordinate hint.
+// {§cli-log-entry-line-format} — 4-space indented dim preview lines with log:/// coordinate hint.
 export const previewLines = (
     content: string,
     limit: number = 5,
     columns: number = 80,
     coordinate?: string | null,
+    op?: string | null,
 ): string[] => {
     const normalized = ModelText.plain(content).replace(/\r\n/gu, "\n").trimEnd();
     if (normalized.length === 0 || limit <= 0) return [];
@@ -284,10 +285,19 @@ export const previewLines = (
         .map((line) => paint(`    ${truncateToColumns(line.replace(/\t/gu, "    "), maxLineCols)}`, "dim"));
     if (allLines.length > limit) {
         const remaining = allLines.length - limit;
-        const peek = coordinate ? ` — /peek ${ModelText.plain(coordinate)}` : "";
+        const cleanCoord = coordinate ? ModelText.plain(coordinate) : "";
+        const cleanOp = op ? ModelText.plain(op) : "";
+        const addr =
+            cleanCoord.length === 0
+                ? ""
+                : cleanCoord.startsWith("log://")
+                  ? ` · ${cleanCoord}`
+                  : cleanOp.length > 0
+                    ? ` · log:///${cleanCoord}/${cleanOp}`
+                    : ` · log:///${cleanCoord}`;
         shown.push(
             paint(
-                `    … (${String(remaining)} more ${remaining === 1 ? "line" : "lines"}${peek})`,
+                `    … +${String(remaining)} ${remaining === 1 ? "line" : "lines"}${addr}`,
                 "dim",
             ),
         );
@@ -303,6 +313,8 @@ export const renderOperationBlock = (opts: {
     readonly op?: string | null;
     readonly title?: string | null;
     readonly target?: string | null;
+    readonly scope?: string | null;
+    readonly destination?: string | null;
     readonly pattern?: string | null;
     readonly count?: number | null;
     readonly aside?: string | null;
@@ -318,6 +330,7 @@ export const renderOperationBlock = (opts: {
     if (CURATION_VERBS.has(op)) {
         const parts = ["🧹", op];
         if (opts.target) parts.push(`(${ModelText.plain(opts.target)})`);
+        if (opts.scope) parts.push(ModelText.plain(opts.scope));
         if (opts.aside) parts.push(paint(ModelText.plain(opts.aside), "dim", "italic"));
         return paint(parts.join(" "), "dim");
     }
@@ -330,8 +343,15 @@ export const renderOperationBlock = (opts: {
     } else if (!op && opts.title) {
         headParts.push(ModelText.plain(opts.title));
     }
+    if (opts.scope) {
+        headParts.push(ModelText.plain(opts.scope));
+    }
+    if (opts.destination) {
+        headParts.push(`(${ModelText.plain(opts.destination)})`);
+    }
     if (opts.pattern) {
-        headParts.push(`/${ModelText.plain(opts.pattern)}/`);
+        const cleanPat = ModelText.plain(opts.pattern);
+        headParts.push(/^[~/&=!]/u.test(cleanPat) ? cleanPat : `/${cleanPat}/`);
     }
     if (typeof opts.count === "number") {
         headParts.push(`{${String(opts.count)}}`);
@@ -349,6 +369,7 @@ export const renderOperationBlock = (opts: {
         opts.previewLimit ?? 5,
         opts.columns ?? 80,
         opts.coordinate,
+        op,
     );
     return [headParts.join(" "), ...preview].join("\n");
 };

@@ -32,8 +32,8 @@ export const CLIENT_OPTIONS = {
     version: { type: "boolean", short: "v" },
     json: { type: "boolean" },
     workspace: { type: "string" },
-    worker: { type: "string" },
-    "tui-worker": { type: "string" },
+    session: { type: "string" },
+    "tui-session": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
     env: { type: "string", multiple: true },
@@ -72,24 +72,24 @@ export const CLIENT_OPTIONS = {
     width: { type: "string" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;
 
-export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
+export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
-       plurnk workspace workers <name> [--json]
+       plurnk workspace sessions <name> [--json]
        plurnk workspace rename <name> <newname> [--json]
-       plurnk log read --workspace <name> [--worker <name>]
+       plurnk log read --workspace <name> [--session <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
-       plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
-       plurnk effort [level] --workspace <name> [--worker <name>] [--json]
-       plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
+       plurnk read <loop>/<turn>/<seq> --workspace <name> [--session <name>] [--json]
+       plurnk effort [level] --workspace <name> [--session <name>] [--json]
+       plurnk capabilities [json] --workspace <name> [--session <name>] [--json]
        plurnk script <file.plk> [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [subcommand]
        plurnk skills [subcommand]
        plurnk members [subcommand]
-       plurnk env [--scope worker|workspace] [subcommand]
+       plurnk env [--scope session|workspace] [subcommand]
        plurnk schedule [subcommand]
 
 Connects to plurnk-service at its configured address, starting the installed service there when nothing listens; it keeps running after this client (plurnk-service stop ends it). Run a single prompt one-shot (positional args, piped stdin, or both — positionals come first, stdin is appended after a blank line). With no positionals and a TTY stdin, enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list / log read / read <coord>) inspect daemon state without running a loop.
@@ -125,27 +125,27 @@ options:
                           if none exists (attach-or-create). Defaults to the launch
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
-      --worker <name>        resume (or create) the named worker within the workspace.
-                          Overrides PLURNK_CLIENT_WORKER. Unset, the TUI binds
-                          --tui-worker and a one-shot a new worker of its own.
-      --tui-worker <name>  the worker the TUI binds when no worker is selected.
-                          Overrides PLURNK_CLIENT_TUI_WORKER (user).
-      --model <selector>  persistently select the worker's model
+      --session <name>       resume (or create) the named session within the workspace.
+                          Overrides PLURNK_CLIENT_SESSION. Unset, the TUI binds
+                          --tui-session and a one-shot a new session of its own.
+      --tui-session <name> the session the TUI binds when no session is selected.
+                          Overrides PLURNK_CLIENT_TUI_SESSION (user).
+      --model <selector>  persistently select the session's model
                           before the first loop (session/set_config_option). A selector is
                           a declared alias or exact provider/model route. Without
-                          this, the worker's durable model or the daemon's
+                          this, the session's durable model or the daemon's
                           boot-time default runs.
-      --effort <level>    persistently select the worker's effort before
+      --effort <level>    persistently select the session's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
       --env <NAME>[=<value>]
-                          persistently set <NAME> on the worker before the first loop
-                          (worker.env.replace); without =, carry <NAME> from this
+                          persistently set <NAME> on the session before the first loop
+                          (session.env.replace); without =, carry <NAME> from this
                           environment when set. Repeatable. Overrides
                           PLURNK_CLIENT_ENV_<NAME>.
       --env-inherit <list>
                           comma-separated variable names or trailing-* prefix globs
-                          carried from this environment onto the worker before the
+                          carried from this environment onto the session before the
                           first loop. Overrides PLURNK_CLIENT_ENV_INHERIT.
       --env-exclude <list>
                           comma-separated variable names or trailing-* prefix globs
@@ -170,13 +170,13 @@ options:
                           that would wait for a person concludes instead. Approval
                           stays local (--yolo). Overrides PLURNK_CLIENT_AUTO.
       --bell              ring the terminal bell when you are needed: the bound
-                          worker's loop replies, stops or fails, or a review or
+                          session's loop replies, stops or fails, or a review or
                           question waits for you. Overrides PLURNK_CLIENT_BELL.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
-      --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
+      --max-turns <n>     model-call budget for the prompt's session tree: its turns, its
                           descendants' turns and every BARE call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (session/cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true.
@@ -186,7 +186,7 @@ options:
                           beneath its row; the rest is named by its address. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
       --history-entries <n> recent entries restored when the TUI opens or switches a
-                          workspace or worker; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
+                          workspace or session; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
                           Overrides PLURNK_CLIENT_MERMAID_TIMEOUT_MS.
       --color <when>      style terminal output: always, auto, or never. Overrides
@@ -213,12 +213,12 @@ options:
 subcommands:
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
-  workspace workers <name>  list workers in the named workspace (workspace.workers)
+  workspace sessions <name> list sessions in the named workspace (workspace.sessions)
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
-                          name is a mutable handle; workers are immutable)
-  log read --workspace ...  read log entries from the named workspace's worker
-  read <loop/turn/op>     inspect one log row in the selected workspace/worker
-  effort [level]          inspect or set a worker's effort
+                          name is a mutable handle; sessions are immutable)
+  log read --workspace ...  read log entries from the named workspace's session
+  read <loop/turn/op>     inspect one log row in the selected workspace/session
+  effort [level]          inspect or set a session's effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -230,7 +230,7 @@ subcommands:
   mcp ...                   List or manage this workspace's MCP servers.
   skills ...                List or manage this workspace's Agent Skills.
   members ...               List or manage this workspace's file members.
-  env ...                   Manage worker overrides or shared workspace environment defaults.
+  env ...                   Manage session overrides or shared workspace environment defaults.
   schedule ...              List or manage this workspace's scheduled messages.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
@@ -277,7 +277,7 @@ const readStdinAll = async (): Promise<string> => {
 const isTruthyEnv = (val: string | undefined): boolean =>
     val === "1" || val === "true" || val === "yes" || val === "on";
 
-const collectWorkerEnv = (
+const collectSessionEnv = (
     env: Record<string, string>,
     flagEnvs: readonly string[],
     inheritSpec: string | undefined,
@@ -419,12 +419,12 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const workspace = typeof parsed.values.workspace === "string"
         ? parsed.values.workspace
         : env.PLURNK_CLIENT_WORKSPACE;
-    const sessionId = typeof parsed.values.worker === "string"
-        ? parsed.values.worker
-        : env.PLURNK_CLIENT_WORKER;
-    const tuiWorker = typeof parsed.values["tui-worker"] === "string"
-        ? parsed.values["tui-worker"]
-        : env.PLURNK_CLIENT_TUI_WORKER;
+    const sessionId = typeof parsed.values.session === "string"
+        ? parsed.values.session
+        : env.PLURNK_CLIENT_SESSION;
+    const tuiSession = typeof parsed.values["tui-session"] === "string"
+        ? parsed.values["tui-session"]
+        : env.PLURNK_CLIENT_TUI_SESSION;
     const model = typeof parsed.values.model === "string"
         ? parsed.values.model
         : env.PLURNK_CLIENT_MODEL;
@@ -472,7 +472,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const flagEnvs = Array.isArray(parsed.values.env)
         ? parsed.values.env.filter((x): x is string => typeof x === "string")
         : [];
-    const workerEnv = collectWorkerEnv(env, flagEnvs, inheritSpec, excludeSpec);
+    const sessionEnv = collectSessionEnv(env, flagEnvs, inheritSpec, excludeSpec);
 
     const autostartRaw = typeof parsed.values.autostart === "string"
         ? parsed.values.autostart
@@ -558,12 +558,12 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         cwd: process.cwd(),
         ...(workspace !== undefined && workspace.length > 0 ? { workspace } : {}),
         ...(sessionId !== undefined && sessionId.length > 0 ? { sessionId } : {}),
-        tuiWorker,
+        tuiSession,
         ...(model !== undefined && model.length > 0 ? { model } : {}),
         ...(effort !== undefined && effort.length > 0 ? { effort } : {}),
         ...(projectRoot !== undefined ? { projectRoot } : {}),
         ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
-        ...(Object.keys(workerEnv).length > 0 ? { workerEnv } : {}),
+        ...(Object.keys(sessionEnv).length > 0 ? { sessionEnv } : {}),
         ...(maxTurns !== undefined && Number.isInteger(maxTurns) ? { maxTurns } : {}),
         ...(timeoutSec !== undefined && Number.isFinite(timeoutSec) ? { timeoutSec } : {}),
         autostart,

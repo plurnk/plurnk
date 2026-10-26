@@ -24,7 +24,7 @@ reliable machinery; the model supplies the strategy.
 Plurnk is an agentic virtual machine: each turn the model writes a short
 program, the machine runs it against one address space and journals the
 results, and the model reads the journal and writes the next. Files, tools,
-other workers and the model's own past all have addresses; one selection
+other sessions and the model's own past all have addresses; one selection
 algebra reaches every one of them; the edges are the ecosystem's standards.
 The argument, and what it costs today:
 [PLURNK.md](https://github.com/plurnk/plurnk-service/blob/main/PLURNK.md).
@@ -36,8 +36,8 @@ with ordinary shell pipelines.
 This repository provides the CLI and interactive terminal client for
 [plurnk-service](https://github.com/plurnk/plurnk-service), its backend.
 
-Workspaces, workers and their history live in the daemon, independently of the
-client session. Choose your model, context limits, tools, and capability
+Workspaces, sessions and their history live in the daemon, independently of the
+client attachment. Choose your model, context limits, tools, and capability
 policies without replacing the environment.
 
 ![A Plurnk terminal session: a prompt, the model's operations, and its answer](https://raw.githubusercontent.com/plurnk/plurnk-service/main/docs/media/session.gif)
@@ -60,8 +60,8 @@ Run from your project directory. Or try it without a global install:
 
 Without `--workspace`, the daemon names the workspace after its folder, the
 directory you launch from (for example, `~/projects/myProject`); both CLI and TUI open
-worker `user`. Launches in the same folder share that workspace on the same
-daemon/database. Override either identity with `--workspace` or `--worker`;
+session `user`. Launches in the same folder share that workspace on the same
+daemon/database. Override either identity with `--workspace` or `--session`;
 neither changes an existing workspace's folder.
 
 Starting a new workspace from your home directory asks for a project folder.
@@ -73,8 +73,8 @@ Give it a task in ordinary language. The model uses the operation language;
 you do not need to learn it to use Plurnk. If no model is selected, follow the
 startup hint or [choose one below](#models). The first launch starts the
 included service, which keeps running for later sessions ([Service](#service)).
-The TUI returns to worker `user` and its history; each one-shot prompt runs in
-a new worker of its own, named on stderr so `--worker` can continue it.
+The TUI returns to session `user` and its history; each one-shot prompt runs in
+a new session of its own, named on stderr so `--session` can continue it.
 
 Proposals are accepted automatically by default (`PLURNK_CLIENT_YOLO=1`);
 set it to `0` or start a prompt with `?` to review them. Neither overrides
@@ -90,7 +90,7 @@ In the TUI, `/models` lists models with configured credentials and
 `/model <provider/model>` selects one. You can also launch with
 `--model=<provider/model>`; aliases are optional.
 
-To set a default for new workers, add your chosen route to
+To set a default for new sessions, add your chosen route to
 `~/.config/plurnk/.env` (`$XDG_CONFIG_HOME/plurnk/.env` when set):
 
 ```dotenv
@@ -98,7 +98,7 @@ PLURNK_MODEL=deepseek/deepseek-v4-flash
 ```
 
 Restart an already-running daemon to load changed startup settings; existing
-workers retain their selection. See [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
+sessions retain their selection. See [model configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-providers/README.md#configure-a-model)
 for local endpoints and tuning.
 
 ## Service
@@ -131,8 +131,8 @@ plurnk --workspace="myProject"
 
 A scrollback-native TUI with multiline prompts, streaming reasoning when the
 provider supplies it, Markdown and Mermaid rendering, and slash commands for
-managing models, workers, and tools. Run `/help` to explore; `/model` and
-`/child` select the worker's model and its delegated model.
+managing models, sessions, and tools. Run `/help` to explore; `/model` and
+`/child` select the session's model and its delegated model.
 
 Operation headings use emoji labels, such as `📖 (README.md)` and `⚙️ sh`.
 Notes marked fact, idea, or plan use 📊, 💡, or 🚧; completed replies use 🐹.

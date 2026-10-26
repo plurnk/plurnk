@@ -35,9 +35,9 @@
       "evidence": ["src/cli.test.ts — workspace attachment"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
-    "workspace.workers": {
+    "workspace.sessions": {
       "posture": "native",
-      "evidence": ["src/cli.test.ts — worker listing"],
+      "evidence": ["src/cli.test.ts — session listing"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "log.read": {
@@ -53,9 +53,9 @@
       "evidence": ["src/cli.test.ts — prompt history"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.loops": {
+    "session.loops": {
       "posture": "native",
-      "evidence": ["src/cli.test.ts — worker loops"],
+      "evidence": ["src/cli.test.ts — session loops"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.share": {
@@ -199,37 +199,37 @@
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.list": {
+    "session.env.list": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.discover": {
+    "session.env.discover": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.add": {
+    "session.env.add": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.replace": {
+    "session.env.replace": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.enable": {
+    "session.env.enable": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.disable": {
+    "session.env.disable": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
-    "worker.env.remove": {
+    "session.env.remove": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]

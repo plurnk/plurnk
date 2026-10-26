@@ -21,7 +21,7 @@ test("{§cli-runtime-floor} {§cli-invocation} {§cli-family-arguments} {§cli-c
     });
     assert.equal(help.status, 0);
     assert.match(help.stdout, /--workspace/);
-    assert.match(help.stdout, /--worker/);
+    assert.match(help.stdout, /--session/);
 });
 
 test("{§cli-render-filter} {§cli-markdown-projection} {§cli-markdown-adapter} {§cli-hyperlinks} {§cli-color-policy} {§cli-color-scheme} {§cli-palette}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
@@ -60,7 +60,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-provider-reasoning}, {§cli-response-order})
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
-        workerName: "user",
+        sessionName: "user",
         model: "mocktest/default",
         maxReasoningLines: 2,
     });
@@ -89,7 +89,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         assert.deepEqual(t1[1].contentLines, ["file contents"]);
     }
 
-    // Subagent and session_message projection ({§cli-workers-topology})
+    // Subagent and session_message projection ({§cli-sessions-topology})
     const sub = presenter.apply({
         sessionUpdate: "subagent_update",
         sessionId: "1#helper",
@@ -107,7 +107,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(msg[0]?.kind, "session_message");
 });
 
-test("{§cli-worker-status} {§cli-status-wait} {§cli-status-preparation} {§cli-status-disconnected} {§cli-identity-effort} {§cli-status-project-root} {§cli-status-children} {§cli-status-gated} {§cli-status-inbox} {§cli-status-streams} {§cli-status-clock} {§cli-status-spend}: worker status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
+test("{§cli-session-status} {§cli-status-wait} {§cli-status-preparation} {§cli-status-disconnected} {§cli-identity-effort} {§cli-status-project-root} {§cli-status-children} {§cli-status-gated} {§cli-status-inbox} {§cli-status-streams} {§cli-status-clock} {§cli-status-spend}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
     assert.equal(lifecycleGlyphFor("running"), "⌛︎");
     assert.equal(lifecycleGlyphFor("parked"), "💤");
     assert.equal(lifecycleGlyphFor("idle", 200), "⏹️");
@@ -116,7 +116,7 @@ test("{§cli-worker-status} {§cli-status-wait} {§cli-status-preparation} {§cl
 
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
-        workerName: "user",
+        sessionName: "user",
         model: "mocktest/default",
     });
     presenter.apply({

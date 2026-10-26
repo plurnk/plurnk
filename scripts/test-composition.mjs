@@ -211,7 +211,7 @@ try {
         let completed;
         try {
             completed = await runClient(clientBin, [
-                "--json", "--workspace", "packed-composition", "--worker", "durable-worker",
+                "--json", "--workspace", "packed-composition", "--session", "durable-session",
                 "--project-root", "", "--max-turns", "2", "--timeout", "20",
                 ...(selector === undefined ? [] : ["--model", selector]),
                 prompt,
@@ -225,20 +225,20 @@ try {
         return JSON.parse(completed.stdout);
     };
 
-    const seeded = await runPrompt("Seed the existing worker on the daemon default.");
+    const seeded = await runPrompt("Seed the existing session on the daemon default.");
     if (seeded.response !== "composition ok: composition") {
         throw new Error(`default packed run returned ${JSON.stringify(seeded.response)}`);
     }
 
     const exactSelector = "openai/composition-family/selected";
-    const selected = await runPrompt("Select an exact model route for this worker.", exactSelector);
+    const selected = await runPrompt("Select an exact model route for this session.", exactSelector);
     if (selected.response !== "composition ok: composition-family/selected") {
         throw new Error(`selected packed run returned ${JSON.stringify(selected.response)}`);
     }
 
     const requestsBeforeRefusal = selectedModels.length;
     await runClient(clientBin, [
-        "--json", "--workspace", "packed-composition", "--worker", "durable-worker",
+        "--json", "--workspace", "packed-composition", "--session", "durable-session",
         "--project-root", "", "--model", "missing-provider/missing-model",
         "This prompt must never reach a model.",
     ], { cwd: install, env, timeout: 30_000 }).then(
@@ -255,13 +255,13 @@ try {
     }
     const expectedModels = ["composition", "composition-family/selected", "composition-family/selected"];
     if (JSON.stringify(selectedModels) !== JSON.stringify(expectedModels)) {
-        throw new Error(`worker model lifecycle selected ${JSON.stringify(selectedModels)}, expected ${JSON.stringify(expectedModels)}`);
+        throw new Error(`session model lifecycle selected ${JSON.stringify(selectedModels)}, expected ${JSON.stringify(expectedModels)}`);
     }
 
     const delegatedRoot = join(temp, "delegated-root");
     await mkdir(delegatedRoot, { recursive: true });
     scriptedResponses.push(
-        "````WORK (worker://guesser1)\nCreate child.txt and conclude.\n````\n"
+        "````WORK (session://guesser1)\nCreate child.txt and conclude.\n````\n"
             + "````WAIT\nWaiting for guesser1.\n````",
         "````EDIT (child.txt)\ncreated by packed child\n````\n"
             + "````NOTE\nConfirming the write.\n````",
@@ -270,7 +270,7 @@ try {
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [
-        "--json", "--yolo", "--workspace", "packed-delegation", "--worker", "delegation-parent",
+        "--json", "--yolo", "--workspace", "packed-delegation", "--session", "delegation-parent",
         "--project-root", delegatedRoot, "--max-turns", "8", "--timeout", "30",
         "Exercise descendant proposal composition.",
     ], { cwd: install, env, timeout: 45_000 });
@@ -306,13 +306,13 @@ try {
     }
 
     const log = await runClient(clientBin, [
-        "log", "read", "--json", "--workspace", "packed-composition", "--worker", "durable-worker", "--limit", "100",
+        "log", "read", "--json", "--workspace", "packed-composition", "--session", "durable-session", "--limit", "100",
     ], { cwd: install, env, timeout: 30_000 });
     const rows = JSON.parse(log.stdout);
     const entries = Array.isArray(rows) ? rows : rows.entries;
     if (!Array.isArray(entries) || !entries.some((entry) =>
-        Number.isInteger(entry.worker_id) && Number.isInteger(entry.loop_id) && Number.isInteger(entry.turn_id))) {
-        throw new Error(`packed run created no durable worker/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
+        Number.isInteger(entry.session_id) && Number.isInteger(entry.loop_id) && Number.isInteger(entry.turn_id))) {
+        throw new Error(`packed run created no durable session/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
     }
 
     // {§cli-daemon-autostart} service-stop: with nothing listening, the installed client starts the
@@ -322,7 +322,7 @@ try {
     const sharedPort = await listen(free);
     await new Promise((accept) => free.close(accept));
     const sharedEnv = { ...serviceEnv, PLURNK_HOST: "127.0.0.1", PLURNK_PORT: String(sharedPort), PLURNK_ACP_URL: "" };
-    const sharedRun = await runClient(clientBin, ["--json", "--workspace", "shared-composition", "--worker", "primary", "--project-root", "", "Confirm shared startup."], {
+    const sharedRun = await runClient(clientBin, ["--json", "--workspace", "shared-composition", "--session", "primary", "--project-root", "", "Confirm shared startup."], {
         cwd: install, env: sharedEnv, timeout: 30_000,
     });
     if (JSON.parse(sharedRun.stdout).response !== "composition ok: composition" || sharedRun.stderr !== "") {
@@ -332,7 +332,7 @@ try {
     sharedPid = JSON.parse(await readFile(`${database}.lock`, "utf8")).pid;
     process.kill(sharedPid, 0);
     await access(join(isolatedEnv.XDG_STATE_HOME, "plurnk", "service.log"));
-    const resumed = await runClient(clientBin, ["log", "read", "--json", "--workspace", "shared-composition", "--worker", "primary"], {
+    const resumed = await runClient(clientBin, ["log", "read", "--json", "--workspace", "shared-composition", "--session", "primary"], {
         cwd: install, env: sharedEnv, timeout: 30_000,
     });
     if (!resumed.stdout.includes("composition ok: composition")) throw new Error("a later client did not reach the running service's history");

@@ -54,6 +54,6 @@ test("[{§cli-posix-artifacts}] bash completion preserves spaces and glob charac
     assert.deepEqual(complete(["plurnk", "alpha"]), [...files].sort());
     assert.deepEqual(complete(["plurnk", "script", "alpha b"]), ["alpha beta"]);
     assert.deepEqual(complete(["plurnk", "script", "absent"]), []);
-    assert.deepEqual(complete(["plurnk", "--work"]), ["--worker", "--workspace"]);
+    assert.deepEqual(complete(["plurnk", "--work"]), ["--workspace"]);
     assert.deepEqual(complete(["plurnk", "mod"]), ["models"]);
 });

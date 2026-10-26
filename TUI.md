@@ -2,7 +2,7 @@
 
 `plurnk` is a thin terminal client for `plurnk-service`. Both one-shot and
 interactive modes use the daemon's ACP v2 surface. The daemon owns
-workspaces, workers, model execution, and durable state; the client submits
+workspaces, sessions, model execution, and durable state; the client submits
 actions and renders events.
 
 The behavioral contract lives in [SPEC.md](SPEC.md). This document records only
@@ -20,7 +20,7 @@ client.
   transcript and the composer, at most a third of the terminal tall, that shows the
   newest lines and overwrites itself as the reasoning grows. It empties when the
   turn's operations arrive and never enters the transcript; immutable history keeps every
-  turn's reasoning at `reasoning://<worker>/L/T` for a READ, so a model with a fat reasoning
+  turn's reasoning at `reasoning://<session>/L/T` for a READ, so a model with a fat reasoning
   habit costs a third of the screen, not the session.
 - Prompts, command verbs, and raw DSL use the same ACP v2 session and action transport.
 
@@ -47,11 +47,11 @@ keyboard negotiation, cursor/IME behavior, resize, and scrollback rendering.
 Plurnk owns command and run semantics. `Ctrl-C` cancels an active run and
 remains the escape hatch from the interactive client when idle.
 
-Opening or switching a workspace or worker restores a bounded recent transcript and
+Opening or switching a workspace or session restores a bounded recent transcript and
 observes any current loop, without resubmitting a prompt. Replies remain whole;
-historical operations are headings, a sub-worker's rows are marked `🐜 <name>` and stepped in as they
+historical operations are headings, a sub-session's rows are marked `🐜 <name>` and stepped in as they
 are live, and old reasoning is not replayed.
-`PLURNK_CLIENT_HISTORY_ENTRIES` sets the tail size; `/loops` lists the worker's loops and `/loop <n>`
+`PLURNK_CLIENT_HISTORY_ENTRIES` sets the tail size; `/loops` lists the session's loops and `/loop <n>`
 prints any of them whole.
 
 Side-effect proposals are rendered for human review unless loop or client

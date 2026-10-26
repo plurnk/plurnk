@@ -1,4 +1,4 @@
-// Unified ACP v2 SessionPresenter pipeline ({§cli-rendering}, {§cli-worker-status}, {§cli-provider-reasoning}).
+// Unified ACP v2 SessionPresenter pipeline ({§cli-rendering}, {§cli-session-status}, {§cli-provider-reasoning}).
 // Single state machine between AcpSession and any rendering viewport (CLI stdout/stderr or pi-tui)
 // so that TUI is a pure perspective of the CLI and never makes an independent presentation decision.
 
@@ -72,7 +72,7 @@ export const lifecycleGlyphFor = (lifecycle: string | undefined, status?: number
 
 export interface StatusBarModel {
     readonly workspaceName: string;
-    readonly workerName: string;
+    readonly sessionName: string;
     readonly projectLabel: string | null;
     readonly lifecycle: string;
     readonly lifecycleGlyph: string;
@@ -155,7 +155,7 @@ export type PresentationFrame =
 
 export interface SessionPresenterOptions {
     readonly workspaceName?: string;
-    readonly workerName?: string;
+    readonly sessionName?: string;
     readonly model?: string;
     readonly yolo?: boolean;
     readonly maxReasoningLines?: number;
@@ -165,7 +165,7 @@ export interface SessionPresenterOptions {
 
 export class SessionPresenter {
     workspaceName: string;
-    workerName: string;
+    sessionName: string;
     projectLabel: string | null = null;
     lifecycle: string = "idle";
     lifecycleGlyph: string = "⏹️";
@@ -195,7 +195,7 @@ export class SessionPresenter {
 
     constructor(options: SessionPresenterOptions = {}) {
         this.workspaceName = options.workspaceName ?? "default";
-        this.workerName = options.workerName ?? "user";
+        this.sessionName = options.sessionName ?? "user";
         this.model = options.model ?? "default";
         this.yolo = options.yolo ?? true;
         this.maxReasoningLines = options.maxReasoningLines ?? 8;
@@ -230,8 +230,8 @@ export class SessionPresenter {
         if (typeof ws?.projectLabel === "string") {
             this.projectLabel = ws.projectLabel;
         }
-        if (typeof plurnk.workerName === "string" && plurnk.workerName.length > 0) {
-            this.workerName = plurnk.workerName;
+        if (typeof plurnk.sessionName === "string" && plurnk.sessionName.length > 0) {
+            this.sessionName = plurnk.sessionName;
         }
 
         const status = plurnk.status as Record<string, unknown> | undefined;
@@ -317,7 +317,7 @@ export class SessionPresenter {
 
         return {
             workspaceName: this.workspaceName,
-            workerName: this.workerName,
+            sessionName: this.sessionName,
             projectLabel: this.projectLabel,
             lifecycle: this.lifecycle,
             lifecycleGlyph: glyph,

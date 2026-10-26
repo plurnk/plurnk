@@ -110,7 +110,7 @@ const createMockAcpServer = async () => {
             },
         )
         .onRequest(methods.agent.session.new, async ({ params }) => {
-            const name = (params._meta as any)?.plurnk?.name ?? "worker-1";
+            const name = (params._meta as any)?.plurnk?.name ?? "session-1";
             const sessionId = `1#${name}`;
             sessions.set(sessionId, { cwd: params.cwd, model: "mocktest/mock-v1", effort: "medium" });
             return {
@@ -286,12 +286,12 @@ const createMockAcpServer = async () => {
     };
 };
 
-test("{§cli-workspaces-and-workers} {§cli-project-root} {§cli-workspace-open-settings} {§cli-history-lost} {§cli-one-shot-mode} {§cli-one-shot-flow} {§cli-output-channels} {§cli-what-one-shot-mode-does-not-do} {§cli-prompt-prefixes} {§cli-prompt-open-paths} {§cli-exit-codes} {§cli-partial-record} {§cli-interrupted-record}: one-shot prompt execution, --worker attach-or-create, --json record, and exit codes", async () => {
+test("{§cli-workspaces-and-sessions} {§cli-project-root} {§cli-workspace-open-settings} {§cli-history-lost} {§cli-one-shot-mode} {§cli-one-shot-flow} {§cli-output-channels} {§cli-what-one-shot-mode-does-not-do} {§cli-prompt-prefixes} {§cli-prompt-open-paths} {§cli-exit-codes} {§cli-partial-record} {§cli-interrupted-record}: one-shot prompt execution, --session attach-or-create, --json record, and exit codes", async () => {
     const server = await createMockAcpServer();
     try {
-        // User's exact reproducer: --worker="test01" "Describe this project." must create/resume test01 and succeed!
+        // User's exact reproducer: --session="test01" "Describe this project." must create/resume test01 and succeed!
         const res = await runCli(
-            ["--worker=test01", "Describe this project."],
+            ["--session=test01", "Describe this project."],
             {
                 ...process.env,
                 PLURNK_ACP_URL: server.url,
@@ -303,7 +303,7 @@ test("{§cli-workspaces-and-workers} {§cli-project-root} {§cli-workspace-open-
 
         // --json output mode emits structured JSON record with .response ({§cli-output-channels})
         const jsonRes = await runCli(
-            ["--json", "--worker=test01", "JSON check"],
+            ["--json", "--session=test01", "JSON check"],
             {
                 ...process.env,
                 PLURNK_ACP_URL: server.url,
@@ -318,7 +318,7 @@ test("{§cli-workspaces-and-workers} {§cli-project-root} {§cli-workspace-open-
     }
 });
 
-test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {§cli-proposal-review} {§cli-worker-ownership} {§cli-gate-answer-lifetime} {§cli-notification-shape} {§cli-review-attribution} {§cli-review-menu-interactive} {§cli-inline-review} {§cli-yolo-plurnkyolo} {§cli-tool-acceptance} {§cli-fail-closed-no-review-channel} {§cli-question-forms} {§cli-proposal-review-boundaries}: model/effort flags and permission handling under --yolo and fail-closed non-interactive review", async () => {
+test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {§cli-proposal-review} {§cli-session-ownership} {§cli-gate-answer-lifetime} {§cli-notification-shape} {§cli-review-attribution} {§cli-review-menu-interactive} {§cli-inline-review} {§cli-yolo-plurnkyolo} {§cli-tool-acceptance} {§cli-fail-closed-no-review-channel} {§cli-question-forms} {§cli-proposal-review-boundaries}: model/effort flags and permission handling under --yolo and fail-closed non-interactive review", async () => {
     const server = await createMockAcpServer();
     try {
         // With --yolo (default), ASK_PERMISSION is auto-approved
@@ -349,7 +349,7 @@ test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {�
     }
 });
 
-test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-workers-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
+test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-sessions-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
     const server = await createMockAcpServer();
     try {
         const modelsRes = await runCli(
@@ -376,7 +376,7 @@ test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-pl
     }
 });
 
-test("{§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-workers-topology} {§cli-resume-observation} {§cli-worker-history} {§cli-loops} {§cli-active-command-admission} {§cli-cancellation} {§cli-import-and-bracketed-paste} {§cli-problems-and-notices} {§cli-problem-control-flow} {§cli-connection-onboarding} {§cli-sign-in} {§cli-mcp-oauth-callback} {§cli-notice-rendering} {§cli-channel-posture} {§cli-stream-event-and-stream-concluded} {§cli-conformance} {§cli-acp-conformance} {§cli-test-daemon-lifecycle}: interactive slash commands, problems, notices, streams, and conformance matrix", async () => {
+test("{§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-sessions-topology} {§cli-resume-observation} {§cli-session-history} {§cli-loops} {§cli-active-command-admission} {§cli-cancellation} {§cli-import-and-bracketed-paste} {§cli-problems-and-notices} {§cli-problem-control-flow} {§cli-connection-onboarding} {§cli-sign-in} {§cli-mcp-oauth-callback} {§cli-notice-rendering} {§cli-channel-posture} {§cli-stream-event-and-stream-concluded} {§cli-conformance} {§cli-acp-conformance} {§cli-test-daemon-lifecycle}: interactive slash commands, problems, notices, streams, and conformance matrix", async () => {
     const server = await createMockAcpServer();
     try {
         const compRes = await runCli(

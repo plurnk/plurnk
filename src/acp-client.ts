@@ -324,7 +324,7 @@ export class AcpClient {
         context?: {
             readonly workspace?: string;
             readonly workspaceId?: number;
-            readonly worker?: string;
+            readonly session?: string;
             readonly sessionId?: string;
         },
     ): Promise<T> {
@@ -337,7 +337,7 @@ export class AcpClient {
             params,
             ...(context?.workspace !== undefined ? { workspace: context.workspace } : {}),
             ...(context?.workspaceId !== undefined ? { workspaceId: context.workspaceId } : {}),
-            ...(context?.worker !== undefined ? { worker: context.worker } : {}),
+            ...(context?.session !== undefined ? { session: context.session } : {}),
             ...(context?.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
         });
     }

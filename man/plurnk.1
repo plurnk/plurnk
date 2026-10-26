@@ -3,24 +3,24 @@
 plurnk \- terminal client for the plurnk\-service agentic daemon
 .SH SYNOPSIS
 .nf
-plurnk [--json] [--workspace <name>] [--worker <name>] [--model <selector>] [--effort <level>] [prompt...]
+plurnk [--json] [--workspace <name>] [--session <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
-       plurnk workspace workers <name> [--json]
+       plurnk workspace sessions <name> [--json]
        plurnk workspace rename <name> <newname> [--json]
-       plurnk log read --workspace <name> [--worker <name>]
+       plurnk log read --workspace <name> [--session <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
-       plurnk read <loop>/<turn>/<seq> --workspace <name> [--worker <name>] [--json]
-       plurnk effort [level] --workspace <name> [--worker <name>] [--json]
-       plurnk capabilities [json] --workspace <name> [--worker <name>] [--json]
+       plurnk read <loop>/<turn>/<seq> --workspace <name> [--session <name>] [--json]
+       plurnk effort [level] --workspace <name> [--session <name>] [--json]
+       plurnk capabilities [json] --workspace <name> [--session <name>] [--json]
        plurnk script <file.plk> [options]
        plurnk completion <bash|zsh|fish>
        <markdown stdin> | plurnk render [--width <columns>]
        plurnk mcp [subcommand]
        plurnk skills [subcommand]
        plurnk members [subcommand]
-       plurnk env [--scope worker|workspace] [subcommand]
+       plurnk env [--scope session|workspace] [subcommand]
        plurnk schedule [subcommand]
 .fi
 .SH DESCRIPTION
@@ -46,27 +46,27 @@ loop.
                           if none exists (attach-or-create). Defaults to the launch
                           directory, home-shortened with ~.
                           Overrides PLURNK_CLIENT_WORKSPACE.
-      --worker <name>        resume (or create) the named worker within the workspace.
-                          Overrides PLURNK_CLIENT_WORKER. Unset, the TUI binds
-                          --tui-worker and a one-shot a new worker of its own.
-      --tui-worker <name>  the worker the TUI binds when no worker is selected.
-                          Overrides PLURNK_CLIENT_TUI_WORKER (user).
-      --model <selector>  persistently select the worker's model
+      --session <name>       resume (or create) the named session within the workspace.
+                          Overrides PLURNK_CLIENT_SESSION. Unset, the TUI binds
+                          --tui-session and a one-shot a new session of its own.
+      --tui-session <name> the session the TUI binds when no session is selected.
+                          Overrides PLURNK_CLIENT_TUI_SESSION (user).
+      --model <selector>  persistently select the session's model
                           before the first loop (session/set_config_option). A selector is
                           a declared alias or exact provider/model route. Without
-                          this, the worker's durable model or the daemon's
+                          this, the session's durable model or the daemon's
                           boot-time default runs.
-      --effort <level>    persistently select the worker's effort before
+      --effort <level>    persistently select the session's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
       --env <NAME>[=<value>]
-                          persistently set <NAME> on the worker before the first loop
-                          (worker.env.replace); without =, carry <NAME> from this
+                          persistently set <NAME> on the session before the first loop
+                          (session.env.replace); without =, carry <NAME> from this
                           environment when set. Repeatable. Overrides
                           PLURNK_CLIENT_ENV_<NAME>.
       --env-inherit <list>
                           comma-separated variable names or trailing-* prefix globs
-                          carried from this environment onto the worker before the
+                          carried from this environment onto the session before the
                           first loop. Overrides PLURNK_CLIENT_ENV_INHERIT.
       --env-exclude <list>
                           comma-separated variable names or trailing-* prefix globs
@@ -91,13 +91,13 @@ loop.
                           that would wait for a person concludes instead. Approval
                           stays local (--yolo). Overrides PLURNK_CLIENT_AUTO.
       --bell              ring the terminal bell when you are needed: the bound
-                          worker's loop replies, stops or fails, or a review or
+                          session's loop replies, stops or fails, or a review or
                           question waits for you. Overrides PLURNK_CLIENT_BELL.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
       --env-file-if-exists <p>  same, but silently skip a missing file. Repeatable.
-      --max-turns <n>     model-call budget for the prompt's worker tree: its turns, its
+      --max-turns <n>     model-call budget for the prompt's session tree: its turns, its
                           descendants' turns and every BARE call (else the daemon's ceiling).
       --timeout <s>       cancel each prompt loop (session/cancel) after <s> seconds;
                           CLI exits 3 with "timedOut":true.
@@ -107,7 +107,7 @@ loop.
                           beneath its row; the rest is named by its address. Overrides
                           PLURNK_CLIENT_PREVIEW_LINES.
       --history-entries <n> recent entries restored when the TUI opens or switches a
-                          workspace or worker; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
+                          workspace or session; 0 hides history. Overrides PLURNK_CLIENT_HISTORY_ENTRIES.
       --mermaid-timeout-ms <n> total positive rendering deadline per diagram in milliseconds.
                           Overrides PLURNK_CLIENT_MERMAID_TIMEOUT_MS.
       --color <when>      style terminal output: always, auto, or never. Overrides
@@ -135,12 +135,12 @@ loop.
 .nf
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
-  workspace workers <name>  list workers in the named workspace (workspace.workers)
+  workspace sessions <name> list sessions in the named workspace (workspace.sessions)
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
-                          name is a mutable handle; workers are immutable)
-  log read --workspace ...  read log entries from the named workspace's worker
-  read <loop/turn/op>     inspect one log row in the selected workspace/worker
-  effort [level]          inspect or set a worker's effort
+                          name is a mutable handle; sessions are immutable)
+  log read --workspace ...  read log entries from the named workspace's session
+  read <loop/turn/op>     inspect one log row in the selected workspace/session
+  effort [level]          inspect or set a session's effort
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -152,7 +152,7 @@ loop.
   mcp ...                   List or manage this workspace's MCP servers.
   skills ...                List or manage this workspace's Agent Skills.
   members ...               List or manage this workspace's file members.
-  env ...                   Manage worker overrides or shared workspace environment defaults.
+  env ...                   Manage session overrides or shared workspace environment defaults.
   schedule ...              List or manage this workspace's scheduled messages.
                           For family commands, put client options before the family name;
                           everything after it belongs to the family, including server flags.
@@ -167,10 +167,10 @@ The no-argument interactive terminal accepts these slash commands:
 /help [verb]                   Show the command index or one command's usage.
 /models [search]               Search the bounded model catalog.
 /workspaces                    List daemon workspaces.
-/workers                       List this workspace's workers as a tree, each with its state.
-/loops                         List this worker's loops: each one's number and opening line.
+/sessions                      List this workspace's sessions as a tree, each with its state.
+/loops                         List this session's loops: each one's number and opening line.
 /loop [n]                      Print loop n whole, or the current loop.
-/model [selector] [effort]     Inspect or select this worker's durable model, and its effort with it.
+/model [selector] [effort]     Inspect or select this session's durable model, and its effort with it.
 /child [selector|inherit]      Inspect or select the inherited child model.
 /effort [policy]               Inspect or select reasoning effort.
 /capabilities [json]           Inspect the capability cascade or set the workspace policy.
@@ -178,17 +178,17 @@ The no-argument interactive terminal accepts these slash commands:
 /workspace [name]              Open or create a workspace.
 /rename <name>                 Rename this workspace's mutable handle.
 /share <folder>                Write this workspace's share into <folder> for a bug report.
-/rollback <loop>/<turn>/<item> Reverse the bound worker's file mutations after a log coordinate, latest first, as your own operations.
-/worker [name]                 Show this worker, or go to the named one; a new name makes a new worker.
-/fork [name]                   Fork this worker into a child that keeps its history, and go there.
-/parent                        Hop to the bound worker's parent (Alt-h).
-/enter                         Hop into the bound worker's newest child (Alt-l).
-/older                         Hop to the next older sibling worker, wrapping (Alt-j).
-/newer                         Hop to the next newer sibling worker, wrapping (Alt-k).
+/rollback <loop>/<turn>/<item> Reverse the bound session's file mutations after a log coordinate, latest first, as your own operations.
+/session [name]                Show this session, or go to the named one; a new name makes a new session.
+/fork [name]                   Fork this session into a child that keeps its history, and go there.
+/parent                        Hop to the bound session's parent (Alt-h).
+/enter                         Hop into the bound session's newest child (Alt-l).
+/older                         Hop to the next older sibling session, wrapping (Alt-j).
+/newer                         Hop to the next newer sibling session, wrapping (Alt-k).
 /mcp [subcommand]              List or manage this workspace's MCP servers.
 /skills [subcommand]           List or manage this workspace's Agent Skills.
 /members [subcommand]          List or manage this workspace's file members.
-/env [--scope worker|workspace] [subcommand] Manage worker overrides or shared workspace environment defaults.
+/env [--scope session|workspace] [subcommand] Manage session overrides or shared workspace environment defaults.
 /schedule [subcommand]         List or manage this workspace's scheduled messages.
 /import <path>                 Insert a local file into the composer.
 /script <path>                 Submit a local .plk program through op.parse.

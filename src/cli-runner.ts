@@ -36,12 +36,12 @@ export interface CliCommonOptions {
     readonly cwd: string;
     readonly workspace?: string;
     readonly sessionId?: string;
-    readonly tuiWorker: string;
+    readonly tuiSession: string;
     readonly model?: string;
     readonly effort?: string;
     readonly projectRoot?: string;
     readonly workspaceSettings?: Record<string, unknown>;
-    readonly workerEnv?: Record<string, string>;
+    readonly sessionEnv?: Record<string, string>;
     readonly maxTurns?: number;
     readonly timeoutSec?: number;
     readonly autostart: boolean;
@@ -295,11 +295,11 @@ const applyInitialConfig = async (
         const res = await client.setConfigOption(session.sessionId, "thought_level", options.effort);
         session.configOptions = [...res.configOptions];
     }
-    if (options.workerEnv !== undefined && Object.keys(options.workerEnv).length > 0) {
+    if (options.sessionEnv !== undefined && Object.keys(options.sessionEnv).length > 0) {
         await client.action(
-            "worker.env.replace",
-            { entries: options.workerEnv },
-            { sessionId: session.sessionId, workspace: options.workspace, worker: options.sessionId },
+            "session.env.replace",
+            { entries: options.sessionEnv },
+            { sessionId: session.sessionId, workspace: options.workspace, session: options.sessionId },
         ).catch(() => undefined);
     }
 };
@@ -330,7 +330,7 @@ export const openCliSession = async (
     const plurnkMeta: Record<string, unknown> = {
         create: true,
         ...(options.workspace !== undefined ? { workspace: options.workspace } : {}),
-        ...(options.sessionId !== undefined ? { worker: options.sessionId, name: options.sessionId } : {}),
+        ...(options.sessionId !== undefined ? { session: options.sessionId, name: options.sessionId } : {}),
         ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
         ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
     };
@@ -523,7 +523,7 @@ export const runCliPrompt = async (
                     timedOut,
                     turnCount,
                     workspace: plurnkSessionMeta.workspace ?? { name: options.workspace ?? "default" },
-                    worker: plurnkSessionMeta.worker ?? { name: options.sessionId ?? "user" },
+                    session: plurnkSessionMeta.session ?? { name: options.sessionId ?? "user" },
                     turns,
                     response: finalAnswer,
                     usage: mergedUsage,
@@ -871,17 +871,17 @@ export const runCliWorkspace = async (
             }
             return 0;
         }
-        if (sub === "workers") {
+        if (sub === "sessions") {
             const wsName = arg1 ?? options.workspace;
-            const result = await client.action("workspace.workers", {}, { workspace: wsName });
+            const result = await client.action("workspace.sessions", {}, { workspace: wsName });
             if (options.json) {
                 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
                 return 0;
             }
             const rec = result as Record<string, unknown>;
-            const workers = Array.isArray(rec.workers) ? rec.workers : [];
-            for (const w of workers) {
-                const r = w as Record<string, unknown>;
+            const sessions = Array.isArray(rec.sessions) ? rec.sessions : [];
+            for (const s of sessions) {
+                const r = s as Record<string, unknown>;
                 process.stdout.write(`${String(r.name)}\t${String(r.lifecycle ?? "idle")}\n`);
             }
             return 0;
@@ -927,7 +927,7 @@ export const runCliLogRead = async (
             },
             {
                 workspace: options.workspace,
-                worker: options.sessionId ?? options.tuiWorker,
+                session: options.sessionId ?? options.tuiSession,
             },
         );
         if (options.json) {
@@ -962,7 +962,7 @@ export const runCliReadCoord = async (
             { target },
             {
                 workspace: options.workspace,
-                worker: options.sessionId ?? options.tuiWorker,
+                session: options.sessionId ?? options.tuiSession,
             },
         );
         if (options.json) {
@@ -1020,7 +1020,7 @@ export const runCliScript = async (
         const res = await client.action<{ readonly results?: Array<{ readonly status?: number; readonly content?: string; readonly message?: string }> }>(
             "op.parse",
             { text },
-            { workspace: options.workspace, worker: options.sessionId ?? options.tuiWorker },
+            { workspace: options.workspace, session: options.sessionId ?? options.tuiSession },
         );
         if (options.json) {
             process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
@@ -1070,11 +1070,11 @@ export const runCliFamily = async (
     });
     await ensureDaemonConnected(client, options);
     try {
-        const scopePrefix = family === "env" && familyArgs.includes("worker") ? "worker" : "workspace";
+        const scopePrefix = family === "env" && familyArgs.includes("session") ? "session" : "workspace";
         const actionName = `${scopePrefix}.${family}.${sub}`;
         const session = await openCliSession(client, {
             ...options,
-            sessionId: options.sessionId ?? options.tuiWorker,
+            sessionId: options.sessionId ?? options.tuiSession,
         });
         const result = await client.action<Record<string, unknown>>(
             actionName,
@@ -1082,7 +1082,7 @@ export const runCliFamily = async (
             {
                 sessionId: session.sessionId,
                 workspace: options.workspace,
-                worker: options.sessionId ?? options.tuiWorker,
+                session: options.sessionId ?? options.tuiSession,
             },
         );
         if (options.json) {
@@ -1119,7 +1119,7 @@ export const runCliFamily = async (
 export const runInteractiveSession = async (options: CliCommonOptions): Promise<number> => {
     const presenter = new SessionPresenter({
         workspaceName: options.workspace ?? "default",
-        workerName: options.sessionId ?? options.tuiWorker ?? "user",
+        sessionName: options.sessionId ?? options.tuiSession ?? "user",
         model: options.model ?? "default",
         yolo: options.yolo,
     });
@@ -1160,7 +1160,7 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                         process.stdout.write(`${frame.terminalDetail}\n`);
                     }
                     process.stdout.write(
-                        `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.workerName}(1/${frame.turns})] `,
+                        `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.sessionName}(1/${frame.turns})] `,
                     );
                     break;
             }
@@ -1180,17 +1180,17 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
         client,
         {
             ...options,
-            sessionId: options.sessionId ?? options.tuiWorker,
+            sessionId: options.sessionId ?? options.tuiSession,
         },
         onUpdate,
     );
 
     presenter.ingestMeta(session.meta);
-    if (session.sessionId.includes("#") && presenter.workerName === (options.sessionId ?? options.tuiWorker ?? "user")) {
-        presenter.workerName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
+    if (session.sessionId.includes("#") && presenter.sessionName === (options.sessionId ?? options.tuiSession ?? "user")) {
+        presenter.sessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
     }
 
-    process.stdout.write(`workspace: ${presenter.workspaceName}\n[${presenter.workspaceName}/~${presenter.workerName}] `);
+    process.stdout.write(`workspace: ${presenter.workspaceName}\n[${presenter.workspaceName}/~${presenter.sessionName}] `);
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
     return await new Promise<number>((resolvePromise) => {
@@ -1221,10 +1221,10 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                     });
                 return;
             }
-            if (line === "/workers") {
+            if (line === "/sessions") {
                 const glyphPart = presenter.lifecycleGlyph.length > 0 ? ` ${presenter.lifecycleGlyph}` : "";
                 const statusPart = presenter.lastStatusLine.length > 0 ? `\n${presenter.lastStatusLine}` : "";
-                process.stdout.write(`● ${presenter.workerName}${glyphPart}${statusPart}\n`);
+                process.stdout.write(`● ${presenter.sessionName}${glyphPart}${statusPart}\n`);
                 return;
             }
             if (line.startsWith("/")) {
@@ -1271,7 +1271,7 @@ export const runInteractiveSession = async (options: CliCommonOptions): Promise<
                             {
                                 sessionId: session.sessionId,
                                 workspace: presenter.workspaceName,
-                                worker: presenter.workerName,
+                                session: presenter.sessionName,
                             },
                         )
                         .then((result) => {

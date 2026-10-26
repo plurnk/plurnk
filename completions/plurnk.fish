@@ -19,8 +19,8 @@ complete -c plurnk -l help
 complete -c plurnk -l version
 complete -c plurnk -l json
 complete -c plurnk -l workspace
-complete -c plurnk -l worker
-complete -c plurnk -l tui-worker
+complete -c plurnk -l session
+complete -c plurnk -l tui-session
 complete -c plurnk -l model
 complete -c plurnk -l effort
 complete -c plurnk -l env

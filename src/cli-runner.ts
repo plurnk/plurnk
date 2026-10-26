@@ -21,7 +21,17 @@ import {
 import { AcpClient } from "./acp-client.ts";
 import { AcpSession, contentBlockToText, type AcpMessageItem } from "./acp-session.ts";
 import Credential from "./credential.ts";
-import { SessionPresenter } from "./session-presenter.ts";
+import {
+    mintGateHash,
+    openProcessStreams,
+    runReplSession,
+    runTuiViewport,
+    writeErrorJsonl,
+    writeEventJsonl,
+    type ClientStreams,
+} from "./repl-session.ts";
+
+export { openProcessStreams, runReplSession, runTuiViewport, type ClientStreams };
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -53,6 +63,7 @@ export interface CliCommonOptions {
     readonly auto: boolean;
     readonly bell: boolean;
     readonly json: boolean;
+    readonly repl?: boolean;
     readonly statusStream: boolean;
     readonly shareFolder?: string;
     readonly previewLines: number;
@@ -88,7 +99,7 @@ const resolveServiceCommand = (serviceBin?: string): { readonly file: string; re
     return { file: "plurnk-service", args: ["start"] };
 };
 
-const ensureDaemonConnected = async (client: AcpClient, options: CliCommonOptions): Promise<void> => {
+export const ensureDaemonConnected = async (client: AcpClient, options: CliCommonOptions): Promise<void> => {
     try {
         await client.connect();
         return;
@@ -346,7 +357,9 @@ export const openCliSession = async (
         const resumed = await client.resumeSession(created.sessionId, options.cwd, {
             _meta: { plurnk: plurnkMeta },
         });
-        session.configOptions = [...(resumed.configOptions ?? [])];
+        if (resumed.configOptions && resumed.configOptions.length > 0) {
+            session.configOptions = [...resumed.configOptions];
+        }
         if (resumed._meta !== undefined && resumed._meta !== null) {
             session.meta = resumed._meta as Record<string, unknown>;
         }
@@ -370,50 +383,150 @@ export const openCliSession = async (
 export const runCliPrompt = async (
     promptText: string,
     options: CliCommonOptions,
+    customStreams?: Partial<ClientStreams>,
 ): Promise<number> => {
+    const streams = openProcessStreams(customStreams);
     const isQuestionPrompt = promptText.trimStart().startsWith("?");
     const effectiveYolo = isQuestionPrompt ? false : options.yolo;
+    let gateSeq = 0;
+    let activeSessionId = options.sessionId ?? "user";
+    const basePermHandler = createCliPermissionHandler(effectiveYolo);
+    const baseElicitHandler = createCliElicitationHandler();
 
     const client = new AcpClient({
         url: options.url,
         credential: options.credential,
         env: options.env,
-        onPermissionRequest: createCliPermissionHandler(effectiveYolo),
-        onElicitationRequest: createCliElicitationHandler(),
+        onPermissionRequest: async (request, signal) => {
+            gateSeq += 1;
+            const id = mintGateHash(activeSessionId, "permission", gateSeq);
+            writeEventJsonl(streams.events, {
+                ...request,
+                sessionUpdate: "permission_request",
+                id,
+                sessionId: activeSessionId,
+            });
+            const res = await basePermHandler(request, signal);
+            writeEventJsonl(streams.events, {
+                sessionUpdate: "gate_resolved",
+                id,
+                outcome: res.outcome,
+            });
+            return res;
+        },
+        onElicitationRequest: async (request, signal) => {
+            gateSeq += 1;
+            const id = mintGateHash(activeSessionId, "elicitation", gateSeq);
+            writeEventJsonl(streams.events, {
+                sessionUpdate: "elicitation_request",
+                id,
+                sessionId: activeSessionId,
+                mode: CreateElicitationRequest.isUrl(request) ? "url" : "form",
+                message: request.message,
+                ...(CreateElicitationRequest.isForm(request) ? { requestedSchema: request.requestedSchema } : {}),
+                ...(CreateElicitationRequest.isUrl(request) ? { url: request.url } : {}),
+                ...(request._meta !== undefined ? { _meta: request._meta } : {}),
+            });
+            const res = await baseElicitHandler(request, signal);
+            writeEventJsonl(streams.events, {
+                sessionUpdate: "gate_resolved",
+                id,
+                outcome: res,
+            });
+            return res;
+        },
     });
 
     await ensureDaemonConnected(client, options);
 
     try {
         let promptDispatched = false;
+        let reasoningOpenOnLine = false;
         let turnIdleResolve: (() => void) | null = null;
         const turnIdlePromise = new Promise<void>((resolveIdle) => {
             turnIdleResolve = resolveIdle;
         });
 
+        const flushReasoningNewline = (): void => {
+            if (reasoningOpenOnLine) {
+                streams.reasoning.write("\n");
+                reasoningOpenOnLine = false;
+            }
+        };
+
         const session = await openCliSession(client, options, (update) => {
             if (!promptDispatched) return;
 
-            if (!options.json) {
-                if (SessionUpdate.isToolCallUpdate(update)) {
-                    const status = update.status ?? "in_progress";
-                    const label = update.title ?? update.name ?? update.toolCallId;
-                    if (status === "in_progress" || status === "completed" || status === "failed") {
-                        process.stderr.write(`[tool:${status}] ${label}\n`);
-                    }
-                } else if (SessionUpdate.isTerminalOutputChunk(update)) {
-                    const text = Buffer.from(update.data, "base64").toString("utf8");
-                    process.stderr.write(text);
-                } else if (SessionUpdate.isNotice(update)) {
-                    process.stderr.write(
-                        `[${update.severity}] ${update.title}${update.description ? `: ${update.description}` : ""}\n`,
-                    );
+            if (SessionUpdate.isAgentThoughtChunk(update)) {
+                const delta = contentBlockToText(update.content);
+                if (delta.length > 0) {
+                    streams.reasoning.write(delta);
+                    reasoningOpenOnLine = !delta.endsWith("\n");
                 }
+                return;
             }
 
-            if (SessionUpdate.isStateUpdate(update) && update.state === "idle") {
-                turnIdleResolve?.();
+            if (SessionUpdate.isAgentMessageChunk(update)) {
+                flushReasoningNewline();
+                return;
             }
+
+            if (SessionUpdate.isToolCallUpdate(update)) {
+                flushReasoningNewline();
+                writeEventJsonl(streams.events, update);
+                return;
+            }
+
+            if (SessionUpdate.isNotice(update)) {
+                if (!options.json && update.severity === "error") {
+                    writeErrorJsonl(streams.stderr, update);
+                }
+                writeEventJsonl(streams.events, update);
+                return;
+            }
+
+            if (SessionUpdate.isStateUpdate(update)) {
+                if (update.state === "idle") {
+                    flushReasoningNewline();
+                    const termProblem = (
+                        update._meta as
+                            | {
+                                  plurnk?: {
+                                      terminal?: {
+                                          problem?: Record<string, unknown>;
+                                      };
+                                  };
+                              }
+                            | undefined
+                    )?.plurnk?.terminal?.problem;
+                    if (!options.json && termProblem !== undefined) {
+                        writeErrorJsonl(streams.stderr, termProblem);
+                    }
+                    writeEventJsonl(streams.events, update);
+                    turnIdleResolve?.();
+                    return;
+                }
+                writeEventJsonl(streams.events, update);
+                return;
+            }
+
+            writeEventJsonl(streams.events, update);
+        });
+
+        activeSessionId = session.sessionId;
+        const plurnkInitMeta = (session.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+        const wsInit = (plurnkInitMeta?.workspace ?? undefined) as Record<string, unknown> | undefined;
+        writeEventJsonl(streams.events, {
+            sessionUpdate: "session_bound",
+            sessionId: session.sessionId,
+            workspace: typeof wsInit?.name === "string" ? wsInit.name : (options.workspace ?? "default"),
+            session:
+                typeof plurnkInitMeta?.sessionName === "string"
+                    ? plurnkInitMeta.sessionName
+                    : (options.sessionId ?? "user"),
+            cwd: typeof wsInit?.projectRoot === "string" ? wsInit.projectRoot : (options.projectRoot ?? options.cwd),
+            configOptions: session.configOptions,
+            ...(session.meta !== undefined ? { _meta: session.meta } : {}),
         });
 
         const replayCount = session.items.length;
@@ -447,6 +560,7 @@ export const runCliPrompt = async (
                 turnIdlePromise,
                 client.closed,
             ]);
+            flushReasoningNewline();
 
             if (options.shareFolder !== undefined && options.shareFolder.length > 0) {
                 const resolvedShare = options.shareFolder.startsWith("~/")
@@ -530,9 +644,9 @@ export const runCliPrompt = async (
                     configOptions: session.configOptions,
                     items: turnItems,
                 };
-                process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+                streams.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
             } else if (finalAnswer.length > 0) {
-                process.stdout.write(finalAnswer.endsWith("\n") ? finalAnswer : `${finalAnswer}\n`);
+                streams.stdout.write(finalAnswer.endsWith("\n") ? finalAnswer : `${finalAnswer}\n`);
             }
 
             if (timedOut || stopReason === "cancelled" || finalStatus === 499) return 3;
@@ -726,7 +840,7 @@ export const runCliDeleteSession = async (
     }
 };
 
-const formatConfigOption = (opt: SessionConfigOption): string => {
+export const formatConfigOption = (opt: SessionConfigOption): string => {
     if (SessionConfigOption.isBoolean(opt)) {
         return `${opt.configId} (${opt.name}): ${String(opt.currentValue)}`;
     }
@@ -1116,208 +1230,12 @@ export const runCliFamily = async (
     }
 };
 
-export const runInteractiveSession = async (options: CliCommonOptions): Promise<number> => {
-    const presenter = new SessionPresenter({
-        workspaceName: options.workspace ?? "default",
-        sessionName: options.sessionId ?? options.tuiSession ?? "user",
-        model: options.model ?? "default",
-        yolo: options.yolo,
-    });
-
-    const onUpdate = (update: SessionUpdate): void => {
-        const frames = presenter.apply(update);
-        for (const frame of frames) {
-            switch (frame.kind) {
-                case "reasoning_tail":
-                    process.stdout.write(`${frame.deltaText}\n`);
-                    break;
-                case "reasoning_retired":
-                    break;
-                case "tool_call":
-                    if (frame.title) {
-                        process.stdout.write(`${frame.title}\n`);
-                    }
-                    for (const line of frame.contentLines) {
-                        process.stdout.write(`${line}\n`);
-                    }
-                    break;
-                case "reply_chunk":
-                    process.stdout.write(`${frame.text}\n`);
-                    break;
-                case "terminal_output":
-                    process.stdout.write(`${frame.rawData}\n`);
-                    break;
-                case "subagent":
-                    break;
-                case "session_message":
-                    process.stdout.write(`🐜 ${frame.senderSessionId}: ${frame.text}\n`);
-                    break;
-                case "notice":
-                    process.stdout.write(`${frame.formatted}\n`);
-                    break;
-                case "status_bar":
-                    if (frame.terminalDetail) {
-                        process.stdout.write(`${frame.terminalDetail}\n`);
-                    }
-                    process.stdout.write(
-                        `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.sessionName}(1/${frame.turns})] `,
-                    );
-                    break;
-            }
-        }
-    };
-
-    const client = new AcpClient({
-        url: options.url,
-        credential: options.credential,
-        env: options.env,
-        onPermissionRequest: createCliPermissionHandler(options.yolo || options.auto),
-        onElicitationRequest: createCliElicitationHandler(),
-    });
-
-    await ensureDaemonConnected(client, options);
-    const session = await openCliSession(
-        client,
-        {
-            ...options,
-            sessionId: options.sessionId ?? options.tuiSession,
-        },
-        onUpdate,
-    );
-
-    presenter.ingestMeta(session.meta);
-    if (session.sessionId.includes("#") && presenter.sessionName === (options.sessionId ?? options.tuiSession ?? "user")) {
-        presenter.sessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
+export const runInteractiveSession = async (
+    options: CliCommonOptions,
+    customStreams?: Partial<ClientStreams>,
+): Promise<number> => {
+    if (options.repl) {
+        return await runReplSession(options, customStreams);
     }
-
-    process.stdout.write(`workspace: ${presenter.workspaceName}\n[${presenter.workspaceName}/~${presenter.sessionName}] `);
-
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-    return await new Promise<number>((resolvePromise) => {
-        let settled = false;
-        const finish = (code: number): void => {
-            if (settled) return;
-            settled = true;
-            rl.close();
-            client.close();
-            resolvePromise(code);
-        };
-
-        rl.on("line", (rawLine: string) => {
-            const line = rawLine.trim();
-            if (line.length === 0) return;
-            if (line === "/quit" || line === "/exit") {
-                finish(0);
-                return;
-            }
-            if (line === "/stop") {
-                void client
-                    .cancel(session.sessionId)
-                    .then(() => {
-                        process.stdout.write("cancelled (final 499)\n");
-                    })
-                    .catch(() => {
-                        process.stdout.write("cancelled (final 499)\n");
-                    });
-                return;
-            }
-            if (line === "/sessions") {
-                const glyphPart = presenter.lifecycleGlyph.length > 0 ? ` ${presenter.lifecycleGlyph}` : "";
-                const statusPart = presenter.lastStatusLine.length > 0 ? `\n${presenter.lastStatusLine}` : "";
-                process.stdout.write(`● ${presenter.sessionName}${glyphPart}${statusPart}\n`);
-                return;
-            }
-            if (line.startsWith("/")) {
-                const parts = line.slice(1).split(/\s+/u);
-                const cmd = parts[0]?.toLowerCase() ?? "";
-                const arg = parts[1];
-                const configMap: Record<string, string> = {
-                    model: "model",
-                    effort: "thought_level",
-                    child: "spawn_model",
-                    mode: "mode",
-                };
-                const mappedConfigId = configMap[cmd];
-                if (mappedConfigId !== undefined) {
-                    if (arg === undefined || arg.length === 0) {
-                        const opt = session.configOptions.find((o) => o.configId === mappedConfigId);
-                        if (opt !== undefined) {
-                            process.stdout.write(`${formatConfigOption(opt)}\n`);
-                        }
-                        return;
-                    }
-                    void client
-                        .setConfigOption(session.sessionId, mappedConfigId, arg)
-                        .then((res) => {
-                            session.configOptions = [...res.configOptions];
-                            if (mappedConfigId === "model") {
-                                presenter.model = arg;
-                            }
-                            const opt = session.configOptions.find((o) => o.configId === mappedConfigId);
-                            if (opt !== undefined) {
-                                process.stdout.write(`${formatConfigOption(opt)}\n`);
-                            }
-                        })
-                        .catch((err) => {
-                            process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-                        });
-                    return;
-                }
-                if (["mcp", "skills", "members", "env", "schedule"].includes(cmd)) {
-                    void client
-                        .action<Record<string, unknown>>(
-                            `workspace.${cmd}.list`,
-                            {},
-                            {
-                                sessionId: session.sessionId,
-                                workspace: presenter.workspaceName,
-                                session: presenter.sessionName,
-                            },
-                        )
-                        .then((result) => {
-                            const definitions = Array.isArray(result.definitions)
-                                ? result.definitions
-                                : Array.isArray(result.items)
-                                    ? result.items
-                                    : [];
-                            if (definitions.length === 0) {
-                                process.stdout.write(`${cmd}: none\n`);
-                                return;
-                            }
-                            for (const item of definitions) {
-                                const d = item as Record<string, unknown>;
-                                const alias = String(d.alias ?? d.name ?? "");
-                                const state = String(d.state ?? "active");
-                                const def = (d.definition ?? {}) as Record<string, unknown>;
-                                const type = typeof def.type === "string" ? def.type : "";
-                                const commandStr = typeof def.command === "string" ? def.command : typeof def.url === "string" ? def.url : "";
-                                const prov = (d.provenance ?? {}) as Record<string, unknown>;
-                                const source = typeof prov.source === "string" ? `source=${prov.source}` : "";
-                                const rowParts = [alias, state, type, commandStr, source].filter((p) => p.length > 0);
-                                process.stdout.write(`${rowParts.join("  ")}\n`);
-                            }
-                        })
-                        .catch((err) => {
-                            process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-                        });
-                    return;
-                }
-            }
-
-            presenter.markTurnStart();
-            void client
-                .prompt(session.sessionId, [{ type: "text", text: line }], {
-                    plurnk: {
-                        ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
-                    },
-                })
-                .catch((err) => {
-                    process.stdout.write(`${err instanceof Error ? err.message : String(err)}\n`);
-                });
-        });
-
-        rl.on("close", () => {
-            finish(0);
-        });
-    });
+    return await runTuiViewport(options, customStreams);
 };

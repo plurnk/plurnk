@@ -48,6 +48,7 @@ export const CLIENT_OPTIONS = {
     yolo: { type: "boolean" },
     auto: { type: "boolean" },
     bell: { type: "boolean" },
+    repl: { type: "boolean" },
     capabilities: { type: "string" },
     "env-file": { type: "string", multiple: true },
     "env-file-if-exists": { type: "string", multiple: true },
@@ -172,6 +173,9 @@ options:
       --bell              ring the terminal bell when you are needed: the bound
                           session's loop replies, stops or fails, or a review or
                           question waits for you. Overrides PLURNK_CLIENT_BELL.
+      --repl              run the interactive line-oriented REPL over the 5-stream
+                          contract ([stdin, stdout, stderr, events, reasoning], fd 0..4)
+                          without the TUI viewport. Overrides PLURNK_CLIENT_REPL.
       --capabilities <json>
                           CapabilityPolicy JSON applied when creating the workspace.
       --env-file <p>      load env from <p> (errors if missing). Repeatable.
@@ -339,6 +343,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                 token !== "--no-yolo" &&
                 token !== "--auto" &&
                 token !== "--bell" &&
+                token !== "--repl" &&
                 token !== "--status-stream" &&
                 token !== "--no-git" &&
                 token !== "--all"
@@ -506,6 +511,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         : env.PLURNK_CLIENT_YOLO !== "0" && env.PLURNK_CLIENT_YOLO !== "false";
     const auto = parsed.values.auto === true || isTruthyEnv(env.PLURNK_CLIENT_AUTO);
     const bell = parsed.values.bell === true || isTruthyEnv(env.PLURNK_CLIENT_BELL);
+    const repl = parsed.values.repl === true || isTruthyEnv(env.PLURNK_CLIENT_REPL);
     const json = parsed.values.json === true || isTruthyEnv(env.PLURNK_CLIENT_JSON);
     const statusStream = parsed.values["status-stream"] === true || isTruthyEnv(env.PLURNK_CLIENT_STATUS_STREAM);
     const shareFolder = typeof parsed.values.share === "string"
@@ -574,6 +580,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         yolo,
         auto,
         bell,
+        repl,
         json,
         statusStream,
         ...(shareFolder !== undefined && shareFolder.length > 0 ? { shareFolder } : {}),
@@ -680,6 +687,8 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                 return;
             }
             exitCode = await runCliScript(positionals[1], common);
+        } else if (common.repl && positionals.length === 0) {
+            exitCode = await runInteractiveSession(common);
         } else {
             const positionalText = positionals.join(" ");
             const stdinText = !process.stdin.isTTY ? (await readStdinAll()).trim() : "";

@@ -20,7 +20,7 @@ const locateServiceEntry = async (): Promise<string> => {
 };
 
 test(
-    "[§cli-tui-flow] interactive TUI live session completes a real-model prompt over ACP v2",
+    "[{§cli-tui-flow}] interactive TUI live session completes a real-model prompt over ACP v2",
     {
         timeout: 600_000,
         skip: liveEnabled ? false : "real-model tier requires npm run test:tui:live",

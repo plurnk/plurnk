@@ -33,6 +33,7 @@ export {
     createCliElicitationHandler,
     createCliPermissionHandler,
     openCliSession,
+    openProcessStreams,
     runCliConfig,
     runCliDeleteSession,
     runCliForkSession,
@@ -40,7 +41,11 @@ export {
     runCliNewSession,
     runCliPrompt,
     runCliResumeSession,
+    runInteractiveSession,
+    runReplSession,
+    runTuiViewport,
     type CliCommonOptions,
+    type ClientStreams,
 } from "./cli-runner.ts";
 export { main } from "./dispatcher.ts";
 export { NODE_MAJOR_FLOOR, refuseBelowFloor } from "./runtime-floor.ts";

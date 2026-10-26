@@ -20,7 +20,8 @@ what it guarantees, what its exit codes mean, and what it renders.
 | **loop** | Daemon-owned execution spanning turns. Message delivery and loop completion are independent; the Run's end carries the authoritative terminal record as `_meta.plurnk.terminal` (plurnk-service ``§acp-plurnk-metadata``). |
 | **log/entry notification** | A durable operation row or its update; the client draws it from the standard part it builds, or whole when it builds none ({§cli-row-sources}). Rendering follows §5. |
 | **one-shot mode** | `plurnk "prompt"` — one prompt's loop, rendered, then exit. Unix-tool posture. |
-| **TUI mode** | `plurnk` (no args) — interactive REPL; many prompts per workspace. |
+| **REPL mode** | `plurnk --repl` (or `PLURNK_CLIENT_REPL=1`) — line-oriented interactive session over the 5-stream contract (`[stdin, stdout, stderr, events, reasoning]`), without `pi-tui`. |
+| **TUI mode** | `plurnk` (no args, TTY stdin, `PLURNK_CLIENT_REPL=0`) — `pi-tui` terminal viewport composed atop REPL mode's 5-stream contract. |
 
 ---
 
@@ -29,7 +30,8 @@ what it guarantees, what its exit codes mean, and what it renders.
 ```
 plurnk [options] [prompt...]                # one-shot from positionals
 <piped stdin> | plurnk [options] [prompt...] # one-shot from stdin (and/or positionals)
-plurnk [options]                             # TUI mode (no positionals, TTY stdin)
+plurnk --repl [options]                      # REPL mode over [stdin, stdout, stderr, events, reasoning]
+plurnk [options]                             # TUI mode (no positionals, TTY stdin, PLURNK_CLIENT_REPL=0)
 ```
 
 
@@ -37,7 +39,7 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 floor its package declares in `engines.node`. Below it, one stderr line names both versions and
 the process exits 1, before any option is read or any daemon is contacted.
 
-The prompt is assembled from positional args + piped stdin. If both are present, positionals come first followed by a blank line, then stdin. If only positionals → those. If only piped stdin → that. If neither and stdin is a TTY → TUI mode. Empty non-TTY input is a usage error (exit 64), before contacting the daemon. `CI` does not change this terminal-based choice. The `--json` flag requires a non-empty prompt (errors with exit 64 if neither source provides one).
+With `--repl` (`PLURNK_CLIENT_REPL=1`) and no positional prompt, `plurnk` enters interactive REPL mode regardless of whether `stdin` is a TTY. Otherwise, the prompt is assembled from positional args + piped stdin: if both are present, positionals come first followed by a blank line, then stdin; if only positionals → those; if only piped stdin → that; if neither and stdin is a TTY → TUI mode. Empty non-TTY input without `--repl` is a usage error (exit 64), before contacting the daemon. `CI` does not change this choice. The `--json` flag requires one-shot or subcommand mode and a non-empty prompt (errors with exit 64 if neither source provides one).
 
 `plurnk <subcommand> --help` prints that command's invocation forms and summary
 from the same inventory as global help, without contacting the daemon.
@@ -57,6 +59,7 @@ Options:
 | Flag | Type | Meaning |
 |---|---|---|
 | `-h`, `--help` | flag | Print usage, exit 0 |
+| `--repl` | flag | Enter line-oriented interactive REPL mode over the 5-stream contract (`[stdin, stdout, stderr, events, reasoning]`) without launching `pi-tui`. Overrides `PLURNK_CLIENT_REPL` (shipped `0`). See {§cli-repl-mode}. |
 | `--json` | flag | CLI mode only (or `PLURNK_CLIENT_JSON`). One complete record document on stdout, structured errors; interactive OAuth instructions use stderr. See §2.1. |
 | `--workspace <name>` | string | Resume the named workspace. See §1.1. Overrides `PLURNK_CLIENT_WORKSPACE`. |
 | `--session <name>` | string | Resume (or create) the named session within the workspace, in either mode. Overrides `PLURNK_CLIENT_SESSION`, which ships unset. See §1.1. |
@@ -413,25 +416,25 @@ A prompt token `@<path>` that starts the prompt or follows whitespace is a file 
 
 ### §cli-output-channels Output channels
 
-Standard Unix discipline: **stdout is the program's product, stderr is its narration.** There are two OUTPUT MODES, selected by `--json` / `PLURNK_CLIENT_JSON` — not a flag on one output, but two distinct contracts:
+The client exposes a five-stream POSIX descriptor contract (`[stdin, stdout, stderr, events, reasoning]`, file descriptors `0..4`) across one-shot CLI and interactive REPL modes, separating delivered product, errors, discrete JSON Lines session telemetry, and continuous model reasoning:
 
-**text mode (default):**
-- **stdout** — delivered responses ({§cli-broadcast-send-rendering}), verbatim in operation order and separated by a blank line. A later failure or cancellation does not retract them. NOTE inventories, unrelated recipients and failed messages do not appear on stdout.
-- **stderr** — one mutable status row on a TTY, durable action trace lines
-  (including intermediate broadcasts), diagnostics, and the terminal summary.
-  Non-TTY stderr omits routine status/progress instead of accumulating heartbeat
-  history. It still receives durable trace, diagnostics, and the summary.
+| Slot | Descriptor | Stream | Contract |
+|---|---|---|---|
+| `0` | `fd 0` | `stdin` | User prompts, `/` slash commands, `!` shell commands, `?` review prompts, `: ` literal prompts, `...` loop injections, and executable backtick fences. |
+| `1` | `fd 1` | `stdout` | **Product only.** In text mode: delivered assistant responses ({§cli-broadcast-send-rendering}), verbatim in operation order, and interactive `/` or CLI subcommand outputs. NOTE inventories, unrelated recipients, and failed messages do not appear on `stdout`. In `--json` mode: one complete JSON document (`schemaVersion`, `session`, `sessionId`, `loopId`, `response`, `finalStatus`, `turns`, `notices`, `usage`, or `{"schemaVersion":6, "problem": ProblemDetails}` on failure). |
+| `2` | `fd 2` | `stderr` | **Errors only.** RFC 9457 `ProblemDetails` and `error`-level diagnostics, emitted as JSON Lines (or human diagnostic text when a pre-admission usage/floor error occurs). Silence on `stderr` means no errors occurred. |
+| `3` | `fd 3` | `events` | **Discrete session telemetry (NDJSON).** When `fd 3` is open (`fstatSync(3)` or an in-process `events` stream; unopened `fd 3` is a no-op), emits one JSON object per line for every non-thought, non-reply session transition: `session_bound` (on attachment, workspace/session navigation, or rename), ACP `tool_call_update`, `terminal_update`, `terminal_output_chunk`, `usage_update`, `state_update`, `config_option_update`, `subagent_update`, `session_message`, `notice` (`info`/`warn`), and interactive gate events (`permission_request`, `elicitation_request`, `gate_resolved`), each gate carrying a unique 8-hex-character `id` hash. |
+| `4` | `fd 4` | `reasoning` | **Model reasoning stream (UTF-8).** When `fd 4` is open (`fstatSync(4)` or an in-process `reasoning` stream; unopened `fd 4` is a no-op), streams the raw UTF-8 text of `agent_thought_chunk` updates as they arrive, flushing a trailing `\n` when the turn's reasoning retires (before the first `tool_call_update`, `agent_message_chunk`, or `state_update: idle`). |
 
-**json mode (`--json` / `PLURNK_CLIENT_JSON`):**
+**json mode (`--json` / `PLURNK_CLIENT_JSON`) details:**
 - **stdout** - ONE complete document and nothing else: the coherent record of the terminated session loop - `schemaVersion`, the bound `session` name, authoritative `sessionId` + `loopId`, `response` (the answer, top-level for `jq -r .response`), `finalStatus`, `turns: [{turn, ops: [{coord, op, origin, target, scope, status, signal}]}]`, `notices`, `usage`, exit metadata. Each op's `target` is the address its row recorded, and its `scope` the daemon's line marker as its ordered coordinate array. `usage` is preserved verbatim from the terminal record: ordered physical-request evidence and conventional aggregate token fields live under `usage.accounting`, whose `costUsd` is an exact decimal string or `null`; `curationWeight`/`curationBudget`, `contextTokens`/`contextCapacity`, and provider metadata remain sibling fields. Curation weight is never compared with physical provider tokens. The client does not project, sum, round, or settle accounting. The terminal record supplies both owning coordinates; the client never combines a terminal loop with a session inferred from ambient rows. Workspace-visible child/sibling rows may be rendered as topology, but they do not enter this record's `response` or `turns`. On failure it is `{"schemaVersion":6, "problem": ProblemDetails}` - valid JSON either way, paired with the exit code.
-- **stderr** — silent.
 - **NOT inlined:** op *content* (file bodies, exec output). Under co-location the consumer reads the file directly or fetches one op on demand with `plurnk read <coord> --json` (§7) — the same addressable, scoped log discipline the engine runs on. `--json` carries the record, not the content.
 
 
 §cli-partial-record A connection or decoding failure during any one-shot Run
 segment retains the rows, response and notices already observed, including prior
 proposal-resume segments. JSON emits one record; text retains delivered output
-and reports the failure. The invocation exits with the client failure, without
+and reports the failure on `stderr`. The invocation exits with the client failure, without
 reconnecting or replaying the prompt. A received terminal result and accounting
 remain authoritative; absent those, an observed Problem or the client failure
 describes the incomplete outcome and usage remains unknown. A secondary client
@@ -454,34 +457,51 @@ daemon loop has concluded.
 
 Consequence:
 
-- `plurnk "X" > answer.txt` captures just the delivered response messages.
-- `plurnk "X" 2>/dev/null` suppresses the trace.
-- A TTY user sees both interleaved (the terminal merges streams).
-- `plurnk "X" | tool` pipes only the answer.
-- `plurnk --json "X" | jq -r .response` pulls the answer; `… | jq .turns` the structured trace. One document, no stderr archaeology — the CLI is the integration layer, no third-party client needed for basic needs.
+- `plurnk "X"` writes only the delivered response on `stdout` (`fd 1`) and stays silent on `stderr` (`fd 2`) unless an error occurs.
+- `plurnk "X" 3>events.jsonl 4>reasoning.txt` captures discrete NDJSON session events on `fd 3` and continuous reasoning prose on `fd 4`.
+- `plurnk "X" 3>&2 4>&2` (or `plurnk --repl 3>&2 4>&2`) streams live events and reasoning to the terminal via standard POSIX descriptor redirection.
+- `plurnk --json "X" | jq -r .response` pulls the answer; `… | jq .turns` the structured trace.
 
 ### §cli-one-shot-flow Flow
 
 1. Read the session's durable model, then `POST /acp` (`session/prompt`) with the workspace and thread selected under §1.1, the prompt as a user text content block, and per-loop options on `_meta.plurnk`.
-2. Consume the `session/update` notifications: rows ({§cli-row-sources}) advance observed turn status and
-   render as durable action trace lines on stderr; derivation Notices update the
-   replaceable activity row without becoming trace history.
-   Delivered responses go to stdout ({§cli-broadcast-send-rendering}).
-3. A proposal arrives as a standard ACP interrupt carrying the daemon's proposal projection, naming the operation's own call when the run holds it, and terminates run A (the internal loop stays paused). Run B on the same thread returns the decision through `session/request_permission`, and the continued loop streams there. The terminal record its Run ends with is authoritative for the internal outcome; a stream that dies without terminal truth is an error (502), never a fabricated success.
-4. **text mode:** write summary lines to stderr (final status, turns/wall/tokens); stdout stays the pure answer. **json mode:** emit the complete record document on stdout (§2.1); stderr stays silent.
+2. Consume `session/update` notifications:
+   - `agent_thought_chunk` text streams to `fd 4` (`reasoning`) when open.
+   - Discrete session updates (`tool_call_update`, `terminal_update`, `terminal_output_chunk`, `usage_update`, `state_update`, `config_option_update`, `subagent_update`, `session_message`, and `info`/`warn` `notice`) emit as JSON Lines to `fd 3` (`events`) when open.
+   - Error `notice`s and RFC 9457 `ProblemDetails` emit to `fd 2` (`stderr`).
+   - Delivered responses go to `fd 1` (`stdout`) ({§cli-broadcast-send-rendering}).
+3. A proposal or elicitation arrives as an ACP interrupt (`session/request_permission` or `elicitation/create`), emits a `permission_request` or `elicitation_request` JSON Line with its unique 8-hex-character `id` hash on `fd 3` (`events`), and resolves under §6.
+4. **text mode:** `stdout` carries the pure answer. **json mode:** emit the complete record document on `stdout` (§2.1).
 5. Exit with the appropriate code (§4).
 
 ### §cli-what-one-shot-mode-does-not-do What one-shot mode does NOT do
 
 - No interactive prompts during the loop (proposal review prompts are separate; see §6).
-- No interpretation of a positional prompt as raw DSL. Use `plurnk script <file.plk>` or the TUI's executable-fence input for `op.parse`.
+- No interpretation of a positional prompt as raw DSL. Use `plurnk script <file.plk>` or the REPL/TUI's executable-fence input for `op.parse`.
 - No reconnect on dropped connection. Connection drop = exit with error.
+
+---
+
+## §cli-repl-mode REPL mode (`--repl` / `PLURNK_CLIENT_REPL`)
+
+Triggered when `--repl` or `PLURNK_CLIENT_REPL=1` is active with no positional prompt. REPL mode exposes the complete interactive session protocol over the 5-stream contract (`[stdin, stdout, stderr, events, reasoning]`, `fd 0..4`) without launching `pi-tui`:
+
+1. Acquire the workspace and bind `AcpClient` to its ID and session name (§1.1), restore the bound session's history under {§cli-session-history}, and emit `{"sessionUpdate":"session_bound","sessionId":...,"workspace":...,"session":...,"cwd":...,"configOptions":...,"_meta":...}` on `fd 3` (`events`).
+2. Read lines from `fd 0` (`stdin`), dispatching every interactive command verb (`/help`, `/models`, `/workspaces`, `/sessions`, `/loops`, `/loop`, `/model`, `/child`, `/effort`, `/capabilities`, `/yolo`, `/workspace`, `/rename`, `/share`, `/rollback`, `/session`, `/fork`, `/parent`, `/enter`, `/older`, `/newer`, `/mcp`, `/skills`, `/members`, `/env`, `/schedule`, `/import`, `/script`, `/review`, `/approve` / `/accept`, `/reject`, `/cancel`, `/edit`, `/answer`, `/stop`, `/quit`), executable backtick fences (`op.parse`), `!` shell commands (`op.parse` `sh`), `? ` review-mode prompts, `: ` literal prompts, `...` loop injections (`loop.inject`), and `@<path>` file references (`openPaths`).
+3. Pending permissions (`session/request_permission`) and elicitations (`elicitation/create`) each receive a unique 8-hex-character `id` hash emitted in their `permission_request` or `elicitation_request` event on `fd 3` (`events`). Gate resolution commands on `stdin` accept that `id` optionally (defaulting to the oldest pending gate when omitted) so concurrent gates resolve unambiguously and stale hashes fail closed without answering a subsequent interrupt:
+   - `/approve [id] [optionId]` (alias `/accept [id] [optionId]`) — selects `allow_once` / `allow_always` or the named `optionId` (or accepts a URL elicitation).
+   - `/reject [id] [optionId]` — selects `reject_once` / `reject_always` or the named `optionId` (or declines an elicitation).
+   - `/cancel [id]` — cancels the identified gate.
+   - `/edit [id] <body...>` — accepts an `EDIT` proposal with the supplied replacement body.
+   - `/answer [id] <json-or-text>` — submits the validated response payload for a form elicitation/question.
+   - `/review` — prints all pending gates (`id`, kind, title/message, options or schema) to `stdout`.
+4. When a gate resolves or withdraws, the REPL emits `{"sessionUpdate":"gate_resolved","id":...,"outcome":...}` on `fd 3` (`events`).
 
 ---
 
 ## §cli-tui-mode TUI mode
 
-Triggered when `argv` has no positional prompt.
+Triggered when `argv` has no positional prompt, `stdin` is a TTY, and `PLURNK_CLIENT_REPL=0`. `pi-tui` is a pure terminal viewport composed atop the REPL's 5-stream contract (`[stdin, stdout, stderr, events, reasoning]`): it holds no sidechannel reference to `AcpClient` or `AcpSession`, submits all user prompts, slash commands, and gate decisions over `stdin`, and renders its transcript, live reasoning scrollbox, inline review controls, and status footer solely from `[stdout, stderr, events, reasoning]`.
 
 ### §cli-tui-flow Flow
 
@@ -535,7 +555,7 @@ ShellCheck; a missing checker or an invalid artifact fails that explicit check.
 | Workspace | `/workspace /rename /share /rollback /session /fork /parent /enter /older /newer` |
 | Functionality | `/mcp /skills /members /env /schedule` |
 | Compose | `/import /script /editor` |
-| Review | `/review /accept /reject /cancel /edit` |
+| Review | `/review /approve /accept /reject /cancel /edit /answer` |
 | Session | `/stop /quit` |
 
 Completion remains demand-driven. Root syntax and known model aliases need no

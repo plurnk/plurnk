@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import * as readline from "node:readline";
+import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { AcpServer } from "@agentclientprotocol/sdk/experimental/server";
 import { createNodeHttpHandler } from "@agentclientprotocol/sdk/experimental/node";
@@ -20,22 +22,34 @@ const runCli = (
     args: string[],
     env: Record<string, string | undefined>,
     timeoutMs = 5000,
-): Promise<{ status: number | null; stdout: string; stderr: string }> =>
+): Promise<{ status: number | null; stdout: string; stderr: string; events: string; reasoning: string }> =>
     new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [binPath, ...args], {
             env,
-            stdio: ["pipe", "pipe", "pipe"],
+            stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
         });
-        child.stdin.end();
+        child.stdin!.end();
         let stdout = "";
         let stderr = "";
-        child.stdout.setEncoding("utf8");
-        child.stderr.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
+        let events = "";
+        let reasoning = "";
+        const fd3 = child.stdio[3] as Readable;
+        const fd4 = child.stdio[4] as Readable;
+        child.stdout!.setEncoding("utf8");
+        child.stderr!.setEncoding("utf8");
+        fd3.setEncoding("utf8");
+        fd4.setEncoding("utf8");
+        child.stdout!.on("data", (chunk: string) => {
             stdout += chunk;
         });
-        child.stderr.on("data", (chunk: string) => {
+        child.stderr!.on("data", (chunk: string) => {
             stderr += chunk;
+        });
+        fd3.on("data", (chunk: string) => {
+            events += chunk;
+        });
+        fd4.on("data", (chunk: string) => {
+            reasoning += chunk;
         });
         const timer = setTimeout(() => {
             child.kill("SIGKILL");
@@ -47,7 +61,7 @@ const runCli = (
         });
         child.on("close", (status) => {
             clearTimeout(timer);
-            resolve({ status, stdout, stderr });
+            resolve({ status, stdout, stderr, events, reasoning });
         });
     });
 
@@ -202,6 +216,33 @@ const createMockAcpServer = async () => {
                 .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
                 .map((b) => b.text)
                 .join("\n");
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_thought_chunk",
+                    messageId: "t-1",
+                    content: { type: "text", text: `Thinking about: ${text}` },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "tc-1",
+                    title: "READ file:///tmp/test.txt",
+                    status: "completed",
+                    _meta: {
+                        plurnk: {
+                            id: 1,
+                            turnId: 1,
+                            op: "READ",
+                            origin: "model",
+                            status: 200,
+                            coordinate: "1/1/1",
+                        },
+                    },
+                },
+            });
             if (text.includes("ASK_PERMISSION")) {
                 const perm = await client.request(methods.client.session.requestPermission, {
                     sessionId: params.sessionId,
@@ -299,7 +340,18 @@ test("{§cli-workspaces-and-sessions} {§cli-project-root} {§cli-workspace-open
             },
         );
         assert.equal(res.status, 0, `stderr was: ${res.stderr}`);
-        assert.match(res.stdout, /Answered: Describe this project\./);
+        assert.equal(res.stderr, "");
+        assert.equal(res.stdout, "Answered: Describe this project.\n");
+        assert.equal(res.reasoning, "Thinking about: Describe this project.\n");
+        const eventLines = res.events
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as { sessionUpdate: string });
+        assert.ok(eventLines.some((e) => e.sessionUpdate === "session_bound"));
+        assert.ok(eventLines.some((e) => e.sessionUpdate === "tool_call_update"));
+        assert.ok(eventLines.some((e) => e.sessionUpdate === "usage_update"));
+        assert.ok(eventLines.some((e) => e.sessionUpdate === "state_update"));
 
         // --json output mode emits structured JSON record with .response ({§cli-output-channels})
         const jsonRes = await runCli(
@@ -376,7 +428,7 @@ test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-pl
     }
 });
 
-test("{§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-sessions-topology} {§cli-resume-observation} {§cli-session-history} {§cli-loops} {§cli-active-command-admission} {§cli-cancellation} {§cli-import-and-bracketed-paste} {§cli-problems-and-notices} {§cli-problem-control-flow} {§cli-connection-onboarding} {§cli-sign-in} {§cli-mcp-oauth-callback} {§cli-notice-rendering} {§cli-channel-posture} {§cli-stream-event-and-stream-concluded} {§cli-conformance} {§cli-acp-conformance} {§cli-test-daemon-lifecycle}: interactive slash commands, problems, notices, streams, and conformance matrix", async () => {
+test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-sessions-topology} {§cli-resume-observation} {§cli-session-history} {§cli-loops} {§cli-active-command-admission} {§cli-cancellation} {§cli-import-and-bracketed-paste} {§cli-problems-and-notices} {§cli-problem-control-flow} {§cli-connection-onboarding} {§cli-sign-in} {§cli-mcp-oauth-callback} {§cli-notice-rendering} {§cli-channel-posture} {§cli-stream-event-and-stream-concluded} {§cli-conformance} {§cli-acp-conformance} {§cli-test-daemon-lifecycle}: interactive REPL 5-stream contract, gate hash resolution, slash commands, problems, notices, streams, and conformance matrix", async () => {
     const server = await createMockAcpServer();
     try {
         const compRes = await runCli(
@@ -389,6 +441,121 @@ test("{§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-command-discovery} {�
         );
         assert.equal(compRes.status, 0);
         assert.match(compRes.stdout, /plurnk/);
+
+        // Exercise interactive --repl mode over all 5 file descriptors (0..4)
+        const replChild = spawn(
+            process.execPath,
+            [binPath, "--repl", "--session=repl01"],
+            {
+                env: {
+                    ...process.env,
+                    PLURNK_ACP_URL: server.url,
+                    PLURNK_CLIENT_AUTOSTART: "0",
+                    PLURNK_CLIENT_YOLO: "0",
+                },
+                stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
+            },
+        );
+
+        const stdoutLines: string[] = [];
+        const stderrObjs: Record<string, unknown>[] = [];
+        const eventObjs: Record<string, unknown>[] = [];
+        let reasoningText = "";
+
+        const stdoutRl = readline.createInterface({ input: replChild.stdout!, terminal: false });
+        const stderrRl = readline.createInterface({ input: replChild.stderr!, terminal: false });
+        const eventsRl = readline.createInterface({ input: replChild.stdio[3] as Readable, terminal: false });
+        const reasoningStream = replChild.stdio[4] as Readable;
+        reasoningStream.setEncoding("utf8");
+        reasoningStream.on("data", (chunk: string) => {
+            reasoningText += chunk;
+        });
+
+        const stdoutWaiters: Array<{ pred: (line: string) => boolean; resolve: (line: string) => void }> = [];
+        const stderrWaiters: Array<{ pred: (obj: Record<string, unknown>) => boolean; resolve: (obj: Record<string, unknown>) => void }> = [];
+        const eventWaiters: Array<{ pred: (obj: Record<string, unknown>) => boolean; resolve: (obj: Record<string, unknown>) => void }> = [];
+
+        stdoutRl.on("line", (line) => {
+            stdoutLines.push(line);
+            for (let i = stdoutWaiters.length - 1; i >= 0; i -= 1) {
+                if (stdoutWaiters[i]!.pred(line)) {
+                    const w = stdoutWaiters.splice(i, 1)[0]!;
+                    w.resolve(line);
+                }
+            }
+        });
+        stderrRl.on("line", (line) => {
+            const obj = JSON.parse(line) as Record<string, unknown>;
+            stderrObjs.push(obj);
+            for (let i = stderrWaiters.length - 1; i >= 0; i -= 1) {
+                if (stderrWaiters[i]!.pred(obj)) {
+                    const w = stderrWaiters.splice(i, 1)[0]!;
+                    w.resolve(obj);
+                }
+            }
+        });
+        eventsRl.on("line", (line) => {
+            const obj = JSON.parse(line) as Record<string, unknown>;
+            eventObjs.push(obj);
+            for (let i = eventWaiters.length - 1; i >= 0; i -= 1) {
+                if (eventWaiters[i]!.pred(obj)) {
+                    const w = eventWaiters.splice(i, 1)[0]!;
+                    w.resolve(obj);
+                }
+            }
+        });
+
+        const waitStdout = (pred: (line: string) => boolean): Promise<string> => {
+            const existing = stdoutLines.find(pred);
+            if (existing !== undefined) return Promise.resolve(existing);
+            return new Promise((resolve) => stdoutWaiters.push({ pred, resolve }));
+        };
+        const waitStderr = (pred: (obj: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> => {
+            const existing = stderrObjs.find(pred);
+            if (existing !== undefined) return Promise.resolve(existing);
+            return new Promise((resolve) => stderrWaiters.push({ pred, resolve }));
+        };
+        const waitEvent = (pred: (obj: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> => {
+            const existing = eventObjs.find(pred);
+            if (existing !== undefined) return Promise.resolve(existing);
+            return new Promise((resolve) => eventWaiters.push({ pred, resolve }));
+        };
+
+        await waitEvent((e) => e.sessionUpdate === "session_bound");
+        await waitStdout((l) => l === "workspace: test-ws");
+
+        // Slash commands on fd 0 -> output on fd 1
+        replChild.stdin!.write("/model\n");
+        await waitStdout((l) => l.includes("model (Model): mocktest/mock-v1"));
+
+        // Unknown command -> structured Problem JSONL on fd 2 (stderr)
+        replChild.stdin!.write("/nonexistent\n");
+        const errObj = await waitStderr((e) => e.type === "https://problems.plurnk.xyz/client/unknown-command");
+        assert.equal(errObj.status, 400);
+
+        // Prompt that triggers a permission gate while yolo is off
+        replChild.stdin!.write("ASK_PERMISSION\n");
+        const permEvent = await waitEvent((e) => e.sessionUpdate === "permission_request");
+        const gateId = String(permEvent.id ?? "");
+        assert.match(gateId, /^[0-9a-f]{8}$/u);
+
+        // /review lists the pending gate with its hash
+        replChild.stdin!.write("/review\n");
+        await waitStdout((l) => l.includes(gateId) && l.includes("permission"));
+
+        // /approve <id> allow_always resolves the specific gate by hash
+        replChild.stdin!.write(`/approve ${gateId} allow_always\n`);
+        await waitStdout((l) => l === `approved ${gateId}`);
+        const resolvedEvent = await waitEvent((e) => e.sessionUpdate === "gate_resolved" && e.id === gateId);
+        assert.deepEqual(resolvedEvent.outcome, { outcome: "selected", optionId: "allow_always" });
+
+        await waitStdout((l) => l === "Permission outcome: allow_always");
+        await waitEvent((e) => e.sessionUpdate === "state_update" && e.state === "idle");
+        assert.match(reasoningText, /Thinking about: ASK_PERMISSION/);
+
+        replChild.stdin!.write("/quit\n");
+        const exitCode = await new Promise<number | null>((resolve) => replChild.on("close", resolve));
+        assert.equal(exitCode, 0);
     } finally {
         await server.close();
     }

@@ -70,6 +70,24 @@ export const lifecycleGlyphFor = (lifecycle: string | undefined, status?: number
     }
 };
 
+export interface WorkerDoing {
+    readonly phase: "awaiting" | "working";
+    readonly since: number;
+    readonly op: string | null;
+    readonly target: string | null;
+}
+
+export interface WorkspacePreparationState {
+    readonly state?: string;
+    readonly phase?: string;
+    readonly percent?: number;
+}
+
+export interface SearchActivityState {
+    readonly phase: string;
+    readonly percent?: number;
+}
+
 export interface StatusBarModel {
     readonly workspaceName: string;
     readonly sessionName: string;
@@ -109,8 +127,16 @@ export type PresentationFrame =
           readonly kind: "tool_call";
           readonly toolCallId: string;
           readonly glyph: string;
+          readonly op: string;
           readonly title: string;
+          readonly target: string | null;
+          readonly pattern: string | null;
+          readonly count: number | null;
+          readonly aside: string | null;
+          readonly noteBody: string | null;
           readonly status: string;
+          readonly statusCode: number;
+          readonly outcome: string | null;
           readonly contentLines: readonly string[];
       }
     | {
@@ -138,6 +164,9 @@ export type PresentationFrame =
           readonly kind: "reply_chunk";
           readonly messageId?: string | null;
           readonly text: string;
+          readonly op: string;
+          readonly status: number;
+          readonly aside: string | null;
       }
     | {
           readonly kind: "notice";
@@ -147,8 +176,16 @@ export type PresentationFrame =
           readonly formatted: string;
       }
     | {
+          readonly kind: "status_update";
+          readonly status: StatusBarModel;
+          readonly newTurn?: boolean;
+      }
+    | {
           readonly kind: "status_bar";
           readonly status: StatusBarModel;
+          readonly statusCode: number;
+          readonly elapsedMs: number;
+          readonly hitMaxTurns: boolean;
           readonly terminalDetail?: string;
           readonly turns: number;
       };
@@ -162,6 +199,35 @@ export interface SessionPresenterOptions {
     readonly initialMeta?: MetaRecord;
     readonly initialConfigOptions?: readonly SessionConfigOptionType[];
 }
+
+const extractTitleAside = (title: string | null | undefined): string | null => {
+    if (typeof title !== "string") return null;
+    const sepIdx = title.indexOf(" — ");
+    if (sepIdx < 0) return null;
+    const aside = title.slice(sepIdx + 3).trim();
+    return aside.length > 0 ? aside : null;
+};
+
+const extractTitleTarget = (title: string | null | undefined): string | null => {
+    if (typeof title !== "string") return null;
+    const head = title.includes(" — ") ? title.slice(0, title.indexOf(" — ")) : title;
+    const parenMatch = head.match(/^\S+\s+\((.+)\)$/u);
+    if (parenMatch?.[1]) return parenMatch[1];
+    const spaceMatch = head.match(/^(?:READ|EDIT|FIND|COPY|MOVE|KILL|OPEN|SHUT|VIEW|KEEP|DROP|FOLD)\s+(.+)$/u);
+    return spaceMatch?.[1]?.trim() ?? null;
+};
+
+const compactTarget = (target: string): string => {
+    const clean = target.replace(/^file:\/\//u, "");
+    const parts = clean.split("/").filter(Boolean);
+    if (parts.length <= 2) return clean;
+    return `…/${parts.slice(-2).join("/")}`;
+};
+
+const formatLiveWait = (ms: number): string => {
+    if (ms < 1000) return `${String(Math.max(1, Math.round(ms)))}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+};
 
 export class SessionPresenter {
     workspaceName: string;
@@ -185,6 +251,10 @@ export class SessionPresenter {
     inputTokens = 0;
     outputTokens = 0;
     costUsd: string | null = null;
+    doing: WorkerDoing | null = null;
+    preparation: WorkspacePreparationState | null = null;
+    activity: SearchActivityState | null = null;
+    lastLoopStatus: number | null = null;
     lastStatusLine = "";
 
     readonly maxReasoningLines: number;
@@ -216,6 +286,7 @@ export class SessionPresenter {
         this.#turnStartedAt = now;
         this.lifecycle = "running";
         this.lifecycleGlyph = "⌛︎";
+        this.doing = { phase: "awaiting", since: now, op: null, target: null };
     }
 
     ingestMeta(meta: MetaRecord | undefined): void {
@@ -229,6 +300,22 @@ export class SessionPresenter {
         }
         if (typeof ws?.projectLabel === "string") {
             this.projectLabel = ws.projectLabel;
+        }
+        if (ws?.preparation && typeof ws.preparation === "object") {
+            const prep = ws.preparation as Record<string, unknown>;
+            this.preparation = {
+                ...(typeof prep.state === "string" ? { state: prep.state } : {}),
+                ...(typeof prep.phase === "string" ? { phase: prep.phase } : {}),
+                ...(typeof prep.percent === "number" ? { percent: prep.percent } : {}),
+            };
+        }
+        if (plurnk.preparation && typeof plurnk.preparation === "object") {
+            const prep = plurnk.preparation as Record<string, unknown>;
+            this.preparation = {
+                ...(typeof prep.state === "string" ? { state: prep.state } : {}),
+                ...(typeof prep.phase === "string" ? { phase: prep.phase } : {}),
+                ...(typeof prep.percent === "number" ? { percent: prep.percent } : {}),
+            };
         }
         if (typeof plurnk.sessionName === "string" && plurnk.sessionName.length > 0) {
             this.sessionName = plurnk.sessionName;
@@ -302,17 +389,73 @@ export class SessionPresenter {
     }
 
     buildStatusBar(elapsedMsOverride?: number, statusCodeOverride?: number): StatusBarModel {
-        const glyph = lifecycleGlyphFor(this.lifecycle, statusCodeOverride);
-        this.lifecycleGlyph = glyph;
+        const effectiveStatus = statusCodeOverride ?? this.lastLoopStatus ?? undefined;
+        const glyph =
+            this.lifecycle === "idle" && effectiveStatus === undefined
+                ? "idle"
+                : lifecycleGlyphFor(this.lifecycle, effectiveStatus);
+        this.lifecycleGlyph = glyph === "idle" ? "⏹️" : glyph;
         const elapsedMs = elapsedMsOverride ?? Math.max(1, Date.now() - this.#turnStartedAt);
         const used = this.contextTokens ?? this.curationWeight;
         const capacity = this.contextCapacity ?? this.curationBudget;
         const budgetPercent = capacity > 0 ? Math.min(100, Math.round((used / capacity) * 100)) : null;
 
-        const formattedStatusLine =
-            typeof statusCodeOverride === "number" && statusCodeOverride >= 400
-                ? `${glyph}  · 🎲 ${this.model} · ${elapsedMs}ms`
-                : `${glyph}  · 🎲 ${this.model} · ${elapsedMs}ms · ↓${this.inputTokens} ↑${this.outputTokens}`;
+        const lead = glyph === "idle" ? "idle" : `${glyph} `;
+        const baseParts: string[] = [lead, `🎲 ${this.model}`, `${String(elapsedMs)}ms`];
+        if (!(typeof effectiveStatus === "number" && effectiveStatus >= 400)) {
+            baseParts.push(`↓${String(this.inputTokens)} ↑${String(this.outputTokens)}`);
+        }
+
+        // Right-of-status-line live activity indicators ({§cli-session-status}, {§cli-status-wait}, {§cli-status-preparation})
+        if (this.lifecycle === "running" && this.doing !== null) {
+            if (this.doing.phase === "awaiting") {
+                baseParts.push(`awaiting model ${formatLiveWait(Math.max(0, Date.now() - this.doing.since))}`);
+            } else if (this.doing.op !== null) {
+                baseParts.push(
+                    this.doing.target !== null
+                        ? `${this.doing.op} ${compactTarget(this.doing.target)}`
+                        : this.doing.op,
+                );
+            } else {
+                baseParts.push("working");
+            }
+        } else if (this.lifecycle === "parked") {
+            const waitSuffix =
+                this.waitUntil !== null
+                    ? `updates in ${String(Math.max(1, Math.ceil((this.waitUntil - Date.now()) / 1000)))}s`
+                    : `updates in ${this.#lastStreamTarget || "stream"}`;
+            baseParts.push(waitSuffix);
+        }
+
+        if (this.activeChildren > 0) {
+            baseParts.push(`🐜 ${String(this.activeChildren)}`);
+        }
+        if (this.gatedCount > 0) {
+            baseParts.push(`🔒 ${String(this.gatedCount)} gated`);
+        }
+        if (this.inboxCount > 0) {
+            baseParts.push(`📬 ${String(this.inboxCount)}`);
+        }
+        if (this.openStreams > 0) {
+            baseParts.push(`📡 ${String(this.openStreams)}`);
+        }
+        if (this.preparation && this.preparation.state && this.preparation.state !== "ready") {
+            const label = this.preparation.phase ?? this.preparation.state;
+            const pct =
+                typeof this.preparation.percent === "number"
+                    ? ` ${String(Math.round(this.preparation.percent))}%`
+                    : "";
+            baseParts.push(`🧮 ${label}${pct}`);
+        }
+        if (this.activity !== null) {
+            const pct =
+                typeof this.activity.percent === "number"
+                    ? ` ${String(Math.round(this.activity.percent))}%`
+                    : "";
+            baseParts.push(`🔎 ${this.activity.phase}${pct}`);
+        }
+
+        const formattedStatusLine = baseParts.join(" · ");
         this.lastStatusLine = formattedStatusLine;
 
         return {
@@ -320,7 +463,7 @@ export class SessionPresenter {
             sessionName: this.sessionName,
             projectLabel: this.projectLabel,
             lifecycle: this.lifecycle,
-            lifecycleGlyph: glyph,
+            lifecycleGlyph: this.lifecycleGlyph,
             yolo: this.yolo,
             model: this.model,
             effort: this.effort,
@@ -376,21 +519,120 @@ export class SessionPresenter {
 
         if (SessionUpdate.isToolCallUpdate(update)) {
             this.#retireReasoning(frames);
-            const metaPlurnk = (update._meta as { plurnk?: { op?: string; attrs?: { aside?: string } } } | undefined)?.plurnk;
-            const opName = metaPlurnk?.op ?? update.title ?? update.name ?? undefined;
-            const glyph = operationGlyphFor(opName, metaPlurnk?.attrs?.aside);
+            const metaPlurnk = (
+                update._meta as
+                    | {
+                          plurnk?: {
+                              op?: string;
+                              status?: number;
+                              attrs?: { aside?: string };
+                          };
+                      }
+                    | undefined
+            )?.plurnk;
+            const rawInput =
+                update.rawInput && typeof update.rawInput === "object"
+                    ? (update.rawInput as Record<string, unknown>)
+                    : undefined;
+            const rawOutput =
+                update.rawOutput && typeof update.rawOutput === "object"
+                    ? (update.rawOutput as Record<string, unknown>)
+                    : undefined;
+            const opName = metaPlurnk?.op ?? update.name ?? update.title?.split(/[\s(—]/u)[0] ?? "tool";
+            const aside =
+                typeof rawInput?.aside === "string" && rawInput.aside.trim().length > 0
+                    ? rawInput.aside.trim()
+                    : typeof rawInput?.comment === "string" && rawInput.comment.trim().length > 0
+                      ? rawInput.comment.trim()
+                      : typeof metaPlurnk?.attrs?.aside === "string" && metaPlurnk.attrs.aside.trim().length > 0
+                        ? metaPlurnk.attrs.aside.trim()
+                        : extractTitleAside(update.title);
+            const glyph = operationGlyphFor(opName, aside);
+            const target = update.locations?.[0]?.path ?? extractTitleTarget(update.title);
+            const rawPattern = rawInput?.pattern;
+            const pattern =
+                typeof rawPattern === "string"
+                    ? rawPattern
+                    : rawPattern && typeof rawPattern === "object" && typeof (rawPattern as { raw?: unknown }).raw === "string"
+                      ? (rawPattern as { raw: string }).raw
+                      : null;
+            const count =
+                typeof rawOutput?.count === "number"
+                    ? rawOutput.count
+                    : typeof rawOutput?.matches === "number"
+                      ? rawOutput.matches
+                      : null;
+
             const contentLines: string[] = [];
             for (const c of update.content ?? []) {
                 if (ToolCallContent.isContent(c)) {
                     contentLines.push(contentBlockToText(c.content));
+                } else if (ToolCallContent.isDiff(c) && typeof c.patch?.text === "string") {
+                    contentLines.push(c.patch.text);
                 }
             }
+
+            let noteBody: string | null = null;
+            if (opName === "NOTE") {
+                const rawBody = rawInput?.body;
+                if (typeof rawBody === "string") {
+                    noteBody = rawBody;
+                } else if (
+                    rawBody &&
+                    typeof rawBody === "object" &&
+                    typeof (rawBody as { raw?: unknown }).raw === "string"
+                ) {
+                    noteBody = (rawBody as { raw: string }).raw;
+                } else if (contentLines.length > 0) {
+                    noteBody = contentLines.join("\n");
+                } else {
+                    noteBody = "";
+                }
+            }
+
+            const statusCode =
+                typeof metaPlurnk?.status === "number"
+                    ? metaPlurnk.status
+                    : update.status === "failed"
+                      ? 500
+                      : 200;
+            const problemRec =
+                rawOutput?.problem && typeof rawOutput.problem === "object"
+                    ? (rawOutput.problem as { detail?: unknown; title?: unknown })
+                    : undefined;
+            const outcome =
+                typeof problemRec?.detail === "string" && problemRec.detail.length > 0
+                    ? problemRec.detail
+                    : typeof problemRec?.title === "string" && problemRec.title.length > 0
+                      ? problemRec.title
+                      : update.status === "failed" && typeof rawOutput?.message === "string"
+                        ? rawOutput.message
+                        : null;
+
+            if (this.lifecycle === "running") {
+                this.doing = {
+                    phase: "working",
+                    since: Date.now(),
+                    op: opName,
+                    target,
+                };
+                this.buildStatusBar();
+            }
+
             frames.push({
                 kind: "tool_call",
                 toolCallId: update.toolCallId,
                 glyph,
+                op: opName,
                 title: update.title ?? update.name ?? update.toolCallId,
+                target,
+                pattern,
+                count,
+                aside,
+                noteBody,
                 status: update.status ?? "in_progress",
+                statusCode,
+                outcome,
                 contentLines,
             });
             return frames;
@@ -445,40 +687,126 @@ export class SessionPresenter {
 
         if (SessionUpdate.isAgentMessageChunk(update)) {
             this.#retireReasoning(frames);
+            const metaPlurnk = (
+                update._meta as
+                    | {
+                          plurnk?: {
+                              op?: string;
+                              status?: number;
+                              attrs?: { aside?: string };
+                          };
+                      }
+                    | undefined
+            )?.plurnk;
             const text = contentBlockToText(update.content);
             frames.push({
                 kind: "reply_chunk",
                 messageId: update.messageId,
                 text,
+                op: metaPlurnk?.op ?? "SEND",
+                status: typeof metaPlurnk?.status === "number" ? metaPlurnk.status : 200,
+                aside: metaPlurnk?.attrs?.aside ?? null,
             });
             return frames;
         }
 
         if (SessionUpdate.isNotice(update)) {
-            const rawNotice = (update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined)?.plurnk
-                ?.notice;
+            // Route workspace state/preparation, engine turn progress, loop status, and search progress
+            // to the right of the status line instead of the waterfall ({§cli-session-status}, {§cli-what-is-not-rendered}).
+            if (update.title === "workspace:state" || update.title === "workspace:preparation") {
+                this.ingestMeta(update._meta as MetaRecord | undefined);
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return frames;
+            }
+
+            const rawNotice = (
+                update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined
+            )?.plurnk?.notice;
+
+            if (rawNotice?.source === "engine:turn") {
+                if (rawNotice.kind === "turn_awaiting_model") {
+                    this.lifecycle = "running";
+                    this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
+                    frames.push({
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
+                        newTurn: true,
+                    });
+                    return frames;
+                }
+                if (rawNotice.kind === "turn_generated") {
+                    this.lifecycle = "running";
+                    this.doing = { phase: "working", since: Date.now(), op: null, target: null };
+                    const acc = rawNotice.accounting as
+                        | {
+                              usage?: { inputTokens?: number; outputTokens?: number };
+                              costUsd?: string;
+                          }
+                        | undefined;
+                    if (typeof acc?.usage?.inputTokens === "number") {
+                        this.inputTokens += acc.usage.inputTokens;
+                    }
+                    if (typeof acc?.usage?.outputTokens === "number") {
+                        this.outputTokens += acc.usage.outputTokens;
+                    }
+                    if (typeof acc?.costUsd === "string") {
+                        this.costUsd = acc.costUsd;
+                    }
+                    frames.push({
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
+                    });
+                    return frames;
+                }
+            }
+
             if (rawNotice?.kind === "loop_status") {
                 if (rawNotice.status === 202) {
                     this.lifecycle = "parked";
+                    this.doing = null;
                     this.waitUntil = typeof rawNotice.waitUntil === "number" ? rawNotice.waitUntil : null;
-                    const waitSuffix =
-                        this.waitUntil !== null
-                            ? `updates in ${Math.max(1, Math.ceil((this.waitUntil - Date.now()) / 1000))}s`
-                            : `updates in ${this.#lastStreamTarget || "stream"}`;
                     frames.push({
-                        kind: "notice",
-                        severity: update.severity,
-                        title: update.title,
-                        description: update.description,
-                        formatted: `${update.title}: ${waitSuffix}`,
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
                     });
                     return frames;
                 }
                 if (rawNotice.status === 100 || rawNotice.status === 102) {
                     this.waitUntil = null;
                     this.lifecycle = rawNotice.status === 102 ? "running" : "queued";
+                    frames.push({
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
+                    });
+                    return frames;
                 }
             }
+
+            if (
+                rawNotice?.kind === "search_progress" ||
+                (typeof rawNotice?.source === "string" &&
+                    rawNotice.source.startsWith("exec:") &&
+                    typeof rawNotice.percent === "number")
+            ) {
+                const pct = typeof rawNotice.percent === "number" ? rawNotice.percent : undefined;
+                if (pct !== undefined && pct >= 100) {
+                    this.activity = null;
+                } else {
+                    this.activity = {
+                        phase: typeof rawNotice?.phase === "string" ? rawNotice.phase : "search",
+                        ...(pct !== undefined ? { percent: pct } : {}),
+                    };
+                }
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
+                return frames;
+            }
+
             const formatted = `${update.title}${update.description ? `: ${update.description}` : ""}`;
             frames.push({
                 kind: "notice",
@@ -494,16 +822,31 @@ export class SessionPresenter {
             if (update.state === "running") {
                 this.lifecycle = "running";
                 this.lifecycleGlyph = "⌛︎";
+                if (this.doing === null) {
+                    this.doing = { phase: "working", since: Date.now(), op: null, target: null };
+                }
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
                 return frames;
             }
             if (update.state === "requires_action") {
                 this.lifecycle = "requires_action";
                 this.lifecycleGlyph = "💤";
+                this.doing = null;
+                frames.push({
+                    kind: "status_update",
+                    status: this.buildStatusBar(),
+                });
                 return frames;
             }
             if (update.state === "idle") {
                 this.#retireReasoning(frames);
                 this.#lastStreamTarget = "";
+                this.doing = null;
+                this.activity = null;
+                this.waitUntil = null;
                 const termMeta = (
                     update._meta as
                         | {
@@ -531,6 +874,7 @@ export class SessionPresenter {
                           : update.stopReason === "cancelled"
                             ? 499
                             : 200;
+                this.lastLoopStatus = status;
                 this.lifecycle = status >= 400 ? (status === 499 ? "cancelled" : "failed") : "idle";
                 const usage = termMeta?.usage?.accounting?.usage;
                 if (typeof usage?.inputTokens === "number") this.inputTokens = usage.inputTokens;
@@ -541,6 +885,7 @@ export class SessionPresenter {
                 const elapsedMs = Math.max(1, Date.now() - this.#turnStartedAt);
                 const statusBar = this.buildStatusBar(elapsedMs, status);
                 const turns = typeof termMeta?.turns === "number" && termMeta.turns > 0 ? termMeta.turns : 1;
+                const hitMaxTurns = update.stopReason === "max_turn_requests" || status === 429;
                 const terminalDetail =
                     typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0
                         ? termMeta.problem.detail
@@ -548,6 +893,9 @@ export class SessionPresenter {
                 frames.push({
                     kind: "status_bar",
                     status: statusBar,
+                    statusCode: status,
+                    elapsedMs,
+                    hitMaxTurns,
                     ...(terminalDetail !== undefined ? { terminalDetail } : {}),
                     turns,
                 });

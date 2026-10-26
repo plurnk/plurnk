@@ -20,6 +20,11 @@ import TuiSurface, {
     learnScheme,
     ModelText,
     paint,
+    renderLoopSummary,
+    renderModelReply,
+    renderNoteBlock,
+    renderOperationBlock,
+    renderReasoning,
     renderSubmittedInput,
     resumeCommand,
     TailText,
@@ -126,6 +131,55 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         content: [{ type: "text", text: "done" }],
     });
     assert.equal(msg[0]?.kind, "session_message");
+
+    // Rich TUI waterfall formatting: 🐹 model replies, NOTE bodies, operation previews, 💭 reasoning, 🎯 loop summary
+    assert.match(renderModelReply("Hello **world**", 80, { op: "SEND", status: 200 }), /🐹[\s\S]*Hello/);
+    assert.match(renderModelReply("Cancelled", 80, { op: "SEND", status: 499 }), /❌/);
+    assert.match(renderModelReply("Waiting", 80, { op: "WAIT", status: 200 }), /⏳/);
+    assert.match(
+        renderNoteBlock({ glyph: "💡", aside: "IDEA", body: "Full note markdown body", columns: 80 }),
+        /💡[\s\S]*IDEA[\s\S]*Full note markdown body/,
+    );
+    assert.match(
+        renderOperationBlock({
+            glyph: "📖",
+            op: "READ",
+            target: "file:///tmp/a.ts",
+            count: 10,
+            aside: "check",
+            contentLines: ["l1\nl2\nl3\nl4\nl5\nl6"],
+            coordinate: "1/1/1",
+            previewLimit: 5,
+            columns: 80,
+        }),
+        /📖[\s\S]*\(file:\/\/\/tmp\/a\.ts\) \{10\}[\s\S]*1 more line — \/peek 1\/1\/1/,
+    );
+    assert.match(renderReasoning("step 1\nstep 2"), /💭 step 1[\s\S]*   step 2/);
+    assert.match(
+        renderLoopSummary({
+            status: 200,
+            turns: 1,
+            elapsedMs: 1250,
+            inputTokens: 1200,
+            outputTokens: 300,
+            curationWeight: 400,
+            curationBudget: 4000,
+            contextTokens: 800,
+            contextCapacity: 8000,
+            costUsd: "0.02",
+        }),
+        /🎯 done · 1 turn · 1\.25s · ↓1\.2k ↑300 · cur 10%\/4k · ctx 10%\/8k · loop \$0\.02/,
+    );
+
+    // Engine turn and workspace notices route to status_update, never waterfall notice ({§cli-what-is-not-rendered})
+    const turnAwait = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_awaiting_model",
+        _meta: { plurnk: { notice: { source: "engine:turn", kind: "turn_awaiting_model" } } },
+    });
+    assert.equal(turnAwait[0]?.kind, "status_update");
+    assert.match(presenter.lastStatusLine, /awaiting model/);
 });
 
 test("{§cli-session-status} {§cli-status-wait} {§cli-status-preparation} {§cli-status-disconnected} {§cli-identity-effort} {§cli-status-project-root} {§cli-status-children} {§cli-status-gated} {§cli-status-inbox} {§cli-status-streams} {§cli-status-clock} {§cli-status-spend}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {

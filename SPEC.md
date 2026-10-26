@@ -1263,7 +1263,9 @@ Loop state comes from the daemon's status events, not an inference from a verb o
 ```
 
 `tag` derives from the exact terminal `OperationResult`; `lead` is `🎯 ` for a success (`done`) and two spaces
-for every other tag. A 500 is `strike-out` only for `engine/rails/strike-threshold`; another 500 is `failed`.
+for every other tag. When a `200` loop concludes with a delivered `🐹` reply ({§cli-broadcast-send-rendering}),
+its dim loop metrics (`<N> turns · <wall>ms · ...`) ride the `🐹` lead line directly and the standalone `🎯 done`
+row is omitted; loops concluding without a `🐹` reply render the standalone summary line. A 500 is `strike-out` only for `engine/rails/strike-threshold`; another 500 is `failed`.
 A summary follows exactly one loop terminal. An observation that ends without one — the sync Run
 completing, the daemon stopping, a credential revoked, a dead wire, this client's own hangup — is no
 loop outcome: no summary, no usage, no tally, no lifecycle change; its Problem is diagnosed as it arrives
@@ -1296,7 +1298,7 @@ An assistant text message projected from SEND or KILL carries response content, 
 
 TUI mode contract:
 
-- Lead line: the operation glyph ({§cli-operation-glyphs}), muted, followed by the sanitized aside. The body's lines stay at column zero. No keyword, numeric code, or path.
+- Lead line: the operation glyph ({§cli-operation-glyphs}), muted; on a `200` `SEND` (`🐹`), the model's `SEND` aside is omitted and the concluded loop metrics ({§cli-summary-line-per-loop}) ride the `🐹` lead line in dim text. The body's lines stay at column zero. No keyword, numeric code, or path.
 - Body: follows the lead line at column zero, without indentation, truncation, or dimming; §5.1.0 owns Markdown layout.
 - No synthetic surrounding blank rows.
 - Empty SEND content is legal; its receipt remains an operation row, not blank speech.
@@ -1863,22 +1865,20 @@ they advise without terminating an operation. Client failures are Problems.
 
 §cli-channel-posture Channel posture separates stdout answer delivery from stderr diagnostics.
 
-`renderDiagnostic(diagnostic)` preserves the distinction between transient Notices
-and RFC 9457 Problems. Notices use the operation-row presentation, not an alert block:
+Transient Notices and RFC 9457 Problems use the operation-row presentation, not an alert block:
 
 ```
-⚠️ <source>:<kind> [<position>] — <message>
+⚠️  <message>
 ```
 
 | Contract | Label and style | Layout |
 | --- | --- | --- |
-| Notice, `warn` | `⚠️` and message in the operation failure red | Flush-left, no gutter or surrounding blank rows |
+| Notice, `warn` | `⚠️` and message in the operation failure red | Flush-left, no raw `<source>:<kind>` discriminator, gutter, or surrounding blank rows |
 | Notice, `error` | `⛔` and message in the operation failure red | Same as `warn` |
 | Notice, `info` | `📌` and message in muted text | Same as `warn` |
 | Problem | `❌` and message in the operation failure red: a request of this session's, or its connection, failed (the glyph of a failed status and a cancelled SEND); `⛔` stays the session's own operation failing | Same as `warn`; recovery and hint lines follow |
 
-Notice discriminators are muted; further message, snippet and hint lines follow
-without an alert gutter. Rendering does not change severity, operation results,
+Rendering does not change severity, operation results,
 or model teaching, and never infers severity from `kind`. Problems retain their
 alert presentation:
 

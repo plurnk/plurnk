@@ -91,6 +91,8 @@ test(
                 process.execPath,
                 [
                     binPath,
+                    "--autostart",
+                    "0",
                     "--yolo",
                     "--workspace",
                     "live-client-tui",
@@ -109,6 +111,8 @@ test(
                             ...process.env,
                             HOME: home,
                             XDG_CONFIG_HOME: join(home, ".config"),
+                            XDG_DATA_HOME: join(home, ".local", "share"),
+                            XDG_STATE_HOME: join(home, ".local", "state"),
                             PLURNK_HOST: new URL(daemon.url).hostname,
                             PLURNK_PORT: new URL(daemon.url).port,
                             PLURNK_ACP_URL: "",

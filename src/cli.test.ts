@@ -6,6 +6,27 @@ import { fileURLToPath } from "node:url";
 import { refuseBelowFloor } from "./runtime-floor.ts";
 import { main } from "./dispatcher.ts";
 import { lifecycleGlyphFor, operationGlyphFor, SessionPresenter } from "./session-presenter.ts";
+import { altShortcut, backTabShortcut } from "./repl-session.ts";
+import { completeInput, completeOps, dslOpPartial, pathPartial } from "./tui-completion.ts";
+import Review, { QuestionForm } from "./tui-review.ts";
+import TuiSurface, {
+    attention,
+    backgroundScheme,
+    bell,
+    buildHeader,
+    colorEnabled,
+    colorFgBgScheme,
+    concluded,
+    learnScheme,
+    ModelText,
+    paint,
+    renderSubmittedInput,
+    resumeCommand,
+    TailText,
+    windowTitle,
+    withColorOutput,
+} from "./tui-surface.ts";
+import type { Terminal } from "@earendil-works/pi-tui";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -183,4 +204,166 @@ test("{§cli-session-status} {§cli-status-wait} {§cli-status-preparation} {§c
         },
     );
     assert.notEqual(statusRun.status, 0);
+});
+
+test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-forms} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-color-policy} {§cli-color-scheme} {§cli-terminal-title} {§cli-attention}: pi-tui TuiSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
+    // ModelText sanitization ({§cli-problems-and-notices})
+    assert.equal(ModelText.plain("hello\x1b[31mworld\x1b[0m\x07"), "helloworld");
+    assert.deepEqual(ModelText.plainFields({ detail: "a\x1b[2Jb", status: 400 }), { detail: "ab", status: 400 });
+
+    // Color policy and scheme detection ({§cli-color-policy}, {§cli-color-scheme})
+    assert.equal(colorEnabled({ isTTY: true }, { PLURNK_CLIENT_COLOR: "never" }), false);
+    assert.equal(colorEnabled({ isTTY: false }, { PLURNK_CLIENT_COLOR: "always" }), true);
+    assert.equal(colorEnabled({ isTTY: true }, { NO_COLOR: "1" }), false);
+    assert.equal(colorFgBgScheme({ COLORFGBG: "15;0" }), "dark");
+    assert.equal(colorFgBgScheme({ COLORFGBG: "0;15" }), "light");
+    assert.equal(backgroundScheme({ r: 10, g: 10, b: 10 }), "dark");
+    assert.equal(backgroundScheme({ r: 245, g: 245, b: 245 }), "light");
+    learnScheme("dark");
+    const painted = withColorOutput({ isTTY: true }, () => {
+        const prevNoColor = process.env.NO_COLOR;
+        const prevColor = process.env.PLURNK_CLIENT_COLOR;
+        process.env.PLURNK_CLIENT_COLOR = "always";
+        delete process.env.NO_COLOR;
+        try {
+            return paint("ok", "success");
+        } finally {
+            if (prevNoColor !== undefined) process.env.NO_COLOR = prevNoColor;
+            if (prevColor !== undefined) process.env.PLURNK_CLIENT_COLOR = prevColor;
+            else delete process.env.PLURNK_CLIENT_COLOR;
+        }
+    });
+    assert.match(painted, /\x1b\[32mok\x1b\[0m/u);
+
+    // Header, title, resumeCommand, attention ({§cli-terminal-title}, {§cli-attention})
+    assert.equal(windowTitle("ws", "user"), "plurnk · ws · user");
+    assert.equal(windowTitle("ws", null), "plurnk · ws");
+    assert.match(
+        buildHeader({ workspaceName: "ws", sessionName: "user", modelSelector: "fast", effort: "high", yolo: false }),
+        /workspace: ws · session: user · model: fast · effort: high · yolo: off · \/help/u,
+    );
+    assert.equal(resumeCommand("ws", "my session"), "plurnk --workspace ws --session 'my session'");
+    assert.match(renderSubmittedInput("line 1\nline 2"), /› line 1[\s\S]*line 2/u);
+    assert.equal(concluded(200, false), "reply");
+    assert.equal(concluded(499, false), "stopped");
+    assert.equal(concluded(500, false), "failed");
+    let bellBeeps = 0;
+    const sink = attention([bell({ isTTY: true, write: () => (bellBeeps += 1) })]);
+    sink("reply");
+    assert.equal(bellBeeps, 1);
+
+    // Shortcuts
+    assert.equal(altShortcut("\x1bh"), "/parent");
+    assert.equal(altShortcut("\x1bl"), "/enter");
+    assert.equal(altShortcut("\x1bj"), "/older");
+    assert.equal(altShortcut("\x1bk"), "/newer");
+    assert.equal(altShortcut("\x1b?"), "/help");
+    assert.equal(backTabShortcut("\x1b[Z"), "/yolo");
+
+    // TailText caps reasoning scroll lines ({§cli-provider-reasoning})
+    const tail = new TailText(() => 2);
+    assert.equal(tail.hasText, false);
+    tail.setText("r1\nr2\nr3");
+    assert.equal(tail.hasText, true);
+    assert.deepEqual(tail.render(40), ["r2", "r3"]);
+
+    // QuestionForm step-by-step and JSON validation ({§cli-question-forms})
+    const form = new QuestionForm(
+        {
+            type: "object",
+            properties: {
+                choice: { type: "string", enum: ["alpha", "beta", "other"], title: "Pick one" },
+                note: { type: "string", description: "Extra details" },
+            },
+            required: ["choice"],
+        },
+        "question",
+    );
+    assert.deepEqual(form.choices, ["alpha", "beta", "other"]);
+    assert.equal(form.freeResponseChoice, "other");
+    assert.equal(form.submit("").kind, "invalid");
+    const fixedDone = form.submit("1");
+    assert.deepEqual(fixedDone, { kind: "complete", content: { choice: "alpha" } });
+
+    // TuiSurface + Review over fake Terminal ({§cli-inline-review})
+    const written: string[] = [];
+    const fakeTerminal: Terminal = {
+        columns: 80,
+        rows: 24,
+        kittyProtocolActive: false,
+        start() {},
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            written.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle(t: string) {
+            written.push(`TITLE:${t}`);
+        },
+        setProgress() {},
+        setProgramStatus() {},
+    };
+    const surface = new TuiSurface(fakeTerminal);
+    const stdinCommands: string[] = [];
+    const review = new Review(surface, {
+        sendStdin: (cmd) => stdinCommands.push(cmd),
+        editBody: async () => "edited body",
+        record: (t) => surface.append(t),
+    });
+    surface.start();
+    surface.setTitle(windowTitle("ws", "user"));
+    assert.ok(written.some((w) => w.includes("TITLE:plurnk · ws · user")));
+
+    // When editor is empty, adding a permission gate opens review automatically ({§cli-inline-review})
+    review.addPermissionGate({
+        id: "deadbeef",
+        title: "EDIT file:///tmp/a.txt",
+        _meta: { plurnk: { proposal: { body: "hello" } } },
+    });
+    assert.equal(surface.reviewing, true);
+    assert.equal(review.waiting, 1);
+    assert.equal(review.focusedGateId, "deadbeef");
+
+    // Pressing Enter in Review selects the first item ("Accept") and sends /approve @deadbeef to replStdin
+    review.handleInput("\r");
+    assert.deepEqual(stdinCommands, ["/approve @deadbeef\n"]);
+
+    // Escape leaves review back to editor without losing gate; openReview returns to review
+    assert.equal(surface.leaveReview(), true);
+    assert.equal(surface.reviewing, false);
+    assert.equal(surface.openReview(), true);
+    assert.equal(surface.reviewing, true);
+
+    review.remove("deadbeef");
+    assert.equal(review.waiting, 0);
+    assert.equal(surface.reviewing, false);
+    surface.stop();
+
+    // Completion ({§cli-interactive-command-discovery}, {§cli-path-completion})
+    assert.deepEqual(dslOpPartial("```re"), { fence: "```", typed: "re" });
+    const [ops] = completeOps({ fence: "````", typed: "RE" });
+    assert.ok(ops.includes("````READ"));
+    assert.deepEqual(pathPartial("/import src/"), { kind: "local", partial: "src/" });
+    assert.deepEqual(pathPartial("check @README"), { kind: "reference", partial: "README" });
+
+    const rootComp = await completeInput("/session", {
+        cwd: repoRoot,
+        getProjectRoot: () => repoRoot,
+        getSessionNames: () => ["user", "helper"],
+        getPendingGateIds: () => ["deadbeef"],
+    });
+    assert.equal(rootComp.suggestions[0]?.value, "/session", "exact match /session must sort before /sessions");
+
+    const gateComp = await completeInput("/approve @de", {
+        cwd: repoRoot,
+        getProjectRoot: () => repoRoot,
+        getPendingGateIds: () => ["deadbeef", "cafebabe"],
+    });
+    assert.deepEqual(gateComp.suggestions, [{ value: "@deadbeef", description: "pending gate" }]);
 });

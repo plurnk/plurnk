@@ -49,3 +49,51 @@ export {
 } from "./cli-runner.ts";
 export { main } from "./dispatcher.ts";
 export { NODE_MAJOR_FLOOR, refuseBelowFloor } from "./runtime-floor.ts";
+export {
+    ALT_SHORTCUTS,
+    altShortcut,
+    backTabShortcut,
+} from "./repl-session.ts";
+export {
+    completeAddressPath,
+    completeInput,
+    completeOps,
+    completePath,
+    dslOpPartial,
+    makeAutocompleteProvider,
+    pathPartial,
+    type CompletionContext,
+    type CompletionSuggestion,
+    type DslOpPartial,
+    type PathPartial,
+} from "./tui-completion.ts";
+export {
+    default as Review,
+    QuestionForm,
+    type ElicitationGateEvent,
+    type PermissionGateEvent,
+    type QuestionAnswer,
+} from "./tui-review.ts";
+export {
+    attention,
+    backgroundScheme,
+    bell,
+    buildHeader,
+    colorEnabled,
+    colorFgBgScheme,
+    concluded,
+    default as TuiSurface,
+    editorTheme,
+    isColorMode,
+    learnScheme,
+    ModelText,
+    paint,
+    renderSubmittedInput,
+    resumeCommand,
+    TailText,
+    windowTitle,
+    withColorOutput,
+    type AttentionReason,
+    type AttentionSink,
+    type Role,
+} from "./tui-surface.ts";

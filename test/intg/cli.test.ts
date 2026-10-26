@@ -539,17 +539,24 @@ test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-com
         const gateId = String(permEvent.id ?? "");
         assert.match(gateId, /^[0-9a-f]{8}$/u);
 
-        // /review lists the pending gate with its hash
+        // /review lists the pending gate with its @<id> hash
         replChild.stdin!.write("/review\n");
-        await waitStdout((l) => l.includes(gateId) && l.includes("permission"));
+        await waitStdout((l) => l.includes(`@${gateId}`) && l.includes("permission"));
 
-        // /approve <id> allow_always resolves the specific gate by hash
-        replChild.stdin!.write(`/approve ${gateId} allow_always\n`);
-        await waitStdout((l) => l === `approved ${gateId}`);
+        // Omitting @<id> in REPL mode is refused with 400 on fd 2 (stderr)
+        replChild.stdin!.write("/approve allow_always\n");
+        const missingIdErr = await waitStderr(
+            (e) => e.type === "https://problems.plurnk.xyz/client/usage" && String(e.detail ?? "").includes("@<id>"),
+        );
+        assert.equal(missingIdErr.status, 400);
+
+        // /approve @<id> allow_always resolves the specific gate by hash; receipt is gate_resolved on fd 3 (events)
+        replChild.stdin!.write(`/approve @${gateId} allow_always\n`);
         const resolvedEvent = await waitEvent((e) => e.sessionUpdate === "gate_resolved" && e.id === gateId);
         assert.deepEqual(resolvedEvent.outcome, { outcome: "selected", optionId: "allow_always" });
 
         await waitStdout((l) => l === "Permission outcome: allow_always");
+        assert.ok(!stdoutLines.some((l) => l.startsWith("approved ")), "stdout must stay free of gate resolution acks");
         await waitEvent((e) => e.sessionUpdate === "state_update" && e.state === "idle");
         assert.match(reasoningText, /Thinking about: ASK_PERMISSION/);
 

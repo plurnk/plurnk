@@ -442,15 +442,32 @@ export const runReplSession = async (
     let session = await bindSession(options.workspace, currentSessionName);
     streams.stdout.write(`workspace: ${currentWorkspace}\n`);
 
-    const findGate = (maybeId: string | undefined): { readonly gate: PendingGate | undefined; readonly consumedId: boolean } => {
-        if (maybeId !== undefined && pendingGates.has(maybeId)) {
-            return { gate: pendingGates.get(maybeId), consumedId: true };
+    const resolveRequiredGate = (
+        cmdName: string,
+        usage: string,
+        rawTarget: string | undefined,
+    ): PendingGate | undefined => {
+        if (!rawTarget || !rawTarget.startsWith("@") || rawTarget.length < 2) {
+            writeErrorJsonl(streams.stderr, {
+                type: "https://problems.plurnk.xyz/client/usage",
+                title: "Missing gate identifier",
+                status: 400,
+                detail: `usage: ${usage} (/<${cmdName}> requires @<id> in REPL mode; inspect pending gates with /review or fd 3 events).`,
+            });
+            return undefined;
         }
-        if (maybeId !== undefined && /^[0-9a-f]{8}$/iu.test(maybeId)) {
-            return { gate: undefined, consumedId: true };
+        const id = rawTarget.slice(1);
+        const gate = pendingGates.get(id);
+        if (!gate) {
+            writeErrorJsonl(streams.stderr, {
+                type: "https://problems.plurnk.xyz/client/gate-not-found",
+                title: "Gate not found",
+                status: 404,
+                detail: `No pending gate with id @${id}.`,
+            });
+            return undefined;
         }
-        const first = pendingGates.values().next().value as PendingGate | undefined;
-        return { gate: first, consumedId: false };
+        return gate;
     };
 
     const bindingContext = () => ({
@@ -687,26 +704,20 @@ export const runReplSession = async (
                     for (const gate of pendingGates.values()) {
                         if (gate.kind === "permission") {
                             const opts = gate.request.options.map((o) => o.optionId).join(", ");
-                            streams.stdout.write(`${gate.id}  permission  ${gate.request.title}  [${opts}]\n`);
+                            streams.stdout.write(`@${gate.id}  permission  ${gate.request.title}  [${opts}]\n`);
                         } else {
-                            streams.stdout.write(`${gate.id}  elicitation  ${gate.request.message}\n`);
+                            streams.stdout.write(`@${gate.id}  elicitation  ${gate.request.message}\n`);
                         }
                     }
                     return "continue";
                 }
 
                 if (cmd === "approve" || cmd === "accept") {
-                    const { gate, consumedId } = findGate(args[0]);
+                    const gate = resolveRequiredGate(cmd, `/${cmd} @<id> [optionId]`, args[0]);
                     if (!gate) {
-                        writeErrorJsonl(streams.stderr, {
-                            type: "https://problems.plurnk.xyz/client/gate-not-found",
-                            title: "Gate not found",
-                            status: 404,
-                            detail: args[0] ? `No pending gate with id ${args[0]}.` : "No pending gate to approve.",
-                        });
                         return "continue";
                     }
-                    const explicitOptionId = consumedId ? args[1] : args[0];
+                    const explicitOptionId = args[1];
                     if (gate.kind === "permission") {
                         const chosen =
                             (explicitOptionId
@@ -726,22 +737,15 @@ export const runReplSession = async (
                     } else {
                         gate.resolveGate({ action: "accept" });
                     }
-                    streams.stdout.write(`approved ${gate.id}\n`);
                     return "continue";
                 }
 
                 if (cmd === "reject") {
-                    const { gate, consumedId } = findGate(args[0]);
+                    const gate = resolveRequiredGate(cmd, "/reject @<id> [optionId]", args[0]);
                     if (!gate) {
-                        writeErrorJsonl(streams.stderr, {
-                            type: "https://problems.plurnk.xyz/client/gate-not-found",
-                            title: "Gate not found",
-                            status: 404,
-                            detail: args[0] ? `No pending gate with id ${args[0]}.` : "No pending gate to reject.",
-                        });
                         return "continue";
                     }
-                    const explicitOptionId = consumedId ? args[1] : args[0];
+                    const explicitOptionId = args[1];
                     if (gate.kind === "permission") {
                         const chosen =
                             (explicitOptionId
@@ -760,19 +764,12 @@ export const runReplSession = async (
                     } else {
                         gate.resolveGate({ action: "decline" });
                     }
-                    streams.stdout.write(`rejected ${gate.id}\n`);
                     return "continue";
                 }
 
                 if (cmd === "cancel") {
-                    const { gate } = findGate(args[0]);
+                    const gate = resolveRequiredGate(cmd, "/cancel @<id>", args[0]);
                     if (!gate) {
-                        writeErrorJsonl(streams.stderr, {
-                            type: "https://problems.plurnk.xyz/client/gate-not-found",
-                            title: "Gate not found",
-                            status: 404,
-                            detail: args[0] ? `No pending gate with id ${args[0]}.` : "No pending gate to cancel.",
-                        });
                         return "continue";
                     }
                     if (gate.kind === "permission") {
@@ -780,23 +777,24 @@ export const runReplSession = async (
                     } else {
                         gate.resolveGate({ action: "cancel" });
                     }
-                    streams.stdout.write(`cancelled ${gate.id}\n`);
                     return "continue";
                 }
 
                 if (cmd === "edit") {
-                    const { gate, consumedId } = findGate(args[0]);
-                    if (!gate || gate.kind !== "permission") {
+                    const gate = resolveRequiredGate(cmd, "/edit @<id> <body...>", args[0]);
+                    if (!gate) {
+                        return "continue";
+                    }
+                    if (gate.kind !== "permission") {
                         writeErrorJsonl(streams.stderr, {
                             type: "https://problems.plurnk.xyz/client/gate-not-found",
                             title: "Gate not found",
                             status: 404,
-                            detail: "No pending permission gate to edit.",
+                            detail: `Gate @${gate.id} is not a permission gate.`,
                         });
                         return "continue";
                     }
-                    const bodyTokens = consumedId ? args.slice(1) : args;
-                    const editedBody = bodyTokens.join(" ");
+                    const editedBody = args.slice(1).join(" ");
                     const allowOpt =
                         gate.request.options.find(
                             (o) => o.kind === "allow_once" || o.kind === "allow_always",
@@ -807,22 +805,24 @@ export const runReplSession = async (
                             : { outcome: "cancelled" },
                         ...(editedBody.length > 0 ? { _meta: { plurnk: { body: editedBody } } } : {}),
                     } as RequestPermissionResponse);
-                    streams.stdout.write(`edited ${gate.id}\n`);
                     return "continue";
                 }
 
                 if (cmd === "answer") {
-                    const { gate, consumedId } = findGate(args[0]);
-                    if (!gate || gate.kind !== "elicitation") {
+                    const gate = resolveRequiredGate(cmd, "/answer @<id> <json>", args[0]);
+                    if (!gate) {
+                        return "continue";
+                    }
+                    if (gate.kind !== "elicitation") {
                         writeErrorJsonl(streams.stderr, {
                             type: "https://problems.plurnk.xyz/client/gate-not-found",
                             title: "Gate not found",
                             status: 404,
-                            detail: "No pending elicitation gate to answer.",
+                            detail: `Gate @${gate.id} is not an elicitation gate.`,
                         });
                         return "continue";
                     }
-                    const rawPayload = (consumedId ? args.slice(1) : args).join(" ").trim();
+                    const rawPayload = args.slice(1).join(" ").trim();
                     let content: Record<string, unknown> = {};
                     if (rawPayload.length > 0) {
                         try {
@@ -839,7 +839,6 @@ export const runReplSession = async (
                         action: "accept",
                         content: content as Record<string, ElicitationContentValue>,
                     });
-                    streams.stdout.write(`answered ${gate.id}\n`);
                     return "continue";
                 }
 
@@ -1305,6 +1304,7 @@ export const runTuiViewport = async (
     });
 
     let initialPromptPrinted = false;
+    const focusedGateIds: string[] = [];
 
     replStdout.setEncoding("utf8");
     replStdout.on("data", (chunk: string) => {
@@ -1384,9 +1384,19 @@ export const runTuiViewport = async (
 
         if (
             event.sessionUpdate === "permission_request" ||
-            event.sessionUpdate === "elicitation_request" ||
-            event.sessionUpdate === "gate_resolved"
+            event.sessionUpdate === "elicitation_request"
         ) {
+            if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
+                focusedGateIds.push(event.id);
+            }
+            return;
+        }
+
+        if (event.sessionUpdate === "gate_resolved") {
+            if (typeof event.id === "string") {
+                const idx = focusedGateIds.indexOf(event.id);
+                if (idx >= 0) focusedGateIds.splice(idx, 1);
+            }
             return;
         }
 
@@ -1427,12 +1437,29 @@ export const runTuiViewport = async (
         }
     });
 
+    const GATE_VERBS = new Set(["approve", "accept", "reject", "cancel", "edit", "answer"]);
     const userRl = readline.createInterface({ input: termIn, terminal: false });
     userRl.on("line", (line: string) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("/")) {
+            const tokens = trimmed.slice(1).split(/\s+/u);
+            const verb = tokens[0]?.toLowerCase() ?? "";
+            const firstArg = tokens[1];
+            const focusedId = focusedGateIds[0];
+            if (
+                GATE_VERBS.has(verb) &&
+                focusedId !== undefined &&
+                (firstArg === undefined || !firstArg.startsWith("@"))
+            ) {
+                const rest = tokens.slice(1).join(" ");
+                replStdin.write(rest.length > 0 ? `/${verb} @${focusedId} ${rest}\n` : `/${verb} @${focusedId}\n`);
+                return;
+            }
+        }
         if (
-            line.trim().length > 0 &&
-            !line.trim().startsWith("/") &&
-            !line.trim().startsWith("!")
+            trimmed.length > 0 &&
+            !trimmed.startsWith("/") &&
+            !trimmed.startsWith("!")
         ) {
             presenter.markTurnStart();
         }

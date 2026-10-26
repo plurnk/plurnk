@@ -488,20 +488,20 @@ Triggered when `--repl` or `PLURNK_CLIENT_REPL=1` is active with no positional p
 
 1. Acquire the workspace and bind `AcpClient` to its ID and session name (§1.1), restore the bound session's history under {§cli-session-history}, and emit `{"sessionUpdate":"session_bound","sessionId":...,"workspace":...,"session":...,"cwd":...,"configOptions":...,"_meta":...}` on `fd 3` (`events`).
 2. Read lines from `fd 0` (`stdin`), dispatching every interactive command verb (`/help`, `/models`, `/workspaces`, `/sessions`, `/loops`, `/loop`, `/model`, `/child`, `/effort`, `/capabilities`, `/yolo`, `/workspace`, `/rename`, `/share`, `/rollback`, `/session`, `/fork`, `/parent`, `/enter`, `/older`, `/newer`, `/mcp`, `/skills`, `/members`, `/env`, `/schedule`, `/import`, `/script`, `/review`, `/approve` / `/accept`, `/reject`, `/cancel`, `/edit`, `/answer`, `/stop`, `/quit`), executable backtick fences (`op.parse`), `!` shell commands (`op.parse` `sh`), `? ` review-mode prompts, `: ` literal prompts, `...` loop injections (`loop.inject`), and `@<path>` file references (`openPaths`).
-3. Pending permissions (`session/request_permission`) and elicitations (`elicitation/create`) each receive a unique 8-hex-character `id` hash emitted in their `permission_request` or `elicitation_request` event on `fd 3` (`events`). Gate resolution commands on `stdin` accept that `id` optionally (defaulting to the oldest pending gate when omitted) so concurrent gates resolve unambiguously and stale hashes fail closed without answering a subsequent interrupt:
-   - `/approve [id] [optionId]` (alias `/accept [id] [optionId]`) — selects `allow_once` / `allow_always` or the named `optionId` (or accepts a URL elicitation).
-   - `/reject [id] [optionId]` — selects `reject_once` / `reject_always` or the named `optionId` (or declines an elicitation).
-   - `/cancel [id]` — cancels the identified gate.
-   - `/edit [id] <body...>` — accepts an `EDIT` proposal with the supplied replacement body.
-   - `/answer [id] <json-or-text>` — submits the validated response payload for a form elicitation/question.
-   - `/review` — prints all pending gates (`id`, kind, title/message, options or schema) to `stdout`.
-4. When a gate resolves or withdraws, the REPL emits `{"sessionUpdate":"gate_resolved","id":...,"outcome":...}` on `fd 3` (`events`).
+3. Pending permissions (`session/request_permission`) and elicitations (`elicitation/create`) each receive a unique 8-hex-character `id` hash emitted in their `permission_request` or `elicitation_request` event on `fd 3` (`events`). In REPL mode, gate resolution commands on `stdin` require the `@<id>` target token so concurrent gates resolve unambiguously, argument parsing between `@<id>` and `<optionId>` / `<body...>` / `<json>` has zero lexical ambiguity, and stale hashes fail closed with `404` on `fd 2` (`stderr`) without answering a subsequent interrupt:
+   - `/approve @<id> [optionId]` (alias `/accept @<id> [optionId]`) — selects `allow_once` / `allow_always` or the named `optionId` (or accepts a URL elicitation).
+   - `/reject @<id> [optionId]` — selects `reject_once` / `reject_always` or the named `optionId` (or declines an elicitation).
+   - `/cancel @<id>` — cancels the identified gate.
+   - `/edit @<id> <body...>` — accepts an `EDIT` proposal with the supplied replacement body.
+   - `/answer @<id> <json-or-text>` — submits the validated response payload for a form elicitation/question.
+   - `/review` — prints all pending gates (`@<id>`, kind, title/message, options or schema) to `stdout`.
+4. When a gate resolves or withdraws, the REPL emits `{"sessionUpdate":"gate_resolved","id":...,"outcome":...}` on `fd 3` (`events`) and writes nothing to `fd 1` (`stdout`), keeping `stdout` strictly reserved for delivered product and inspection outputs.
 
 ---
 
 ## §cli-tui-mode TUI mode
 
-Triggered when `argv` has no positional prompt, `stdin` is a TTY, and `PLURNK_CLIENT_REPL=0`. `pi-tui` is a pure terminal viewport composed atop the REPL's 5-stream contract (`[stdin, stdout, stderr, events, reasoning]`): it holds no sidechannel reference to `AcpClient` or `AcpSession`, submits all user prompts, slash commands, and gate decisions over `stdin`, and renders its transcript, live reasoning scrollbox, inline review controls, and status footer solely from `[stdout, stderr, events, reasoning]`.
+Triggered when `argv` has no positional prompt, `stdin` is a TTY, and `PLURNK_CLIENT_REPL=0`. `pi-tui` is a pure terminal viewport composed atop the REPL's 5-stream contract (`[stdin, stdout, stderr, events, reasoning]`): it holds no sidechannel reference to `AcpClient` or `AcpSession`, submits all user prompts, slash commands, and gate decisions over `stdin`, and renders its transcript, live reasoning scrollbox, inline review controls, and status footer solely from `[stdout, stderr, events, reasoning]`. Because the TUI viewport tracks the currently focused gate card from `fd 3` (`events`), `@<id>` is optional in the TUI: selecting an option in the gate widget or typing a bare `/approve`, `/accept`, `/reject`, `/cancel`, `/edit <body...>`, or `/answer <json>` command in the TUI automatically routes to the focused gate's `@<id>` on `fd 0` (`stdin`).
 
 ### §cli-tui-flow Flow
 

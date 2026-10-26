@@ -197,12 +197,12 @@ The no-argument interactive terminal accepts these slash commands:
 /script <path>                 Submit a local .plk program through op.parse.
 /editor                        Compose the current value in $EDITOR.
 /review                        Inspect pending proposals or questions.
-/approve [id] [optionId]       Approve the pending proposal (or identified gate).
-/accept [id] [optionId]        Accept the pending proposal (or identified gate).
-/reject [id] [optionId]        Reject the pending proposal (or identified gate).
-/cancel [id]                   Cancel the pending proposal or question.
-/edit [id] <body...>           Edit and accept the pending proposal.
-/answer [id] <json>            Answer the pending elicitation or question.
+/approve @<id> [optionId]      Approve the identified proposal or gate (@<id> optional in TUI).
+/accept @<id> [optionId]       Accept the identified proposal or gate (@<id> optional in TUI).
+/reject @<id> [optionId]       Reject the identified proposal or gate (@<id> optional in TUI).
+/cancel @<id>                  Cancel the identified proposal or question (@<id> optional in TUI).
+/edit @<id> <body...>          Edit and accept the identified proposal (@<id> optional in TUI).
+/answer @<id> <json>           Answer the identified elicitation or question (@<id> optional in TUI).
 /stop                          Cancel the running loop.
 /quit                          Exit the interactive client.
 .fi

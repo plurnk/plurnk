@@ -1676,6 +1676,10 @@ Queries one bounded page from the daemon's release-pinned catalog through `model
 
 §cli-models-efforts Default output is a column-aligned table of `selector / name / context / efforts / readiness`, where `efforts` lists the daemon's admitted efforts for the exact route (`capabilities.efforts`) or `-` for a model without an effort dimension, plus a continuation offset when another page exists. The default availability is configured-and-ready exact routes; `--all` rows explain missing credential or configuration alternatives. With `--json`, the client emits the complete page unchanged so `offset`, `total`, and `nextOffset` survive.
 
+### §cli-plurnk-update `plurnk update` and `/update`
+
+Calls `service.update` (`_plurnk/action`) to refresh the daemon's cached model catalog and update installed Plurnk packages when the daemon permits updates (`PLURNK_SERVICE_UPDATEABLE=1`). Text mode prints the catalog and package update summary lines; `--json` emits the structured `ApplicationServiceUpdateResult` verbatim.
+
 ### §cli-plurnk-workspace-list `plurnk workspace list`
 
 Lists workspaces on the daemon via `workspace.list`. No prior attach required.

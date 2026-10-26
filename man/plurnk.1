@@ -5,6 +5,7 @@ plurnk \- terminal client for the plurnk\-service agentic daemon
 .nf
 plurnk [--json] [--workspace <name>] [--session <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
+       plurnk update [--json]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
        plurnk workspace sessions <name> [--json]
@@ -136,6 +137,7 @@ loop.
 .fi
 .SH SUBCOMMANDS
 .nf
+  update                  update the model catalog and installed Plurnk packages (service.update)
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
   workspace sessions <name> list sessions in the named workspace (workspace.sessions)
@@ -168,6 +170,7 @@ loop.
 The no-argument interactive terminal accepts these slash commands:
 .nf
 /help [verb]                   Show the command index or one command's usage.
+/update                        Update the model catalog and installed Plurnk packages.
 /models [search]               Search the bounded model catalog.
 /workspaces                    List daemon workspaces.
 /sessions                      List this workspace's sessions as a tree, each with its state.

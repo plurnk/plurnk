@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { refuseBelowFloor } from "./runtime-floor.ts";
+import { formatServiceUpdateResult } from "./cli-runner.ts";
 import { main } from "./dispatcher.ts";
 import { lifecycleGlyphFor, operationGlyphFor, SessionPresenter } from "./session-presenter.ts";
 import { altShortcut, backTabShortcut } from "./repl-session.ts";
@@ -572,4 +573,12 @@ test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-fo
         getPendingGateIds: () => ["deadbeef", "cafebabe"],
     });
     assert.deepEqual(gateComp.suggestions, [{ value: "@deadbeef", description: "pending gate" }]);
+
+    // Service and model catalog update formatting ({§cli-plurnk-update})
+    const formattedUpdate = formatServiceUpdateResult({
+        catalog: { status: "updated", models: 500, providers: 20, addedModels: 4 },
+        npm: { status: "updated", package: "@plurnk/plurnk-service", previousVersion: "4.4.0", currentVersion: "4.5.0" },
+    });
+    assert.match(formattedUpdate, /catalog: updated \(500 models across 20 providers, \+4 new\)/u);
+    assert.match(formattedUpdate, /npm: @plurnk\/plurnk-service 4\.4\.0 -> 4\.5\.0/u);
 });

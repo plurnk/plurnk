@@ -858,6 +858,28 @@ export const runReplSession = async (
                     return "continue";
                 }
 
+                if (cmd === "update") {
+                    const result = await client.action<Record<string, unknown>>("service.update", {});
+                    const cat = (result.catalog ?? {}) as Record<string, unknown>;
+                    const npm = (result.npm ?? {}) as Record<string, unknown>;
+                    const added =
+                        typeof cat.addedModels === "number" && cat.addedModels > 0
+                            ? `, +${String(cat.addedModels)} new`
+                            : "";
+                    const catLine = `catalog: ${String(cat.status ?? "updated")} (${String(cat.models ?? 0)} models across ${String(cat.providers ?? 0)} providers${added})`;
+                    const pkg = String(npm.package ?? "@plurnk/plurnk-service");
+                    const prev = String(npm.previousVersion ?? "");
+                    const curr = String(npm.currentVersion ?? prev);
+                    const npmLine =
+                        npm.status === "source"
+                            ? `npm: ${pkg}@${curr} (source checkout)`
+                            : npm.status === "updated"
+                              ? `npm: ${pkg} ${prev} -> ${curr}`
+                              : `npm: ${pkg}@${curr} (unchanged)`;
+                    streams.stdout.write(`${catLine}\n${npmLine}\n`);
+                    return "continue";
+                }
+
                 if (cmd === "yolo") {
                     currentYolo = !currentYolo;
                     streams.stdout.write(`yolo: ${currentYolo ? "on" : "off"}\n`);

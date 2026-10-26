@@ -32,6 +32,7 @@ export {
 export {
     createCliElicitationHandler,
     createCliPermissionHandler,
+    formatServiceUpdateResult,
     openCliSession,
     openProcessStreams,
     runCliConfig,
@@ -41,6 +42,7 @@ export {
     runCliNewSession,
     runCliPrompt,
     runCliResumeSession,
+    runCliUpdate,
     runInteractiveSession,
     runReplSession,
     runTuiViewport,

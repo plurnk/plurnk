@@ -117,6 +117,24 @@ const createMockAcpServer = async () => {
                         aliases: [],
                     };
                 }
+                if (params.kind === "service.update") {
+                    return {
+                        catalog: {
+                            status: "updated",
+                            providers: 10,
+                            models: 300,
+                            addedModels: 2,
+                            updatedAt: "2026-10-26T00:00:00.000Z",
+                            path: "/tmp/models.json",
+                        },
+                        npm: {
+                            status: "source",
+                            package: "@plurnk/plurnk-service",
+                            previousVersion: "4.3.3",
+                            currentVersion: "4.3.3",
+                        },
+                    };
+                }
                 if (params.kind === "workspace.list") {
                     return {
                         workspaces: [
@@ -485,9 +503,21 @@ test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {�
     }
 });
 
-test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-sessions-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
+test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-update} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-sessions-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
     const server = await createMockAcpServer();
     try {
+        const updateRes = await runCli(
+            ["update"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(updateRes.status, 0, `stderr was: ${updateRes.stderr}`);
+        assert.match(updateRes.stdout, /catalog: updated \(300 models across 10 providers, \+2 new\)/);
+        assert.match(updateRes.stdout, /npm: @plurnk\/plurnk-service@4\.3\.3 \(source checkout\)/);
+
         const modelsRes = await runCli(
             ["models", "--json"],
             {

@@ -17,6 +17,11 @@
       "evidence": ["src/cli.test.ts — model catalog"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
+    "service.update": {
+      "posture": "native",
+      "evidence": ["src/cli.test.ts — service and model catalog update"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
+    },
     "workspace.list": {
       "posture": "native",
       "evidence": ["src/cli.test.ts — workspace listing"],

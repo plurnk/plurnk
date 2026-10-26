@@ -911,6 +911,42 @@ export const runCliConfig = async (
     }
 };
 
+export const formatServiceUpdateResult = (res: Record<string, unknown>): string => {
+    const cat = (res.catalog ?? {}) as Record<string, unknown>;
+    const npm = (res.npm ?? {}) as Record<string, unknown>;
+    const added = typeof cat.addedModels === "number" && cat.addedModels > 0 ? `, +${String(cat.addedModels)} new` : "";
+    const catLine = `catalog: ${String(cat.status ?? "updated")} (${String(cat.models ?? 0)} models across ${String(cat.providers ?? 0)} providers${added})`;
+    const pkg = String(npm.package ?? "@plurnk/plurnk-service");
+    const prev = String(npm.previousVersion ?? "");
+    const curr = String(npm.currentVersion ?? prev);
+    const npmLine = npm.status === "source"
+        ? `npm: ${pkg}@${curr} (source checkout)`
+        : npm.status === "updated"
+            ? `npm: ${pkg} ${prev} -> ${curr}`
+            : `npm: ${pkg}@${curr} (unchanged)`;
+    return `${catLine}\n${npmLine}`;
+};
+
+export const runCliUpdate = async (options: CliCommonOptions): Promise<number> => {
+    const client = new AcpClient({
+        url: options.url,
+        credential: options.credential,
+        env: options.env,
+    });
+    await ensureDaemonConnected(client, options);
+    try {
+        const result = await client.action<Record<string, unknown>>("service.update", {});
+        if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        } else {
+            process.stdout.write(`${formatServiceUpdateResult(result)}\n`);
+        }
+        return 0;
+    } finally {
+        client.close();
+    }
+};
+
 export const runCliModels = async (
     searchTerms: readonly string[],
     query: { readonly provider?: string; readonly all?: boolean; readonly offset?: number; readonly limit?: number },

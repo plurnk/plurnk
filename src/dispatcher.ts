@@ -19,6 +19,7 @@ import {
     runCliReadCoord,
     runCliResumeSession,
     runCliScript,
+    runCliUpdate,
     runCliWorkspace,
     runInteractiveSession,
     type CliCommonOptions,
@@ -75,6 +76,7 @@ export const CLIENT_OPTIONS = {
 
 export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <name>] [--model <selector>] [--effort <level>] [prompt...]
        <piped stdin> | plurnk [options] [prompt...]
+       plurnk update [--json]
        plurnk models [search...] [--provider <name>] [--all] [--offset <n>] [--limit <n>] [--json]
        plurnk workspace list [--json]
        plurnk workspace sessions <name> [--json]
@@ -215,6 +217,7 @@ options:
                           width when available, otherwise 80)
 
 subcommands:
+  update                  update the model catalog and installed Plurnk packages (service.update)
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
   workspace sessions <name> list sessions in the named workspace (workspace.sessions)
@@ -636,6 +639,8 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             }
         } else if (first === "config") {
             exitCode = await runCliConfig(positionals[1], positionals[2], common);
+        } else if (first === "update") {
+            exitCode = await runCliUpdate(common);
         } else if (first === "models") {
             const limitNum = typeof parsed.values.limit === "string"
                 ? Number.parseInt(parsed.values.limit, 10)

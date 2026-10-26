@@ -225,7 +225,8 @@ export const renderModelReply = (
     const status = opts?.status ?? 200;
     const failed = status >= 400;
     const glyph = op === "WAIT" ? (failed ? "❌" : "⏳") : failed ? "❌" : "🐹";
-    const cleanAside = opts?.aside ? ModelText.plain(opts.aside).trim() : "";
+    const cleanAside =
+        (op === "WAIT" || failed) && opts?.aside ? ModelText.plain(opts.aside).trim() : "";
     const lead = `${paint(glyph, failed ? "failure" : "dim")}${
         cleanAside.length > 0 ? ` ${paint(cleanAside, "dim", "italic")}` : ""
     }`;
@@ -399,6 +400,38 @@ export const formatDurationSummary = (ms: number): string => {
     return `${String(mins)}m ${String(secs)}s`;
 };
 
+export const formatLoopMetrics = (opts: {
+    readonly turns: number;
+    readonly elapsedMs: number;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly curationWeight: number;
+    readonly curationBudget: number;
+    readonly contextTokens: number | null;
+    readonly contextCapacity: number | null;
+    readonly costUsd: string | null;
+}): string => {
+    const turnLabel = `${String(opts.turns)} ${opts.turns === 1 ? "turn" : "turns"}`;
+    const parts: string[] = [turnLabel, formatDurationSummary(opts.elapsedMs)];
+    if (opts.inputTokens > 0 || opts.outputTokens > 0) {
+        parts.push(`↓${formatCompactCount(opts.inputTokens)} ↑${formatCompactCount(opts.outputTokens)}`);
+    }
+    if (opts.curationBudget > 0) {
+        const curPct = Math.min(100, Math.round((opts.curationWeight / opts.curationBudget) * 100));
+        parts.push(`cur ${String(curPct)}%/${formatCompactCount(opts.curationBudget)}`);
+    }
+    if (opts.contextTokens !== null && opts.contextCapacity !== null && opts.contextCapacity > 0) {
+        const ctxPct = Math.min(100, Math.round((opts.contextTokens / opts.contextCapacity) * 100));
+        parts.push(`ctx ${String(ctxPct)}%/${formatCompactCount(opts.contextCapacity)}`);
+    }
+    if (opts.costUsd !== null && Number(opts.costUsd) > 0) {
+        const num = Number(opts.costUsd);
+        const formattedUsd = num < 0.01 ? `$${num.toFixed(4)}` : `$${num.toFixed(2)}`;
+        parts.push(`loop ${formattedUsd}`);
+    }
+    return parts.join(" · ");
+};
+
 // {§cli-summary-line-per-loop} — Loop conclusion summary line.
 export const renderLoopSummary = (opts: {
     readonly status: number;
@@ -421,25 +454,7 @@ export const renderLoopSummary = (opts: {
               : opts.hitMaxTurns
                 ? "  paused at turn limit"
                 : "  failed";
-    const turnLabel = `${String(opts.turns)} ${opts.turns === 1 ? "turn" : "turns"}`;
-    const parts: string[] = [state, turnLabel, formatDurationSummary(opts.elapsedMs)];
-    if (opts.inputTokens > 0 || opts.outputTokens > 0) {
-        parts.push(`↓${formatCompactCount(opts.inputTokens)} ↑${formatCompactCount(opts.outputTokens)}`);
-    }
-    if (opts.curationBudget > 0) {
-        const curPct = Math.min(100, Math.round((opts.curationWeight / opts.curationBudget) * 100));
-        parts.push(`cur ${String(curPct)}%/${formatCompactCount(opts.curationBudget)}`);
-    }
-    if (opts.contextTokens !== null && opts.contextCapacity !== null && opts.contextCapacity > 0) {
-        const ctxPct = Math.min(100, Math.round((opts.contextTokens / opts.contextCapacity) * 100));
-        parts.push(`ctx ${String(ctxPct)}%/${formatCompactCount(opts.contextCapacity)}`);
-    }
-    if (opts.costUsd !== null && Number(opts.costUsd) > 0) {
-        const num = Number(opts.costUsd);
-        const formattedUsd = num < 0.01 ? `$${num.toFixed(4)}` : `$${num.toFixed(2)}`;
-        parts.push(`loop ${formattedUsd}`);
-    }
-    return paint(parts.join(" · "), "dim");
+    return paint(`${state} · ${formatLoopMetrics(opts)}`, "dim");
 };
 
 // {§cli-attention} — signal when the person is needed.
@@ -717,17 +732,30 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
-    archiveTurn(): void {
-        if (this.#turnResponses.length === 0) return;
-        const responses = this.#turnResponses;
+    archiveTurn(summaryAside?: string | null): boolean {
+        if (this.#turnResponses.length === 0) return false;
+        const responses = [...this.#turnResponses];
         this.#turnResponses = [];
         this.#turn.clear();
+        let attachedSummary = false;
+        if (summaryAside && summaryAside.length > 0) {
+            const lastIdx = responses.length - 1;
+            const last = responses[lastIdx]!;
+            const nl = last.indexOf("\n");
+            const firstLine = nl >= 0 ? last.slice(0, nl) : last;
+            if (stripVTControlCharacters(firstLine).trim() === "🐹") {
+                const decoratedFirst = `${firstLine} ${paint(summaryAside, "dim")}`;
+                responses[lastIdx] = nl >= 0 ? `${decoratedFirst}${last.slice(nl)}` : decoratedFirst;
+                attachedSummary = true;
+            }
+        }
         for (const text of responses) {
             this.#transcript.addChild(new Text(text, 0, 0));
             this.#lastWasSpacer = false;
         }
         this.#status.invalidate();
         this.#tui.requestRender();
+        return attachedSummary;
     }
 
     setLive(text: string | null): void {

@@ -37,6 +37,7 @@ import TuiSurface, {
     bell,
     buildHeader,
     concluded,
+    formatLoopMetrics,
     ModelText,
     paint,
     renderLoopSummary,
@@ -2331,25 +2332,34 @@ export const runTuiViewport = async (
                         retireLiveReasoning();
                         currentTurns = frame.turns;
                         if (surface !== null) {
-                            surface.archiveTurn();
+                            const metricsOpts = {
+                                turns: frame.turns,
+                                elapsedMs: frame.elapsedMs,
+                                inputTokens: frame.status.inputTokens,
+                                outputTokens: frame.status.outputTokens,
+                                curationWeight: frame.status.curationWeight,
+                                curationBudget: frame.status.curationBudget,
+                                contextTokens: frame.status.contextTokens,
+                                contextCapacity: frame.status.contextCapacity,
+                                costUsd: frame.status.costUsd,
+                            };
+                            const attachedToHamster = surface.archiveTurn(
+                                frame.statusCode === 200 && !frame.hitMaxTurns
+                                    ? formatLoopMetrics(metricsOpts)
+                                    : null,
+                            );
                             if (frame.terminalDetail) {
                                 surface.append(paint(ModelText.plain(frame.terminalDetail), "failure"));
                             }
-                            surface.append(
-                                renderLoopSummary({
-                                    status: frame.statusCode,
-                                    hitMaxTurns: frame.hitMaxTurns,
-                                    turns: frame.turns,
-                                    elapsedMs: frame.elapsedMs,
-                                    inputTokens: frame.status.inputTokens,
-                                    outputTokens: frame.status.outputTokens,
-                                    curationWeight: frame.status.curationWeight,
-                                    curationBudget: frame.status.curationBudget,
-                                    contextTokens: frame.status.contextTokens,
-                                    contextCapacity: frame.status.contextCapacity,
-                                    costUsd: frame.status.costUsd,
-                                }),
-                            );
+                            if (!attachedToHamster) {
+                                surface.append(
+                                    renderLoopSummary({
+                                        status: frame.statusCode,
+                                        hitMaxTurns: frame.hitMaxTurns,
+                                        ...metricsOpts,
+                                    }),
+                                );
+                            }
                             updateSurfaceStatus();
                             attend(concluded(frame.statusCode, frame.hitMaxTurns));
                         } else {

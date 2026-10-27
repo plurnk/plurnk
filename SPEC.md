@@ -107,8 +107,25 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | `fd 3` | `events` | **Discrete session telemetry (NDJSON)** when `fd 3` is open (`fstatSync(3)` or in-process stream): `session_bound`, `tool_call_update`, `terminal_update`, `terminal_output_chunk`, `usage_update`, `state_update`, `config_option_update`, `subagent_update`, `session_message`, `notice` (`info`/`warn`), `composer_updated`, and gate events (`permission_request`, `elicitation_request`, `gate_resolved`) with 8-hex-char `id` hash. |
 | `fd 4` | `reasoning` | **Model reasoning stream (UTF-8)** when `fd 4` is open: raw `agent_thought_chunk` text flushed with trailing `\n` when the turn's reasoning retires. |
 
-- **Partial & interrupted records**: Connection/decode failures mid-run retain observed rows, response, and notices without reconnecting or replaying. `SIGINT` and `SIGTERM` send `session/cancel` (waiting up to `PLURNK_CLIENT_CANCEL_GRACE_MS` for the terminal record; a second signal aborts the wait), flush one complete record (using `client/transport/terminal-missing` 502 if no daemon terminal arrived), and exit `130` (`SIGINT`) or `143` (`SIGTERM`).
-- **Exit codes**: `0` (`finalStatus === 200`, or clean TUI exit), `1` (runtime/connection/action error), `2` (`hitMaxTurns === true`), `3` (`finalStatus === 499` cancellation or `--timeout`), `4` (loop failure 4xx/5xx other than 499, or failed script/`!`), `64` (usage error), `130`/`143` (`SIGINT`/`SIGTERM`).
+- **Partial & interrupted records**:
+
+| Condition | Contract |
+| --- | --- |
+| Mid-run connection or decode cutoff | Retains all rows, `response` text, and `notices` already observed across initial and proposal-resume segments without reconnecting or replaying the prompt. If a daemon terminal arrived (`turnSettled`), its `finalStatus` and `usage` remain authoritative; otherwise an observed `reportedProblem` supplies `finalStatus` (or `502 https://problems.plurnk.xyz/client/transport/terminal-missing`), `usage` is `null` (never fabricated from intermediate `usage_update`), and CLI exits `4`. |
+| Pre-admission failure | Emits `{"schemaVersion":6,"problem":ProblemDetails}` on `stdout` in `--json` mode or renders Problem title/detail/recovery on `stderr` in text mode. |
+| `SIGINT` / `SIGTERM` interruption | Sends `session/cancel` for the bound session (waiting up to `PLURNK_CLIENT_CANCEL_GRACE_MS` for the terminal record; a second signal aborts the wait), flushes one complete record (`client/transport/terminal-missing` `502` with `usage: null` if no daemon terminal arrived), and exits `130` (`SIGINT`) or `143` (`SIGTERM`). |
+
+- **Exit codes**:
+
+| Exit Code | Meaning |
+| ---: | --- |
+| `0` | Loop terminated successfully (`finalStatus === 200`), or clean TUI/REPL shutdown. |
+| `1` | Runtime, connection, authentication, or action error before or outside loop settlement. |
+| `2` | Session tree exhausted its model-call budget (`hitMaxTurns === true`). |
+| `3` | Loop terminated with cancellation (`finalStatus === 499`, including `--timeout` which sets `"timedOut": true`). |
+| `4` | Loop failed (`4xx`/`5xx` terminal status other than `499`), mid-turn stream cutoff without settlement, or failed `plurnk script` / `! <command>`. |
+| `64` | Usage or flag validation error (missing prompt, unrecognized flag, invalid switch value, missing project root). |
+| `130` / `143` | `SIGINT` / `SIGTERM` interruption. |
 
 ---
 
@@ -208,7 +225,19 @@ Subcommands inspect or configure daemon state without running a model loop (`--j
 
 ## §cli-problems-and-notices 7. Problems, Notices, OAuth Credentials, and Stream Events
 
-- **Problems & Notices (`src/diagnostics.ts`)**: Client Problems use `https://problems.plurnk.xyz/client/<owner>/<kind>` (`ProblemError` carries Problem + exit code; JSON mode outputs `{"schemaVersion":6,"problem":ProblemDetails}`). Notices (`warn` `⚠️`, `error` `⛔`, `info` `📌`) and Problems (`❌`) render flush-left in the waterfall or on `stderr` (`ContentOffset` as `L<line> col<column>`), keeping `stdout` strictly for delivered product.
+- **Problems & Notices**: Client Problems use `https://problems.plurnk.xyz/client/<kind>` (JSON mode outputs `{"schemaVersion":6,"problem":ProblemDetails}`). Notices (`warn` `⚠️`, `error` `⛔`, `info` `📌`) and Problems (`❌`) render flush-left in the waterfall or on `stderr` (`ContentOffset` as `L<line> col<column>`), keeping `stdout` strictly for delivered product.
+
+| Problem Type URI | Status | Condition |
+| --- | ---: | --- |
+| `https://problems.plurnk.xyz/client/usage` | 400 | Invalid flag, missing argument, or invalid interactive slash-command syntax (CLI exits `64`). |
+| `https://problems.plurnk.xyz/client/unknown-command` | 400 | Unrecognized interactive `/` command. |
+| `https://problems.plurnk.xyz/client/gate-not-found` | 404 | Interactive gate command (`/approve`, `/reject`, `/cancel`, `/edit`, `/answer`) named an unknown or already-settled `@<id>` hash. |
+| `https://problems.plurnk.xyz/client/editor-unavailable` | 500 | External `$VISUAL` / `$EDITOR` invocation failed or returned nonzero during `/editor`. |
+| `https://problems.plurnk.xyz/client/command-failed` | 400 / 500 | Interactive command or `_plurnk/action` call failed. |
+| `https://problems.plurnk.xyz/client/exec-failed` | 400 / 500 | Direct `! <command>` or executable fence (`op.parse`) failed. |
+| `https://problems.plurnk.xyz/client/prompt-failed` | 500 | Prompt turn or auto-recovery reconnect failed. |
+| `https://problems.plurnk.xyz/client/transport/terminal-missing` | 502 | Stream closed or was interrupted before a terminal `state_update` (`idle` / `failed` / `cancelled`) arrived. |
+
 - **Credentials & browser sign-in (`src/credential.ts`)**: Uses `PLURNK_SECRET` or the daemon's minted `secret` file beside `PLURNK_SERVICE_DB_PATH` / `$XDG_DATA_HOME/plurnk/secret` to exchange `client_credentials` (`client_id: "operator"`, `scope: "acp"`) via RFC 9728 / RFC 8414 discovery, retrying once on `bearer-token-invalid` or rotated `invalid_client` file (`client/credential/refused` or `client/credential/discovery-failed` on failure). With no secret at an authenticating daemon, interactive invocations register a public client (RFC 7591), run PKCE (`S256`) browser sign-in via loopback callback (`PLURNK_CLIENT_OAUTH_TIMEOUT_MS`), and persist the refresh grant in `$XDG_STATE_HOME/plurnk/grants.json` (`0600`); headless invocations without a grant fail with `client/credential/sign-in-required`.
 - **Stream events (`stream/event`, `stream/concluded`)**: `stream/event` writes nothing; admitted executions (`200` started / `202` queued with `attrs.stream`) wait for `stream/concluded` and render once with their conclusion (`wakeAction` is never rendered as a row).
 

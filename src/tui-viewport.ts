@@ -11,7 +11,7 @@ import type { SessionUpdate } from "@agentclientprotocol/sdk/experimental/v2/uns
 import { matchesKey, type Terminal } from "@earendil-works/pi-tui";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
-import { SessionPresenter, type PresentationFrame } from "./session-presenter.ts";
+import { formatModelRoute, SessionPresenter, type PresentationFrame } from "./session-presenter.ts";
 import { makeAutocompleteProvider } from "./tui-completion.ts";
 import Review, { type ElicitationGateEvent, type PermissionGateEvent } from "./tui-review.ts";
 import TuiSurface, {
@@ -139,14 +139,16 @@ export const runTuiViewport = async (
 
     const updateSurfaceStatus = (): void => {
         if (surface === null) return;
+        const loopNum = presenter.loopSeq ?? 1;
         const place =
             currentTurns > 0
-                ? `[${presenter.workspaceName}/~${presenter.sessionName}(1/${String(currentTurns)})]`
+                ? `[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(currentTurns)})]`
                 : `[${presenter.workspaceName}/~${presenter.sessionName}]`;
+        const modelLabel = formatModelRoute(presenter.model, presenter.effort, presenter.effortSource);
         const activity =
             presenter.lastStatusLine.length > 0
                 ? presenter.lastStatusLine
-                : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · 🎲 ${presenter.model}`;
+                : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · 🎲 ${modelLabel}`;
         surface.setStatus(`${place} ${activity}`);
     };
 
@@ -253,6 +255,16 @@ export const runTuiViewport = async (
         );
     };
 
+    let cancelArmed = false;
+    const cancelRun = (): void => {
+        replStdin.write("/stop\n");
+        if (!cancelArmed && surface !== null) {
+            cancelArmed = true;
+            surface.append(paint("  cancelling… (ctrl-c again to quit)", "dim"));
+            surface.renderNow();
+        }
+    };
+
     let removeInputListener: (() => void) | null = null;
     if (surface !== null) {
         surface.setAutocompleteProvider(
@@ -271,8 +283,13 @@ export const runTuiViewport = async (
             if (surface.dialogOpen) return undefined;
             if (matchesKey(text, "escape")) {
                 if (surface.leaveReview()) return { consume: true };
-                if (presenter.lifecycle === "running" || presenter.lifecycle === "parked" || presenter.lifecycle === "requires_action") {
-                    replStdin.write("/stop\n");
+                if (
+                    presenter.lifecycle === "running" ||
+                    presenter.lifecycle === "parked" ||
+                    presenter.lifecycle === "requires_action" ||
+                    focusedGateIds.length > 0
+                ) {
+                    cancelRun();
                     return { consume: true };
                 }
                 if (surface.editor.getText().length > 0) {
@@ -281,13 +298,16 @@ export const runTuiViewport = async (
                 return { consume: true };
             }
             if (matchesKey(text, "ctrl+c")) {
-                if (
+                if (cancelArmed) {
+                    cancelArmed = false;
+                    replStdin.write("/quit\n");
+                } else if (
                     presenter.lifecycle === "running" ||
                     presenter.lifecycle === "parked" ||
                     presenter.lifecycle === "requires_action" ||
                     focusedGateIds.length > 0
                 ) {
-                    replStdin.write("/stop\n");
+                    cancelRun();
                 } else if (surface.editor.getText().length > 0) {
                     surface.setInput("");
                 } else {
@@ -386,6 +406,9 @@ export const runTuiViewport = async (
             }
             if (remaining.length === 0) return;
             const trimmed = remaining.replace(/\r?\n$/u, "");
+            if (trimmed === "cancelled (final 499)" && cancelArmed) {
+                return;
+            }
             if (trimmed === "yolo: on" || trimmed === "yolo: off") {
                 presenter.yolo = trimmed === "yolo: on";
                 updateSurfaceStatus();
@@ -470,6 +493,68 @@ export const runTuiViewport = async (
         }
     });
 
+    const renderHistoryItemsToSurface = (items: readonly unknown[], addToEditorHistory: boolean): void => {
+        if (surface === null) return;
+        for (const rawItem of items) {
+            const rec = rawItem as Record<string, unknown>;
+            if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
+                if (addToEditorHistory) {
+                    surface.editor.addToHistory(rec.text);
+                }
+                surface.append("");
+                surface.append(renderSubmittedInput(rec.text));
+                surface.append("");
+            } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
+                const effectiveStatus =
+                    rec.status === "in_progress" || rec.status === "pending"
+                        ? "completed"
+                        : typeof rec.status === "string"
+                          ? rec.status
+                          : "completed";
+                const tcFrames = presenter.apply({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: rec.toolCallId,
+                    ...(typeof rec.name === "string" ? { name: rec.name } : {}),
+                    ...(typeof rec.title === "string" ? { title: rec.title } : {}),
+                    status: effectiveStatus,
+                    ...(Array.isArray(rec.locations) ? { locations: rec.locations } : {}),
+                    ...(Array.isArray(rec.content) ? { content: rec.content } : {}),
+                    ...(rec.rawInput !== undefined ? { rawInput: rec.rawInput } : {}),
+                    ...(rec.rawOutput !== undefined ? { rawOutput: rec.rawOutput } : {}),
+                    ...(rec.meta !== undefined ? { _meta: rec.meta } : {}),
+                } as unknown as SessionUpdate);
+                for (const f of tcFrames) {
+                    if (f.kind === "tool_call") {
+                        renderToolCallToSurface(f);
+                    }
+                }
+            } else if (
+                rec.kind === "agent_message" &&
+                typeof rec.text === "string" &&
+                rec.text.length > 0
+            ) {
+                const plurnkMeta = (
+                    rec.meta as
+                        | {
+                              plurnk?: {
+                                  op?: string;
+                                  status?: number;
+                                  attrs?: { aside?: string };
+                              };
+                          }
+                        | undefined
+                )?.plurnk;
+                surface.append(
+                    renderModelReply(rec.text, surface.columns, {
+                        op: plurnkMeta?.op ?? "SEND",
+                        status: plurnkMeta?.status ?? 200,
+                        aside: plurnkMeta?.attrs?.aside ?? null,
+                    }),
+                );
+            }
+        }
+    };
+
     replEvents.setEncoding("utf8");
     let eventsBuf = "";
     replEvents.on("data", (chunk: string) => {
@@ -486,6 +571,7 @@ export const runTuiViewport = async (
             }
 
             if (event.sessionUpdate === "session_bound") {
+                cancelArmed = false;
                 const prevWorkspace = presenter.workspaceName;
                 const prevSession = presenter.sessionName;
                 const wasStarted = initialPromptPrinted;
@@ -538,62 +624,7 @@ export const runTuiViewport = async (
                 if (surface !== null) {
                     ensureSurfaceStarted();
                     if (Array.isArray(event.history) && event.history.length > 0) {
-                        for (const rawItem of event.history) {
-                            const rec = rawItem as Record<string, unknown>;
-                            if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
-                                surface.editor.addToHistory(rec.text);
-                                surface.append("");
-                                surface.append(renderSubmittedInput(rec.text));
-                                surface.append("");
-                            } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
-                                const effectiveStatus =
-                                    rec.status === "in_progress" || rec.status === "pending"
-                                        ? "completed"
-                                        : typeof rec.status === "string"
-                                          ? rec.status
-                                          : "completed";
-                                const tcFrames = presenter.apply({
-                                    sessionUpdate: "tool_call_update",
-                                    toolCallId: rec.toolCallId,
-                                    ...(typeof rec.name === "string" ? { name: rec.name } : {}),
-                                    ...(typeof rec.title === "string" ? { title: rec.title } : {}),
-                                    status: effectiveStatus,
-                                    ...(Array.isArray(rec.locations) ? { locations: rec.locations } : {}),
-                                    ...(Array.isArray(rec.content) ? { content: rec.content } : {}),
-                                    ...(rec.rawInput !== undefined ? { rawInput: rec.rawInput } : {}),
-                                    ...(rec.rawOutput !== undefined ? { rawOutput: rec.rawOutput } : {}),
-                                    ...(rec.meta !== undefined ? { _meta: rec.meta } : {}),
-                                } as unknown as SessionUpdate);
-                                for (const f of tcFrames) {
-                                    if (f.kind === "tool_call") {
-                                        renderToolCallToSurface(f);
-                                    }
-                                }
-                            } else if (
-                                rec.kind === "agent_message" &&
-                                typeof rec.text === "string" &&
-                                rec.text.length > 0
-                            ) {
-                                const plurnkMeta = (
-                                    rec.meta as
-                                        | {
-                                              plurnk?: {
-                                                  op?: string;
-                                                  status?: number;
-                                                  attrs?: { aside?: string };
-                                              };
-                                          }
-                                        | undefined
-                                )?.plurnk;
-                                surface.append(
-                                    renderModelReply(rec.text, surface.columns, {
-                                        op: plurnkMeta?.op ?? "SEND",
-                                        status: plurnkMeta?.status ?? 200,
-                                        aside: plurnkMeta?.attrs?.aside ?? null,
-                                    }),
-                                );
-                            }
-                        }
+                        renderHistoryItemsToSurface(event.history, true);
                     }
                     if (wasStarted && (presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession)) {
                         currentTurns = 0;
@@ -603,6 +634,21 @@ export const runTuiViewport = async (
                     surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
                     updateSurfaceStatus();
                     surface.renderNow();
+                }
+                continue;
+            }
+
+            if (event.sessionUpdate === "loop_replay") {
+                if (surface !== null) {
+                    ensureSurfaceStarted();
+                    const seqLabel = typeof event.loopSeq === "number" ? String(event.loopSeq) : "?";
+                    surface.append(paint(`── loop ${seqLabel} ──`, "dim"));
+                    if (Array.isArray(event.history) && event.history.length > 0) {
+                        renderHistoryItemsToSurface(event.history, false);
+                    }
+                    surface.renderNow();
+                } else if (typeof event.text === "string" && event.text.length > 0) {
+                    termOut.write(event.text);
                 }
                 continue;
             }
@@ -711,19 +757,21 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "status_bar":
+                        cancelArmed = false;
                         retireLiveReasoning();
                         currentTurns = frame.turns;
                         if (surface !== null) {
                             const metricsOpts = {
                                 turns: frame.turns,
                                 elapsedMs: frame.elapsedMs,
-                                inputTokens: frame.status.inputTokens,
-                                outputTokens: frame.status.outputTokens,
+                                inputTokens: frame.loopInputTokens ?? frame.status.inputTokens,
+                                outputTokens: frame.loopOutputTokens ?? frame.status.outputTokens,
                                 curationWeight: frame.status.curationWeight,
                                 curationBudget: frame.status.curationBudget,
                                 contextTokens: frame.status.contextTokens,
                                 contextCapacity: frame.status.contextCapacity,
-                                costUsd: frame.status.costUsd,
+                                costUsd:
+                                    frame.loopCostUsd !== undefined ? frame.loopCostUsd : frame.status.costUsd,
                             };
                             const attachedToHamster = surface.archiveTurn(
                                 frame.statusCode === 200 && !frame.hitMaxTurns
@@ -748,8 +796,9 @@ export const runTuiViewport = async (
                             if (frame.terminalDetail) {
                                 termOut.write(`${frame.terminalDetail}\n`);
                             }
+                            const loopNum = presenter.loopSeq ?? 1;
                             termOut.write(
-                                `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.sessionName}(1/${frame.turns})] `,
+                                `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(frame.turns)})] `,
                             );
                         }
                         break;

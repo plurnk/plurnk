@@ -403,27 +403,8 @@ export const runReplSession = async (
         }
     };
 
-    const emitSessionBound = (
-        session: AcpSession,
-        extra?: {
-            readonly sessions?: ReadonlyArray<Record<string, unknown>>;
-            readonly workspaces?: ReadonlyArray<Record<string, unknown>>;
-        },
-    ): void => {
-        const plurnk = (session.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
-        const ws = (plurnk?.workspace ?? undefined) as Record<string, unknown> | undefined;
-        if (typeof ws?.name === "string" && ws.name.length > 0) {
-            currentWorkspace = ws.name;
-        }
-        if (typeof ws?.projectRoot === "string") {
-            currentProjectRoot = ws.projectRoot;
-        }
-        if (typeof plurnk?.sessionName === "string" && plurnk.sessionName.length > 0) {
-            currentSessionName = plurnk.sessionName;
-        } else if (session.sessionId.includes("#")) {
-            currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
-        }
-        const visibleItems = session.items.filter((item) => {
+    const extractChronologicalHistory = (targetSession: AcpSession) => {
+        const visibleItems = targetSession.items.filter((item) => {
             if (item.kind === "user_message" || item.kind === "agent_message") {
                 return item.text.length > 0;
             }
@@ -459,10 +440,32 @@ export const runReplSession = async (
         const lastId = visibleItems
             .map(idOf)
             .findLast((id): id is number => id !== undefined);
-        const chronologicalItems =
-            firstId !== undefined && lastId !== undefined && firstId > lastId
-                ? visibleItems.toReversed()
-                : visibleItems;
+        return firstId !== undefined && lastId !== undefined && firstId > lastId
+            ? visibleItems.toReversed()
+            : visibleItems;
+    };
+
+    const emitSessionBound = (
+        session: AcpSession,
+        extra?: {
+            readonly sessions?: ReadonlyArray<Record<string, unknown>>;
+            readonly workspaces?: ReadonlyArray<Record<string, unknown>>;
+        },
+    ): void => {
+        const plurnk = (session.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+        const ws = (plurnk?.workspace ?? undefined) as Record<string, unknown> | undefined;
+        if (typeof ws?.name === "string" && ws.name.length > 0) {
+            currentWorkspace = ws.name;
+        }
+        if (typeof ws?.projectRoot === "string") {
+            currentProjectRoot = ws.projectRoot;
+        }
+        if (typeof plurnk?.sessionName === "string" && plurnk.sessionName.length > 0) {
+            currentSessionName = plurnk.sessionName;
+        } else if (session.sessionId.includes("#") ) {
+            currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
+        }
+        const chronologicalItems = extractChronologicalHistory(session);
         const historyLimit = options.historyEntries > 0 ? options.historyEntries : 0;
         const history = historyLimit > 0 ? chronologicalItems.slice(-historyLimit) : [];
         const mergedMeta =
@@ -855,6 +858,13 @@ export const runReplSession = async (
         }
 
         if (line === "/stop") {
+            for (const gate of [...pendingGates.values()]) {
+                if (gate.kind === "permission") {
+                    gate.resolveGate({ outcome: { outcome: "cancelled" } });
+                } else {
+                    gate.resolveGate({ action: "cancel" });
+                }
+            }
             await client
                 .cancel(session.sessionId)
                 .then(() => {
@@ -1161,26 +1171,131 @@ export const runReplSession = async (
                     const result = await client.action<{
                         readonly items?: ReadonlyArray<Record<string, unknown>>;
                     }>("session.loops", {}, bindingContext());
-                    for (const l of result.items ?? []) {
-                        streams.stdout.write(`  ${String(l.sequence ?? "")}: ${String(l.prompt ?? "")}\n`);
+                    const items = [...(result.items ?? [])].toSorted(
+                        (a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0),
+                    );
+                    if (items.length === 0) {
+                        streams.stdout.write("  (no loops yet)\n");
+                        return "continue";
+                    }
+                    for (const l of items) {
+                        const seq = String(l.sequence ?? "");
+                        const rawPrompt = typeof l.prompt === "string" ? l.prompt : "";
+                        const nonEmptyLines = rawPrompt
+                            .split(/\r?\n/u)
+                            .map((s) => s.trim())
+                            .filter(Boolean);
+                        const firstLine = nonEmptyLines[0] ?? "";
+                        const clipped = firstLine.length > 240 ? firstLine.slice(0, 240) : firstLine;
+                        const ellipsis = nonEmptyLines.length > 1 || firstLine.length > 240 ? "…" : "";
+                        const rawSource = typeof l.promptSource === "string" ? l.promptSource : "";
+                        const sender =
+                            rawSource.length > 0 && !rawSource.startsWith("acp:")
+                                ? `${rawSource.replace(/^session:\/\//u, "~")}: `
+                                : "";
+                        const status = typeof l.status === "number" ? l.status : 200;
+                        const mark =
+                            status === 100
+                                ? " ⏳"
+                                : status === 102
+                                  ? " ⌛︎"
+                                  : status === 202
+                                    ? " 💤"
+                                    : status === 499
+                                      ? " 🛑"
+                                      : status >= 400
+                                        ? " ❌"
+                                        : "";
+                        streams.stdout.write(`  ${seq}: ${sender}${clipped}${ellipsis}${mark}\n`);
                     }
                     return "continue";
                 }
 
                 if (cmd === "loop") {
-                    const loopNum = args[0] ? Number.parseInt(args[0], 10) : undefined;
-                    const result = await client.action<{
-                        readonly entries?: ReadonlyArray<Record<string, unknown>>;
+                    if (args.length > 1 || (args[0] !== undefined && !/^[1-9]\d*$/u.test(args[0]))) {
+                        streams.stdout.write("  usage: /loop [n]\n");
+                        return "continue";
+                    }
+                    const listRes = await client.action<{
+                        readonly items?: ReadonlyArray<Record<string, unknown>>;
+                        readonly updates?: ReadonlyArray<SessionUpdate>;
                     }>(
-                        "log.read",
-                        {
-                            ...(loopNum !== undefined && Number.isInteger(loopNum) ? { loopId: loopNum } : {}),
-                            limit: 100,
-                        },
+                        "session.loops",
+                        args[0] !== undefined ? { loopSeq: Number.parseInt(args[0], 10) } : {},
                         bindingContext(),
                     );
-                    streams.stdout.write(`── loop ${String(loopNum ?? "current")} ──\n`);
-                    streams.stdout.write(formatLogEntries(result.entries ?? []));
+                    const items = [...(listRes.items ?? [])].toSorted(
+                        (a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0),
+                    );
+                    if (items.length === 0) {
+                        streams.stdout.write("  (no loops yet)\n");
+                        return "continue";
+                    }
+                    const targetSeq =
+                        args[0] !== undefined
+                            ? Number.parseInt(args[0], 10)
+                            : Number(items.at(-1)?.sequence ?? 1);
+                    const targetLoop = items.find((i) => Number(i.sequence) === targetSeq);
+                    if (!targetLoop) {
+                        streams.stdout.write(`  (no loop ${String(targetSeq)}; /loops lists them)\n`);
+                        return "continue";
+                    }
+                    const detailRes =
+                        args[0] !== undefined
+                            ? listRes
+                            : await client.action<{
+                                  readonly items?: ReadonlyArray<Record<string, unknown>>;
+                                  readonly updates?: ReadonlyArray<SessionUpdate>;
+                              }>("session.loops", { loopSeq: targetSeq }, bindingContext());
+                    const tempSession = new AcpSession(session.sessionId);
+                    if (Array.isArray(detailRes.updates)) {
+                        for (const u of detailRes.updates) {
+                            tempSession.applyUpdate(u);
+                        }
+                    }
+                    const history = [...extractChronologicalHistory(tempSession)];
+                    if (
+                        typeof targetLoop.prompt === "string" &&
+                        targetLoop.prompt.length > 0 &&
+                        !history.some((h) => h.kind === "user_message")
+                    ) {
+                        history.unshift({
+                            kind: "user_message",
+                            id: `loop-${String(targetSeq)}`,
+                            text: targetLoop.prompt,
+                            blocks: [],
+                        });
+                    }
+                    let plainText = `── loop ${String(targetSeq)} ──\n`;
+                    if (Array.isArray(detailRes.updates) && history.length > 0) {
+                        for (const item of history) {
+                            if (item.kind === "user_message") {
+                                plainText += `🎤 ${item.text}\n`;
+                            } else if (item.kind === "tool_call") {
+                                plainText += `${item.title ?? item.name ?? item.toolCallId}\n`;
+                            } else if (item.kind === "agent_message") {
+                                plainText += `${item.text}\n`;
+                            }
+                        }
+                    } else {
+                        const logResult = await client.action<{
+                            readonly entries?: ReadonlyArray<Record<string, unknown>>;
+                        }>(
+                            "log.read",
+                            { loopSeq: targetSeq, limit: 100 },
+                            bindingContext(),
+                        );
+                        plainText += formatLogEntries(logResult.entries ?? []);
+                    }
+                    writeEventJsonl(streams.events, {
+                        sessionUpdate: "loop_replay",
+                        loopSeq: targetSeq,
+                        history,
+                        text: plainText,
+                    });
+                    if (customStreams?.events === undefined) {
+                        streams.stdout.write(plainText);
+                    }
                     return "continue";
                 }
 
@@ -1344,6 +1459,7 @@ export const runReplSession = async (
                     const value = cmd === "child" && arg === "inherit" ? "" : arg;
                     const res = await client.setConfigOption(session.sessionId, mappedConfigId, value);
                     session.configOptions = [...res.configOptions];
+                    let latestMeta = (res as { _meta?: unknown })._meta;
                     if (cmd === "model" && args[1]) {
                         const effortRes = await client.setConfigOption(
                             session.sessionId,
@@ -1351,10 +1467,12 @@ export const runReplSession = async (
                             args[1],
                         );
                         session.configOptions = [...effortRes.configOptions];
+                        latestMeta = (effortRes as { _meta?: unknown })._meta ?? latestMeta;
                     }
                     writeEventJsonl(streams.events, {
                         sessionUpdate: "config_option_update",
                         configOptions: session.configOptions,
+                        ...(latestMeta !== undefined ? { _meta: latestMeta } : {}),
                     });
                     const opt = session.configOptions.find((o) => o.configId === mappedConfigId);
                     if (opt !== undefined) {

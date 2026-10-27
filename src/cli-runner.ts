@@ -864,6 +864,9 @@ export const formatConfigOption = (opt: SessionConfigOption): string => {
                 choices.push(entry.value === opt.currentValue ? `*${entry.value}` : entry.value);
             }
         }
+        if (choices.length > 12) {
+            return `${opt.configId} (${opt.name}): ${opt.currentValue}`;
+        }
         return `${opt.configId} (${opt.name}): ${opt.currentValue} [${choices.join(", ")}]`;
     }
     return `${opt.configId} (${opt.name})`;

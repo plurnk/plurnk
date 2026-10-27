@@ -152,6 +152,45 @@ const createMockAcpServer = async () => {
                         ],
                     };
                 }
+                if (params.kind === "session.loops") {
+                    const items = [
+                        {
+                            id: 1,
+                            sessionId: 1,
+                            sequence: 1,
+                            status: 200,
+                            prompt: "First loop question\nSecond line",
+                            promptSource: "acp://operator/sessions/1%23repl01/messages/m1",
+                        },
+                        {
+                            id: 2,
+                            sessionId: 1,
+                            sequence: 2,
+                            status: 499,
+                            prompt: "Cancelled loop",
+                            promptSource: "session://helper",
+                        },
+                    ];
+                    if (typeof params.params?.loopSeq === "number") {
+                        return {
+                            items,
+                            updates: [
+                                {
+                                    sessionUpdate: "user_message_chunk",
+                                    messageId: "m1",
+                                    content: { type: "text", text: "First loop question" },
+                                },
+                                {
+                                    sessionUpdate: "agent_message_chunk",
+                                    messageId: "1/1/1",
+                                    content: { type: "text", text: "First loop answer" },
+                                    _meta: { plurnk: { id: 1, op: "SEND", status: 200 } },
+                                },
+                            ],
+                        };
+                    }
+                    return { items };
+                }
                 if (params.kind === "op.parse") {
                     const rawText = String(params.params?.text ?? "");
                     return {
@@ -648,6 +687,14 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-repl-mode} {§cli-interactive-c
         // Slash commands on fd 0 -> output on fd 1
         replChild.stdin!.write("/model\n");
         await waitStdout((l) => l.includes("model (Model): mocktest/mock-v1"));
+
+        // /loops and /loop 1
+        replChild.stdin!.write("/loops\n");
+        await waitStdout((l) => l === "  1: First loop question…");
+        await waitStdout((l) => l === "  2: ~helper: Cancelled loop 🛑");
+        replChild.stdin!.write("/loop 1\n");
+        const loopReplayEvent = await waitEvent((e) => e.sessionUpdate === "loop_replay" && e.loopSeq === 1);
+        assert.ok(Array.isArray(loopReplayEvent.history) && loopReplayEvent.history.length === 2);
 
         // Unknown command -> structured Problem JSONL on fd 2 (stderr)
         replChild.stdin!.write("/nonexistent\n");

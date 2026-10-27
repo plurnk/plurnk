@@ -211,6 +211,9 @@ export type PresentationFrame =
           readonly hitMaxTurns: boolean;
           readonly terminalDetail?: string;
           readonly turns: number;
+          readonly loopInputTokens?: number;
+          readonly loopOutputTokens?: number;
+          readonly loopCostUsd?: string | null;
       };
 
 export interface SessionPresenterOptions {
@@ -250,6 +253,66 @@ const compactTarget = (target: string): string => {
 const formatLiveWait = (ms: number): string => {
     if (ms < 1000) return `${String(Math.max(1, Math.round(ms)))}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
+};
+
+export const formatDuration = (ms: number): string => {
+    if (ms < 1000) return `${String(Math.max(1, Math.round(ms)))}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+    if (ms < 3_600_000) {
+        const m = Math.floor(ms / 60_000);
+        const s = Math.floor((ms % 60_000) / 1000);
+        return `${String(m)}m${String(s).padStart(2, "0")}s`;
+    }
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    return `${String(h)}h${String(m).padStart(2, "0")}m`;
+};
+
+export const abbreviatedCount = (n: number): string => {
+    if (n < 1000) return String(n);
+    if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/u, "")}k`;
+    if (n < 1_000_000) return `${String(Math.round(n / 1000))}k`;
+    if (n < 10_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/u, "")}M`;
+    if (n < 1_000_000_000) return `${String(Math.round(n / 1_000_000))}M`;
+    return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/u, "")}B`;
+};
+
+export const formatUsdSpend = (costUsd: string | null): string | null => {
+    if (costUsd === null || costUsd.length === 0) return null;
+    const num = Number(costUsd);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    return `$${num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+};
+
+export const addDecimal = (a: string | null, b: string): string => {
+    if (a === null || a.length === 0) return b;
+    if (b.length === 0) return a;
+    const [aInt = "0", aFrac = ""] = a.split(".");
+    const [bInt = "0", bFrac = ""] = b.split(".");
+    const scale = Math.max(aFrac.length, bFrac.length);
+    const aScaled = BigInt(aInt + aFrac.padEnd(scale, "0"));
+    const bScaled = BigInt(bInt + bFrac.padEnd(scale, "0"));
+    const sum = (aScaled + bScaled).toString().padStart(scale + 1, "0");
+    if (scale === 0) return sum;
+    const intPart = sum.slice(0, sum.length - scale);
+    const fracPart = sum.slice(sum.length - scale).replace(/0+$/u, "");
+    return fracPart.length > 0 ? `${intPart}.${fracPart}` : intPart;
+};
+
+export const formatModelRoute = (
+    model: string,
+    effort: string | null,
+    effortSource: "default" | "explicit" | null,
+): string => {
+    if (
+        effort !== null &&
+        effort.length > 0 &&
+        !model.endsWith(`(${effort})`) &&
+        !model.endsWith(`[${effort}]`)
+    ) {
+        return effortSource === "default" ? `${model}(${effort})` : `${model}[${effort}]`;
+    }
+    return model;
 };
 
 const extractRawString = (val: unknown): string | null => {
@@ -342,6 +405,9 @@ export class SessionPresenter {
     yolo: boolean;
     model: string;
     effort: string | null = null;
+    effortSource: "default" | "explicit" | null = null;
+    supportedEfforts: readonly string[] = [];
+    spawnModel: string | null = null;
     loopSeq: number | null = null;
     waitUntil: number | null = null;
     curationWeight = 0;
@@ -366,6 +432,9 @@ export class SessionPresenter {
     #reasoningLines: string[] = [];
     #lastStreamTarget = "";
     #turnStartedAt = Date.now();
+    #turnBaseInputTokens = 0;
+    #turnBaseOutputTokens = 0;
+    #turnBaseCostUsd: string | null = null;
     readonly #pendingToolCalls = new Map<string, PendingToolCallState>();
     readonly #renderedToolCalls = new Set<string>();
     readonly #terminalOutputs = new Map<string, string>();
@@ -383,6 +452,9 @@ export class SessionPresenter {
         if (options.initialMeta) {
             this.ingestMeta(options.initialMeta);
         }
+        this.#turnBaseInputTokens = this.inputTokens;
+        this.#turnBaseOutputTokens = this.outputTokens;
+        this.#turnBaseCostUsd = this.costUsd;
     }
 
     get reasoningLines(): readonly string[] {
@@ -391,6 +463,9 @@ export class SessionPresenter {
 
     markTurnStart(now = Date.now()): void {
         this.#turnStartedAt = now;
+        this.#turnBaseInputTokens = this.inputTokens;
+        this.#turnBaseOutputTokens = this.outputTokens;
+        this.#turnBaseCostUsd = this.costUsd;
         this.lifecycle = "running";
         this.lifecycleGlyph = "⌛︎";
         this.doing = { phase: "awaiting", since: now, op: null, target: null };
@@ -439,6 +514,36 @@ export class SessionPresenter {
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
             }
+            if (status.model && typeof status.model === "object") {
+                const m = status.model as Record<string, unknown>;
+                if (typeof m.alias === "string" && m.alias.length > 0) {
+                    this.model = m.alias;
+                } else if (typeof m.provider === "string" && typeof m.model === "string") {
+                    this.model = `${m.provider}/${m.model}`;
+                }
+                if (typeof m.effort === "string" && m.effort.length > 0) {
+                    this.effort = m.effort;
+                } else if (m.effort === undefined || m.effort === null) {
+                    this.effort = null;
+                }
+                if (m.effortSource === "default" || m.effortSource === "explicit") {
+                    this.effortSource = m.effortSource;
+                }
+            }
+            if (status.spawnModel === null) {
+                this.spawnModel = null;
+            } else if (status.spawnModel && typeof status.spawnModel === "object") {
+                const sm = status.spawnModel as Record<string, unknown>;
+                const base =
+                    typeof sm.alias === "string" && sm.alias.length > 0
+                        ? sm.alias
+                        : typeof sm.provider === "string" && typeof sm.model === "string"
+                          ? `${sm.provider}/${sm.model}`
+                          : null;
+                const eff = typeof sm.effort === "string" && sm.effort.length > 0 ? sm.effort : null;
+                const src = sm.effortSource === "explicit" ? "explicit" : "default";
+                this.spawnModel = base !== null ? formatModelRoute(base, eff, src) : null;
+            }
             if (Array.isArray(status.descendants)) {
                 this.activeChildren = status.descendants.filter((d) => {
                     const rec = d as Record<string, unknown>;
@@ -457,10 +562,16 @@ export class SessionPresenter {
             }
             const spend = status.spend as Record<string, unknown> | undefined;
             if (spend) {
-                const usage = spend.usage as Record<string, unknown> | undefined;
+                const usage = (spend.usage ?? spend.knownUsage) as Record<string, unknown> | undefined;
                 if (typeof usage?.inputTokens === "number") this.inputTokens = usage.inputTokens;
                 if (typeof usage?.outputTokens === "number") this.outputTokens = usage.outputTokens;
-                if (typeof spend.costUsd === "string") this.costUsd = spend.costUsd;
+                const cost =
+                    typeof spend.costUsd === "string"
+                        ? spend.costUsd
+                        : typeof spend.knownCostUsd === "string"
+                          ? spend.knownCostUsd
+                          : null;
+                if (cost !== null) this.costUsd = cost;
             }
         }
 
@@ -477,12 +588,31 @@ export class SessionPresenter {
         }
     }
 
-    #applyConfigOptions(options: readonly SessionConfigOptionType[]): void {
+    #applyConfigOptions(options: readonly SessionConfigOptionType[], fromUpdate = false): void {
         for (const opt of options) {
             if (opt.configId === "model" && SessionConfigOption.isSelect(opt) && opt.currentValue.length > 0) {
                 this.model = opt.currentValue;
             } else if (opt.configId === "thought_level" && SessionConfigOption.isSelect(opt)) {
-                this.effort = opt.currentValue;
+                const nextEffort = opt.currentValue.length > 0 ? opt.currentValue : null;
+                if (fromUpdate && nextEffort !== null && nextEffort !== this.effort) {
+                    this.effortSource = "explicit";
+                } else if (this.effortSource === null && nextEffort !== null) {
+                    this.effortSource = "default";
+                }
+                this.effort = nextEffort;
+                const vals: string[] = [];
+                for (const item of opt.options) {
+                    if ("options" in item) {
+                        for (const sub of item.options) vals.push(sub.value);
+                    } else {
+                        vals.push(item.value);
+                    }
+                }
+                this.supportedEfforts = vals;
+            } else if (opt.configId === "spawn_model" && SessionConfigOption.isSelect(opt)) {
+                this.spawnModel = opt.currentValue.length > 0 && opt.currentValue !== "inherit" ? opt.currentValue : null;
+            } else if (opt.configId === "mode" && SessionConfigOption.isSelect(opt)) {
+                this.yolo = opt.currentValue === "allow";
             }
         }
     }
@@ -508,9 +638,14 @@ export class SessionPresenter {
         const budgetPercent = capacity > 0 ? Math.min(100, Math.round((used / capacity) * 100)) : null;
 
         const lead = glyph === "idle" ? "idle" : `${glyph} `;
-        const baseParts: string[] = [lead, `🎲 ${this.model}`, `${String(elapsedMs)}ms`];
+        const modelLabel = formatModelRoute(this.model, this.effort, this.effortSource);
+        const baseParts: string[] = [lead, `🎲 ${modelLabel}`, formatDuration(elapsedMs)];
         if (!(typeof effectiveStatus === "number" && effectiveStatus >= 400)) {
-            baseParts.push(`↓${String(this.inputTokens)} ↑${String(this.outputTokens)}`);
+            baseParts.push(`↓${abbreviatedCount(this.inputTokens)} ↑${abbreviatedCount(this.outputTokens)}`);
+            const usd = formatUsdSpend(this.costUsd);
+            if (usd !== null) {
+                baseParts.push(usd);
+            }
         }
 
         // Right-of-status-line live activity indicators ({§cli-session-status}, {§cli-session-status}, {§cli-session-status})
@@ -538,10 +673,10 @@ export class SessionPresenter {
             baseParts.push(`🐜 ${String(this.activeChildren)}`);
         }
         if (this.gatedCount > 0) {
-            baseParts.push(`🔒 ${String(this.gatedCount)} gated`);
+            baseParts.push(`🚦 ${String(this.gatedCount)}`);
         }
         if (this.inboxCount > 0) {
-            baseParts.push(`📬 ${String(this.inboxCount)}`);
+            baseParts.push(`📨 ${String(this.inboxCount)}`);
         }
         if (this.openStreams > 0) {
             baseParts.push(`📡 ${String(this.openStreams)}`);
@@ -596,7 +731,8 @@ export class SessionPresenter {
         const frames: PresentationFrame[] = [];
 
         if (SessionUpdate.isConfigOptionUpdate(update)) {
-            this.#applyConfigOptions(update.configOptions);
+            this.#applyConfigOptions(update.configOptions, true);
+            this.ingestMeta(update._meta as MetaRecord | undefined);
             return frames;
         }
 
@@ -983,16 +1119,21 @@ export class SessionPresenter {
                               op?: string;
                               status?: number;
                               attrs?: { aside?: string };
+                              outside?: unknown;
                           };
                       }
                     | undefined
             )?.plurnk;
             const text = contentBlockToText(update.content);
+            const isOutside =
+                (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
+                metaPlurnk?.op === "outside-" ||
+                metaPlurnk?.outside !== undefined;
             frames.push({
                 kind: "reply_chunk",
                 messageId: update.messageId,
                 text,
-                op: metaPlurnk?.op ?? "SEND",
+                op: isOutside ? "outside-" : (metaPlurnk?.op ?? "SEND"),
                 status: typeof metaPlurnk?.status === "number" ? metaPlurnk.status : 200,
                 aside: metaPlurnk?.attrs?.aside ?? null,
             });
@@ -1034,19 +1175,56 @@ export class SessionPresenter {
                     this.doing = { phase: "working", since: Date.now(), op: null, target: null };
                     const acc = rawNotice?.accounting as
                         | {
+                              inputTokens?: number;
+                              outputTokens?: number;
+                              knownInputTokens?: number;
+                              knownOutputTokens?: number;
                               usage?: { inputTokens?: number; outputTokens?: number };
+                              knownUsage?: { inputTokens?: number; outputTokens?: number };
                               costUsd?: string;
+                              knownCostUsd?: string;
                           }
                         | undefined;
-                    if (typeof acc?.usage?.inputTokens === "number") {
-                        this.inputTokens += acc.usage.inputTokens;
+                    const inTok =
+                        typeof acc?.inputTokens === "number"
+                            ? acc.inputTokens
+                            : typeof acc?.knownInputTokens === "number"
+                              ? acc.knownInputTokens
+                              : typeof acc?.usage?.inputTokens === "number"
+                                ? acc.usage.inputTokens
+                                : typeof acc?.knownUsage?.inputTokens === "number"
+                                  ? acc.knownUsage.inputTokens
+                                  : 0;
+                    const outTok =
+                        typeof acc?.outputTokens === "number"
+                            ? acc.outputTokens
+                            : typeof acc?.knownOutputTokens === "number"
+                              ? acc.knownOutputTokens
+                              : typeof acc?.usage?.outputTokens === "number"
+                                ? acc.usage.outputTokens
+                                : typeof acc?.knownUsage?.outputTokens === "number"
+                                  ? acc.knownUsage.outputTokens
+                                  : 0;
+                    this.inputTokens += inTok;
+                    this.outputTokens += outTok;
+                    const turnCost =
+                        typeof acc?.costUsd === "string"
+                            ? acc.costUsd
+                            : typeof acc?.knownCostUsd === "string"
+                              ? acc.knownCostUsd
+                              : null;
+                    if (turnCost !== null) {
+                        this.costUsd = addDecimal(this.costUsd, turnCost);
                     }
-                    if (typeof acc?.usage?.outputTokens === "number") {
-                        this.outputTokens += acc.usage.outputTokens;
-                    }
-                    if (typeof acc?.costUsd === "string") {
-                        this.costUsd = acc.costUsd;
-                    }
+                    frames.push({
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
+                    });
+                    return frames;
+                }
+                if (rawNotice?.kind === "results_pending" || update.title === "engine:turn:results_pending") {
+                    this.lifecycle = "running";
+                    this.doing = { phase: "working", since: Date.now(), op: null, target: null };
                     frames.push({
                         kind: "status_update",
                         status: this.buildStatusBar(),
@@ -1056,6 +1234,9 @@ export class SessionPresenter {
             }
 
             if (rawNotice?.kind === "loop_status") {
+                if (typeof rawNotice.loopSeq === "number") {
+                    this.loopSeq = rawNotice.loopSeq;
+                }
                 if (rawNotice.status === 202) {
                     this.lifecycle = "parked";
                     this.doing = null;
@@ -1187,11 +1368,13 @@ export class SessionPresenter {
                 this.lastLoopStatus = status;
                 this.lifecycle = status >= 400 ? (status === 499 ? "cancelled" : "failed") : "idle";
                 const usage = termMeta?.usage?.accounting?.usage ?? termMeta?.usage?.accounting?.knownUsage;
-                if (typeof usage?.inputTokens === "number") this.inputTokens = usage.inputTokens;
-                if (typeof usage?.outputTokens === "number") this.outputTokens = usage.outputTokens;
+                const loopIn = typeof usage?.inputTokens === "number" ? usage.inputTokens : undefined;
+                const loopOut = typeof usage?.outputTokens === "number" ? usage.outputTokens : undefined;
+                if (loopIn !== undefined) this.inputTokens = this.#turnBaseInputTokens + loopIn;
+                if (loopOut !== undefined) this.outputTokens = this.#turnBaseOutputTokens + loopOut;
                 const costStr = termMeta?.usage?.accounting?.costUsd ?? termMeta?.usage?.accounting?.knownCostUsd;
                 if (typeof costStr === "string") {
-                    this.costUsd = costStr;
+                    this.costUsd = addDecimal(this.#turnBaseCostUsd, costStr);
                 }
                 if (typeof termMeta?.usage?.curationWeight === "number") {
                     this.curationWeight = termMeta.usage.curationWeight;
@@ -1214,6 +1397,12 @@ export class SessionPresenter {
                     typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0
                         ? termMeta.problem.detail
                         : undefined;
+                const effectiveLoopIn = loopIn ?? Math.max(0, this.inputTokens - this.#turnBaseInputTokens);
+                const effectiveLoopOut = loopOut ?? Math.max(0, this.outputTokens - this.#turnBaseOutputTokens);
+                const effectiveLoopCost = typeof costStr === "string" ? costStr : this.costUsd;
+                this.#turnBaseInputTokens = this.inputTokens;
+                this.#turnBaseOutputTokens = this.outputTokens;
+                this.#turnBaseCostUsd = this.costUsd;
                 frames.push({
                     kind: "status_bar",
                     status: statusBar,
@@ -1222,6 +1411,9 @@ export class SessionPresenter {
                     hitMaxTurns,
                     ...(terminalDetail !== undefined ? { terminalDetail } : {}),
                     turns,
+                    loopInputTokens: effectiveLoopIn,
+                    loopOutputTokens: effectiveLoopOut,
+                    loopCostUsd: effectiveLoopCost,
                 });
             }
         }

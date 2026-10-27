@@ -394,7 +394,26 @@ test("{§cli-session-status} {§cli-session-status} {§cli-session-status} {§cl
     assert.equal(bar.inputTokens, 120);
     assert.equal(bar.outputTokens, 45);
     assert.equal(bar.costUsd, "0.0125");
-    assert.match(bar.formattedStatusLine, /🎲 mocktest\/default · 150ms · ↓120 ↑45/);
+    assert.match(bar.formattedStatusLine, /🎲 mocktest\/default · 150ms · ↓120 ↑45 · \$0\.0125 · 🐜 1 · 🚦 1 · 📨 2/);
+
+    // engine:turn:results_pending is routed to status_update and never emitted as a waterfall notice
+    const pendingFrames = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:results_pending",
+        description: "All Open Messages resolved. Review new results; emit no OPs if finished.",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:turn",
+                    kind: "results_pending",
+                    message: "All Open Messages resolved. Review new results; emit no OPs if finished.",
+                },
+            },
+        },
+    });
+    assert.equal(pendingFrames.length, 1);
+    assert.equal(pendingFrames[0]?.kind, "status_update");
 
     const statusRun = spawnSync(
         process.execPath,
@@ -450,7 +469,7 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-re
         /workspace: ws · session: user · model: fast · effort: high · yolo: off · \/help/u,
     );
     assert.equal(resumeCommand("ws", "my session"), "plurnk --workspace ws --session 'my session'");
-    assert.match(renderSubmittedInput("line 1\nline 2"), /› line 1[\s\S]*line 2/u);
+    assert.match(renderSubmittedInput("line 1\nline 2"), /🎤 line 1[\s\S]*line 2/u);
     assert.equal(concluded(200, false), "reply");
     assert.equal(concluded(499, false), "stopped");
     assert.equal(concluded(500, false), "failed");

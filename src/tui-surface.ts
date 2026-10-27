@@ -450,10 +450,10 @@ export const renderLoopSummary = (opts: {
         opts.status === 200 && !opts.hitMaxTurns
             ? "🎯 done"
             : opts.status === 499
-              ? "  cancelled (final 499)"
+              ? "🛑 cancelled (final 499)"
               : opts.hitMaxTurns
-                ? "  paused at turn limit"
-                : "  failed";
+                ? "⏸️ paused at turn limit"
+                : "❌ failed";
     return paint(`${state} · ${formatLoopMetrics(opts)}`, "dim");
 };
 
@@ -501,7 +501,7 @@ export const resumeCommand = (workspace: string, session: string): string => {
 export const renderSubmittedInput = (text: string): string =>
     text
         .split("\n")
-        .map((line, i) => paint(`${i === 0 ? "› " : "  "}${ModelText.plain(line)}`, "human", "bold"))
+        .map((line, i) => paint(`${i === 0 ? "🎤 " : "   "}${ModelText.plain(line)}`, "human", "bold"))
         .join("\n");
 
 // Live reasoning scroll: at most a third of the terminal, newest lines only, never durable ({§cli-markdown-projection}).

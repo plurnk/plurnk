@@ -919,18 +919,17 @@ export const runCliConfig = async (
 
 export const formatServiceUpdateResult = (res: Record<string, unknown>): string => {
     const cat = (res.catalog ?? {}) as Record<string, unknown>;
-    const npm = (res.npm ?? {}) as Record<string, unknown>;
+    const svc = (res.service ?? {}) as Record<string, unknown>;
     const added = typeof cat.addedModels === "number" && cat.addedModels > 0 ? `, +${String(cat.addedModels)} new` : "";
     const catLine = `catalog: ${String(cat.status ?? "updated")} (${String(cat.models ?? 0)} models across ${String(cat.providers ?? 0)} providers${added})`;
-    const pkg = String(npm.package ?? "@plurnk/plurnk-service");
-    const prev = String(npm.previousVersion ?? "");
-    const curr = String(npm.currentVersion ?? prev);
-    const npmLine = npm.status === "source"
-        ? `npm: ${pkg}@${curr} (source checkout)`
-        : npm.status === "updated"
-            ? `npm: ${pkg} ${prev} -> ${curr}`
-            : `npm: ${pkg}@${curr} (unchanged)`;
-    return `${catLine}\n${npmLine}`;
+    const pkg = String(svc.package ?? "@plurnk/plurnk-service");
+    const ver = String(svc.version ?? "");
+    const suffix = svc.artifact === "source" ? " (source checkout)" : "";
+    const upgradeCmd = typeof svc.upgradeCommand === "string"
+        ? svc.upgradeCommand
+        : "npm install -g @plurnk/plurnk-service@latest @plurnk/plurnk@latest";
+    const verLine = `version: ${pkg}@${ver}${suffix} — to update packages, stop the daemon and run: ${upgradeCmd}`;
+    return `${catLine}\n${verLine}`;
 };
 
 export const runCliUpdate = async (options: CliCommonOptions): Promise<number> => {

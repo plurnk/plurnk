@@ -218,7 +218,7 @@ options:
                           width when available, otherwise 80)
 
 subcommands:
-  update                  update the model catalog and installed Plurnk packages (service.update)
+  update                  update the model catalog and show how to update Plurnk packages (service.update)
   models [search...]      list the bounded daemon model catalog (models.list)
   workspace list            list workspaces on the daemon (workspace.list)
   workspace sessions <name> list sessions in the named workspace (workspace.sessions)

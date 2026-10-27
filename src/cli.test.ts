@@ -596,8 +596,13 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-re
     // Service and model catalog update formatting ({§cli-subcommands})
     const formattedUpdate = formatServiceUpdateResult({
         catalog: { status: "updated", models: 500, providers: 20, addedModels: 4 },
-        npm: { status: "updated", package: "@plurnk/plurnk-service", previousVersion: "4.4.0", currentVersion: "4.5.0" },
+        service: {
+            package: "@plurnk/plurnk-service",
+            version: "4.4.0",
+            artifact: "dist",
+            upgradeCommand: "npm install -g @plurnk/plurnk-service@latest @plurnk/plurnk@latest",
+        },
     });
     assert.match(formattedUpdate, /catalog: updated \(500 models across 20 providers, \+4 new\)/u);
-    assert.match(formattedUpdate, /npm: @plurnk\/plurnk-service 4\.4\.0 -> 4\.5\.0/u);
+    assert.match(formattedUpdate, /version: @plurnk\/plurnk-service@4\.4\.0 — to update packages, stop the daemon and run: npm install -g @plurnk\/plurnk-service@latest @plurnk\/plurnk@latest/u);
 });

@@ -197,7 +197,7 @@ Subcommands inspect or configure daemon state without running a model loop (`--j
 | Subcommand | Contract |
 | --- | --- |
 | `plurnk models [search...]` | Queries one bounded page from `models.list` (`--provider`, `--all`, `--offset`, `--limit`) without attaching a workspace; renders `selector / name / context / efforts / readiness`. |
-| `plurnk update` / `/update` | Calls `service.update` (`_plurnk/action`) to refresh the cached model catalog and installed packages when `PLURNK_SERVICE_UPDATEABLE=1`. |
+| `plurnk update` / `/update` | Calls `service.update` (`_plurnk/action`) to refresh the cached model catalog and report package upgrade instructions when `PLURNK_SERVICE_UPDATEABLE=1`. |
 | `plurnk workspace list` | Calls `workspace.list`; renders `name / project_root / created` (`(headless)` for `null` root). |
 | `plurnk workspace sessions <name>` | Attaches existing `<name>` via `workspace.attach` (404 if missing) and lists `workspace.sessions` (`name / created`). |
 | `plurnk log read` | Calls `log.read` (`--session`, `--loop`, `--turn`, `--since`, `--limit`); renders trace lines `[<status>] <origin> <op>[<sub>] <path> <scope>` or JSON `entries`. |

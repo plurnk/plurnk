@@ -453,6 +453,8 @@ export const runCliPrompt = async (
     try {
         let promptDispatched = false;
         let reasoningOpenOnLine = false;
+        let turnSettled = false;
+        let reportedProblem: Record<string, unknown> | undefined;
         let turnIdleResolve: (() => void) | null = null;
         const turnIdlePromise = new Promise<void>((resolveIdle) => {
             turnIdleResolve = resolveIdle;
@@ -489,8 +491,28 @@ export const runCliPrompt = async (
             }
 
             if (SessionUpdate.isNotice(update)) {
-                if (!options.json && update.severity === "error") {
-                    writeErrorJsonl(streams.stderr, update);
+                if (update.severity === "error") {
+                    const noticeProblem = (
+                        update._meta as
+                            | {
+                                  plurnk?: {
+                                      problem?: Record<string, unknown>;
+                                  };
+                              }
+                            | undefined
+                    )?.plurnk?.problem;
+                    reportedProblem =
+                        noticeProblem ?? {
+                            type: "https://problems.plurnk.xyz/service/notice",
+                            title: update.title || "Error",
+                            status: 500,
+                            ...(typeof update.description === "string" && update.description.length > 0
+                                ? { detail: update.description }
+                                : {}),
+                        };
+                    if (!options.json) {
+                        writeErrorJsonl(streams.stderr, update);
+                    }
                 }
                 writeEventJsonl(streams.events, update);
                 return;
@@ -498,6 +520,7 @@ export const runCliPrompt = async (
 
             if (SessionUpdate.isStateUpdate(update)) {
                 if (update.state === "idle") {
+                    turnSettled = true;
                     flushReasoningNewline();
                     const termProblem = (
                         update._meta as
@@ -510,8 +533,11 @@ export const runCliPrompt = async (
                               }
                             | undefined
                     )?.plurnk?.terminal?.problem;
-                    if (!options.json && termProblem !== undefined) {
-                        writeErrorJsonl(streams.stderr, termProblem);
+                    if (termProblem !== undefined) {
+                        reportedProblem = termProblem;
+                        if (!options.json) {
+                            writeErrorJsonl(streams.stderr, termProblem);
+                        }
                     }
                     writeEventJsonl(streams.events, update);
                     turnIdleResolve?.();
@@ -584,7 +610,19 @@ export const runCliPrompt = async (
                 ).catch(() => undefined);
             }
 
-            const stopReason = session.stopReason ?? "end_turn";
+            const disconnectProblem: Record<string, unknown> | undefined = !turnSettled
+                ? (reportedProblem ?? {
+                      type: "https://problems.plurnk.xyz/client/transport/terminal-missing",
+                      title: "Incomplete stream",
+                      status: 502,
+                      detail: "The ACP stream closed before the turn reached an idle state.",
+                  })
+                : undefined;
+            if (!turnSettled && !options.json && reportedProblem === undefined && disconnectProblem !== undefined) {
+                writeErrorJsonl(streams.stderr, disconnectProblem);
+            }
+
+            const stopReason = turnSettled ? (session.stopReason ?? "end_turn") : "error";
             const turnItems = session.items.slice(replayCount);
             const agentMessages = turnItems
                 .filter((item): item is AcpMessageItem => item.kind === "agent_message")
@@ -616,15 +654,19 @@ export const runCliPrompt = async (
             }
             const turns = [...turnsById.entries()].map(([turnId, ops]) => ({ turnId, ops }));
 
-            const finalStatus = typeof terminalMeta.status === "number"
-                ? terminalMeta.status
-                : timedOut || stopReason === "cancelled"
+            const finalStatus = !turnSettled
+                ? typeof disconnectProblem?.status === "number"
+                    ? disconnectProblem.status
+                    : 502
+                : typeof terminalMeta.status === "number"
+                  ? terminalMeta.status
+                  : timedOut || stopReason === "cancelled"
                     ? 499
                     : stopReason === "max_turn_requests"
-                        ? 429
-                        : stopReason === "refusal" || stopReason === "error"
-                            ? 500
-                            : 200;
+                      ? 429
+                      : stopReason === "refusal" || stopReason === "error"
+                        ? 500
+                        : 200;
 
             const turnCount = typeof terminalMeta.turnCount === "number"
                 ? terminalMeta.turnCount
@@ -632,9 +674,15 @@ export const runCliPrompt = async (
                     ? turns.length + 1
                     : 1;
 
-            const mergedUsage = terminalMeta.usage !== undefined && typeof terminalMeta.usage === "object" && terminalMeta.usage !== null
-                ? { ...(session.usage ?? {}), ...(terminalMeta.usage as Record<string, unknown>) }
-                : session.usage;
+            const mergedUsage = !turnSettled
+                ? null
+                : terminalMeta.usage !== undefined && typeof terminalMeta.usage === "object" && terminalMeta.usage !== null
+                  ? { ...(session.usage ?? {}), ...(terminalMeta.usage as Record<string, unknown>) }
+                  : session.usage;
+
+            const problemRecord =
+                disconnectProblem ??
+                ((terminalMeta.problem as Record<string, unknown> | undefined) ?? reportedProblem ?? null);
 
             if (options.json) {
                 const payload = {
@@ -650,6 +698,7 @@ export const runCliPrompt = async (
                     turns,
                     response: finalAnswer,
                     usage: mergedUsage,
+                    problem: problemRecord,
                     configOptions: session.configOptions,
                     items: turnItems,
                 };
@@ -658,6 +707,7 @@ export const runCliPrompt = async (
                 streams.stdout.write(finalAnswer.endsWith("\n") ? finalAnswer : `${finalAnswer}\n`);
             }
 
+            if (!turnSettled) return 4;
             if (timedOut || stopReason === "cancelled" || finalStatus === 499) return 3;
             if (stopReason === "max_turn_requests" || finalStatus === 429) return 2;
             if (stopReason === "error" || stopReason === "refusal" || finalStatus >= 400) return 4;

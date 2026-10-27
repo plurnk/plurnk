@@ -678,6 +678,8 @@ export const runTuiViewport = async (
                 if (surface !== null) {
                     updateSurfaceStatus();
                     surface.renderNow();
+                } else if (presenter.lastStatusLine.length > 0) {
+                    termOut.write(`${presenter.lastStatusLine}\n`);
                 }
                 continue;
             }

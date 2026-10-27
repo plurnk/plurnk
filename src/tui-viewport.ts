@@ -805,7 +805,7 @@ export const runTuiViewport = async (
                                     : null,
                             );
                             if (frame.terminalDetail) {
-                                surface.append(paint(ModelText.plain(frame.terminalDetail), "failure"));
+                                surface.append(paint(`⛔ ${ModelText.plain(frame.terminalDetail)}`, "failure"));
                             }
                             if (!attachedToHamster) {
                                 surface.append(

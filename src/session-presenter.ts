@@ -587,8 +587,12 @@ export class SessionPresenter {
 
         const budget = plurnk.budget as Record<string, unknown> | undefined;
         if (budget) {
-            if (typeof budget.curationWeight === "number") this.curationWeight = budget.curationWeight;
-            if (typeof budget.curationBudget === "number") this.curationBudget = budget.curationBudget;
+            if (typeof budget.curationBudget === "number" && budget.curationBudget > 0) {
+                this.curationBudget = budget.curationBudget;
+                if (typeof budget.curationWeight === "number") {
+                    this.curationWeight = budget.curationWeight;
+                }
+            }
             if (typeof budget.contextTokens === "number" || budget.contextTokens === null) {
                 this.contextTokens = budget.contextTokens as number | null;
             }
@@ -1394,22 +1398,22 @@ export class SessionPresenter {
                 if (typeof costStr === "string") {
                     this.costUsd = addDecimal(this.#turnBaseCostUsd, costStr);
                 }
-                if (typeof termMeta?.usage?.curationWeight === "number") {
-                    this.curationWeight = termMeta.usage.curationWeight;
-                }
-                if (typeof termMeta?.usage?.curationBudget === "number") {
+                if (typeof termMeta?.usage?.curationBudget === "number" && termMeta.usage.curationBudget > 0) {
                     this.curationBudget = termMeta.usage.curationBudget;
+                    if (typeof termMeta?.usage?.curationWeight === "number") {
+                        this.curationWeight = termMeta.usage.curationWeight;
+                    }
                 }
-                if (termMeta?.usage?.contextTokens !== undefined) {
+                if (typeof termMeta?.usage?.contextTokens === "number") {
                     this.contextTokens = termMeta.usage.contextTokens;
                 }
-                if (termMeta?.usage?.contextCapacity !== undefined) {
+                if (typeof termMeta?.usage?.contextCapacity === "number") {
                     this.contextCapacity = termMeta.usage.contextCapacity;
                 }
                 const elapsedMs = Math.max(1, Date.now() - this.#turnStartedAt);
                 const statusBar = this.buildStatusBar(elapsedMs, status);
                 const rawTurns = termMeta?.turnCount;
-                const turns = typeof rawTurns === "number" && rawTurns > 0 ? rawTurns : 1;
+                const turns = typeof rawTurns === "number" && rawTurns >= 0 ? rawTurns : 1;
                 const hitMaxTurns = update.stopReason === "max_turn_requests" || status === 429;
                 const terminalDetail =
                     typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0

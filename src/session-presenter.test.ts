@@ -115,4 +115,43 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
         assert.equal(idleFrames[0].loopInputTokens, 50);
         assert.equal(idleFrames[0].loopOutputTokens, 25);
     }
+
+    // Cancelled loop with uncalibrated terminal usage preserves the last known curation gauge
+    presenter.markTurnStart(3000);
+    const cancelFrames = presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "cancelled",
+        _meta: {
+            plurnk: {
+                terminal: {
+                    status: 499,
+                    turnCount: 0,
+                    usage: {
+                        curationWeight: null,
+                        curationBudget: null,
+                        contextTokens: null,
+                        contextCapacity: null,
+                    },
+                    problem: {
+                        type: "https://problems.plurnk.xyz/lifecycle/cancel/scope-cancelled",
+                        title: "Session scope cancelled",
+                        status: 499,
+                        detail: "The session scope was cancelled: Cancelled by ACP client.",
+                    },
+                },
+            },
+        },
+    });
+    assert.equal(cancelFrames[0]?.kind, "status_bar");
+    if (cancelFrames[0]?.kind === "status_bar") {
+        assert.equal(cancelFrames[0].statusCode, 499);
+        assert.equal(cancelFrames[0].turns, 0);
+        assert.equal(cancelFrames[0].status.curationWeight, 100);
+        assert.equal(cancelFrames[0].status.curationBudget, 1000);
+        assert.equal(
+            cancelFrames[0].terminalDetail,
+            "The session scope was cancelled: Cancelled by ACP client.",
+        );
+    }
 });

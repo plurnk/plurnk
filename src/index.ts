@@ -55,7 +55,7 @@ export {
     ALT_SHORTCUTS,
     altShortcut,
     backTabShortcut,
-} from "./repl-session.ts";
+} from "./tui-viewport.ts";
 export {
     completeAddressPath,
     completeInput,

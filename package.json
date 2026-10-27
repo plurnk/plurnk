@@ -23,7 +23,7 @@
         "completions/"
     ],
     "scripts": {
-        "test:lint": "tsc --noEmit",
+        "test:lint": "tsc --noEmit && node ../plurnk-service/plurnk-spec-check/check.mjs .",
         "test:posix": "node scripts/check-posix.mjs",
         "test:unit": "node --env-file-if-exists=.env.defaults --test 'src/**/*.test.ts' 'scripts/**/*.test.mjs'",
         "pretest:intg": "npm run build",

@@ -22,16 +22,21 @@ import { AcpClient } from "./acp-client.ts";
 import { AcpSession, contentBlockToText, type AcpMessageItem } from "./acp-session.ts";
 import Credential from "./credential.ts";
 import {
+    executeFamilyCommand,
+    formatFamilyRows,
+    formatLogEntries,
+    formatModelsRows,
+    formatWorkspacesRows,
     mintGateHash,
     openProcessStreams,
     runReplSession,
-    runTuiViewport,
     writeErrorJsonl,
     writeEventJsonl,
     type ClientStreams,
 } from "./repl-session.ts";
+import { runTuiViewport } from "./tui-viewport.ts";
 
-export { openProcessStreams, runReplSession, runTuiViewport, type ClientStreams };
+export { formatFamilyRows, openProcessStreams, runReplSession, runTuiViewport, type ClientStreams };
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -623,11 +628,9 @@ export const runCliPrompt = async (
 
             const turnCount = typeof terminalMeta.turnCount === "number"
                 ? terminalMeta.turnCount
-                : typeof terminalMeta.turns === "number"
-                    ? terminalMeta.turns
-                    : turns.length > 0
-                        ? turns.length + 1
-                        : 1;
+                : turns.length > 0
+                    ? turns.length + 1
+                    : 1;
 
             const mergedUsage = terminalMeta.usage !== undefined && typeof terminalMeta.usage === "object" && terminalMeta.usage !== null
                 ? { ...(session.usage ?? {}), ...(terminalMeta.usage as Record<string, unknown>) }
@@ -959,32 +962,18 @@ export const runCliModels = async (
     });
     await ensureDaemonConnected(client, options);
     try {
-        let result: unknown;
-        try {
-            result = await client.action("models.list", {
-                ...(searchTerms.length > 0 ? { search: searchTerms.join(" ") } : {}),
-                ...(query.provider !== undefined ? { provider: query.provider } : {}),
-                ...(query.all !== undefined ? { all: query.all } : {}),
-                ...(query.offset !== undefined ? { offset: query.offset } : {}),
-                ...(query.limit !== undefined ? { limit: query.limit } : {}),
-            });
-        } catch {
-            result = await client.listProviders();
-        }
+        const result = await client.action<Record<string, unknown>>("models.list", {
+            ...(searchTerms.length > 0 ? { search: searchTerms.join(" ") } : {}),
+            ...(query.provider !== undefined ? { provider: query.provider } : {}),
+            ...(query.all !== undefined ? { all: query.all } : {}),
+            ...(query.offset !== undefined ? { offset: query.offset } : {}),
+            ...(query.limit !== undefined ? { limit: query.limit } : {}),
+        });
         if (options.json) {
             process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
             return 0;
         }
-        const rec = result as Record<string, unknown>;
-        const items = Array.isArray(rec.items)
-            ? rec.items
-            : Array.isArray(rec.providers)
-                ? rec.providers
-                : [];
-        for (const item of items) {
-            const r = item as Record<string, unknown>;
-            process.stdout.write(`${String(r.id ?? r.providerId ?? r.alias ?? "")}\t${String(r.name ?? r.model ?? "")}\n`);
-        }
+        process.stdout.write(formatModelsRows(result));
         return 0;
     } finally {
         client.close();
@@ -1005,26 +994,12 @@ export const runCliWorkspace = async (
     await ensureDaemonConnected(client, options);
     try {
         if (sub === "list" || sub === undefined) {
-            let result: unknown;
-            try {
-                result = await client.action("workspace.list", {});
-            } catch {
-                result = await client.listSessions(options.cwd);
-            }
+            const result = await client.action<Record<string, unknown>>("workspace.list", {});
             if (options.json) {
                 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
                 return 0;
             }
-            const rec = result as Record<string, unknown>;
-            const list = Array.isArray(rec.workspaces)
-                ? rec.workspaces
-                : Array.isArray(rec.sessions)
-                    ? rec.sessions
-                    : [];
-            for (const item of list) {
-                const w = item as Record<string, unknown>;
-                process.stdout.write(`${String(w.name ?? w.sessionId ?? w.id)}\t${String(w.project_root ?? w.cwd ?? "")}\n`);
-            }
+            process.stdout.write(formatWorkspacesRows(result));
             return 0;
         }
         if (sub === "sessions") {
@@ -1091,11 +1066,7 @@ export const runCliLogRead = async (
             process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
             return 0;
         }
-        const entries = Array.isArray(result.entries) ? result.entries : [];
-        for (const entry of entries) {
-            const e = entry as Record<string, unknown>;
-            process.stdout.write(`${String(e.loop_seq ?? e.loop_id)}/${String(e.turn_seq ?? e.turn_id)}/${String(e.sequence)}\t${String(e.op ?? "")}\t${String(e.status ?? "")}\n`);
-        }
+        process.stdout.write(formatLogEntries(Array.isArray(result.entries) ? result.entries : []));
         return 0;
     } finally {
         client.close();
@@ -1220,7 +1191,6 @@ export const runCliFamily = async (
         process.stdout.write(`usage: plurnk ${family} [list|add|remove|enable|disable] [options]\n`);
         return 0;
     }
-    const sub = familyArgs[0] ?? "list";
     const client = new AcpClient({
         url: options.url,
         credential: options.credential,
@@ -1228,47 +1198,32 @@ export const runCliFamily = async (
     });
     await ensureDaemonConnected(client, options);
     try {
-        const scopePrefix = family === "env" && familyArgs.includes("session") ? "session" : "workspace";
-        const actionName = `${scopePrefix}.${family}.${sub}`;
         const session = await openCliSession(client, {
             ...options,
             sessionId: options.sessionId ?? options.tuiSession,
         });
-        const result = await client.action<Record<string, unknown>>(
-            actionName,
-            {},
+        let hadError = false;
+        await executeFamilyCommand(
+            client,
+            family,
+            familyArgs,
             {
                 sessionId: session.sessionId,
                 workspace: options.workspace,
                 session: options.sessionId ?? options.tuiSession,
+                cwd: options.cwd,
+            },
+            options.cwd,
+            {
+                json: options.json,
+                stdout: process.stdout,
+                onError: (problem) => {
+                    hadError = true;
+                    writeErrorJsonl(process.stderr, problem);
+                },
             },
         );
-        if (options.json) {
-            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-            return 0;
-        }
-        const definitions = Array.isArray(result.definitions)
-            ? result.definitions
-            : Array.isArray(result.items)
-                ? result.items
-                : [];
-        if (definitions.length === 0) {
-            process.stdout.write(`${family}: none\n`);
-            return 0;
-        }
-        for (const item of definitions) {
-            const d = item as Record<string, unknown>;
-            const alias = String(d.alias ?? d.name ?? "");
-            const state = String(d.state ?? "active");
-            const def = (d.definition ?? {}) as Record<string, unknown>;
-            const type = typeof def.type === "string" ? def.type : "";
-            const cmd = typeof def.command === "string" ? def.command : typeof def.url === "string" ? def.url : "";
-            const prov = (d.provenance ?? {}) as Record<string, unknown>;
-            const source = typeof prov.source === "string" ? `source=${prov.source}` : "";
-            const parts = [alias, state, type, cmd, source].filter((p) => p.length > 0);
-            process.stdout.write(`${parts.join("  ")}\n`);
-        }
-        return 0;
+        return hadError ? 64 : 0;
     } finally {
         client.close();
     }

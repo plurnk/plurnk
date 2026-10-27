@@ -7,7 +7,7 @@ import { existsSync, fstatSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import * as readline from "node:readline";
-import { PassThrough, Writable } from "node:stream";
+import { Writable } from "node:stream";
 import { parseEnv } from "node:util";
 import {
     CreateElicitationRequest,
@@ -24,30 +24,12 @@ import { AcpSession, contentBlockToText } from "./acp-session.ts";
 import {
     ensureDaemonConnected,
     formatConfigOption,
+    formatServiceUpdateResult,
     openCliSession,
     type CliCommonOptions,
 } from "./cli-runner.ts";
 import { INTERACTIVE_COMMANDS, renderCommandReference } from "./commands.ts";
-import { SessionPresenter, lifecycleGlyphFor, type PresentationFrame } from "./session-presenter.ts";
-import { matchesKey, type Terminal } from "@earendil-works/pi-tui";
-import { makeAutocompleteProvider } from "./tui-completion.ts";
-import Review, { type ElicitationGateEvent, type PermissionGateEvent } from "./tui-review.ts";
-import TuiSurface, {
-    attention,
-    bell,
-    buildHeader,
-    concluded,
-    formatLoopMetrics,
-    ModelText,
-    paint,
-    renderLoopSummary,
-    renderModelReply,
-    renderNoteBlock,
-    renderOperationBlock,
-    renderReasoning,
-    renderSubmittedInput,
-    windowTitle,
-} from "./tui-surface.ts";
+import { lifecycleGlyphFor } from "./session-presenter.ts";
 
 export interface ClientStreams {
     readonly stdin: NodeJS.ReadableStream;
@@ -157,19 +139,15 @@ const extractOpenPaths = (promptText: string, projectRoot: string | undefined): 
     return result;
 };
 
-const formatFamilyRows = (family: string, result: Record<string, unknown>): string => {
-    const definitions = Array.isArray(result.definitions)
-        ? result.definitions
-        : Array.isArray(result.items)
-          ? result.items
-          : [];
+export const formatFamilyRows = (family: string, result: Record<string, unknown>): string => {
+    const definitions = Array.isArray(result.definitions) ? result.definitions : [];
     if (definitions.length === 0) {
         return `${family}: none\n`;
     }
     const lines: string[] = [];
     for (const item of definitions) {
         const d = item as Record<string, unknown>;
-        const alias = String(d.alias ?? d.name ?? d.glob ?? "");
+        const alias = String(d.alias ?? "");
         const state = String(d.state ?? "active");
         const def = (d.definition ?? {}) as Record<string, unknown>;
         const type = typeof def.type === "string" ? def.type : "";
@@ -189,6 +167,217 @@ const formatFamilyRows = (family: string, result: Record<string, unknown>): stri
         lines.push(rowParts.join("  "));
     }
     return `${lines.join("\n")}\n`;
+};
+
+export const formatModelsRows = (result: Record<string, unknown>): string => {
+    const items = Array.isArray(result.items) ? result.items : [];
+    let out = "";
+    for (const item of items) {
+        const r = item as Record<string, unknown>;
+        out += `${String(r.selector ?? "")}\t${String(r.modelName ?? r.model ?? "")}\n`;
+    }
+    return out;
+};
+
+export const formatWorkspacesRows = (result: Record<string, unknown>): string => {
+    const workspaces = Array.isArray(result.workspaces) ? result.workspaces : [];
+    let out = "";
+    for (const item of workspaces) {
+        const w = item as Record<string, unknown>;
+        out += `${String(w.name ?? w.id)}\t${String(w.project_root ?? "")}\n`;
+    }
+    return out;
+};
+
+export const formatLogEntries = (entries: readonly unknown[]): string => {
+    let out = "";
+    for (const entry of entries) {
+        const e = entry as Record<string, unknown>;
+        out += `${String(e.loop_seq)}/${String(e.turn_seq)}/${String(e.sequence)}\t${String(e.op ?? "")}\t${String(e.status_rx ?? e.status ?? "")}\n`;
+    }
+    return out;
+};
+
+export const executeFamilyCommand = async (
+    client: AcpClient,
+    family: string,
+    args: readonly string[],
+    binding: { readonly sessionId?: string; readonly workspace?: string; readonly session?: string; readonly cwd?: string },
+    cwd: string,
+    io: {
+        readonly json?: boolean;
+        readonly stdout: NodeJS.WritableStream;
+        readonly onError: (problem: { readonly type: string; readonly title: string; readonly status: number; readonly detail: string }) => void;
+    },
+): Promise<void> => {
+    let scopePrefix = family === "env" ? "session" : "workspace";
+    const filteredArgs: string[] = [];
+    for (let i = 0; i < args.length; i += 1) {
+        const tok = args[i]!;
+        if (tok === "--scope" && args[i + 1]) {
+            scopePrefix = args[i + 1] === "workspace" ? "workspace" : "session";
+            i += 1;
+            continue;
+        }
+        if (tok.startsWith("--scope=")) {
+            scopePrefix = tok.slice("--scope=".length) === "workspace" ? "workspace" : "session";
+            continue;
+        }
+        filteredArgs.push(tok);
+    }
+    const sub = filteredArgs[0] ?? "list";
+    const rest = filteredArgs.slice(1);
+    const writeResult = (result: Record<string, unknown>): void => {
+        io.stdout.write(io.json ? `${JSON.stringify(result, null, 2)}\n` : `${JSON.stringify(result)}\n`);
+    };
+
+    if (sub === "list") {
+        const result = await client.action<Record<string, unknown>>(
+            `${scopePrefix}.${family}.list`,
+            {},
+            binding,
+        );
+        if (io.json) {
+            io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        } else {
+            io.stdout.write(formatFamilyRows(family, result));
+        }
+        return;
+    }
+    if (sub === "discover") {
+        const query = rest.join(" ");
+        const result = await client.action<Record<string, unknown>>(
+            `${scopePrefix}.${family}.discover`,
+            query.length > 0 ? { query, source: query } : {},
+            binding,
+        );
+        io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+    }
+    if (sub === "enable" || sub === "disable" || sub === "remove") {
+        const target = rest[0] ?? "";
+        const param = family === "members" ? { file: target } : { alias: target };
+        const result = await client.action<Record<string, unknown>>(
+            `${scopePrefix}.${family}.${sub}`,
+            param,
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if ((sub === "add" || sub === "replace") && family === "mcp") {
+        const alias = rest[0] ?? "";
+        const target = rest[1] ?? "";
+        const extraArgs = rest.slice(2);
+        const definition = /^https?:\/\//iu.test(target)
+            ? { name: alias, type: "streamable-http", url: target }
+            : {
+                  name: alias,
+                  type: "stdio",
+                  command: target,
+                  ...(extraArgs.length > 0 ? { args: extraArgs } : {}),
+              };
+        const result = await client.action<Record<string, unknown>>(
+            `workspace.mcp.${sub}`,
+            { alias, definition },
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if ((sub === "add" || sub === "replace") && family === "skills") {
+        const alias = rest[0] ?? "";
+        const source = rest[1] ?? "";
+        const refIdx = rest.indexOf("--ref");
+        const ref = refIdx >= 0 ? rest[refIdx + 1] : undefined;
+        const definition = {
+            name: alias,
+            source,
+            ...(ref !== undefined ? { ref } : {}),
+        };
+        const result = await client.action<Record<string, unknown>>(
+            `workspace.skills.${sub}`,
+            { alias, definition },
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if (sub === "add" && family === "members") {
+        const result = await client.action<Record<string, unknown>>(
+            "workspace.members.add",
+            { files: rest },
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if ((sub === "add" || sub === "replace") && family === "env") {
+        const alias = rest[0] ?? "";
+        const value = rest.slice(1).join(" ");
+        const result = await client.action<Record<string, unknown>>(
+            `${scopePrefix}.env.${sub}`,
+            { alias, definition: { value } },
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    if (sub === "import" && family === "env") {
+        const filePath = rest[0];
+        if (!filePath) {
+            io.onError({
+                type: "https://problems.plurnk.xyz/client/usage",
+                title: "Missing env import path",
+                status: 400,
+                detail: "usage: /env import <path>",
+            });
+            return;
+        }
+        const parsed = parseEnv(readFileSync(resolve(cwd, filePath), "utf8"));
+        const entries = Object.entries(parsed);
+        let landed = 0;
+        for (const [alias, val] of entries) {
+            try {
+                await client.action(
+                    `${scopePrefix}.env.add`,
+                    { alias, definition: { value: String(val ?? "") } },
+                    binding,
+                );
+                landed += 1;
+            } catch (err) {
+                io.onError({
+                    type: "https://problems.plurnk.xyz/client/command-failed",
+                    title: "Env import entry failed",
+                    status: 400,
+                    detail: err instanceof Error ? err.message : String(err),
+                });
+            }
+        }
+        const scopeDesc = scopePrefix === "workspace" ? "workspace defaults" : "this session only";
+        io.stdout.write(`imported ${String(landed)} of ${String(entries.length)} into ${scopeDesc}\n`);
+        return;
+    }
+    if ((sub === "add" || sub === "replace") && family === "schedule") {
+        const alias = rest[0] ?? "";
+        const sessionArg = rest[1] ?? "";
+        const rule = rest[2] ?? "";
+        const prompt = rest.slice(3).join(" ");
+        const target = sessionArg.startsWith("session://") ? sessionArg : `session://${sessionArg}`;
+        const result = await client.action<Record<string, unknown>>(
+            `workspace.schedule.${sub}`,
+            { alias, definition: { rule, target, prompt } },
+            binding,
+        );
+        writeResult(result);
+        return;
+    }
+    const result = await client.action<Record<string, unknown>>(
+        `${scopePrefix}.${family}.${sub}`,
+        rest.length > 0 ? { args: rest } : {},
+        binding,
+    );
+    writeResult(result);
 };
 
 export const runReplSession = async (
@@ -596,167 +785,10 @@ export const runReplSession = async (
     });
 
     const handleFamilyCommand = async (family: string, args: readonly string[]): Promise<void> => {
-        let scopePrefix = family === "env" ? "session" : "workspace";
-        const filteredArgs: string[] = [];
-        for (let i = 0; i < args.length; i += 1) {
-            const tok = args[i]!;
-            if (tok === "--scope" && args[i + 1]) {
-                scopePrefix = args[i + 1] === "workspace" ? "workspace" : "session";
-                i += 1;
-                continue;
-            }
-            if (tok.startsWith("--scope=")) {
-                scopePrefix = tok.slice("--scope=".length) === "workspace" ? "workspace" : "session";
-                continue;
-            }
-            filteredArgs.push(tok);
-        }
-        const sub = filteredArgs[0] ?? "list";
-        const rest = filteredArgs.slice(1);
-
-        if (sub === "list") {
-            const result = await client.action<Record<string, unknown>>(
-                `${scopePrefix}.${family}.list`,
-                {},
-                bindingContext(),
-            );
-            streams.stdout.write(formatFamilyRows(family, result));
-            return;
-        }
-        if (sub === "discover") {
-            const query = rest.join(" ");
-            const result = await client.action<Record<string, unknown>>(
-                `${scopePrefix}.${family}.discover`,
-                query.length > 0 ? { query, source: query } : {},
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-            return;
-        }
-        if (sub === "enable" || sub === "disable" || sub === "remove") {
-            const target = rest[0] ?? "";
-            const param = family === "members" ? { file: target } : { alias: target };
-            const result = await client.action<Record<string, unknown>>(
-                `${scopePrefix}.${family}.${sub}`,
-                param,
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result)}\n`);
-            return;
-        }
-        if ((sub === "add" || sub === "replace") && family === "mcp") {
-            const alias = rest[0] ?? "";
-            const target = rest[1] ?? "";
-            const extraArgs = rest.slice(2);
-            const definition = /^https?:\/\//iu.test(target)
-                ? { name: alias, type: "streamable-http", url: target }
-                : {
-                      name: alias,
-                      type: "stdio",
-                      command: target,
-                      ...(extraArgs.length > 0 ? { args: extraArgs } : {}),
-                  };
-            const result = await client.action<Record<string, unknown>>(
-                `workspace.mcp.${sub}`,
-                { alias, definition },
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result)}\n`);
-            return;
-        }
-        if ((sub === "add" || sub === "replace") && family === "skills") {
-            const alias = rest[0] ?? "";
-            const source = rest[1] ?? "";
-            const refIdx = rest.indexOf("--ref");
-            const ref = refIdx >= 0 ? rest[refIdx + 1] : undefined;
-            const definition = {
-                name: alias,
-                source,
-                ...(ref !== undefined ? { ref } : {}),
-            };
-            const result = await client.action<Record<string, unknown>>(
-                `workspace.skills.${sub}`,
-                { alias, definition },
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result)}\n`);
-            return;
-        }
-        if (sub === "add" && family === "members") {
-            const result = await client.action<Record<string, unknown>>(
-                "workspace.members.add",
-                { files: rest },
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result)}\n`);
-            return;
-        }
-        if ((sub === "add" || sub === "replace") && family === "env") {
-            const alias = rest[0] ?? "";
-            const value = rest.slice(1).join(" ");
-            const result = await client.action<Record<string, unknown>>(
-                `${scopePrefix}.env.${sub}`,
-                { alias, definition: { value } },
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result)}\n`);
-            return;
-        }
-        if (sub === "import" && family === "env") {
-            const filePath = rest[0];
-            if (!filePath) {
-                writeErrorJsonl(streams.stderr, {
-                    type: "https://problems.plurnk.xyz/client/usage",
-                    title: "Missing env import path",
-                    status: 400,
-                    detail: "usage: /env import <path>",
-                });
-                return;
-            }
-            const parsed = parseEnv(readFileSync(resolve(options.cwd, filePath), "utf8"));
-            const entries = Object.entries(parsed);
-            let landed = 0;
-            for (const [alias, val] of entries) {
-                try {
-                    await client.action(
-                        `${scopePrefix}.env.add`,
-                        { alias, definition: { value: String(val ?? "") } },
-                        bindingContext(),
-                    );
-                    landed += 1;
-                } catch (err) {
-                    writeErrorJsonl(streams.stderr, {
-                        type: "https://problems.plurnk.xyz/client/command-failed",
-                        title: "Env import entry failed",
-                        status: 400,
-                        detail: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            }
-            const scopeDesc = scopePrefix === "workspace" ? "workspace defaults" : "this session only";
-            streams.stdout.write(`imported ${String(landed)} of ${String(entries.length)} into ${scopeDesc}\n`);
-            return;
-        }
-        if ((sub === "add" || sub === "replace") && family === "schedule") {
-            const alias = rest[0] ?? "";
-            const sessionArg = rest[1] ?? "";
-            const rule = rest[2] ?? "";
-            const prompt = rest.slice(3).join(" ");
-            const target = sessionArg.startsWith("session://") ? sessionArg : `session://${sessionArg}`;
-            const result = await client.action<Record<string, unknown>>(
-                `workspace.schedule.${sub}`,
-                { alias, definition: { rule, target, prompt } },
-                bindingContext(),
-            );
-            streams.stdout.write(`${JSON.stringify(result)}\n`);
-            return;
-        }
-        const result = await client.action<Record<string, unknown>>(
-            `${scopePrefix}.${family}.${sub}`,
-            rest.length > 0 ? { args: rest } : {},
-            bindingContext(),
-        );
-        streams.stdout.write(`${JSON.stringify(result)}\n`);
+        await executeFamilyCommand(client, family, args, bindingContext(), options.cwd, {
+            stdout: streams.stdout,
+            onError: (problem) => writeErrorJsonl(streams.stderr, problem),
+        });
     };
 
     const navigateTopology = async (direction: "parent" | "enter" | "older" | "newer"): Promise<void> => {
@@ -765,13 +797,12 @@ export const runReplSession = async (
                 readonly id?: number;
                 readonly name: string;
                 readonly parentSessionId?: number | null;
-                readonly parent_session_id?: number | null;
                 readonly origin?: string;
             }>;
         }>("workspace.sessions", {}, bindingContext());
         const sessions = (res.sessions ?? []).filter((s) => s.origin !== "maintenance" && s.origin !== "scratch");
-        const parentOf = (s: { readonly parentSessionId?: number | null; readonly parent_session_id?: number | null } | undefined): number | null =>
-            s?.parentSessionId ?? s?.parent_session_id ?? null;
+        const parentOf = (s: { readonly parentSessionId?: number | null } | undefined): number | null =>
+            s?.parentSessionId ?? null;
         const current = sessions.find((s) => s.name === currentSessionName);
         if (direction === "parent") {
             const pid = parentOf(current);
@@ -860,23 +891,7 @@ export const runReplSession = async (
 
                 if (cmd === "update") {
                     const result = await client.action<Record<string, unknown>>("service.update", {});
-                    const cat = (result.catalog ?? {}) as Record<string, unknown>;
-                    const npm = (result.npm ?? {}) as Record<string, unknown>;
-                    const added =
-                        typeof cat.addedModels === "number" && cat.addedModels > 0
-                            ? `, +${String(cat.addedModels)} new`
-                            : "";
-                    const catLine = `catalog: ${String(cat.status ?? "updated")} (${String(cat.models ?? 0)} models across ${String(cat.providers ?? 0)} providers${added})`;
-                    const pkg = String(npm.package ?? "@plurnk/plurnk-service");
-                    const prev = String(npm.previousVersion ?? "");
-                    const curr = String(npm.currentVersion ?? prev);
-                    const npmLine =
-                        npm.status === "source"
-                            ? `npm: ${pkg}@${curr} (source checkout)`
-                            : npm.status === "updated"
-                              ? `npm: ${pkg} ${prev} -> ${curr}`
-                              : `npm: ${pkg}@${curr} (unchanged)`;
-                    streams.stdout.write(`${catLine}\n${npmLine}\n`);
+                    streams.stdout.write(`${formatServiceUpdateResult(result)}\n`);
                     return "continue";
                 }
 
@@ -1095,15 +1110,8 @@ export const runReplSession = async (
                 }
 
                 if (cmd === "workspaces") {
-                    const result = await client.action<{ readonly workspaces?: ReadonlyArray<Record<string, unknown>> }>(
-                        "workspace.list",
-                        {},
-                    );
-                    for (const w of result.workspaces ?? []) {
-                        streams.stdout.write(
-                            `${String(w.name ?? w.id)}\t${String(w.project_root ?? w.cwd ?? "")}\n`,
-                        );
-                    }
+                    const result = await client.action<Record<string, unknown>>("workspace.list", {});
+                    streams.stdout.write(formatWorkspacesRows(result));
                     return "continue";
                 }
 
@@ -1141,36 +1149,20 @@ export const runReplSession = async (
                 }
 
                 if (cmd === "models") {
-                    let result: unknown;
-                    try {
-                        result = await client.action("models.list", args.length > 0 ? { search: args.join(" ") } : {});
-                    } catch {
-                        result = await client.listProviders();
-                    }
-                    const rec = result as Record<string, unknown>;
-                    const items = Array.isArray(rec.items)
-                        ? rec.items
-                        : Array.isArray(rec.providers)
-                          ? rec.providers
-                          : [];
-                    for (const item of items) {
-                        const r = item as Record<string, unknown>;
-                        streams.stdout.write(
-                            `${String(r.id ?? r.providerId ?? r.alias ?? "")}\t${String(r.name ?? r.model ?? "")}\n`,
-                        );
-                    }
+                    const result = await client.action<Record<string, unknown>>(
+                        "models.list",
+                        args.length > 0 ? { search: args.join(" ") } : {},
+                    );
+                    streams.stdout.write(formatModelsRows(result));
                     return "continue";
                 }
 
                 if (cmd === "loops") {
                     const result = await client.action<{
                         readonly items?: ReadonlyArray<Record<string, unknown>>;
-                        readonly loops?: ReadonlyArray<Record<string, unknown>>;
                     }>("session.loops", {}, bindingContext());
-                    for (const l of result.items ?? result.loops ?? []) {
-                        const seq = String(l.seq ?? l.id ?? "");
-                        const summary = String(l.summary ?? l.prompt ?? "");
-                        streams.stdout.write(`  ${seq}: ${summary}\n`);
+                    for (const l of result.items ?? []) {
+                        streams.stdout.write(`  ${String(l.sequence ?? "")}: ${String(l.prompt ?? "")}\n`);
                     }
                     return "continue";
                 }
@@ -1188,11 +1180,7 @@ export const runReplSession = async (
                         bindingContext(),
                     );
                     streams.stdout.write(`── loop ${String(loopNum ?? "current")} ──\n`);
-                    for (const e of result.entries ?? []) {
-                        streams.stdout.write(
-                            `${String(e.loop_seq ?? e.loop_id)}/${String(e.turn_seq ?? e.turn_id)}/${String(e.sequence)}\t${String(e.op ?? "")}\t${String(e.status ?? "")}\n`,
-                        );
-                    }
+                    streams.stdout.write(formatLogEntries(result.entries ?? []));
                     return "continue";
                 }
 
@@ -1669,759 +1657,3 @@ export const runReplSession = async (
     });
 };
 
-export const ALT_SHORTCUTS: Readonly<Record<string, string>> = Object.freeze({
-    m: "/models",
-    s: "/workspaces",
-    R: "/sessions",
-    L: "/loops",
-    Y: "/yolo",
-    N: "/workspace",
-    M: "/members",
-    x: "/stop",
-    "?": "/help",
-    e: "/editor",
-    h: "/parent",
-    l: "/enter",
-    j: "/older",
-    k: "/newer",
-});
-
-export const altShortcut = (forward: string): string | null => {
-    const m = forward.match(/^\x1b([a-zA-Z?])$/u);
-    return m ? (ALT_SHORTCUTS[m[1]!] ?? null) : null;
-};
-
-export const backTabShortcut = (forward: string): string | null =>
-    forward === "\x1b[Z" ? "/yolo" : null;
-
-// Pure TUI viewport composed atop the 5-stream contract ([stdin, stdout, stderr, events, reasoning]).
-// Holds no reference to AcpClient or AcpSession ({§cli-repl-mode}).
-export const runTuiViewport = async (
-    options: CliCommonOptions,
-    outerStreams?: Partial<Pick<ClientStreams, "stdin" | "stdout" | "stderr">> & {
-        readonly terminal?: Terminal;
-    },
-): Promise<number> => {
-    const replStdin = new PassThrough();
-    const replStdout = new PassThrough();
-    const replStderr = new PassThrough();
-    const replEvents = new PassThrough();
-    const replReasoning = new PassThrough();
-
-    const termIn = outerStreams?.stdin ?? process.stdin;
-    const termOut = outerStreams?.stdout ?? process.stdout;
-    const termErr = outerStreams?.stderr ?? process.stderr;
-
-    const useSurface =
-        outerStreams?.terminal !== undefined ||
-        (outerStreams === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true);
-    const surface = useSurface ? new TuiSurface(outerStreams?.terminal) : null;
-    if (surface !== null) {
-        await surface.learnGround();
-    }
-
-    const attend = attention(options.bell ? [bell(termOut as { readonly isTTY?: boolean; write(chunk: string): unknown })] : []);
-
-    const presenter = new SessionPresenter({
-        workspaceName: options.workspace ?? "default",
-        sessionName: options.sessionId ?? options.tuiSession ?? "user",
-        model: options.model ?? "default",
-        yolo: options.yolo,
-    });
-
-    let initialPromptPrinted = false;
-    let initialWorkspaceConsumed = false;
-    let boundProjectRoot: string | null = options.projectRoot ?? options.cwd;
-    let cachedModels: string[] = [];
-    let cachedEfforts: string[] = ["low", "medium", "high"];
-    let cachedSessions: string[] = [];
-    let cachedWorkspaces: string[] = [];
-    let liveReasoningBuffer = "";
-    let liveReasoningTurnEnded = false;
-    let currentTurns = 0;
-    const focusedGateIds: string[] = [];
-    const suppressedStdoutQueue: string[] = [];
-
-    const editInExternalEditor = (initialText: string): string | null => {
-        const editorCmd = options.env.VISUAL || options.env.EDITOR || "vi";
-        const tmpDir = mkdtempSync(join(tmpdir(), "plurnk-tui-editor-"));
-        const tmpFile = join(tmpDir, "buffer.md");
-        try {
-            writeFileSync(tmpFile, initialText, "utf8");
-            const res = spawnSync(editorCmd, [tmpFile], {
-                stdio: "inherit",
-                shell: true,
-                env: options.env as NodeJS.ProcessEnv,
-            });
-            if (res.status === 0) {
-                return readFileSync(tmpFile, "utf8");
-            }
-            return null;
-        } finally {
-            rmSync(tmpDir, { recursive: true, force: true });
-        }
-    };
-
-    const review =
-        surface !== null
-            ? new Review(surface, {
-                  sendStdin: (cmd) => {
-                      replStdin.write(cmd);
-                  },
-                  editBody: async (initialBody) => {
-                      return await surface.handOff(() => editInExternalEditor(initialBody));
-                  },
-                  record: (text) => {
-                      surface.append(text);
-                  },
-              })
-            : null;
-
-    const updateSurfaceStatus = (): void => {
-        if (surface === null) return;
-        const place =
-            currentTurns > 0
-                ? `[${presenter.workspaceName}/~${presenter.sessionName}(1/${String(currentTurns)})]`
-                : `[${presenter.workspaceName}/~${presenter.sessionName}]`;
-        const activity =
-            presenter.lastStatusLine.length > 0
-                ? presenter.lastStatusLine
-                : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · 🎲 ${presenter.model}`;
-        surface.setStatus(`${place} ${activity}`);
-    };
-
-    const ensureSurfaceStarted = (): void => {
-        if (surface === null || initialPromptPrinted) return;
-        initialPromptPrinted = true;
-        surface.start();
-        const header = buildHeader({
-            workspaceName: presenter.workspaceName,
-            sessionName: presenter.sessionName,
-            modelSelector: presenter.model,
-            effort: presenter.effort,
-            yolo: presenter.yolo,
-        });
-        surface.append(paint(header, "dim"));
-        surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
-        surface.append("");
-        updateSurfaceStatus();
-        surface.renderNow();
-    };
-
-    const renderToolCallToSurface = (frame: Extract<PresentationFrame, { kind: "tool_call" }>): void => {
-        if (surface === null) return;
-        if (frame.op === "NOTE" && frame.origin === "model") {
-            const rendered = renderNoteBlock({
-                glyph: frame.glyph,
-                aside: frame.aside,
-                body: frame.noteBody ?? frame.contentLines.join("\n"),
-                columns: surface.columns,
-            });
-            surface.append(rendered);
-            if (rendered.includes("\n")) {
-                surface.append("");
-            }
-        } else {
-            const rendered = renderOperationBlock({
-                glyph: frame.glyph,
-                op: frame.op,
-                title: frame.title,
-                target: frame.target,
-                scope: frame.scope,
-                destination: frame.destination,
-                pattern: frame.pattern,
-                count: frame.count,
-                aside: frame.aside,
-                status: frame.status,
-                statusCode: frame.statusCode,
-                outcome: frame.outcome,
-                contentLines: frame.contentLines,
-                outputLines: frame.outputLines,
-                coordinate: frame.toolCallId,
-                previewLimit: options.previewLines,
-                columns: surface.columns,
-            });
-            surface.append(rendered);
-            if (rendered.includes("\n")) {
-                surface.append("");
-            }
-        }
-    };
-
-    const statusTicker =
-        surface !== null
-            ? setInterval(() => {
-                  if (presenter.lifecycle === "running" || presenter.lifecycle === "parked") {
-                      presenter.buildStatusBar();
-                      updateSurfaceStatus();
-                  }
-              }, 1000).unref()
-            : null;
-
-    const GATE_VERBS = new Set(["approve", "accept", "reject", "cancel", "edit", "answer"]);
-
-    const routeAndSendLine = (rawSubmission: string): void => {
-        const trimmed = rawSubmission.trim();
-        if (trimmed.length === 0) return;
-        if (trimmed.startsWith("/")) {
-            const tokens = trimmed.slice(1).split(/\s+/u);
-            const verb = tokens[0]?.toLowerCase() ?? "";
-            const firstArg = tokens[1];
-            const focusedId = focusedGateIds[0];
-            if (
-                GATE_VERBS.has(verb) &&
-                focusedId !== undefined &&
-                (firstArg === undefined || !firstArg.startsWith("@"))
-            ) {
-                const afterVerb = trimmed.slice(1 + verb.length).trimStart();
-                const routed = afterVerb.length > 0 ? `/${verb} @${focusedId} ${afterVerb}` : `/${verb} @${focusedId}`;
-                replStdin.write(
-                    routed.includes("\n") ? `\x1b[200~${routed}\x1b[201~\n` : `${routed}\n`,
-                );
-                return;
-            }
-        }
-        if (!trimmed.startsWith("/") && !trimmed.startsWith("!")) {
-            presenter.markTurnStart();
-            presenter.buildStatusBar();
-            updateSurfaceStatus();
-        }
-        replStdin.write(
-            rawSubmission.includes("\n")
-                ? `\x1b[200~${rawSubmission}\x1b[201~\n`
-                : `${rawSubmission}\n`,
-        );
-    };
-
-    let removeInputListener: (() => void) | null = null;
-    if (surface !== null) {
-        surface.setAutocompleteProvider(
-            makeAutocompleteProvider({
-                cwd: options.cwd,
-                getProjectRoot: () => boundProjectRoot,
-                getModels: () => cachedModels,
-                getEfforts: () => cachedEfforts,
-                getSessionNames: () => cachedSessions,
-                getWorkspaceNames: () => cachedWorkspaces,
-                getPendingGateIds: () => focusedGateIds,
-            }),
-        );
-
-        removeInputListener = surface.addInputListener((text) => {
-            if (surface.dialogOpen) return undefined;
-            if (matchesKey(text, "escape")) {
-                if (surface.leaveReview()) return { consume: true };
-                if (presenter.lifecycle === "running" || presenter.lifecycle === "parked" || presenter.lifecycle === "requires_action") {
-                    replStdin.write("/stop\n");
-                    return { consume: true };
-                }
-                if (surface.editor.getText().length > 0) {
-                    surface.setInput("");
-                }
-                return { consume: true };
-            }
-            if (matchesKey(text, "ctrl+c")) {
-                if (
-                    presenter.lifecycle === "running" ||
-                    presenter.lifecycle === "parked" ||
-                    presenter.lifecycle === "requires_action" ||
-                    focusedGateIds.length > 0
-                ) {
-                    replStdin.write("/stop\n");
-                } else if (surface.editor.getText().length > 0) {
-                    surface.setInput("");
-                } else {
-                    replStdin.write("/quit\n");
-                }
-                return { consume: true };
-            }
-            if (matchesKey(text, "ctrl+d") && !surface.reviewing && surface.editor.getText().length === 0) {
-                replStdin.write("/quit\n");
-                return { consume: true };
-            }
-            if (surface.reviewing) return undefined;
-            const shortcut = altShortcut(text) ?? backTabShortcut(text);
-            if (shortcut !== null) {
-                if (shortcut === "/editor") {
-                    const draft = surface.editor.getText();
-                    void surface.handOff(() => editInExternalEditor(draft)).then((edited) => {
-                        if (edited !== null) {
-                            surface.setInput(edited.replace(/\r?\n$/u, ""));
-                        }
-                    });
-                } else {
-                    replStdin.write(`${shortcut}\n`);
-                }
-                return { consume: true };
-            }
-            return undefined;
-        });
-
-        surface.editor.onSubmit = (rawText: string) => {
-            const trimmed = rawText.trim();
-            if (trimmed.length === 0) return;
-            surface.editor.addToHistory(rawText);
-            surface.append("");
-            surface.append(renderSubmittedInput(rawText));
-            surface.append("");
-
-            if (trimmed === "/review" && review !== null && review.waiting > 0) {
-                surface.openReview();
-                return;
-            }
-
-            if (trimmed === "/editor") {
-                void surface.handOff(() => editInExternalEditor("")).then((edited) => {
-                    if (edited !== null) {
-                        surface.setInput(edited.replace(/\r?\n$/u, ""));
-                    }
-                });
-                return;
-            }
-
-            const importMatch = trimmed.match(/^\/import(?:\s+(.+))?$/u);
-            if (importMatch) {
-                const filePath = importMatch[1]?.trim() ?? "";
-                if (!filePath) {
-                    replStdin.write("/import\n");
-                    return;
-                }
-                try {
-                    const content = readFileSync(resolve(options.cwd, filePath), "utf8");
-                    surface.insertInput(content);
-                } catch (err) {
-                    surface.append(
-                        paint(
-                            `error: ${ModelText.plain(err instanceof Error ? err.message : String(err))}`,
-                            "failure",
-                        ),
-                    );
-                }
-                return;
-            }
-
-            routeAndSendLine(rawText);
-        };
-    }
-
-    const retireLiveReasoning = (): void => {
-        if (liveReasoningBuffer.length > 0) {
-            liveReasoningBuffer = "";
-            liveReasoningTurnEnded = false;
-            surface?.setLive(null);
-        }
-    };
-
-    replStdout.setEncoding("utf8");
-    replStdout.on("data", (chunk: string) => {
-        if (surface !== null) {
-            if (!initialWorkspaceConsumed && chunk.startsWith("workspace: ")) {
-                initialWorkspaceConsumed = true;
-                ensureSurfaceStarted();
-                return;
-            }
-            let remaining = chunk;
-            while (suppressedStdoutQueue.length > 0 && remaining.startsWith(suppressedStdoutQueue[0]!)) {
-                remaining = remaining.slice(suppressedStdoutQueue.shift()!.length);
-            }
-            if (remaining.length === 0) return;
-            const trimmed = remaining.replace(/\r?\n$/u, "");
-            if (trimmed === "yolo: on" || trimmed === "yolo: off") {
-                presenter.yolo = trimmed === "yolo: on";
-                updateSurfaceStatus();
-            }
-            if (trimmed.length > 0) {
-                surface.append(trimmed);
-            }
-            return;
-        }
-
-        if (
-            !initialPromptPrinted &&
-            chunk.startsWith("workspace: ") &&
-            presenter.workspaceName &&
-            presenter.sessionName
-        ) {
-            initialPromptPrinted = true;
-            termOut.write(`${chunk}[${presenter.workspaceName}/~${presenter.sessionName}] `);
-            return;
-        }
-        if (chunk.startsWith("● ") && presenter.lastStatusLine.length > 0 && !chunk.includes("🎲")) {
-            const trimmed = chunk.endsWith("\n") ? chunk.slice(0, -1) : chunk;
-            termOut.write(`${trimmed}\n${presenter.lastStatusLine}\n`);
-            return;
-        }
-        termOut.write(chunk);
-    });
-
-    replStderr.setEncoding("utf8");
-    let stderrBuf = "";
-    replStderr.on("data", (chunk: string) => {
-        stderrBuf += chunk;
-        const lines = stderrBuf.split("\n");
-        stderrBuf = lines.pop() ?? "";
-        for (const line of lines) {
-            if (line.trim().length === 0) continue;
-            try {
-                const parsed = JSON.parse(line) as Record<string, unknown>;
-                if (
-                    typeof parsed.type === "string" &&
-                    parsed.type.startsWith("https://problems.plurnk.xyz/client/")
-                ) {
-                    const detail =
-                        typeof parsed.detail === "string"
-                            ? parsed.detail
-                            : typeof parsed.title === "string"
-                              ? parsed.title
-                              : line;
-                    if (surface !== null) {
-                        surface.append(paint(ModelText.plain(detail), "failure"));
-                    } else {
-                        termErr.write(`${detail}\n`);
-                    }
-                }
-            } catch {
-                if (surface !== null) {
-                    surface.append(paint(ModelText.plain(line), "failure"));
-                } else {
-                    termErr.write(`${line}\n`);
-                }
-            }
-        }
-    });
-
-    replReasoning.setEncoding("utf8");
-    replReasoning.on("data", (chunk: string) => {
-        if (surface !== null) {
-            if (liveReasoningTurnEnded) {
-                liveReasoningBuffer = "";
-                liveReasoningTurnEnded = false;
-            }
-            liveReasoningBuffer += chunk;
-            const rendered = renderReasoning(liveReasoningBuffer);
-            if (rendered.length > 0) {
-                surface.setLive(rendered);
-            }
-            return;
-        }
-        const trimmed = chunk.replace(/\r?\n$/u, "");
-        if (trimmed.length > 0) {
-            termOut.write(`${trimmed}\n`);
-        }
-    });
-
-    replEvents.setEncoding("utf8");
-    let eventsBuf = "";
-    replEvents.on("data", (chunk: string) => {
-        eventsBuf += chunk;
-        const lines = eventsBuf.split("\n");
-        eventsBuf = lines.pop() ?? "";
-        for (const line of lines) {
-            if (line.trim().length === 0) continue;
-            let event: Record<string, unknown>;
-            try {
-                event = JSON.parse(line) as Record<string, unknown>;
-            } catch {
-                continue;
-            }
-
-            if (event.sessionUpdate === "session_bound") {
-                const prevWorkspace = presenter.workspaceName;
-                const prevSession = presenter.sessionName;
-                const wasStarted = initialPromptPrinted;
-                if (typeof event.workspace === "string" && event.workspace.length > 0) {
-                    presenter.workspaceName = event.workspace;
-                }
-                if (typeof event.session === "string" && event.session.length > 0) {
-                    presenter.sessionName = event.session;
-                }
-                if (typeof event.cwd === "string") {
-                    boundProjectRoot = event.cwd.length > 0 ? event.cwd : null;
-                }
-                if (Array.isArray(event.sessions)) {
-                    cachedSessions = event.sessions
-                        .map((s) => (s && typeof s === "object" ? String((s as { name?: unknown }).name ?? "") : ""))
-                        .filter(Boolean);
-                }
-                if (Array.isArray(event.workspaces)) {
-                    cachedWorkspaces = event.workspaces
-                        .map((w) => (w && typeof w === "object" ? String((w as { name?: unknown }).name ?? "") : ""))
-                        .filter(Boolean);
-                }
-                if (Array.isArray(event.configOptions)) {
-                    for (const rawOpt of event.configOptions) {
-                        const opt = rawOpt as {
-                            configId?: string;
-                            currentValue?: string;
-                            options?: ReadonlyArray<{ value?: string }>;
-                        };
-                        if (opt.configId === "model") {
-                            if (typeof opt.currentValue === "string" && opt.currentValue.length > 0) {
-                                presenter.model = opt.currentValue;
-                            }
-                            if (Array.isArray(opt.options)) {
-                                cachedModels = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
-                            }
-                        } else if (opt.configId === "thought_level") {
-                            if (typeof opt.currentValue === "string") {
-                                presenter.effort = opt.currentValue.length > 0 ? opt.currentValue : null;
-                            }
-                            if (Array.isArray(opt.options)) {
-                                cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
-                            }
-                        }
-                    }
-                }
-                if (event._meta && typeof event._meta === "object") {
-                    presenter.ingestMeta(event._meta as Record<string, unknown>);
-                }
-                if (surface !== null) {
-                    ensureSurfaceStarted();
-                    if (Array.isArray(event.history) && event.history.length > 0) {
-                        for (const rawItem of event.history) {
-                            const rec = rawItem as Record<string, unknown>;
-                            if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
-                                surface.editor.addToHistory(rec.text);
-                                surface.append("");
-                                surface.append(renderSubmittedInput(rec.text));
-                                surface.append("");
-                            } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
-                                const effectiveStatus =
-                                    rec.status === "in_progress" || rec.status === "pending"
-                                        ? "completed"
-                                        : typeof rec.status === "string"
-                                          ? rec.status
-                                          : "completed";
-                                const tcFrames = presenter.apply({
-                                    sessionUpdate: "tool_call_update",
-                                    toolCallId: rec.toolCallId,
-                                    ...(typeof rec.name === "string" ? { name: rec.name } : {}),
-                                    ...(typeof rec.title === "string" ? { title: rec.title } : {}),
-                                    status: effectiveStatus,
-                                    ...(Array.isArray(rec.locations) ? { locations: rec.locations } : {}),
-                                    ...(Array.isArray(rec.content) ? { content: rec.content } : {}),
-                                    ...(rec.rawInput !== undefined ? { rawInput: rec.rawInput } : {}),
-                                    ...(rec.rawOutput !== undefined ? { rawOutput: rec.rawOutput } : {}),
-                                    ...(rec.meta !== undefined ? { _meta: rec.meta } : {}),
-                                } as unknown as SessionUpdate);
-                                for (const f of tcFrames) {
-                                    if (f.kind === "tool_call") {
-                                        renderToolCallToSurface(f);
-                                    }
-                                }
-                            } else if (
-                                rec.kind === "agent_message" &&
-                                typeof rec.text === "string" &&
-                                rec.text.length > 0
-                            ) {
-                                const plurnkMeta = (
-                                    rec.meta as
-                                        | {
-                                              plurnk?: {
-                                                  op?: string;
-                                                  status?: number;
-                                                  attrs?: { aside?: string };
-                                              };
-                                          }
-                                        | undefined
-                                )?.plurnk;
-                                surface.append(
-                                    renderModelReply(rec.text, surface.columns, {
-                                        op: plurnkMeta?.op ?? "SEND",
-                                        status: plurnkMeta?.status ?? 200,
-                                        aside: plurnkMeta?.attrs?.aside ?? null,
-                                    }),
-                                );
-                            }
-                        }
-                    }
-                    if (wasStarted && (presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession)) {
-                        currentTurns = 0;
-                        presenter.lastLoopStatus = null;
-                        presenter.lastStatusLine = "";
-                    }
-                    surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
-                    updateSurfaceStatus();
-                    surface.renderNow();
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "composer_updated") {
-                if (surface !== null && typeof event.text === "string") {
-                    surface.setInput(event.text);
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "permission_request") {
-                if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
-                    focusedGateIds.push(event.id);
-                }
-                if (review !== null && typeof event.id === "string") {
-                    review.addPermissionGate(event as unknown as PermissionGateEvent);
-                    attend("review");
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "elicitation_request") {
-                if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
-                    focusedGateIds.push(event.id);
-                }
-                if (review !== null && typeof event.id === "string") {
-                    review.addElicitationGate(event as unknown as ElicitationGateEvent);
-                    attend("question");
-                }
-                continue;
-            }
-
-            if (event.sessionUpdate === "gate_resolved") {
-                if (typeof event.id === "string") {
-                    const idx = focusedGateIds.indexOf(event.id);
-                    if (idx >= 0) focusedGateIds.splice(idx, 1);
-                    review?.remove(event.id);
-                }
-                continue;
-            }
-
-            const frames = presenter.apply(event as unknown as SessionUpdate);
-            for (const frame of frames) {
-                switch (frame.kind) {
-                    case "reasoning_tail":
-                    case "reasoning_retired":
-                    case "subagent":
-                        break;
-                    case "status_update":
-                        if (frame.newTurn) {
-                            liveReasoningTurnEnded = true;
-                            surface?.archiveTurn();
-                        }
-                        if (surface !== null) {
-                            updateSurfaceStatus();
-                        } else if (frame.status.lifecycle === "parked") {
-                            termOut.write(`${frame.status.formattedStatusLine}\n`);
-                        }
-                        break;
-                    case "reply_chunk":
-                        if (surface !== null && frame.text.length > 0) {
-                            suppressedStdoutQueue.push(frame.text.endsWith("\n") ? frame.text : `${frame.text}\n`);
-                            surface.addResponse(
-                                renderModelReply(frame.text, surface.columns, {
-                                    op: frame.op,
-                                    status: frame.status,
-                                    aside: frame.aside,
-                                }),
-                            );
-                        }
-                        break;
-                    case "tool_call":
-                        if (surface !== null) {
-                            renderToolCallToSurface(frame);
-                            updateSurfaceStatus();
-                        } else {
-                            if (frame.title) {
-                                termOut.write(`${frame.title}\n`);
-                            }
-                            for (const cLine of frame.contentLines) {
-                                termOut.write(`${cLine}\n`);
-                            }
-                        }
-                        break;
-                    case "terminal_output":
-                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-rendering});
-                        // concluded output is previewed beneath the launching operation row when it finishes.
-                        if (surface === null) {
-                            termOut.write(`${frame.rawData}\n`);
-                        }
-                        break;
-                    case "session_message":
-                        if (surface !== null) {
-                            surface.append(`🐜 ${ModelText.plain(frame.senderSessionId)}: ${ModelText.plain(frame.text)}`);
-                        } else {
-                            termOut.write(`🐜 ${frame.senderSessionId}: ${frame.text}\n`);
-                        }
-                        break;
-                    case "notice":
-                        if (surface !== null) {
-                            const accent = frame.severity === "info" ? "dim" : "failure";
-                            surface.append(paint(ModelText.plain(frame.formatted), accent));
-                        } else {
-                            termOut.write(`${frame.formatted}\n`);
-                        }
-                        break;
-                    case "status_bar":
-                        retireLiveReasoning();
-                        currentTurns = frame.turns;
-                        if (surface !== null) {
-                            const metricsOpts = {
-                                turns: frame.turns,
-                                elapsedMs: frame.elapsedMs,
-                                inputTokens: frame.status.inputTokens,
-                                outputTokens: frame.status.outputTokens,
-                                curationWeight: frame.status.curationWeight,
-                                curationBudget: frame.status.curationBudget,
-                                contextTokens: frame.status.contextTokens,
-                                contextCapacity: frame.status.contextCapacity,
-                                costUsd: frame.status.costUsd,
-                            };
-                            const attachedToHamster = surface.archiveTurn(
-                                frame.statusCode === 200 && !frame.hitMaxTurns
-                                    ? formatLoopMetrics(metricsOpts)
-                                    : null,
-                            );
-                            if (frame.terminalDetail) {
-                                surface.append(paint(ModelText.plain(frame.terminalDetail), "failure"));
-                            }
-                            if (!attachedToHamster) {
-                                surface.append(
-                                    renderLoopSummary({
-                                        status: frame.statusCode,
-                                        hitMaxTurns: frame.hitMaxTurns,
-                                        ...metricsOpts,
-                                    }),
-                                );
-                            }
-                            updateSurfaceStatus();
-                            attend(concluded(frame.statusCode, frame.hitMaxTurns));
-                        } else {
-                            if (frame.terminalDetail) {
-                                termOut.write(`${frame.terminalDetail}\n`);
-                            }
-                            termOut.write(
-                                `${frame.status.formattedStatusLine}\n[${presenter.workspaceName}/~${presenter.sessionName}(1/${frame.turns})] `,
-                            );
-                        }
-                        break;
-                }
-            }
-        }
-    });
-
-    const userRl = surface === null ? readline.createInterface({ input: termIn, terminal: false }) : null;
-    if (userRl !== null) {
-        userRl.on("line", (line: string) => {
-            routeAndSendLine(line);
-        });
-        userRl.on("close", () => {
-            replStdin.end();
-        });
-    }
-
-    try {
-        return await runReplSession(options, {
-            stdin: replStdin,
-            stdout: replStdout,
-            stderr: replStderr,
-            events: replEvents,
-            reasoning: replReasoning,
-        });
-    } finally {
-        if (statusTicker !== null) {
-            clearInterval(statusTicker);
-        }
-        removeInputListener?.();
-        surface?.stop();
-        userRl?.close();
-    }
-};

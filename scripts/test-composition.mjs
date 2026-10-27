@@ -345,15 +345,6 @@ try {
 
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));
-    JSON.parse(await readFile(join(
-        install,
-        "node_modules",
-        "@plurnk",
-        "plurnk-contracts",
-        "dist",
-        "conformance",
-        "acp-v2.json",
-    ), "utf8"));
     console.log(`packed composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${servicePackage.name}@${servicePackage.version}`);
     passed = true;
 } finally {

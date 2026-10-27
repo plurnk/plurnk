@@ -7,7 +7,7 @@ import { refuseBelowFloor } from "./runtime-floor.ts";
 import { formatServiceUpdateResult } from "./cli-runner.ts";
 import { main } from "./dispatcher.ts";
 import { lifecycleGlyphFor, operationGlyphFor, SessionPresenter } from "./session-presenter.ts";
-import { altShortcut, backTabShortcut } from "./repl-session.ts";
+import { altShortcut, backTabShortcut } from "./tui-viewport.ts";
 import { completeInput, completeOps, dslOpPartial, pathPartial } from "./tui-completion.ts";
 import Review, { QuestionForm } from "./tui-review.ts";
 import TuiSurface, {

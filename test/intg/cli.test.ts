@@ -106,15 +106,18 @@ const createMockAcpServer = async () => {
             async ({ params }) => {
                 if (params.kind === "models.list") {
                     return {
-                        providers: [
+                        items: [
                             {
-                                id: "mocktest",
-                                name: "Mock Provider",
-                                status: "ready",
-                                models: [{ id: "mocktest/mock-v1", name: "Mock V1" }],
+                                selector: "mocktest/mock-v1",
+                                provider: "mocktest",
+                                providerName: "Mock Provider",
+                                model: "mock-v1",
+                                modelName: "Mock V1",
+                                readiness: { ready: true },
                             },
                         ],
-                        aliases: [],
+                        offset: 0,
+                        total: 1,
                     };
                 }
                 if (params.kind === "service.update") {
@@ -138,7 +141,7 @@ const createMockAcpServer = async () => {
                 if (params.kind === "workspace.list") {
                     return {
                         workspaces: [
-                            { id: 1, name: "test-ws", projectRoot: "/tmp", projectLabel: "test-ws" },
+                            { id: 1, name: "test-ws", project_root: "/tmp", project_label: "test-ws" },
                         ],
                     };
                 }
@@ -396,7 +399,7 @@ const createMockAcpServer = async () => {
                     stopReason: "end_turn",
                     _meta: {
                         plurnk: {
-                            terminal: { status: 200, turns: 1, reason: "end_turn" },
+                            terminal: { status: 200, turnCount: 1, reason: "end_turn" },
                         },
                     },
                 },

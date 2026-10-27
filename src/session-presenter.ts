@@ -1157,7 +1157,6 @@ export class SessionPresenter {
                               plurnk?: {
                                   terminal?: {
                                       status?: number;
-                                      turns?: number;
                                       turnCount?: number;
                                       problem?: { detail?: string };
                                       usage?: {
@@ -1208,7 +1207,7 @@ export class SessionPresenter {
                 }
                 const elapsedMs = Math.max(1, Date.now() - this.#turnStartedAt);
                 const statusBar = this.buildStatusBar(elapsedMs, status);
-                const rawTurns = termMeta?.turnCount ?? termMeta?.turns;
+                const rawTurns = termMeta?.turnCount;
                 const turns = typeof rawTurns === "number" && rawTurns > 0 ? rawTurns : 1;
                 const hitMaxTurns = update.stopReason === "max_turn_requests" || status === 429;
                 const terminalDetail =

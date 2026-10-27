@@ -1,4 +1,4 @@
-// {§cli-env-defaults} — the client's half of the cascading-environment law
+// {§cli-invocation} — the client's half of the cascading-environment law
 // (plurnk/plurnk-service#771): its packaged `.env.defaults` is the only home for a client choice,
 // and a flag is a knob's spelling for one invocation. This gate reads what Git tracks.
 import assert from "node:assert/strict";
@@ -64,12 +64,12 @@ for (const { code } of sources) {
     for (const match of code.matchAll(/\b(PLURNK_[A-Z0-9_]*[A-Z0-9])(?:_<[A-Z0-9_]+>|\b)/gu)) read.add(match[1]);
 }
 
-test("[{§cli-env-defaults}] the client's panel declares only its own prefix: one owner per key", () => {
+test("[{§cli-invocation}] the client's panel declares only its own prefix: one owner per key", () => {
     const strays = [...declared].filter((key) => !OWNED.test(key));
     assert.deepEqual(strays, [], `declared outside PLURNK_CLIENT_*: ${strays.join(", ")}`);
 });
 
-test("[{§cli-env-defaults}] every key the client names is declared or has a stated owner, and every declaration is read", () => {
+test("[{§cli-invocation}] every key the client names is declared or has a stated owner, and every declaration is read", () => {
     const undeclared = [...read].filter((key) => !declared.has(key) && !FOREIGN.has(key) && !NOT_A_KNOB.has(key)).toSorted();
     assert.deepEqual(undeclared, [], `named by src but declared on no panel the client knows: ${undeclared.join(", ")}`);
     const dead = [...declared].filter((key) => !read.has(key)).toSorted();
@@ -78,7 +78,7 @@ test("[{§cli-env-defaults}] every key the client names is declared or has a sta
     assert.deepEqual(unread, [], `listed as a foreign key but no longer named: ${unread.join(", ")}`);
 });
 
-test("[{§cli-env-defaults}] a knob read never carries a value of its own", () => {
+test("[{§cli-invocation}] a knob read never carries a value of its own", () => {
     const found = new Map();
     for (const { name, code } of sources) {
         const count = [...code.matchAll(/(?:\.PLURNK_[A-Z0-9_]+|\[\s*["'`]PLURNK_[A-Z0-9_]+["'`]\s*\])\s*(?:\?\?|\|\|)\s*(?:["'`][^"'`]|-?\d|true\b|false\b)/gu)].length;
@@ -87,7 +87,7 @@ test("[{§cli-env-defaults}] a knob read never carries a value of its own", () =
     assert.deepEqual([...found], [], "a default beside a read is a second home for a choice");
 });
 
-test("[{§cli-env-defaults}] a flag is a knob's spelling: every option mirrors one, or says why it is an argument", () => {
+test("[{§cli-invocation}] a flag is a knob's spelling: every option mirrors one, or says why it is an argument", () => {
     const options = Object.keys(CLIENT_OPTIONS);
     assert.ok(options.length > 20, `declared ${options.length} options`);
     const flagOf = (knob) => knob.replace(/^PLURNK_CLIENT_/u, "").toLowerCase().replaceAll("_", "-");
@@ -102,7 +102,7 @@ test("[{§cli-env-defaults}] a flag is a knob's spelling: every option mirrors o
     assert.deepEqual(both, [], `an option cannot be both a knob's flag and an argument: ${both.join(", ")}`);
 });
 
-test("[{§cli-env-defaults}] a key shared with the daemon is declared by the package both depend on, and the floor folds it", async () => {
+test("[{§cli-invocation}] a key shared with the daemon is declared by the package both depend on, and the floor folds it", async () => {
     const { SHARED_DEFAULTS_PATH, parseDefaults } = await import("../src/envdefaults.ts");
     const shared = readFileSync(SHARED_DEFAULTS_PATH, "utf8");
     const declaredThere = new Set([...shared.matchAll(/^(?:# )?([A-Z][A-Z0-9_]*)=/gmu)].map((match) => match[1]));

@@ -38,7 +38,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const binPath = path.join(repoRoot, "bin", "plurnk.js");
 
-test("{§cli-runtime-floor} {§cli-invocation} {§cli-family-arguments} {§cli-configuration-source}: runtime floor check, CLI flag parsing, and family argument forwarding", () => {
+test("{§cli-invocation} {§cli-invocation} {§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI flag parsing, and family argument forwarding", () => {
     assert.doesNotThrow(() => refuseBelowFloor("plurnk", "26.0.0"));
 
     const help = spawnSync(process.execPath, [binPath, "--help"], {
@@ -51,7 +51,7 @@ test("{§cli-runtime-floor} {§cli-invocation} {§cli-family-arguments} {§cli-c
     assert.match(help.stdout, /--session/);
 });
 
-test("{§cli-render-filter} {§cli-markdown-projection} {§cli-markdown-adapter} {§cli-hyperlinks} {§cli-color-policy} {§cli-color-scheme} {§cli-palette}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
+test("{§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
     const rendered = spawnSync(
         process.execPath,
         [binPath, "render", "--width", "60", "--color", "never"],
@@ -67,10 +67,10 @@ test("{§cli-render-filter} {§cli-markdown-projection} {§cli-markdown-adapter}
     assert.match(rendered.stdout, /example/);
 });
 
-test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-log-entry-line-format} {§cli-operation-glyphs} {§cli-curation-notice} {§cli-note-rendering} {§cli-provider-reasoning} {§cli-response-order} {§cli-outside-text} {§cli-summary-line-per-loop} {§cli-what-is-not-rendered} {§cli-broadcast-send-rendering} {§cli-terminal-conveniences} {§cli-terminal-title} {§cli-attention}: waterfall rendering, operation glyphs, NOTE bodies, reasoning blocks, and summary lines", async () => {
+test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-rendering} {§cli-rendering} {§cli-markdown-projection} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: waterfall rendering, operation glyphs, NOTE bodies, reasoning blocks, and summary lines", async () => {
     await main(["node", "plurnk", "--version"]);
 
-    // Operation glyphs ({§cli-operation-glyphs})
+    // Operation glyphs ({§cli-rendering})
     assert.equal(operationGlyphFor("READ"), "📖");
     assert.equal(operationGlyphFor("EDIT"), "📝");
     assert.equal(operationGlyphFor("FIND"), "🔎");
@@ -84,7 +84,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(operationGlyphFor("SEND"), "✉️");
     assert.equal(operationGlyphFor("sh"), "⚙️  sh");
 
-    // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-provider-reasoning}, {§cli-response-order})
+    // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-markdown-projection}, {§cli-markdown-projection})
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
         sessionName: "user",
@@ -99,7 +99,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     assert.equal(r1[0]?.kind, "reasoning_tail");
     assert.deepEqual(presenter.reasoningLines, ["line 2", "line 3"]);
 
-    // Internal _plurnk emission READ (ops://...) and entry materialization EDIT are never rendered ({§cli-what-is-not-rendered})
+    // Internal _plurnk emission READ (ops://...) and entry materialization EDIT are never rendered ({§cli-rendering})
     const emittedAnnouncement = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/0",
@@ -111,7 +111,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     });
     assert.equal(emittedAnnouncement.length, 0);
 
-    // Tool call retires reasoning tail and emits operation glyph; READ and FIND show {count} and no receipt body ({§cli-response-order}, {§cli-log-entry-line-format})
+    // Tool call retires reasoning tail and emits operation glyph; READ and FIND show {count} and no receipt body ({§cli-markdown-projection}, {§cli-rendering})
     const t1 = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/1",
@@ -133,7 +133,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         assert.deepEqual(t1[1].contentLines, []);
     }
 
-    // NOTE category asides (plan/idea/fact/note) use category glyph and consume the category word ({§cli-operation-glyphs})
+    // NOTE category asides (plan/idea/fact/note) use category glyph and consume the category word ({§cli-rendering})
     const notePlan = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/2",
@@ -150,7 +150,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         assert.equal(notePlan[0].noteBody, "Evaluate and react to the Open Message.");
     }
 
-    // Harness NOTE (_plurnk origin) sets contentLines and renders all lines indented 4 spaces ({§cli-note-rendering})
+    // Harness NOTE (_plurnk origin) sets contentLines and renders all lines indented 4 spaces ({§cli-rendering})
     const harnessNote = presenter.apply({
         sessionUpdate: "tool_call_update",
         toolCallId: "1/1/3",
@@ -182,7 +182,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         assert.doesNotMatch(renderedHarnessNote, /\+\d+ line/u);
     }
 
-    // Concluded runtime execution previews streamed output under the operation row and suppresses duplicate obligation READ ({§cli-log-entry-line-format}, {§cli-stream-event-and-stream-concluded})
+    // Concluded runtime execution previews streamed output under the operation row and suppresses duplicate obligation READ ({§cli-rendering}, {§cli-problems-and-notices})
     assert.equal(
         presenter.apply({
             sessionUpdate: "tool_call_update",
@@ -300,7 +300,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
         /🎯 done · 1 turn · 1\.25s · ↓1\.2k ↑300 · cur 10%\/4k · ctx 10%\/8k · loop \$0\.02/,
     );
 
-    // Engine turn and workspace notices route to status_update or are suppressed, never waterfall notice ({§cli-what-is-not-rendered})
+    // Engine turn and workspace notices route to status_update or are suppressed, never waterfall notice ({§cli-rendering})
     const turnAwait = presenter.apply({
         sessionUpdate: "notice",
         severity: "info",
@@ -335,7 +335,7 @@ test("{§cli-rendering} {§cli-presentation-loading} {§cli-row-sources} {§cli-
     }
 });
 
-test("{§cli-session-status} {§cli-status-wait} {§cli-status-preparation} {§cli-status-disconnected} {§cli-identity-effort} {§cli-status-project-root} {§cli-status-children} {§cli-status-gated} {§cli-status-inbox} {§cli-status-streams} {§cli-status-clock} {§cli-status-spend}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
+test("{§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-model-selection} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
     assert.equal(lifecycleGlyphFor("running"), "⌛︎");
     assert.equal(lifecycleGlyphFor("parked"), "💤");
     assert.equal(lifecycleGlyphFor("idle", 200), "⏹️");
@@ -413,12 +413,12 @@ test("{§cli-session-status} {§cli-status-wait} {§cli-status-preparation} {§c
     assert.notEqual(statusRun.status, 0);
 });
 
-test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-forms} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-color-policy} {§cli-color-scheme} {§cli-terminal-title} {§cli-attention}: pi-tui TuiSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
+test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-review} {§cli-interactive-command-discovery} {§cli-interactive-command-discovery} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: pi-tui TuiSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
     // ModelText sanitization ({§cli-problems-and-notices})
     assert.equal(ModelText.plain("hello\x1b[31mworld\x1b[0m\x07"), "helloworld");
     assert.deepEqual(ModelText.plainFields({ detail: "a\x1b[2Jb", status: 400 }), { detail: "ab", status: 400 });
 
-    // Color policy and scheme detection ({§cli-color-policy}, {§cli-color-scheme})
+    // Color policy and scheme detection ({§cli-color-policy}, {§cli-color-policy})
     assert.equal(colorEnabled({ isTTY: true }, { PLURNK_CLIENT_COLOR: "never" }), false);
     assert.equal(colorEnabled({ isTTY: false }, { PLURNK_CLIENT_COLOR: "always" }), true);
     assert.equal(colorEnabled({ isTTY: true }, { NO_COLOR: "1" }), false);
@@ -442,7 +442,7 @@ test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-fo
     });
     assert.match(painted, /\x1b\[32mok\x1b\[0m/u);
 
-    // Header, title, resumeCommand, attention ({§cli-terminal-title}, {§cli-attention})
+    // Header, title, resumeCommand, attention ({§cli-color-policy}, {§cli-color-policy})
     assert.equal(windowTitle("ws", "user"), "plurnk · ws · user");
     assert.equal(windowTitle("ws", null), "plurnk · ws");
     assert.match(
@@ -467,14 +467,14 @@ test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-fo
     assert.equal(altShortcut("\x1b?"), "/help");
     assert.equal(backTabShortcut("\x1b[Z"), "/yolo");
 
-    // TailText caps reasoning scroll lines ({§cli-provider-reasoning})
+    // TailText caps reasoning scroll lines ({§cli-markdown-projection})
     const tail = new TailText(() => 2);
     assert.equal(tail.hasText, false);
     tail.setText("r1\nr2\nr3");
     assert.equal(tail.hasText, true);
     assert.deepEqual(tail.render(40), ["r2", "r3"]);
 
-    // QuestionForm step-by-step and JSON validation ({§cli-question-forms})
+    // QuestionForm step-by-step and JSON validation ({§cli-inline-review})
     const form = new QuestionForm(
         {
             type: "object",
@@ -552,7 +552,7 @@ test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-fo
     assert.equal(surface.reviewing, false);
     surface.stop();
 
-    // Completion ({§cli-interactive-command-discovery}, {§cli-path-completion})
+    // Completion ({§cli-interactive-command-discovery}, {§cli-interactive-command-discovery})
     assert.deepEqual(dslOpPartial("```re"), { fence: "```", typed: "re" });
     const [ops] = completeOps({ fence: "````", typed: "RE" });
     assert.ok(ops.includes("````READ"));
@@ -574,7 +574,7 @@ test("{§cli-tui-mode} {§cli-tui-flow} {§cli-inline-review} {§cli-question-fo
     });
     assert.deepEqual(gateComp.suggestions, [{ value: "@deadbeef", description: "pending gate" }]);
 
-    // Service and model catalog update formatting ({§cli-plurnk-update})
+    // Service and model catalog update formatting ({§cli-subcommands})
     const formattedUpdate = formatServiceUpdateResult({
         catalog: { status: "updated", models: 500, providers: 20, addedModels: 4 },
         npm: { status: "updated", package: "@plurnk/plurnk-service", previousVersion: "4.4.0", currentVersion: "4.5.0" },

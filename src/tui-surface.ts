@@ -1,5 +1,5 @@
-// Terminal substrate on `@earendil-works/pi-tui` ({§cli-tui-mode}, {§cli-tui-flow},
-// {§cli-color-scheme}, {§cli-terminal-title}, {§cli-attention}, {§cli-rendering}).
+// Terminal substrate on `@earendil-works/pi-tui` ({§cli-repl-mode}, {§cli-repl-mode},
+// {§cli-color-policy}, {§cli-color-policy}, {§cli-color-policy}, {§cli-rendering}).
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { stripVTControlCharacters } from "node:util";
@@ -66,7 +66,7 @@ export const colorEnabled = (
     return env.CLICOLOR !== "0" && env.TERM !== "dumb" && output.isTTY === true;
 };
 
-// {§cli-color-scheme} — the TUI's answer from the terminal itself.
+// {§cli-color-policy} — the TUI's answer from the terminal itself.
 let learned: TerminalColorScheme | undefined;
 export const learnScheme = (scheme: TerminalColorScheme | undefined): void => {
     learned = scheme;
@@ -128,7 +128,7 @@ export const paint = (text: string, ...roles: Role[]): string => {
     return `\x1b[${roles.map((role) => sgr[role]).join(";")}m${text}\x1b[0m`;
 };
 
-// {§cli-hyperlinks} — OSC 8 hyperlinks when color is enabled.
+// {§cli-markdown-projection} — OSC 8 hyperlinks when color is enabled.
 export const hyperlink = (url: string, label: string): string => {
     if (!colorEnabled()) return label;
     const clean = ModelText.plain(url);
@@ -185,7 +185,7 @@ export const renderMermaid = (source: string, width: number = 80): string | null
     }
 };
 
-// {§cli-markdown-adapter} — Terminal Markdown projection via pi-tui Markdown + Mermaid.
+// {§cli-markdown-projection} — Terminal Markdown projection via pi-tui Markdown + Mermaid.
 export const renderMarkdownDocument = (markdown: string, width: number = 80): string => {
     const clean = ModelText.plain(markdown).replace(/\r\n/gu, "\n");
     if (clean.trim().length === 0) return "";
@@ -198,7 +198,7 @@ export const renderMarkdownDocument = (markdown: string, width: number = 80): st
     return lines.join("\n").replace(/\n+$/u, "");
 };
 
-// {§cli-provider-reasoning} — Live 1/3-screen reasoning formatting with 💭 lead and 3-space indent.
+// {§cli-markdown-projection} — Live 1/3-screen reasoning formatting with 💭 lead and 3-space indent.
 export const renderReasoning = (content: string): string => {
     const clean = ModelText.plain(content).replace(/\r\n/gu, "\n").replace(/\n$/u, "");
     if (clean.length === 0) return "";
@@ -208,7 +208,7 @@ export const renderReasoning = (content: string): string => {
         .join("\n");
 };
 
-// {§cli-operation-glyphs}, {§cli-response-order}, {§cli-outside-text} — Model response rendering.
+// {§cli-rendering}, {§cli-markdown-projection}, {§cli-markdown-projection} — Model response rendering.
 export const renderModelReply = (
     text: string,
     columns: number = 80,
@@ -234,7 +234,7 @@ export const renderModelReply = (
     return body.length > 0 ? `${lead}\n${body}` : lead;
 };
 
-// {§cli-note-rendering} — Full dimmed Markdown rendering for NOTE / FACT / IDEA / PLAN.
+// {§cli-rendering} — Full dimmed Markdown rendering for NOTE / FACT / IDEA / PLAN.
 export const renderNoteBlock = (opts: {
     readonly glyph: string;
     readonly aside?: string | null;
@@ -270,7 +270,7 @@ const truncateToColumns = (line: string, maxCols: number): string => {
     return `${out}…`;
 };
 
-// {§cli-log-entry-line-format} — 4-space indented dim preview lines with log:/// coordinate hint.
+// {§cli-rendering} — 4-space indented dim preview lines with log:/// coordinate hint.
 export const previewLines = (
     content: string,
     limit: number = 5,
@@ -309,7 +309,7 @@ export const previewLines = (
 
 const CURATION_VERBS = new Set(["KEEP", "DROP", "FOLD", "OPEN", "SHUT", "VIEW", "META"]);
 
-// {§cli-log-entry-line-format}, {§cli-curation-notice} — Operation row + preview block.
+// {§cli-rendering}, {§cli-rendering} — Operation row + preview block.
 export const renderOperationBlock = (opts: {
     readonly glyph: string;
     readonly op?: string | null;
@@ -432,7 +432,7 @@ export const formatLoopMetrics = (opts: {
     return parts.join(" · ");
 };
 
-// {§cli-summary-line-per-loop} — Loop conclusion summary line.
+// {§cli-rendering} — Loop conclusion summary line.
 export const renderLoopSummary = (opts: {
     readonly status: number;
     readonly hitMaxTurns?: boolean;
@@ -457,7 +457,7 @@ export const renderLoopSummary = (opts: {
     return paint(`${state} · ${formatLoopMetrics(opts)}`, "dim");
 };
 
-// {§cli-attention} — signal when the person is needed.
+// {§cli-color-policy} — signal when the person is needed.
 export type AttentionReason = "reply" | "stopped" | "failed" | "review" | "question";
 export type AttentionSink = (reason: AttentionReason) => void;
 
@@ -472,7 +472,7 @@ export const bell = (stream: { readonly isTTY?: boolean; write(chunk: string): u
     if (stream.isTTY === true) stream.write("\x07");
 };
 
-// {§cli-terminal-title}
+// {§cli-color-policy}
 export const windowTitle = (workspace: string, session: string | null | undefined): string =>
     session ? `plurnk · ${workspace} · ${session}` : `plurnk · ${workspace}`;
 
@@ -504,7 +504,7 @@ export const renderSubmittedInput = (text: string): string =>
         .map((line, i) => paint(`${i === 0 ? "› " : "  "}${ModelText.plain(line)}`, "human", "bold"))
         .join("\n");
 
-// Live reasoning scroll: at most a third of the terminal, newest lines only, never durable ({§cli-provider-reasoning}).
+// Live reasoning scroll: at most a third of the terminal, newest lines only, never durable ({§cli-markdown-projection}).
 export class TailText implements Component {
     #text = "";
     readonly #maxLines: () => number;
@@ -722,7 +722,7 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
-    // {§cli-response-order} — Turn responses sit below #live reasoning during the turn, then archive to #transcript.
+    // {§cli-markdown-projection} — Turn responses sit below #live reasoning during the turn, then archive to #transcript.
     addResponse(text: string): void {
         const normalized = text.replace(/\n$/u, "");
         if (normalized.length === 0) return;

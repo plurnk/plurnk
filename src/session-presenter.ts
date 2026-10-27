@@ -1,4 +1,4 @@
-// Unified ACP v2 SessionPresenter pipeline ({§cli-rendering}, {§cli-session-status}, {§cli-provider-reasoning}).
+// Unified ACP v2 SessionPresenter pipeline ({§cli-rendering}, {§cli-session-status}, {§cli-markdown-projection}).
 // Single state machine between AcpSession and any rendering viewport (CLI stdout/stderr or pi-tui)
 // so that TUI is a pure perspective of the CLI and never makes an independent presentation decision.
 
@@ -513,7 +513,7 @@ export class SessionPresenter {
             baseParts.push(`↓${String(this.inputTokens)} ↑${String(this.outputTokens)}`);
         }
 
-        // Right-of-status-line live activity indicators ({§cli-session-status}, {§cli-status-wait}, {§cli-status-preparation})
+        // Right-of-status-line live activity indicators ({§cli-session-status}, {§cli-session-status}, {§cli-session-status})
         if (this.lifecycle === "running" && this.doing !== null) {
             if (this.doing.phase === "awaiting") {
                 baseParts.push(`awaiting model ${formatLiveWait(Math.max(0, Date.now() - this.doing.since))}`);
@@ -694,7 +694,7 @@ export class SessionPresenter {
             const target =
                 authoredTarget ?? effectiveLocations?.[0]?.path ?? extractTitleTarget(effectiveTitle);
 
-            // Suppress internal _plurnk emission announcements and entry materializations ({§cli-what-is-not-rendered}).
+            // Suppress internal _plurnk emission announcements and entry materializations ({§cli-rendering}).
             if (
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "READ" &&
@@ -749,7 +749,7 @@ export class SessionPresenter {
                       })
                     : undefined;
 
-            // Over-budget curation moment ({§cli-curation-notice}): render as `📌 — curating context`.
+            // Over-budget curation moment ({§cli-rendering}): render as `📌 — curating context`.
             if (
                 (opName === "error" || opName === "ERROR" || opName === "FAIL") &&
                 problemRec?.type === "https://problems.plurnk.xyz/engine/context/packet-exceeds-budget"
@@ -818,7 +818,7 @@ export class SessionPresenter {
 
             // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, runtime execs, harness NOTEs)
             // and concluded runtime execution stream outputs receive a preview beneath the row
-            // ({§cli-log-entry-line-format}, {§cli-what-is-not-rendered}).
+            // ({§cli-rendering}, {§cli-rendering}).
             const contentLines: string[] = [];
             if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
                 contentLines.push(noteBody);
@@ -1001,7 +1001,7 @@ export class SessionPresenter {
 
         if (SessionUpdate.isNotice(update)) {
             // Route workspace state/preparation, engine turn progress, loop status, and search progress
-            // to the right of the status line instead of the waterfall ({§cli-session-status}, {§cli-what-is-not-rendered}).
+            // to the right of the status line instead of the waterfall ({§cli-session-status}, {§cli-rendering}).
             if (update.title === "workspace:state" || update.title === "workspace:preparation") {
                 this.ingestMeta(update._meta as MetaRecord | undefined);
                 frames.push({

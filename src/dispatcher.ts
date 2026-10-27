@@ -1,4 +1,5 @@
-// CLI entrypoint, option catalog, USAGE authority, and subcommand dispatcher ({§cli-invocation}, {§cli-env-defaults}).
+// {§cli-workspaces-and-sessions} {§cli-model-selection} {§cli-sessions-topology} {§cli-subcommands} {§cli-conformance}
+// CLI entrypoint, option catalog, USAGE authority, and subcommand dispatcher ({§cli-invocation}, {§cli-invocation}).
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -326,7 +327,7 @@ const collectSessionEnv = (
 export const main = async (argv: readonly string[] = process.argv): Promise<void> => {
     const rawArgs = argv.slice(2);
 
-    // Split before family command if present ({§cli-family-arguments})
+    // Split before family command if present ({§cli-invocation})
     let clientArgs = [...rawArgs];
     let familyName: string | undefined;
     let familyArgs: string[] = [];
@@ -384,7 +385,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const positionals = parsed.positionals;
     const first = familyName ?? positionals[0];
 
-    // Local-only subcommands require no daemon or env cascade ({§cli-render-filter})
+    // Local-only subcommands require no daemon or env cascade ({§cli-markdown-projection})
     if (first === "render") {
         const defaultWidth = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80;
         const width = typeof parsed.values.width === "string"

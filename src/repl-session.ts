@@ -1,5 +1,5 @@
 // Five-stream contract ([stdin, stdout, stderr, events, reasoning], fd 0..4) and
-// interactive REPL engine ({§cli-output-channels}, {§cli-repl-mode}, {§cli-tui-mode}).
+// interactive REPL engine ({§cli-output-channels}, {§cli-repl-mode}, {§cli-repl-mode}).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -1695,7 +1695,7 @@ export const backTabShortcut = (forward: string): string | null =>
     forward === "\x1b[Z" ? "/yolo" : null;
 
 // Pure TUI viewport composed atop the 5-stream contract ([stdin, stdout, stderr, events, reasoning]).
-// Holds no reference to AcpClient or AcpSession ({§cli-tui-mode}).
+// Holds no reference to AcpClient or AcpSession ({§cli-repl-mode}).
 export const runTuiViewport = async (
     options: CliCommonOptions,
     outerStreams?: Partial<Pick<ClientStreams, "stdin" | "stdout" | "stderr">> & {
@@ -2329,7 +2329,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "terminal_output":
-                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-what-is-not-rendered});
+                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-rendering});
                         // concluded output is previewed beneath the launching operation row when it finishes.
                         if (surface === null) {
                             termOut.write(`${frame.rawData}\n`);

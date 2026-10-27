@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-test("the push gate does not leak its Git repository into test-created repositories", async () => {
+test("{§cli-conformance} the push gate does not leak its Git repository into test-created repositories", async () => {
     const root = await mkdtemp(join(tmpdir(), "plurnk-push-gate-"));
     const keys = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_COMMON_DIR"];
     try {

@@ -28,7 +28,7 @@ client.
 
 The waterfall is intentionally compact: operation glyphs begin at the
 left edge, with only the fields that identify their action and outcome.
-Runtimes and subsystems retain their names after ⚙️ ({§cli-operation-glyphs}).
+Runtimes and subsystems retain their names after ⚙️ ({§cli-rendering}).
 Delivered messages render as full response blocks rather than diagnostic rows.
 The status row projects standard ACP state in lifecycle → model → packet →
 activity order. The lifecycle glyph is the daemon's word (`⌛︎` while a loop runs),

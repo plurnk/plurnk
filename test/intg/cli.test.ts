@@ -429,7 +429,7 @@ const createMockAcpServer = async () => {
     };
 };
 
-test("{§cli-workspaces-and-sessions} {§cli-project-root} {§cli-workspace-open-settings} {§cli-history-lost} {§cli-one-shot-mode} {§cli-one-shot-flow} {§cli-output-channels} {§cli-what-one-shot-mode-does-not-do} {§cli-prompt-prefixes} {§cli-prompt-open-paths} {§cli-exit-codes} {§cli-partial-record} {§cli-interrupted-record}: one-shot prompt execution, --session attach-or-create, --json record, and exit codes", async () => {
+test("{§cli-workspaces-and-sessions} {§cli-workspaces-and-sessions} {§cli-workspaces-and-sessions} {§cli-workspaces-and-sessions} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels} {§cli-output-channels}: one-shot prompt execution, --session attach-or-create, --json record, and exit codes", async () => {
     const server = await createMockAcpServer();
     try {
         // User's exact reproducer: --session="test01" "Describe this project." must create/resume test01 and succeed!
@@ -472,7 +472,7 @@ test("{§cli-workspaces-and-sessions} {§cli-project-root} {§cli-workspace-open
     }
 });
 
-test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {§cli-proposal-review} {§cli-session-ownership} {§cli-gate-answer-lifetime} {§cli-notification-shape} {§cli-review-attribution} {§cli-review-menu-interactive} {§cli-inline-review} {§cli-yolo-plurnkyolo} {§cli-tool-acceptance} {§cli-fail-closed-no-review-channel} {§cli-question-forms} {§cli-proposal-review-boundaries}: model/effort flags and permission handling under --yolo and fail-closed non-interactive review", async () => {
+test("{§cli-model-selection} {§cli-model-selection} {§cli-model-selection} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review} {§cli-inline-review}: model/effort flags and permission handling under --yolo and fail-closed non-interactive review", async () => {
     const server = await createMockAcpServer();
     try {
         // With --yolo (default), ASK_PERMISSION is auto-approved
@@ -487,7 +487,7 @@ test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {�
         assert.equal(yoloRes.status, 0, `stderr was: ${yoloRes.stderr}`);
         assert.match(yoloRes.stdout, /Permission outcome: allow_once/);
 
-        // With PLURNK_CLIENT_YOLO=0 and non-TTY stdin, permission request fails closed (denies/rejects) ({§cli-fail-closed-no-review-channel})
+        // With PLURNK_CLIENT_YOLO=0 and non-TTY stdin, permission request fails closed (denies/rejects) ({§cli-inline-review})
         const noYoloRes = await runCli(
             ["ASK_PERMISSION"],
             {
@@ -503,7 +503,7 @@ test("{§cli-model-selection} {§cli-child-provider-selection} {§cli-effort} {�
     }
 });
 
-test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-plurnk-update} {§cli-plurnk-workspace-list} {§cli-plurnk-workspace-sessions-name} {§cli-plurnk-log-read} {§cli-plurnk-effort} {§cli-script-binding} {§cli-workspace-mcp-controls} {§cli-functionality-replacement} {§cli-universal-agent-skills} {§cli-file-members} {§cli-environment} {§cli-schedule}: CLI subcommands and Functionality family commands", async () => {
+test("{§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-configuration-source} {§cli-configuration-source} {§cli-configuration-source} {§cli-configuration-source} {§cli-configuration-source} {§cli-configuration-source}: CLI subcommands and Functionality family commands", async () => {
     const server = await createMockAcpServer();
     try {
         const updateRes = await runCli(
@@ -542,7 +542,7 @@ test("{§cli-subcommands} {§cli-plurnk-models} {§cli-models-efforts} {§cli-pl
     }
 });
 
-test("{§cli-repl-mode} {§cli-tui-mode} {§cli-tui-flow} {§cli-interactive-command-discovery} {§cli-path-completion} {§cli-sessions-topology} {§cli-resume-observation} {§cli-session-history} {§cli-loops} {§cli-active-command-admission} {§cli-cancellation} {§cli-import-and-bracketed-paste} {§cli-problems-and-notices} {§cli-problem-control-flow} {§cli-connection-onboarding} {§cli-sign-in} {§cli-mcp-oauth-callback} {§cli-notice-rendering} {§cli-channel-posture} {§cli-stream-event-and-stream-concluded} {§cli-conformance} {§cli-acp-conformance} {§cli-test-daemon-lifecycle}: interactive REPL 5-stream contract, gate hash resolution, slash commands, problems, notices, streams, and conformance matrix", async () => {
+test("{§cli-repl-mode} {§cli-repl-mode} {§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-interactive-command-discovery} {§cli-sessions-topology} {§cli-inline-review} {§cli-sessions-topology} {§cli-sessions-topology} {§cli-sessions-topology} {§cli-repl-mode} {§cli-repl-mode} {§cli-problems-and-notices} {§cli-problems-and-notices} {§cli-problems-and-notices} {§cli-problems-and-notices} {§cli-configuration-source} {§cli-problems-and-notices} {§cli-problems-and-notices} {§cli-problems-and-notices} {§cli-conformance} {§cli-conformance} {§cli-conformance}: interactive REPL 5-stream contract, gate hash resolution, slash commands, problems, notices, streams, and conformance matrix", async () => {
     const server = await createMockAcpServer();
     try {
         const compRes = await runCli(

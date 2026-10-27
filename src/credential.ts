@@ -1,4 +1,4 @@
-// OAuth 2.1 credential exchange for @plurnk/plurnk ({§cli-credential}, {§cli-sign-in}).
+// OAuth 2.1 credential exchange for @plurnk/plurnk ({§cli-problems-and-notices}, {§cli-problems-and-notices}).
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";

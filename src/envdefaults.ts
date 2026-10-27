@@ -1,4 +1,4 @@
-// Cascading environment loader for @plurnk/plurnk ({§cli-env-defaults}, {§cli-configuration-source}).
+// Cascading environment loader for @plurnk/plurnk ({§cli-invocation}, {§cli-configuration-source}).
 
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";

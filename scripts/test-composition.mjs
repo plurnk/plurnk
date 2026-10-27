@@ -176,7 +176,7 @@ try {
     };
     const serviceEnv = {
             ...isolatedEnv,
-            // {§cli-credential} — the installed daemon authenticates with a configured operator secret,
+            // {§cli-problems-and-notices} — the installed daemon authenticates with a configured operator secret,
             // and the installed client exchanges the same value for its access tokens.
             PLURNK_SECRET: randomBytes(32).toString("base64url"),
             PLURNK_MODEL: "composition",
@@ -315,7 +315,7 @@ try {
         throw new Error(`packed run created no durable session/loop/turn log entry; log.read returned ${log.stdout.trim()}`);
     }
 
-    // {§cli-daemon-autostart} service-stop: with nothing listening, the installed client starts the
+    // {§cli-invocation} service-stop: with nothing listening, the installed client starts the
     // installed service as the one shared service on its configured address and leaves it running; a later
     // client reaches the same history, and `plurnk-service stop` ends it.
     const free = createServer();

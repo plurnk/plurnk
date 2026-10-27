@@ -639,7 +639,7 @@ export class SessionPresenter {
 
         const lead = glyph === "idle" ? "idle" : `${glyph} `;
         const modelLabel = formatModelRoute(this.model, this.effort, this.effortSource);
-        const baseParts: string[] = [lead, `🎲 ${modelLabel}`, formatDuration(elapsedMs)];
+        const baseParts: string[] = [lead, modelLabel, formatDuration(elapsedMs)];
         if (!(typeof effectiveStatus === "number" && effectiveStatus >= 400)) {
             baseParts.push(`↓${abbreviatedCount(this.inputTokens)} ↑${abbreviatedCount(this.outputTokens)}`);
             const usd = formatUsdSpend(this.costUsd);

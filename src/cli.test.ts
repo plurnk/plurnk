@@ -394,7 +394,7 @@ test("{§cli-session-status} {§cli-session-status} {§cli-session-status} {§cl
     assert.equal(bar.inputTokens, 120);
     assert.equal(bar.outputTokens, 45);
     assert.equal(bar.costUsd, "0.0125");
-    assert.match(bar.formattedStatusLine, /🎲 mocktest\/default · 150ms · ↓120 ↑45 · \$0\.0125 · 🐜 1 · 🚦 1 · 📨 2/);
+    assert.match(bar.formattedStatusLine, /mocktest\/default · 150ms · ↓120 ↑45 · \$0\.0125 · 🐜 1 · 🚦 1 · 📨 2/);
 
     // engine:turn:results_pending is routed to status_update and never emitted as a waterfall notice
     const pendingFrames = presenter.apply({

@@ -148,7 +148,7 @@ export const runTuiViewport = async (
         const activity =
             presenter.lastStatusLine.length > 0
                 ? presenter.lastStatusLine
-                : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · 🎲 ${modelLabel}`;
+                : `${presenter.lifecycle === "running" ? "⌛︎ " : presenter.lifecycle} · ${modelLabel}`;
         surface.setStatus(`${place} ${activity}`);
     };
 
@@ -429,7 +429,7 @@ export const runTuiViewport = async (
             termOut.write(`${chunk}[${presenter.workspaceName}/~${presenter.sessionName}] `);
             return;
         }
-        if (chunk.startsWith("● ") && presenter.lastStatusLine.length > 0 && !chunk.includes("🎲")) {
+        if (chunk.startsWith("● ") && presenter.lastStatusLine.length > 0 && !chunk.includes(presenter.lastStatusLine)) {
             const trimmed = chunk.endsWith("\n") ? chunk.slice(0, -1) : chunk;
             termOut.write(`${trimmed}\n${presenter.lastStatusLine}\n`);
             return;

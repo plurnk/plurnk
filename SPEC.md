@@ -80,7 +80,7 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 ### §cli-session-status 1.3 Session Status and Gauge
 
 ```
-[<project folder> ] [<TUI place> ] [🔌 ][🔥 ]<glyph>  · 🎲 <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 📨 <waiting>] [· 🧮 <percent>%]
+[<project folder> ] [<TUI place> ] [🔌 ][🔥 ]<glyph>  · <model> · <wall> · ↓<input> ↑<output> · $<usd> · <doing> [· 🐜<children> [<child>]] [· 🚦 <gated>] [· 📨 <waiting>] [· 🧮 <percent>%]
 ```
 
 | Segment | Contract |

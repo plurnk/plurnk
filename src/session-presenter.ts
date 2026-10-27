@@ -424,6 +424,7 @@ export class SessionPresenter {
     doing: WorkerDoing | null = null;
     preparation: WorkspacePreparationState | null = null;
     activity: SearchActivityState | null = null;
+    disconnected = false;
     lastLoopStatus: number | null = null;
     lastStatusLine = "";
 
@@ -466,15 +467,24 @@ export class SessionPresenter {
         this.#turnBaseInputTokens = this.inputTokens;
         this.#turnBaseOutputTokens = this.outputTokens;
         this.#turnBaseCostUsd = this.costUsd;
+        this.disconnected = false;
         this.lifecycle = "running";
         this.lifecycleGlyph = "⌛︎";
         this.doing = { phase: "awaiting", since: now, op: null, target: null };
+    }
+
+    markDisconnected(): StatusBarModel {
+        this.disconnected = true;
+        this.lifecycle = "idle";
+        this.doing = null;
+        return this.buildStatusBar();
     }
 
     ingestMeta(meta: MetaRecord | undefined): void {
         if (!meta) return;
         const plurnk = meta.plurnk as Record<string, unknown> | undefined;
         if (!plurnk) return;
+        this.disconnected = false;
 
         const ws = plurnk.workspace as Record<string, unknown> | undefined;
         if (typeof ws?.name === "string" && ws.name.length > 0) {
@@ -627,10 +637,11 @@ export class SessionPresenter {
 
     buildStatusBar(elapsedMsOverride?: number, statusCodeOverride?: number): StatusBarModel {
         const effectiveStatus = statusCodeOverride ?? this.lastLoopStatus ?? undefined;
-        const glyph =
-            this.lifecycle === "idle" && effectiveStatus === undefined
-                ? "idle"
-                : lifecycleGlyphFor(this.lifecycle, effectiveStatus);
+        const glyph = this.disconnected
+            ? "🔌"
+            : this.lifecycle === "idle" && effectiveStatus === undefined
+              ? "idle"
+              : lifecycleGlyphFor(this.lifecycle, effectiveStatus);
         this.lifecycleGlyph = glyph === "idle" ? "⏹️" : glyph;
         const elapsedMs = elapsedMsOverride ?? Math.max(1, Date.now() - this.#turnStartedAt);
         const used = this.contextTokens ?? this.curationWeight;
@@ -1280,6 +1291,12 @@ export class SessionPresenter {
                 return frames;
             }
 
+            if (plurnkMeta?.problem !== undefined) {
+                this.disconnected = true;
+                this.lifecycle = "idle";
+                this.doing = null;
+                this.buildStatusBar();
+            }
             const noticeGlyph =
                 plurnkMeta?.problem !== undefined
                     ? "❌"
@@ -1304,6 +1321,7 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isStateUpdate(update)) {
+            this.disconnected = false;
             if (update.state === "running") {
                 this.lifecycle = "running";
                 this.lifecycleGlyph = "⌛︎";

@@ -7,13 +7,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as readline from "node:readline";
 import { PassThrough } from "node:stream";
-import type { SessionUpdate } from "@agentclientprotocol/sdk/experimental/v2/unstable";
+import type {
+    SessionUpdate,
+    ToolCallContent,
+    ToolCallLocation,
+    ToolCallStatus,
+} from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { matchesKey, type Terminal } from "@earendil-works/pi-tui";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
 import { formatModelRoute, SessionPresenter, type PresentationFrame } from "./session-presenter.ts";
 import { makeAutocompleteProvider } from "./tui-completion.ts";
-import Review, { type ElicitationGateEvent, type PermissionGateEvent } from "./tui-review.ts";
+import Review, { isElicitationGateEvent, isPermissionGateEvent } from "./tui-review.ts";
 import TuiSurface, {
     attention,
     bell,
@@ -493,9 +498,16 @@ export const runTuiViewport = async (
         }
     });
 
+    const isToolCallStatus = (value: unknown): value is ToolCallStatus =>
+        value === "pending" || value === "in_progress" || value === "completed" || value === "failed";
+
+    const isSessionUpdatePayload = (value: Record<string, unknown>): value is SessionUpdate =>
+        typeof value.sessionUpdate === "string";
+
     const renderHistoryItemsToSurface = (items: readonly unknown[], addToEditorHistory: boolean): void => {
         if (surface === null) return;
         for (const rawItem of items) {
+            if (typeof rawItem !== "object" || rawItem === null) continue;
             const rec = rawItem as Record<string, unknown>;
             if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
                 if (addToEditorHistory) {
@@ -505,24 +517,25 @@ export const runTuiViewport = async (
                 surface.append(renderSubmittedInput(rec.text));
                 surface.append("");
             } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
-                const effectiveStatus =
-                    rec.status === "in_progress" || rec.status === "pending"
+                const effectiveStatus: ToolCallStatus =
+                    rec.status === "in_progress" || rec.status === "pending" || !isToolCallStatus(rec.status)
                         ? "completed"
-                        : typeof rec.status === "string"
-                          ? rec.status
-                          : "completed";
-                const tcFrames = presenter.apply({
+                        : rec.status;
+                const toolCallUpdate: SessionUpdate = {
                     sessionUpdate: "tool_call_update",
                     toolCallId: rec.toolCallId,
                     ...(typeof rec.name === "string" ? { name: rec.name } : {}),
                     ...(typeof rec.title === "string" ? { title: rec.title } : {}),
                     status: effectiveStatus,
-                    ...(Array.isArray(rec.locations) ? { locations: rec.locations } : {}),
-                    ...(Array.isArray(rec.content) ? { content: rec.content } : {}),
+                    ...(Array.isArray(rec.locations) ? { locations: rec.locations as ToolCallLocation[] } : {}),
+                    ...(Array.isArray(rec.content) ? { content: rec.content as ToolCallContent[] } : {}),
                     ...(rec.rawInput !== undefined ? { rawInput: rec.rawInput } : {}),
                     ...(rec.rawOutput !== undefined ? { rawOutput: rec.rawOutput } : {}),
-                    ...(rec.meta !== undefined ? { _meta: rec.meta } : {}),
-                } as unknown as SessionUpdate);
+                    ...(rec.meta !== undefined && typeof rec.meta === "object" && rec.meta !== null
+                        ? { _meta: rec.meta as Record<string, unknown> }
+                        : {}),
+                };
+                const tcFrames = presenter.apply(toolCallUpdate);
                 for (const f of tcFrames) {
                     if (f.kind === "tool_call") {
                         renderToolCallToSurface(f);
@@ -660,12 +673,21 @@ export const runTuiViewport = async (
                 continue;
             }
 
+            if (event.sessionUpdate === "connection_lost") {
+                presenter.markDisconnected();
+                if (surface !== null) {
+                    updateSurfaceStatus();
+                    surface.renderNow();
+                }
+                continue;
+            }
+
             if (event.sessionUpdate === "permission_request") {
                 if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
                     focusedGateIds.push(event.id);
                 }
-                if (review !== null && typeof event.id === "string") {
-                    review.addPermissionGate(event as unknown as PermissionGateEvent);
+                if (review !== null && isPermissionGateEvent(event)) {
+                    review.addPermissionGate(event);
                     attend("review");
                 }
                 continue;
@@ -675,8 +697,8 @@ export const runTuiViewport = async (
                 if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
                     focusedGateIds.push(event.id);
                 }
-                if (review !== null && typeof event.id === "string") {
-                    review.addElicitationGate(event as unknown as ElicitationGateEvent);
+                if (review !== null && isElicitationGateEvent(event)) {
+                    review.addElicitationGate(event);
                     attend("question");
                 }
                 continue;
@@ -691,7 +713,8 @@ export const runTuiViewport = async (
                 continue;
             }
 
-            const frames = presenter.apply(event as unknown as SessionUpdate);
+            if (!isSessionUpdatePayload(event)) continue;
+            const frames = presenter.apply(event);
             for (const frame of frames) {
                 switch (frame.kind) {
                     case "reasoning_tail":
@@ -752,6 +775,7 @@ export const runTuiViewport = async (
                         if (surface !== null) {
                             const accent = frame.severity === "info" ? "dim" : "failure";
                             surface.append(paint(ModelText.plain(frame.formatted), accent));
+                            updateSurfaceStatus();
                         } else {
                             termOut.write(`${frame.formatted}\n`);
                         }

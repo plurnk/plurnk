@@ -218,6 +218,7 @@ export class QuestionForm {
 }
 
 export interface PermissionGateEvent {
+    readonly sessionUpdate?: "permission_request";
     readonly id: string;
     readonly title: string;
     readonly options?: ReadonlyArray<{
@@ -229,6 +230,7 @@ export interface PermissionGateEvent {
 }
 
 export interface ElicitationGateEvent {
+    readonly sessionUpdate?: "elicitation_request";
     readonly id: string;
     readonly mode: "form" | "url";
     readonly message: string;
@@ -236,6 +238,19 @@ export interface ElicitationGateEvent {
     readonly requestedSchema?: Record<string, unknown>;
     readonly _meta?: Record<string, unknown>;
 }
+
+export const isPermissionGateEvent = (value: unknown): value is PermissionGateEvent =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    typeof (value as { title?: unknown }).title === "string";
+
+export const isElicitationGateEvent = (value: unknown): value is ElicitationGateEvent =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    ((value as { mode?: unknown }).mode === "form" || (value as { mode?: unknown }).mode === "url") &&
+    typeof (value as { message?: unknown }).message === "string";
 
 interface ReviewActions {
     readonly sendStdin: (commandLine: string) => void;

@@ -585,6 +585,12 @@ export const runReplSession = async (
         url: options.url,
         credential: options.credential,
         env: options.env,
+        onDisconnect: () => {
+            currentLifecycle = "idle";
+            writeEventJsonl(streams.events, {
+                sessionUpdate: "connection_lost",
+            });
+        },
         onPermissionRequest: async (request, signal): Promise<RequestPermissionResponse> => {
             if (signal.aborted) {
                 return { outcome: { outcome: "cancelled" } };
@@ -1609,6 +1615,7 @@ export const runReplSession = async (
                 },
             })
             .catch((err) => {
+                currentLifecycle = "idle";
                 writeErrorJsonl(streams.stderr, {
                     type: "https://problems.plurnk.xyz/client/prompt-failed",
                     title: "Prompt failed",

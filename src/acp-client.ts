@@ -87,6 +87,7 @@ export interface AcpClientOptions {
     readonly onSessionUpdate?: SessionUpdateHandler;
     readonly onPermissionRequest?: PermissionRequestHandler;
     readonly onElicitationRequest?: ElicitationRequestHandler;
+    readonly onDisconnect?: () => void | Promise<void>;
 }
 
 export class AcpClient {
@@ -97,7 +98,13 @@ export class AcpClient {
     readonly #clientVersion: string;
     #connection: ClientConnection | null = null;
     #initResponse: InitializeResponse | null = null;
+    #hasConnected = false;
+    #explicitlyClosed = false;
+    #suppressReplayNotifications = false;
+    #reconnectPromise: Promise<ClientConnection> | null = null;
+    readonly #boundSessions = new Map<string, string>();
     readonly #updateListeners = new Set<SessionUpdateHandler>();
+    readonly #disconnectListeners = new Set<() => void | Promise<void>>();
     #permissionHandler: PermissionRequestHandler | undefined;
     #elicitationHandler: ElicitationRequestHandler | undefined;
 
@@ -114,6 +121,9 @@ export class AcpClient {
         this.#clientVersion = options.clientVersion ?? "1.0.0";
         if (options.onSessionUpdate !== undefined) {
             this.#updateListeners.add(options.onSessionUpdate);
+        }
+        if (options.onDisconnect !== undefined) {
+            this.#disconnectListeners.add(options.onDisconnect);
         }
         this.#permissionHandler = options.onPermissionRequest;
         this.#elicitationHandler = options.onElicitationRequest;
@@ -146,6 +156,13 @@ export class AcpClient {
         };
     }
 
+    onDisconnect(listener: () => void | Promise<void>): () => void {
+        this.#disconnectListeners.add(listener);
+        return () => {
+            this.#disconnectListeners.delete(listener);
+        };
+    }
+
     setPermissionHandler(handler: PermissionRequestHandler | undefined): void {
         this.#permissionHandler = handler;
     }
@@ -155,9 +172,10 @@ export class AcpClient {
     }
 
     async connect(): Promise<InitializeResponse> {
-        if (this.#connection !== null && this.#initResponse !== null) {
+        if (this.#connection !== null && !this.#connection.signal.aborted && this.#initResponse !== null) {
             return this.#initResponse;
         }
+        this.#explicitlyClosed = false;
 
         const credHeaders = this.#credential !== null ? await this.#credential.headers(this.#url) : {};
         const headers: Record<string, string> = {
@@ -168,6 +186,7 @@ export class AcpClient {
         const app = client({ name: this.#clientName });
 
         app.onNotification(methods.client.session.update, async (ctx) => {
+            if (this.#suppressReplayNotifications) return;
             for (const listener of this.#updateListeners) {
                 await listener(ctx.params);
             }
@@ -207,6 +226,17 @@ export class AcpClient {
 
         const conn = app.connect(stream);
         this.#connection = conn;
+        void conn.closed.finally(() => {
+            if (this.#connection === conn) {
+                this.#connection = null;
+                this.#initResponse = null;
+                if (!this.#explicitlyClosed) {
+                    for (const listener of this.#disconnectListeners) {
+                        void Promise.resolve(listener()).catch(() => undefined);
+                    }
+                }
+            }
+        });
 
         const initRes = await conn.agent.request(methods.agent.initialize, {
             protocolVersion: PROTOCOL_VERSION,
@@ -222,22 +252,90 @@ export class AcpClient {
             },
         });
         this.#initResponse = initRes;
+        this.#hasConnected = true;
         return initRes;
     }
 
-    #requireConnection(): ClientConnection {
-        if (this.#connection === null) {
+    async #ensureConnection(options?: { readonly excludeSessionId?: string }): Promise<ClientConnection> {
+        if (this.#connection !== null && !this.#connection.signal.aborted) {
+            return this.#connection;
+        }
+        if (!this.#hasConnected) {
             throw new Error("AcpClient is not connected; call connect() first.");
         }
-        return this.#connection;
+        if (this.#reconnectPromise !== null) {
+            return await this.#reconnectPromise;
+        }
+        this.#reconnectPromise = (async () => {
+            this.#connection = null;
+            this.#initResponse = null;
+            await this.connect();
+            const conn = this.#connection as ClientConnection | null;
+            if (conn === null) {
+                throw new Error("AcpClient failed to reconnect.");
+            }
+            if (this.#boundSessions.size > 0) {
+                this.#suppressReplayNotifications = true;
+                try {
+                    for (const [sessionId, cwd] of this.#boundSessions) {
+                        if (sessionId === options?.excludeSessionId) continue;
+                        await conn.agent.request(methods.agent.session.resume, {
+                            sessionId,
+                            cwd,
+                        });
+                    }
+                } finally {
+                    this.#suppressReplayNotifications = false;
+                }
+            }
+            return conn;
+        })();
+        try {
+            return await this.#reconnectPromise;
+        } finally {
+            this.#reconnectPromise = null;
+        }
+    }
+
+    async #withAutoReconnect<T>(
+        fn: (conn: ClientConnection) => Promise<T>,
+        options?: { readonly excludeSessionId?: string },
+    ): Promise<T> {
+        const conn = await this.#ensureConnection(options);
+        let updatesDuringCall = 0;
+        const off = this.onSessionUpdate(() => {
+            updatesDuringCall += 1;
+        });
+        try {
+            return await fn(conn);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const isStalePreFlight =
+                updatesDuringCall === 0 &&
+                (msg.includes("ACP HTTP stream is closed") || msg.includes("Unknown Acp-Connection-Id"));
+            if (!isStalePreFlight || this.#explicitlyClosed) {
+                throw err;
+            }
+            if (this.#connection === conn) {
+                this.#connection = null;
+                this.#initResponse = null;
+            }
+            const reconnected = await this.#ensureConnection(options);
+            return await fn(reconnected);
+        } finally {
+            off();
+        }
     }
 
     async newSession(cwd: string, extra?: Omit<NewSessionRequest, "cwd">): Promise<NewSessionResponse> {
-        const conn = this.#requireConnection();
-        return await conn.agent.request(methods.agent.session.new, {
-            cwd,
-            ...extra,
-        });
+        const res = await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.new, {
+                cwd,
+                ...extra,
+            }),
+        );
+        this.#boundSessions.set(res.sessionId, cwd);
+        return res;
     }
 
     async resumeSession(
@@ -245,42 +343,53 @@ export class AcpClient {
         cwd: string,
         extra?: Omit<ResumeSessionRequest, "sessionId" | "cwd">,
     ): Promise<ResumeSessionResponse> {
-        const conn = this.#requireConnection();
-        return await conn.agent.request(methods.agent.session.resume, {
-            sessionId,
-            cwd,
-            ...extra,
-        });
+        const res = await this.#withAutoReconnect(
+            (conn) =>
+                conn.agent.request(methods.agent.session.resume, {
+                    sessionId,
+                    cwd,
+                    ...extra,
+                }),
+            { excludeSessionId: sessionId },
+        );
+        this.#boundSessions.set(sessionId, cwd);
+        return res;
     }
 
     async listSessions(cwd?: string): Promise<ListSessionsResponse> {
-        const conn = this.#requireConnection();
-        return await conn.agent.request(methods.agent.session.list, {
-            ...(cwd !== undefined ? { cwd } : {}),
-        });
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.list, {
+                ...(cwd !== undefined ? { cwd } : {}),
+            }),
+        );
     }
 
     async listProviders(): Promise<ListProvidersResponse> {
-        const conn = this.#requireConnection();
-        return await conn.agent.request(methods.agent.providers.list, {});
+        return await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.providers.list, {}));
     }
 
     async forkSession(sessionId: string, cwd: string): Promise<ForkSessionResponse> {
-        const conn = this.#requireConnection();
-        return await conn.agent.request(methods.agent.session.fork, {
-            sessionId,
-            cwd,
-        });
+        const res = await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.fork, {
+                sessionId,
+                cwd,
+            }),
+        );
+        this.#boundSessions.set(res.sessionId, cwd);
+        return res;
     }
 
     async deleteSession(sessionId: string): Promise<DeleteSessionResponse | void> {
-        const conn = this.#requireConnection();
-        return await conn.agent.request(methods.agent.session.delete, { sessionId });
+        const res = await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.delete, { sessionId }),
+        );
+        this.#boundSessions.delete(sessionId);
+        return res;
     }
 
     async closeSession(sessionId: string): Promise<void> {
-        const conn = this.#requireConnection();
-        await conn.agent.request(methods.agent.session.close, { sessionId });
+        await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.session.close, { sessionId }));
+        this.#boundSessions.delete(sessionId);
     }
 
     async setConfigOption(
@@ -288,11 +397,12 @@ export class AcpClient {
         configId: string,
         value: SessionConfigValueId | boolean,
     ): Promise<SetSessionConfigOptionResponse> {
-        const conn = this.#requireConnection();
         const req = typeof value === "boolean"
             ? { sessionId, configId, type: "boolean" as const, value }
             : { sessionId, configId, type: "id" as const, value };
-        return await conn.agent.request(methods.agent.session.setConfigOption, req);
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.setConfigOption, req),
+        );
     }
 
     async prompt(
@@ -300,22 +410,22 @@ export class AcpClient {
         prompt: string | ContentBlock | ContentBlock[],
         meta?: Record<string, unknown>,
     ): Promise<PromptResponse> {
-        const conn = this.#requireConnection();
         const blocks: ContentBlock[] = typeof prompt === "string"
             ? [{ type: "text", text: prompt }]
             : Array.isArray(prompt)
                 ? prompt
                 : [prompt];
-        return await conn.agent.request(methods.agent.session.prompt, {
-            sessionId,
-            prompt: blocks,
-            ...(meta !== undefined ? { _meta: meta } : {}),
-        });
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.prompt, {
+                sessionId,
+                prompt: blocks,
+                ...(meta !== undefined ? { _meta: meta } : {}),
+            }),
+        );
     }
 
     async cancel(sessionId: string): Promise<void> {
-        const conn = this.#requireConnection();
-        await conn.agent.notify(methods.agent.session.cancel, { sessionId });
+        await this.#withAutoReconnect((conn) => conn.agent.notify(methods.agent.session.cancel, { sessionId }));
     }
 
     async action<T = unknown>(
@@ -329,22 +439,26 @@ export class AcpClient {
             readonly cwd?: string;
         },
     ): Promise<T> {
-        if (this.#connection === null) {
+        if (!this.#hasConnected) {
             await this.connect();
         }
-        const conn = this.#requireConnection();
-        return await conn.agent.request<T>("_plurnk/action", {
-            kind,
-            params,
-            ...(context?.workspace !== undefined ? { workspace: context.workspace } : {}),
-            ...(context?.workspaceId !== undefined ? { workspaceId: context.workspaceId } : {}),
-            ...(context?.session !== undefined ? { session: context.session } : {}),
-            ...(context?.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
-            ...(context?.cwd !== undefined ? { cwd: context.cwd } : {}),
-        });
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request<T>("_plurnk/action", {
+                kind,
+                params,
+                ...(context?.workspace !== undefined ? { workspace: context.workspace } : {}),
+                ...(context?.workspaceId !== undefined ? { workspaceId: context.workspaceId } : {}),
+                ...(context?.session !== undefined ? { session: context.session } : {}),
+                ...(context?.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+                ...(context?.cwd !== undefined ? { cwd: context.cwd } : {}),
+            }),
+        );
     }
 
     close(): void {
+        this.#explicitlyClosed = true;
+        this.#hasConnected = false;
+        this.#boundSessions.clear();
         if (this.#connection !== null) {
             this.#connection.close();
             this.#connection = null;

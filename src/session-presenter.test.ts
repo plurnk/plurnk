@@ -154,4 +154,35 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
             "The session scope was cancelled: Cancelled by ACP client.",
         );
     }
+
+    // status.inbox only counts messages held by a live loop and clears on publish or idle ({§cli-session-status})
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                inbox: [
+                    { path: "message://main/1", loopId: 1, lifecycle: "cancelled" },
+                    { path: "message://main/2", loopId: 2, lifecycle: "failed" },
+                    { path: "message://main/3", loopId: 3, lifecycle: "running" },
+                    { path: "message://main/4", loopId: 3, lifecycle: "queued" },
+                ],
+            },
+        },
+    });
+    assert.equal(presenter.inboxCount, 2);
+    assert.match(presenter.buildStatusBar().formattedStatusLine, /📨 2/u);
+
+    presenter.apply({
+        sessionUpdate: "user_message_chunk",
+        messageId: "m-3",
+        content: { type: "text", text: "published at turn boundary" },
+    });
+    assert.equal(presenter.inboxCount, 1);
+
+    presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "end_turn",
+    });
+    assert.equal(presenter.inboxCount, 0);
+    assert.doesNotMatch(presenter.buildStatusBar().formattedStatusLine, /📨/u);
 });

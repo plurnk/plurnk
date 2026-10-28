@@ -565,7 +565,11 @@ export class SessionPresenter {
                 }, 0);
             }
             if (Array.isArray(status.inbox)) {
-                this.inboxCount = status.inbox.length;
+                this.inboxCount = status.inbox.filter((item) => {
+                    const rec = item as Record<string, unknown> | null;
+                    const lc = rec && typeof rec === "object" ? rec.lifecycle : undefined;
+                    return lc === undefined || lc === "running" || lc === "queued" || lc === "parked";
+                }).length;
             }
             if (Array.isArray(status.streams)) {
                 this.openStreams = status.streams.length;
@@ -1125,6 +1129,14 @@ export class SessionPresenter {
             return frames;
         }
 
+        if (update.sessionUpdate === "user_message_chunk") {
+            const published = (update._meta as { plurnk?: { published?: boolean } } | undefined)?.plurnk?.published;
+            if (published !== false && this.inboxCount > 0) {
+                this.inboxCount = Math.max(0, this.inboxCount - 1);
+            }
+            return frames;
+        }
+
         if (SessionUpdate.isAgentMessageChunk(update)) {
             this.#retireReasoning(frames);
             const metaPlurnk = (
@@ -1354,6 +1366,7 @@ export class SessionPresenter {
                 this.doing = null;
                 this.activity = null;
                 this.waitUntil = null;
+                this.inboxCount = 0;
                 const termMeta = (
                     update._meta as
                         | {

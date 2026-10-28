@@ -1133,6 +1133,7 @@ export class SessionPresenter {
             const published = (update._meta as { plurnk?: { published?: boolean } } | undefined)?.plurnk?.published;
             if (published !== false && this.inboxCount > 0) {
                 this.inboxCount = Math.max(0, this.inboxCount - 1);
+                frames.push({ kind: "status_update", status: this.buildStatusBar(), newTurn: false });
             }
             return frames;
         }

@@ -644,6 +644,7 @@ export const runTuiViewport = async (
                         presenter.lastLoopStatus = null;
                         presenter.lastStatusLine = "";
                     }
+                    presenter.buildStatusBar();
                     surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
                     updateSurfaceStatus();
                     surface.renderNow();

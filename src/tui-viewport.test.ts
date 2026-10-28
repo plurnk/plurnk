@@ -91,7 +91,7 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
     assert.ok(addr && typeof addr === "object");
 
     const termWrites: string[] = [];
-    let inputCallback: ((data: string) => void) | null = null;
+    let inputCallback = null as ((data: string) => void) | null;
     const fakeTerminal: Terminal = {
         columns: 100,
         rows: 30,
@@ -163,6 +163,283 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
         assert.ok(inputCallback !== null);
 
         // Send Ctrl-D on empty editor to trigger /quit through the TUI input listener
+        inputCallback!("\x04");
+        const exitCode = await viewportPromise;
+        assert.equal(exitCode, 0);
+    } finally {
+        stdin.end();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
+test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport counts only running inbox items, clears 📨 on publish, and renders Ctrl-C cancellation once with preserved curation metrics", async () => {
+    const runningNotified = Promise.withResolvers<void>();
+    const cancelReceived = Promise.withResolvers<void>();
+    let capturedClient = null as { notify: (method: string, params: unknown) => Promise<void> } | null;
+
+    const agentApp = createAcpAgent({ name: "viewport-cancel-inbox-agent" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: { session: { prompt: {}, resume: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async ({ client }) => {
+            capturedClient = client as { notify: (method: string, params: unknown) => Promise<void> };
+            return {
+                sessionId: "1#user",
+                configOptions: [
+                    {
+                        configId: "model",
+                        name: "Model",
+                        type: "select",
+                        currentValue: "mocktest/fast",
+                        options: [{ value: "mocktest/fast", name: "Fast" }],
+                    },
+                ],
+                _meta: {
+                    plurnk: {
+                        workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                        sessionName: "user",
+                        status: {
+                            lifecycle: "running",
+                            inbox: [
+                                { id: "msg-cancelled", lifecycle: "cancelled" },
+                                { id: "msg-running", lifecycle: "running" },
+                            ],
+                        },
+                    },
+                },
+            };
+        })
+        .onRequest(methods.agent.session.resume, async ({ client }) => {
+            capturedClient = client as { notify: (method: string, params: unknown) => Promise<void> };
+            return {
+                configOptions: [
+                    {
+                        configId: "model",
+                        name: "Model",
+                        type: "select",
+                        currentValue: "mocktest/fast",
+                        options: [{ value: "mocktest/fast", name: "Fast" }],
+                    },
+                ],
+                _meta: {
+                    plurnk: {
+                        workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                        sessionName: "user",
+                        status: {
+                            lifecycle: "running",
+                            inbox: [
+                                { id: "msg-cancelled", lifecycle: "cancelled" },
+                                { id: "msg-running", lifecycle: "running" },
+                            ],
+                        },
+                    },
+                },
+            };
+        })
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string },
+            async ({ params }) => {
+                if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
+                    return { id: 1, name: "alpha", project_root: "/tmp/alpha" };
+                }
+                if (params.kind === "workspace.sessions") {
+                    return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                }
+                if (params.kind === "workspace.list") {
+                    return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                }
+                return {};
+            },
+        )
+        .onRequest(methods.agent.session.prompt, async ({ client, params }) => {
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "running",
+                    _meta: { plurnk: { loopSeq: 2 } },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "usage_update",
+                    used: 264_000,
+                    size: 1_100_000,
+                    cost: { amount: 6.76, currency: "USD" },
+                    _meta: {
+                        plurnk: {
+                            turn: 1,
+                            turnUsage: { inputTokens: 200_000, outputTokens: 1_200 },
+                            curation: { weight: 264_000, budget: 1_100_000 },
+                        },
+                    },
+                },
+            });
+            runningNotified.resolve();
+            await cancelReceived.promise;
+            return { stopReason: "cancelled", messageId: "msg-2" };
+        })
+        .onNotification(methods.agent.session.cancel, async ({ client, params }) => {
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "cancelled",
+                    _meta: {
+                        plurnk: {
+                            loopSeq: 2,
+                            terminal: {
+                                status: 499,
+                                turnCount: 1,
+                                elapsedMs: 3600,
+                                usage: {
+                                    accounting: {
+                                        usage: { inputTokens: 200_000, outputTokens: 1_200 },
+                                        costUsd: "6.76",
+                                    },
+                                },
+                                problem: {
+                                    type: "https://problems.plurnk.xyz/session/loop-cancelled",
+                                    title: "Loop cancelled",
+                                    status: 499,
+                                    detail: "The session scope was cancelled: Cancelled by ACP client.",
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+            cancelReceived.resolve();
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => handler(req, res));
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const termWrites: string[] = [];
+    let inputCallback = null as ((data: string) => void) | null;
+    const fakeTerminal: Terminal = {
+        columns: 120,
+        rows: 30,
+        kittyProtocolActive: false,
+        start(onInput: (data: string) => void) {
+            inputCallback = onInput;
+        },
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            termWrites.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle(t: string) {
+            termWrites.push(`TITLE:${t}`);
+        },
+        setProgress() {},
+        setProgramStatus() {},
+    };
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const options: CliCommonOptions = {
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        explicitAcpUrl: true,
+        host: "127.0.0.1",
+        port: addr.port,
+        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        autostart: false,
+        daemonTimeoutMs: 2000,
+        oauthTimeoutMs: 2000,
+        cancelGraceMs: 500,
+        workspace: "alpha",
+        sessionId: "user",
+        tuiSession: "user",
+        yolo: true,
+        auto: false,
+        json: false,
+        repl: false,
+        statusStream: false,
+        previewLines: 5,
+        historyEntries: 10,
+        mermaidTimeoutMs: 2000,
+        color: "never",
+        bell: false,
+        cwd: "/tmp",
+        env: { PLURNK_SECRET: "test-secret" },
+    };
+
+    try {
+        const viewportPromise = runTuiViewport(options, {
+            stdin,
+            stdout,
+            stderr,
+            terminal: fakeTerminal,
+        });
+
+        const waitUntil = async (predicate: () => boolean) => {
+            const deadline = Date.now() + 5000;
+            while (!predicate() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 20));
+            }
+            assert.ok(predicate());
+        };
+
+        await waitUntil(() => termWrites.join("").includes("📨 1"));
+        assert.doesNotMatch(termWrites.join(""), /📨 2/u, "cancelled inbox items are not counted as pending");
+
+        assert.ok(capturedClient !== null);
+        await capturedClient.notify(methods.client.session.update, {
+            sessionId: "1#user",
+            update: {
+                sessionUpdate: "user_message_chunk",
+                messageId: "msg-running",
+                content: { type: "text", text: "queued live" },
+                _meta: { plurnk: { published: true } },
+            },
+        });
+        await waitUntil(() => !termWrites.at(-1)!.includes("📨"));
+
+        // Submit prompt through the TUI editor
+        assert.ok(inputCallback !== null);
+        inputCallback!("do work");
+        inputCallback!("\r");
+        await runningNotified.promise;
+        await new Promise((r) => setTimeout(r, 30));
+
+        // Press Ctrl-C while running to cancel
+        inputCallback!("\x03");
+        await waitUntil(() => termWrites.join("").includes("🛑 cancelled (final 499)"));
+
+        const transcript = termWrites.join("");
+        assert.match(transcript, /cancelling… \(ctrl-c again to quit\)/u);
+        assert.match(transcript, /⛔ The session scope was cancelled: Cancelled by ACP client\./u);
+        assert.doesNotMatch(
+            transcript,
+            /\nThe session scope was cancelled: Cancelled by ACP client\.\r?\n/u,
+            "terminal problem detail is never rendered a second time without ⛔",
+        );
+        assert.match(
+            transcript,
+            /🛑 cancelled \(final 499\) · 1 turn · [^·]+ · ↓200k ↑1\.2k · cur 24%\/1\.1M · loop \$6\.76/u,
+            "cancelled loop summary preserves cur 24%/1.1M and loop $6.76",
+        );
+        assert.doesNotMatch(transcript, /cur 0%\/128k/u, "never overwrites curation gauge with default 0%/128k");
+
         inputCallback!("\x04");
         const exitCode = await viewportPromise;
         assert.equal(exitCode, 0);

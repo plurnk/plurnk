@@ -634,8 +634,12 @@ export const runTuiViewport = async (
                 if (event._meta && typeof event._meta === "object") {
                     presenter.ingestMeta(event._meta as Record<string, unknown>);
                 }
+                const historyLostFrame = presenter.consumeHistoryLostFrame();
                 if (surface !== null) {
                     ensureSurfaceStarted();
+                    if (historyLostFrame !== null) {
+                        surface.append(paint(ModelText.plain(historyLostFrame.formatted), "failure"));
+                    }
                     if (Array.isArray(event.history) && event.history.length > 0) {
                         renderHistoryItemsToSurface(event.history, true);
                     }
@@ -648,6 +652,8 @@ export const runTuiViewport = async (
                     surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
                     updateSurfaceStatus();
                     surface.renderNow();
+                } else if (historyLostFrame !== null) {
+                    termOut.write(`${historyLostFrame.formatted}\n`);
                 }
                 continue;
             }

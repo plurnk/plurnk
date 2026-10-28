@@ -554,9 +554,9 @@ export const runCliScript = async (filePath: string, options: CliCommonOptions):
 
 export const runCliCompletion = (shell: string | undefined): number => {
     const map: Record<string, string> = {
-        bash: "completions/plurnk.bash",
-        zsh: "completions/_plurnk",
-        fish: "completions/plurnk.fish",
+        bash: "dist/posix/completions/plurnk.bash",
+        zsh: "dist/posix/completions/_plurnk",
+        fish: "dist/posix/completions/plurnk.fish",
     };
     const rel = shell !== undefined ? map[shell] : undefined;
     if (rel === undefined) {

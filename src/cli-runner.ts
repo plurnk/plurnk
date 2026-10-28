@@ -145,12 +145,49 @@ const resolveServiceCommand = (serviceBin?: string): { readonly file: string; re
     return { file: "plurnk-service", args: ["start"] };
 };
 
+export class ClientCliError extends Error {
+    readonly problem: {
+        readonly type: string;
+        readonly title: string;
+        readonly status: number;
+        readonly detail: string;
+    };
+    readonly exitCode: number;
+
+    constructor(
+        problem: {
+            readonly type: string;
+            readonly title: string;
+            readonly status: number;
+            readonly detail: string;
+        },
+        exitCode = 1,
+    ) {
+        super(problem.detail);
+        this.name = "ClientCliError";
+        this.problem = problem;
+        this.exitCode = exitCode;
+    }
+}
+
 export const ensureDaemonConnected = async (client: AcpClient, options: CliCommonOptions): Promise<void> => {
     try {
         await client.connect();
         return;
     } catch (firstErr) {
         if (!options.autostart || options.explicitAcpUrl || !isLoopbackHost(options.host)) {
+            const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+            if (/fetch failed|ECONNREFUSED|connect/iu.test(msg)) {
+                throw new ClientCliError(
+                    {
+                        type: "https://problems.plurnk.xyz/client/connection/refused",
+                        title: "Connection refused",
+                        status: 503,
+                        detail: `Could not reach the configured service at ${options.url}. Start it with \`plurnk-service start\` or check PLURNK_ACP_URL.`,
+                    },
+                    1,
+                );
+            }
             throw firstErr;
         }
     }
@@ -163,16 +200,38 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
 
     try {
         const cmd = resolveServiceCommand(options.serviceBin);
-        const child = spawn(cmd.file, cmd.args, {
-            cwd: options.cwd,
-            env: {
-                ...process.env,
-                ...options.env,
-            },
-            detached: true,
-            stdio: ["ignore", logFd, logFd],
+        await new Promise<void>((resolveSpawn, rejectSpawn) => {
+            const child = spawn(cmd.file, cmd.args, {
+                cwd: options.cwd,
+                env: {
+                    ...process.env,
+                    ...options.env,
+                },
+                detached: true,
+                stdio: ["ignore", logFd, logFd],
+            });
+            child.once("error", (err: NodeJS.ErrnoException) => {
+                if (err.code === "ENOENT") {
+                    rejectSpawn(
+                        new ClientCliError(
+                            {
+                                type: "https://problems.plurnk.xyz/client/daemon/not-installed",
+                                title: "Service not installed",
+                                status: 503,
+                                detail: "Could not find `plurnk-service` to start the daemon automatically. Install `@plurnk/plurnk-service` (`npm install -g @plurnk/plurnk-service`).",
+                            },
+                            127,
+                        ),
+                    );
+                    return;
+                }
+                rejectSpawn(err);
+            });
+            child.once("spawn", () => {
+                child.unref();
+                resolveSpawn();
+            });
         });
-        child.unref();
     } finally {
         closeSync(logFd);
     }
@@ -188,9 +247,18 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
             lastError = err;
         }
     }
-    throw lastError instanceof Error
-        ? lastError
-        : new Error(`Timed out after ${options.daemonTimeoutMs}ms waiting for plurnk-service to start.`);
+    throw new ClientCliError(
+        {
+            type: "https://problems.plurnk.xyz/client/connection/refused",
+            title: "Connection refused",
+            status: 503,
+            detail:
+                lastError instanceof Error
+                    ? `Could not reach the configured service at ${options.url} (${lastError.message}). Run \`plurnk-service start\`.`
+                    : `Timed out after ${options.daemonTimeoutMs}ms waiting for plurnk-service to start.`,
+        },
+        1,
+    );
 };
 
 const applyInitialConfig = async (

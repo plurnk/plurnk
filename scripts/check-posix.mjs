@@ -3,11 +3,11 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const checks = [
-    ["mandoc", "-T", "lint", "man/plurnk.1"],
-    ["bash", "-n", "completions/plurnk.bash"],
-    ["zsh", "-n", "completions/_plurnk"],
-    ["fish", "--no-config", "-n", "completions/plurnk.fish"],
-    ["shellcheck", "-s", "bash", "completions/plurnk.bash"],
+    ["mandoc", "-T", "lint", "dist/posix/man/plurnk.1"],
+    ["bash", "-n", "dist/posix/completions/plurnk.bash"],
+    ["zsh", "-n", "dist/posix/completions/_plurnk"],
+    ["fish", "--no-config", "-n", "dist/posix/completions/plurnk.fish"],
+    ["shellcheck", "-s", "bash", "dist/posix/completions/plurnk.bash"],
 ];
 
 export const checkPosix = () => checks.map(([command, ...args]) => {

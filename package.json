@@ -18,13 +18,13 @@
         "dist/**/*",
         "conformance/acp-client.json",
         ".env.defaults",
-        "README.md",
-        "man/",
-        "completions/"
+        "README.md"
     ],
     "scripts": {
-        "test:lint": "tsc --noEmit && node ../plurnk-service/plurnk-spec-check/check.mjs .",
+        "test:lint": "tsc --noEmit && node ../plurnk-service/plurnk-spec-check/check.mjs . && npm run test:posix",
+        "pretest:posix": "npm run build:posix",
         "test:posix": "node scripts/check-posix.mjs",
+        "pretest:unit": "npm run build:posix",
         "test:unit": "node --env-file-if-exists=.env.defaults --test --test-timeout=30000 'src/**/*.test.ts' 'scripts/**/*.test.mjs'",
         "pretest:intg": "npm run build",
         "test:intg": "node --test --test-concurrency=$(node scripts/test-concurrency.mjs) --test-timeout=120000 --env-file-if-exists=.env 'test/intg/**/*.test.ts'",
@@ -33,7 +33,7 @@
         "build:clean": "node scripts/clean-dist.mjs",
         "build:dist": "tsc -p tsconfig.build.json",
         "build:info": "node scripts/write-build-info.mjs",
-        "build": "npm run build:clean && npm run build:dist && npm run build:info",
+        "build": "npm run build:clean && npm run build:dist && npm run build:info && npm run build:posix",
         "prepare": "git config core.hooksPath .githooks && npm run build",
         "prepublishOnly": "npm run test && node scripts/audit-gate.mjs && npm run test:composition",
         "pretest:tui": "npm run build",
@@ -68,5 +68,5 @@
     "optionalDependencies": {
         "@plurnk/plurnk-service": "^4.3.2"
     },
-    "man": "./man/plurnk.1"
+    "man": "./dist/posix/man/plurnk.1"
 }

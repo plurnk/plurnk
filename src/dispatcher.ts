@@ -720,12 +720,22 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             process.exitCode = exitCode;
         }
     } catch (error) {
+        const cliErr = error as {
+            readonly problem?: Record<string, unknown>;
+            readonly exitCode?: number;
+        };
         const message = error instanceof Error ? error.message : String(error);
+        const problem = cliErr?.problem ?? {
+            type: "https://problems.plurnk.xyz/client/error",
+            title: "Client error",
+            status: 500,
+            detail: message,
+        };
         if (common.json) {
-            process.stdout.write(`${JSON.stringify({ problem: { detail: message } }, null, 2)}\n`);
+            process.stdout.write(`${JSON.stringify({ schemaVersion: 6, problem }, null, 2)}\n`);
         } else {
             process.stderr.write(`plurnk: ${message}\n`);
         }
-        process.exitCode = 1;
+        process.exitCode = typeof cliErr?.exitCode === "number" ? cliErr.exitCode : 1;
     }
 };

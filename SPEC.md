@@ -146,7 +146,7 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | Review | `/review /approve /accept /reject /cancel /edit /answer` |
 | Session | `/stop /quit /update` |
 
-- **POSIX artifacts**: `man/plurnk.1` (dated by source commit `%cs`, no wall-clock timestamp) and `completions/{plurnk.bash,_plurnk,plurnk.fish}` derive from the single command/usage inventory (`npm run build:posix`). `plurnk completion <bash|zsh|fish>` prints the script to `stdout` without daemon contact; `npm run test:posix` validates with `mandoc`, `bash`, `zsh`, `fish`, and `shellcheck`.
+- **POSIX artifacts**: `dist/posix/man/plurnk.1` (dated by source commit `%cs`, no wall-clock timestamp) and `dist/posix/completions/{plurnk.bash,_plurnk,plurnk.fish}` derive from the single command/usage inventory (`npm run build:posix`). `plurnk completion <bash|zsh|fish>` prints the script to `stdout` without daemon contact; `npm run test:posix` validates with `mandoc`, `bash`, `zsh`, `fish`, and `shellcheck`.
 - **Filesystem completion**: `/import`, `/script`, `/env import` resolve against client launch directory; `@file` and `/members discover|add` resolve against bound workspace root; bare or `file:///` OP targets resolve against workspace `/` (`§fs-namei`); other schemes produce no local filesystem suggestions.
 
 ### §cli-sessions-topology 3.2 Session Topology, Loops, History, and Active Run Admission

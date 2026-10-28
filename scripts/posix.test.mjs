@@ -7,11 +7,11 @@ import { join, resolve } from "node:path";
 import { checkPosix } from "./check-posix.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const bash = resolve(root, "completions/plurnk.bash");
+const bash = resolve(root, "dist/posix/completions/plurnk.bash");
 const checks = checkPosix();
 
 test("[{§cli-interactive-command-discovery}] the shipped manual has a dated section-one title", async () => {
-    const manual = await readFile(resolve(root, "man/plurnk.1"), "utf8");
+    const manual = await readFile(resolve(root, "dist/posix/man/plurnk.1"), "utf8");
     assert.match(manual, /^\.TH PLURNK 1 "\d{4}-\d{2}-\d{2}" "plurnk [^"]+" "User Commands"\n/u);
 });
 

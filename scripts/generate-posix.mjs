@@ -1,5 +1,5 @@
-// POSIX surface generator (#29 / https://github.com/plurnk/plurnk-service/issues/343): emits man/plurnk.1
-// and completions/{plurnk.bash,_plurnk,plurnk.fish} from the ONE source of
+// POSIX surface generator (#29 / https://github.com/plurnk/plurnk-service/issues/343): emits dist/posix/man/plurnk.1
+// and dist/posix/completions/{plurnk.bash,_plurnk,plurnk.fish} from the ONE source of
 // truth — the exported USAGE text. Deterministic; run via npm run build:posix.
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -130,10 +130,10 @@ ${subcommands.map((sub) => `complete -c plurnk -n __fish_use_subcommand -a ${sub
 ${flags.map((flag) => `complete -c plurnk -l ${flag.slice(2)}`).join("\n")}
 `;
 
-await mkdir(new URL("../man", import.meta.url), { recursive: true });
-await mkdir(new URL("../completions", import.meta.url), { recursive: true });
-await writeFile(new URL("../man/plurnk.1", import.meta.url), man);
-await writeFile(new URL("../completions/plurnk.bash", import.meta.url), bash);
-await writeFile(new URL("../completions/_plurnk", import.meta.url), zsh);
-await writeFile(new URL("../completions/plurnk.fish", import.meta.url), fish);
-console.log(`man/plurnk.1 + completions generated (${flags.length} flags, ${subcommands.length} subcommands)`);
+await mkdir(new URL("../dist/posix/man", import.meta.url), { recursive: true });
+await mkdir(new URL("../dist/posix/completions", import.meta.url), { recursive: true });
+await writeFile(new URL("../dist/posix/man/plurnk.1", import.meta.url), man);
+await writeFile(new URL("../dist/posix/completions/plurnk.bash", import.meta.url), bash);
+await writeFile(new URL("../dist/posix/completions/_plurnk", import.meta.url), zsh);
+await writeFile(new URL("../dist/posix/completions/plurnk.fish", import.meta.url), fish);
+console.log(`dist/posix/man/plurnk.1 + completions generated (${flags.length} flags, ${subcommands.length} subcommands)`);

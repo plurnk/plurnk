@@ -217,7 +217,7 @@ test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {�
     });
     assert.equal(execDone.length, 1);
     if (execDone[0]?.kind === "tool_call") {
-        assert.deepEqual(execDone[0].contentLines, ['{"query":"weather"}']);
+        assert.deepEqual(execDone[0].contentLines, []);
         assert.deepEqual(execDone[0].outputLines, ["Result line 1\nResult line 2\nResult line 3"]);
         const renderedExec = renderOperationBlock({
             glyph: execDone[0].glyph,
@@ -233,7 +233,20 @@ test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {�
             previewLimit: 2,
             columns: 80,
         });
-        assert.match(renderedExec, /⚙️\s+brave[\s\S]*\{"query":"weather"\}[\s\S]*Result line 1[\s\S]*Result line 2[\s\S]*\+1 line/u);
+        assert.doesNotMatch(renderedExec, /\{"query":"weather"\}/u);
+        assert.match(renderedExec, /⚙️\s+brave[\s\S]*Result line 1[\s\S]*Result line 2[\s\S]*\+1 line/u);
+    }
+    const shDone = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/5",
+        title: "sh",
+        status: "completed",
+        rawInput: { body: "git status --short" },
+        _meta: { plurnk: { id: 5, op: "sh", origin: "model", status: 200, coordinate: "1/1/5" } },
+    });
+    assert.equal(shDone.length, 1);
+    if (shDone[0]?.kind === "tool_call") {
+        assert.deepEqual(shDone[0].contentLines, ["git status --short"]);
     }
     const dupDischarge = presenter.apply({
         sessionUpdate: "tool_call_update",

@@ -387,6 +387,8 @@ const NO_PREVIEW_VERBS = new Set([
     "META",
 ]);
 
+const SCRIPT_RUNTIMES = new Set(["sh", "js", "python3", "py"]);
+
 interface PendingToolCallState {
     readonly name?: string;
     readonly title?: string;
@@ -971,18 +973,22 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, runtime execs, harness NOTEs)
+            // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, script runtimes, harness NOTEs)
             // and concluded runtime execution stream outputs receive a preview beneath the row
-            // ({§cli-rendering}, {§cli-rendering}).
+            // ({§cli-rendering}). MCP tool request bodies are not shown.
+            const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
             const contentLines: string[] = [];
             if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
                 contentLines.push(noteBody);
-            } else if (!NO_PREVIEW_VERBS.has(opName) && authoredBody !== null) {
+            } else if (
+                !NO_PREVIEW_VERBS.has(opName) &&
+                (!isRuntimeExec || SCRIPT_RUNTIMES.has(opName)) &&
+                authoredBody !== null
+            ) {
                 contentLines.push(authoredBody);
             }
 
             const outputLines: string[] = [];
-            const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
             if (isRuntimeExec) {
                 const streamed = terminalIds
                     .map((id) => this.#terminalOutputs.get(id) ?? "")

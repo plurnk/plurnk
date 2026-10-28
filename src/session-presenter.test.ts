@@ -3,13 +3,21 @@ import assert from "node:assert/strict";
 import {
     abbreviatedCount,
     addDecimal,
+    compactTarget,
+    extractRawString,
+    extractScopeToken,
+    extractTitleAside,
+    extractTitleTarget,
     formatDuration,
+    formatLiveWait,
     formatModelRoute,
     formatUsdSpend,
     lifecycleGlyphFor,
     normalizeNoteHeading,
     operationGlyphFor,
+    receiptCountFor,
     SessionPresenter,
+    spanLength,
 } from "./session-presenter.ts";
 
 test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionPresenter formatting helpers, disconnection state, and frame projection", () => {
@@ -185,4 +193,78 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
     });
     assert.equal(presenter.inboxCount, 0);
     assert.doesNotMatch(presenter.buildStatusBar().formattedStatusLine, /📨/u);
+});
+
+test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: parked wait countdown, history_lost notice on reset loop gauge, and presenter-formatters", () => {
+    assert.equal(extractTitleAside("READ src/a.ts — 12 lines"), "12 lines");
+    assert.equal(extractTitleTarget("READ src/a.ts — 12 lines"), "src/a.ts");
+    assert.equal(compactTarget("file:///repo/src/a.ts"), "…/src/a.ts");
+    assert.equal(formatLiveWait(45), "45ms");
+    assert.equal(formatLiveWait(1250), "1.3s");
+    assert.equal(extractRawString({ raw: "echo hi" }), "echo hi");
+    assert.equal(extractScopeToken({ marks: [10, 20] }), "<10,20>");
+    assert.equal(spanLength([10, 20]), 11);
+    assert.equal(receiptCountFor("READ", { range: { returned: [1, 2] } }), 2);
+
+    const presenter = new SessionPresenter({
+        workspaceName: "ws",
+        sessionName: "main",
+        model: "fast",
+        yolo: false,
+    });
+
+    // Parked wait countdown shows "updates in <remaining>" while future, then "updates due" once expired ({§cli-session-status})
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                lifecycle: "parked",
+                waitUntil: Date.now() + 20_000,
+            },
+        },
+    });
+    const futureBar = presenter.buildStatusBar();
+    assert.match(futureBar.formattedStatusLine, /updates in (?:19|20)s/u);
+
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                lifecycle: "parked",
+                waitUntil: Date.now() - 5_000,
+            },
+        },
+    });
+    const dueBar = presenter.buildStatusBar();
+    assert.match(dueBar.formattedStatusLine, /updates due/u);
+
+    // Gauge carrying loopId/loopSeq followed by null on the same binding emits history_lost warning notice ({§cli-workspaces-and-sessions})
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                loopId: 7,
+                loopSeq: 3,
+            },
+        },
+    });
+    assert.equal(presenter.consumeHistoryLostFrame(), null);
+
+    const lostFrames = presenter.apply({
+        sessionUpdate: "usage_update",
+        used: 0,
+        size: 1000,
+        _meta: {
+            plurnk: {
+                status: {
+                    loopId: null,
+                    loopSeq: null,
+                },
+            },
+        },
+    });
+    assert.equal(lostFrames.length, 1);
+    assert.equal(lostFrames[0]?.kind, "notice");
+    if (lostFrames[0]?.kind === "notice") {
+        assert.equal(lostFrames[0].severity, "warning");
+        assert.equal(lostFrames[0].title, "client:session:history_lost");
+        assert.match(lostFrames[0].formatted, /⚠️  The daemon holds no history for this session\./u);
+    }
 });

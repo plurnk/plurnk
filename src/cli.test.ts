@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PassThrough } from "node:stream";
 import { refuseBelowFloor } from "./runtime-floor.ts";
-import { formatServiceUpdateResult } from "./cli-runner.ts";
+import {
+    createCliPermissionHandler,
+    formatProposalDiffPreview,
+    formatServiceUpdateResult,
+    matchesRuntimeAcceptance,
+} from "./cli-runner.ts";
+import { hyperlink } from "./color.ts";
+import { renderMarkdownDocument, renderMermaid } from "./markdown.ts";
 import { main } from "./dispatcher.ts";
 import { lifecycleGlyphFor, operationGlyphFor, SessionPresenter } from "./session-presenter.ts";
 import { altShortcut, backTabShortcut } from "./tui-viewport.ts";
@@ -618,4 +626,130 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-re
     });
     assert.match(formattedUpdate, /catalog: updated \(500 models across 20 providers, \+4 new\)/u);
     assert.match(formattedUpdate, /version: @plurnk\/plurnk-service@4\.4\.0 — to update packages, stop the daemon and run: npm install -g @plurnk\/plurnk-service@latest @plurnk\/plurnk@latest/u);
+});
+
+test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: per-runtime PLURNK_CLIENT_ACCEPT_<runtime> auto-acceptance, interactive TTY permission review menu, colored diff preview, and markdown/color modules", async () => {
+    // 1. Per-runtime acceptance ({§cli-inline-review})
+    const braveReq = {
+        sessionId: "default#user",
+        title: "EXEC: brave",
+        toolCall: { toolCallId: "tc-1", title: "EXEC: brave" },
+        options: [
+            { optionId: "allow", name: "Allow", kind: "allow_once" as const },
+            { optionId: "reject", name: "Reject", kind: "reject_once" as const },
+        ],
+        _meta: {
+            plurnk: {
+                proposal: {
+                    op: "EXEC",
+                    target: "brave",
+                    attrs: { tool: "brave_web_search" },
+                    body: "plurnk",
+                },
+            },
+        },
+    };
+    assert.equal(matchesRuntimeAcceptance(braveReq, {}), false);
+    assert.equal(
+        matchesRuntimeAcceptance(braveReq, { PLURNK_CLIENT_ACCEPT_brave_TOOLS: '["brave_web_search"]' }),
+        false,
+        "_TOOLS alone enables nothing without PLURNK_CLIENT_ACCEPT_<runtime>=1",
+    );
+    assert.equal(
+        matchesRuntimeAcceptance(braveReq, { PLURNK_CLIENT_ACCEPT_brave: "1" }),
+        true,
+        "PLURNK_CLIENT_ACCEPT_brave=1 accepts every call on runtime brave",
+    );
+    assert.equal(
+        matchesRuntimeAcceptance(braveReq, {
+            PLURNK_CLIENT_ACCEPT_brave: "1",
+            PLURNK_CLIENT_ACCEPT_brave_TOOLS: '["brave_web_search"]',
+        }),
+        true,
+    );
+    assert.equal(
+        matchesRuntimeAcceptance(braveReq, {
+            PLURNK_CLIENT_ACCEPT_brave: "1",
+            PLURNK_CLIENT_ACCEPT_brave_TOOLS: '["brave_local_search"]',
+        }),
+        false,
+    );
+
+    // 2. Colored udiff preview ({§cli-inline-review})
+    const diffPreview = withColorOutput(
+        { isTTY: true },
+        () =>
+            formatProposalDiffPreview(
+                {
+                    ...braveReq,
+                    _meta: {
+                        plurnk: {
+                            proposal: {
+                                op: "EDIT",
+                                target: "file:///tmp/demo.txt",
+                                preview: "@@ -1 +1 @@\n-old line\n+new line",
+                            },
+                        },
+                    },
+                },
+                { isTTY: true },
+            ),
+    );
+    assert.match(diffPreview, /@@ -1 \+1 @@/u);
+    assert.match(diffPreview, /-old line/u);
+    assert.match(diffPreview, /\+new line/u);
+
+    // 3. One-shot interactive TTY review menu ([a]ccept / [r]eject / [c]ancel and ? forceReview override) ({§cli-inline-review})
+    const stdinAccept = new PassThrough() as PassThrough & { isTTY?: boolean };
+    stdinAccept.isTTY = true;
+    let stderrOut = "";
+    const stderrStream = new PassThrough() as PassThrough & { isTTY?: boolean };
+    stderrStream.isTTY = true;
+    stderrStream.on("data", (chunk) => {
+        stderrOut += String(chunk);
+    });
+
+    const handler = createCliPermissionHandler(true, {
+        forceReview: true,
+        stdin: stdinAccept,
+        stderr: stderrStream,
+    });
+    const acceptPromise = handler(braveReq, new AbortController().signal);
+    stdinAccept.write("a\n");
+    const acceptRes = await acceptPromise;
+    assert.deepEqual(acceptRes, { outcome: { outcome: "selected", optionId: "allow" } });
+    assert.match(stderrOut, /\[a\]ccept · \[e\]dit · \[r\]eject · \[c\]ancel \[1\]:/u);
+
+    const stdinReject = new PassThrough() as PassThrough & { isTTY?: boolean };
+    stdinReject.isTTY = true;
+    const rejectHandler = createCliPermissionHandler(true, {
+        forceReview: true,
+        stdin: stdinReject,
+        stderr: stderrStream,
+    });
+    const rejectPromise = rejectHandler(braveReq, new AbortController().signal);
+    stdinReject.write("r\n");
+    const rejectRes = await rejectPromise;
+    assert.deepEqual(rejectRes, { outcome: { outcome: "selected", optionId: "reject" } });
+
+    // 4. Direct color.ts and markdown.ts exports ({§cli-color-policy}, {§cli-markdown-projection})
+    const prevColor = process.env.PLURNK_CLIENT_COLOR;
+    process.env.PLURNK_CLIENT_COLOR = "always";
+    try {
+        const linked = withColorOutput({ isTTY: true }, () =>
+            hyperlink("https://plurnk.xyz", "plurnk"),
+        );
+        assert.equal(linked, "\x1b]8;;https://plurnk.xyz\x1b\\plurnk\x1b]8;;\x1b\\");
+    } finally {
+        if (prevColor === undefined) {
+            delete process.env.PLURNK_CLIENT_COLOR;
+        } else {
+            process.env.PLURNK_CLIENT_COLOR = prevColor;
+        }
+    }
+    const mmd = renderMermaid("graph LR\n  A --> B", 60);
+    assert.ok(mmd !== null && mmd.length > 0);
+    const doc = renderMarkdownDocument("# Title\n\nParagraph text.", 60);
+    assert.match(doc, /Title/u);
+    assert.match(doc, /Paragraph text\./u);
 });

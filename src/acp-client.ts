@@ -284,6 +284,7 @@ export class AcpClient {
                             cwd,
                         });
                     }
+                    await new Promise<void>((resolve) => setImmediate(resolve));
                 } finally {
                     this.#suppressReplayNotifications = false;
                 }

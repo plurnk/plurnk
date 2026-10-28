@@ -234,12 +234,12 @@ const createMockAcpServer = async () => {
                     } as any,
                 ],
                 availableCommands: [
-                    { name: "mcp", description: "Manage MCP servers" },
-                    { name: "skills", description: "Manage Agent Skills" },
-                    { name: "members", description: "Manage file members" },
-                    { name: "env", description: "Manage environment" },
-                    { name: "schedule", description: "Manage scheduled messages" },
-                    { name: "script", description: "Execute .plk script" },
+                    { type: "command", name: "mcp", description: "Manage MCP servers" },
+                    { type: "command", name: "skills", description: "Manage Agent Skills" },
+                    { type: "command", name: "members", description: "Manage file members" },
+                    { type: "command", name: "env", description: "Manage environment" },
+                    { type: "command", name: "schedule", description: "Manage scheduled messages" },
+                    { type: "command", name: "script", description: "Execute .plk script" },
                 ],
                 _meta: {
                     plurnk: {

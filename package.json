@@ -58,7 +58,7 @@
         "node-pty@1.1.0": true
     },
     "dependencies": {
-        "@agentclientprotocol/sdk": "^2.0.2",
+        "@agentclientprotocol/sdk": "^2.1.0",
         "@earendil-works/pi-tui": "1.4.0",
         "@plurnk/plurnk-contracts": "^6.0.1",
         "beautiful-mermaid": "^1.1.3",

@@ -732,7 +732,7 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             detail: message,
         };
         if (common.json) {
-            process.stdout.write(`${JSON.stringify({ schemaVersion: 6, problem }, null, 2)}\n`);
+            process.stdout.write(`${JSON.stringify({ schemaVersion: 6, problem })}\n`);
         } else {
             process.stderr.write(`plurnk: ${message}\n`);
         }

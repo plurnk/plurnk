@@ -508,6 +508,8 @@ test("{§cli-workspaces-and-sessions} {§cli-workspaces-and-sessions} {§cli-wor
         );
         assert.equal(jsonRes.status, 0, `stderr was: ${jsonRes.stderr}`);
         const doc = JSON.parse(jsonRes.stdout);
+        assert.equal(doc.schemaVersion, 6);
+        assert.equal("items" in doc, false);
         assert.match(String(doc.response), /Answered: JSON check/);
     } finally {
         await server.close();

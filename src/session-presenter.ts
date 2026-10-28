@@ -53,7 +53,7 @@ export {
     spanLength,
 };
 
-export interface WorkerDoing {
+export interface SessionDoing {
     readonly phase: "awaiting" | "working";
     readonly since: number;
     readonly op: string | null;
@@ -225,7 +225,7 @@ export class SessionPresenter {
     inputTokens = 0;
     outputTokens = 0;
     costUsd: string | null = null;
-    doing: WorkerDoing | null = null;
+    doing: SessionDoing | null = null;
     preparation: WorkspacePreparationState | null = null;
     activity: SearchActivityState | null = null;
     disconnected = false;

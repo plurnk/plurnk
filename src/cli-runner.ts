@@ -542,6 +542,7 @@ export const runCliPrompt = async (
         };
         process.once("SIGINT", onSigInt);
 
+        const startedAt = Date.now();
         promptDispatched = true;
         session.state = "running";
 
@@ -598,10 +599,14 @@ export const runCliPrompt = async (
 
             const plurnkSessionMeta = (session.meta?.plurnk ?? {}) as Record<string, unknown>;
             const terminalMeta = ((session.lastStateMeta?.plurnk as Record<string, unknown> | undefined)?.terminal ?? {}) as Record<string, unknown>;
+            let loopId: number | null = typeof terminalMeta.loopId === "number" ? terminalMeta.loopId : null;
 
             const turnsById = new Map<number, Record<string, unknown>[]>();
             for (const item of turnItems) {
                 const p = (item.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+                if (loopId === null && typeof p?.loopId === "number") {
+                    loopId = p.loopId;
+                }
                 if (p !== undefined && typeof p.op === "string") {
                     const turnId = typeof p.turnId === "number" ? p.turnId : 1;
                     let bucket = turnsById.get(turnId);
@@ -653,13 +658,16 @@ export const runCliPrompt = async (
 
             if (options.json) {
                 const payload = {
+                    schemaVersion: 6,
                     sessionId: session.sessionId,
+                    loopId,
                     messageId: promptRes.messageId,
                     stopReason,
                     state: session.state,
                     finalStatus,
                     timedOut,
                     turnCount,
+                    wallMs: Date.now() - startedAt,
                     workspace: plurnkSessionMeta.workspace ?? { name: options.workspace ?? "default" },
                     session: plurnkSessionMeta.session ?? { name: options.sessionId ?? "user" },
                     turns,
@@ -667,9 +675,8 @@ export const runCliPrompt = async (
                     usage: mergedUsage,
                     problem: problemRecord,
                     configOptions: session.configOptions,
-                    items: turnItems,
                 };
-                streams.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+                streams.stdout.write(`${JSON.stringify(payload)}\n`);
             } else if (finalAnswer.length > 0) {
                 streams.stdout.write(finalAnswer.endsWith("\n") ? finalAnswer : `${finalAnswer}\n`);
             }

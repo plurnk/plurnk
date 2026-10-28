@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AcpServer } from "@agentclientprotocol/sdk/experimental/server";
 import { createNodeHttpHandler } from "@agentclientprotocol/sdk/experimental/node";
 import {
@@ -11,6 +14,7 @@ import {
     SessionUpdate,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
+import Credential from "./credential.ts";
 
 test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and reattaches bound sessions when the connection SSE stream closes while idle", async () => {
     const sseResponses = new Set<http.ServerResponse>();
@@ -137,5 +141,122 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and 
         await acpServer.close();
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
+test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated bearer token on 401 bearer-token-invalid and retries", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "plurnk-cred-test-"));
+    const secretFile = join(dir, "secret");
+    writeFileSync(secretFile, "secret-1\n", "utf8");
+
+    let expectedSecret = "secret-1";
+    let issuedTokenCounter = 0;
+    let validToken = "";
+    const promptsReceived: string[] = [];
+
+    const agentApp = createAcpAgent({ name: "mock-acp-service" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: {
+                session: {
+                    fork: {},
+                    delete: {},
+                    prompt: { image: {}, embeddedContext: {} },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions: [],
+        }))
+        .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
+            const first = params.prompt[0];
+            const text = first && "text" in first && typeof first.text === "string" ? first.text : "";
+            promptsReceived.push(text);
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { messageId: `msg-${String(promptsReceived.length)}` };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => {
+        if (req.url === "/oauth/token" && req.method === "POST") {
+            let body = "";
+            req.on("data", (chunk) => {
+                body += String(chunk);
+            });
+            req.on("end", () => {
+                const params = new URLSearchParams(body);
+                if (params.get("client_secret") !== expectedSecret) {
+                    res.writeHead(401, { "content-type": "application/json" });
+                    res.end(JSON.stringify({ error: "invalid_client" }));
+                    return;
+                }
+                issuedTokenCounter += 1;
+                validToken = `tok-${String(issuedTokenCounter)}`;
+                res.writeHead(200, { "content-type": "application/json" });
+                res.end(JSON.stringify({ access_token: validToken, expires_in: 3600 }));
+            });
+            return;
+        }
+        if (req.headers.authorization !== `Bearer ${validToken}`) {
+            res.writeHead(401, { "content-type": "application/problem+json" });
+            res.end(
+                JSON.stringify({
+                    code: "acp/http/bearer-token-invalid",
+                    stage: "authorization",
+                    recovery: "Obtain a new access token from this daemon's token endpoint.",
+                    retryable: false,
+                    type: "https://problems.plurnk.xyz/acp/http/bearer-token-invalid",
+                    title: "Bearer token invalid",
+                    status: 401,
+                    detail: "The access token is unknown, expired or revoked.",
+                }),
+            );
+            return;
+        }
+        handler(req, res);
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const client = new AcpClient({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        credential: new Credential({ PLURNK_SERVICE_DB_PATH: join(dir, "plurnk.db") }),
+    });
+
+    try {
+        await client.connect();
+        assert.equal(issuedTokenCounter, 1);
+
+        const created = await client.newSession("/tmp/ws");
+        assert.equal(created.sessionId, "1#user");
+
+        await client.prompt("1#user", "turn before token expiry");
+        assert.deepEqual(promptsReceived, ["turn before token expiry"]);
+
+        // Simulate token expiry and secret rotation on disk: the server rejects tok-1 with 401 bearer-token-invalid
+        expectedSecret = "secret-2";
+        writeFileSync(secretFile, "secret-2\n", "utf8");
+        validToken = "expired";
+
+        await client.prompt("1#user", "turn after token expiry");
+        assert.equal(issuedTokenCounter, 2, "client exchanged rotated secret for a fresh access token on 401");
+        assert.deepEqual(promptsReceived, ["turn before token expiry", "turn after token expiry"]);
+    } finally {
+        client.close();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+        rmSync(dir, { recursive: true, force: true });
     }
 });

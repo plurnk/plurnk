@@ -171,17 +171,21 @@ export class AcpClient {
         this.#elicitationHandler = handler;
     }
 
+    async #resolveHeaders(): Promise<Record<string, string>> {
+        const credHeaders = this.#credential !== null ? await this.#credential.headers(this.#url) : {};
+        return {
+            ...credHeaders,
+            ...this.#staticHeaders,
+        };
+    }
+
     async connect(): Promise<InitializeResponse> {
         if (this.#connection !== null && !this.#connection.signal.aborted && this.#initResponse !== null) {
             return this.#initResponse;
         }
         this.#explicitlyClosed = false;
 
-        const credHeaders = this.#credential !== null ? await this.#credential.headers(this.#url) : {};
-        const headers: Record<string, string> = {
-            ...credHeaders,
-            ...this.#staticHeaders,
-        };
+        const initialHeaders = await this.#resolveHeaders();
 
         const app = client({ name: this.#clientName });
 
@@ -212,15 +216,32 @@ export class AcpClient {
         const stream = isWebSocket
             ? createWebSocketStream(this.#url, {
                   WebSocket: NodeWebSocket as unknown as WebSocketConstructor,
-                  headers,
+                  headers: initialHeaders,
               })
             : createHttpStream(this.#url, {
                   fetch: async (input, init) => {
+                      const currentHeaders = await this.#resolveHeaders();
                       const merged = new Headers(init?.headers);
-                      for (const [k, v] of Object.entries(headers)) {
+                      for (const [k, v] of Object.entries(currentHeaders)) {
                           if (!merged.has(k)) merged.set(k, v);
                       }
-                      return await globalThis.fetch(input, { ...init, headers: merged });
+                      const res = await globalThis.fetch(input, { ...init, headers: merged });
+                      if (res.status === 401 && this.#credential !== null) {
+                          this.#credential.invalidate();
+                          const refreshedHeaders = await this.#resolveHeaders();
+                          if (
+                              refreshedHeaders.authorization !== undefined &&
+                              refreshedHeaders.authorization !== currentHeaders.authorization
+                          ) {
+                              void res.body?.cancel().catch(() => undefined);
+                              const retryMerged = new Headers(init?.headers);
+                              for (const [k, v] of Object.entries(refreshedHeaders)) {
+                                  if (!retryMerged.has(k)) retryMerged.set(k, v);
+                              }
+                              return await globalThis.fetch(input, { ...init, headers: retryMerged });
+                          }
+                      }
+                      return res;
                   },
               });
 
@@ -313,9 +334,15 @@ export class AcpClient {
             const msg = err instanceof Error ? err.message : String(err);
             const isStalePreFlight =
                 updatesDuringCall === 0 &&
-                (msg.includes("ACP HTTP stream is closed") || msg.includes("Unknown Acp-Connection-Id"));
+                (msg.includes("ACP HTTP stream is closed") ||
+                    msg.includes("Unknown Acp-Connection-Id") ||
+                    msg.includes("bearer-token-invalid") ||
+                    msg.includes("credential-revoked"));
             if (!isStalePreFlight || this.#explicitlyClosed) {
                 throw err;
+            }
+            if (msg.includes("bearer-token-invalid") || msg.includes("credential-revoked")) {
+                this.#credential?.invalidate();
             }
             if (this.#connection === conn) {
                 this.#connection = null;

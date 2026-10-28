@@ -32,29 +32,34 @@ const toHttpOrigin = (rawUrl: string): string => {
 };
 
 export default class Credential {
-    readonly #secret: string | null;
+    readonly #explicitSecret: string | null;
     readonly #env: Record<string, string | undefined>;
     #cachedToken: string | null = null;
     #cachedExpiresAt = 0;
 
     constructor(secretOrEnv?: string | Record<string, string | undefined> | null) {
         if (typeof secretOrEnv === "string") {
-            this.#secret = secretOrEnv.trim().length > 0 ? secretOrEnv.trim() : null;
+            this.#explicitSecret = secretOrEnv.trim().length > 0 ? secretOrEnv.trim() : null;
             this.#env = process.env;
         } else if (secretOrEnv !== undefined && secretOrEnv !== null) {
+            this.#explicitSecret = null;
             this.#env = secretOrEnv;
-            this.#secret = resolveSecretFromEnv(secretOrEnv);
         } else {
+            this.#explicitSecret = null;
             this.#env = process.env;
-            this.#secret = resolveSecretFromEnv(process.env);
         }
+    }
+
+    invalidate(): void {
+        this.#cachedToken = null;
+        this.#cachedExpiresAt = 0;
     }
 
     async token(acpUrl: string): Promise<string | null> {
         if (this.#cachedToken !== null && Date.now() < this.#cachedExpiresAt) {
             return this.#cachedToken;
         }
-        const secret = this.#secret ?? resolveSecretFromEnv(this.#env);
+        const secret = this.#explicitSecret ?? resolveSecretFromEnv(this.#env);
         if (secret === null) return null;
 
         const origin = toHttpOrigin(acpUrl);

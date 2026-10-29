@@ -353,6 +353,7 @@ export const openCliSession = async (
     });
     if (replayHistory) {
         const resumed = await client.resumeSession(created.sessionId, options.cwd, {
+            replayFrom: { type: "start" },
             _meta: { plurnk: plurnkMeta },
         });
         if (resumed.configOptions && resumed.configOptions.length > 0) {

@@ -375,6 +375,8 @@ export const runReplSession = async (
                 sessionId: sessionName,
                 model: bindOpts?.initial ? options.model : undefined,
                 effort: bindOpts?.initial ? options.effort : undefined,
+                persona: bindOpts?.initial ? options.persona : undefined,
+                systemPrompt: bindOpts?.initial ? options.systemPrompt : undefined,
                 sessionEnv: bindOpts?.isChild ? undefined : options.sessionEnv,
             },
             (update, s) => {
@@ -1117,6 +1119,7 @@ export const runReplSession = async (
                     effort: "thought_level",
                     child: "spawn_model",
                     mode: "mode",
+                    persona: "persona",
                 };
                 const mappedConfigId = configMap[cmd];
                 if (mappedConfigId !== undefined) {

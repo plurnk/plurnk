@@ -71,7 +71,7 @@ const runCli = (
     });
 
 const createMockAcpServer = async () => {
-    const sessions = new Map<string, { cwd: string; model: string; effort: string }>();
+    const sessions = new Map<string, { cwd: string; model: string; effort: string; persona: string; systemPrompt?: string }>();
     const agentApp = createAcpAgent({ name: "mock-plurnk-service" })
         .onRequest(methods.agent.initialize, async () => ({
             protocolVersion: PROTOCOL_VERSION,
@@ -229,7 +229,15 @@ const createMockAcpServer = async () => {
         .onRequest(methods.agent.session.new, async ({ params }) => {
             const name = (params._meta as any)?.plurnk?.name ?? "session-1";
             const sessionId = `1#${name}`;
-            sessions.set(sessionId, { cwd: params.cwd, model: "mocktest/mock-v1", effort: "medium" });
+            const spText = (params.systemPrompt as any)?.content?.[0]?.text;
+            const initialPersona = typeof spText === "string" && spText.length > 0 ? "custom" : "none";
+            sessions.set(sessionId, {
+                cwd: params.cwd,
+                model: "mocktest/mock-v1",
+                effort: "medium",
+                persona: initialPersona,
+                ...(typeof spText === "string" ? { systemPrompt: spText } : {}),
+            });
             return {
                 sessionId,
                 configOptions: [
@@ -251,6 +259,18 @@ const createMockAcpServer = async () => {
                             { value: "low", name: "Low" },
                             { value: "medium", name: "Medium" },
                             { value: "high", name: "High" },
+                        ],
+                    } as any,
+                    {
+                        configId: "persona",
+                        name: "Persona",
+                        category: "persona",
+                        type: "select",
+                        currentValue: initialPersona,
+                        options: [
+                            { value: "none", name: "None" },
+                            { value: "reviewer", name: "reviewer", description: "Strict code reviewer" },
+                            ...(initialPersona === "custom" ? [{ value: "custom", name: "Custom" }] : []),
                         ],
                     } as any,
                 ],
@@ -275,7 +295,7 @@ const createMockAcpServer = async () => {
                 throw new Error(`Session '${params.sessionId}' does not exist.`);
             }
             if (!sessions.has(params.sessionId)) {
-                sessions.set(params.sessionId, { cwd: params.cwd, model: "mocktest/mock-v1", effort: "medium" });
+                sessions.set(params.sessionId, { cwd: params.cwd, model: "mocktest/mock-v1", effort: "medium", persona: "none" });
             }
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
@@ -316,6 +336,7 @@ const createMockAcpServer = async () => {
                 cwd: "/tmp",
                 model: "mocktest/mock-v1",
                 effort: "medium",
+                persona: "none",
             };
             if (params.configId === "model") {
                 if (params.value !== "mocktest/mock-v1" && params.value !== "mocktest") {
@@ -345,6 +366,23 @@ const createMockAcpServer = async () => {
                     );
                 }
                 existing.effort = String(params.value);
+            } else if (params.configId === "persona") {
+                if (!["none", "reviewer"].includes(String(params.value))) {
+                    throw new RequestError(
+                        -32602,
+                        `Persona '${String(params.value)}' was not found.`,
+                        {
+                            type: "https://problems.plurnk.xyz/acp/persona-not-found",
+                            title: "Persona not found",
+                            status: 404,
+                            detail: `Persona '${String(params.value)}' was not found.`,
+                        },
+                    );
+                }
+                existing.persona = String(params.value);
+                if (existing.persona === "reviewer") {
+                    existing.effort = "high";
+                }
             }
             sessions.set(params.sessionId, existing);
             return {
@@ -367,6 +405,17 @@ const createMockAcpServer = async () => {
                             { value: "low", name: "Low" },
                             { value: "medium", name: "Medium" },
                             { value: "high", name: "High" },
+                        ],
+                    } as any,
+                    {
+                        configId: "persona",
+                        name: "Persona",
+                        category: "persona",
+                        type: "select",
+                        currentValue: existing.persona,
+                        options: [
+                            { value: "none", name: "None" },
+                            { value: "reviewer", name: "reviewer", description: "Strict code reviewer" },
                         ],
                     } as any,
                 ],
@@ -736,6 +785,34 @@ test("{§cli-subcommands} {§cli-subcommands} {§cli-subcommands} {§cli-subcomm
             },
         );
         assert.equal(wsListRes.status, 0, `stderr was: ${wsListRes.stderr}`);
+
+        const personaRes = await runCli(
+            ["persona", "reviewer"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(personaRes.status, 0, `stderr was: ${personaRes.stderr}`);
+        assert.match(personaRes.stdout, /persona \(Persona\): reviewer \[\*none|persona \(Persona\): reviewer \[none, \*reviewer\]/);
+
+        const sysPromptRes = await runCli(
+            ["--system-prompt", "Act as security auditor.", "--json", "hello"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+                PLURNK_PERSONA: "reviewer",
+            },
+        );
+        assert.equal(sysPromptRes.status, 0, `stderr was: ${sysPromptRes.stderr}`);
+        const sysPromptPayload = JSON.parse(sysPromptRes.stdout) as { configOptions?: Array<{ configId: string; currentValue: string }> };
+        assert.equal(
+            sysPromptPayload.configOptions?.find((o) => o.configId === "persona")?.currentValue,
+            "custom",
+            "--system-prompt must seed session role and override ambient PLURNK_PERSONA",
+        );
     } finally {
         await server.close();
     }
@@ -844,6 +921,11 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-repl-mode} {§cli-interactive-c
         // Slash commands on fd 0 -> output on fd 1
         replChild.stdin!.write("/model\n");
         await waitStdout((l) => l.includes("model (Model): mocktest/mock-v1"));
+
+        replChild.stdin!.write("/persona reviewer\n");
+        await waitStdout((l) => l.includes("persona (Persona): reviewer"));
+        replChild.stdin!.write("/persona none\n");
+        await waitStdout((l) => l.includes("persona (Persona): none"));
 
         // /loops and /loop 1
         replChild.stdin!.write("/loops\n");

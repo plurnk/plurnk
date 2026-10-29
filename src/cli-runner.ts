@@ -95,6 +95,8 @@ export interface CliCommonOptions {
     readonly tuiSession: string;
     readonly model?: string;
     readonly effort?: string;
+    readonly persona?: string;
+    readonly systemPrompt?: string;
     readonly projectRoot?: string;
     readonly workspaceSettings?: Record<string, unknown>;
     readonly sessionEnv?: Record<string, string>;
@@ -288,6 +290,13 @@ const applyInitialConfig = async (
     session: AcpSession,
     options: CliCommonOptions,
 ): Promise<void> => {
+    if (options.persona !== undefined && options.persona.length > 0) {
+        const res = await client.setConfigOption(session.sessionId, "persona", options.persona);
+        session.configOptions = [...res.configOptions];
+        if (res._meta !== undefined && res._meta !== null) {
+            session.meta = mergeSessionMeta(session.meta, res._meta as Record<string, unknown>);
+        }
+    }
     if (options.model !== undefined && options.model.length > 0) {
         const res = await client.setConfigOption(session.sessionId, "model", options.model);
         session.configOptions = [...res.configOptions];
@@ -344,7 +353,15 @@ export const openCliSession = async (
         ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
     };
 
+    const systemPrompt =
+        options.systemPrompt !== undefined && options.systemPrompt.length > 0
+            ? {
+                  mode: "append" as const,
+                  content: [{ type: "text" as const, text: options.systemPrompt }],
+              }
+            : undefined;
     const created = await client.newSession(options.cwd, {
+        ...(systemPrompt !== undefined ? { systemPrompt } : {}),
         _meta: { plurnk: plurnkMeta },
     });
     session = new AcpSession(created.sessionId, {

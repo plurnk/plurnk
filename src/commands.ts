@@ -11,6 +11,7 @@ export const INTERACTIVE_COMMANDS: readonly { readonly usage: string; readonly s
     { usage: "/model [selector] [effort]", summary: "Inspect or select this session's durable model, and its effort with it." },
     { usage: "/child [selector|inherit]", summary: "Inspect or select the inherited child model." },
     { usage: "/effort [policy]", summary: "Inspect or select reasoning effort." },
+    { usage: "/persona [name|none]", summary: "Inspect, select, or clear this session's persona role." },
     { usage: "/capabilities [json]", summary: "Inspect the capability cascade or set the workspace policy." },
     { usage: "/yolo", summary: "Toggle local proposal auto-accept (Shift-Tab). On by default." },
     { usage: "/workspace [name]", summary: "Open or create a workspace." },

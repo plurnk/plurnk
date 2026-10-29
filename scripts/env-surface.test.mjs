@@ -23,6 +23,7 @@ const FOREIGN = new Map([
     ["PLURNK_SECRET", "@plurnk/plurnk-contracts — the operator's client secret on the shared panel; unset, the client reads the daemon's minted file"],
     ["PLURNK_SERVICE_DB_PATH", "@plurnk/plurnk-core — the selected service's database path, beside which the client reads the secret it minted"],
     ["PLURNK_SERVICE_MAX_COMMANDS", "@plurnk/plurnk-core — the daemon's ceiling, which usage names beside the flag it bounds"],
+    ["PLURNK_PERSONA", "ambient persona selector shorthand alongside PLURNK_CLIENT_PERSONA (#228)"],
 ]);
 
 // `PLURNK_*` strings that are not knobs.
@@ -37,6 +38,7 @@ const ARGUMENTS = new Map([
     ["version", "prints provenance"],
     ["env-file", "chooses the environment itself, so it cannot be a knob of it"],
     ["env-file-if-exists", "chooses the environment itself, so it cannot be a knob of it"],
+    ["system-prompt", "an invocation-scoped role instruction or @file path (#228)"],
     ["loop", "an argument of `log read`"],
     ["turn", "an argument of `log read`"],
     ["since", "an argument of `log read`"],

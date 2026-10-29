@@ -96,6 +96,7 @@ export const runTuiViewport = async (
     let boundProjectRoot: string | null = options.projectRoot ?? options.cwd;
     let cachedModels: string[] = [];
     let cachedEfforts: string[] = ["low", "medium", "high"];
+    let cachedPersonas: string[] = ["none"];
     let cachedSessions: string[] = [];
     let cachedWorkspaces: string[] = [];
     let liveReasoningBuffer = "";
@@ -276,6 +277,7 @@ export const runTuiViewport = async (
                 getProjectRoot: () => boundProjectRoot,
                 getModels: () => cachedModels,
                 getEfforts: () => cachedEfforts,
+                getPersonas: () => cachedPersonas,
                 getSessionNames: () => cachedSessions,
                 getWorkspaceNames: () => cachedWorkspaces,
                 getPendingGateIds: () => focusedGateIds,
@@ -644,6 +646,12 @@ export const runTuiViewport = async (
                             }
                             if (Array.isArray(opt.options)) {
                                 cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
+                            }
+                        } else if (opt.configId === "persona") {
+                            if (Array.isArray(opt.options)) {
+                                cachedPersonas = opt.options
+                                    .map((o) => String(o.value ?? ""))
+                                    .filter((v) => v.length > 0 && v !== "custom");
                             }
                         }
                     }

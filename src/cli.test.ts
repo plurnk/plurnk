@@ -57,6 +57,20 @@ test("{§cli-invocation} {§cli-invocation} {§cli-invocation} {§cli-configurat
     assert.equal(help.status, 0);
     assert.match(help.stdout, /--workspace/);
     assert.match(help.stdout, /--session/);
+    assert.match(help.stdout, /--persona/);
+    assert.match(help.stdout, /--system-prompt/);
+
+    const conflict = spawnSync(
+        process.execPath,
+        [binPath, "--persona", "reviewer", "--system-prompt", "Be strict.", "hello"],
+        {
+            env: { ...process.env, PLURNK_ACP_URL: "http://127.0.0.1:1/acp" },
+            encoding: "utf8",
+            timeout: 3000,
+        },
+    );
+    assert.equal(conflict.status, 64);
+    assert.match(conflict.stderr, /--persona and --system-prompt cannot be used together/);
 });
 
 test("{§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
@@ -613,6 +627,13 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-re
         getPendingGateIds: () => ["deadbeef", "cafebabe"],
     });
     assert.deepEqual(gateComp.suggestions, [{ value: "@deadbeef", description: "pending gate" }]);
+
+    const personaComp = await completeInput("/persona rev", {
+        cwd: repoRoot,
+        getProjectRoot: () => repoRoot,
+        getPersonas: () => ["none", "reviewer", "architect"],
+    });
+    assert.deepEqual(personaComp.suggestions, [{ value: "reviewer", description: "persona" }]);
 
     // Service and model catalog update formatting ({§cli-subcommands})
     const formattedUpdate = formatServiceUpdateResult({

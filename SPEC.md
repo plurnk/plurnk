@@ -38,6 +38,8 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | `--tui-session <name>` | string | Default session bound by TUI, scripts, and subcommands when `--session` is unset (`PLURNK_CLIENT_TUI_SESSION`, shipped `user`). |
 | `--model <selector>` | string | Persist declared alias or exact `provider/model` route on the session before its first loop (`PLURNK_CLIENT_MODEL`). |
 | `--effort <policy>` | string | Persist daemon-validated effort on the session before its first loop (`PLURNK_CLIENT_EFFORT`). |
+| `--persona <name\|none>` | string | Select or clear the session's persona role via `session/set_config_option` (`configId: "persona"`) before its first loop (`PLURNK_CLIENT_PERSONA`, fallback `PLURNK_PERSONA`). |
+| `--system-prompt <text\|@file>` | string | Seed `session://<session>/AGENTS.md` with `<text>` (or `@<file>` resolved relative to `cwd`) on session open; overrides ambient `PLURNK_CLIENT_PERSONA` / `PLURNK_PERSONA` and exits `64` if combined with `--persona`. |
 | `--autostart <0\|1>` | string | Start installed service when nothing listens, or require attachment (`PLURNK_CLIENT_AUTOSTART`). |
 | `--daemon-timeout-ms <n>` | string | Positive connection/startup limit (`PLURNK_CLIENT_DAEMON_TIMEOUT_MS`). |
 | `--oauth-timeout-ms <n>` | string | Positive browser OAuth callback deadline (`PLURNK_CLIENT_OAUTH_TIMEOUT_MS`). |
@@ -71,11 +73,12 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | Project root (`projectRoot`) | Existing workspace keeps stored root. Otherwise: `--project-root` / `PLURNK_CLIENT_PROJECT_ROOT` (empty string = headless `null`, requires `--workspace`, else exit `64` `client/flag/missing-dependency`) $\to$ `cwd` when `cwd != HOME` $\to$ home workspace `~` if held $\to$ interactive prompt (or exit `64` `client/project-root/required` when noninteractive/JSON). `Esc`/`Ctrl-C` during root prompt exits `130`. |
 | Workspace-open settings | Sent as `settings` on `workspace.create` (`filesItems`, `capabilities`, `maxCommands`, `git: false`); create-time only, preserved on existing workspaces. |
 
-### §cli-model-selection 1.2 Model, Child Provider, and Effort Selection
+### §cli-model-selection 1.2 Model, Child Provider, Effort, and Persona Selection
 
 - **Model selection**: `--model <selector>` or `PLURNK_CLIENT_MODEL` calls `session/set_config_option` (`configId: "model"`) before the invocation's first loop (rejection fails admission before sending a prompt or accepting input). When initial session has no model, TUI emits one startup warning naming the provider API key, `/models`, and `/model <selector>`. `/model` reads/writes `model`; bare fragments complete from `providers/list` aliases, and `provider/…` fragments complete lazily from one bounded `models.list` page cached per provider.
 - **Child provider (`/child`)**: `PLURNK_MODEL_CHILD` seeds spawn override for `WORK`, `FORK`, and `BARE`. `/child` inspects; `/child <selector>` sets `configId: "spawn_model"`; `/child inherit` clears (`value: ""`).
-- **Effort & identity provenance (`/effort`)**: `/effort` and `plurnk effort` inspect or set `configId: "thought_level"`; `--model <selector> <effort>` / `/model <selector> <effort>` validates the pair atomically. Route labels format chosen effort in brackets (`deepdumb[low]`), alias-seeded default in parentheses (`deepdumb(low]`), and effortless routes bare. Every durable policy mutation (`/model`, `/child`, `/effort`, rebind/hop, admission flags) performs one whole readback of `configOptions` (`thought_level`, `model`, `spawn_model`) before confirming; external changes detected on the gauge trigger the same readback.
+- **Effort & identity provenance (`/effort`)**: `/effort` and `plurnk effort` inspect or set `configId: "thought_level"`; `--model <selector> <effort>` / `/model <selector> <effort>` validates the pair atomically. Route labels format chosen effort in brackets (`deepdumb[low]`), alias-seeded default in parentheses (`deepdumb(low]`), and effortless routes bare. Every durable policy mutation (`/model`, `/child`, `/effort`, `/persona`, rebind/hop, admission flags) performs one whole readback of `configOptions` (`thought_level`, `model`, `spawn_model`, `persona`) before confirming; external changes detected on the gauge trigger the same readback.
+- **Persona & role seeding (`/persona`, `--persona`, `--system-prompt`)**: `--persona <name|none>`, `PLURNK_CLIENT_PERSONA`, or `PLURNK_PERSONA` calls `session/set_config_option` (`configId: "persona"`) before explicit `--model`/`--effort` overrides so persona defaults apply when `--model`/`--effort` are omitted. `--system-prompt <text|@file>` passes `systemPrompt` (`mode: "append"`) on `session/new` (suppressing ambient `PLURNK_CLIENT_PERSONA`/`PLURNK_PERSONA`, or exiting `64` when paired with `--persona`). `/persona` and `plurnk persona` inspect, select, or clear (`none`) `configId: "persona"`, with TUI tab-completion from the session's `persona` config option.
 
 ### §cli-session-status 1.3 Session Status and Gauge
 
@@ -139,7 +142,7 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 | Group | Verbs |
 | --- | --- |
 | Inspect | `/help /models /workspaces /sessions /loops /loop` |
-| Policy | `/model /child /effort /capabilities /yolo` |
+| Policy | `/model /child /effort /persona /capabilities /yolo` |
 | Workspace | `/workspace /rename /share /rollback /session /fork /parent /enter /older /newer` |
 | Functionality | `/mcp /skills /members /env /schedule` |
 | Compose | `/import /script /editor` |
@@ -219,6 +222,7 @@ Subcommands inspect or configure daemon state without running a model loop (`--j
 | `plurnk workspace sessions <name>` | Attaches existing `<name>` via `workspace.attach` (404 if missing) and lists `workspace.sessions` (`name / created`). |
 | `plurnk log read` | Calls `log.read` (`--session`, `--loop`, `--turn`, `--since`, `--limit`); renders trace lines `[<status>] <origin> <op>[<sub>] <path> <scope>` or JSON `entries`. |
 | `plurnk effort [level]` | Reads or updates `thought_level` on `configOptions` via `session/set_config_option`. |
+| `plurnk persona [name\|none]` | Reads, selects, or clears `persona` on `configOptions` via `session/set_config_option`. |
 | `plurnk script <file.plk>` | Submits `<file.plk>` via `op.parse` on the resolved workspace/session, retaining binding across proposal resumes; exits `0` on success or `4` on failed operation. |
 
 ---

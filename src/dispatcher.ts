@@ -38,6 +38,8 @@ export const CLIENT_OPTIONS = {
     "tui-session": { type: "string" },
     model: { type: "string" },
     effort: { type: "string" },
+    persona: { type: "string" },
+    "system-prompt": { type: "string" },
     env: { type: "string", multiple: true },
     "env-inherit": { type: "string" },
     "env-exclude": { type: "string" },
@@ -86,6 +88,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--session <name>] [--json]
        plurnk effort [level] --workspace <name> [--session <name>] [--json]
+       plurnk persona [name|none] --workspace <name> [--session <name>] [--json]
        plurnk capabilities [json] --workspace <name> [--session <name>] [--json]
        plurnk script <file.plk> [options]
        plurnk completion <bash|zsh|fish>
@@ -142,6 +145,14 @@ options:
       --effort <level>    persistently select the session's effort before
                           the first loop; with --model, the two are chosen together.
                           The daemon validates it against the parent and child models.
+      --persona <name|none>
+                          persistently select or clear the session's persona role
+                          before the first loop (session/set_config_option configId
+                          "persona"). Overrides PLURNK_CLIENT_PERSONA and PLURNK_PERSONA.
+      --system-prompt <text|@file>
+                          seed session://<session>/AGENTS.md with <text> (or @<file>
+                          relative to cwd) on session open. Overrides ambient
+                          PLURNK_CLIENT_PERSONA / PLURNK_PERSONA; conflicts with --persona.
       --env <NAME>[=<value>]
                           persistently set <NAME> on the session before the first loop
                           (session.env.replace); without =, carry <NAME> from this
@@ -227,6 +238,7 @@ subcommands:
   log read --workspace ...  read log entries from the named workspace's session
   read <loop/turn/op>     inspect one log row in the selected workspace/session
   effort [level]          inspect or set a session's effort
+  persona [name|none]     inspect, select, or clear a session's persona role
   capabilities [json]    inspect the capability cascade or set the workspace policy
   render                  project Markdown stdin as width-bounded plain Unicode;
                           local only: no daemon, config cascade, or startup output
@@ -440,6 +452,62 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
     const effort = typeof parsed.values.effort === "string"
         ? parsed.values.effort
         : env.PLURNK_CLIENT_EFFORT;
+    if (typeof parsed.values.persona === "string" && typeof parsed.values["system-prompt"] === "string") {
+        const detail = "--persona and --system-prompt cannot be used together.";
+        if (parsed.values.json === true) {
+            process.stdout.write(
+                `${JSON.stringify({
+                    schemaVersion: 6,
+                    problem: {
+                        type: "https://problems.plurnk.xyz/client/usage",
+                        title: "Conflicting flags",
+                        status: 400,
+                        detail,
+                    },
+                })}\n`,
+            );
+        } else {
+            process.stderr.write(`plurnk: ${detail}\n`);
+        }
+        process.exitCode = 64;
+        return;
+    }
+    let systemPrompt: string | undefined;
+    if (typeof parsed.values["system-prompt"] === "string") {
+        const rawPrompt = parsed.values["system-prompt"];
+        if (rawPrompt.startsWith("@") && rawPrompt.length > 1) {
+            try {
+                systemPrompt = readFileSync(resolve(process.cwd(), rawPrompt.slice(1)), "utf8");
+            } catch (err) {
+                const detail = `Failed to read --system-prompt file ${rawPrompt.slice(1)}: ${err instanceof Error ? err.message : String(err)}`;
+                if (parsed.values.json === true) {
+                    process.stdout.write(
+                        `${JSON.stringify({
+                            schemaVersion: 6,
+                            problem: {
+                                type: "https://problems.plurnk.xyz/client/usage",
+                                title: "Invalid --system-prompt file",
+                                status: 400,
+                                detail,
+                            },
+                        })}\n`,
+                    );
+                } else {
+                    process.stderr.write(`plurnk: ${detail}\n`);
+                }
+                process.exitCode = 64;
+                return;
+            }
+        } else {
+            systemPrompt = rawPrompt;
+        }
+    }
+    const persona =
+        typeof parsed.values.persona === "string"
+            ? parsed.values.persona
+            : systemPrompt === undefined
+              ? (env.PLURNK_CLIENT_PERSONA || env.PLURNK_PERSONA)
+              : undefined;
     const projectRoot = typeof parsed.values["project-root"] === "string"
         ? parsed.values["project-root"]
         : env.PLURNK_CLIENT_PROJECT_ROOT;
@@ -571,6 +639,8 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         tuiSession,
         ...(model !== undefined && model.length > 0 ? { model } : {}),
         ...(effort !== undefined && effort.length > 0 ? { effort } : {}),
+        ...(persona !== undefined && persona.length > 0 ? { persona } : {}),
+        ...(systemPrompt !== undefined && systemPrompt.length > 0 ? { systemPrompt } : {}),
         ...(projectRoot !== undefined ? { projectRoot } : {}),
         ...(Object.keys(workspaceSettings).length > 0 ? { workspaceSettings } : {}),
         ...(Object.keys(sessionEnv).length > 0 ? { sessionEnv } : {}),
@@ -684,6 +754,8 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
             exitCode = await runCliReadCoord(positionals[1], common);
         } else if (first === "effort") {
             exitCode = await runCliConfig("thought_level", positionals[1], common);
+        } else if (first === "persona") {
+            exitCode = await runCliConfig("persona", positionals[1], common);
         } else if (first === "capabilities") {
             exitCode = await runCliCapabilities(positionals[1], common);
         } else if (first === "script") {

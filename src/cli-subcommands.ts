@@ -239,7 +239,12 @@ export const runCliConfig = async (
     });
     try {
         await ensureDaemonConnected(client, options);
-        const session = await openCliSession(client, options);
+        const session = await openCliSession(client, {
+            ...options,
+            ...(configId === "persona" ? { persona: undefined } : {}),
+            ...(configId === "thought_level" ? { effort: undefined } : {}),
+            ...(configId === "model" ? { model: undefined } : {}),
+        });
         if (configId !== undefined && value !== undefined) {
             const existing = session.configOptions.find((o) => o.configId === configId);
             const parsedValue =

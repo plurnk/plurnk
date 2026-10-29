@@ -96,6 +96,7 @@ export interface CompletionContext {
     readonly getProjectRoot: () => string | null;
     readonly getModels?: () => readonly string[];
     readonly getEfforts?: () => readonly string[];
+    readonly getPersonas?: () => readonly string[];
     readonly getSessionNames?: () => readonly string[];
     readonly getWorkspaceNames?: () => readonly string[];
     readonly getPendingGateIds?: () => readonly string[];
@@ -214,6 +215,21 @@ export const completeInput = async (
             suggestions: efforts
                 .filter((e) => e.startsWith(frag))
                 .map((value) => ({ value, description: "reasoning effort" })),
+            prefix: frag,
+        };
+    }
+
+    const personaMatch = /^\/persona\s+(\S*)$/u.exec(line);
+    if (personaMatch !== null) {
+        const frag = personaMatch[1]!;
+        const personas = ctx.getPersonas?.() ?? ["none"];
+        return {
+            suggestions: personas
+                .filter((p) => p.startsWith(frag))
+                .map((value) => ({
+                    value,
+                    description: value === "none" ? "clear persona role" : "persona",
+                })),
             prefix: frag,
         };
     }

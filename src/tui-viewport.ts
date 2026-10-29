@@ -145,9 +145,10 @@ export const runTuiViewport = async (
     const updateSurfaceStatus = (): void => {
         if (surface === null) return;
         const loopNum = presenter.loopSeq ?? 1;
+        const turns = presenter.turns > 0 ? presenter.turns : currentTurns;
         const place =
-            currentTurns > 0
-                ? `[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(currentTurns)})]`
+            turns > 0
+                ? `[${presenter.workspaceName}/~${presenter.sessionName}(${String(loopNum)}/${String(turns)})]`
                 : `[${presenter.workspaceName}/~${presenter.sessionName}]`;
         const modelLabel = formatModelRoute(presenter.model, presenter.effort, presenter.effortSource);
         const activity =
@@ -552,11 +553,19 @@ export const runTuiViewport = async (
                               plurnk?: {
                                   op?: string;
                                   status?: number;
+                                  loopSeq?: number;
+                                  turnSeq?: number;
                                   attrs?: { aside?: string };
                               };
                           }
                         | undefined
                 )?.plurnk;
+                if (typeof plurnkMeta?.loopSeq === "number") {
+                    presenter.loopSeq = plurnkMeta.loopSeq;
+                }
+                if (typeof plurnkMeta?.turnSeq === "number" && plurnkMeta.turnSeq > 0) {
+                    presenter.turns = Math.max(presenter.turns, plurnkMeta.turnSeq);
+                }
                 surface.append(
                     renderModelReply(rec.text, surface.columns, {
                         op: plurnkMeta?.op ?? "SEND",
@@ -645,9 +654,11 @@ export const runTuiViewport = async (
                     }
                     if (wasStarted && (presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession)) {
                         currentTurns = 0;
+                        presenter.turns = 0;
                         presenter.lastLoopStatus = null;
                         presenter.lastStatusLine = "";
                     }
+                    currentTurns = presenter.turns;
                     presenter.buildStatusBar();
                     surface.setTitle(windowTitle(presenter.workspaceName, presenter.sessionName));
                     updateSurfaceStatus();
@@ -659,6 +670,11 @@ export const runTuiViewport = async (
             }
 
             if (event.sessionUpdate === "loop_replay") {
+                if (typeof event.loopSeq === "number") {
+                    presenter.loopSeq = event.loopSeq;
+                    presenter.turns = 0;
+                    currentTurns = 0;
+                }
                 if (surface !== null) {
                     ensureSurfaceStarted();
                     const seqLabel = typeof event.loopSeq === "number" ? String(event.loopSeq) : "?";
@@ -666,6 +682,11 @@ export const runTuiViewport = async (
                     if (Array.isArray(event.history) && event.history.length > 0) {
                         renderHistoryItemsToSurface(event.history, false);
                     }
+                    if (presenter.turns === 0 && typeof event.loopSeq === "number") {
+                        presenter.turns = 1;
+                    }
+                    currentTurns = presenter.turns;
+                    updateSurfaceStatus();
                     surface.renderNow();
                 } else if (typeof event.text === "string" && event.text.length > 0) {
                     termOut.write(event.text);
@@ -731,6 +752,7 @@ export const runTuiViewport = async (
                     case "subagent":
                         break;
                     case "status_update":
+                        currentTurns = presenter.turns;
                         if (frame.newTurn) {
                             liveReasoningTurnEnded = true;
                             surface?.archiveTurn();
@@ -742,6 +764,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "reply_chunk":
+                        currentTurns = presenter.turns;
                         if (surface !== null && frame.text.length > 0) {
                             suppressedStdoutQueue.push(frame.text.endsWith("\n") ? frame.text : `${frame.text}\n`);
                             surface.addResponse(
@@ -754,6 +777,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "tool_call":
+                        currentTurns = presenter.turns;
                         if (surface !== null) {
                             renderToolCallToSurface(frame);
                             updateSurfaceStatus();

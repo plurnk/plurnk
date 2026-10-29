@@ -213,6 +213,7 @@ export class SessionPresenter {
     spawnModel: string | null = null;
     loopId: number | null = null;
     loopSeq: number | null = null;
+    turns = 0;
     waitUntil: number | null = null;
     curationWeight = 0;
     curationBudget = 0;
@@ -245,6 +246,8 @@ export class SessionPresenter {
     readonly #terminalOutputs = new Map<string, string>();
     readonly #bindingsWithLoops = new Set<string>();
     #pendingHistoryLost = false;
+    #awaitingTurnCount = 0;
+    #loopConcluded = false;
 
     constructor(options: SessionPresenterOptions = {}) {
         this.workspaceName = options.workspaceName ?? "default";
@@ -283,7 +286,32 @@ export class SessionPresenter {
         };
     }
 
+    #resetLoopTurns(): void {
+        this.turns = 0;
+        this.#awaitingTurnCount = 0;
+        this.#loopConcluded = false;
+    }
+
+    #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown): void {
+        if (typeof loopSeq === "number") {
+            if (this.loopSeq !== null && this.loopSeq !== loopSeq) {
+                this.#resetLoopTurns();
+            }
+            this.loopSeq = loopSeq;
+            this.#bindingsWithLoops.add(`${this.workspaceName}#${this.sessionName}`);
+        }
+        if (typeof turnSeq === "number" && turnSeq > 0) {
+            if (this.#loopConcluded && typeof loopSeq !== "number") {
+                this.#resetLoopTurns();
+            }
+            this.turns = Math.max(this.turns, turnSeq);
+        }
+    }
+
     markTurnStart(now = Date.now()): void {
+        if (this.#loopConcluded) {
+            this.#resetLoopTurns();
+        }
         this.#turnStartedAt = now;
         this.#turnBaseInputTokens = this.inputTokens;
         this.#turnBaseOutputTokens = this.outputTokens;
@@ -333,6 +361,7 @@ export class SessionPresenter {
         if (typeof plurnk.sessionName === "string" && plurnk.sessionName.length > 0) {
             this.sessionName = plurnk.sessionName;
         }
+        this.#syncLoopAndTurn(plurnk.loopSeq, plurnk.turn);
 
         const status = plurnk.status as Record<string, unknown> | undefined;
         if (status) {
@@ -341,6 +370,9 @@ export class SessionPresenter {
                 this.lifecycle = status.lifecycle;
             }
             if (typeof status.loopId === "number") {
+                if (this.loopId !== null && this.loopId !== status.loopId) {
+                    this.#resetLoopTurns();
+                }
                 this.loopId = status.loopId;
                 this.#bindingsWithLoops.add(bindingKey);
             } else if (status.loopId === null) {
@@ -349,8 +381,12 @@ export class SessionPresenter {
                     this.#pendingHistoryLost = true;
                 }
                 this.loopId = null;
+                this.#resetLoopTurns();
             }
             if (typeof status.loopSeq === "number") {
+                if (this.loopSeq !== null && this.loopSeq !== status.loopSeq) {
+                    this.#resetLoopTurns();
+                }
                 this.loopSeq = status.loopSeq;
                 this.#bindingsWithLoops.add(bindingKey);
             } else if (status.loopSeq === null) {
@@ -359,6 +395,10 @@ export class SessionPresenter {
                     this.#pendingHistoryLost = true;
                 }
                 this.loopSeq = null;
+                this.#resetLoopTurns();
+            }
+            if (typeof status.packetCount === "number" && status.packetCount > 0) {
+                this.turns = Math.max(this.turns, status.packetCount);
             }
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
@@ -661,8 +701,11 @@ export class SessionPresenter {
                 op?: string;
                 origin?: string;
                 status?: number;
+                loopSeq?: number;
+                turnSeq?: number;
                 attrs?: { aside?: string; kind?: string; stream?: string };
             };
+            this.#syncLoopAndTurn(metaPlurnk.loopSeq, metaPlurnk.turnSeq);
             const incomingRawInput =
                 update.rawInput && typeof update.rawInput === "object"
                     ? (update.rawInput as Record<string, unknown>)
@@ -1002,12 +1045,15 @@ export class SessionPresenter {
                           plurnk?: {
                               op?: string;
                               status?: number;
+                              loopSeq?: number;
+                              turnSeq?: number;
                               attrs?: { aside?: string };
                               outside?: unknown;
                           };
                       }
                     | undefined
             )?.plurnk;
+            this.#syncLoopAndTurn(metaPlurnk?.loopSeq, metaPlurnk?.turnSeq);
             const text = contentBlockToText(update.content);
             const isOutside =
                 (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
@@ -1046,6 +1092,11 @@ export class SessionPresenter {
 
             if (rawNotice?.source === "engine:turn" || update.title?.startsWith("engine:turn:")) {
                 if (rawNotice?.kind === "turn_awaiting_model" || update.title === "engine:turn:turn_awaiting_model") {
+                    if (this.#loopConcluded) {
+                        this.#resetLoopTurns();
+                    }
+                    this.#awaitingTurnCount += 1;
+                    this.turns = Math.max(this.turns, this.#awaitingTurnCount);
                     this.lifecycle = "running";
                     this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
                     frames.push({
@@ -1120,8 +1171,19 @@ export class SessionPresenter {
 
             if (rawNotice?.kind === "loop_status") {
                 if (typeof rawNotice.loopSeq === "number") {
+                    if (
+                        (this.loopSeq !== null && this.loopSeq !== rawNotice.loopSeq) ||
+                        ((rawNotice.status === 100 || rawNotice.status === 102) && this.#loopConcluded)
+                    ) {
+                        this.#resetLoopTurns();
+                    }
                     this.loopSeq = rawNotice.loopSeq;
                     this.#bindingsWithLoops.add(`${this.workspaceName}#${this.sessionName}`);
+                }
+                if (typeof rawNotice.packetCount === "number" && rawNotice.packetCount > 0) {
+                    this.turns = Math.max(this.turns, rawNotice.packetCount);
+                } else if (rawNotice.status === 102 && this.turns === 0) {
+                    this.turns = 1;
                 }
                 if (rawNotice.status === 202) {
                     this.lifecycle = "parked";
@@ -1197,7 +1259,14 @@ export class SessionPresenter {
 
         if (SessionUpdate.isStateUpdate(update)) {
             this.disconnected = false;
+            this.ingestMeta(update._meta as MetaRecord | undefined);
             if (update.state === "running") {
+                if (this.#loopConcluded) {
+                    this.#resetLoopTurns();
+                }
+                if (this.turns === 0) {
+                    this.turns = 1;
+                }
                 this.lifecycle = "running";
                 this.lifecycleGlyph = "⌛︎";
                 if (this.doing === null) {
@@ -1286,6 +1355,8 @@ export class SessionPresenter {
                 const statusBar = this.buildStatusBar(elapsedMs, status);
                 const rawTurns = termMeta?.turnCount;
                 const turns = typeof rawTurns === "number" && rawTurns >= 0 ? rawTurns : 1;
+                this.turns = turns;
+                this.#loopConcluded = true;
                 const hitMaxTurns = update.stopReason === "max_turn_requests" || status === 429;
                 const terminalDetail =
                     typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0

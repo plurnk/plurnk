@@ -267,4 +267,71 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
         assert.equal(lostFrames[0].title, "client:session:history_lost");
         assert.match(lostFrames[0].formatted, /⚠️  The daemon holds no history for this session\./u);
     }
+
+    // Starting a new loop resets turns from the previous loop's turnCount and advances per turn ({§cli-session-status})
+    presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "end_turn",
+        _meta: {
+            plurnk: {
+                loopSeq: 32,
+                terminal: {
+                    status: 200,
+                    turnCount: 14,
+                },
+            },
+        },
+    });
+    assert.equal(presenter.loopSeq, 32);
+    assert.equal(presenter.turns, 14);
+
+    presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:lifecycle:loop_status",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:lifecycle",
+                    kind: "loop_status",
+                    status: 102,
+                    loopSeq: 33,
+                    packetCount: 0,
+                },
+            },
+        },
+    });
+    assert.equal(presenter.loopSeq, 33);
+    assert.equal(presenter.turns, 1);
+
+    presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_awaiting_model",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:turn",
+                    kind: "turn_awaiting_model",
+                },
+            },
+        },
+    });
+    assert.equal(presenter.turns, 1);
+
+    presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_awaiting_model",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:turn",
+                    kind: "turn_awaiting_model",
+                },
+            },
+        },
+    });
+    assert.equal(presenter.turns, 2);
 });

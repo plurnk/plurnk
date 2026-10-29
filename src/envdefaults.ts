@@ -57,6 +57,10 @@ export const assembleClientEnv = (
     const operatorEnv = existsSync(operatorEnvPath)
         ? parseDefaults(readFileSync(operatorEnvPath, "utf8"))
         : {};
+    const operatorLocalEnvPath = join(xdgConfig, "plurnk", ".env.local");
+    const operatorLocalEnv = existsSync(operatorLocalEnvPath)
+        ? parseDefaults(readFileSync(operatorLocalEnvPath, "utf8"))
+        : {};
 
     const fileLayer: Record<string, string> = {};
     for (const spec of explicitFiles) {
@@ -81,6 +85,7 @@ export const assembleClientEnv = (
         ...sharedFloor,
         ...clientFloor,
         ...operatorEnv,
+        ...operatorLocalEnv,
         ...fileLayer,
         ...shellLayer,
     };

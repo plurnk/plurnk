@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
+import { assembleClientEnv } from "./envdefaults.ts";
 import { refuseBelowFloor } from "./runtime-floor.ts";
 import {
     createCliPermissionHandler,
@@ -71,6 +74,19 @@ test("{§cli-invocation} {§cli-invocation} {§cli-invocation} {§cli-configurat
     );
     assert.equal(conflict.status, 64);
     assert.match(conflict.stderr, /--persona and --system-prompt cannot be used together/);
+
+    const tmpXdg = fs.mkdtempSync(path.join(os.tmpdir(), "plurnk-xdg-env-"));
+    try {
+        const plurnkCfg = path.join(tmpXdg, "plurnk");
+        fs.mkdirSync(plurnkCfg, { recursive: true });
+        fs.writeFileSync(path.join(plurnkCfg, ".env"), "PLURNK_CLIENT_MODEL=from-env\nPLURNK_CLIENT_EFFORT=low\n");
+        fs.writeFileSync(path.join(plurnkCfg, ".env.local"), "PLURNK_CLIENT_MODEL=from-env-local\n");
+        const assembled = assembleClientEnv({ XDG_CONFIG_HOME: tmpXdg });
+        assert.equal(assembled.PLURNK_CLIENT_MODEL, "from-env-local");
+        assert.equal(assembled.PLURNK_CLIENT_EFFORT, "low");
+    } finally {
+        fs.rmSync(tmpXdg, { recursive: true, force: true });
+    }
 });
 
 test("{§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {

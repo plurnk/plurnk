@@ -102,7 +102,7 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
 Connects to plurnk-service at its configured address, starting the installed service there when nothing listens; it keeps running after this client (plurnk-service stop ends it). Run a single prompt one-shot (positional args, piped stdin, or both — positionals come first, stdin is appended after a blank line). With no positionals and a TTY stdin, enters the scrollback-native interactive terminal. Read-only subcommands (models / workspace list / log read / read <coord>) inspect daemon state without running a loop.
 
 env (cascade, low → high: packaged .env.defaults < $XDG_CONFIG_HOME/plurnk/.env
-     < repeated --env-file flags (last wins) < shell):
+     < $XDG_CONFIG_HOME/plurnk/.env.local < repeated --env-file flags (last wins) < shell):
                         Works with no config at all.
   PLURNK_CLIENT_*       every option below is one knob's spelling for one invocation:
                         --max-turns is PLURNK_CLIENT_MAX_TURNS, --no-git is

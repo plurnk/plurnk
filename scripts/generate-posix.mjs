@@ -82,6 +82,9 @@ Terminated by SIGTERM after requesting cancellation
 and emitting the partial record.
 .SH FILES
 .TP
+.I $XDG_CONFIG_HOME/plurnk/.env.local
+Machine-local operator configuration overrides (layered above .env).
+.TP
 .I $XDG_CONFIG_HOME/plurnk/.env
 Operator configuration (model aliases and client defaults).
 .SH SEE ALSO

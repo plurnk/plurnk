@@ -81,9 +81,6 @@ export const runTuiViewport = async (
         outerStreams?.terminal !== undefined ||
         (outerStreams === undefined && process.stdin.isTTY === true && process.stdout.isTTY === true);
     const surface = useSurface ? new TuiSurface(outerStreams?.terminal) : null;
-    if (surface !== null) {
-        await surface.learnGround();
-    }
 
     const attend = attention(options.bell ? [bell(termOut as { readonly isTTY?: boolean; write(chunk: string): unknown })] : []);
 
@@ -457,6 +454,17 @@ export const runTuiViewport = async (
                     typeof parsed.type === "string" &&
                     parsed.type.startsWith("https://problems.plurnk.xyz/client/")
                 ) {
+                    if (parsed.type === "https://problems.plurnk.xyz/client/prompt-failed") {
+                        cancelArmed = false;
+                        retireLiveReasoning();
+                        presenter.lifecycle = "failed";
+                        presenter.lifecycleGlyph = "❌";
+                        presenter.doing = null;
+                        presenter.buildStatusBar();
+                        if (surface !== null) {
+                            updateSurfaceStatus();
+                        }
+                    }
                     const detail =
                         typeof parsed.detail === "string"
                             ? parsed.detail
@@ -624,8 +632,8 @@ export const runTuiViewport = async (
                             options?: ReadonlyArray<{ value?: string }>;
                         };
                         if (opt.configId === "model") {
-                            if (typeof opt.currentValue === "string" && opt.currentValue.length > 0) {
-                                presenter.model = opt.currentValue;
+                            if (typeof opt.currentValue === "string") {
+                                presenter.model = opt.currentValue.length > 0 ? opt.currentValue : "none";
                             }
                             if (Array.isArray(opt.options)) {
                                 cachedModels = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
@@ -646,6 +654,14 @@ export const runTuiViewport = async (
                 const historyLostFrame = presenter.consumeHistoryLostFrame();
                 if (surface !== null) {
                     ensureSurfaceStarted();
+                    if (!wasStarted && (presenter.model === "none" || presenter.model === "")) {
+                        surface.append(
+                            paint(
+                                "⚠️  Supply a provider's API key to the backend (for example, export DEEPSEEK_API_KEY before launching); /models then lists its models and /model <selector> chooses one.",
+                                "warning",
+                            ),
+                        );
+                    }
                     if (historyLostFrame !== null) {
                         surface.append(paint(ModelText.plain(historyLostFrame.formatted), "failure"));
                     }
@@ -889,5 +905,8 @@ export const runTuiViewport = async (
         removeInputListener?.();
         surface?.stop();
         userRl?.close();
+        if (termIn === process.stdin) {
+            process.stdin.pause();
+        }
     }
 };

@@ -259,22 +259,30 @@ export class AcpClient {
             }
         });
 
-        const initRes = await conn.agent.request(methods.agent.initialize, {
-            protocolVersion: PROTOCOL_VERSION,
-            info: {
-                name: this.#clientName,
-                title: "PLURNK Terminal Client",
-                version: this.#clientVersion,
-            },
-            capabilities: {
-                elicitation: {
-                    form: {},
+        try {
+            const initRes = await conn.agent.request(methods.agent.initialize, {
+                protocolVersion: PROTOCOL_VERSION,
+                info: {
+                    name: this.#clientName,
+                    title: "PLURNK Terminal Client",
+                    version: this.#clientVersion,
                 },
-            },
-        });
-        this.#initResponse = initRes;
-        this.#hasConnected = true;
-        return initRes;
+                capabilities: {
+                    elicitation: {
+                        form: {},
+                    },
+                },
+            });
+            this.#initResponse = initRes;
+            this.#hasConnected = true;
+            return initRes;
+        } catch (err) {
+            conn.close();
+            if (this.#connection === conn) {
+                this.#connection = null;
+            }
+            throw err;
+        }
     }
 
     async #ensureConnection(options?: { readonly excludeSessionId?: string }): Promise<ClientConnection> {

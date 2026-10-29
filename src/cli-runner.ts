@@ -261,6 +261,28 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
     );
 };
 
+const mergeSessionMeta = (
+    prev: Record<string, unknown> | undefined,
+    next: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined => {
+    if (next === undefined) return prev;
+    const prevPlurnk = (prev?.plurnk ?? {}) as Record<string, unknown>;
+    const nextPlurnk = (next.plurnk ?? {}) as Record<string, unknown>;
+    const prevStatus = (prevPlurnk.status ?? {}) as Record<string, unknown>;
+    const nextStatus = (nextPlurnk.status ?? {}) as Record<string, unknown>;
+    return {
+        ...(prev ?? {}),
+        ...next,
+        plurnk: {
+            ...prevPlurnk,
+            ...nextPlurnk,
+            ...(Object.keys(prevStatus).length > 0 || Object.keys(nextStatus).length > 0
+                ? { status: { ...prevStatus, ...nextStatus } }
+                : {}),
+        },
+    };
+};
+
 const applyInitialConfig = async (
     client: AcpClient,
     session: AcpSession,
@@ -269,17 +291,25 @@ const applyInitialConfig = async (
     if (options.model !== undefined && options.model.length > 0) {
         const res = await client.setConfigOption(session.sessionId, "model", options.model);
         session.configOptions = [...res.configOptions];
+        if (res._meta !== undefined && res._meta !== null) {
+            session.meta = mergeSessionMeta(session.meta, res._meta as Record<string, unknown>);
+        }
     }
     if (options.effort !== undefined && options.effort.length > 0) {
         const res = await client.setConfigOption(session.sessionId, "thought_level", options.effort);
         session.configOptions = [...res.configOptions];
+        if (res._meta !== undefined && res._meta !== null) {
+            session.meta = mergeSessionMeta(session.meta, res._meta as Record<string, unknown>);
+        }
     }
     if (options.sessionEnv !== undefined && Object.keys(options.sessionEnv).length > 0) {
-        await client.action(
-            "session.env.replace",
-            { entries: options.sessionEnv },
-            { sessionId: session.sessionId, workspace: options.workspace, session: options.sessionId },
-        ).catch(() => undefined);
+        for (const [alias, value] of Object.entries(options.sessionEnv)) {
+            await client.action(
+                "session.env.replace",
+                { alias, definition: { value } },
+                { sessionId: session.sessionId, workspace: options.workspace, session: options.sessionId },
+            );
+        }
     }
 };
 
@@ -415,9 +445,8 @@ export const runCliPrompt = async (
         },
     });
 
-    await ensureDaemonConnected(client, options);
-
     try {
+        await ensureDaemonConnected(client, options);
         let promptDispatched = false;
         let reasoningOpenOnLine = false;
         let turnSettled = false;

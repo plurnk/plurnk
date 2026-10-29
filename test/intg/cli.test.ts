@@ -15,6 +15,7 @@ import {
     agent as createAcpAgent,
     methods,
     PROTOCOL_VERSION,
+    RequestError,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -202,6 +203,26 @@ const createMockAcpServer = async () => {
                         ],
                     };
                 }
+                if (params.kind === "session.env.replace") {
+                    const alias = params.params?.alias;
+                    const def = params.params?.definition as { value?: unknown } | undefined;
+                    if (typeof alias !== "string" || typeof def?.value !== "string") {
+                        throw new RequestError(-32602, "Action 'session.env.replace' rejected parameters.");
+                    }
+                    if (alias.startsWith("PLURNK_")) {
+                        throw new RequestError(
+                            -32602,
+                            `Environment variable '${alias}' is reserved by the PLURNK platform.`,
+                            {
+                                type: "https://problems.plurnk.xyz/config/invalid",
+                                title: "Invalid configuration",
+                                status: 400,
+                                detail: `Environment variable '${alias}' is reserved by the PLURNK platform.`,
+                            },
+                        );
+                    }
+                    return { alias, state: "active", definition: { value: def.value } };
+                }
                 return { ok: true };
             },
         )
@@ -290,9 +311,74 @@ const createMockAcpServer = async () => {
             return {};
         })
         .onRequest(methods.agent.session.close, async () => ({}))
-        .onRequest(methods.agent.session.setConfigOption, async () => ({
-            configOptions: [],
-        }))
+        .onRequest(methods.agent.session.setConfigOption, async ({ params }) => {
+            const existing = sessions.get(params.sessionId) ?? {
+                cwd: "/tmp",
+                model: "mocktest/mock-v1",
+                effort: "medium",
+            };
+            if (params.configId === "model") {
+                if (params.value !== "mocktest/mock-v1" && params.value !== "mocktest") {
+                    throw new RequestError(
+                        -32000,
+                        `Provider alias '${String(params.value)}' is not declared. (https://problems.plurnk.xyz/daemon/provider/alias-not-found)`,
+                        {
+                            type: "https://problems.plurnk.xyz/daemon/provider/alias-not-found",
+                            title: "Provider alias not found",
+                            status: 404,
+                            detail: `Provider alias '${String(params.value)}' is not declared.`,
+                        },
+                    );
+                }
+                existing.model = "mocktest/mock-v1";
+            } else if (params.configId === "thought_level") {
+                if (!["low", "medium", "high"].includes(String(params.value))) {
+                    throw new RequestError(
+                        -32602,
+                        `Effort '${String(params.value)}' is not supported.`,
+                        {
+                            type: "https://problems.plurnk.xyz/config/invalid",
+                            title: "Invalid configuration",
+                            status: 400,
+                            detail: `Effort '${String(params.value)}' is not supported.`,
+                        },
+                    );
+                }
+                existing.effort = String(params.value);
+            }
+            sessions.set(params.sessionId, existing);
+            return {
+                configOptions: [
+                    {
+                        configId: "model",
+                        name: "Model",
+                        category: "model",
+                        type: "select",
+                        currentValue: existing.model,
+                        options: [{ value: "mocktest/mock-v1", name: "Mock V1" }],
+                    } as any,
+                    {
+                        configId: "thought_level",
+                        name: "Effort",
+                        category: "thought_level",
+                        type: "select",
+                        currentValue: existing.effort,
+                        options: [
+                            { value: "low", name: "Low" },
+                            { value: "medium", name: "Medium" },
+                            { value: "high", name: "High" },
+                        ],
+                    } as any,
+                ],
+                _meta: {
+                    plurnk: {
+                        status: {
+                            model: { provider: "mocktest", model: "mock-v1", chosenEffort: existing.effort },
+                        },
+                    },
+                },
+            };
+        })
         .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
             const text = params.prompt
                 .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
@@ -521,7 +607,7 @@ test("{§cli-model-selection} {§cli-model-selection} {§cli-model-selection} {�
     try {
         // With --yolo (default), ASK_PERMISSION is auto-approved
         const yoloRes = await runCli(
-            ["--yolo", "--model", "mocktest/mock-v1", "--effort", "high", "ASK_PERMISSION"],
+            ["--yolo", "--model", "mocktest/mock-v1", "--effort", "high", "--env", "CUSTOM_VAR=ok", "ASK_PERMISSION"],
             {
                 ...process.env,
                 PLURNK_ACP_URL: server.url,
@@ -530,6 +616,75 @@ test("{§cli-model-selection} {§cli-model-selection} {§cli-model-selection} {�
         );
         assert.equal(yoloRes.status, 0, `stderr was: ${yoloRes.stderr}`);
         assert.match(yoloRes.stdout, /Permission outcome: allow_once/);
+
+        // Pre-admission rejection on invalid --model, --effort, or reserved --env exits 1 cleanly without hanging ({§cli-model-selection}, {§cli-output-channels})
+        const badModelCli = await runCli(
+            ["--model=granite", "--session=granite", "Hello"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(badModelCli.status, 1);
+        assert.match(badModelCli.stderr, /Provider alias 'granite' is not declared\./u);
+
+        const badEffortRepl = await runCli(
+            ["--repl", "--effort=bogus", "--session=granite"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(badEffortRepl.status, 1);
+        assert.match(badEffortRepl.stderr, /Effort 'bogus' is not supported\./u);
+
+        const badEnvCli = await runCli(
+            ["--env", "PLURNK_MODEL=illegal", "Hello"],
+            {
+                ...process.env,
+                PLURNK_ACP_URL: server.url,
+                PLURNK_CLIENT_AUTOSTART: "0",
+            },
+        );
+        assert.equal(badEnvCli.status, 1);
+        assert.match(badEnvCli.stderr, /reserved by the PLURNK platform/u);
+
+        // User's exact PTY TUI reproducer: `plurnk --model="granite" --session="granite"` exits 1 cleanly without hanging or writing raw-mode escape queries
+        let badModelPtyOut = "";
+        const badModelPty = pty.spawn(
+            process.execPath,
+            [binPath, "--model=granite", "--session=granite"],
+            {
+                name: "xterm-256color",
+                cols: 100,
+                rows: 30,
+                cwd: repoRoot,
+                env: {
+                    ...process.env,
+                    PLURNK_ACP_URL: server.url,
+                    PLURNK_CLIENT_AUTOSTART: "0",
+                    NO_COLOR: "1",
+                } as Record<string, string>,
+            },
+        );
+        badModelPty.onData((chunk) => {
+            badModelPtyOut += chunk;
+        });
+        const badModelPtyExit = await new Promise<number>((resolveExit, rejectExit) => {
+            const timer = setTimeout(() => {
+                badModelPty.kill();
+                rejectExit(new Error(`PTY hung on --model=granite:\n${badModelPtyOut}`));
+            }, 4000);
+            badModelPty.onExit(({ exitCode }) => {
+                clearTimeout(timer);
+                resolveExit(exitCode);
+            });
+        });
+        assert.equal(badModelPtyExit, 1);
+        assert.match(badModelPtyOut, /Provider alias 'granite' is not declared\./u);
+        assert.doesNotMatch(badModelPtyOut, /\x1b\[\?2004h/u, "Must not enable raw terminal modes before admission succeeds");
 
         // With PLURNK_CLIENT_YOLO=0 and non-TTY stdin, permission request fails closed (denies/rejects) ({§cli-inline-review})
         const noYoloRes = await runCli(
@@ -818,28 +973,26 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-repl-mode} {§cli-interactive-c
             assert.ok(!screenLines.some((l) => l.includes('{"query":"yemen"}')), "MCP request body must not be shown in TUI");
             assert.ok(screenLines.some((l) => l === "    Sana'a result 1"), "Concluded execution output must preview indented 4 spaces");
             assert.ok(screenLines.some((l) => /^🐹 1 turn · \d+ms/u.test(l)), `Model reply must render with hamster glyph and inline loop summary:\n${screenLines.join("\n")}`);
-        } finally {
-            await new Promise<void>((resolveExit) => {
+
+            // /quit in PTY TUI must exit cleanly with code 0 on its own without kill()
+            const tuiExitCode = await new Promise<number>((resolveExit, rejectExit) => {
                 const timer = setTimeout(() => {
-                    try {
-                        tuiPty.kill();
-                    } catch {
-                        // ignore
-                    }
-                    resolveExit();
-                }, 500);
-                tuiPty.onExit(() => {
-                    clearTimeout(timer);
-                    resolveExit();
-                });
-                try {
-                    tuiPty.write("/quit\r");
                     tuiPty.kill();
-                } catch {
+                    rejectExit(new Error("TUI PTY hung after /quit"));
+                }, 4000);
+                tuiPty.onExit(({ exitCode }) => {
                     clearTimeout(timer);
-                    resolveExit();
-                }
+                    resolveExit(exitCode);
+                });
+                tuiPty.write("/quit\r");
             });
+            assert.equal(tuiExitCode, 0);
+        } finally {
+            try {
+                tuiPty.kill();
+            } catch {
+                // already exited
+            }
             xterm.dispose();
         }
     } finally {

@@ -32,8 +32,8 @@ export const runCliListSessions = async (options: CliCommonOptions): Promise<num
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const res = await client.listSessions(options.cwd);
         if (options.json) {
             process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
@@ -60,8 +60,8 @@ export const runCliNewSession = async (options: CliCommonOptions): Promise<numbe
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, { ...options, sessionId: undefined });
         if (options.json) {
             process.stdout.write(
@@ -92,8 +92,8 @@ export const runCliResumeSession = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, { ...options, sessionId }, undefined, true);
         if (options.json) {
             process.stdout.write(
@@ -167,8 +167,8 @@ export const runCliForkSession = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const res = await client.forkSession(sessionId, options.cwd);
         if (options.json) {
             process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
@@ -190,8 +190,8 @@ export const runCliDeleteSession = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         await client.deleteSession(sessionId);
         if (options.json) {
             process.stdout.write(`${JSON.stringify({ deleted: sessionId }, null, 2)}\n`);
@@ -237,8 +237,8 @@ export const runCliConfig = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, options);
         if (configId !== undefined && value !== undefined) {
             const existing = session.configOptions.find((o) => o.configId === configId);
@@ -298,8 +298,8 @@ export const runCliUpdate = async (options: CliCommonOptions): Promise<number> =
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const result = await client.action<Record<string, unknown>>("service.update", {});
         if (options.json) {
             process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -327,8 +327,8 @@ export const runCliModels = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const result = await client.action<Record<string, unknown>>("models.list", {
             ...(searchTerms.length > 0 ? { search: searchTerms.join(" ") } : {}),
             ...(query.provider !== undefined ? { provider: query.provider } : {}),
@@ -358,8 +358,8 @@ export const runCliWorkspace = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         if (sub === "list" || sub === undefined) {
             const result = await client.action<Record<string, unknown>>("workspace.list", {});
             if (options.json) {
@@ -422,8 +422,8 @@ export const runCliLogRead = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const result = await client.action<{ readonly entries?: unknown[] }>(
             "log.read",
             {
@@ -455,8 +455,8 @@ export const runCliReadCoord = async (coord: string, options: CliCommonOptions):
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const target = coord.includes("://") ? coord : `log:///${coord}`;
         const result = await client.action(
             "entry.read",
@@ -492,8 +492,8 @@ export const runCliCapabilities = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const result =
             policyJson !== undefined
                 ? await client.action(
@@ -520,8 +520,8 @@ export const runCliScript = async (filePath: string, options: CliCommonOptions):
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const res = await client.action<{
             readonly results?: Array<{
                 readonly status?: number;
@@ -582,8 +582,8 @@ export const runCliFamily = async (
         credential: options.credential,
         env: options.env,
     });
-    await ensureDaemonConnected(client, options);
     try {
+        await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, {
             ...options,
             sessionId: options.sessionId ?? options.tuiSession,

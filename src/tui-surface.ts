@@ -250,6 +250,14 @@ export default class TuiSurface {
         this.#tui.setFocus(this.#focus);
         if (colorEnabled()) {
             this.#tui.setTerminalColorSchemeNotifications(true);
+            const apply = ({ background }: TerminalColors): void => {
+                if (background !== undefined) {
+                    learnScheme(backgroundScheme(background));
+                    this.#tui.invalidate();
+                    this.#tui.requestRender();
+                }
+            };
+            void this.#tui.queryTerminalColors({ timeoutMs: 100, onLateReply: apply }).then(apply);
         }
     }
 

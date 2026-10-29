@@ -359,15 +359,23 @@ export const runReplSession = async (
         },
     });
 
-    await ensureDaemonConnected(client, options);
+    try {
+        await ensureDaemonConnected(client, options);
 
-    const bindSession = async (workspaceName: string | undefined, sessionName: string): Promise<AcpSession> => {
+        const bindSession = async (
+            workspaceName: string | undefined,
+            sessionName: string,
+            bindOpts?: { readonly initial?: boolean; readonly isChild?: boolean },
+        ): Promise<AcpSession> => {
         const nextSession = await openCliSession(
             client,
             {
                 ...options,
                 ...(workspaceName !== undefined ? { workspace: workspaceName } : {}),
                 sessionId: sessionName,
+                model: bindOpts?.initial ? options.model : undefined,
+                effort: bindOpts?.initial ? options.effort : undefined,
+                sessionEnv: bindOpts?.isChild ? undefined : options.sessionEnv,
             },
             (update, s) => {
                 if (s === activeSession) {
@@ -410,7 +418,7 @@ export const runReplSession = async (
         return nextSession;
     };
 
-    let session = await bindSession(options.workspace, currentSessionName);
+    let session = await bindSession(options.workspace, currentSessionName, { initial: true });
     streams.stdout.write(`workspace: ${currentWorkspace}\n`);
 
     const resolveRequiredGate = (
@@ -478,7 +486,9 @@ export const runReplSession = async (
                 streams.stdout.write("(at the root: no parent)\n");
                 return;
             }
-            session = await bindSession(currentWorkspace, parent.name);
+            session = await bindSession(currentWorkspace, parent.name, {
+                isChild: parentOf(parent) !== null,
+            });
             streams.stdout.write(`session: ${currentSessionName} (bound)\n`);
             return;
         }
@@ -489,7 +499,7 @@ export const runReplSession = async (
                 streams.stdout.write("(no children)\n");
                 return;
             }
-            session = await bindSession(currentWorkspace, newest.name);
+            session = await bindSession(currentWorkspace, newest.name, { isChild: true });
             streams.stdout.write(`session: ${currentSessionName} (bound)\n`);
             return;
         }
@@ -505,7 +515,9 @@ export const runReplSession = async (
                 ? (idx - 1 + siblings.length) % siblings.length
                 : (idx + 1) % siblings.length;
         const target = siblings[nextIdx]!;
-        session = await bindSession(currentWorkspace, target.name);
+        session = await bindSession(currentWorkspace, target.name, {
+            isChild: parentId !== null,
+        });
         streams.stdout.write(`session: ${currentSessionName} (bound)\n`);
     };
 
@@ -769,7 +781,7 @@ export const runReplSession = async (
                     const nextName = args[0] ?? (forked.sessionId.includes("#")
                         ? forked.sessionId.slice(forked.sessionId.indexOf("#") + 1)
                         : forked.sessionId);
-                    session = await bindSession(currentWorkspace, nextName);
+                    session = await bindSession(currentWorkspace, nextName, { isChild: true });
                     streams.stdout.write(`session: ${currentSessionName} (forked)\n`);
                     return "continue";
                 }
@@ -1228,18 +1240,14 @@ export const runReplSession = async (
         if (line.startsWith("...")) {
             const injected = line.slice(3).trimStart();
             if (injected.length === 0) return "continue";
-            try {
-                await client.action("loop.inject", { message: injected }, bindingContext());
-            } catch {
-                void client.prompt(session.sessionId, [{ type: "text", text: injected }]).catch((err) => {
-                    writeErrorJsonl(streams.stderr, {
-                        type: "https://problems.plurnk.xyz/client/prompt-failed",
-                        title: "Prompt failed",
-                        status: 500,
-                        detail: err instanceof Error ? err.message : String(err),
-                    });
+            void client.prompt(session.sessionId, [{ type: "text", text: injected }]).catch((err) => {
+                writeErrorJsonl(streams.stderr, {
+                    type: "https://problems.plurnk.xyz/client/prompt-failed",
+                    title: "Prompt failed",
+                    status: 500,
+                    detail: err instanceof Error ? err.message : String(err),
                 });
-            }
+            });
             return "continue";
         }
 
@@ -1269,7 +1277,7 @@ export const runReplSession = async (
                 },
             })
             .catch((err) => {
-                currentLifecycle = "idle";
+                currentLifecycle = "failed";
                 writeErrorJsonl(streams.stderr, {
                     type: "https://problems.plurnk.xyz/client/prompt-failed",
                     title: "Prompt failed",
@@ -1434,5 +1442,11 @@ export const runReplSession = async (
             });
         });
     });
+    } finally {
+        if (streams.stdin === process.stdin) {
+            process.stdin.pause();
+        }
+        client.close();
+    }
 };
 

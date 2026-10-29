@@ -403,7 +403,11 @@ export class SessionPresenter {
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
             }
-            if (status.model && typeof status.model === "object") {
+            if (status.model === null) {
+                this.model = "none";
+                this.effort = null;
+                this.effortSource = null;
+            } else if (status.model && typeof status.model === "object") {
                 const m = status.model as Record<string, unknown>;
                 if (typeof m.alias === "string" && m.alias.length > 0) {
                     this.model = m.alias;

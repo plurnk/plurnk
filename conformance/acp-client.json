@@ -326,6 +326,11 @@
       "posture": "generic",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["projection", "success", "failure"]
+    },
+    "workspace.mcp.skills": {
+      "posture": "generic",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["projection", "success", "failure"]
     }
   },
   "notifications": {

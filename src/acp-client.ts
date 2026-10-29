@@ -198,14 +198,14 @@ export class AcpClient {
 
         app.onRequest(methods.client.session.requestPermission, async (ctx): Promise<RequestPermissionResponse> => {
             if (this.#permissionHandler === undefined) {
-                return { outcome: { outcome: "cancelled" } };
+                throw new Error("No permission handler registered on this client.");
             }
             return await this.#permissionHandler(ctx.params, ctx.signal);
         });
 
         app.onRequest(methods.client.elicitation.create, async (ctx): Promise<CreateElicitationResponse> => {
             if (this.#elicitationHandler === undefined) {
-                return { action: "cancel" };
+                throw new Error("No elicitation handler registered on this client.");
             }
             return await this.#elicitationHandler(ctx.params, ctx.signal);
         });

@@ -260,3 +260,82 @@ test("{§cli-problems-and-notices}: AcpClient refreshes an expired or rotated be
         rmSync(dir, { recursive: true, force: true });
     }
 });
+
+test("{§cli-inline-review}: passive AcpClient without permission or elicitation handlers rejects incoming gate requests instead of cancelling them", async () => {
+    let permissionOutcome: string | undefined;
+    let elicitationOutcome: string | undefined;
+
+    const agentApp = createAcpAgent({ name: "mock-acp-service" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: {
+                session: {
+                    fork: {},
+                    delete: {},
+                    prompt: { image: {}, embeddedContext: {} },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.resume, async ({ params, client }) => {
+            try {
+                const permRes = await client.request(methods.client.session.requestPermission, {
+                    sessionId: params.sessionId,
+                    title: "EDIT a.ts",
+                    description: "Review the requested action.",
+                    subject: {
+                        type: "command",
+                        command: "ls",
+                        cwd: "/tmp",
+                    },
+                    options: [
+                        { optionId: "allow_once", name: "Allow Once", kind: "allow_once" },
+                        { optionId: "reject_once", name: "Reject Once", kind: "reject_once" },
+                    ],
+                });
+                permissionOutcome = permRes.outcome.outcome;
+            } catch (err) {
+                permissionOutcome = `rejected:${err instanceof Error ? err.message : String(err)}`;
+            }
+
+            try {
+                const elicitRes = await client.request(methods.client.elicitation.create, {
+                    scope: "session",
+                    sessionId: params.sessionId,
+                    mode: "form",
+                    message: "Answer question",
+                    requestedSchema: { type: "object", properties: {} },
+                });
+                elicitationOutcome = elicitRes.action;
+            } catch (err) {
+                elicitationOutcome = `rejected:${err instanceof Error ? err.message : String(err)}`;
+            }
+
+            return { configOptions: [] };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const client = new AcpClient({
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        token: "test-token",
+    });
+
+    try {
+        await client.connect();
+        await client.resumeSession("1#user", "/tmp/ws");
+        assert.ok(permissionOutcome?.startsWith("rejected:"), `expected permission request to reject, got ${String(permissionOutcome)}`);
+        assert.ok(elicitationOutcome?.startsWith("rejected:"), `expected elicitation request to reject, got ${String(elicitationOutcome)}`);
+    } finally {
+        client.close();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+

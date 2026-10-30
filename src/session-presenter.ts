@@ -286,6 +286,12 @@ export class SessionPresenter {
         };
     }
 
+    resetSessionHistory(): void {
+        this.#pendingToolCalls.clear();
+        this.#renderedToolCalls.clear();
+        this.#terminalOutputs.clear();
+    }
+
     #resetLoopTurns(): void {
         this.turns = 0;
         this.#awaitingTurnCount = 0;
@@ -707,7 +713,14 @@ export class SessionPresenter {
                 status?: number;
                 loopSeq?: number;
                 turnSeq?: number;
-                attrs?: { aside?: string; kind?: string; stream?: string };
+                attrs?: {
+                    aside?: string;
+                    kind?: string;
+                    stream?: string;
+                    session?: string;
+                    to?: string;
+                    waiting?: number;
+                };
             };
             this.#syncLoopAndTurn(metaPlurnk.loopSeq, metaPlurnk.turnSeq);
             const incomingRawInput =
@@ -745,8 +758,19 @@ export class SessionPresenter {
                 opName === "COPY" || opName === "MOVE"
                     ? extractRawString(rawInput?.source)
                     : extractRawString(rawInput?.target);
+            const attrSessionTarget =
+                typeof metaPlurnk.attrs?.session === "string" && metaPlurnk.attrs.session.length > 0
+                    ? metaPlurnk.attrs.session.includes("://")
+                        ? metaPlurnk.attrs.session
+                        : `session://${metaPlurnk.attrs.session}`
+                    : typeof metaPlurnk.attrs?.to === "string" && metaPlurnk.attrs.to.length > 0
+                      ? metaPlurnk.attrs.to
+                      : null;
             const target =
-                authoredTarget ?? effectiveLocations?.[0]?.path ?? extractTitleTarget(effectiveTitle);
+                authoredTarget ??
+                effectiveLocations?.[0]?.path ??
+                attrSessionTarget ??
+                extractTitleTarget(effectiveTitle);
 
             // Suppress internal _plurnk emission announcements and entry materializations ({§cli-rendering}).
             if (
@@ -893,6 +917,13 @@ export class SessionPresenter {
                     .trimEnd();
                 if (streamed.length > 0) {
                     outputLines.push(streamed);
+                } else if (receiptLines.length > 0) {
+                    const fallback = receiptLines.join("\n").trimEnd();
+                    if (fallback.length > 0) {
+                        outputLines.push(fallback);
+                    }
+                } else if (typeof rawOutput?.content === "string" && rawOutput.content.trimEnd().length > 0) {
+                    outputLines.push(rawOutput.content.trimEnd());
                 }
             }
 
@@ -930,7 +961,15 @@ export class SessionPresenter {
                     typeof rawOutput?.detail === "string" &&
                     rawOutput.detail.length > 0
                   ? rawOutput.detail
-                  : null;
+                  : opName === "WAIT"
+                    ? typeof rawOutput?.detail === "string" && rawOutput.detail.length > 0
+                        ? rawOutput.detail
+                        : typeof metaPlurnk.attrs?.waiting === "number"
+                          ? `${String(metaPlurnk.attrs.waiting)}s`
+                          : typeof rawInput?.seconds === "number"
+                            ? `${String(rawInput.seconds)}s`
+                            : null
+                    : null;
 
             if (this.lifecycle === "running") {
                 this.doing = {
@@ -1334,6 +1373,23 @@ export class SessionPresenter {
                             : 200;
                 this.lastLoopStatus = status;
                 this.lifecycle = status >= 400 ? (status === 499 ? "cancelled" : "failed") : "idle";
+                for (const [pendingId] of [...this.#pendingToolCalls.entries()]) {
+                    const flushed = this.apply({
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: pendingId,
+                        status: status >= 400 ? "failed" : "completed",
+                        _meta: {
+                            plurnk: {
+                                status,
+                            },
+                        },
+                    });
+                    for (const f of flushed) {
+                        if (f.kind === "tool_call") {
+                            frames.push(f);
+                        }
+                    }
+                }
                 const usage = termMeta?.usage?.accounting?.usage ?? termMeta?.usage?.accounting?.knownUsage;
                 const loopIn = typeof usage?.inputTokens === "number" ? usage.inputTokens : undefined;
                 const loopOut = typeof usage?.outputTokens === "number" ? usage.outputTokens : undefined;

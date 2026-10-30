@@ -21,6 +21,8 @@ import { lifecycleGlyphFor, operationGlyphFor, SessionPresenter } from "./sessio
 import { altShortcut, backTabShortcut } from "./tui-viewport.ts";
 import { completeInput, completeOps, dslOpPartial, pathPartial } from "./tui-completion.ts";
 import Review, { QuestionForm } from "./tui-review.ts";
+import { AcpSession } from "./acp-session.ts";
+import { extractChronologicalHistory } from "./repl-commands.ts";
 import TuiSurface, {
     attention,
     backgroundScheme,
@@ -620,7 +622,44 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     review.remove("deadbeef");
     assert.equal(review.waiting, 0);
     assert.equal(surface.reviewing, false);
+
+    // Mid-turn response followed by append preserves chronological order ({§cli-markdown-projection})
+    surface.addResponse("FIRST_MID_TURN_RESPONSE");
+    surface.append("SECOND_TRANSCRIPT_ROW");
+    surface.renderNow();
+    const surfaceDump = written.join("");
+    const firstPos = surfaceDump.indexOf("FIRST_MID_TURN_RESPONSE");
+    const secondPos = surfaceDump.indexOf("SECOND_TRANSCRIPT_ROW");
+    assert.ok(firstPos >= 0 && secondPos > firstPos, "mid-turn response must archive above subsequent transcript row");
     surface.stop();
+
+    // extractChronologicalHistory filters published:false replay chunks and hydrates terminal output ({§cli-rendering})
+    const replaySess = new AcpSession("1#user");
+    replaySess.applyUpdate({
+        sessionUpdate: "user_message_chunk",
+        messageId: "m-unpublished",
+        content: { type: "text", text: "queued unpublished" },
+        _meta: { plurnk: { published: false } },
+    });
+    replaySess.applyUpdate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/1",
+        name: "sh",
+        status: "completed",
+        content: [{ type: "terminal", terminalId: "term:7" }],
+        _meta: { plurnk: { id: 7, op: "sh", status: 200 } },
+    });
+    replaySess.applyUpdate({
+        sessionUpdate: "terminal_update",
+        terminalId: "term:7",
+        output: { data: Buffer.from("hydrated-out\n", "utf8").toString("base64") },
+    });
+    const extracted = extractChronologicalHistory(replaySess);
+    assert.equal(extracted.length, 1);
+    assert.equal(extracted[0]?.kind, "tool_call");
+    if (extracted[0]?.kind === "tool_call") {
+        assert.ok(extracted[0].content.some((c) => c.type === "content"));
+    }
 
     // Completion ({§cli-interactive-command-discovery})
     assert.deepEqual(dslOpPartial("```re"), { fence: "```", typed: "re" });

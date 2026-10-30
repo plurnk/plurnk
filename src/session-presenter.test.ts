@@ -334,4 +334,141 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
         },
     });
     assert.equal(presenter.turns, 2);
+
+    // WAIT outcome renders attrs.waiting ("30s") and 102 rawOutput.detail ({§cli-rendering})
+    const wait202 = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "33/2/1",
+        name: "WAIT",
+        title: "WAIT",
+        status: "completed",
+        _meta: {
+            plurnk: {
+                op: "WAIT",
+                status: 202,
+                attrs: { waiting: 30 },
+            },
+        },
+    });
+    assert.equal(wait202[0]?.kind, "tool_call");
+    if (wait202[0]?.kind === "tool_call") {
+        assert.equal(wait202[0].glyph, "⏳");
+        assert.equal(wait202[0].outcome, "30s");
+    }
+
+    const wait102 = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "33/2/2",
+        name: "WAIT",
+        title: "WAIT",
+        status: "completed",
+        rawOutput: { status: 102, detail: "Nothing is in flight. Continuing." },
+        _meta: {
+            plurnk: {
+                op: "WAIT",
+                status: 102,
+            },
+        },
+    });
+    assert.equal(wait102[0]?.kind, "tool_call");
+    if (wait102[0]?.kind === "tool_call") {
+        assert.equal(wait102[0].outcome, "Nothing is in flight. Continuing.");
+    }
+
+    // Unnamed WORK/FORK falls back to attrs.session, and replay sh falls back to receipt content ({§cli-rendering})
+    const unnamedWork = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "33/2/3",
+        name: "WORK",
+        title: "WORK",
+        status: "completed",
+        rawInput: { body: "Check tests" },
+        _meta: {
+            plurnk: {
+                op: "WORK",
+                status: 200,
+                attrs: { session: "work-1" },
+            },
+        },
+    });
+    assert.equal(unnamedWork[0]?.kind, "tool_call");
+    if (unnamedWork[0]?.kind === "tool_call") {
+        assert.equal(unnamedWork[0].target, "session://work-1");
+        assert.deepEqual(unnamedWork[0].contentLines, ["Check tests"]);
+    }
+
+    const replaySh = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "33/2/4",
+        name: "sh",
+        title: "sh",
+        status: "completed",
+        rawInput: { body: "echo replayed" },
+        content: [{ type: "content", content: { type: "text", text: "replayed\n" } }],
+        _meta: {
+            plurnk: {
+                op: "sh",
+                status: 200,
+            },
+        },
+    });
+    assert.equal(replaySh[0]?.kind, "tool_call");
+    if (replaySh[0]?.kind === "tool_call") {
+        assert.deepEqual(replaySh[0].outputLines, ["replayed"]);
+    }
+
+    // resetSessionHistory clears rendered coordinates so switching sessions or /loop renders 33/2/4 again ({§cli-sessions-topology})
+    assert.equal(
+        presenter.apply({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "33/2/4",
+            name: "sh",
+            status: "completed",
+        }).length,
+        0,
+    );
+    presenter.resetSessionHistory();
+    assert.equal(
+        presenter.apply({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "33/2/4",
+            name: "sh",
+            status: "completed",
+        })[0]?.kind,
+        "tool_call",
+    );
+
+    // Unfinished in_progress tool calls flush before status_bar when loop terminates early ({§cli-rendering})
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "33/2/5",
+        name: "sh",
+        title: "sh",
+        status: "in_progress",
+        rawInput: { body: "sleep 60" },
+        _meta: {
+            plurnk: {
+                id: 99,
+                op: "sh",
+                status: 202,
+            },
+        },
+    });
+    const abortedIdle = presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "cancelled",
+        _meta: {
+            plurnk: {
+                terminal: { status: 499, turnCount: 2 },
+            },
+        },
+    });
+    assert.equal(abortedIdle[0]?.kind, "tool_call");
+    if (abortedIdle[0]?.kind === "tool_call") {
+        assert.equal(abortedIdle[0].toolCallId, "33/2/5");
+        assert.equal(abortedIdle[0].status, "failed");
+        assert.equal(abortedIdle[0].statusCode, 499);
+    }
+    assert.equal(abortedIdle[1]?.kind, "status_bar");
 });

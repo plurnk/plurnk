@@ -310,6 +310,9 @@ export default class TuiSurface {
     }
 
     append(text: string): void {
+        if (this.#turnResponses.length > 0) {
+            this.archiveTurn();
+        }
         const normalized = text.replace(/\n$/u, "");
         if (normalized.length === 0) {
             if (this.#lastWasSpacer) return;

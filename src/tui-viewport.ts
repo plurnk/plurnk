@@ -521,12 +521,30 @@ export const runTuiViewport = async (
             if (typeof rawItem !== "object" || rawItem === null) continue;
             const rec = rawItem as Record<string, unknown>;
             if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
-                if (addToEditorHistory) {
-                    surface.editor.addToHistory(rec.text);
+                const plurnkMeta = (
+                    rec.meta as
+                        | {
+                              plurnk?: {
+                                  answering?: string;
+                                  source?: string;
+                              };
+                          }
+                        | undefined
+                )?.plurnk;
+                if (typeof plurnkMeta?.answering === "string") {
+                    const sender =
+                        typeof plurnkMeta.source === "string" && plurnkMeta.source.length > 0
+                            ? plurnkMeta.source
+                            : plurnkMeta.answering;
+                    surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(rec.text)}`);
+                } else {
+                    if (addToEditorHistory) {
+                        surface.editor.addToHistory(rec.text);
+                    }
+                    surface.append("");
+                    surface.append(renderSubmittedInput(rec.text));
+                    surface.append("");
                 }
-                surface.append("");
-                surface.append(renderSubmittedInput(rec.text));
-                surface.append("");
             } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
                 const effectiveStatus: ToolCallStatus =
                     rec.status === "in_progress" || rec.status === "pending" || !isToolCallStatus(rec.status)
@@ -673,6 +691,9 @@ export const runTuiViewport = async (
                     if (historyLostFrame !== null) {
                         surface.append(paint(ModelText.plain(historyLostFrame.formatted), "failure"));
                     }
+                    if (!wasStarted || presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession) {
+                        presenter.resetSessionHistory();
+                    }
                     if (Array.isArray(event.history) && event.history.length > 0) {
                         renderHistoryItemsToSurface(event.history, true);
                     }
@@ -701,6 +722,7 @@ export const runTuiViewport = async (
                 }
                 if (surface !== null) {
                     ensureSurfaceStarted();
+                    presenter.resetSessionHistory();
                     const seqLabel = typeof event.loopSeq === "number" ? String(event.loopSeq) : "?";
                     surface.append(paint(`── loop ${seqLabel} ──`, "dim"));
                     if (Array.isArray(event.history) && event.history.length > 0) {

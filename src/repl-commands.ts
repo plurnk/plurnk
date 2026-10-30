@@ -100,34 +100,65 @@ export const extractOpenPaths = (promptText: string, projectRoot: string | undef
 };
 
 export const extractChronologicalHistory = (targetSession: AcpSession): AcpTranscriptItem[] => {
-    const visibleItems = targetSession.items.filter((item) => {
-        if (item.kind === "user_message" || item.kind === "agent_message") {
-            return item.text.length > 0;
-        }
-        if (item.kind === "tool_call") {
-            const itemPlurnk = (item.meta?.plurnk ?? undefined) as
-                | { op?: string; origin?: string; attrs?: { kind?: string } }
-                | undefined;
-            const op = itemPlurnk?.op ?? item.name ?? "";
-            const target = item.locations[0]?.path ?? "";
-            if (
-                itemPlurnk?.origin === "_plurnk" &&
-                op === "READ" &&
-                (itemPlurnk.attrs?.kind === "emission" || target.startsWith("ops://"))
-            ) {
-                return false;
+    const visibleItems = targetSession.items
+        .filter((item) => {
+            if (item.kind === "user_message") {
+                const published = (item.meta?.plurnk as { published?: unknown } | undefined)?.published;
+                return published !== false && item.text.length > 0;
             }
-            if (
-                itemPlurnk?.origin === "_plurnk" &&
-                op === "EDIT" &&
-                itemPlurnk.attrs?.kind === "entry_materialized"
-            ) {
-                return false;
+            if (item.kind === "agent_message") {
+                return item.text.length > 0;
             }
-            return true;
-        }
-        return false;
-    });
+            if (item.kind === "tool_call") {
+                const itemPlurnk = (item.meta?.plurnk ?? undefined) as
+                    | { op?: string; origin?: string; attrs?: { kind?: string } }
+                    | undefined;
+                const op = itemPlurnk?.op ?? item.name ?? "";
+                const target = item.locations[0]?.path ?? "";
+                if (
+                    itemPlurnk?.origin === "_plurnk" &&
+                    op === "READ" &&
+                    (itemPlurnk.attrs?.kind === "emission" || target.startsWith("ops://"))
+                ) {
+                    return false;
+                }
+                if (
+                    itemPlurnk?.origin === "_plurnk" &&
+                    op === "EDIT" &&
+                    itemPlurnk.attrs?.kind === "entry_materialized"
+                ) {
+                    return false;
+                }
+                return true;
+            }
+            return false;
+        })
+        .map((item) => {
+            if (item.kind !== "tool_call") return item;
+            const hasContentBlock = item.content.some((c) => c.type === "content");
+            if (hasContentBlock) return item;
+            const itemPlurnk = (item.meta?.plurnk ?? undefined) as { id?: unknown } | undefined;
+            const terminalIds = item.content
+                .filter(
+                    (c): c is { readonly type: "terminal"; readonly terminalId: string } =>
+                        c.type === "terminal" && typeof (c as { terminalId?: unknown }).terminalId === "string",
+                )
+                .map((c) => c.terminalId);
+            if (terminalIds.length === 0 && typeof itemPlurnk?.id === "number") {
+                terminalIds.push(`term:${String(itemPlurnk.id)}`);
+            }
+            const termOut = terminalIds
+                .map((tid) => targetSession.terminals.get(tid)?.outputText ?? "")
+                .join("");
+            if (termOut.length === 0) return item;
+            return {
+                ...item,
+                content: [
+                    ...item.content,
+                    { type: "content" as const, content: { type: "text" as const, text: termOut } },
+                ],
+            };
+        });
     const idOf = (item: (typeof visibleItems)[number]): number | undefined => {
         const id = (item.meta?.plurnk as { id?: unknown } | undefined)?.id;
         return typeof id === "number" ? id : undefined;

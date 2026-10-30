@@ -1,5 +1,5 @@
 // {§cli-workspaces-and-sessions} {§cli-model-selection} {§cli-sessions-topology} {§cli-subcommands} {§cli-conformance}
-// CLI entrypoint, option catalog, USAGE authority, and subcommand dispatcher ({§cli-invocation}, {§cli-invocation}).
+// CLI entrypoint, option catalog, USAGE authority, and subcommand dispatcher ({§cli-invocation}).
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

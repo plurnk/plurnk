@@ -93,7 +93,7 @@ export const extractTitleTarget = (title: string | null | undefined): string | n
     const head = title.includes(" — ") ? title.slice(0, title.indexOf(" — ")) : title;
     const parenMatch = head.match(/^\S+\s+\((.+)\)$/u);
     if (parenMatch?.[1]) return parenMatch[1];
-    const spaceMatch = head.match(/^(?:READ|EDIT|FIND|COPY|MOVE|KILL|OPEN|SHUT|VIEW|KEEP|DROP|FOLD)\s+(.+)$/u);
+    const spaceMatch = head.match(/^(?:READ|EDIT|FIND|COPY|MOVE|KILL)\s+(.+)$/u);
     return spaceMatch?.[1]?.trim() ?? null;
 };
 
@@ -232,13 +232,6 @@ export const NO_PREVIEW_VERBS = new Set([
     "BARE",
     "WAIT",
     "NOTE",
-    "KEEP",
-    "DROP",
-    "FOLD",
-    "OPEN",
-    "SHUT",
-    "VIEW",
-    "META",
 ]);
 
 export const SCRIPT_RUNTIMES = new Set(["sh", "js", "python3", "py"]);

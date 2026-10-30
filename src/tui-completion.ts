@@ -1,4 +1,4 @@
-// Editor tab-completion provider for TUI mode ({§cli-interactive-command-discovery}, {§cli-interactive-command-discovery}).
+// Editor tab-completion provider for TUI mode ({§cli-interactive-command-discovery}).
 
 import { readdir } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";

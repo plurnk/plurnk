@@ -161,8 +161,6 @@ export const previewLines = (
     return shown;
 };
 
-const CURATION_VERBS = new Set(["KEEP", "DROP", "FOLD", "OPEN", "SHUT", "VIEW", "META"]);
-
 // {§cli-rendering} — Operation row + preview block.
 export const renderOperationBlock = (opts: {
     readonly glyph: string;
@@ -184,14 +182,6 @@ export const renderOperationBlock = (opts: {
     readonly columns?: number;
 }): string => {
     const op = opts.op ?? "";
-    if (CURATION_VERBS.has(op)) {
-        const parts = ["🧹", op];
-        if (opts.target) parts.push(`(${ModelText.plain(opts.target)})`);
-        if (opts.scope) parts.push(ModelText.plain(opts.scope));
-        if (opts.aside) parts.push(paint(ModelText.plain(opts.aside), "dim", "italic"));
-        return paint(parts.join(" "), "dim");
-    }
-
     const failed =
         opts.status === "failed" || (typeof opts.statusCode === "number" && opts.statusCode >= 400);
     const headParts: string[] = [paint(opts.glyph, "bold", failed ? "failure" : "success")];

@@ -1,5 +1,5 @@
 // Inline proposal review and elicitation forms on `@earendil-works/pi-tui`
-// ({§cli-inline-review}, {§cli-inline-review}, {§cli-inline-review}).
+// ({§cli-inline-review}).
 
 import { Container, Editor, SelectList, Text, type Focusable } from "@earendil-works/pi-tui";
 import { Validator } from "@plurnk/plurnk-contracts";

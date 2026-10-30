@@ -49,7 +49,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const binPath = path.join(repoRoot, "bin", "plurnk.js");
 
-test("{§cli-invocation} {§cli-invocation} {§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI flag parsing, and family argument forwarding", () => {
+test("{§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI flag parsing, and family argument forwarding", () => {
     assert.doesNotThrow(() => refuseBelowFloor("plurnk", "26.0.0"));
 
     const help = spawnSync(process.execPath, [binPath, "--help"], {
@@ -89,7 +89,7 @@ test("{§cli-invocation} {§cli-invocation} {§cli-invocation} {§cli-configurat
     }
 });
 
-test("{§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
+test("{§cli-markdown-projection} {§cli-color-policy}: local render filter, markdown projection, OSC 8 hyperlinks, and color policy", () => {
     const rendered = spawnSync(
         process.execPath,
         [binPath, "render", "--width", "60", "--color", "never"],
@@ -105,7 +105,7 @@ test("{§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-pr
     assert.match(rendered.stdout, /example/);
 });
 
-test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-markdown-projection} {§cli-rendering} {§cli-rendering} {§cli-markdown-projection} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: waterfall rendering, operation glyphs, NOTE bodies, reasoning blocks, and summary lines", async () => {
+test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterfall rendering, operation glyphs, NOTE bodies, reasoning blocks, and summary lines", async () => {
     await main(["node", "plurnk", "--version"]);
 
     // Operation glyphs ({§cli-rendering})
@@ -122,7 +122,7 @@ test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {�
     assert.equal(operationGlyphFor("SEND"), "✉️");
     assert.equal(operationGlyphFor("sh"), "⚙️  sh");
 
-    // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-markdown-projection}, {§cli-markdown-projection})
+    // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-markdown-projection})
     const presenter = new SessionPresenter({
         workspaceName: "alpha",
         sessionName: "user",
@@ -386,7 +386,7 @@ test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {�
     }
 });
 
-test("{§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-model-selection} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status} {§cli-session-status}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
+test("{§cli-session-status} {§cli-model-selection}: session status line formatting for wait deadlines, preparation, disconnection, effort, project root, subagents, gates, inbox, streams, clock, and spend", () => {
     assert.equal(lifecycleGlyphFor("running"), "⌛︎");
     assert.equal(lifecycleGlyphFor("parked"), "💤");
     assert.equal(lifecycleGlyphFor("idle", 200), "⏹️");
@@ -483,12 +483,12 @@ test("{§cli-session-status} {§cli-session-status} {§cli-session-status} {§cl
     assert.notEqual(statusRun.status, 0);
 });
 
-test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-review} {§cli-interactive-command-discovery} {§cli-interactive-command-discovery} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy} {§cli-color-policy}: pi-tui TuiSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
+test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discovery} {§cli-color-policy}: pi-tui TuiSurface, TailText, Review, QuestionForm, completion, color scheme, and shortcuts", async () => {
     // ModelText sanitization ({§cli-problems-and-notices})
     assert.equal(ModelText.plain("hello\x1b[31mworld\x1b[0m\x07"), "helloworld");
     assert.deepEqual(ModelText.plainFields({ detail: "a\x1b[2Jb", status: 400 }), { detail: "ab", status: 400 });
 
-    // Color policy and scheme detection ({§cli-color-policy}, {§cli-color-policy})
+    // Color policy and scheme detection ({§cli-color-policy})
     assert.equal(colorEnabled({ isTTY: true }, { PLURNK_CLIENT_COLOR: "never" }), false);
     assert.equal(colorEnabled({ isTTY: false }, { PLURNK_CLIENT_COLOR: "always" }), true);
     assert.equal(colorEnabled({ isTTY: true }, { NO_COLOR: "1" }), false);
@@ -512,7 +512,7 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-re
     });
     assert.match(painted, /\x1b\[32mok\x1b\[0m/u);
 
-    // Header, title, resumeCommand, attention ({§cli-color-policy}, {§cli-color-policy})
+    // Header, title, resumeCommand, attention ({§cli-color-policy})
     assert.equal(windowTitle("ws", "user"), "plurnk · ws · user");
     assert.equal(windowTitle("ws", null), "plurnk · ws");
     assert.match(
@@ -622,7 +622,7 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-inline-review} {§cli-inline-re
     assert.equal(surface.reviewing, false);
     surface.stop();
 
-    // Completion ({§cli-interactive-command-discovery}, {§cli-interactive-command-discovery})
+    // Completion ({§cli-interactive-command-discovery})
     assert.deepEqual(dslOpPartial("```re"), { fence: "```", typed: "re" });
     const [ops] = completeOps({ fence: "````", typed: "RE" });
     assert.ok(ops.includes("````READ"));

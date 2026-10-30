@@ -1,5 +1,5 @@
 // Five-stream contract ([stdin, stdout, stderr, events, reasoning], fd 0..4) and
-// interactive REPL engine ({§cli-output-channels}, {§cli-repl-mode}, {§cli-repl-mode}).
+// interactive REPL engine ({§cli-output-channels}, {§cli-repl-mode}).
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

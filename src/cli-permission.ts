@@ -42,7 +42,6 @@ const extractProposalRuntimeAndTool = (
     const op = extractRawString(proposal.op) ?? extractRawString(plurnk.op);
     const rawRuntime =
         extractRawString(proposal.runtime) ??
-        (op === "EXEC" ? (extractRawString(proposal.target) ?? extractRawString(plurnk.target)) : null) ??
         op ??
         request.title?.split(/[\s(:—]/u)[0] ??
         null;
@@ -50,7 +49,8 @@ const extractProposalRuntimeAndTool = (
         extractRawString(proposal.tool) ??
         extractRawString(attrs?.tool) ??
         extractRawString(plurnk.tool) ??
-        (op !== "EXEC" ? (extractRawString(proposal.target) ?? extractRawString(plurnk.target)) : null) ??
+        extractRawString(proposal.target) ??
+        extractRawString(plurnk.target) ??
         extractTitleTarget(request.title);
     return {
         runtime: rawRuntime ? rawRuntime.trim() : null,

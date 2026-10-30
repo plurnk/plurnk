@@ -579,7 +579,10 @@ export const runCliFamily = async (
     options: CliCommonOptions,
 ): Promise<number> => {
     if (familyArgs.includes("--help") || familyArgs.includes("-h")) {
-        process.stdout.write(`usage: plurnk ${family} [list|add|remove|enable|disable] [options]\n`);
+        const extra = family === "mcp" ? "|oauth" : family === "env" ? "|import" : "";
+        process.stdout.write(
+            `usage: plurnk ${family} [list|discover|add|replace|enable|disable|remove${extra}] [options]\n`,
+        );
         return 0;
     }
     const client = new AcpClient({

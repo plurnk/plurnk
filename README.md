@@ -73,8 +73,9 @@ Give it a task in ordinary language. The model uses the operation language;
 you do not need to learn it to use Plurnk. If no model is selected, follow the
 startup hint or [choose one below](#models). The first launch starts the
 included service, which keeps running for later sessions ([Service](#service)).
-The TUI returns to session `user` and its history; each one-shot prompt runs in
-a new session of its own, named on stderr so `--session` can continue it.
+The TUI returns to session `user` and its history; unless `--session` is given,
+each one-shot prompt runs in a new session of its own (reported in `--json`
+output and on `fd 3` events).
 
 Proposals are accepted automatically by default (`PLURNK_CLIENT_YOLO=1`);
 set it to `0` or start a prompt with `?` to review them. Neither overrides
@@ -110,8 +111,8 @@ every later session, with one database, `~/.local/share/plurnk/plurnk.db`, and
 its log in `~/.local/state/plurnk/service.log`. Stop it with
 `plurnk-service stop`.
 
-To start it at login on Linux, install the package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
-(`plurnk.service` in the package root); its comments cover installation,
+To start it at login on Linux, install the service package's example [systemd user unit](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/plurnk.service)
+(`plurnk.service` in `@plurnk/plurnk-service`); its comments cover installation,
 executable paths, and environment setup. The service must receive your provider
 credentials—systemd does not source your interactive shell.
 
@@ -147,7 +148,8 @@ git diff | plurnk "Review this patch for correctness"
 plurnk --json "Explain the test layout" | jq -r .response
 ```
 
-One-shot commands put the answer on stdout and progress on stderr. `--json`
+One-shot commands write the delivered answer to stdout and errors to stderr
+(with structured session events on `fd 3` and reasoning on `fd 4` when opened). `--json`
 returns one structured document containing the answer, operation trace,
 diagnostics, and usage. A lost connection exits with an error while preserving
 received evidence; missing final usage stays unknown. No prompt is replayed.

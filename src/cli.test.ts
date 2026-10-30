@@ -669,8 +669,8 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
     // 1. Per-runtime acceptance ({§cli-inline-review})
     const braveReq = {
         sessionId: "default#user",
-        title: "EXEC: brave",
-        toolCall: { toolCallId: "tc-1", title: "EXEC: brave" },
+        title: "brave (brave_web_search)",
+        toolCall: { toolCallId: "tc-1", title: "brave (brave_web_search)" },
         options: [
             { optionId: "allow", name: "Allow", kind: "allow_once" as const },
             { optionId: "reject", name: "Reject", kind: "reject_once" as const },
@@ -678,9 +678,8 @@ test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: pe
         _meta: {
             plurnk: {
                 proposal: {
-                    op: "EXEC",
-                    target: "brave",
-                    attrs: { tool: "brave_web_search" },
+                    op: "brave",
+                    target: "brave_web_search",
                     body: "plurnk",
                 },
             },

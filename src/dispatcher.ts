@@ -27,7 +27,7 @@ import {
 } from "./cli-runner.ts";
 import Credential from "./credential.ts";
 import { assembleClientEnv, type CascadeFileSpec } from "./envdefaults.ts";
-import { runRender } from "./render-filter.ts";
+import { RENDER_HELP, runRender } from "./render-filter.ts";
 
 export const CLIENT_OPTIONS = {
     help: { type: "boolean", short: "h" },
@@ -84,6 +84,8 @@ export const USAGE = `usage: plurnk [--json] [--workspace <name>] [--session <na
        plurnk workspace list [--json]
        plurnk workspace sessions <name> [--json]
        plurnk workspace rename <name> <newname> [--json]
+       plurnk session [list|new|resume <id>|fork <id>|delete <id>] [--workspace <name>] [--json]
+       plurnk config [<id> [<value>]] [--workspace <name>] [--session <name>] [--json]
        plurnk log read --workspace <name> [--session <name>]
                        [--loop <id>] [--turn <id>] [--since <id>] [--limit <n>] [--json]
        plurnk read <loop>/<turn>/<seq> --workspace <name> [--session <name>] [--json]
@@ -134,7 +136,7 @@ options:
                           Overrides PLURNK_CLIENT_WORKSPACE.
       --session <name>       resume (or create) the named session within the workspace.
                           Overrides PLURNK_CLIENT_SESSION. Unset, the TUI binds
-                          --tui-session and a one-shot a new session of its own.
+                          --tui-session and a one-shot opens a new session of its own.
       --tui-session <name> the session the TUI binds when no session is selected.
                           Overrides PLURNK_CLIENT_TUI_SESSION (user).
       --model <selector>  persistently select the session's model
@@ -235,8 +237,10 @@ subcommands:
   workspace sessions <name> list sessions in the named workspace (workspace.sessions)
   workspace rename <a> <b>  rename workspace <a> to <b> (workspace.rename — a workspace's
                           name is a mutable handle; sessions are immutable)
+  session [subcommand]      list, create, resume, fork, or delete sessions in the workspace
+  config [<id> [<value>]]   inspect or set ACP session config options
   log read --workspace ...  read log entries from the named workspace's session
-  read <loop/turn/op>     inspect one log row in the selected workspace/session
+  read <loop>/<turn>/<seq>  inspect one log row in the selected workspace/session
   effort [level]          inspect or set a session's effort
   persona [name|none]     inspect, select, or clear a session's persona role
   capabilities [json]    inspect the capability cascade or set the workspace policy
@@ -384,8 +388,11 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         options: CLIENT_OPTIONS,
     });
 
+    const positionals = parsed.positionals;
+    const first = familyName ?? positionals[0];
+
     if (parsed.values.help === true && familyName === undefined) {
-        process.stdout.write(USAGE);
+        process.stdout.write(first === "render" ? RENDER_HELP : USAGE);
         return;
     }
 
@@ -393,9 +400,6 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
         process.stdout.write(`${readVersion()}\n`);
         return;
     }
-
-    const positionals = parsed.positionals;
-    const first = familyName ?? positionals[0];
 
     // Local-only subcommands require no daemon or env cascade ({§cli-markdown-projection})
     if (first === "render") {

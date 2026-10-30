@@ -11,15 +11,16 @@ client.
 
 ## Modes
 
-- `plurnk "prompt"` is a Unix-style one-shot command. The final answer goes to
-  stdout; narration and diagnostics go to stderr.
+- `plurnk "prompt"` is a Unix-style one-shot command. The delivered answer goes
+  to stdout and errors go to stderr; when opened, `fd 3` carries NDJSON session
+  events and `fd 4` streams model reasoning.
 - `plurnk` is a readline-style, main-buffer interaction built on pi-tui's
   main-screen renderer and multiline editor. It preserves normal terminal
   scrollback rather than taking over the alternate screen.
 - Provider reasoning streams into the reasoning scroll: a live region between the
   transcript and the composer, at most a third of the terminal tall, that shows the
-  newest lines and overwrites itself as the reasoning grows. It empties when the
-  turn's operations arrive and never enters the transcript; immutable history keeps every
+  newest lines and overwrites itself as the reasoning grows. It retires when the
+  turn settles and never enters the transcript; immutable history keeps every
   turn's reasoning at `reasoning://<session>/L/T` for a READ, so a model with a fat reasoning
   habit costs a third of the screen, not the session.
 - Prompts, command verbs, and raw DSL use the same ACP v2 session and action transport.
@@ -30,13 +31,13 @@ The waterfall is intentionally compact: operation glyphs begin at the
 left edge, with only the fields that identify their action and outcome.
 Runtimes and subsystems retain their names after ⚙️ ({§cli-rendering}).
 Delivered messages render as full response blocks rather than diagnostic rows.
-The status row projects standard ACP state in lifecycle → model → packet →
-activity order. The lifecycle glyph is the daemon's word (`⌛︎` while a loop runs),
-and YOLO puts 🔥 beside it; indexing and search progress update the activity field
-instead of appending an event for every milestone.
+The status row projects session place and ACP state in place → lifecycle → model →
+elapsed → spend → activity order (`⌛︎` while a loop runs). Indexing and search
+progress update the activity tail (`🧮`, `🔎`) instead of appending an event for
+every milestone.
 
 The renderer follows the shared
-[colour selection policy](SPEC.md#551-colour-selection-cli-color-policy), including
+[colour selection policy](SPEC.md#cli-color-policy-42-palette-colour-policy-lightdark-grounds-titles-and-attention), including
 `NO_COLOR` and `--color`. Rendering details and exit behavior are specified and
 tested in `SPEC.md`; design history belongs in Git.
 
@@ -62,5 +63,5 @@ Approvals and questions use pi-tui selection lists and multiline editors in
 the composer's place, not floating dialogs. Escape returns to the untouched
 composer; `/review` reopens the pending interaction. Background output keeps
 flowing, and ordinary commands remain available from the composer. See
-[inline review](SPEC.md#inline-review-cli-inline-review) for focus and interrupt
+[inline review](SPEC.md#cli-inline-review-5-proposal-review-ownership-tool-acceptance-and-questions) for focus and interrupt
 identity rules.

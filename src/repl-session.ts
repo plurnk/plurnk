@@ -433,7 +433,7 @@ export const runReplSession = async (
                 type: "https://problems.plurnk.xyz/client/usage",
                 title: "Missing gate identifier",
                 status: 400,
-                detail: `usage: ${usage} (/<${cmdName}> requires @<id> in REPL mode; inspect pending gates with /review or fd 3 events).`,
+                detail: `usage: ${usage} (/${cmdName} requires @<id> in REPL mode; inspect pending gates with /review or fd 3 events).`,
             });
             return undefined;
         }

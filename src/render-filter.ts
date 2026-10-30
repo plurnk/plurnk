@@ -267,13 +267,13 @@ export const renderMarkdown = (markdown: string, width: number = DEFAULT_WIDTH):
 
 // ─── CLI entrypoint for `plurnk render` ────────────────────────────────────
 
-export const RENDER_HELP = `plurnk render --width <columns>
+export const RENDER_HELP = `plurnk render [--width <columns>]
 
 Reads semantic Markdown from stdin and writes a width-bounded plain-Unicode
 projection to stdout. Daemon-free; no model work, network, or ANSI styling.
 
 Options:
-  -w, --width <columns>  Output width in columns (default: ${DEFAULT_WIDTH})
+      --width <columns>  Output width in columns (default: stdout width when available, otherwise 80)
   -h, --help             Print this help (capability probe)
 `;
 

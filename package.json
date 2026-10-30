@@ -39,7 +39,7 @@
         "pretest:tui": "npm run build",
         "test:tui": "node --test --test-concurrency=$(node scripts/test-concurrency.mjs) --test-timeout=600000 --env-file-if-exists=.env 'test/tui/**/*.test.ts'",
         "test:tui:live": "PLURNK_CLIENT_LIVE=1 node --test --test-timeout=600000 --env-file-if-exists=.env test/tui/live.test.ts",
-        "build:global:install": "npm run build && npm install -g .",
+        "build:global:install": "npm run build && npm install -g --ignore-scripts .",
         "build:global:uninstall": "npm uninstall -g @plurnk/plurnk",
         "build:local:install": "node scripts/install-sandbox.mjs install",
         "build:local:uninstall": "node scripts/install-sandbox.mjs uninstall",
@@ -55,7 +55,9 @@
         "typescript": "^7.0.2"
     },
     "allowScripts": {
-        "node-pty@1.1.0": true
+        "@google/genai@2.21.0": false,
+        "node-pty@1.1.0": true,
+        "protobufjs@7.6.6": false
     },
     "dependencies": {
         "@agentclientprotocol/sdk": "^2.2.0",

@@ -51,7 +51,7 @@ Requirements:
 * git
 
 ```sh
-npm install -g @plurnk/plurnk
+npm install -g --ignore-scripts @plurnk/plurnk
 plurnk --workspace="myProject"
 ```
 
@@ -117,7 +117,7 @@ executable paths, and environment setup. The service must receive your provider
 credentials—systemd does not source your interactive shell.
 
 For a client-only installation, use
-`npm install -g @plurnk/plurnk --omit=optional`.
+`npm install -g --ignore-scripts @plurnk/plurnk --omit=optional`.
 Set `PLURNK_CLIENT_AUTOSTART=0` to require an existing service. No system service
 is installed or enabled automatically. See [service configuration](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/INSTALL.md)
 for other deployments.

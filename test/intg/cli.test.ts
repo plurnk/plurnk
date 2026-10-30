@@ -135,7 +135,7 @@ const createMockAcpServer = async () => {
                             package: "@plurnk/plurnk-service",
                             version: "4.3.3",
                             artifact: "source",
-                            upgradeCommand: "npm install -g @plurnk/plurnk-service@latest @plurnk/plurnk@latest",
+                            upgradeCommand: "npm install -g --ignore-scripts @plurnk/plurnk-service@latest @plurnk/plurnk@latest",
                         },
                     };
                 }
@@ -764,7 +764,7 @@ test("{§cli-subcommands} {§cli-configuration-source}: CLI subcommands and Func
         );
         assert.equal(updateRes.status, 0, `stderr was: ${updateRes.stderr}`);
         assert.match(updateRes.stdout, /catalog: updated \(300 models across 10 providers, \+2 new\)/);
-        assert.match(updateRes.stdout, /version: @plurnk\/plurnk-service@4\.3\.3 \(source checkout\) — to update packages, stop the daemon and run: npm install -g @plurnk\/plurnk-service@latest @plurnk\/plurnk@latest/);
+        assert.match(updateRes.stdout, /version: @plurnk\/plurnk-service@4\.3\.3 \(source checkout\) — to update packages, stop the daemon and run: npm install -g --ignore-scripts @plurnk\/plurnk-service@latest @plurnk\/plurnk@latest/);
 
         const modelsRes = await runCli(
             ["models", "--json"],

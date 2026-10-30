@@ -292,7 +292,7 @@ export const formatServiceUpdateResult = (res: Record<string, unknown>): string 
     const upgradeCmd =
         typeof svc.upgradeCommand === "string"
             ? svc.upgradeCommand
-            : "npm install -g @plurnk/plurnk-service@latest @plurnk/plurnk@latest";
+            : "npm install -g --ignore-scripts @plurnk/plurnk-service@latest @plurnk/plurnk@latest";
     const verLine = `version: ${pkg}@${ver}${suffix} — to update packages, stop the daemon and run: ${upgradeCmd}`;
     return `${catLine}\n${verLine}`;
 };

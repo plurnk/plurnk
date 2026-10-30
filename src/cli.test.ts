@@ -658,11 +658,11 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
             package: "@plurnk/plurnk-service",
             version: "4.4.0",
             artifact: "dist",
-            upgradeCommand: "npm install -g @plurnk/plurnk-service@latest @plurnk/plurnk@latest",
+            upgradeCommand: "npm install -g --ignore-scripts @plurnk/plurnk-service@latest @plurnk/plurnk@latest",
         },
     });
     assert.match(formattedUpdate, /catalog: updated \(500 models across 20 providers, \+4 new\)/u);
-    assert.match(formattedUpdate, /version: @plurnk\/plurnk-service@4\.4\.0 — to update packages, stop the daemon and run: npm install -g @plurnk\/plurnk-service@latest @plurnk\/plurnk@latest/u);
+    assert.match(formattedUpdate, /version: @plurnk\/plurnk-service@4\.4\.0 — to update packages, stop the daemon and run: npm install -g --ignore-scripts @plurnk\/plurnk-service@latest @plurnk\/plurnk@latest/u);
 });
 
 test("{§cli-inline-review} {§cli-color-policy} {§cli-markdown-projection}: per-runtime PLURNK_CLIENT_ACCEPT_<runtime> auto-acceptance, interactive TTY permission review menu, colored diff preview, and markdown/color modules", async () => {

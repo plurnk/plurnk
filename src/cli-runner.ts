@@ -220,7 +220,7 @@ export const ensureDaemonConnected = async (client: AcpClient, options: CliCommo
                                 type: "https://problems.plurnk.xyz/client/daemon/not-installed",
                                 title: "Service not installed",
                                 status: 503,
-                                detail: "Could not find `plurnk-service` to start the daemon automatically. Install `@plurnk/plurnk-service` (`npm install -g @plurnk/plurnk-service`).",
+                                detail: "Could not find `plurnk-service` to start the daemon automatically. Install `@plurnk/plurnk-service` (`npm install -g --ignore-scripts @plurnk/plurnk-service`).",
                             },
                             127,
                         ),

@@ -39,7 +39,7 @@ export function installSandbox() {
         `${JSON.stringify({ name: "plurnk-client-sandbox", version: "1.0.0", private: true }, null, 2)}\n`,
     );
     // Deliberately omit the backend; absence must remain supported.
-    sh("npm", ["install", "--omit=optional", tarball], { cwd: sandbox });
+    sh("npm", ["install", "--ignore-scripts", "--omit=optional", tarball], { cwd: sandbox });
     return { sandbox, tarball };
 }
 

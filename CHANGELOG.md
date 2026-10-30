@@ -1,5 +1,9 @@
 # @plurnk/plurnk
 
+## 5.0.1
+
+- Pass `--ignore-scripts` in global install documentation and upgrade commands, and deny transitive install scripts in `allowScripts` (https://repo.possumtech.com/plurnk/plurnk-service/issues/1331).
+
 ## 5.0.0
 
 ### Upgrade

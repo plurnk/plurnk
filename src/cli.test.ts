@@ -155,7 +155,7 @@ test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {�
         toolCallId: "1/1/1",
         title: "READ",
         status: "completed",
-        rawInput: { target: { raw: "workspace:///_plurnk/plurnk/session.md" }, lineMarker: { marks: [1, -1] } },
+        rawInput: { target: { raw: "plurnk:///session.md" }, lineMarker: { marks: [1, -1] } },
         rawOutput: { range: { returned: [1, 78] } },
         content: [{ type: "content", content: { type: "text", text: "file contents" } }],
         _meta: { plurnk: { op: "READ" } },
@@ -165,7 +165,7 @@ test("{§cli-rendering} {§cli-rendering} {§cli-rendering} {§cli-rendering} {�
     assert.equal(t1[1]?.kind, "tool_call");
     if (t1[1]?.kind === "tool_call") {
         assert.equal(t1[1].glyph, "📖");
-        assert.equal(t1[1].target, "workspace:///_plurnk/plurnk/session.md");
+        assert.equal(t1[1].target, "plurnk:///session.md");
         assert.equal(t1[1].scope, "<1,-1>");
         assert.equal(t1[1].count, 78);
         assert.deepEqual(t1[1].contentLines, []);

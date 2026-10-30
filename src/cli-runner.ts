@@ -315,7 +315,7 @@ const applyInitialConfig = async (
         for (const [alias, value] of Object.entries(options.sessionEnv)) {
             await client.action(
                 "session.env.replace",
-                { alias, definition: { value } },
+                { alias, value },
                 { sessionId: session.sessionId, workspace: options.workspace, session: options.sessionId },
             );
         }

@@ -258,9 +258,17 @@ export const executeFamilyCommand = async (
     }
     if (sub === "discover") {
         const query = rest.join(" ");
+        const payload =
+            query.length === 0
+                ? {}
+                : family === "skills"
+                  ? { source: query }
+                  : family === "schedule"
+                    ? { rule: query }
+                    : { query };
         const result = await client.action<Record<string, unknown>>(
             `${scopePrefix}.${family}.discover`,
-            query.length > 0 ? { query, source: query } : {},
+            payload,
             binding,
         );
         io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -281,17 +289,17 @@ export const executeFamilyCommand = async (
         const alias = rest[0] ?? "";
         const target = rest[1] ?? "";
         const extraArgs = rest.slice(2);
-        const definition = /^https?:\/\//iu.test(target)
-            ? { name: alias, type: "streamable-http", url: target }
+        const payload = /^https?:\/\//iu.test(target)
+            ? { alias, type: "streamable-http", url: target }
             : {
-                  name: alias,
+                  alias,
                   type: "stdio",
                   command: target,
                   ...(extraArgs.length > 0 ? { args: extraArgs } : {}),
               };
         const result = await client.action<Record<string, unknown>>(
             `workspace.mcp.${sub}`,
-            { alias, definition },
+            payload,
             binding,
         );
         writeResult(result);
@@ -302,14 +310,14 @@ export const executeFamilyCommand = async (
         const source = rest[1] ?? "";
         const refIdx = rest.indexOf("--ref");
         const ref = refIdx >= 0 ? rest[refIdx + 1] : undefined;
-        const definition = {
-            name: alias,
-            source,
+        const payload = {
+            alias,
+            ...(source.length > 0 ? { source } : {}),
             ...(ref !== undefined ? { ref } : {}),
         };
         const result = await client.action<Record<string, unknown>>(
             `workspace.skills.${sub}`,
-            { alias, definition },
+            payload,
             binding,
         );
         writeResult(result);
@@ -329,7 +337,7 @@ export const executeFamilyCommand = async (
         const value = rest.slice(1).join(" ");
         const result = await client.action<Record<string, unknown>>(
             `${scopePrefix}.env.${sub}`,
-            { alias, definition: { value } },
+            { alias, value },
             binding,
         );
         writeResult(result);
@@ -353,7 +361,7 @@ export const executeFamilyCommand = async (
             try {
                 await client.action(
                     `${scopePrefix}.env.add`,
-                    { alias, definition: { value: String(val ?? "") } },
+                    { alias, value: String(val ?? "") },
                     binding,
                 );
                 landed += 1;
@@ -378,7 +386,7 @@ export const executeFamilyCommand = async (
         const target = sessionArg.startsWith("session://") ? sessionArg : `session://${sessionArg}`;
         const result = await client.action<Record<string, unknown>>(
             `workspace.schedule.${sub}`,
-            { alias, definition: { rule, target, prompt } },
+            { alias, rule, target, prompt },
             binding,
         );
         writeResult(result);

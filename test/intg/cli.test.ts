@@ -205,8 +205,8 @@ const createMockAcpServer = async () => {
                 }
                 if (params.kind === "session.env.replace") {
                     const alias = params.params?.alias;
-                    const def = params.params?.definition as { value?: unknown } | undefined;
-                    if (typeof alias !== "string" || typeof def?.value !== "string") {
+                    const value = params.params?.value;
+                    if (typeof alias !== "string" || typeof value !== "string") {
                         throw new RequestError(-32602, "Action 'session.env.replace' rejected parameters.");
                     }
                     if (alias.startsWith("PLURNK_")) {
@@ -221,7 +221,7 @@ const createMockAcpServer = async () => {
                             },
                         );
                     }
-                    return { alias, state: "active", definition: { value: def.value } };
+                    return { alias, state: "active", definition: { value } };
                 }
                 return { ok: true };
             },
@@ -470,7 +470,7 @@ const createMockAcpServer = async () => {
                         status: "completed",
                         rawInput: { target: { raw: "workspace:///*" }, aside: "entries" },
                         rawOutput: { matches: [1, 2, 3] },
-                        content: [{ type: "content", content: { type: "text", text: '[{"path":"workspace:///_plurnk/**"}]' } }],
+                        content: [{ type: "content", content: { type: "text", text: '[{"path":"workspace:///notes/**"}]' } }],
                         _meta: { plurnk: { id: 2, turnId: 1, op: "FIND", origin: "model", status: 200, coordinate: "1/1/2" } },
                     },
                 });
@@ -1049,7 +1049,7 @@ test("{§cli-repl-mode} {§cli-repl-mode} {§cli-repl-mode} {§cli-interactive-c
             const findIdx = screenLines.findIndex((l) => l.startsWith("🔎 (workspace:///*)"));
             assert.ok(readIdx >= 0 && findIdx >= 0, `Expected READ and FIND rows on screen:\n${screenLines.join("\n")}`);
             assert.equal(findIdx, readIdx + 1, "Consecutive READ and FIND rows must have zero blank lines between them");
-            assert.ok(!screenLines.some((l) => l.includes('[{"path":"workspace:///_plurnk/**"}]')), "FIND result body must not be shown");
+            assert.ok(!screenLines.some((l) => l.includes('[{"path":"workspace:///notes/**"}]')), "FIND result body must not be shown");
             assert.ok(screenLines.some((l) => l === "🚧"), `Model plan NOTE must render glyph without category word:\n${screenLines.join("\n")}`);
             assert.ok(screenLines.some((l) => l.startsWith("⚙️  brave (brave_web_search)")), `Runtime execution row must render with two spaces after gear:\n${screenLines.join("\n")}`);
             assert.ok(!screenLines.some((l) => l.includes('{"query":"yemen"}')), "MCP request body must not be shown in TUI");

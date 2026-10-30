@@ -1,5 +1,18 @@
 # @plurnk/plurnk
 
+## 5.0.0
+
+### Upgrade
+
+Upgrade this client and the daemon together to 5.0.
+
+- The client communicates with `plurnk-service` over ACP v2 (`/acp`) using `@agentclientprotocol/sdk` (#218, #219, #220, #221).
+- The session entity and its flags, subcommands, slash commands, and environment variables use `session` across the CLI and TUI (`--session`, `PLURNK_CLIENT_SESSION`, `PLURNK_SESSION_ENV_*`, `/session`, `/sessions`), and `session://`, `workspace://`, `persona://`, `mcp://`, and `plurnk://` address session, workspace, persona, MCP, and built-in resources (#223).
+- `--persona`, `--system-prompt`, `PLURNK_CLIENT_PERSONA`, and `/persona` select or override a session's persona (`persona://<name>`) and `session://<session>/AGENTS.md` (#228).
+- `plurnk update` and `/update` refresh the daemon's live model catalog and report package upgrade status (#224).
+- Interactive `--repl` mode and the full-screen `pi-tui` surface share a 5-stream contract (`3` status, `4` reasoning, `5` gates) with multiline fenced input, `/import`, `/editor`, and `@<id>` gate targeting (#218, #230).
+- `${XDG_CONFIG_HOME:-$HOME/.config}/plurnk/.env.local` loads above `.env` in the client configuration cascade (#229).
+
 ## 4.3.0
 
 - `/loops` lists the bound worker's loops with their sequence number, lifecycle, sender and opening

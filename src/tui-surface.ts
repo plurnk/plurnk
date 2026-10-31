@@ -610,7 +610,21 @@ export default class TuiSurface {
     }
 
     setAutocompleteProvider(provider: AutocompleteProvider): void {
-        this.editor.setAutocompleteProvider(provider);
+        this.editor.setAutocompleteProvider({
+            ...provider,
+            applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+                const lcp = (item as { readonly lcp?: string }).lcp;
+                const res = provider.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+                if (typeof lcp === "string" && lcp.length > prefix.length) {
+                    queueMicrotask(() => {
+                        if (!this.editor.isShowingAutocomplete()) {
+                            this.editor.handleInput("\t");
+                        }
+                    });
+                }
+                return res;
+            },
+        });
     }
 
     addInputListener(listener: TuiInputListener): () => void {

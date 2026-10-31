@@ -2138,35 +2138,52 @@ test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocom
         }
         assert.equal(surface.editor.getText(), "/models dee");
         onTermInput!("\t");
-        await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 10));
         assert.equal(surface.editor.getText(), "/models deepseek/deepseek-");
+        assert.equal(
+            surface.editor.isShowingAutocomplete(),
+            true,
+            "narrowed candidate popup remains open in the same Tab keystroke after LCP extension",
+        );
 
         onTermInput!("r");
-        await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 10));
         onTermInput!("\t");
-        await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 10));
         assert.equal(surface.editor.getText(), "/models deepseek/deepseek-reasoner");
 
-        // Now test /model dee -> Tab (LCP) -> Tab (opens 2-item popup) -> Tab (selects first item) -> " h" -> Tab (effort)
+        // Single-provider catalog: "/models " + Tab extends to "deepseek/deepseek-" and keeps list open in the same keystroke
+        currentCatalog = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
+        surface.setInput("/models ");
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 10));
+        assert.equal(surface.editor.getText(), "/models deepseek/deepseek-");
+        assert.equal(
+            surface.editor.isShowingAutocomplete(),
+            true,
+            "single-provider Tab extends to provider prefix and keeps candidate popup open in the same keystroke",
+        );
+        currentCatalog = multiCatalog;
+
+        // Now test /model dee -> Tab (LCP + popup stays open) -> Tab (selects first item) -> " h" -> Tab (effort)
         surface.setInput("");
         for (const ch of "/model dee") {
             onTermInput!(ch);
             await new Promise((r) => setTimeout(r, 5));
         }
         onTermInput!("\t");
-        await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 10));
         assert.equal(surface.editor.getText(), "/model deepseek/deepseek-");
+        assert.equal(surface.editor.isShowingAutocomplete(), true);
         onTermInput!("\t");
-        await new Promise((r) => setTimeout(r, 5));
-        onTermInput!("\t");
-        await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 10));
         assert.equal(surface.editor.getText(), "/model deepseek/deepseek-chat");
         for (const ch of " h") {
             onTermInput!(ch);
             await new Promise((r) => setTimeout(r, 5));
         }
         onTermInput!("\t");
-        await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 10));
         assert.equal(surface.editor.getText(), "/model deepseek/deepseek-chat high");
     } finally {
         surface.stop();

@@ -80,6 +80,21 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
                 }
+                if (params.kind === "models.list") {
+                    return {
+                        items: [
+                            {
+                                selector: "mocktest/fast",
+                                modelName: "Fast",
+                                limits: { contextTokens: 128000 },
+                                capabilities: { reasoning: false, efforts: [] },
+                                readiness: { ready: true, causes: [] },
+                            },
+                        ],
+                        offset: 0,
+                        total: 1,
+                    };
+                }
                 return {};
             },
         );
@@ -253,6 +268,21 @@ test("{§cli-repl-mode} {§cli-session-status} {§cli-rendering}: TUI viewport c
                 }
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                }
+                if (params.kind === "models.list") {
+                    return {
+                        items: [
+                            {
+                                selector: "mocktest/fast",
+                                modelName: "Fast",
+                                limits: { contextTokens: 128000 },
+                                capabilities: { reasoning: false, efforts: [] },
+                                readiness: { ready: true, causes: [] },
+                            },
+                        ],
+                        offset: 0,
+                        total: 1,
+                    };
                 }
                 return {};
             },
@@ -460,27 +490,41 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
             info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
             capabilities: { session: { prompt: {}, resume: {} } },
         }))
-        .onRequest(methods.agent.session.new, async () => ({
-            sessionId: "1#user",
-            configOptions: [
-                {
-                    configId: "model",
-                    name: "Model",
-                    type: "select",
-                    currentValue: "",
-                    options: [{ value: "mocktest/fast", name: "Fast" }],
-                },
-            ],
-            _meta: {
-                plurnk: {
-                    workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
-                    sessionName: "user",
-                    status: {
-                        model: null,
+        .onRequest(methods.agent.session.new, async ({ client }) => {
+            await client.notify(methods.client.session.update, {
+                sessionId: "1#user",
+                update: {
+                    sessionUpdate: "notice",
+                    severity: "warning",
+                    title: "engine:configuration:configuration_error",
+                    description: "Configuration skipped mcp: '/tmp/mcp.json' requires object 'mcpServers'",
+                    _meta: {
+                        plurnk: {
+                            notice: {
+                                source: "engine:configuration",
+                                kind: "configuration_error",
+                                level: "warn",
+                                scope: "mcp",
+                                message: "'/tmp/mcp.json' requires object 'mcpServers'",
+                            },
+                        },
                     },
                 },
-            },
-        }))
+            });
+            return {
+                sessionId: "1#user",
+                configOptions: [],
+                _meta: {
+                    plurnk: {
+                        workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                        sessionName: "user",
+                        status: {
+                            model: null,
+                        },
+                    },
+                },
+            };
+        })
         .onRequest(methods.agent.session.resume, async () => ({
             configOptions: [
                 {
@@ -586,6 +630,21 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
                 }
+                if (params.kind === "models.list") {
+                    return {
+                        items: [
+                            {
+                                selector: "mocktest/fast",
+                                modelName: "Fast",
+                                limits: { contextTokens: 128000 },
+                                capabilities: { reasoning: false, efforts: [] },
+                                readiness: { ready: true, causes: [] },
+                            },
+                        ],
+                        offset: 0,
+                        total: 1,
+                    };
+                }
                 return {};
             },
         );
@@ -670,12 +729,25 @@ test("{§cli-model-selection} {§cli-session-status} {§cli-problems-and-notices
             assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
         };
 
-        // 1. Modelless startup warning and `none` in status bar
-        await waitUntil(() => termWrites.join("").includes("/model <selector> chooses one."));
+        // 1. Modelless startup warning, startup configuration notice, and `none` in status bar
+        await waitUntil(
+            () =>
+                termWrites.join("").includes("/model <selector> chooses one.") &&
+                termWrites.join("").includes("Configuration skipped mcp: '/tmp/mcp.json' requires object 'mcpServers'"),
+        );
+        assert.match(termWrites.join(""), /No model selected\. \/models lists ready models and \/model <selector> chooses one\./u);
         assert.match(termWrites.join(""), /· none ·/u);
 
-        // 2. Sending a prompt when modelless rejects and resets status bar to ❌ instead of hanging in ⌛︎
+        // 1b. /model with no args prints current model (none) and /models prints aligned table
         assert.ok(inputCallback !== null);
+        inputCallback!("/model");
+        inputCallback!("\r");
+        await waitUntil(() => termWrites.join("").includes("model (Model): none"));
+        inputCallback!("/models");
+        inputCallback!("\r");
+        await waitUntil(() => termWrites.join("").includes("selector") && termWrites.join("").includes("mocktest/fast"));
+
+        // 2. Sending a prompt when modelless rejects and resets status bar to ❌ instead of hanging in ⌛︎
         inputCallback!("hello without model");
         inputCallback!("\r");
         await waitUntil(() => termWrites.join("").includes("No model is selected for this session."));
@@ -1578,6 +1650,21 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
                 }
                 if (params.kind === "workspace.list") {
                     return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                }
+                if (params.kind === "models.list") {
+                    return {
+                        items: [
+                            {
+                                selector: "mocktest/fast",
+                                modelName: "Fast",
+                                limits: { contextTokens: 128000 },
+                                capabilities: { reasoning: false, efforts: [] },
+                                readiness: { ready: true, causes: [] },
+                            },
+                        ],
+                        offset: 0,
+                        total: 1,
+                    };
                 }
                 return {};
             },

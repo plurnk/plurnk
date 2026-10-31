@@ -39,6 +39,7 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
     assert.equal(formatModelRoute("fast", "high", "explicit"), "fast[high]");
     assert.equal(formatModelRoute("fast", "low", "default"), "fast(low)");
     assert.equal(formatModelRoute("fast", null, null), "fast");
+    assert.equal(formatModelRoute("none", "medium", "default"), "none");
 
     assert.deepEqual(normalizeNoteHeading("NOTE", "FACT: summary"), { glyph: "📊", aside: "summary" });
     assert.deepEqual(normalizeNoteHeading("NOTE", "plan"), { glyph: "🚧", aside: null });
@@ -51,6 +52,7 @@ test("{§cli-rendering} {§cli-session-status} {§cli-model-selection}: SessionP
         model: "fast",
         yolo: false,
     });
+    assert.equal(presenter.buildStatusBar().formattedStatusLine, "idle · fast · ↓0 ↑0");
 
     presenter.markTurnStart(1000);
     assert.equal(presenter.lifecycle, "running");
@@ -212,6 +214,7 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
         model: "fast",
         yolo: false,
     });
+    assert.equal(presenter.buildStatusBar().formattedStatusLine, "idle · fast · ↓0 ↑0");
 
     // Parked wait countdown shows "updates in <remaining>" while future, then "updates due" once expired ({§cli-session-status})
     presenter.ingestMeta({

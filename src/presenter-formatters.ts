@@ -169,6 +169,8 @@ export const formatModelRoute = (
     effortSource: "default" | "explicit" | null,
 ): string => {
     if (
+        model !== "none" &&
+        model.length > 0 &&
         effort !== null &&
         effort.length > 0 &&
         !model.endsWith(`(${effort})`) &&

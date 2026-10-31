@@ -209,6 +209,7 @@ export const formatConfigOption = (opt: SessionConfigOption): string => {
         return `${opt.configId} (${opt.name}): ${String(opt.currentValue)}`;
     }
     if (SessionConfigOption.isSelect(opt)) {
+        const displayValue = opt.currentValue.length > 0 ? opt.currentValue : "none";
         const choices: string[] = [];
         for (const entry of opt.options) {
             if ("options" in entry) {
@@ -220,9 +221,9 @@ export const formatConfigOption = (opt: SessionConfigOption): string => {
             }
         }
         if (choices.length > 12) {
-            return `${opt.configId} (${opt.name}): ${opt.currentValue}`;
+            return `${opt.configId} (${opt.name}): ${displayValue}`;
         }
-        return `${opt.configId} (${opt.name}): ${opt.currentValue} [${choices.join(", ")}]`;
+        return `${opt.configId} (${opt.name}): ${displayValue} [${choices.join(", ")}]`;
     }
     return `${opt.configId} (${opt.name})`;
 };
@@ -241,6 +242,7 @@ export const runCliConfig = async (
         await ensureDaemonConnected(client, options);
         const session = await openCliSession(client, {
             ...options,
+            sessionId: options.sessionId ?? options.tuiSession ?? "user",
             ...(configId === "persona" ? { persona: undefined } : {}),
             ...(configId === "thought_level" ? { effort: undefined } : {}),
             ...(configId === "model" ? { model: undefined } : {}),

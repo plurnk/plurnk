@@ -77,9 +77,13 @@ interface PendingElicitationGate {
 
 type PendingGate = PendingPermissionGate | PendingElicitationGate;
 
+export interface ReplSessionHooks {
+    readonly onProviderModelsFetcher?: (fetcher: (provider: string) => Promise<readonly string[]>) => void;
+}
+
 export const runReplSession = async (
     options: CliCommonOptions,
-    customStreams?: Partial<ClientStreams>,
+    customStreams?: Partial<ClientStreams> & ReplSessionHooks,
 ): Promise<number> => {
     const streams = openProcessStreams(customStreams);
     let currentWorkspace = options.workspace ?? "default";
@@ -371,6 +375,27 @@ export const runReplSession = async (
 
     try {
         await ensureDaemonConnected(client, options);
+        const providerModelsCache = new Map<string, Promise<readonly string[]>>();
+        customStreams?.onProviderModelsFetcher?.((provider: string) => {
+            const existing = providerModelsCache.get(provider);
+            if (existing !== undefined) return existing;
+            const promise = client
+                .action<{ readonly items?: ReadonlyArray<{ readonly selector?: string }> }>("models.list", {
+                    provider,
+                    limit: 100,
+                })
+                .then((res) =>
+                    (res.items ?? [])
+                        .map((item) => (typeof item?.selector === "string" ? item.selector : ""))
+                        .filter(Boolean),
+                )
+                .catch(() => {
+                    providerModelsCache.delete(provider);
+                    return [];
+                });
+            providerModelsCache.set(provider, promise);
+            return promise;
+        });
 
         const bindSession = async (
             workspaceName: string | undefined,
@@ -414,7 +439,7 @@ export const runReplSession = async (
                 : nextSession.sessionId.includes("#")
                   ? nextSession.sessionId.slice(nextSession.sessionId.indexOf("#") + 1)
                   : sessionName;
-        const [sessionsRes, workspacesRes] = await Promise.all([
+        const [sessionsRes, workspacesRes, modelsRes] = await Promise.all([
             client
                 .action<{ readonly sessions?: ReadonlyArray<Record<string, unknown>> }>(
                     "workspace.sessions",
@@ -429,11 +454,120 @@ export const runReplSession = async (
             client
                 .action<{ readonly workspaces?: ReadonlyArray<Record<string, unknown>> }>("workspace.list", {})
                 .catch(() => undefined),
+            client
+                .action<{
+                    readonly items?: ReadonlyArray<{
+                        readonly selector?: string;
+                        readonly modelName?: string;
+                        readonly limits?: { readonly contextTokens?: number; readonly inputTokens?: number };
+                    }>;
+                }>("models.list", { limit: 100 })
+                .catch(() => undefined),
         ]);
+        const catalogOptions = (modelsRes?.items ?? [])
+            .filter(
+                (
+                    m,
+                ): m is {
+                    readonly selector: string;
+                    readonly modelName?: string;
+                    readonly limits?: { readonly contextTokens?: number; readonly inputTokens?: number };
+                } => typeof m?.selector === "string" && m.selector.length > 0,
+            )
+            .map((m) => {
+                const cap = m.limits?.inputTokens ?? m.limits?.contextTokens;
+                return {
+                    value: m.selector,
+                    name:
+                        m.modelName && m.modelName !== m.selector
+                            ? `${m.selector} (${m.modelName})`
+                            : m.selector,
+                    description:
+                        typeof cap === "number" && cap > 0
+                            ? `${String(Math.round(cap / 1000))}k context`
+                            : null,
+                };
+            });
+        const existingModelOptIdx = nextSession.configOptions.findIndex((o) => o.configId === "model");
+        if (
+            existingModelOptIdx < 0 &&
+            ((plurnk?.status && typeof plurnk.status === "object" && "model" in plurnk.status) ||
+                catalogOptions.length > 0)
+        ) {
+            const statusModel =
+                (
+                    plurnk?.status as
+                        | { model?: { alias?: string | null; provider?: string; model?: string } | null }
+                        | undefined
+                )?.model ?? null;
+            const currentVal =
+                statusModel !== null && typeof statusModel === "object"
+                    ? (statusModel.alias ??
+                      (typeof statusModel.provider === "string" && typeof statusModel.model === "string"
+                          ? `${statusModel.provider}/${statusModel.model}`
+                          : "none"))
+                    : "none";
+            nextSession.configOptions = [
+                {
+                    configId: "model",
+                    name: "Model",
+                    category: "model",
+                    type: "select",
+                    currentValue: currentVal,
+                    options: [
+                        ...(currentVal === "none"
+                            ? [{ value: "none", name: "None (unselected)", description: null }]
+                            : []),
+                        ...catalogOptions,
+                    ],
+                },
+                ...nextSession.configOptions,
+            ];
+        } else if (existingModelOptIdx >= 0 && catalogOptions.length > 0) {
+            const existingOpt = nextSession.configOptions[existingModelOptIdx]!;
+            if (SessionConfigOption.isSelect(existingOpt)) {
+                const isGroupList = existingOpt.options.length > 0 && "options" in existingOpt.options[0]!;
+                if (!isGroupList) {
+                    const flatOpts = [
+                        ...(existingOpt.options as ReadonlyArray<{
+                            readonly value: string;
+                            readonly name: string;
+                            readonly description?: string | null;
+                        }>),
+                    ];
+                    for (const cOpt of catalogOptions) {
+                        if (!flatOpts.some((o) => o.value === cOpt.value)) {
+                            flatOpts.push(cOpt);
+                        }
+                    }
+                    nextSession.configOptions[existingModelOptIdx] = {
+                        ...existingOpt,
+                        options: flatOpts,
+                    };
+                }
+            }
+        }
         emitSessionBound(nextSession, {
             sessions: Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [],
             workspaces: Array.isArray(workspacesRes?.workspaces) ? workspacesRes.workspaces : [],
         });
+        if (bindOpts?.initial) {
+            for (const item of nextSession.items) {
+                if (item.kind !== "notice") continue;
+                const plurnkItem = (item.meta?.plurnk ?? undefined) as
+                    | { notice?: { source?: string }; problem?: unknown }
+                    | undefined;
+                if (plurnkItem?.notice?.source === "engine:configuration" || plurnkItem?.problem !== undefined) {
+                    handleSessionUpdate({
+                        sessionUpdate: "notice",
+                        severity: item.severity,
+                        title: item.title,
+                        ...(item.description !== undefined ? { description: item.description } : {}),
+                        ...(item.meta !== undefined ? { _meta: item.meta } : {}),
+                    });
+                }
+            }
+        }
         return nextSession;
     };
 
@@ -1145,6 +1279,8 @@ export const runReplSession = async (
                         const opt = session.configOptions.find((o) => o.configId === mappedConfigId);
                         if (opt !== undefined) {
                             streams.stdout.write(`${formatConfigOption(opt)}\n`);
+                        } else if (mappedConfigId === "model") {
+                            streams.stdout.write("model (Model): none\n");
                         }
                         return "continue";
                     }

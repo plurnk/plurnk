@@ -95,6 +95,7 @@ export interface CompletionContext {
     readonly cwd: string;
     readonly getProjectRoot: () => string | null;
     readonly getModels?: () => readonly string[];
+    readonly getProviderModels?: (provider: string) => Promise<readonly string[]>;
     readonly getEfforts?: () => readonly string[];
     readonly getPersonas?: () => readonly string[];
     readonly getSessionNames?: () => readonly string[];
@@ -193,6 +194,19 @@ export const completeInput = async (
     const modelMatch = /^\/(model|child)\s+(\S*)$/u.exec(line);
     if (modelMatch !== null) {
         const frag = modelMatch[2]!;
+        const slashIdx = frag.indexOf("/");
+        if (slashIdx > 0 && ctx.getProviderModels !== undefined) {
+            const provider = frag.slice(0, slashIdx);
+            const providerModels = await ctx.getProviderModels(provider);
+            const models = ctx.getModels?.() ?? [];
+            const merged = [...new Set([...models, ...providerModels])];
+            return {
+                suggestions: merged
+                    .filter((m) => m.startsWith(frag))
+                    .map((value) => ({ value, description: "model" })),
+                prefix: frag,
+            };
+        }
         const models = ctx.getModels?.() ?? [];
         const candidates =
             modelMatch[1] === "child" ? ["inherit", ...models.filter((m) => m !== "inherit")] : models;

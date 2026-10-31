@@ -99,6 +99,43 @@ export const runTuiViewport = async (
     let cachedPersonas: string[] = ["none"];
     let cachedSessions: string[] = [];
     let cachedWorkspaces: string[] = [];
+    let providerModelsFetcher: ((provider: string) => Promise<readonly string[]>) | null = null;
+
+    const applyConfigOptionsToCache = (rawOptions: readonly unknown[]): void => {
+        for (const rawOpt of rawOptions) {
+            const opt = rawOpt as {
+                configId?: string;
+                currentValue?: string;
+                options?: ReadonlyArray<{ value?: string }>;
+            };
+            if (opt.configId === "model") {
+                if (typeof opt.currentValue === "string") {
+                    presenter.model = opt.currentValue.length > 0 ? opt.currentValue : "none";
+                }
+                if (Array.isArray(opt.options)) {
+                    cachedModels = opt.options
+                        .map((o) => String(o.value ?? ""))
+                        .filter((v) => v.length > 0 && v !== "none");
+                }
+            } else if (opt.configId === "thought_level") {
+                if (typeof opt.currentValue === "string") {
+                    presenter.effort = opt.currentValue.length > 0 ? opt.currentValue : null;
+                    if (presenter.effort !== null && presenter.effortSource === null) {
+                        presenter.effortSource = "default";
+                    }
+                }
+                if (Array.isArray(opt.options)) {
+                    cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
+                }
+            } else if (opt.configId === "persona") {
+                if (Array.isArray(opt.options)) {
+                    cachedPersonas = opt.options
+                        .map((o) => String(o.value ?? ""))
+                        .filter((v) => v.length > 0 && v !== "custom");
+                }
+            }
+        }
+    };
     let liveReasoningBuffer = "";
     let liveReasoningTurnEnded = false;
     let currentTurns = 0;
@@ -271,6 +308,8 @@ export const runTuiViewport = async (
                 cwd: options.cwd,
                 getProjectRoot: () => boundProjectRoot,
                 getModels: () => cachedModels,
+                getProviderModels: async (provider) =>
+                    providerModelsFetcher !== null ? await providerModelsFetcher(provider) : [],
                 getEfforts: () => cachedEfforts,
                 getPersonas: () => cachedPersonas,
                 getSessionNames: () => cachedSessions,
@@ -412,6 +451,7 @@ export const runTuiViewport = async (
             }
             if (trimmed === "yolo: on" || trimmed === "yolo: off") {
                 presenter.yolo = trimmed === "yolo: on";
+                presenter.buildStatusBar();
                 updateSurfaceStatus();
             }
             if (trimmed.length > 0) {
@@ -681,37 +721,7 @@ export const runTuiViewport = async (
                         .filter(Boolean);
                 }
                 if (Array.isArray(event.configOptions)) {
-                    for (const rawOpt of event.configOptions) {
-                        const opt = rawOpt as {
-                            configId?: string;
-                            currentValue?: string;
-                            options?: ReadonlyArray<{ value?: string }>;
-                        };
-                        if (opt.configId === "model") {
-                            if (typeof opt.currentValue === "string") {
-                                presenter.model = opt.currentValue.length > 0 ? opt.currentValue : "none";
-                            }
-                            if (Array.isArray(opt.options)) {
-                                cachedModels = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
-                            }
-                        } else if (opt.configId === "thought_level") {
-                            if (typeof opt.currentValue === "string") {
-                                presenter.effort = opt.currentValue.length > 0 ? opt.currentValue : null;
-                                if (presenter.effort !== null && presenter.effortSource === null) {
-                                    presenter.effortSource = "default";
-                                }
-                            }
-                            if (Array.isArray(opt.options)) {
-                                cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
-                            }
-                        } else if (opt.configId === "persona") {
-                            if (Array.isArray(opt.options)) {
-                                cachedPersonas = opt.options
-                                    .map((o) => String(o.value ?? ""))
-                                    .filter((v) => v.length > 0 && v !== "custom");
-                            }
-                        }
-                    }
+                    applyConfigOptionsToCache(event.configOptions);
                 }
                 if (event._meta && typeof event._meta === "object") {
                     presenter.ingestMeta(event._meta as Record<string, unknown>);
@@ -720,9 +730,12 @@ export const runTuiViewport = async (
                 if (surface !== null) {
                     ensureSurfaceStarted();
                     if (!wasStarted && (presenter.model === "none" || presenter.model === "")) {
+                        const hasReadyModels = cachedModels.length > 0;
                         surface.append(
                             paint(
-                                "⚠️  Supply a provider's API key to the backend (for example, export DEEPSEEK_API_KEY before launching); /models then lists its models and /model <selector> chooses one.",
+                                hasReadyModels
+                                    ? "⚠️  No model selected. /models lists ready models and /model <selector> chooses one."
+                                    : "⚠️  No model selected. Supply a provider's API key to the backend (for example, export DEEPSEEK_API_KEY before launching); /models then lists its models and /model <selector> chooses one.",
                                 "warning",
                             ),
                         );
@@ -888,6 +901,9 @@ export const runTuiViewport = async (
                 surface.reserveToolCall(event.toolCallId);
             }
             const frames = presenter.apply(event);
+            if (event.sessionUpdate === "config_option_update" && Array.isArray(event.configOptions)) {
+                applyConfigOptionsToCache(event.configOptions);
+            }
             if (event.sessionUpdate === "usage_update" || event.sessionUpdate === "config_option_update") {
                 presenter.buildStatusBar();
                 if (surface !== null) {
@@ -1037,6 +1053,9 @@ export const runTuiViewport = async (
             stderr: replStderr,
             events: replEvents,
             reasoning: replReasoning,
+            onProviderModelsFetcher: (fetcher) => {
+                providerModelsFetcher = fetcher;
+            },
         });
     } finally {
         if (statusTicker !== null) {

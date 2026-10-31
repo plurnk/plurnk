@@ -672,7 +672,17 @@ export class SessionPresenter {
 
         const lead = glyph === "idle" ? "idle" : `${glyph} `;
         const modelLabel = formatModelRoute(this.model, this.effort, this.effortSource);
-        const baseParts: string[] = [lead, modelLabel, formatDuration(elapsedMs)];
+        const hasElapsed =
+            elapsedMsOverride !== undefined ||
+            isActiveLifecycle ||
+            effectiveStatus !== undefined ||
+            this.turns > 0 ||
+            this.loopSeq !== null;
+        const baseParts: string[] = [
+            lead,
+            modelLabel,
+            ...(hasElapsed ? [formatDuration(elapsedMs)] : []),
+        ];
         const usd = formatUsdSpend(this.costUsd, { hasUnknownCost: this.hasUnknownCost });
         if (
             !(typeof effectiveStatus === "number" && effectiveStatus >= 400) ||

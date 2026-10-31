@@ -22,7 +22,7 @@ import { altShortcut, backTabShortcut } from "./tui-viewport.ts";
 import { completeInput, completeOps, dslOpPartial, pathPartial } from "./tui-completion.ts";
 import Review, { QuestionForm } from "./tui-review.ts";
 import { AcpSession } from "./acp-session.ts";
-import { extractChronologicalHistory } from "./repl-commands.ts";
+import { extractChronologicalHistory, formatModelsRows, formatWorkspacesRows } from "./repl-commands.ts";
 import TuiSurface, {
     attention,
     backgroundScheme,
@@ -696,6 +696,44 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
         getPersonas: () => ["none", "reviewer", "architect"],
     });
     assert.deepEqual(personaComp.suggestions, [{ value: "reviewer", description: "persona" }]);
+
+    const providerComp = await completeInput("/model deepseek/deepseek-f", {
+        cwd: repoRoot,
+        getProjectRoot: () => repoRoot,
+        getModels: () => [],
+        getProviderModels: async (provider) =>
+            provider === "deepseek" ? ["deepseek/deepseek-flash", "deepseek/deepseek-v4-pro"] : [],
+    });
+    assert.deepEqual(providerComp.suggestions, [{ value: "deepseek/deepseek-flash", description: "model" }]);
+
+    assert.equal(
+        formatModelsRows({ items: [] }),
+        "(no models match; use --all to include models missing local configuration)\n",
+    );
+    const modelsTable = formatModelsRows({
+        items: [
+            {
+                selector: "deepseek/deepseek-flash",
+                modelName: "DeepSeek Flash",
+                limits: { contextTokens: 128_000 },
+                capabilities: { reasoning: true, efforts: ["low", "medium", "high"] },
+                readiness: { ready: true, causes: [] },
+            },
+        ],
+        offset: 0,
+        total: 4,
+        nextOffset: 1,
+    });
+    assert.match(modelsTable, /selector\s+name\s+context\s+efforts\s+readiness/u);
+    assert.match(modelsTable, /deepseek\/deepseek-flash\s+DeepSeek Flash\s+128k\s+low,medium,high\s+ready/u);
+    assert.match(modelsTable, /\(showing 1-1 of 4; next --offset 1\)/u);
+
+    assert.equal(formatWorkspacesRows({ workspaces: [] }), "(no workspaces; run `plurnk` to create one)\n");
+    const workspacesTable = formatWorkspacesRows({
+        workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha", created_at: "2026-10-31" }],
+    });
+    assert.match(workspacesTable, /name\s+project_root\s+created/u);
+    assert.match(workspacesTable, /alpha\s+\/tmp\/alpha\s+2026-10-31/u);
 
     // Service and model catalog update formatting ({§cli-subcommands})
     const formattedUpdate = formatServiceUpdateResult({

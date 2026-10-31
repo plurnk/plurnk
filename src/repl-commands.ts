@@ -221,24 +221,81 @@ export const formatFamilyRows = (family: string, result: Record<string, unknown>
     return `${lines.join("\n")}\n`;
 };
 
+const renderTable = (headers: readonly string[], rows: readonly (readonly string[])[]): string => {
+    const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
+    const fmt = (cells: readonly string[]) =>
+        cells.map((c, i) => c.padEnd(widths[i] ?? 0)).join("  ").trimEnd();
+    return [fmt(headers), ...rows.map(fmt)].join("\n");
+};
+
+const contextLabel = (tokens: number): string =>
+    tokens >= 1_000_000 && tokens % 1_000_000 === 0
+        ? `${tokens / 1_000_000}m`
+        : tokens >= 1_000 && tokens % 1_000 === 0
+          ? `${tokens / 1_000}k`
+          : String(tokens);
+
+const readinessLabel = (entry: Record<string, unknown>): string => {
+    const readiness = entry.readiness as
+        | {
+              readonly ready?: boolean;
+              readonly causes?: ReadonlyArray<{ readonly alternatives?: ReadonlyArray<ReadonlyArray<string>> }>;
+          }
+        | undefined;
+    if (!readiness || readiness.ready !== false) return "ready";
+    return (readiness.causes ?? [])
+        .map(({ alternatives }) => (alternatives ?? []).map((names) => names.join("+")).join("|"))
+        .join("; ");
+};
+
 export const formatModelsRows = (result: Record<string, unknown>): string => {
     const items = Array.isArray(result.items) ? result.items : [];
-    let out = "";
-    for (const item of items) {
+    if (items.length === 0) {
+        return "(no models match; use --all to include models missing local configuration)\n";
+    }
+    const rows = items.map((item) => {
         const r = item as Record<string, unknown>;
-        out += `${String(r.selector ?? "")}\t${String(r.modelName ?? r.model ?? "")}\n`;
+        const limits = (r.limits ?? {}) as { readonly contextTokens?: number };
+        const caps = (r.capabilities ?? {}) as {
+            readonly reasoning?: boolean;
+            readonly efforts?: ReadonlyArray<string>;
+        };
+        const ctx = typeof limits.contextTokens === "number" ? contextLabel(limits.contextTokens) : "-";
+        const efforts =
+            caps.reasoning && Array.isArray(caps.efforts) && caps.efforts.length > 0
+                ? caps.efforts.join(",")
+                : "-";
+        return [
+            String(r.selector ?? ""),
+            String(r.modelName ?? r.model ?? ""),
+            ctx,
+            efforts,
+            readinessLabel(r),
+        ];
+    });
+    let out = `${renderTable(["selector", "name", "context", "efforts", "readiness"], rows)}\n`;
+    if (typeof result.nextOffset === "number") {
+        const offset = typeof result.offset === "number" ? result.offset : 0;
+        const total = typeof result.total === "number" ? result.total : items.length;
+        out += `(showing ${String(offset + 1)}-${String(offset + items.length)} of ${String(total)}; next --offset ${String(result.nextOffset)})\n`;
     }
     return out;
 };
 
 export const formatWorkspacesRows = (result: Record<string, unknown>): string => {
     const workspaces = Array.isArray(result.workspaces) ? result.workspaces : [];
-    let out = "";
-    for (const item of workspaces) {
-        const w = item as Record<string, unknown>;
-        out += `${String(w.name ?? w.id)}\t${String(w.project_root ?? "")}\n`;
+    if (workspaces.length === 0) {
+        return "(no workspaces; run `plurnk` to create one)\n";
     }
-    return out;
+    const rows = workspaces.map((item) => {
+        const w = item as Record<string, unknown>;
+        return [
+            String(w.name ?? w.id ?? ""),
+            typeof w.project_root === "string" && w.project_root.length > 0 ? w.project_root : "(headless)",
+            typeof w.created_at === "string" ? w.created_at : "",
+        ];
+    });
+    return `${renderTable(["name", "project_root", "created"], rows)}\n`;
 };
 
 export const formatLogEntries = (entries: readonly unknown[]): string => {

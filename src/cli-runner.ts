@@ -349,10 +349,21 @@ export const openCliSession = async (
     });
 
     try {
+        const qualifiedMatch =
+            options.sessionId !== undefined ? /^(\d+)#(.+)$/u.exec(options.sessionId) : null;
+        const resolvedSessionName = qualifiedMatch !== null ? qualifiedMatch[2]! : options.sessionId;
+        const resolvedWorkspaceId =
+            qualifiedMatch !== null ? Number.parseInt(qualifiedMatch[1]!, 10) : undefined;
         const plurnkMeta: Record<string, unknown> = {
             create: true,
-            ...(options.workspace !== undefined ? { workspace: options.workspace } : {}),
-            ...(options.sessionId !== undefined ? { session: options.sessionId, name: options.sessionId } : {}),
+            ...(options.workspace !== undefined
+                ? { workspace: options.workspace }
+                : resolvedWorkspaceId !== undefined
+                  ? { workspaceId: resolvedWorkspaceId }
+                  : {}),
+            ...(resolvedSessionName !== undefined
+                ? { session: resolvedSessionName, name: resolvedSessionName }
+                : {}),
             ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
             ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
         };
@@ -395,8 +406,14 @@ export const openCliSession = async (
             }
         }
 
+        const seenStartupNotices = new Set<string>();
         for (const notification of bufferedNotifications) {
             if (matchesSession(notification.sessionId, session.sessionId)) {
+                if (SessionUpdate.isNotice(notification.update)) {
+                    const key = `${notification.update.severity}:${notification.update.title}:${notification.update.description ?? ""}`;
+                    if (seenStartupNotices.has(key)) continue;
+                    seenStartupNotices.add(key);
+                }
                 session.applyUpdate(notification.update);
             }
         }
@@ -592,6 +609,25 @@ export const runCliPrompt = async (
             configOptions: session.configOptions,
             ...(session.meta !== undefined ? { _meta: session.meta } : {}),
         });
+        for (const item of session.items) {
+            if (item.kind !== "notice") continue;
+            const plurnkItem = (item.meta?.plurnk ?? undefined) as
+                | { notice?: { source?: string }; problem?: unknown }
+                | undefined;
+            if (plurnkItem?.notice?.source === "engine:configuration" || plurnkItem?.problem !== undefined) {
+                const noticeUpdate: SessionUpdate = {
+                    sessionUpdate: "notice",
+                    severity: item.severity,
+                    title: item.title,
+                    ...(item.description !== undefined ? { description: item.description } : {}),
+                    ...(item.meta !== undefined ? { _meta: item.meta } : {}),
+                };
+                if (item.severity === "error" && !options.json) {
+                    writeErrorJsonl(streams.stderr, noticeUpdate);
+                }
+                writeEventJsonl(streams.events, noticeUpdate);
+            }
+        }
 
         const replayCount = session.items.length;
         let timedOut = false;

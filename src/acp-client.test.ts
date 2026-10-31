@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,11 @@ import {
     PROTOCOL_VERSION,
     SessionUpdate,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
-import { AcpClient } from "./acp-client.ts";
+import {
+    ACP_ACTION_KINDS,
+    AcpClient,
+    classifyPreFlightDisconnect,
+} from "./acp-client.ts";
 import { AcpSession } from "./acp-session.ts";
 import Credential from "./credential.ts";
 
@@ -360,4 +364,102 @@ test("{§cli-inline-review}: passive AcpClient without permission or elicitation
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-problems-and-notices} {§cli-conformance}: classifyPreFlightDisconnect classifies structured HTTP/JSON-RPC status and conn.signal.aborted without substring matching on server prose", () => {
+    const activeController = new AbortController();
+    const abortedController = new AbortController();
+    abortedController.abort();
+
+    // 404 HttpResponseError -> stale connection (expired Acp-Connection-Id)
+    assert.deepEqual(
+        classifyPreFlightDisconnect(
+            Object.assign(new Error("HTTP 404"), { status: 404, body: '{"status":404}' }),
+            activeController.signal,
+        ),
+        { staleConnection: true, credentialInvalid: false },
+    );
+
+    // 401 HttpResponseError or structured ProblemDetails code -> stale connection + credentialInvalid
+    assert.deepEqual(
+        classifyPreFlightDisconnect(
+            Object.assign(new Error("HTTP 401"), {
+                status: 401,
+                body: JSON.stringify({ code: "acp/http/bearer-token-invalid" }),
+            }),
+            activeController.signal,
+        ),
+        { staleConnection: true, credentialInvalid: true },
+    );
+    assert.deepEqual(
+        classifyPreFlightDisconnect(
+            Object.assign(new Error("RPC error"), {
+                code: -32000,
+                data: { code: "acp/http/credential-revoked" },
+            }),
+            activeController.signal,
+        ),
+        { staleConnection: true, credentialInvalid: true },
+    );
+
+    // 409 Conflict -> domain refusal, never a stale connection even if signal is aborted
+    assert.deepEqual(
+        classifyPreFlightDisconnect(
+            Object.assign(new Error("Conflict"), {
+                code: -32603,
+                data: { status: 409, body: "session conflict" },
+            }),
+            abortedController.signal,
+        ),
+        { staleConnection: false, credentialInvalid: false },
+    );
+
+    // Domain 404 ProblemDetails (e.g. alias-not-found or persona-not-found) -> domain error, never a stale connection
+    assert.deepEqual(
+        classifyPreFlightDisconnect(
+            Object.assign(new Error("Provider alias 'granite' is not declared."), {
+                code: -32602,
+                data: {
+                    type: "https://problems.plurnk.xyz/daemon/provider/alias-not-found",
+                    title: "Provider alias not found",
+                    status: 404,
+                },
+            }),
+            activeController.signal,
+        ),
+        { staleConnection: false, credentialInvalid: false },
+    );
+
+    // Domain JSON-RPC error whose prose happens to mention "Unknown Acp-Connection-Id" or "bearer-token-invalid"
+    // on an active connection must NOT trigger a false-positive reconnect
+    assert.deepEqual(
+        classifyPreFlightDisconnect(
+            Object.assign(
+                new Error("Invalid params: Unknown Acp-Connection-Id or bearer-token-invalid in prompt text"),
+                { code: -32602 },
+            ),
+            activeController.signal,
+        ),
+        { staleConnection: false, credentialInvalid: false },
+    );
+
+    // Aborted connection signal or SDK uncoded "ACP HTTP stream is closed" Error -> stale connection
+    assert.deepEqual(
+        classifyPreFlightDisconnect(new Error("socket hang up"), abortedController.signal),
+        { staleConnection: true, credentialInvalid: false },
+    );
+    assert.deepEqual(
+        classifyPreFlightDisconnect(new Error("ACP HTTP stream is closed"), activeController.signal),
+        { staleConnection: true, credentialInvalid: false },
+    );
+});
+
+test("{§cli-conformance}: PlurnkActionMap and ACP_ACTION_KINDS match conformance/acp-client.json actions 1-to-1", () => {
+    const ledger = JSON.parse(
+        readFileSync(new URL("../conformance/acp-client.json", import.meta.url), "utf8"),
+    ) as { actions: Record<string, unknown> };
+    const ledgerKinds = Object.keys(ledger.actions).sort();
+    const typedKinds = [...ACP_ACTION_KINDS].sort();
+    assert.deepEqual(typedKinds, ledgerKinds);
+});
+
 

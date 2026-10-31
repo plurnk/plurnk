@@ -76,6 +76,462 @@ export type ElicitationRequestHandler = (
     signal: AbortSignal,
 ) => Promise<CreateElicitationResponse>;
 
+export interface PlurnkActionContext {
+    readonly workspace?: string;
+    readonly workspaceId?: number;
+    readonly session?: string;
+    readonly sessionId?: string;
+    readonly cwd?: string;
+}
+
+export interface PlurnkActionEntry<
+    P extends Record<string, unknown> = Record<string, unknown>,
+    R = Record<string, unknown>,
+> {
+    readonly params: P;
+    readonly result: R;
+}
+
+export interface PlurnkFamilyListResult extends Record<string, unknown> {
+    readonly definitions?: ReadonlyArray<Record<string, unknown>>;
+}
+
+export interface PlurnkActionMap {
+    readonly ping: PlurnkActionEntry<Record<string, unknown>, { readonly ok?: boolean } & Record<string, unknown>>;
+    readonly discover: PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "models.list": PlurnkActionEntry<
+        { readonly refresh?: boolean } & Record<string, unknown>,
+        {
+            readonly defaultModel?: unknown;
+            readonly aliases?: ReadonlyArray<Record<string, unknown>>;
+            readonly providers?: ReadonlyArray<Record<string, unknown>>;
+        } & Record<string, unknown>
+    >;
+    readonly "service.update": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "workspace.list": PlurnkActionEntry<
+        Record<string, unknown>,
+        { readonly workspaces?: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+    >;
+    readonly "workspace.create": PlurnkActionEntry<
+        {
+            readonly name?: string;
+            readonly projectRoot?: string;
+            readonly settings?: Record<string, unknown>;
+        } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.attach": PlurnkActionEntry<
+        { readonly name?: string; readonly workspaceId?: number; readonly projectRoot?: string } & Record<
+            string,
+            unknown
+        >,
+        Record<string, unknown>
+    >;
+    readonly "workspace.sessions": PlurnkActionEntry<
+        Record<string, unknown>,
+        { readonly sessions?: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+    >;
+    readonly "log.read": PlurnkActionEntry<
+        { readonly limit?: number; readonly before?: number; readonly after?: number } & Record<string, unknown>,
+        { readonly entries?: ReadonlyArray<Record<string, unknown>> } & Record<string, unknown>
+    >;
+    readonly "workspace.prompts": PlurnkActionEntry<
+        { readonly limit?: number } & Record<string, unknown>,
+        { readonly prompts?: readonly string[] } & Record<string, unknown>
+    >;
+    readonly "session.loops": PlurnkActionEntry<
+        Record<string, unknown>,
+        {
+            readonly loops?: ReadonlyArray<{
+                readonly sequence?: number;
+                readonly id?: number;
+                readonly session?: string;
+                readonly status?: number;
+                readonly prompt?: string;
+                readonly summary?: string;
+            }>;
+        } & Record<string, unknown>
+    >;
+    readonly "workspace.share": PlurnkActionEntry<
+        { readonly outputDir?: string } & Record<string, unknown>,
+        { readonly path?: string; readonly outputDir?: string } & Record<string, unknown>
+    >;
+    readonly "workspace.rename": PlurnkActionEntry<
+        { readonly name: string } & Record<string, unknown>,
+        { readonly name?: string } & Record<string, unknown>
+    >;
+    readonly "workspace.rollback": PlurnkActionEntry<
+        { readonly to: number } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "entry.read": PlurnkActionEntry<
+        { readonly id?: number; readonly uri?: string } & Record<string, unknown>,
+        { readonly content?: string; readonly text?: string } & Record<string, unknown>
+    >;
+    readonly "op.parse": PlurnkActionEntry<
+        { readonly text: string; readonly execute?: boolean } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.capabilities.get": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "workspace.capabilities.set": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "workspace.skills.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.skills.discover": PlurnkActionEntry<
+        { readonly source?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.skills.add": PlurnkActionEntry<
+        { readonly alias: string; readonly source?: string; readonly ref?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.skills.replace": PlurnkActionEntry<
+        { readonly alias: string; readonly source?: string; readonly ref?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.skills.enable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.skills.disable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.skills.remove": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.members.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.members.discover": PlurnkActionEntry<
+        { readonly query?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.members.add": PlurnkActionEntry<
+        { readonly files: readonly string[] } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.members.enable": PlurnkActionEntry<
+        { readonly file: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.members.disable": PlurnkActionEntry<
+        { readonly file: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.members.remove": PlurnkActionEntry<
+        { readonly file: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.env.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.env.discover": PlurnkActionEntry<
+        { readonly query?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.env.add": PlurnkActionEntry<
+        { readonly alias: string; readonly value: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.env.replace": PlurnkActionEntry<
+        { readonly alias: string; readonly value: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.env.enable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.env.disable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.env.remove": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "session.env.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "session.env.discover": PlurnkActionEntry<
+        { readonly query?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "session.env.add": PlurnkActionEntry<
+        { readonly alias: string; readonly value: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "session.env.replace": PlurnkActionEntry<
+        { readonly alias: string; readonly value: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "session.env.enable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "session.env.disable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "session.env.remove": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.mcp.discover": PlurnkActionEntry<
+        { readonly query?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.add": PlurnkActionEntry<
+        (
+            | { readonly alias: string; readonly type: "streamable-http"; readonly url: string }
+            | {
+                  readonly alias: string;
+                  readonly type: "stdio";
+                  readonly command: string;
+                  readonly args?: readonly string[];
+              }
+        ) &
+            Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.replace": PlurnkActionEntry<
+        (
+            | { readonly alias: string; readonly type: "streamable-http"; readonly url: string }
+            | {
+                  readonly alias: string;
+                  readonly type: "stdio";
+                  readonly command: string;
+                  readonly args?: readonly string[];
+              }
+        ) &
+            Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.enable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.disable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.remove": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.schedule.discover": PlurnkActionEntry<
+        { readonly rule?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.add": PlurnkActionEntry<
+        {
+            readonly alias: string;
+            readonly rule: string;
+            readonly target: string;
+            readonly prompt: string;
+        } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.replace": PlurnkActionEntry<
+        {
+            readonly alias: string;
+            readonly rule: string;
+            readonly target: string;
+            readonly prompt: string;
+        } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.enable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.disable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.schedule.remove": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.oauth.begin": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        { readonly authorizationUrl?: string } & Record<string, unknown>
+    >;
+    readonly "workspace.mcp.oauth.complete": PlurnkActionEntry<
+        { readonly alias: string; readonly code?: string; readonly callbackUrl?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.mcp.complete": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+    readonly "workspace.mcp.skills": PlurnkActionEntry<Record<string, unknown>, Record<string, unknown>>;
+}
+
+export type PlurnkActionKind = keyof PlurnkActionMap;
+
+export const ACP_ACTION_KINDS = [
+    "ping",
+    "discover",
+    "models.list",
+    "service.update",
+    "workspace.list",
+    "workspace.create",
+    "workspace.attach",
+    "workspace.sessions",
+    "log.read",
+    "workspace.prompts",
+    "session.loops",
+    "workspace.share",
+    "workspace.rename",
+    "workspace.rollback",
+    "entry.read",
+    "op.parse",
+    "workspace.capabilities.get",
+    "workspace.capabilities.set",
+    "workspace.skills.list",
+    "workspace.skills.discover",
+    "workspace.skills.add",
+    "workspace.skills.replace",
+    "workspace.skills.enable",
+    "workspace.skills.disable",
+    "workspace.skills.remove",
+    "workspace.members.list",
+    "workspace.members.discover",
+    "workspace.members.add",
+    "workspace.members.enable",
+    "workspace.members.disable",
+    "workspace.members.remove",
+    "workspace.env.list",
+    "workspace.env.discover",
+    "workspace.env.add",
+    "workspace.env.replace",
+    "workspace.env.enable",
+    "workspace.env.disable",
+    "workspace.env.remove",
+    "session.env.list",
+    "session.env.discover",
+    "session.env.add",
+    "session.env.replace",
+    "session.env.enable",
+    "session.env.disable",
+    "session.env.remove",
+    "workspace.mcp.list",
+    "workspace.mcp.discover",
+    "workspace.mcp.add",
+    "workspace.mcp.replace",
+    "workspace.mcp.enable",
+    "workspace.mcp.disable",
+    "workspace.mcp.remove",
+    "workspace.schedule.list",
+    "workspace.schedule.discover",
+    "workspace.schedule.add",
+    "workspace.schedule.replace",
+    "workspace.schedule.enable",
+    "workspace.schedule.disable",
+    "workspace.schedule.remove",
+    "workspace.mcp.oauth.begin",
+    "workspace.mcp.oauth.complete",
+    "workspace.mcp.complete",
+    "workspace.mcp.skills",
+] as const satisfies readonly PlurnkActionKind[];
+
+type _AssertExhaustivePlurnkActionKinds = Exclude<
+    PlurnkActionKind,
+    (typeof ACP_ACTION_KINDS)[number]
+> extends never
+    ? true
+    : never;
+const _exhaustivePlurnkActionKinds: _AssertExhaustivePlurnkActionKinds = true;
+void _exhaustivePlurnkActionKinds;
+
+const CREDENTIAL_PROBLEM_CODES = new Set([
+    "acp/http/bearer-token-invalid",
+    "acp/http/credential-revoked",
+]);
+
+const CREDENTIAL_PROBLEM_TYPES = new Set([
+    "https://problems.plurnk.xyz/acp/http/bearer-token-invalid",
+    "https://problems.plurnk.xyz/acp/http/credential-revoked",
+]);
+
+const isCredentialProblemRecord = (rec: Record<string, unknown>): boolean =>
+    (typeof rec.code === "string" && CREDENTIAL_PROBLEM_CODES.has(rec.code)) ||
+    (typeof rec.type === "string" && CREDENTIAL_PROBLEM_TYPES.has(rec.type));
+
+export const classifyPreFlightDisconnect = (
+    err: unknown,
+    connSignal?: AbortSignal,
+): { readonly staleConnection: boolean; readonly credentialInvalid: boolean } => {
+    if (!err || typeof err !== "object") {
+        return { staleConnection: false, credentialInvalid: false };
+    }
+    const errRec = err as {
+        readonly status?: unknown;
+        readonly code?: unknown;
+        readonly body?: unknown;
+        readonly data?: unknown;
+        readonly message?: unknown;
+    };
+
+    const directStatus = typeof errRec.status === "number" ? errRec.status : undefined;
+    const dataRec =
+        errRec.data !== null && typeof errRec.data === "object"
+            ? (errRec.data as Record<string, unknown>)
+            : undefined;
+    const dataStatus = typeof dataRec?.status === "number" ? dataRec.status : undefined;
+    const status = directStatus ?? dataStatus;
+
+    // 409 Conflict (e.g. session already active or state conflict) is a domain refusal, never a dropped connection.
+    if (status === 409) {
+        return { staleConnection: false, credentialInvalid: false };
+    }
+
+    let bodyRec: Record<string, unknown> | undefined;
+    if (typeof errRec.body === "string" && errRec.body.trim().startsWith("{")) {
+        try {
+            const parsed = JSON.parse(errRec.body) as unknown;
+            if (parsed !== null && typeof parsed === "object") {
+                bodyRec = parsed as Record<string, unknown>;
+            }
+        } catch {
+            // Non-JSON response body
+        }
+    } else if (errRec.body !== null && typeof errRec.body === "object") {
+        bodyRec = errRec.body as Record<string, unknown>;
+    }
+
+    const credentialInvalid =
+        status === 401 ||
+        (dataRec !== undefined && isCredentialProblemRecord(dataRec)) ||
+        (bodyRec !== undefined && isCredentialProblemRecord(bodyRec));
+    if (credentialInvalid) {
+        return { staleConnection: true, credentialInvalid: true };
+    }
+
+    const dataType = typeof dataRec?.type === "string" ? dataRec.type : undefined;
+    const isDomainProblem =
+        dataType !== undefined && !dataType.startsWith("https://problems.plurnk.xyz/acp/http/");
+    if (isDomainProblem) {
+        return { staleConnection: false, credentialInvalid: false };
+    }
+
+    // HTTP 404 on an active ACP stream (HttpResponseError or SDK http-stream 404 wrapper)
+    // indicates an expired or unknown Acp-Connection-Id on the server.
+    if (directStatus === 404 || (dataStatus === 404 && !isDomainProblem)) {
+        return { staleConnection: true, credentialInvalid: false };
+    }
+
+    // If the error is a structured JSON-RPC domain error (numeric code without transport abort), do not reconnect.
+    if (typeof errRec.code === "number" && !connSignal?.aborted) {
+        return { staleConnection: false, credentialInvalid: false };
+    }
+
+    // Transport stream closure aborts conn.signal or throws the SDK's uncoded "ACP HTTP stream is closed" Error.
+    if (
+        connSignal?.aborted === true ||
+        (errRec.code === undefined &&
+            status === undefined &&
+            errRec.message === "ACP HTTP stream is closed")
+    ) {
+        return { staleConnection: true, credentialInvalid: false };
+    }
+
+    return { staleConnection: false, credentialInvalid: false };
+};
+
 export interface AcpClientOptions {
     readonly url: string;
     readonly token?: string;
@@ -332,17 +788,12 @@ export class AcpClient {
         try {
             return await fn(conn);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            const isStalePreFlight =
-                updatesDuringCall === 0 &&
-                (msg.includes("ACP HTTP stream is closed") ||
-                    msg.includes("Unknown Acp-Connection-Id") ||
-                    msg.includes("bearer-token-invalid") ||
-                    msg.includes("credential-revoked"));
+            const classification = classifyPreFlightDisconnect(err, conn.signal);
+            const isStalePreFlight = updatesDuringCall === 0 && classification.staleConnection;
             if (!isStalePreFlight || this.#explicitlyClosed) {
                 throw err;
             }
-            if (msg.includes("bearer-token-invalid") || msg.includes("credential-revoked")) {
+            if (classification.credentialInvalid) {
                 this.#credential?.invalidate();
             }
             if (this.#connection === conn) {
@@ -461,16 +912,20 @@ export class AcpClient {
         await this.#withAutoReconnect((conn) => conn.agent.notify(methods.agent.session.cancel, { sessionId }));
     }
 
+    action<K extends PlurnkActionKind>(
+        kind: K,
+        params?: PlurnkActionMap[K]["params"],
+        context?: PlurnkActionContext,
+    ): Promise<PlurnkActionMap[K]["result"]>;
+    action<T = Record<string, unknown>>(
+        kind: PlurnkActionKind | (string & {}),
+        params?: Record<string, unknown>,
+        context?: PlurnkActionContext,
+    ): Promise<T>;
     async action<T = unknown>(
         kind: string,
         params: Record<string, unknown> = {},
-        context?: {
-            readonly workspace?: string;
-            readonly workspaceId?: number;
-            readonly session?: string;
-            readonly sessionId?: string;
-            readonly cwd?: string;
-        },
+        context?: PlurnkActionContext,
     ): Promise<T> {
         if (!this.#hasConnected) {
             await this.connect();

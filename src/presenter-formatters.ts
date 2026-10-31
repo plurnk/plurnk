@@ -59,9 +59,6 @@ export const normalizeNoteHeading = (
 };
 
 export const lifecycleGlyphFor = (lifecycle: string | undefined, status?: number): string => {
-    if (typeof status === "number" && status >= 400) {
-        return status === 499 ? "🛑" : "❌";
-    }
     switch (lifecycle) {
         case "queued":
             return "⏳";
@@ -70,6 +67,11 @@ export const lifecycleGlyphFor = (lifecycle: string | undefined, status?: number
         case "parked":
         case "requires_action":
             return "💤";
+    }
+    if (typeof status === "number" && status >= 400) {
+        return status === 499 ? "🛑" : "❌";
+    }
+    switch (lifecycle) {
         case "cancelled":
             return "🛑";
         case "failed":
@@ -131,11 +133,19 @@ export const abbreviatedCount = (n: number): string => {
     return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/u, "")}B`;
 };
 
-export const formatUsdSpend = (costUsd: string | null): string | null => {
-    if (costUsd === null || costUsd.length === 0) return null;
-    const num = Number(costUsd);
-    if (!Number.isFinite(num) || num <= 0) return null;
-    return `$${num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+export const formatUsdSpend = (
+    costUsd: string | null,
+    options?: { readonly hasUnknownCost?: boolean },
+): string | null => {
+    const hasUnknown = options?.hasUnknownCost === true;
+    if (costUsd !== null && costUsd.length > 0) {
+        const num = Number(costUsd);
+        if (Number.isFinite(num) && num > 0) {
+            const formatted = `$${num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+            return hasUnknown ? `${formatted} + ?` : formatted;
+        }
+    }
+    return hasUnknown ? "$?" : null;
 };
 
 export const addDecimal = (a: string | null, b: string): string => {

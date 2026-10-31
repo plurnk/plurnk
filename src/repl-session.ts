@@ -177,6 +177,13 @@ export const runReplSession = async (
             const rawNotice = (
                 update._meta as { plurnk?: { notice?: Record<string, unknown> } } | undefined
             )?.plurnk?.notice;
+            if (
+                rawNotice?.kind === "turn_generated" ||
+                rawNotice?.kind === "turn_awaiting_model" ||
+                rawNotice?.kind === "loop_status"
+            ) {
+                flushReasoningNewline();
+            }
             if (rawNotice?.kind === "loop_status") {
                 if (rawNotice.status === 202) {
                     currentLifecycle = "parked";

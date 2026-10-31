@@ -226,6 +226,7 @@ export class SessionPresenter {
     inputTokens = 0;
     outputTokens = 0;
     costUsd: string | null = null;
+    hasUnknownCost = false;
     doing: SessionDoing | null = null;
     preparation: WorkspacePreparationState | null = null;
     activity: SearchActivityState | null = null;
@@ -241,6 +242,7 @@ export class SessionPresenter {
     #turnBaseInputTokens = 0;
     #turnBaseOutputTokens = 0;
     #turnBaseCostUsd: string | null = null;
+    #loopCostUsd: string | null = null;
     readonly #pendingToolCalls = new Map<string, PendingToolCallState>();
     readonly #renderedToolCalls = new Set<string>();
     readonly #terminalOutputs = new Map<string, string>();
@@ -296,6 +298,8 @@ export class SessionPresenter {
         this.turns = 0;
         this.#awaitingTurnCount = 0;
         this.#loopConcluded = false;
+        this.lastLoopStatus = null;
+        this.#loopCostUsd = null;
     }
 
     #syncLoopAndTurn(loopSeq: unknown, turnSeq?: unknown): void {
@@ -318,6 +322,8 @@ export class SessionPresenter {
         if (this.#loopConcluded) {
             this.#resetLoopTurns();
         }
+        this.lastLoopStatus = null;
+        this.#loopCostUsd = null;
         this.#turnStartedAt = now;
         this.#turnBaseInputTokens = this.inputTokens;
         this.#turnBaseOutputTokens = this.outputTokens;
@@ -374,6 +380,14 @@ export class SessionPresenter {
             const bindingKey = `${this.workspaceName}#${this.sessionName}`;
             if (typeof status.lifecycle === "string") {
                 this.lifecycle = status.lifecycle;
+                if (
+                    status.lifecycle === "running" ||
+                    status.lifecycle === "queued" ||
+                    status.lifecycle === "parked" ||
+                    status.lifecycle === "requires_action"
+                ) {
+                    this.lastLoopStatus = null;
+                }
             }
             if (typeof status.loopId === "number") {
                 if (this.loopId !== null && this.loopId !== status.loopId) {
@@ -474,7 +488,21 @@ export class SessionPresenter {
                         : typeof spend.knownCostUsd === "string"
                           ? spend.knownCostUsd
                           : null;
-                if (cost !== null) this.costUsd = cost;
+                this.costUsd = cost;
+                this.hasUnknownCost =
+                    spend.costUsd === null &&
+                    (typeof spend.knownCostUsd === "string" ||
+                        (typeof spend.requests === "number" && spend.requests > 0));
+                if (
+                    this.lifecycle !== "running" ||
+                    (this.#turnBaseInputTokens === 0 &&
+                        this.#turnBaseOutputTokens === 0 &&
+                        this.#turnBaseCostUsd === null)
+                ) {
+                    this.#turnBaseInputTokens = this.inputTokens;
+                    this.#turnBaseOutputTokens = this.outputTokens;
+                    this.#turnBaseCostUsd = this.costUsd;
+                }
             }
         }
 
@@ -533,7 +561,13 @@ export class SessionPresenter {
     }
 
     buildStatusBar(elapsedMsOverride?: number, statusCodeOverride?: number): StatusBarModel {
-        const effectiveStatus = statusCodeOverride ?? this.lastLoopStatus ?? undefined;
+        const isActiveLifecycle =
+            this.lifecycle === "running" ||
+            this.lifecycle === "queued" ||
+            this.lifecycle === "parked" ||
+            this.lifecycle === "requires_action";
+        const effectiveStatus =
+            statusCodeOverride ?? (isActiveLifecycle ? undefined : (this.lastLoopStatus ?? undefined));
         const glyph = this.disconnected
             ? "🔌"
             : this.lifecycle === "idle" && effectiveStatus === undefined
@@ -548,9 +582,14 @@ export class SessionPresenter {
         const lead = glyph === "idle" ? "idle" : `${glyph} `;
         const modelLabel = formatModelRoute(this.model, this.effort, this.effortSource);
         const baseParts: string[] = [lead, modelLabel, formatDuration(elapsedMs)];
-        if (!(typeof effectiveStatus === "number" && effectiveStatus >= 400)) {
+        const usd = formatUsdSpend(this.costUsd, { hasUnknownCost: this.hasUnknownCost });
+        if (
+            !(typeof effectiveStatus === "number" && effectiveStatus >= 400) ||
+            this.inputTokens > 0 ||
+            this.outputTokens > 0 ||
+            usd !== null
+        ) {
             baseParts.push(`↓${abbreviatedCount(this.inputTokens)} ↑${abbreviatedCount(this.outputTokens)}`);
-            const usd = formatUsdSpend(this.costUsd);
             if (usd !== null) {
                 baseParts.push(usd);
             }
@@ -1135,9 +1174,11 @@ export class SessionPresenter {
 
             if (rawNotice?.source === "engine:turn" || update.title?.startsWith("engine:turn:")) {
                 if (rawNotice?.kind === "turn_awaiting_model" || update.title === "engine:turn:turn_awaiting_model") {
+                    this.#retireReasoning(frames);
                     if (this.#loopConcluded) {
                         this.#resetLoopTurns();
                     }
+                    this.lastLoopStatus = null;
                     this.#awaitingTurnCount += 1;
                     this.turns = Math.max(this.turns, this.#awaitingTurnCount);
                     this.lifecycle = "running";
@@ -1150,18 +1191,21 @@ export class SessionPresenter {
                     return frames;
                 }
                 if (rawNotice?.kind === "turn_generated" || update.title === "engine:turn:turn_generated") {
+                    this.#retireReasoning(frames);
+                    this.lastLoopStatus = null;
                     this.lifecycle = "running";
                     this.doing = { phase: "working", since: Date.now(), op: null, target: null };
                     const acc = rawNotice?.accounting as
                         | {
+                              requests?: number;
                               inputTokens?: number;
                               outputTokens?: number;
                               knownInputTokens?: number;
                               knownOutputTokens?: number;
                               usage?: { inputTokens?: number; outputTokens?: number };
                               knownUsage?: { inputTokens?: number; outputTokens?: number };
-                              costUsd?: string;
-                              knownCostUsd?: string;
+                              costUsd?: string | null;
+                              knownCostUsd?: string | null;
                           }
                         | undefined;
                     const inTok =
@@ -1194,6 +1238,14 @@ export class SessionPresenter {
                               : null;
                     if (turnCost !== null) {
                         this.costUsd = addDecimal(this.costUsd, turnCost);
+                        this.#loopCostUsd = addDecimal(this.#loopCostUsd, turnCost);
+                    }
+                    if (
+                        acc !== undefined &&
+                        acc.costUsd === null &&
+                        (typeof acc.knownCostUsd === "string" || (typeof acc.requests === "number" && acc.requests > 0))
+                    ) {
+                        this.hasUnknownCost = true;
                     }
                     frames.push({
                         kind: "status_update",
@@ -1202,6 +1254,7 @@ export class SessionPresenter {
                     return frames;
                 }
                 if (rawNotice?.kind === "results_pending" || update.title === "engine:turn:results_pending") {
+                    this.lastLoopStatus = null;
                     this.lifecycle = "running";
                     this.doing = { phase: "working", since: Date.now(), op: null, target: null };
                     frames.push({
@@ -1229,6 +1282,8 @@ export class SessionPresenter {
                     this.turns = 1;
                 }
                 if (rawNotice.status === 202) {
+                    this.#retireReasoning(frames);
+                    this.lastLoopStatus = null;
                     this.lifecycle = "parked";
                     this.doing = null;
                     this.waitUntil = typeof rawNotice.waitUntil === "number" ? rawNotice.waitUntil : null;
@@ -1239,6 +1294,7 @@ export class SessionPresenter {
                     return frames;
                 }
                 if (rawNotice.status === 100 || rawNotice.status === 102) {
+                    this.lastLoopStatus = null;
                     this.waitUntil = null;
                     this.lifecycle = rawNotice.status === 102 ? "running" : "queued";
                     frames.push({
@@ -1302,11 +1358,15 @@ export class SessionPresenter {
 
         if (SessionUpdate.isStateUpdate(update)) {
             this.disconnected = false;
+            const priorBaseInputTokens = this.#turnBaseInputTokens;
+            const priorBaseOutputTokens = this.#turnBaseOutputTokens;
+            const priorBaseCostUsd = this.#turnBaseCostUsd;
             this.ingestMeta(update._meta as MetaRecord | undefined);
             if (update.state === "running") {
                 if (this.#loopConcluded) {
                     this.#resetLoopTurns();
                 }
+                this.lastLoopStatus = null;
                 if (this.turns === 0) {
                     this.turns = 1;
                 }
@@ -1322,6 +1382,8 @@ export class SessionPresenter {
                 return frames;
             }
             if (update.state === "requires_action") {
+                this.#retireReasoning(frames);
+                this.lastLoopStatus = null;
                 this.lifecycle = "requires_action";
                 this.lifecycleGlyph = "💤";
                 this.doing = null;
@@ -1352,10 +1414,11 @@ export class SessionPresenter {
                                           contextTokens?: number | null;
                                           contextCapacity?: number | null;
                                           accounting?: {
+                                              requests?: number;
                                               usage?: { inputTokens?: number; outputTokens?: number };
                                               knownUsage?: { inputTokens?: number; outputTokens?: number };
-                                              costUsd?: string;
-                                              knownCostUsd?: string;
+                                              costUsd?: string | null;
+                                              knownCostUsd?: string | null;
                                           };
                                       };
                                   };
@@ -1390,14 +1453,35 @@ export class SessionPresenter {
                         }
                     }
                 }
-                const usage = termMeta?.usage?.accounting?.usage ?? termMeta?.usage?.accounting?.knownUsage;
+                const hasAuthoritativeSpend =
+                    ((update._meta as { plurnk?: { status?: { spend?: unknown } } } | undefined)?.plurnk?.status
+                        ?.spend ?? null) !== null;
+                const acc = termMeta?.usage?.accounting;
+                const usage = acc?.usage ?? acc?.knownUsage;
                 const loopIn = typeof usage?.inputTokens === "number" ? usage.inputTokens : undefined;
                 const loopOut = typeof usage?.outputTokens === "number" ? usage.outputTokens : undefined;
-                if (loopIn !== undefined) this.inputTokens = this.#turnBaseInputTokens + loopIn;
-                if (loopOut !== undefined) this.outputTokens = this.#turnBaseOutputTokens + loopOut;
-                const costStr = termMeta?.usage?.accounting?.costUsd ?? termMeta?.usage?.accounting?.knownCostUsd;
-                if (typeof costStr === "string") {
-                    this.costUsd = addDecimal(this.#turnBaseCostUsd, costStr);
+                const costStr = acc?.costUsd ?? acc?.knownCostUsd;
+                if (!hasAuthoritativeSpend) {
+                    if (loopIn !== undefined) {
+                        this.inputTokens = Math.max(this.inputTokens, priorBaseInputTokens + loopIn);
+                    }
+                    if (loopOut !== undefined) {
+                        this.outputTokens = Math.max(this.outputTokens, priorBaseOutputTokens + loopOut);
+                    }
+                    if (typeof costStr === "string") {
+                        const candidateCost = addDecimal(priorBaseCostUsd, costStr);
+                        if (this.costUsd === null || Number(candidateCost) >= Number(this.costUsd)) {
+                            this.costUsd = candidateCost;
+                        }
+                    }
+                    if (
+                        acc !== undefined &&
+                        acc.costUsd === null &&
+                        (typeof acc.knownCostUsd === "string" ||
+                            (typeof acc.requests === "number" && acc.requests > 0))
+                    ) {
+                        this.hasUnknownCost = true;
+                    }
                 }
                 if (typeof termMeta?.usage?.curationBudget === "number" && termMeta.usage.curationBudget > 0) {
                     this.curationBudget = termMeta.usage.curationBudget;
@@ -1422,12 +1506,16 @@ export class SessionPresenter {
                     typeof termMeta?.problem?.detail === "string" && termMeta.problem.detail.length > 0
                         ? termMeta.problem.detail
                         : undefined;
-                const effectiveLoopIn = loopIn ?? Math.max(0, this.inputTokens - this.#turnBaseInputTokens);
-                const effectiveLoopOut = loopOut ?? Math.max(0, this.outputTokens - this.#turnBaseOutputTokens);
-                const effectiveLoopCost = typeof costStr === "string" ? costStr : this.costUsd;
+                const effectiveLoopIn = loopIn ?? Math.max(0, this.inputTokens - priorBaseInputTokens);
+                const effectiveLoopOut = loopOut ?? Math.max(0, this.outputTokens - priorBaseOutputTokens);
+                const effectiveLoopCost =
+                    typeof costStr === "string"
+                        ? costStr
+                        : this.#loopCostUsd ?? (hasAuthoritativeSpend ? null : this.costUsd);
                 this.#turnBaseInputTokens = this.inputTokens;
                 this.#turnBaseOutputTokens = this.outputTokens;
                 this.#turnBaseCostUsd = this.costUsd;
+                this.#loopCostUsd = null;
                 frames.push({
                     kind: "status_bar",
                     status: statusBar,

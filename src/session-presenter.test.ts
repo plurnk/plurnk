@@ -472,3 +472,161 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
     }
     assert.equal(abortedIdle[1]?.kind, "status_bar");
 });
+
+test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preservation across 499/parked loops, unknown spend markers, and turn-boundary reasoning retirement", () => {
+    // Active lifecycles outrank a prior terminal status code ({§cli-session-status})
+    assert.equal(lifecycleGlyphFor("running", 499), "⌛︎");
+    assert.equal(lifecycleGlyphFor("parked", 499), "💤");
+    assert.equal(lifecycleGlyphFor("queued", 500), "⏳");
+    assert.equal(lifecycleGlyphFor("requires_action", 499), "💤");
+    assert.equal(lifecycleGlyphFor("cancelled", 499), "🛑");
+    assert.equal(lifecycleGlyphFor("failed", 500), "❌");
+
+    // Partial and wholly unknown spend markers ({§cli-session-status})
+    assert.equal(formatUsdSpend("1.25", { hasUnknownCost: true }), "$1.2500 + ?");
+    assert.equal(formatUsdSpend(null, { hasUnknownCost: true }), "$?");
+    assert.equal(formatUsdSpend("0", { hasUnknownCost: true }), "$?");
+    assert.equal(formatUsdSpend("0", { hasUnknownCost: false }), null);
+
+    const presenter = new SessionPresenter({
+        workspaceName: "plurnk-service",
+        sessionName: "service",
+        model: "argon",
+    });
+
+    // Attach to a session with existing spend ($5.0000, 10k in / 2k out)
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                lifecycle: "idle",
+                loopSeq: 4,
+                model: { alias: "argon", effort: "adaptive", effortSource: "default" },
+                spend: {
+                    requests: 5,
+                    usage: { inputTokens: 10_000, outputTokens: 2_000 },
+                    costUsd: "5",
+                    knownCostUsd: "5",
+                },
+            },
+        },
+    });
+    assert.equal(presenter.inputTokens, 10_000);
+    assert.equal(presenter.outputTokens, 2_000);
+    assert.equal(presenter.costUsd, "5");
+
+    // Loop 5 runs and is cancelled (499) after accruing $0.5000: session spend is preserved on the 499 bar
+    presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "cancelled",
+        _meta: {
+            plurnk: {
+                loopSeq: 5,
+                terminal: {
+                    status: 499,
+                    turnCount: 1,
+                    usage: {
+                        accounting: {
+                            requests: 1,
+                            usage: { inputTokens: 2_000, outputTokens: 500 },
+                            costUsd: "0.5",
+                        },
+                    },
+                },
+            },
+        },
+    });
+    assert.equal(presenter.lastLoopStatus, 499);
+    assert.equal(presenter.inputTokens, 12_000);
+    assert.equal(presenter.outputTokens, 2_500);
+    assert.equal(presenter.costUsd, "5.5");
+    const cancelledBar = presenter.buildStatusBar(1000);
+    assert.equal(cancelledBar.lifecycleGlyph, "🛑");
+    assert.match(cancelledBar.formattedStatusLine, /^🛑 {2}· argon\(adaptive\) · 1\.0s · ↓12k ↑2\.5k · \$5\.5000/u);
+
+    // Loop 6 starts and streams reasoning on Turn 1, then parks on WAIT (status 202):
+    // lastLoopStatus (499) is cleared, glyph becomes ⌛︎ then 💤, reasoning retires, and spend remains visible
+    presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_awaiting_model",
+        _meta: {
+            plurnk: {
+                notice: { source: "engine:turn", kind: "turn_awaiting_model" },
+            },
+        },
+    });
+    assert.equal(presenter.lastLoopStatus, null);
+    assert.match(presenter.buildStatusBar(2000).formattedStatusLine, /^⌛︎ {2}· argon\(adaptive\) · 2\.0s · ↓12k ↑2\.5k · \$5\.5000 · awaiting model/u);
+
+    presenter.apply({
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "thought-1",
+        content: { type: "text", text: "Thinking on turn 1" },
+    });
+    assert.equal(presenter.reasoningLines.length, 1);
+
+    const genFrames = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_generated",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:turn",
+                    kind: "turn_generated",
+                    accounting: {
+                        requests: 1,
+                        inputTokens: 3_000,
+                        outputTokens: 500,
+                        costUsd: "0.75",
+                    },
+                },
+            },
+        },
+    });
+    assert.equal(genFrames[0]?.kind, "reasoning_retired");
+    assert.equal(presenter.reasoningLines.length, 0);
+
+    const parkFrames = presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:lifecycle:loop_status",
+        _meta: {
+            plurnk: {
+                notice: {
+                    source: "engine:lifecycle",
+                    kind: "loop_status",
+                    status: 202,
+                    loopSeq: 6,
+                    packetCount: 1,
+                    waitUntil: Date.now() + 11_000,
+                },
+            },
+        },
+    });
+    assert.equal(parkFrames[0]?.kind, "status_update");
+    if (parkFrames[0]?.kind === "status_update") {
+        assert.equal(parkFrames[0].status.lifecycle, "parked");
+        assert.equal(parkFrames[0].status.lifecycleGlyph, "💤");
+        assert.match(
+            parkFrames[0].status.formattedStatusLine,
+            /^💤 {2}· argon\(adaptive\) · [^·]+ · ↓15k ↑3k · \$6\.2500 · updates in (?:10|11)s/u,
+        );
+    }
+
+    // Partial unknown spend from an unpriced subagent turn appends "+ ?" to the known USD total
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                spend: {
+                    requests: 7,
+                    usage: { inputTokens: 18_000, outputTokens: 4_000 },
+                    costUsd: null,
+                    knownCostUsd: "6.25",
+                },
+            },
+        },
+    });
+    assert.match(presenter.buildStatusBar(5000).formattedStatusLine, /↓18k ↑4k · \$6\.2500 \+ \?/u);
+});

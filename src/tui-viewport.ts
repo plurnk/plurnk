@@ -248,6 +248,7 @@ export const runTuiViewport = async (
             }
         }
         if (!trimmed.startsWith("/") && !trimmed.startsWith("!")) {
+            retireLiveReasoning();
             presenter.markTurnStart();
             presenter.buildStatusBar();
             updateSurfaceStatus();
@@ -390,11 +391,9 @@ export const runTuiViewport = async (
     }
 
     const retireLiveReasoning = (): void => {
-        if (liveReasoningBuffer.length > 0) {
-            liveReasoningBuffer = "";
-            liveReasoningTurnEnded = false;
-            surface?.setLive(null);
-        }
+        liveReasoningBuffer = "";
+        liveReasoningTurnEnded = false;
+        surface?.setLive(null);
     };
 
     replStdout.setEncoding("utf8");
@@ -496,11 +495,12 @@ export const runTuiViewport = async (
                 liveReasoningBuffer = "";
                 liveReasoningTurnEnded = false;
             }
+            if (liveReasoningBuffer.length === 0 && chunk.trim().length === 0) {
+                return;
+            }
             liveReasoningBuffer += chunk;
             const rendered = renderReasoning(liveReasoningBuffer);
-            if (rendered.length > 0) {
-                surface.setLive(rendered);
-            }
+            surface.setLive(rendered.length > 0 ? rendered : null);
             return;
         }
         const trimmed = chunk.replace(/\r?\n$/u, "");
@@ -622,6 +622,7 @@ export const runTuiViewport = async (
 
             if (event.sessionUpdate === "session_bound") {
                 cancelArmed = false;
+                retireLiveReasoning();
                 const prevWorkspace = presenter.workspaceName;
                 const prevSession = presenter.sessionName;
                 const wasStarted = initialPromptPrinted;
@@ -661,6 +662,9 @@ export const runTuiViewport = async (
                         } else if (opt.configId === "thought_level") {
                             if (typeof opt.currentValue === "string") {
                                 presenter.effort = opt.currentValue.length > 0 ? opt.currentValue : null;
+                                if (presenter.effort !== null && presenter.effortSource === null) {
+                                    presenter.effortSource = "default";
+                                }
                             }
                             if (Array.isArray(opt.options)) {
                                 cachedEfforts = opt.options.map((o) => String(o.value ?? "")).filter(Boolean);
@@ -715,6 +719,7 @@ export const runTuiViewport = async (
             }
 
             if (event.sessionUpdate === "loop_replay") {
+                retireLiveReasoning();
                 if (typeof event.loopSeq === "number") {
                     presenter.loopSeq = event.loopSeq;
                     presenter.turns = 0;
@@ -748,6 +753,7 @@ export const runTuiViewport = async (
             }
 
             if (event.sessionUpdate === "connection_lost") {
+                retireLiveReasoning();
                 presenter.markDisconnected();
                 if (surface !== null) {
                     updateSurfaceStatus();
@@ -759,6 +765,7 @@ export const runTuiViewport = async (
             }
 
             if (event.sessionUpdate === "permission_request") {
+                retireLiveReasoning();
                 if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
                     focusedGateIds.push(event.id);
                 }
@@ -770,6 +777,7 @@ export const runTuiViewport = async (
             }
 
             if (event.sessionUpdate === "elicitation_request") {
+                retireLiveReasoning();
                 if (typeof event.id === "string" && event.id.length > 0 && !focusedGateIds.includes(event.id)) {
                     focusedGateIds.push(event.id);
                 }
@@ -791,17 +799,27 @@ export const runTuiViewport = async (
 
             if (!isSessionUpdatePayload(event)) continue;
             const frames = presenter.apply(event);
+            if (event.sessionUpdate === "usage_update" || event.sessionUpdate === "config_option_update") {
+                presenter.buildStatusBar();
+                if (surface !== null) {
+                    updateSurfaceStatus();
+                }
+            }
             for (const frame of frames) {
                 switch (frame.kind) {
                     case "reasoning_tail":
-                    case "reasoning_retired":
                     case "subagent":
+                        break;
+                    case "reasoning_retired":
+                        retireLiveReasoning();
                         break;
                     case "status_update":
                         currentTurns = presenter.turns;
                         if (frame.newTurn) {
-                            liveReasoningTurnEnded = true;
+                            retireLiveReasoning();
                             surface?.archiveTurn();
+                        } else if (frame.status.lifecycle !== "running" || presenter.doing?.phase === "working") {
+                            retireLiveReasoning();
                         }
                         if (surface !== null) {
                             updateSurfaceStatus();
@@ -810,6 +828,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "reply_chunk":
+                        retireLiveReasoning();
                         currentTurns = presenter.turns;
                         if (surface !== null && frame.text.length > 0) {
                             suppressedStdoutQueue.push(frame.text.endsWith("\n") ? frame.text : `${frame.text}\n`);
@@ -823,6 +842,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "tool_call":
+                        retireLiveReasoning();
                         currentTurns = presenter.turns;
                         if (surface !== null) {
                             renderToolCallToSurface(frame);

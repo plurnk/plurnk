@@ -11,8 +11,11 @@ import {
     RequestError,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import type { Terminal } from "@earendil-works/pi-tui";
+import { AcpSession } from "./acp-session.ts";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import Credential from "./credential.ts";
+import { extractPromptHistory } from "./repl-commands.ts";
+import TuiSurface from "./tui-surface.ts";
 import { altShortcut, backTabShortcut, runTuiViewport } from "./tui-viewport.ts";
 
 test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed fd 3 events, renders status bar, and exits cleanly on /quit", async () => {
@@ -1840,3 +1843,87 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-rendering} {§cli-markdown-projection} {§cli-sessions-topology}: TuiSurface enforces the 5-container pinned chrome budget, max(3, floor(rows/3)) live reasoning cap, 0-line idle collapse, and bounded extractPromptHistory (#236)", () => {
+    let currentRows = 6;
+    const fakeTerminal: Terminal = {
+        start: () => {},
+        stop: () => {},
+        write: () => {},
+        get columns() {
+            return 80;
+        },
+        get rows() {
+            return currentRows;
+        },
+        get kittyProtocolActive() {
+            return false;
+        },
+        moveBy: () => {},
+        hideCursor: () => {},
+        showCursor: () => {},
+        clearLine: () => {},
+        clearFromCursor: () => {},
+        clearScreen: () => {},
+        setTitle: () => {},
+        onResize: () => () => {},
+        onData: () => () => {},
+        onColorScheme: () => () => {},
+    } as unknown as Terminal;
+
+    const surface = new TuiSurface(fakeTerminal);
+    assert.equal(surface.chromeChildCount, 5, "TuiMainScreen holds exactly 5 top-level containers");
+    assert.deepEqual(surface.renderLiveLines(80), [], "live reasoning region occupies 0 lines when idle");
+
+    const twentyLines = Array.from({ length: 20 }, (_, idx) => `thought-line-${idx + 1}`).join("\n");
+    surface.setLive(twentyLines);
+
+    // At rows=6, max(3, floor(6/3)) === 3 tail lines
+    assert.deepEqual(surface.renderLiveLines(80), [
+        "thought-line-18",
+        "thought-line-19",
+        "thought-line-20",
+    ]);
+
+    // At rows=12, max(3, floor(12/3)) === 4 tail lines
+    currentRows = 12;
+    assert.deepEqual(surface.renderLiveLines(80), [
+        "thought-line-17",
+        "thought-line-18",
+        "thought-line-19",
+        "thought-line-20",
+    ]);
+
+    // At rows=24, max(3, floor(24/3)) === 8 tail lines
+    currentRows = 24;
+    assert.equal(surface.renderLiveLines(80).length, 8);
+    assert.equal(surface.renderLiveLines(80)[0], "thought-line-13");
+    assert.equal(surface.renderLiveLines(80)[7], "thought-line-20");
+
+    // Collapses back to 0 lines when retired on turn completion
+    surface.setLive(null);
+    assert.deepEqual(surface.renderLiveLines(80), []);
+    assert.equal(surface.chromeChildCount, 5);
+
+    // extractPromptHistory bounds user prompts to maxEntries without letting tool calls evict them
+    const session = new AcpSession("1#user");
+    for (let i = 1; i <= 5; i += 1) {
+        session.applyUpdate({
+            sessionUpdate: "user_message_chunk",
+            messageId: `prompt-${i}`,
+            content: { type: "text", text: `Prompt ${i}` },
+            _meta: { plurnk: { id: i * 10, coordinate: `${i}/0/0`, published: true } },
+        });
+        for (let t = 1; t <= 5; t += 1) {
+            session.applyUpdate({
+                sessionUpdate: "tool_call_update",
+                toolCallId: `${i}/1/${t}`,
+                title: `READ (workspace:///file-${t}.ts)`,
+                status: "completed",
+                _meta: { plurnk: { id: i * 10 + t, coordinate: `${i}/1/${t}` } },
+            });
+        }
+    }
+    assert.deepEqual(extractPromptHistory(session, 3), ["Prompt 3", "Prompt 4", "Prompt 5"]);
+});
+

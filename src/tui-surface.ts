@@ -247,6 +247,14 @@ export default class TuiSurface {
         return this.#terminal.rows;
     }
 
+    get chromeChildCount(): number {
+        return this.#tui.children.length;
+    }
+
+    renderLiveLines(width = this.#terminal.columns): string[] {
+        return this.#live.render(width);
+    }
+
     createEditor(): Editor {
         return new Editor(this.#tui, editorTheme, { paddingX: 0, autocompleteMaxVisible: 8 });
     }

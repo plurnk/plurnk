@@ -18,7 +18,7 @@ import {
     AcpClient,
     classifyPreFlightDisconnect,
 } from "./acp-client.ts";
-import { AcpSession } from "./acp-session.ts";
+import { AcpSession, type AcpMessageItem } from "./acp-session.ts";
 import Credential from "./credential.ts";
 
 test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with replayFrom start and AcpSession idempotently materializes missed turns without duplicating prior ones", async () => {
@@ -461,5 +461,49 @@ test("{§cli-conformance}: PlurnkActionMap and ACP_ACTION_KINDS match conformanc
     const typedKinds = [...ACP_ACTION_KINDS].sort();
     assert.deepEqual(typedKinds, ledgerKinds);
 });
+
+test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId items in place across interleaved chunks and full message updates (#236)", () => {
+    const session = new AcpSession("1#user");
+
+    session.applyUpdate({
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "thought-1",
+        content: { type: "text", text: "First part. " },
+    });
+    // Interleaved tool_call_update clears #activeStreamMessage
+    session.applyUpdate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/1",
+        title: "READ (workspace:///README.md)",
+        status: "completed",
+    });
+    // Subsequent thought delta with the same messageId appends in place rather than pushing a duplicate item
+    session.applyUpdate({
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "thought-1",
+        content: { type: "text", text: "Second part." },
+    });
+    const thoughts = session.items.filter((i): i is AcpMessageItem => i.kind === "agent_thought");
+    assert.equal(thoughts.length, 1);
+    assert.equal(thoughts[0]?.id, "thought-1");
+    assert.equal(thoughts[0]?.text, "First part. Second part.");
+
+    // Full message upsert with modified content for an existing messageId patches in place
+    session.applyUpdate({
+        sessionUpdate: "agent_message",
+        messageId: "1/1/2",
+        content: [{ type: "text", text: "Initial reply" }],
+    });
+    session.applyUpdate({
+        sessionUpdate: "agent_message",
+        messageId: "1/1/2",
+        content: [{ type: "text", text: "Edited reply" }],
+    });
+    const replies = session.items.filter((i): i is AcpMessageItem => i.kind === "agent_message");
+    assert.equal(replies.length, 1);
+    assert.equal(replies[0]?.id, "1/1/2");
+    assert.equal(replies[0]?.text, "Edited reply");
+});
+
 
 

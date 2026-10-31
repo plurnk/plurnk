@@ -257,20 +257,9 @@ export class AcpSession {
                     existing.meta = patchMeta(existing.meta, update._meta);
                     return;
                 }
-                if (wasUnpublished || text.startsWith(existing.text)) {
-                    existing.meta = patchMeta(existing.meta, update._meta);
-                    existing.text = text;
-                    existing.blocks = blocks;
-                } else {
-                    const item: AcpMessageItem = {
-                        kind: update.sessionUpdate,
-                        ...(id !== undefined ? { id } : {}),
-                        text,
-                        blocks,
-                        meta: incomingMeta,
-                    };
-                    this.items.push(item);
-                }
+                existing.meta = patchMeta(existing.meta, update._meta);
+                existing.text = text;
+                existing.blocks = blocks;
             } else {
                 const item: AcpMessageItem = {
                     kind: update.sessionUpdate,
@@ -337,16 +326,12 @@ export class AcpSession {
                         existing.meta = patchMeta(existing.meta, update._meta);
                         existing.text = chunkText;
                         existing.blocks = [update.content];
+                        this.#activeStreamMessage = existing;
                     } else {
-                        const item: AcpMessageItem = {
-                            kind: targetKind,
-                            ...(chunkId !== undefined ? { id: chunkId } : {}),
-                            text: chunkText,
-                            blocks: [update.content],
-                            meta: incomingMeta,
-                        };
-                        this.#activeStreamMessage = item;
-                        this.items.push(item);
+                        existing.text += chunkText;
+                        existing.blocks.push(update.content);
+                        existing.meta = patchMeta(existing.meta, update._meta);
+                        this.#activeStreamMessage = existing;
                     }
                 } else {
                     const item: AcpMessageItem = {

@@ -624,13 +624,20 @@ test("{§cli-repl-mode} {§cli-inline-review} {§cli-interactive-command-discove
     assert.equal(surface.reviewing, false);
 
     // Mid-turn response followed by append preserves chronological order ({§cli-markdown-projection})
-    surface.addResponse("FIRST_MID_TURN_RESPONSE");
+    surface.addResponse(renderModelReply("FIRST_MID_TURN_RESPONSE", 80, { op: "SEND", status: 200 }), "1/1/2");
     surface.append("SECOND_TRANSCRIPT_ROW");
+    // Out-of-order tool call completion anchors at its reserved launch slot and #lastLoopHamster still receives summaryAside
+    surface.reserveToolCall("1/1/1");
+    surface.upsertToolCall("1/1/1", "ANCHORED_TOOL_CALL_1_1_1");
+    assert.equal(surface.archiveTurn("1.25s · 1 turn"), true, "archiveTurn must attach summaryAside to #lastLoopHamster even after a mid-turn append");
     surface.renderNow();
     const surfaceDump = written.join("");
-    const firstPos = surfaceDump.indexOf("FIRST_MID_TURN_RESPONSE");
-    const secondPos = surfaceDump.indexOf("SECOND_TRANSCRIPT_ROW");
+    const toolPos = surfaceDump.lastIndexOf("ANCHORED_TOOL_CALL_1_1_1");
+    const firstPos = surfaceDump.lastIndexOf("FIRST_MID_TURN_RESPONSE");
+    const secondPos = surfaceDump.lastIndexOf("SECOND_TRANSCRIPT_ROW");
+    assert.ok(toolPos >= 0 && firstPos > toolPos, "1/1/1 tool call must sort before 1/1/2 mid-turn response");
     assert.ok(firstPos >= 0 && secondPos > firstPos, "mid-turn response must archive above subsequent transcript row");
+    assert.match(surfaceDump, /🐹 1\.25s · 1 turn/u);
     surface.stop();
 
     // extractChronologicalHistory filters published:false replay chunks and hydrates terminal output ({§cli-rendering})

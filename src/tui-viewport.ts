@@ -183,10 +183,7 @@ export const runTuiViewport = async (
                 body: frame.noteBody ?? frame.contentLines.join("\n"),
                 columns: surface.columns,
             });
-            surface.append(rendered);
-            if (rendered.includes("\n")) {
-                surface.append("");
-            }
+            surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
         } else {
             const rendered = renderOperationBlock({
                 glyph: frame.glyph,
@@ -207,10 +204,7 @@ export const runTuiViewport = async (
                 previewLimit: options.previewLines,
                 columns: surface.columns,
             });
-            surface.append(rendered);
-            if (rendered.includes("\n")) {
-                surface.append("");
-            }
+            surface.upsertToolCall(frame.toolCallId, rendered, rendered.includes("\n"));
         }
     };
 
@@ -546,10 +540,25 @@ export const runTuiViewport = async (
                     surface.append("");
                 }
             } else if (rec.kind === "tool_call" && typeof rec.toolCallId === "string") {
-                const effectiveStatus: ToolCallStatus =
-                    rec.status === "in_progress" || rec.status === "pending" || !isToolCallStatus(rec.status)
-                        ? "completed"
-                        : rec.status;
+                const streamAttr = (
+                    rec.meta as { plurnk?: { attrs?: { stream?: unknown } } } | undefined
+                )?.plurnk?.attrs?.stream;
+                const holdOpenRow =
+                    addToEditorHistory &&
+                    (rec.status === "pending" ||
+                        (rec.status === "in_progress" &&
+                            presenter.isOpenStream(
+                                rec.toolCallId,
+                                typeof streamAttr === "string" ? streamAttr : null,
+                            )));
+                const effectiveStatus: ToolCallStatus = holdOpenRow
+                    ? (rec.status as ToolCallStatus)
+                    : rec.status === "in_progress" || rec.status === "pending" || !isToolCallStatus(rec.status)
+                      ? "completed"
+                      : rec.status;
+                if (holdOpenRow) {
+                    surface.reserveToolCall(rec.toolCallId);
+                }
                 const toolCallUpdate: SessionUpdate = {
                     sessionUpdate: "tool_call_update",
                     toolCallId: rec.toolCallId,
@@ -697,6 +706,7 @@ export const runTuiViewport = async (
                     }
                     if (!wasStarted || presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession) {
                         presenter.resetSessionHistory();
+                        surface.resetToolCallSlots();
                     }
                     if (Array.isArray(event.history) && event.history.length > 0) {
                         renderHistoryItemsToSurface(event.history, true);
@@ -728,6 +738,7 @@ export const runTuiViewport = async (
                 if (surface !== null) {
                     ensureSurfaceStarted();
                     presenter.resetSessionHistory();
+                    surface.resetToolCallSlots();
                     const seqLabel = typeof event.loopSeq === "number" ? String(event.loopSeq) : "?";
                     surface.append(paint(`── loop ${seqLabel} ──`, "dim"));
                     if (Array.isArray(event.history) && event.history.length > 0) {
@@ -798,6 +809,14 @@ export const runTuiViewport = async (
             }
 
             if (!isSessionUpdatePayload(event)) continue;
+            if (
+                surface !== null &&
+                event.sessionUpdate === "tool_call_update" &&
+                typeof event.toolCallId === "string" &&
+                (event.status === "pending" || event.status === "in_progress")
+            ) {
+                surface.reserveToolCall(event.toolCallId);
+            }
             const frames = presenter.apply(event);
             if (event.sessionUpdate === "usage_update" || event.sessionUpdate === "config_option_update") {
                 presenter.buildStatusBar();
@@ -838,6 +857,7 @@ export const runTuiViewport = async (
                                     status: frame.status,
                                     aside: frame.aside,
                                 }),
+                                frame.messageId,
                             );
                         }
                         break;

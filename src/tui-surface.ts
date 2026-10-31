@@ -97,6 +97,82 @@ const muted = (text: Text): Component => ({
     invalidate: () => text.invalidate(),
 });
 
+type CoordinateTuple = readonly [number, number, number];
+
+const parseCoordinate = (id: string | null | undefined): CoordinateTuple | null => {
+    if (typeof id !== "string") return null;
+    const m = /^(\d+)\/(\d+)\/(\d+)$/u.exec(id.trim());
+    if (!m) return null;
+    const loopSeq = Number(m[1]);
+    const turnSeq = Number(m[2]);
+    const seq = Number(m[3]);
+    if (!Number.isSafeInteger(loopSeq) || !Number.isSafeInteger(turnSeq) || !Number.isSafeInteger(seq)) {
+        return null;
+    }
+    return [loopSeq, turnSeq, seq];
+};
+
+const compareCoordinates = (a: CoordinateTuple, b: CoordinateTuple): number => {
+    if (a[0] !== b[0]) return a[0] - b[0];
+    if (a[1] !== b[1]) return a[1] - b[1];
+    return a[2] - b[2];
+};
+
+// {§cli-rendering} {§cli-session-status} — Anchored transcript slot for in-place operation materialization.
+class TranscriptSlot implements Component {
+    readonly epoch: number;
+    readonly coordinate: CoordinateTuple | null;
+    #inner: Text | null = null;
+    #rawText = "";
+    #trailingBlankLine = false;
+
+    constructor(epoch: number, coordinate: CoordinateTuple | null, text = "", trailingBlankLine = false) {
+        this.epoch = epoch;
+        this.coordinate = coordinate;
+        if (text.length > 0) {
+            this.setText(text, trailingBlankLine);
+        }
+    }
+
+    get rawText(): string {
+        return this.#rawText;
+    }
+
+    get hasContent(): boolean {
+        return this.#inner !== null;
+    }
+
+    get trailingBlankLine(): boolean {
+        return this.#trailingBlankLine;
+    }
+
+    setText(text: string, trailingBlankLine = false): void {
+        const normalized = text.replace(/\n$/u, "");
+        this.#rawText = normalized;
+        this.#trailingBlankLine = trailingBlankLine && normalized.length > 0;
+        if (normalized.length === 0) {
+            this.#inner = null;
+        } else if (this.#inner !== null) {
+            this.#inner.setText(normalized);
+        } else {
+            this.#inner = new Text(normalized, 0, 0);
+        }
+    }
+
+    invalidate(): void {
+        this.#inner?.invalidate();
+    }
+
+    render(width: number): string[] {
+        if (this.#inner === null) return [];
+        const lines = this.#inner.render(width);
+        if (this.#trailingBlankLine && lines.length > 0) {
+            return [...lines, ""];
+        }
+        return lines;
+    }
+}
+
 // Live reasoning scroll: at most a third of the terminal, newest lines only, never durable ({§cli-markdown-projection}).
 export class TailText implements Component {
     #text = "";
@@ -133,7 +209,10 @@ export default class TuiSurface {
     readonly #transcript = new Container();
     readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
     readonly #turn = new Container();
-    #turnResponses: string[] = [];
+    #turnResponses: Array<{ text: string; coordinate: CoordinateTuple | null }> = [];
+    #slotEpoch = 0;
+    readonly #toolCallSlots = new Map<string, TranscriptSlot>();
+    #lastLoopHamster: TranscriptSlot | null = null;
     readonly #status = new Text("", 0, 0);
     readonly #input = new Container();
     readonly #pending = new Text("", 0, 0);
@@ -309,6 +388,74 @@ export default class TuiSurface {
         this.#terminal.write("\x1b[23;0t");
     }
 
+    resetToolCallSlots(): void {
+        this.#slotEpoch += 1;
+        this.#toolCallSlots.clear();
+        this.#lastLoopHamster = null;
+    }
+
+    #insertSlot(slot: TranscriptSlot): void {
+        if (slot.coordinate !== null) {
+            const idx = this.#transcript.children.findIndex(
+                (child) =>
+                    child instanceof TranscriptSlot &&
+                    child.epoch === this.#slotEpoch &&
+                    child.coordinate !== null &&
+                    compareCoordinates(slot.coordinate!, child.coordinate) < 0,
+            );
+            if (idx >= 0) {
+                this.#transcript.children.splice(idx, 0, slot);
+                return;
+            }
+        }
+        if (this.#turnResponses.length > 0) {
+            const firstResponseCoord = this.#turnResponses[0]?.coordinate ?? null;
+            if (
+                slot.coordinate === null ||
+                firstResponseCoord === null ||
+                compareCoordinates(slot.coordinate, firstResponseCoord) >= 0
+            ) {
+                this.archiveTurn();
+            }
+        }
+        this.#transcript.addChild(slot);
+        if (slot.hasContent) {
+            this.#lastWasSpacer = slot.trailingBlankLine;
+        }
+    }
+
+    reserveToolCall(toolCallId: string): void {
+        if (toolCallId.length === 0 || this.#toolCallSlots.has(toolCallId)) return;
+        const slot = new TranscriptSlot(this.#slotEpoch, parseCoordinate(toolCallId));
+        this.#toolCallSlots.set(toolCallId, slot);
+        this.#insertSlot(slot);
+    }
+
+    upsertToolCall(toolCallId: string, text: string, trailingBlankLine = false): void {
+        const existing = this.#toolCallSlots.get(toolCallId);
+        if (existing !== undefined) {
+            existing.setText(text, trailingBlankLine);
+            if (this.#transcript.children.at(-1) === existing) {
+                this.#lastWasSpacer = existing.trailingBlankLine;
+            }
+            this.#status.invalidate();
+            this.#tui.requestRender();
+            return;
+        }
+        const slot = new TranscriptSlot(
+            this.#slotEpoch,
+            parseCoordinate(toolCallId),
+            text,
+            trailingBlankLine,
+        );
+        if (toolCallId.length > 0) {
+            this.#toolCallSlots.set(toolCallId, slot);
+        }
+        this.#insertSlot(slot);
+        this.#status.invalidate();
+        this.#tui.requestRender();
+    }
+
     append(text: string): void {
         if (this.#turnResponses.length > 0) {
             this.archiveTurn();
@@ -327,35 +474,72 @@ export default class TuiSurface {
     }
 
     // {§cli-markdown-projection} — Turn responses sit below #live reasoning during the turn, then archive to #transcript.
-    addResponse(text: string): void {
+    addResponse(text: string, coordinate?: string | null): void {
         const normalized = text.replace(/\n$/u, "");
         if (normalized.length === 0) return;
-        this.#turnResponses.push(normalized);
+        this.#turnResponses.push({
+            text: normalized,
+            coordinate: parseCoordinate(coordinate),
+        });
         this.#turn.addChild(new Text(normalized, 0, 0));
         this.#status.invalidate();
         this.#tui.requestRender();
     }
 
+    static #decorateHamsterHeader(raw: string, summaryAside: string): string | null {
+        const nl = raw.indexOf("\n");
+        const firstLine = nl >= 0 ? raw.slice(0, nl) : raw;
+        if (stripVTControlCharacters(firstLine).trim() !== "🐹") {
+            return null;
+        }
+        const decoratedFirst = `${firstLine} ${paint(summaryAside, "dim")}`;
+        return nl >= 0 ? `${decoratedFirst}${raw.slice(nl)}` : decoratedFirst;
+    }
+
     archiveTurn(summaryAside?: string | null): boolean {
-        if (this.#turnResponses.length === 0) return false;
+        const isLoopConclusion = summaryAside !== undefined;
+        if (this.#turnResponses.length === 0) {
+            if (isLoopConclusion && this.#lastLoopHamster !== null) {
+                const target = this.#lastLoopHamster;
+                this.#lastLoopHamster = null;
+                if (typeof summaryAside === "string" && summaryAside.length > 0) {
+                    const decorated = TuiSurface.#decorateHamsterHeader(target.rawText, summaryAside);
+                    if (decorated !== null) {
+                        target.setText(decorated, target.trailingBlankLine);
+                        this.#status.invalidate();
+                        this.#tui.requestRender();
+                        return true;
+                    }
+                }
+            } else if (isLoopConclusion) {
+                this.#lastLoopHamster = null;
+            }
+            return false;
+        }
         const responses = [...this.#turnResponses];
         this.#turnResponses = [];
         this.#turn.clear();
         let attachedSummary = false;
-        if (summaryAside && summaryAside.length > 0) {
+        if (typeof summaryAside === "string" && summaryAside.length > 0) {
             const lastIdx = responses.length - 1;
             const last = responses[lastIdx]!;
-            const nl = last.indexOf("\n");
-            const firstLine = nl >= 0 ? last.slice(0, nl) : last;
-            if (stripVTControlCharacters(firstLine).trim() === "🐹") {
-                const decoratedFirst = `${firstLine} ${paint(summaryAside, "dim")}`;
-                responses[lastIdx] = nl >= 0 ? `${decoratedFirst}${last.slice(nl)}` : decoratedFirst;
+            const decorated = TuiSurface.#decorateHamsterHeader(last.text, summaryAside);
+            if (decorated !== null) {
+                responses[lastIdx] = { ...last, text: decorated };
                 attachedSummary = true;
             }
         }
-        for (const text of responses) {
-            this.#transcript.addChild(new Text(text, 0, 0));
+        for (const item of responses) {
+            const slot = new TranscriptSlot(this.#slotEpoch, item.coordinate, item.text);
+            this.#transcript.addChild(slot);
             this.#lastWasSpacer = false;
+            const firstLine = item.text.split("\n", 1)[0] ?? "";
+            if (stripVTControlCharacters(firstLine).trim() === "🐹") {
+                this.#lastLoopHamster = slot;
+            }
+        }
+        if (isLoopConclusion) {
+            this.#lastLoopHamster = null;
         }
         this.#status.invalidate();
         this.#tui.requestRender();

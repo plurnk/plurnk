@@ -619,6 +619,18 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     presenter.ingestMeta({
         plurnk: {
             status: {
+                streams: [
+                    {
+                        entryId: 605,
+                        sessionId: 1,
+                        target: "sh://605",
+                        lifetime: "loop",
+                        loop_seq: 6,
+                        turn_seq: 1,
+                        sequence: 5,
+                        channels: [],
+                    },
+                ],
                 spend: {
                     requests: 7,
                     usage: { inputTokens: 18_000, outputTokens: 4_000 },
@@ -629,4 +641,64 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         },
     });
     assert.match(presenter.buildStatusBar(5000).formattedStatusLine, /↓18k ↑4k · \$6\.2500 \+ \?/u);
+    assert.equal(presenter.isOpenStream("6/1/5"), true);
+    assert.equal(presenter.isOpenStream("6/1/9", "sh://605"), true);
+    assert.equal(presenter.isOpenStream("6/1/9", "sh://other"), false);
+
+    // An open stream (status: "in_progress") is NOT fabricated as completed when state_update: "idle" (status 200/202) arrives;
+    // it renders once when stream/concluded (status: "completed") arrives ({§cli-session-status}, {§cli-problems-and-notices}).
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "6/1/5",
+        name: "sh",
+        title: "sh",
+        status: "in_progress",
+        rawInput: { body: "echo stream-body" },
+        _meta: {
+            plurnk: {
+                id: 605,
+                op: "sh",
+                status: 200,
+                attrs: { stream: "sh://605" },
+            },
+        },
+    });
+    const okIdleFrames = presenter.apply({
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "end_turn",
+        _meta: {
+            plurnk: {
+                loopSeq: 6,
+                terminal: { status: 200, turnCount: 2 },
+            },
+        },
+    });
+    assert.equal(
+        okIdleFrames.some((f) => f.kind === "tool_call"),
+        false,
+        "state_update: idle (status 200) must never fabricate completions for unsettled in_progress calls",
+    );
+    const concludedFrames = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "6/1/5",
+        name: "sh",
+        title: "sh",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "stream-body\n" } }],
+        _meta: {
+            plurnk: {
+                id: 605,
+                op: "sh",
+                status: 200,
+            },
+        },
+    });
+    assert.equal(concludedFrames.length, 1);
+    assert.equal(concludedFrames[0]?.kind, "tool_call");
+    if (concludedFrames[0]?.kind === "tool_call") {
+        assert.equal(concludedFrames[0].toolCallId, "6/1/5");
+        assert.deepEqual(concludedFrames[0].contentLines, ["echo stream-body"]);
+        assert.deepEqual(concludedFrames[0].outputLines, ["stream-body"]);
+    }
 });

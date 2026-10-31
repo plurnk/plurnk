@@ -246,6 +246,7 @@ export class SessionPresenter {
     readonly #pendingToolCalls = new Map<string, PendingToolCallState>();
     readonly #renderedToolCalls = new Set<string>();
     readonly #terminalOutputs = new Map<string, string>();
+    readonly #openStreamKeys = new Set<string>();
     readonly #bindingsWithLoops = new Set<string>();
     #pendingHistoryLost = false;
     #awaitingTurnCount = 0;
@@ -292,6 +293,14 @@ export class SessionPresenter {
         this.#pendingToolCalls.clear();
         this.#renderedToolCalls.clear();
         this.#terminalOutputs.clear();
+    }
+
+    isOpenStream(toolCallId: string, streamTarget?: string | null): boolean {
+        if (this.#openStreamKeys.has(toolCallId)) return true;
+        if (typeof streamTarget === "string" && streamTarget.length > 0 && this.#openStreamKeys.has(streamTarget)) {
+            return true;
+        }
+        return false;
     }
 
     #resetLoopTurns(): void {
@@ -476,6 +485,24 @@ export class SessionPresenter {
             }
             if (Array.isArray(status.streams)) {
                 this.openStreams = status.streams.length;
+                this.#openStreamKeys.clear();
+                for (const item of status.streams) {
+                    if (!item || typeof item !== "object") continue;
+                    const s = item as Record<string, unknown>;
+                    if (typeof s.target === "string" && s.target.length > 0) {
+                        this.#openStreamKeys.add(s.target);
+                    }
+                    if (typeof s.id === "string" && s.id.length > 0) {
+                        this.#openStreamKeys.add(s.id);
+                    }
+                    if (
+                        typeof s.loop_seq === "number" &&
+                        typeof s.turn_seq === "number" &&
+                        typeof s.sequence === "number"
+                    ) {
+                        this.#openStreamKeys.add(`${String(s.loop_seq)}/${String(s.turn_seq)}/${String(s.sequence)}`);
+                    }
+                }
             }
             const spend = status.spend as Record<string, unknown> | undefined;
             if (spend) {
@@ -1436,20 +1463,25 @@ export class SessionPresenter {
                             : 200;
                 this.lastLoopStatus = status;
                 this.lifecycle = status >= 400 ? (status === 499 ? "cancelled" : "failed") : "idle";
-                for (const [pendingId] of [...this.#pendingToolCalls.entries()]) {
-                    const flushed = this.apply({
-                        sessionUpdate: "tool_call_update",
-                        toolCallId: pendingId,
-                        status: status >= 400 ? "failed" : "completed",
-                        _meta: {
-                            plurnk: {
-                                status,
+                // {§cli-session-status} {§cli-rendering} — Only abort in-flight calls when the loop
+                // terminates with failure/cancellation (status >= 400). On 200/202, open streams
+                // hold their historical launch row until stream/concluded arrives.
+                if (status >= 400) {
+                    for (const [pendingId] of [...this.#pendingToolCalls.entries()]) {
+                        const flushed = this.apply({
+                            sessionUpdate: "tool_call_update",
+                            toolCallId: pendingId,
+                            status: "failed",
+                            _meta: {
+                                plurnk: {
+                                    status,
+                                },
                             },
-                        },
-                    });
-                    for (const f of flushed) {
-                        if (f.kind === "tool_call") {
-                            frames.push(f);
+                        });
+                        for (const f of flushed) {
+                            if (f.kind === "tool_call") {
+                                frames.push(f);
+                            }
                         }
                     }
                 }

@@ -1145,3 +1145,265 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport retires l
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors tool calls at their launch coordinates and preserves 🐹 loop summary aside when background streams finish out of order", async () => {
+    const agentApp = createAcpAgent({ name: "viewport-coordinate-agent" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: { session: { prompt: {}, resume: {} } },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#service",
+            configOptions: [],
+            _meta: {
+                plurnk: {
+                    workspace: { id: 1, name: "plurnk-service", projectRoot: "/tmp/plurnk-service" },
+                    sessionName: "service",
+                    status: { lifecycle: "idle", loopSeq: 17 },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.resume, async () => ({
+            configOptions: [],
+            _meta: {
+                plurnk: {
+                    workspace: { id: 1, name: "plurnk-service", projectRoot: "/tmp/plurnk-service" },
+                    sessionName: "service",
+                    status: { lifecycle: "idle", loopSeq: 17 },
+                },
+            },
+        }))
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string },
+            async ({ params }) => {
+                if (params.kind === "workspace.create" || params.kind === "workspace.attach") {
+                    return { id: 1, name: "plurnk-service", project_root: "/tmp/plurnk-service" };
+                }
+                if (params.kind === "workspace.sessions") {
+                    return { sessions: [{ id: 1, name: "service", lifecycle: "idle" }] };
+                }
+                if (params.kind === "workspace.list") {
+                    return { workspaces: [{ id: 1, name: "plurnk-service", project_root: "/tmp/plurnk-service" }] };
+                }
+                return {};
+            },
+        )
+        .onRequest(methods.agent.session.prompt, async ({ client, params }) => {
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "running",
+                    _meta: { plurnk: { loopSeq: 17 } },
+                },
+            });
+            // Turn 1: sh proposal pending at 17/1/5, then approved and running
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "17/1/5",
+                    name: "sh",
+                    title: "sh",
+                    status: "pending",
+                    rawInput: { body: "echo turn1_sh" },
+                    _meta: {
+                        plurnk: {
+                            id: 24572,
+                            coordinate: "17/1/5",
+                            op: "sh",
+                            origin: "model",
+                            status: 202,
+                        },
+                    },
+                },
+            });
+            // Turn 2: NOTE at 17/2/1 finishes while 17/1/5 is still running
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "17/2/1",
+                    name: "NOTE",
+                    title: "NOTE",
+                    status: "completed",
+                    rawInput: { body: "TURN_2_NOTE_BODY" },
+                    _meta: {
+                        plurnk: {
+                            id: 24580,
+                            coordinate: "17/2/1",
+                            op: "NOTE",
+                            origin: "model",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            // Now 17/1/5 completes AFTER Turn 2's NOTE has already rendered
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "17/1/5",
+                    name: "sh",
+                    title: "sh",
+                    status: "completed",
+                    rawInput: { body: "echo turn1_sh" },
+                    _meta: {
+                        plurnk: {
+                            id: 24572,
+                            coordinate: "17/1/5",
+                            op: "sh",
+                            origin: "model",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            // Turn 7 emits 🐹 reply at 17/7/1 and concludes with status 200
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "17/7/1",
+                    content: { type: "text", text: "FINAL_HAMSTER_REPLY" },
+                    _meta: { plurnk: { op: "SEND", status: 200, coordinate: "17/7/1", loopSeq: 17, turnSeq: 7 } },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                    _meta: {
+                        plurnk: {
+                            loopSeq: 17,
+                            terminal: {
+                                status: 200,
+                                turnCount: 7,
+                                elapsedMs: 69_000,
+                                usage: {
+                                    accounting: {
+                                        requests: 7,
+                                        usage: { inputTokens: 33_000_000, outputTokens: 241_000 },
+                                        costUsd: "14.8579",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+            return { stopReason: "end_turn", messageId: "17/7/1" };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => handler(req, res));
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const termWrites: string[] = [];
+    let inputCallback = null as ((data: string) => void) | null;
+    const fakeTerminal: Terminal = {
+        columns: 120,
+        rows: 40,
+        kittyProtocolActive: false,
+        start(onInput: (data: string) => void) {
+            inputCallback = onInput;
+        },
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            termWrites.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle(t: string) {
+            termWrites.push(`TITLE:${t}`);
+        },
+        setProgress() {},
+        setProgramStatus() {},
+    };
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const options: CliCommonOptions = {
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        explicitAcpUrl: true,
+        host: "127.0.0.1",
+        port: addr.port,
+        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        autostart: false,
+        daemonTimeoutMs: 2000,
+        oauthTimeoutMs: 2000,
+        cancelGraceMs: 500,
+        workspace: "plurnk-service",
+        sessionId: "service",
+        tuiSession: "service",
+        yolo: true,
+        auto: false,
+        json: false,
+        repl: false,
+        statusStream: false,
+        previewLines: 5,
+        historyEntries: 10,
+        mermaidTimeoutMs: 2000,
+        color: "never",
+        bell: false,
+        cwd: "/tmp",
+        env: { PLURNK_SECRET: "test-secret" },
+    };
+
+    try {
+        const viewportPromise = runTuiViewport(options, {
+            stdin,
+            stdout,
+            stderr,
+            terminal: fakeTerminal,
+        });
+
+        const waitUntil = async (predicate: () => boolean) => {
+            const deadline = Date.now() + 5000;
+            while (!predicate() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 20));
+            }
+            assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
+        };
+
+        await waitUntil(() => termWrites.join("").includes("[plurnk-service/~service]"));
+        assert.ok(inputCallback !== null);
+        const writesBeforePrompt = termWrites.length;
+        inputCallback!("go");
+        inputCallback!("\r");
+        await waitUntil(() => termWrites.slice(writesBeforePrompt).join("").includes("FINAL_HAMSTER_REPLY"));
+        await waitUntil(() => termWrites.slice(writesBeforePrompt).join("").includes("7 turns"));
+
+        const promptWrites = termWrites.slice(writesBeforePrompt).join("");
+        const shPos = promptWrites.lastIndexOf("echo turn1_sh");
+        const notePos = promptWrites.lastIndexOf("TURN_2_NOTE_BODY");
+        const hamsterPos = promptWrites.lastIndexOf("FINAL_HAMSTER_REPLY");
+        assert.ok(shPos >= 0, "17/1/5 sh receipt must be rendered");
+        assert.ok(notePos > shPos, "17/1/5 sh receipt must appear above Turn 2 NOTE (17/2/1)");
+        assert.ok(hamsterPos > notePos, "Turn 7 🐹 reply must appear below Turn 1 sh and Turn 2 NOTE");
+        assert.match(promptWrites, /🐹 7 turns · [^·]+ · ↓33M ↑241k · loop \$14\.86/u);
+
+        inputCallback!("\x04");
+        const exitCode = await viewportPromise;
+        assert.equal(exitCode, 0);
+    } finally {
+        stdin.end();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});

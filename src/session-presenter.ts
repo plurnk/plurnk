@@ -69,6 +69,7 @@ import {
     extractScopeToken,
     extractTitleAside,
     extractTitleTarget,
+    formatActiveOperationLead,
     formatDuration,
     formatLiveWait,
     formatModelRoute,
@@ -76,11 +77,13 @@ import {
     lifecycleGlyphFor,
     NO_PREVIEW_VERBS,
     normalizeNoteHeading,
+    normalizeWorkerKey,
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
     receiptCountFor,
     SCRIPT_RUNTIMES,
     spanLength,
+    WORKER_OPS,
 } from "./presenter-formatters.ts";
 
 export {
@@ -91,6 +94,7 @@ export {
     extractScopeToken,
     extractTitleAside,
     extractTitleTarget,
+    formatActiveOperationLead,
     formatDuration,
     formatLiveWait,
     formatModelRoute,
@@ -98,12 +102,23 @@ export {
     lifecycleGlyphFor,
     NO_PREVIEW_VERBS,
     normalizeNoteHeading,
+    normalizeWorkerKey,
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
     receiptCountFor,
     SCRIPT_RUNTIMES,
     spanLength,
+    WORKER_OPS,
 };
+
+export interface ActiveLiveEntry {
+    readonly key: string;
+    readonly kind: "stream" | "worker";
+    readonly glyph: string;
+    readonly op: string;
+    readonly target: string;
+    readonly startedAt: number;
+}
 
 export interface SessionDoing {
     readonly phase: "awaiting" | "working";
@@ -251,6 +266,25 @@ interface PendingToolCallState {
     readonly terminalIds?: readonly string[];
 }
 
+interface ActiveStreamState {
+    readonly key: string;
+    readonly entryId: number | null;
+    readonly terminalIds: readonly string[];
+    readonly op: string;
+    readonly target: string;
+    readonly startedAt: number;
+    readonly openedTurn: number;
+    readonly survivedTurn: boolean;
+}
+
+interface ActiveWorkerState {
+    readonly key: string;
+    readonly glyph: string;
+    readonly op: string;
+    readonly target: string;
+    readonly startedAt: number;
+}
+
 export class SessionPresenter {
     workspaceName: string;
     sessionName: string;
@@ -299,7 +333,10 @@ export class SessionPresenter {
     readonly #renderedToolCalls = new Set<string>();
     readonly #terminalOutputs = new Map<string, string>();
     readonly #openStreamKeys = new Set<string>();
+    readonly #activeStreams = new Map<string, ActiveStreamState>();
+    readonly #activeWorkers = new Map<string, ActiveWorkerState>();
     readonly #bindingsWithLoops = new Set<string>();
+    #replayingHistory = false;
     #pendingHistoryLost = false;
     #awaitingTurnCount = 0;
     #loopConcluded = false;
@@ -309,7 +346,7 @@ export class SessionPresenter {
         this.sessionName = options.sessionName ?? "user";
         this.model = options.model ?? "default";
         this.yolo = options.yolo ?? true;
-        this.maxReasoningLines = options.maxReasoningLines ?? 8;
+        this.maxReasoningLines = options.maxReasoningLines ?? 3;
 
         if (options.initialConfigOptions) {
             this.#applyConfigOptions(options.initialConfigOptions);
@@ -324,6 +361,44 @@ export class SessionPresenter {
 
     get reasoningLines(): readonly string[] {
         return this.#reasoningLines;
+    }
+
+    get activeLiveEntries(): readonly ActiveLiveEntry[] {
+        const entries: ActiveLiveEntry[] = [];
+        for (const stream of this.#activeStreams.values()) {
+            if (!stream.survivedTurn) continue;
+            entries.push({
+                key: stream.key,
+                kind: "stream",
+                glyph: "⚙️",
+                op: stream.op,
+                target: stream.target,
+                startedAt: stream.startedAt,
+            });
+        }
+        for (const worker of this.#activeWorkers.values()) {
+            entries.push({
+                key: worker.key,
+                kind: "worker",
+                glyph: worker.glyph,
+                op: worker.op,
+                target: worker.target,
+                startedAt: worker.startedAt,
+            });
+        }
+        return entries;
+    }
+
+    #promoteSurvivingStreams(currentTurn = this.turns, forceAll = false): void {
+        for (const [k, st] of this.#activeStreams.entries()) {
+            if (!st.survivedTurn && (forceAll || currentTurn > st.openedTurn)) {
+                this.#activeStreams.set(k, { ...st, survivedTurn: true });
+            }
+        }
+    }
+
+    setHistoryReplay(replaying: boolean): void {
+        this.#replayingHistory = replaying;
     }
 
     // {§cli-workspaces-and-sessions} — Emits a warning Notice frame when loopId/loopSeq becomes null
@@ -345,6 +420,8 @@ export class SessionPresenter {
         this.#pendingToolCalls.clear();
         this.#renderedToolCalls.clear();
         this.#terminalOutputs.clear();
+        this.#activeStreams.clear();
+        this.#activeWorkers.clear();
     }
 
     isOpenStream(toolCallId: string, streamTarget?: string | null): boolean {
@@ -379,6 +456,7 @@ export class SessionPresenter {
                 this.#loopConcluded = false;
             }
             this.turns = Math.max(this.turns, turnSeq);
+            this.#promoteSurvivingStreams(this.turns);
         }
     }
 
@@ -402,6 +480,8 @@ export class SessionPresenter {
         this.disconnected = true;
         this.lifecycle = "idle";
         this.doing = null;
+        this.#activeStreams.clear();
+        this.#activeWorkers.clear();
         return this.buildStatusBar();
     }
 
@@ -533,12 +613,53 @@ export class SessionPresenter {
             if (Array.isArray(status.descendants)) {
                 this.activeChildren = status.descendants.filter((d) => {
                     const rec = d as Record<string, unknown>;
-                    return rec.lifecycle === "running" || rec.lifecycle === "queued" || rec.lifecycle === "parked";
+                    return (
+                        rec.lifecycle === "running" ||
+                        rec.lifecycle === "queued" ||
+                        rec.lifecycle === "parked" ||
+                        rec.lifecycle === "requires_action"
+                    );
                 }).length;
                 this.gatedCount = status.descendants.reduce((acc: number, d) => {
                     const rec = d as Record<string, unknown>;
                     return acc + (typeof rec.gates === "number" ? rec.gates : 0);
                 }, 0);
+                const seenActiveWorkers = new Set<string>();
+                for (const d of status.descendants) {
+                    if (!d || typeof d !== "object") continue;
+                    const rec = d as Record<string, unknown>;
+                    const rawName =
+                        typeof rec.name === "string" && rec.name.length > 0
+                            ? rec.name
+                            : typeof rec.session === "string" && rec.session.length > 0
+                              ? rec.session
+                              : null;
+                    if (rawName === null) continue;
+                    const workerKey = normalizeWorkerKey(rawName);
+                    const isAlive =
+                        rec.lifecycle === "running" ||
+                        rec.lifecycle === "queued" ||
+                        rec.lifecycle === "parked" ||
+                        rec.lifecycle === "requires_action";
+                    if (isAlive) {
+                        seenActiveWorkers.add(workerKey);
+                        const existing = this.#activeWorkers.get(workerKey);
+                        this.#activeWorkers.set(workerKey, {
+                            key: workerKey,
+                            glyph: existing?.glyph ?? "🐜",
+                            op: existing?.op ?? "WORK",
+                            target: existing?.target ?? `session:///${workerKey}`,
+                            startedAt: existing?.startedAt ?? Date.now(),
+                        });
+                    } else {
+                        this.#activeWorkers.delete(workerKey);
+                    }
+                }
+                for (const key of [...this.#activeWorkers.keys()]) {
+                    if (!seenActiveWorkers.has(key)) {
+                        this.#activeWorkers.delete(key);
+                    }
+                }
             }
             if (Array.isArray(status.inbox)) {
                 this.inboxCount = status.inbox.filter((item) => {
@@ -550,21 +671,90 @@ export class SessionPresenter {
             if (Array.isArray(status.streams)) {
                 this.openStreams = status.streams.length;
                 this.#openStreamKeys.clear();
+                const seenStreamKeys = new Set<string>();
+                const seenStreamTargets = new Set<string>();
+                const seenStreamEntryIds = new Set<number>();
                 for (const item of status.streams) {
                     if (!item || typeof item !== "object") continue;
                     const s = item as Record<string, unknown>;
-                    if (typeof s.target === "string" && s.target.length > 0) {
-                        this.#openStreamKeys.add(s.target);
-                    }
-                    if (typeof s.id === "string" && s.id.length > 0) {
-                        this.#openStreamKeys.add(s.id);
-                    }
-                    if (
+                    const sTarget =
+                        typeof s.target === "string" && s.target.length > 0
+                            ? s.target
+                            : typeof s.id === "string" && s.id.length > 0
+                              ? s.id
+                              : null;
+                    const sEntryId =
+                        typeof s.entryId === "number"
+                            ? s.entryId
+                            : typeof s.id === "number"
+                              ? s.id
+                              : null;
+                    const coord =
                         typeof s.loop_seq === "number" &&
                         typeof s.turn_seq === "number" &&
                         typeof s.sequence === "number"
-                    ) {
-                        this.#openStreamKeys.add(`${String(s.loop_seq)}/${String(s.turn_seq)}/${String(s.sequence)}`);
+                            ? `${String(s.loop_seq)}/${String(s.turn_seq)}/${String(s.sequence)}`
+                            : null;
+                    if (typeof s.target === "string" && s.target.length > 0) {
+                        this.#openStreamKeys.add(s.target);
+                        seenStreamTargets.add(s.target);
+                    }
+                    if (typeof s.id === "string" && s.id.length > 0) {
+                        this.#openStreamKeys.add(s.id);
+                        seenStreamTargets.add(s.id);
+                    }
+                    if (sEntryId !== null) {
+                        seenStreamEntryIds.add(sEntryId);
+                    }
+                    if (coord !== null) {
+                        this.#openStreamKeys.add(coord);
+                        seenStreamKeys.add(coord);
+                    }
+                    const streamKey = coord ?? sTarget ?? (sEntryId !== null ? `term:${String(sEntryId)}` : null);
+                    if (streamKey !== null) {
+                        seenStreamKeys.add(streamKey);
+                        const derivedOp =
+                            typeof s.op === "string" && s.op.length > 0
+                                ? s.op
+                                : sTarget !== null && sTarget.includes("://")
+                                  ? sTarget.slice(0, sTarget.indexOf("://"))
+                                  : "sh";
+                        if (!(derivedOp in OPERATION_GLYPH_MAP)) {
+                            const existing =
+                                this.#activeStreams.get(streamKey) ??
+                                [...this.#activeStreams.values()].find(
+                                    (st) =>
+                                        (sTarget !== null && st.target === sTarget) ||
+                                        (sEntryId !== null && st.entryId === sEntryId),
+                                );
+                            if (existing !== undefined && existing.key !== streamKey) {
+                                this.#activeStreams.delete(existing.key);
+                            }
+                            this.#activeStreams.set(streamKey, {
+                                key: streamKey,
+                                entryId: sEntryId ?? existing?.entryId ?? null,
+                                terminalIds:
+                                    existing?.terminalIds ??
+                                    (sEntryId !== null ? [`term:${String(sEntryId)}`] : []),
+                                op: existing?.op ?? derivedOp,
+                                target: sTarget ?? existing?.target ?? streamKey,
+                                startedAt: existing?.startedAt ?? Date.now(),
+                                openedTurn:
+                                    typeof s.turn_seq === "number"
+                                        ? s.turn_seq
+                                        : (existing?.openedTurn ?? this.turns),
+                                survivedTurn: true,
+                            });
+                        }
+                    }
+                }
+                for (const [k, st] of [...this.#activeStreams.entries()]) {
+                    const matched =
+                        seenStreamKeys.has(k) ||
+                        seenStreamTargets.has(st.target) ||
+                        (st.entryId !== null && seenStreamEntryIds.has(st.entryId));
+                    if (!matched) {
+                        this.#activeStreams.delete(k);
                     }
                 }
             }
@@ -946,6 +1136,41 @@ export class SessionPresenter {
                     metaPlurnk: metaPlurnk as Record<string, unknown>,
                     ...(terminalIds.length > 0 ? { terminalIds } : {}),
                 });
+                // {§cli-rendering}, {§cli-session-status} — Only open runtime streams (never synchronous verbs in OPERATION_GLYPH_MAP)
+                // enter #activeStreams while in_progress.
+                if (update.status === "in_progress" && !(opName in OPERATION_GLYPH_MAP)) {
+                    const streamTarget =
+                        typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0
+                            ? metaPlurnk.attrs.stream
+                            : target ?? update.toolCallId;
+                    const entryId = typeof metaPlurnk.id === "number" ? metaPlurnk.id : null;
+                    const existing =
+                        this.#activeStreams.get(update.toolCallId) ??
+                        [...this.#activeStreams.values()].find(
+                            (st) =>
+                                st.target === streamTarget ||
+                                (entryId !== null && st.entryId === entryId),
+                        );
+                    if (existing !== undefined && existing.key !== update.toolCallId) {
+                        this.#activeStreams.delete(existing.key);
+                    }
+                    const openedTurn =
+                        typeof metaPlurnk.turnSeq === "number" && metaPlurnk.turnSeq > 0
+                            ? metaPlurnk.turnSeq
+                            : Math.max(1, this.turns);
+                    this.#activeStreams.set(update.toolCallId, {
+                        key: update.toolCallId,
+                        entryId: entryId ?? existing?.entryId ?? null,
+                        terminalIds: terminalIds.length > 0 ? terminalIds : (existing?.terminalIds ?? []),
+                        op: opName,
+                        target: streamTarget,
+                        startedAt: existing?.startedAt ?? Date.now(),
+                        openedTurn: existing?.openedTurn ?? openedTurn,
+                        survivedTurn:
+                            existing?.survivedTurn ??
+                            (this.#replayingHistory || this.turns > openedTurn),
+                    });
+                }
                 if (this.lifecycle === "running") {
                     this.doing = {
                         phase: "working",
@@ -962,6 +1187,14 @@ export class SessionPresenter {
             }
             this.#pendingToolCalls.delete(update.toolCallId);
             this.#renderedToolCalls.add(update.toolCallId);
+            this.#activeStreams.delete(update.toolCallId);
+            if (typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0) {
+                for (const [k, st] of [...this.#activeStreams.entries()]) {
+                    if (st.target === metaPlurnk.attrs.stream) {
+                        this.#activeStreams.delete(k);
+                    }
+                }
+            }
 
             const problemRec =
                 rawOutput?.problem && typeof rawOutput.problem === "object"
@@ -1117,6 +1350,27 @@ export class SessionPresenter {
                             : null
                     : null;
 
+            if (
+                !this.#replayingHistory &&
+                WORKER_OPS.has(opName) &&
+                !failed
+            ) {
+                const rawWorkerRef =
+                    target ??
+                    (typeof metaPlurnk.attrs?.session === "string" && metaPlurnk.attrs.session.length > 0
+                        ? metaPlurnk.attrs.session
+                        : update.toolCallId);
+                const workerKey = normalizeWorkerKey(rawWorkerRef);
+                const existing = this.#activeWorkers.get(workerKey);
+                this.#activeWorkers.set(workerKey, {
+                    key: workerKey,
+                    glyph: OPERATION_GLYPH_MAP[opName] ?? "🐜",
+                    op: opName,
+                    target: target ?? existing?.target ?? `session:///${workerKey}`,
+                    startedAt: existing?.startedAt ?? Date.now(),
+                });
+            }
+
             if (this.lifecycle === "running") {
                 this.doing = {
                     phase: "working",
@@ -1162,6 +1416,22 @@ export class SessionPresenter {
                     this.#terminalOutputs.set(`term:${String(opId)}`, text);
                 }
             }
+            if (update.exitStatus !== undefined) {
+                const concludedTarget = (
+                    update._meta as { plurnk?: { target?: string } } | undefined
+                )?.plurnk?.target;
+                for (const [k, st] of [...this.#activeStreams.entries()]) {
+                    if (
+                        st.terminalIds.includes(update.terminalId) ||
+                        (st.entryId !== null && `term:${String(st.entryId)}` === update.terminalId) ||
+                        (typeof concludedTarget === "string" &&
+                            concludedTarget.length > 0 &&
+                            st.target === concludedTarget)
+                    ) {
+                        this.#activeStreams.delete(k);
+                    }
+                }
+            }
             return frames;
         }
 
@@ -1195,6 +1465,24 @@ export class SessionPresenter {
                 update.state && typeof update.state === "object" && "state" in update.state
                     ? String(update.state.state)
                     : "running";
+            const workerKey = normalizeWorkerKey(update.title ?? update.sessionId);
+            if (
+                subState === "running" ||
+                subState === "queued" ||
+                subState === "parked" ||
+                subState === "requires_action"
+            ) {
+                const existing = this.#activeWorkers.get(workerKey);
+                this.#activeWorkers.set(workerKey, {
+                    key: workerKey,
+                    glyph: existing?.glyph ?? "🐜",
+                    op: existing?.op ?? "WORK",
+                    target: existing?.target ?? `session:///${workerKey}`,
+                    startedAt: existing?.startedAt ?? Date.now(),
+                });
+            } else {
+                this.#activeWorkers.delete(workerKey);
+            }
             frames.push({
                 kind: "subagent",
                 sessionId: update.sessionId,
@@ -1298,6 +1586,7 @@ export class SessionPresenter {
                     this.lastLoopStatus = null;
                     this.#awaitingTurnCount += 1;
                     this.turns = Math.max(this.turns, this.#awaitingTurnCount);
+                    this.#promoteSurvivingStreams(this.turns, true);
                     this.lifecycle = "running";
                     this.doing = { phase: "awaiting", since: Date.now(), op: null, target: null };
                     frames.push({
@@ -1400,6 +1689,7 @@ export class SessionPresenter {
                 }
                 if (rawNotice.status === 202) {
                     this.#retireReasoning(frames);
+                    this.#promoteSurvivingStreams(this.turns, true);
                     this.lastLoopStatus = null;
                     this.lifecycle = "parked";
                     this.doing = null;
@@ -1564,6 +1854,7 @@ export class SessionPresenter {
                 // terminates with failure/cancellation (status >= 400). On 200/202, open streams
                 // hold their historical launch row until stream/concluded arrives.
                 if (status >= 400) {
+                    this.#activeStreams.clear();
                     for (const [pendingId] of [...this.#pendingToolCalls.entries()]) {
                         const flushed = this.apply({
                             sessionUpdate: "tool_call_update",
@@ -1581,6 +1872,11 @@ export class SessionPresenter {
                             }
                         }
                     }
+                } else {
+                    this.#promoteSurvivingStreams(this.turns, true);
+                }
+                if (this.activeChildren === 0) {
+                    this.#activeWorkers.clear();
                 }
                 const hasAuthoritativeSpend =
                     ((update._meta as { plurnk?: { status?: { spend?: unknown } } } | undefined)?.plurnk?.status

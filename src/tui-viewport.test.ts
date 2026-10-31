@@ -11,12 +11,14 @@ import {
     RequestError,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import type { Terminal } from "@earendil-works/pi-tui";
+import { stripVTControlCharacters } from "node:util";
 import { AcpSession } from "./acp-session.ts";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import Credential from "./credential.ts";
 import { extractPromptHistory } from "./repl-commands.ts";
+import { SessionPresenter } from "./session-presenter.ts";
 import { longestCommonPrefix, makeAutocompleteProvider } from "./tui-completion.ts";
-import TuiSurface from "./tui-surface.ts";
+import TuiSurface, { renderActiveLiveLine, renderReasoning } from "./tui-surface.ts";
 import { altShortcut, backTabShortcut, runTuiViewport } from "./tui-viewport.ts";
 
 test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed fd 3 events, renders status bar, and exits cleanly on /quit", async () => {
@@ -1845,7 +1847,7 @@ test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains 
     }
 });
 
-test("{§cli-rendering} {§cli-markdown-projection} {§cli-sessions-topology}: TuiSurface enforces the 5-container pinned chrome budget, max(3, floor(rows/3)) live reasoning cap, 0-line idle collapse, and bounded extractPromptHistory (#236)", () => {
+test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cli-sessions-topology}: TuiSurface enforces the 5-container pinned chrome budget, 3-line rolling reasoning + 1-line active streams/workers reservation, 0-line idle collapse, and bounded extractPromptHistory (#236, #238)", () => {
     let currentRows = 6;
     const fakeTerminal: Terminal = {
         start: () => {},
@@ -1876,35 +1878,109 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-sessions-topology}: T
     assert.equal(surface.chromeChildCount, 5, "TuiMainScreen holds exactly 5 top-level containers");
     assert.deepEqual(surface.renderLiveLines(80), [], "live reasoning region occupies 0 lines when idle");
 
+    // While a loop is active, #live reserves 3 reasoning lines + 1 activity line (4 lines total) to prevent jumping
+    surface.setLoopActive(true);
+    assert.deepEqual(surface.renderLiveLines(80), ["", "", "", ""]);
+    surface.setLive("thought-line-1");
+    assert.deepEqual(surface.renderLiveLines(80), ["thought-line-1", "", "", ""]);
+
     const twentyLines = Array.from({ length: 20 }, (_, idx) => `thought-line-${idx + 1}`).join("\n");
     surface.setLive(twentyLines);
 
-    // At rows=6, max(3, floor(6/3)) === 3 tail lines
+    // Fixed 3-line rolling reasoning cap + 1 activity line across all terminal heights (#238)
+    for (const rows of [6, 12, 24]) {
+        currentRows = rows;
+        assert.deepEqual(surface.renderLiveLines(80), [
+            "thought-line-18",
+            "thought-line-19",
+            "thought-line-20",
+            "",
+        ]);
+    }
+
+    surface.setLiveActivity("⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 WORK (session:///helper) 12.0s");
     assert.deepEqual(surface.renderLiveLines(80), [
         "thought-line-18",
         "thought-line-19",
         "thought-line-20",
+        "⚙️  sh (sh:///1/1/2/sh) 4.2s · 🐜 WORK (session:///helper) 12.0s",
     ]);
 
-    // At rows=12, max(3, floor(12/3)) === 4 tail lines
-    currentRows = 12;
-    assert.deepEqual(surface.renderLiveLines(80), [
-        "thought-line-17",
-        "thought-line-18",
-        "thought-line-19",
-        "thought-line-20",
-    ]);
+    // renderReasoning formats at most the newest 3 lines with 💭 on line 1 and 3-space indent on lines 2-3
+    const renderedTail = stripVTControlCharacters(renderReasoning("l1\nl2\nl3\nl4"));
+    assert.deepEqual(renderedTail.split("\n"), ["💭 l2", "   l3", "   l4"]);
 
-    // At rows=24, max(3, floor(24/3)) === 8 tail lines
-    currentRows = 24;
-    assert.equal(surface.renderLiveLines(80).length, 8);
-    assert.equal(surface.renderLiveLines(80)[0], "thought-line-13");
-    assert.equal(surface.renderLiveLines(80)[7], "thought-line-20");
-
-    // Collapses back to 0 lines when retired on turn completion
+    // Collapses back to 0 lines when retired and loop is idle
     surface.setLive(null);
+    surface.setLiveActivity(null);
+    surface.setLoopActive(false);
     assert.deepEqual(surface.renderLiveLines(80), []);
     assert.equal(surface.chromeChildCount, 5);
+
+    // Active streams & workers strip: synchronous verbs (READ, FIND, EDIT, etc.) never appear,
+    // streams appear only after surviving past their opening turn, and workers appear while active (#238)
+    const presenter = new SessionPresenter({ workspaceName: "ws", sessionName: "user" });
+    presenter.markTurnStart(1_000);
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/1",
+        name: "READ",
+        title: "READ (workspace:///README.md)",
+        status: "in_progress",
+        _meta: { plurnk: { op: "READ", turnSeq: 1 } },
+    });
+    assert.equal(presenter.activeLiveEntries.length, 0, "READ must never enter activeLiveEntries");
+
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/2",
+        name: "sh",
+        title: "sh",
+        status: "in_progress",
+        _meta: { plurnk: { id: 42, op: "sh", turnSeq: 1, attrs: { stream: "sh:///1/1/2/sh" } } },
+    });
+    assert.equal(
+        presenter.activeLiveEntries.length,
+        0,
+        "stream in its opening turn does not enter activeLiveEntries before turn boundary",
+    );
+
+    // Advancing to turn 2 promotes the surviving open stream; spawning WORK adds the active worker
+    presenter.apply({
+        sessionUpdate: "notice",
+        severity: "info",
+        title: "engine:turn:turn_awaiting_model",
+        _meta: { plurnk: { notice: { source: "engine:turn", kind: "turn_awaiting_model" } } },
+    });
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/2/1",
+        name: "WORK",
+        title: "WORK (session:///helper)",
+        status: "completed",
+        _meta: { plurnk: { op: "WORK", status: 200, turnSeq: 2, attrs: { session: "session:///helper" } } },
+    });
+    assert.equal(presenter.activeLiveEntries.length, 2);
+    const stripText = stripVTControlCharacters(
+        renderActiveLiveLine(presenter.activeLiveEntries, 80, Date.now() + 5_000),
+    );
+    assert.match(stripText, /^⚙️ {2}sh \(sh:\/\/\/1\/1\/2\/sh\) \S+ · 🐜 WORK \(session:\/\/\/helper\) \S+$/u);
+
+    // Concluding the stream and worker removes them from activeLiveEntries
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "1/1/2",
+        name: "sh",
+        status: "completed",
+        _meta: { plurnk: { id: 42, op: "sh", status: 200, attrs: { stream: "sh:///1/1/2/sh" } } },
+    });
+    presenter.apply({
+        sessionUpdate: "subagent_update",
+        sessionId: "1#helper",
+        title: "helper",
+        state: { state: "idle", stopReason: "end_turn" },
+    });
+    assert.equal(presenter.activeLiveEntries.length, 0);
 
     // extractPromptHistory bounds user prompts to maxEntries without letting tool calls evict them
     const session = new AcpSession("1#user");

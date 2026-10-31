@@ -17,14 +17,9 @@ client.
 - `plurnk` is a readline-style, main-buffer interaction built on pi-tui's
   main-screen renderer and multiline editor. It preserves normal terminal
   scrollback rather than taking over the alternate screen.
-- Provider reasoning streams into the reasoning scroll: a live region between the
-  transcript and the composer, at most a third of the terminal tall, that shows the
-  newest lines and overwrites itself as the reasoning grows. It retires when the
-  turn settles and never enters the transcript; immutable history keeps every
-  turn's reasoning at `reasoning://<session>/L/T` for a READ, so a model with a fat reasoning
-  habit costs a third of the screen, not the session.
+- Provider reasoning streams into a 3-line rolling ticker between the transcript and the composer: it advances in whole line chunks (pushing previous lines up as each line completes, with `💭 ` on the first visible line and 3-space indent on lines 2–3), retires when the turn settles, and never enters the transcript; immutable history keeps every turn's reasoning at `reasoning://<session>/L/T` for a READ.
 - Prompts, command verbs, and raw DSL use the same ACP v2 session and action transport (Streamable HTTP by default, WebSocket when `PLURNK_ACP_URL` selects `ws://` or `wss://`).
-- **Pinned Chrome Budget**: Main-screen layout stacks five `pi-tui` containers in order: scrollable `#transcript`, transient `#live` reasoning (`TailText` bounded to $\le \max(3, \lfloor\text{rows}/3\rfloor)$ lines and cleared to zero height when idle), active `#turn` responses, `#input` composer or inline review (`Editor` / `SelectList`), and the single-line muted `#status` footer. Pinned chrome below `#transcript` never exceeds the live reasoning third plus the composer/review and one status line, preserving native terminal scrollback.
+- **Pinned Chrome Budget**: Main-screen layout stacks five `pi-tui` containers in order: scrollable `#transcript`, transient `#live` (`TailText` reserving 3 rolling reasoning lines plus 1 active streams/workers strip `<glyph> <op> (<target>) <elapsed> · ...` directly above the composer while a loop is active, and collapsing to zero height when idle), active `#turn` responses, `#input` composer or inline review (`Editor` / `SelectList`), and the single-line muted `#status` footer. Pinned chrome below `#transcript` never exceeds the 3-line reasoning ticker, 1-line active strip, composer/review, and one status line, preserving native terminal scrollback.
 
 ## Rendering
 

@@ -247,3 +247,33 @@ export const NO_PREVIEW_VERBS = new Set([
 ]);
 
 export const SCRIPT_RUNTIMES = new Set(["sh", "js", "python3", "py"]);
+
+export const WORKER_OPS = new Set(["WORK", "FORK", "BARE"]);
+
+export const formatActiveOperationLead = (op: string): string => {
+    const glyph = OPERATION_GLYPH_MAP[op];
+    if (glyph !== undefined) {
+        const sep = glyph.endsWith("\uFE0F") ? "  " : " ";
+        return `${glyph}${sep}${op}`;
+    }
+    return operationGlyphFor(op);
+};
+
+export const normalizeWorkerKey = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) return "worker";
+    if (trimmed.startsWith("session://")) {
+        const withoutScheme = trimmed.replace(/^session:\/\/\/?/u, "");
+        const withoutCoord = withoutScheme.includes("#")
+            ? withoutScheme.slice(0, withoutScheme.indexOf("#"))
+            : withoutScheme;
+        const clean = withoutCoord.replace(/^[~/]+/u, "").replace(/\/+$/u, "");
+        return clean.length > 0 ? clean : "worker";
+    }
+    if (trimmed.includes("#")) {
+        const afterHash = trimmed.slice(trimmed.indexOf("#") + 1).replace(/^[~/]+/u, "");
+        return afterHash.length > 0 ? afterHash : trimmed;
+    }
+    const clean = trimmed.replace(/^[~/]+/u, "").replace(/\/+$/u, "");
+    return clean.length > 0 ? clean : trimmed;
+};

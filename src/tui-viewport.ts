@@ -113,9 +113,10 @@ export const runTuiViewport = async (
                     presenter.model = opt.currentValue.length > 0 ? opt.currentValue : "none";
                 }
                 if (Array.isArray(opt.options)) {
-                    cachedModels = opt.options
+                    const incoming = opt.options
                         .map((o) => String(o.value ?? ""))
                         .filter((v) => v.length > 0 && v !== "none");
+                    cachedModels = [...new Set([...incoming, ...cachedModels])];
                 }
             } else if (opt.configId === "thought_level") {
                 if (typeof opt.currentValue === "string") {

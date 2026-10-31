@@ -15,6 +15,7 @@ import { AcpSession } from "./acp-session.ts";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import Credential from "./credential.ts";
 import { extractPromptHistory } from "./repl-commands.ts";
+import { longestCommonPrefix, makeAutocompleteProvider } from "./tui-completion.ts";
 import TuiSurface from "./tui-surface.ts";
 import { altShortcut, backTabShortcut, runTuiViewport } from "./tui-viewport.ts";
 
@@ -1926,4 +1927,250 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-sessions-topology}: T
     }
     assert.deepEqual(extractPromptHistory(session, 3), ["Prompt 3", "Prompt 4", "Prompt 5"]);
 });
+
+test("{§cli-model-selection} {§cli-interactive-command-discovery}: makeAutocompleteProvider completes /models, /model, /child by longest common prefix and /model <selector> <effort> slot 3 (#237)", async () => {
+    assert.equal(longestCommonPrefix([]), "");
+    assert.equal(longestCommonPrefix(["anthropic/claude-sonnet-4"]), "anthropic/claude-sonnet-4");
+    assert.equal(
+        longestCommonPrefix(["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"]),
+        "deepseek/deepseek-",
+    );
+    assert.equal(
+        longestCommonPrefix(["anthropic/claude-sonnet-4", "deepseek/deepseek-chat"]),
+        "",
+    );
+
+    const signal = new AbortController().signal;
+    const multiCatalog = [
+        "anthropic/claude-sonnet-4",
+        "deepseek/deepseek-chat",
+        "deepseek/deepseek-reasoner",
+    ];
+    let currentCatalog = multiCatalog;
+
+    const provider = makeAutocompleteProvider({
+        cwd: "/tmp",
+        getProjectRoot: () => "/tmp",
+        getModels: () => currentCatalog,
+        getProviderModels: async (prov) =>
+            prov === "openai" ? ["openai/gpt-4o-mini", "openai/gpt-4o-realtime"] : [],
+        getEfforts: () => ["low", "medium", "high"],
+        getPersonas: () => ["none", "architect", "archivist"],
+        getSessionNames: () => ["user", "worker-1", "worker-2"],
+        getWorkspaceNames: () => ["alpha", "beta"],
+    });
+
+    // 1. ["/models "] with multi-provider catalog -> LCP is "", lists all 3 models
+    const allOpen = await provider.getSuggestions(["/models "], 0, 8, { signal, force: false });
+    assert.deepEqual(
+        allOpen?.items.map((i) => i.value),
+        multiCatalog,
+    );
+    assert.equal(allOpen?.prefix, "");
+
+    const allForced = await provider.getSuggestions(["/models "], 0, 8, { signal, force: true });
+    assert.deepEqual(
+        allForced?.items.map((i) => i.value),
+        multiCatalog,
+    );
+    assert.equal(allForced?.prefix, "");
+
+    // 2. ["/models "] with single-provider catalog + force: true -> single LCP item "deepseek/deepseek-"
+    currentCatalog = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
+    const singleProvForced = await provider.getSuggestions(["/models "], 0, 8, { signal, force: true });
+    assert.deepEqual(
+        singleProvForced?.items.map((i) => i.value),
+        ["deepseek/deepseek-"],
+    );
+    assert.equal(singleProvForced?.prefix, "");
+    currentCatalog = multiCatalog;
+
+    // 3. ["/models dee"] -> force: true returns single LCP item "deepseek/deepseek-";
+    //    force: false returns both candidates with lcp attached to items[0]
+    const deeForced = await provider.getSuggestions(["/models dee"], 0, 11, { signal, force: true });
+    assert.deepEqual(
+        deeForced?.items.map((i) => i.value),
+        ["deepseek/deepseek-"],
+    );
+    assert.equal(deeForced?.prefix, "dee");
+
+    const deeRegular = await provider.getSuggestions(["/models dee"], 0, 11, { signal, force: false });
+    assert.deepEqual(
+        deeRegular?.items.map((i) => i.value),
+        ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"],
+    );
+    assert.equal(deeRegular?.prefix, "dee");
+    // Applying items[0] while at "dee" extends to the LCP ("deepseek/deepseek-")
+    assert.deepEqual(
+        provider.applyCompletion(["/models dee"], 0, 11, deeRegular!.items[0]!, deeRegular!.prefix),
+        { lines: ["/models deepseek/deepseek-"], cursorLine: 0, cursorCol: 26 },
+    );
+    // Applying items[1] (user arrowed down) completes the full candidate directly
+    assert.deepEqual(
+        provider.applyCompletion(["/models dee"], 0, 11, deeRegular!.items[1]!, deeRegular!.prefix),
+        { lines: ["/models deepseek/deepseek-reasoner"], cursorLine: 0, cursorCol: 34 },
+    );
+
+    // 4. ["/models deepseek/deepseek-"] -> already at LCP, returns both candidates without lcp override
+    const atLcpForced = await provider.getSuggestions(["/models deepseek/deepseek-"], 0, 26, {
+        signal,
+        force: true,
+    });
+    assert.deepEqual(
+        atLcpForced?.items.map((i) => i.value),
+        ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"],
+    );
+    assert.equal(atLcpForced?.prefix, "deepseek/deepseek-");
+    assert.deepEqual(
+        provider.applyCompletion(
+            ["/models deepseek/deepseek-"],
+            0,
+            26,
+            atLcpForced!.items[0]!,
+            atLcpForced!.prefix,
+        ),
+        { lines: ["/models deepseek/deepseek-chat"], cursorLine: 0, cursorCol: 30 },
+    );
+
+    // 5. ["/models deepseek/deepseek-r"] -> single match "deepseek/deepseek-reasoner"
+    const singleHit = await provider.getSuggestions(["/models deepseek/deepseek-r"], 0, 27, {
+        signal,
+        force: true,
+    });
+    assert.deepEqual(
+        singleHit?.items.map((i) => i.value),
+        ["deepseek/deepseek-reasoner"],
+    );
+    assert.equal(singleHit?.prefix, "deepseek/deepseek-r");
+
+    // 6. ["/models ant"] -> single match "anthropic/claude-sonnet-4"
+    const antHit = await provider.getSuggestions(["/models ant"], 0, 11, { signal, force: true });
+    assert.deepEqual(
+        antHit?.items.map((i) => i.value),
+        ["anthropic/claude-sonnet-4"],
+    );
+    assert.equal(antHit?.prefix, "ant");
+
+    // 7. ["/models zzz"] -> null
+    const noHit = await provider.getSuggestions(["/models zzz"], 0, 11, { signal, force: true });
+    assert.equal(noHit, null);
+
+    // 8. ["/model dee"] & ["/child "] & lazy provider catalog ["/models openai/gp"]
+    const modelDee = await provider.getSuggestions(["/model dee"], 0, 10, { signal, force: true });
+    assert.deepEqual(
+        modelDee?.items.map((i) => i.value),
+        ["deepseek/deepseek-"],
+    );
+    assert.equal(modelDee?.prefix, "dee");
+
+    const childOpen = await provider.getSuggestions(["/child "], 0, 7, { signal, force: false });
+    assert.deepEqual(
+        childOpen?.items.map((i) => i.value),
+        ["inherit", ...multiCatalog],
+    );
+
+    const lazyProviderLcp = await provider.getSuggestions(["/models openai/gp"], 0, 17, {
+        signal,
+        force: true,
+    });
+    assert.deepEqual(
+        lazyProviderLcp?.items.map((i) => i.value),
+        ["openai/gpt-4o-"],
+    );
+    assert.equal(lazyProviderLcp?.prefix, "openai/gp");
+
+    // 9. ["/model deepseek/deepseek-reasoner "] and ["/model deepseek/deepseek-reasoner h"] (slot 3 effort)
+    const modelEffortOpen = await provider.getSuggestions(
+        ["/model deepseek/deepseek-reasoner "],
+        0,
+        34,
+        { signal, force: false },
+    );
+    assert.deepEqual(
+        modelEffortOpen?.items.map((i) => i.value),
+        ["low", "medium", "high"],
+    );
+    assert.equal(modelEffortOpen?.prefix, "");
+
+    const modelEffortForced = await provider.getSuggestions(
+        ["/model deepseek/deepseek-reasoner h"],
+        0,
+        35,
+        { signal, force: true },
+    );
+    assert.deepEqual(
+        modelEffortForced?.items.map((i) => i.value),
+        ["high"],
+    );
+    assert.equal(modelEffortForced?.prefix, "h");
+
+    // 10. End-to-end keystroke walk-through on TuiSurface.editor:
+    //     Type "/models dee" -> Tab extends to "/models deepseek/deepseek-" -> type "r" -> Tab completes "/models deepseek/deepseek-reasoner"
+    let onTermInput = null as ((data: string) => void) | null;
+    const fakeTerm: Terminal = {
+        columns: 100,
+        rows: 24,
+        kittyProtocolActive: false,
+        start(cb: (data: string) => void) {
+            onTermInput = cb;
+        },
+        stop() {},
+        async drainInput() {},
+        write() {},
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle() {},
+        setProgress() {},
+        setProgramStatus() {},
+    };
+    const surface = new TuiSurface(fakeTerm);
+    surface.setAutocompleteProvider(provider);
+    surface.start();
+    try {
+        assert.ok(onTermInput !== null);
+        for (const ch of "/models dee") {
+            onTermInput!(ch);
+            await new Promise((r) => setTimeout(r, 5));
+        }
+        assert.equal(surface.editor.getText(), "/models dee");
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(surface.editor.getText(), "/models deepseek/deepseek-");
+
+        onTermInput!("r");
+        await new Promise((r) => setTimeout(r, 5));
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(surface.editor.getText(), "/models deepseek/deepseek-reasoner");
+
+        // Now test /model dee -> Tab (LCP) -> Tab (opens 2-item popup) -> Tab (selects first item) -> " h" -> Tab (effort)
+        surface.setInput("");
+        for (const ch of "/model dee") {
+            onTermInput!(ch);
+            await new Promise((r) => setTimeout(r, 5));
+        }
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(surface.editor.getText(), "/model deepseek/deepseek-");
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 5));
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(surface.editor.getText(), "/model deepseek/deepseek-chat");
+        for (const ch of " h") {
+            onTermInput!(ch);
+            await new Promise((r) => setTimeout(r, 5));
+        }
+        onTermInput!("\t");
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(surface.editor.getText(), "/model deepseek/deepseek-chat high");
+    } finally {
+        surface.stop();
+    }
+});
+
 

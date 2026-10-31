@@ -89,7 +89,55 @@ export const completeAddressPath = async (
 export interface CompletionSuggestion {
     readonly value: string;
     readonly description: string;
+    readonly lcp?: string;
 }
+
+interface LcpAutocompleteItem extends AutocompleteItem {
+    readonly lcp?: string;
+}
+
+export interface AutocompleteQueryOptions {
+    readonly signal?: AbortSignal;
+    readonly force?: boolean;
+}
+
+export const longestCommonPrefix = (strings: readonly string[]): string => {
+    if (strings.length === 0) return "";
+    let prefix = strings[0]!;
+    for (let i = 1; i < strings.length && prefix.length > 0; i += 1) {
+        const s = strings[i]!;
+        const limit = Math.min(prefix.length, s.length);
+        let j = 0;
+        while (j < limit && prefix.charCodeAt(j) === s.charCodeAt(j)) j += 1;
+        prefix = prefix.slice(0, j);
+    }
+    return prefix;
+};
+
+const namespace = (
+    candidates: readonly string[],
+    frag: string,
+    describe: (value: string) => string,
+    options?: AutocompleteQueryOptions,
+): { suggestions: CompletionSuggestion[]; prefix: string } => {
+    const hits = candidates.filter((c) => c.startsWith(frag));
+    const lcp = longestCommonPrefix(hits);
+    const hasStrictLcp = hits.length > 1 && lcp.length > frag.length;
+    if (options?.force && hasStrictLcp) {
+        return {
+            suggestions: [{ value: lcp, description: describe(lcp), lcp }],
+            prefix: frag,
+        };
+    }
+    return {
+        suggestions: hits.map((value, idx) => ({
+            value,
+            description: describe(value),
+            ...(idx === 0 && hasStrictLcp && value !== lcp ? { lcp } : {}),
+        })),
+        prefix: frag,
+    };
+};
 
 export interface CompletionContext {
     readonly cwd: string;
@@ -116,6 +164,7 @@ const FAMILY_SUBCOMMANDS = [
 export const completeInput = async (
     line: string,
     ctx: CompletionContext,
+    options?: AutocompleteQueryOptions,
 ): Promise<{ suggestions: CompletionSuggestion[]; prefix: string }> => {
     const rootMatch = /^\/(\w*)$/u.exec(line);
     if (rootMatch !== null) {
@@ -135,11 +184,15 @@ export const completeInput = async (
     const helpMatch = /^\/help\s+(\w*)$/u.exec(line);
     if (helpMatch !== null) {
         const typed = helpMatch[1]!.toLowerCase();
-        const commands = INTERACTIVE_COMMANDS.map((c) => {
-            const name = c.usage.split(/\s+/u)[0]!.slice(1);
-            return { value: name, description: c.summary };
-        }).filter((c) => c.value.startsWith(typed));
-        return { suggestions: commands, prefix: helpMatch[1]! };
+        const summaryByVerb = new Map(
+            INTERACTIVE_COMMANDS.map((c) => [c.usage.split(/\s+/u)[0]!.slice(1), c.summary]),
+        );
+        return namespace(
+            [...summaryByVerb.keys()],
+            typed,
+            (value) => summaryByVerb.get(value) ?? "command",
+            options,
+        );
     }
 
     const familyMatch = /^\/(mcp|skills|members|env|schedule)\s+(\w*)$/u.exec(line);
@@ -149,49 +202,44 @@ export const completeInput = async (
             familyMatch[1] === "env"
                 ? [...FAMILY_SUBCOMMANDS, { value: "import", description: "Import dotenv file" }]
                 : FAMILY_SUBCOMMANDS;
-        return {
-            suggestions: subs.filter((s) => s.value.startsWith(typed)),
-            prefix: familyMatch[2]!,
-        };
+        const summaryBySub = new Map(subs.map((s) => [s.value, s.description]));
+        return namespace(
+            subs.map((s) => s.value),
+            typed,
+            (value) => summaryBySub.get(value) ?? "subcommand",
+            options,
+        );
     }
 
     const gateMatch = /^\/(approve|accept|reject|cancel|edit|answer)\s+@?([0-9a-f]*)$/iu.exec(line);
     if (gateMatch !== null) {
         const typed = gateMatch[2]!.toLowerCase();
         const ids = ctx.getPendingGateIds?.() ?? [];
-        return {
-            suggestions: ids
-                .filter((id) => id.startsWith(typed))
-                .map((id) => ({ value: `@${id}`, description: "pending gate" })),
-            prefix: line.slice(line.lastIndexOf(" ") + 1),
-        };
+        const tokenPrefix = line.slice(line.lastIndexOf(" ") + 1);
+        const res = namespace(
+            ids.filter((id) => id.startsWith(typed)).map((id) => `@${id}`),
+            `@${typed}`,
+            () => "pending gate",
+            options,
+        );
+        return { suggestions: res.suggestions, prefix: tokenPrefix };
     }
 
     const sessionMatch = /^\/session\s+(\S*)$/u.exec(line);
     if (sessionMatch !== null) {
         const frag = sessionMatch[1]!;
         const names = ctx.getSessionNames?.() ?? [];
-        return {
-            suggestions: names
-                .filter((n) => n.startsWith(frag))
-                .map((value) => ({ value, description: "session" })),
-            prefix: frag,
-        };
+        return namespace(names, frag, () => "session", options);
     }
 
     const workspaceMatch = /^\/workspace\s+(\S*)$/u.exec(line);
     if (workspaceMatch !== null) {
         const frag = workspaceMatch[1]!;
         const names = ctx.getWorkspaceNames?.() ?? [];
-        return {
-            suggestions: names
-                .filter((n) => n.startsWith(frag))
-                .map((value) => ({ value, description: "workspace" })),
-            prefix: frag,
-        };
+        return namespace(names, frag, () => "workspace", options);
     }
 
-    const modelMatch = /^\/(model|child)\s+(\S*)$/u.exec(line);
+    const modelMatch = /^\/(model|models|child)\s+(\S*)$/u.exec(line);
     if (modelMatch !== null) {
         const frag = modelMatch[2]!;
         const slashIdx = frag.indexOf("/");
@@ -200,70 +248,55 @@ export const completeInput = async (
             const providerModels = await ctx.getProviderModels(provider);
             const models = ctx.getModels?.() ?? [];
             const merged = [...new Set([...models, ...providerModels])];
-            return {
-                suggestions: merged
-                    .filter((m) => m.startsWith(frag))
-                    .map((value) => ({ value, description: "model" })),
-                prefix: frag,
-            };
+            return namespace(merged, frag, () => "model", options);
         }
         const models = ctx.getModels?.() ?? [];
         const candidates =
             modelMatch[1] === "child" ? ["inherit", ...models.filter((m) => m !== "inherit")] : models;
-        return {
-            suggestions: candidates
-                .filter((m) => m.startsWith(frag))
-                .map((value) => ({
-                    value,
-                    description: value === "inherit" ? "inherit parent route" : "model",
-                })),
-            prefix: frag,
-        };
+        return namespace(
+            candidates,
+            frag,
+            (value) => (value === "inherit" ? "inherit parent route" : "model"),
+            options,
+        );
+    }
+
+    const modelEffortMatch = /^\/model\s+(\S+)\s+(\S*)$/u.exec(line);
+    if (modelEffortMatch !== null) {
+        const effortFrag = modelEffortMatch[2]!;
+        const efforts = ctx.getEfforts?.() ?? [];
+        return namespace(efforts, effortFrag, () => "reasoning effort", options);
     }
 
     const effortMatch = /^\/effort\s+(\S*)$/u.exec(line);
     if (effortMatch !== null) {
         const frag = effortMatch[1]!;
         const efforts = ctx.getEfforts?.() ?? [];
-        return {
-            suggestions: efforts
-                .filter((e) => e.startsWith(frag))
-                .map((value) => ({ value, description: "reasoning effort" })),
-            prefix: frag,
-        };
+        return namespace(efforts, frag, () => "reasoning effort", options);
     }
 
     const personaMatch = /^\/persona\s+(\S*)$/u.exec(line);
     if (personaMatch !== null) {
         const frag = personaMatch[1]!;
         const personas = ctx.getPersonas?.() ?? ["none"];
-        return {
-            suggestions: personas
-                .filter((p) => p.startsWith(frag))
-                .map((value) => ({
-                    value,
-                    description: value === "none" ? "clear persona role" : "persona",
-                })),
-            prefix: frag,
-        };
+        return namespace(
+            personas,
+            frag,
+            (value) => (value === "none" ? "clear persona role" : "persona"),
+            options,
+        );
     }
 
     const op = dslOpPartial(line);
     if (op !== null) {
         const [values, prefix] = completeOps(op);
-        return {
-            suggestions: values.map((value) => ({ value, description: "Plurnk operation" })),
-            prefix,
-        };
+        return namespace(values, prefix, () => "Plurnk operation", options);
     }
 
     const partial = pathPartial(line);
     if (partial !== null) {
         const [values, prefix] = await completeAddressPath(partial, ctx.cwd, ctx.getProjectRoot());
-        return {
-            suggestions: values.map((value) => ({ value, description: "local path" })),
-            prefix,
-        };
+        return namespace(values, prefix, () => "local path", options);
     }
 
     return { suggestions: [], prefix: line };
@@ -271,19 +304,20 @@ export const completeInput = async (
 
 export const makeAutocompleteProvider = (ctx: CompletionContext): AutocompleteProvider => ({
     triggerCharacters: ["/", "@"],
-    getSuggestions: async (lines, cursorLine, cursorCol) => {
+    getSuggestions: async (lines, cursorLine, cursorCol, options) => {
         const beforeCursor = lines
             .slice(0, cursorLine)
             .concat(lines[cursorLine]?.slice(0, cursorCol) ?? "")
             .join("\n");
-        const { suggestions, prefix } = await completeInput(beforeCursor, ctx);
+        const { suggestions, prefix } = await completeInput(beforeCursor, ctx, options);
         if (suggestions.length === 0) return null;
         return {
             items: suggestions.map(
-                ({ value, description }): AutocompleteItem => ({
+                ({ value, description, lcp }): LcpAutocompleteItem => ({
                     value,
                     label: value,
                     description,
+                    ...(lcp !== undefined ? { lcp } : {}),
                 }),
             ),
             prefix,
@@ -294,7 +328,9 @@ export const makeAutocompleteProvider = (ctx: CompletionContext): AutocompletePr
         const before = current.slice(0, cursorCol);
         const after = current.slice(cursorCol);
         const replaceFrom = Math.max(0, before.length - prefix.length);
-        const completed = `${before.slice(0, replaceFrom)}${item.value}`;
+        const lcp = (item as LcpAutocompleteItem).lcp;
+        const applied = typeof lcp === "string" && lcp.length > prefix.length ? lcp : item.value;
+        const completed = `${before.slice(0, replaceFrom)}${applied}`;
         const next = [...lines];
         next[cursorLine] = completed + after;
         return { lines: next, cursorLine, cursorCol: completed.length };

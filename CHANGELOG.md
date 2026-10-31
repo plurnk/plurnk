@@ -1,5 +1,12 @@
 # @plurnk/plurnk
 
+## 5.0.3
+
+- Anchor TUI tool-call entries at their launch coordinate across mid-turn message chunks and preserve reply summaries when turn completion precedes the final reply chunk (#231).
+- Enforce watched dependency freshness (`deps-policy.json`) and ACP v2 unstable surface exhaustiveness (#232).
+- Deduplicate session replay materialization, preserve untruncated prompt history on `↑`/`↓`, classify transport disconnects and typed `PlurnkActionMap` keybindings, and retire `selectConfirm` on `pi-tui` `1.4.0` (#233).
+- Render provider-only `/models` tables (`selector | name | context | efforts | readiness`), complete `/model <selector>` from the ready model catalog, suppress duplicate initial configuration notices on session open, and surface only actionable loop/gate indicators in the status bar (#234).
+
 ## 5.0.2
 
 - Render `WAIT` operations, retain streamed receipt headers on `output_rx`, replay `/sessions <id>` loops in chronological order, preserve active status-bar lifecycle glyphs (`⏳`/`⏸`/`🛑`) alongside notices, preserve aggregate session spend across `499`/`202` parked turns and `/sessions <id>` resume, and retire live reasoning (`💭`) at every turn boundary (https://repo.possumtech.com/plurnk/plurnk-service/issues/1356).

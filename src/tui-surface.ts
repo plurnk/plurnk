@@ -47,6 +47,7 @@ import {
     formatLoopMetrics,
     markdownTheme,
     previewLines,
+    renderActiveLiveLine,
     renderLoopSummary,
     renderMarkdownDocument,
     renderMermaid,
@@ -75,6 +76,7 @@ export {
     ModelText,
     paint,
     previewLines,
+    renderActiveLiveLine,
     renderLoopSummary,
     renderMarkdownDocument,
     renderMermaid,
@@ -173,12 +175,14 @@ class TranscriptSlot implements Component {
     }
 }
 
-// Live reasoning scroll: at most a third of the terminal, newest lines only, never durable ({§cli-markdown-projection}).
+// Live reasoning ticker (at most 3 rolling lines) plus 1 active streams/workers strip above the composer ({§cli-markdown-projection}, {§cli-rendering}).
 export class TailText implements Component {
     #text = "";
+    #activity = "";
+    #reserved = false;
     readonly #maxLines: () => number;
 
-    constructor(maxLines: () => number) {
+    constructor(maxLines: () => number = () => 3) {
         this.#maxLines = maxLines;
     }
 
@@ -186,20 +190,55 @@ export class TailText implements Component {
         return this.#text.length > 0;
     }
 
+    get hasActivity(): boolean {
+        return this.#activity.length > 0;
+    }
+
+    get reserved(): boolean {
+        return this.#reserved;
+    }
+
     setText(text: string): void {
         this.#text = text;
+    }
+
+    setActivity(activity: string): void {
+        this.#activity = activity;
+    }
+
+    setReserved(reserved: boolean): void {
+        this.#reserved = reserved;
     }
 
     invalidate(): void {}
 
     render(width: number): string[] {
-        if (this.#text.length === 0) return [];
-        const lines = this.#text
-            .replace(/\t/gu, "   ")
-            .split("\n")
-            .flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width)));
+        const safeWidth = Math.max(1, width);
         const max = Math.max(1, this.#maxLines());
-        return lines.length <= max ? lines : lines.slice(lines.length - max);
+        let reasoningLines: string[] = [];
+        if (this.#text.length > 0) {
+            const rawLines = this.#text.replace(/\t/gu, "   ").split("\n");
+            const tailRaw = rawLines.length <= max ? rawLines : rawLines.slice(rawLines.length - max);
+            const lines = tailRaw.flatMap((line) => wrapTextWithAnsi(line, safeWidth));
+            reasoningLines = lines.length <= max ? lines : lines.slice(lines.length - max);
+        }
+        let activityLine = "";
+        if (this.#activity.length > 0) {
+            const activityLines = wrapTextWithAnsi(this.#activity.replace(/\t/gu, "   "), safeWidth);
+            activityLine = activityLines[0] ?? "";
+        }
+        if (this.#reserved) {
+            const paddedReasoning = [
+                ...reasoningLines,
+                ...Array.from({ length: Math.max(0, max - reasoningLines.length) }, () => ""),
+            ];
+            return [...paddedReasoning, activityLine];
+        }
+        const out: string[] = [...reasoningLines];
+        if (activityLine.length > 0) {
+            out.push(activityLine);
+        }
+        return out;
     }
 }
 
@@ -207,7 +246,7 @@ export default class TuiSurface {
     readonly #terminal: Terminal;
     readonly #tui: TuiMainScreen;
     readonly #transcript = new Container();
-    readonly #live = new TailText(() => Math.max(3, Math.floor(this.#terminal.rows / 3)));
+    readonly #live = new TailText(() => 3);
     readonly #turn = new Container();
     #turnResponses: Array<{ text: string; coordinate: CoordinateTuple | null }> = [];
     #slotEpoch = 0;
@@ -557,23 +596,19 @@ export default class TuiSurface {
     }
 
     setLive(text: string | null): void {
-        if (text === null && this.#live.hasText && this.#started) {
-            try {
-                this.#tui.renderNow();
-            } catch {
-                // ignore intermediate flush errors
-            }
-        }
         this.#live.setText(text ?? "");
-        if (text !== null && this.#started) {
-            try {
-                this.#tui.renderNow();
-            } catch {
-                this.#tui.requestRender();
-            }
-        } else {
-            this.#tui.requestRender();
-        }
+        this.#tui.requestRender();
+    }
+
+    setLiveActivity(text: string | null): void {
+        this.#live.setActivity(text ?? "");
+        this.#tui.requestRender();
+    }
+
+    setLoopActive(active: boolean): void {
+        if (this.#live.reserved === active) return;
+        this.#live.setReserved(active);
+        this.#tui.requestRender();
     }
 
     setStatus(text: string): void {

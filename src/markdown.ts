@@ -6,6 +6,8 @@ import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { renderMermaidASCII } from "beautiful-mermaid";
 import stringWidth from "string-width";
 import { ModelText, paint } from "./color.ts";
+import { formatActiveOperationLead, formatDuration } from "./presenter-formatters.ts";
+import type { ActiveLiveEntry } from "./session-presenter.ts";
 
 export const markdownTheme: MarkdownTheme = {
     heading: (text) => paint(text, "bold"),
@@ -52,12 +54,13 @@ export const renderMarkdownDocument = (markdown: string, width: number = 80): st
     return lines.join("\n").replace(/\n+$/u, "");
 };
 
-// {§cli-markdown-projection} — Live 1/3-screen reasoning formatting with 💭 lead and 3-space indent.
+// {§cli-markdown-projection} — Live 3-line rolling reasoning formatting with 💭 lead and 3-space indent.
 export const renderReasoning = (content: string): string => {
     const clean = ModelText.plain(content).replace(/\r\n/gu, "\n").replace(/\n$/u, "");
     if (clean.length === 0) return "";
-    return clean
-        .split("\n")
+    const allLines = clean.split("\n");
+    const visible = allLines.length <= 3 ? allLines : allLines.slice(allLines.length - 3);
+    return visible
         .map((line, i) => paint(`${i === 0 ? "💭 " : "   "}${line}`, "dim"))
         .join("\n");
 };
@@ -299,4 +302,46 @@ export const renderLoopSummary = (opts: {
                 ? "⏸️ paused at turn limit"
                 : "❌ failed";
     return paint(`${state} · ${formatLoopMetrics(opts)}`, "dim");
+};
+
+// {§cli-rendering}, {§cli-session-status} — Single-line active streams and workers strip above the composer.
+export const renderActiveLiveLine = (
+    entries: readonly ActiveLiveEntry[],
+    columns: number = 80,
+    now: number = Date.now(),
+): string => {
+    if (entries.length === 0) return "";
+    const maxCols = Math.max(20, columns);
+    const formatted = entries.map((entry) => {
+        const lead = formatActiveOperationLead(entry.op);
+        const target = ModelText.plain(entry.target);
+        const elapsed = formatDuration(Math.max(1, now - entry.startedAt));
+        return `${lead} (${target}) ${elapsed}`;
+    });
+    const joined = formatted.join(" · ");
+    if (stringWidth(joined) <= maxCols) {
+        return paint(joined, "dim");
+    }
+    const fit: string[] = [];
+    for (let i = 0; i < formatted.length; i += 1) {
+        const remaining = formatted.length - (i + 1);
+        const suffix = remaining > 0 ? ` · +${String(remaining)} more` : "";
+        const candidate = [...fit, formatted[i]!].join(" · ") + suffix;
+        if (stringWidth(candidate) <= maxCols) {
+            fit.push(formatted[i]!);
+        } else {
+            if (fit.length === 0) {
+                return paint(truncateToColumns(formatted[i]!, maxCols), "dim");
+            }
+            const overflowSuffix = ` · +${String(formatted.length - fit.length)} more`;
+            const withOverflow = fit.join(" · ") + overflowSuffix;
+            return paint(
+                stringWidth(withOverflow) <= maxCols
+                    ? withOverflow
+                    : truncateToColumns(fit.join(" · "), maxCols),
+                "dim",
+            );
+        }
+    }
+    return paint(truncateToColumns(fit.join(" · "), maxCols), "dim");
 };

@@ -13,7 +13,8 @@ import type {
     ToolCallLocation,
     ToolCallStatus,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
-import { matchesKey, type Terminal } from "@earendil-works/pi-tui";
+import { matchesKey, wrapTextWithAnsi, type Terminal } from "@earendil-works/pi-tui";
+import stringWidth from "string-width";
 import type { CliCommonOptions } from "./cli-runner.ts";
 import { runReplSession, type ClientStreams } from "./repl-session.ts";
 import { formatModelRoute, SessionPresenter, type PresentationFrame } from "./session-presenter.ts";
@@ -27,6 +28,7 @@ import TuiSurface, {
     formatLoopMetrics,
     ModelText,
     paint,
+    renderActiveLiveLine,
     renderLoopSummary,
     renderModelReply,
     renderNoteBlock,
@@ -137,8 +139,10 @@ export const runTuiViewport = async (
             }
         }
     };
-    let liveReasoningBuffer = "";
+    const liveReasoningLines: string[] = [];
+    let liveReasoningPending = "";
     let liveReasoningTurnEnded = false;
+    let liveReasoningFlushTimer: ReturnType<typeof setTimeout> | null = null;
     let currentTurns = 0;
     const focusedGateIds: string[] = [];
     const suppressedStdoutQueue: string[] = [];
@@ -180,6 +184,14 @@ export const runTuiViewport = async (
 
     const updateSurfaceStatus = (): void => {
         if (surface === null) return;
+        const isLoopActive =
+            presenter.lifecycle === "running" ||
+            presenter.lifecycle === "queued" ||
+            presenter.lifecycle === "parked" ||
+            presenter.lifecycle === "requires_action";
+        surface.setLoopActive(isLoopActive);
+        const activeLine = renderActiveLiveLine(presenter.activeLiveEntries, surface.columns);
+        surface.setLiveActivity(activeLine.length > 0 ? activeLine : null);
         const loopNum = presenter.loopSeq ?? 1;
         const turns = presenter.turns > 0 ? presenter.turns : currentTurns;
         const place =
@@ -249,7 +261,11 @@ export const runTuiViewport = async (
     const statusTicker =
         surface !== null
             ? setInterval(() => {
-                  if (presenter.lifecycle === "running" || presenter.lifecycle === "parked") {
+                  if (
+                      presenter.lifecycle === "running" ||
+                      presenter.lifecycle === "parked" ||
+                      presenter.activeLiveEntries.length > 0
+                  ) {
                       presenter.buildStatusBar();
                       updateSurfaceStatus();
                   }
@@ -427,8 +443,29 @@ export const runTuiViewport = async (
         };
     }
 
+    const clearReasoningFlushTimer = (): void => {
+        if (liveReasoningFlushTimer !== null) {
+            clearTimeout(liveReasoningFlushTimer);
+            liveReasoningFlushTimer = null;
+        }
+    };
+
+    const flushReasoningToSurface = (includePending: boolean): void => {
+        if (surface === null) return;
+        const trailing = includePending ? liveReasoningPending.trimEnd() : "";
+        const lines =
+            trailing.length > 0
+                ? [...liveReasoningLines, trailing].slice(-3)
+                : liveReasoningLines.slice(-3);
+        if (lines.length === 0) return;
+        const rendered = renderReasoning(lines.join("\n"));
+        surface.setLive(rendered.length > 0 ? rendered : null);
+    };
+
     const retireLiveReasoning = (): void => {
-        liveReasoningBuffer = "";
+        clearReasoningFlushTimer();
+        liveReasoningLines.length = 0;
+        liveReasoningPending = "";
         liveReasoningTurnEnded = false;
         surface?.setLive(null);
     };
@@ -530,15 +567,69 @@ export const runTuiViewport = async (
     replReasoning.on("data", (chunk: string) => {
         if (surface !== null) {
             if (liveReasoningTurnEnded) {
-                liveReasoningBuffer = "";
+                clearReasoningFlushTimer();
+                liveReasoningLines.length = 0;
+                liveReasoningPending = "";
                 liveReasoningTurnEnded = false;
             }
-            if (liveReasoningBuffer.length === 0 && chunk.trim().length === 0) {
+            const cleanChunk = ModelText.plain(chunk).replace(/\r\n/gu, "\n").replace(/\t/gu, "   ");
+            if (
+                liveReasoningLines.length === 0 &&
+                liveReasoningPending.length === 0 &&
+                cleanChunk.trim().length === 0
+            ) {
                 return;
             }
-            liveReasoningBuffer += chunk;
-            const rendered = renderReasoning(liveReasoningBuffer);
-            surface.setLive(rendered.length > 0 ? rendered : null);
+            liveReasoningPending += cleanChunk;
+            const maxLineCols = Math.max(20, surface.columns - 3);
+            let advanced = false;
+
+            const pushCompletedLine = (rawLine: string): void => {
+                const trimmedLine = rawLine.trimEnd();
+                if (trimmedLine.length === 0) return;
+                const wrapped = wrapTextWithAnsi(trimmedLine, maxLineCols);
+                for (const wLine of wrapped) {
+                    if (wLine.trim().length === 0) continue;
+                    liveReasoningLines.push(wLine);
+                    advanced = true;
+                }
+                if (liveReasoningLines.length > 3) {
+                    liveReasoningLines.splice(0, liveReasoningLines.length - 3);
+                }
+            };
+
+            if (liveReasoningPending.includes("\n")) {
+                const segments = liveReasoningPending.split("\n");
+                liveReasoningPending = segments.pop() ?? "";
+                for (const seg of segments) {
+                    pushCompletedLine(seg);
+                }
+            }
+            if (stringWidth(liveReasoningPending) > maxLineCols) {
+                const wrappedPending = wrapTextWithAnsi(liveReasoningPending, maxLineCols);
+                if (wrappedPending.length > 1) {
+                    liveReasoningPending = wrappedPending.pop() ?? "";
+                    for (const wLine of wrappedPending) {
+                        if (wLine.trim().length === 0) continue;
+                        liveReasoningLines.push(wLine);
+                        advanced = true;
+                    }
+                    if (liveReasoningLines.length > 3) {
+                        liveReasoningLines.splice(0, liveReasoningLines.length - 3);
+                    }
+                }
+            }
+
+            clearReasoningFlushTimer();
+            if (advanced) {
+                flushReasoningToSurface(false);
+            }
+            if (liveReasoningPending.trim().length > 0) {
+                liveReasoningFlushTimer = setTimeout(() => {
+                    liveReasoningFlushTimer = null;
+                    flushReasoningToSurface(true);
+                }, 40).unref();
+            }
             return;
         }
         const trimmed = chunk.replace(/\r?\n$/u, "");
@@ -578,7 +669,9 @@ export const runTuiViewport = async (
 
     const renderHistoryItemsToSurface = (items: readonly unknown[], addToEditorHistory: boolean): void => {
         if (surface === null) return;
-        for (const rawItem of items) {
+        presenter.setHistoryReplay(true);
+        try {
+            for (const rawItem of items) {
             if (typeof rawItem !== "object" || rawItem === null) continue;
             const rec = rawItem as Record<string, unknown>;
             if (rec.kind === "user_message" && typeof rec.text === "string" && rec.text.length > 0) {
@@ -678,6 +771,9 @@ export const runTuiViewport = async (
                     }),
                 );
             }
+        }
+        } finally {
+            presenter.setHistoryReplay(false);
         }
     };
 
@@ -905,7 +1001,11 @@ export const runTuiViewport = async (
             if (event.sessionUpdate === "config_option_update" && Array.isArray(event.configOptions)) {
                 applyConfigOptionsToCache(event.configOptions);
             }
-            if (event.sessionUpdate === "usage_update" || event.sessionUpdate === "config_option_update") {
+            if (
+                event.sessionUpdate === "usage_update" ||
+                event.sessionUpdate === "config_option_update" ||
+                event.sessionUpdate === "terminal_update"
+            ) {
                 presenter.buildStatusBar();
                 if (surface !== null) {
                     updateSurfaceStatus();
@@ -914,7 +1014,11 @@ export const runTuiViewport = async (
             for (const frame of frames) {
                 switch (frame.kind) {
                     case "reasoning_tail":
+                        break;
                     case "subagent":
+                        if (surface !== null) {
+                            updateSurfaceStatus();
+                        }
                         break;
                     case "reasoning_retired":
                         retireLiveReasoning();
@@ -1059,6 +1163,7 @@ export const runTuiViewport = async (
             },
         });
     } finally {
+        clearReasoningFlushTimer();
         if (statusTicker !== null) {
             clearInterval(statusTicker);
         }

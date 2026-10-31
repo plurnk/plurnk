@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk",
-    "version": "5.0.3",
+    "version": "5.0.4",
     "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive ACP client.",
     "type": "module",
     "license": "MIT",
@@ -70,7 +70,7 @@
         "string-width": "^8.3.0"
     },
     "optionalDependencies": {
-        "@plurnk/plurnk-service": "^5.0.3"
+        "@plurnk/plurnk-service": "^5.0.4"
     },
     "man": "./dist/posix/man/plurnk.1"
 }

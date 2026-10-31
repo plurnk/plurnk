@@ -1,5 +1,11 @@
 # @plurnk/plurnk
 
+## 5.0.4
+
+- Patch matched `messageId` receipt and message items in place across updates and chunks, bound `session_bound` prompt history by `PLURNK_CLIENT_HISTORY_ENTRIES`, and enforce the 5-container pinned TUI chrome budget (#236).
+- Complete `/models <prefix>` by longest common prefix on `Tab` while keeping the narrowed candidate popup open, and complete `/model <selector> <effort>` from the selected model's advertised effort levels (#237).
+- Fail with exit code `64` (`https://problems.plurnk.xyz/client/usage`) on unknown `plurnk config` option IDs or excess positional arguments, pointing daemon configuration subcommands to `plurnk-service config <subcommand>` (https://repo.possumtech.com/plurnk/plurnk-service/issues/1362).
+
 ## 5.0.3
 
 - Anchor TUI tool-call entries at their launch coordinate across mid-turn message chunks and preserve reply summaries when turn completion precedes the final reply chunk (#231).

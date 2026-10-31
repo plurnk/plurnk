@@ -335,7 +335,7 @@ export const openCliSession = async (
         incomingId === boundId ||
         (!boundId.includes("#") && incomingId.endsWith(`#${boundId}`));
 
-    client.onSessionUpdate((notification) => {
+    const offUpdate = client.onSessionUpdate((notification) => {
         if (session === null) {
             bufferedNotifications.push(notification);
             return;
@@ -344,62 +344,75 @@ export const openCliSession = async (
             session.applyUpdate(notification.update);
         }
     });
-
-    const plurnkMeta: Record<string, unknown> = {
-        create: true,
-        ...(options.workspace !== undefined ? { workspace: options.workspace } : {}),
-        ...(options.sessionId !== undefined ? { session: options.sessionId, name: options.sessionId } : {}),
-        ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-        ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
-    };
-
-    const systemPrompt =
-        options.systemPrompt !== undefined && options.systemPrompt.length > 0
-            ? {
-                  mode: "append" as const,
-                  content: [{ type: "text" as const, text: options.systemPrompt }],
-              }
-            : undefined;
-    const created = await client.newSession(options.cwd, {
-        ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-        _meta: { plurnk: plurnkMeta },
+    const offDisconnect = client.onDisconnect(() => {
+        session?.endActiveStream();
     });
-    session = new AcpSession(created.sessionId, {
-        configOptions: created.configOptions,
-        meta: (created._meta ?? undefined) as Record<string, unknown> | undefined,
-    });
-    if (replayHistory) {
-        const resumed = await client.resumeSession(created.sessionId, options.cwd, {
-            replayFrom: { type: "start" },
+
+    try {
+        const plurnkMeta: Record<string, unknown> = {
+            create: true,
+            ...(options.workspace !== undefined ? { workspace: options.workspace } : {}),
+            ...(options.sessionId !== undefined ? { session: options.sessionId, name: options.sessionId } : {}),
+            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
+            ...(options.workspaceSettings !== undefined ? { settings: options.workspaceSettings } : {}),
+        };
+
+        const systemPrompt =
+            options.systemPrompt !== undefined && options.systemPrompt.length > 0
+                ? {
+                      mode: "append" as const,
+                      content: [{ type: "text" as const, text: options.systemPrompt }],
+                  }
+                : undefined;
+        const created = await client.newSession(options.cwd, {
+            ...(systemPrompt !== undefined ? { systemPrompt } : {}),
             _meta: { plurnk: plurnkMeta },
         });
-        if (resumed.configOptions && resumed.configOptions.length > 0) {
-            session.configOptions = [...resumed.configOptions];
+        session = new AcpSession(created.sessionId, {
+            configOptions: created.configOptions,
+            meta: (created._meta ?? undefined) as Record<string, unknown> | undefined,
+        });
+        session.onDispose(() => {
+            offUpdate();
+            offDisconnect();
+        });
+        if (replayHistory) {
+            const resumed = await client.resumeSession(created.sessionId, options.cwd, {
+                replayFrom: { type: "start" },
+                _meta: { plurnk: plurnkMeta },
+            });
+            if (resumed.configOptions && resumed.configOptions.length > 0) {
+                session.configOptions = [...resumed.configOptions];
+            }
+            if (resumed._meta !== undefined && resumed._meta !== null) {
+                const prevPlurnk = (session.meta?.plurnk ?? {}) as Record<string, unknown>;
+                const nextPlurnk = ((resumed._meta as Record<string, unknown>).plurnk ?? {}) as Record<string, unknown>;
+                session.meta = {
+                    ...(session.meta ?? {}),
+                    ...(resumed._meta as Record<string, unknown>),
+                    plurnk: { ...prevPlurnk, ...nextPlurnk },
+                };
+            }
         }
-        if (resumed._meta !== undefined && resumed._meta !== null) {
-            const prevPlurnk = (session.meta?.plurnk ?? {}) as Record<string, unknown>;
-            const nextPlurnk = ((resumed._meta as Record<string, unknown>).plurnk ?? {}) as Record<string, unknown>;
-            session.meta = {
-                ...(session.meta ?? {}),
-                ...(resumed._meta as Record<string, unknown>),
-                plurnk: { ...prevPlurnk, ...nextPlurnk },
-            };
+
+        for (const notification of bufferedNotifications) {
+            if (matchesSession(notification.sessionId, session.sessionId)) {
+                session.applyUpdate(notification.update);
+            }
         }
-    }
+        bufferedNotifications.length = 0;
 
-    for (const notification of bufferedNotifications) {
-        if (matchesSession(notification.sessionId, session.sessionId)) {
-            session.applyUpdate(notification.update);
+        if (onLiveUpdate !== undefined) {
+            session.onUpdate(onLiveUpdate);
         }
-    }
-    bufferedNotifications.length = 0;
 
-    if (onLiveUpdate !== undefined) {
-        session.onUpdate(onLiveUpdate);
+        await applyInitialConfig(client, session, options);
+        return session;
+    } catch (err) {
+        offUpdate();
+        offDisconnect();
+        throw err;
     }
-
-    await applyInitialConfig(client, session, options);
-    return session;
 };
 
 export const runCliPrompt = async (

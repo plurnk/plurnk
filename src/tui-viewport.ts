@@ -340,7 +340,10 @@ export const runTuiViewport = async (
         surface.editor.onSubmit = (rawText: string) => {
             const trimmed = rawText.trim();
             if (trimmed.length === 0) return;
-            surface.editor.addToHistory(rawText);
+            surface.recordPrompt(rawText);
+            if (!trimmed.startsWith("/")) {
+                localSubmittedPrompts.push(rawText);
+            }
             surface.append("");
             surface.append(renderSubmittedInput(rawText));
             surface.append("");
@@ -509,6 +512,29 @@ export const runTuiViewport = async (
     const isSessionUpdatePayload = (value: Record<string, unknown>): value is SessionUpdate =>
         typeof value.sessionUpdate === "string";
 
+    const localSubmittedPrompts: string[] = [];
+    const consumeLocalSubmittedPrompt = (text: string): boolean => {
+        const trimmed = text.trim();
+        const idx = localSubmittedPrompts.findIndex((p) => p === text || p.trim() === trimmed);
+        if (idx < 0) return false;
+        localSubmittedPrompts.splice(idx, 1);
+        return true;
+    };
+
+    const extractUpdateText = (content: unknown): string => {
+        if (!content || typeof content !== "object") return "";
+        if (Array.isArray(content)) {
+            return content
+                .map((b) =>
+                    b && typeof b === "object" && typeof (b as { text?: unknown }).text === "string"
+                        ? (b as { text: string }).text
+                        : "",
+                )
+                .join("\n");
+        }
+        return typeof (content as { text?: unknown }).text === "string" ? (content as { text: string }).text : "";
+    };
+
     const renderHistoryItemsToSurface = (items: readonly unknown[], addToEditorHistory: boolean): void => {
         if (surface === null) return;
         for (const rawItem of items) {
@@ -533,7 +559,7 @@ export const runTuiViewport = async (
                     surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(rec.text)}`);
                 } else {
                     if (addToEditorHistory) {
-                        surface.editor.addToHistory(rec.text);
+                        surface.recordPrompt(rec.text);
                     }
                     surface.append("");
                     surface.append(renderSubmittedInput(rec.text));
@@ -707,6 +733,12 @@ export const runTuiViewport = async (
                     if (!wasStarted || presenter.workspaceName !== prevWorkspace || presenter.sessionName !== prevSession) {
                         presenter.resetSessionHistory();
                         surface.resetToolCallSlots();
+                        localSubmittedPrompts.length = 0;
+                    }
+                    if (Array.isArray(event.prompts)) {
+                        surface.recordPromptHistory(
+                            event.prompts.filter((p): p is string => typeof p === "string"),
+                        );
                     }
                     if (Array.isArray(event.history) && event.history.length > 0) {
                         renderHistoryItemsToSurface(event.history, true);
@@ -809,6 +841,44 @@ export const runTuiViewport = async (
             }
 
             if (!isSessionUpdatePayload(event)) continue;
+            if (
+                surface !== null &&
+                (event.sessionUpdate === "user_message_chunk" || event.sessionUpdate === "user_message")
+            ) {
+                const plurnkMeta = (
+                    event._meta as
+                        | {
+                              plurnk?: {
+                                  published?: boolean;
+                                  answering?: string;
+                                  source?: string;
+                                  op?: string;
+                              };
+                          }
+                        | undefined
+                )?.plurnk;
+                if (plurnkMeta?.published !== false) {
+                    const userText = extractUpdateText(event.content);
+                    if (userText.length > 0) {
+                        if (typeof plurnkMeta?.answering === "string") {
+                            if (plurnkMeta?.op === "SEND") {
+                                const sender =
+                                    typeof plurnkMeta.source === "string" && plurnkMeta.source.length > 0
+                                        ? plurnkMeta.source
+                                        : plurnkMeta.answering;
+                                surface.append(`🐜 ${ModelText.plain(sender)}: ${ModelText.plain(userText)}`);
+                            }
+                        } else {
+                            surface.recordPrompt(userText);
+                            if (plurnkMeta?.op === "SEND" && !consumeLocalSubmittedPrompt(userText)) {
+                                surface.append("");
+                                surface.append(renderSubmittedInput(userText));
+                                surface.append("");
+                            }
+                        }
+                    }
+                }
+            }
             if (
                 surface !== null &&
                 event.sessionUpdate === "tool_call_update" &&

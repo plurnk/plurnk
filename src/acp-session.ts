@@ -154,6 +154,7 @@ export class AcpSession {
     readonly subagents = new Map<string, AcpSubagentState>();
     #activeStreamMessage: AcpMessageItem | null = null;
     readonly #listeners = new Set<AcpSessionEventListener>();
+    readonly #disposeCallbacks = new Set<() => void>();
 
     constructor(
         sessionId: string,
@@ -178,6 +179,54 @@ export class AcpSession {
         };
     }
 
+    onDispose(cb: () => void): () => void {
+        this.#disposeCallbacks.add(cb);
+        return () => {
+            this.#disposeCallbacks.delete(cb);
+        };
+    }
+
+    dispose(): void {
+        this.#activeStreamMessage = null;
+        this.#listeners.clear();
+        for (const cb of [...this.#disposeCallbacks]) {
+            this.#disposeCallbacks.delete(cb);
+            cb();
+        }
+    }
+
+    endActiveStream(): void {
+        this.#activeStreamMessage = null;
+    }
+
+    #findMessageItem(
+        kind: AcpMessageItem["kind"],
+        id: string | undefined,
+        meta: MetaRecord | undefined,
+    ): AcpMessageItem | undefined {
+        const plurnk = (meta?.plurnk ?? undefined) as
+            | { id?: unknown; coordinate?: unknown }
+            | undefined;
+        const coord =
+            typeof plurnk?.coordinate === "string" && plurnk.coordinate.length > 0
+                ? plurnk.coordinate
+                : undefined;
+        const entryId = typeof plurnk?.id === "number" ? plurnk.id : undefined;
+        if (id === undefined && coord === undefined && entryId === undefined) {
+            return undefined;
+        }
+        for (const item of this.items) {
+            if (item.kind !== kind) continue;
+            if (id !== undefined && item.id === id) return item;
+            const itemPlurnk = (item.meta?.plurnk ?? undefined) as
+                | { id?: unknown; coordinate?: unknown }
+                | undefined;
+            if (coord !== undefined && itemPlurnk?.coordinate === coord) return item;
+            if (entryId !== undefined && itemPlurnk?.id === entryId) return item;
+        }
+        return undefined;
+    }
+
     applyNotification(notification: UpdateSessionNotification): void {
         if (notification.sessionId !== this.sessionId) return;
         this.applyUpdate(notification.update);
@@ -192,17 +241,46 @@ export class AcpSession {
             this.#activeStreamMessage = null;
             const blocks = [...(update.content ?? [])];
             const text = blocks.map(contentBlockToText).join("");
-            const id = "messageId" in update && typeof update.messageId === "string"
+            const id = "messageId" in update && typeof update.messageId === "string" && update.messageId.length > 0
                 ? update.messageId
                 : undefined;
-            const item: AcpMessageItem = {
-                kind: update.sessionUpdate,
-                ...(id !== undefined ? { id } : {}),
-                text,
-                blocks,
-                meta: patchMeta(undefined, update._meta),
-            };
-            this.items.push(item);
+            const incomingMeta = patchMeta(undefined, update._meta);
+            const existing = this.#findMessageItem(update.sessionUpdate, id, incomingMeta);
+            if (existing !== undefined) {
+                const incomingPlurnk = (incomingMeta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+                const existingPlurnk = (existing.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+                if (incomingPlurnk?.published === false && existingPlurnk?.published !== false) {
+                    return;
+                }
+                const wasUnpublished = existingPlurnk?.published === false && incomingPlurnk?.published !== false;
+                if (!wasUnpublished && existing.text.startsWith(text)) {
+                    existing.meta = patchMeta(existing.meta, update._meta);
+                    return;
+                }
+                if (wasUnpublished || text.startsWith(existing.text)) {
+                    existing.meta = patchMeta(existing.meta, update._meta);
+                    existing.text = text;
+                    existing.blocks = blocks;
+                } else {
+                    const item: AcpMessageItem = {
+                        kind: update.sessionUpdate,
+                        ...(id !== undefined ? { id } : {}),
+                        text,
+                        blocks,
+                        meta: incomingMeta,
+                    };
+                    this.items.push(item);
+                }
+            } else {
+                const item: AcpMessageItem = {
+                    kind: update.sessionUpdate,
+                    ...(id !== undefined ? { id } : {}),
+                    text,
+                    blocks,
+                    meta: incomingMeta,
+                };
+                this.items.push(item);
+            }
         } else if (
             SessionUpdate.isUserMessageChunk(update) ||
             SessionUpdate.isAgentThoughtChunk(update) ||
@@ -213,11 +291,26 @@ export class AcpSession {
                 : update.sessionUpdate === "agent_thought_chunk"
                     ? "agent_thought"
                     : "agent_message";
-            const chunkId = typeof update.messageId === "string" ? update.messageId : undefined;
+            const chunkId = typeof update.messageId === "string" && update.messageId.length > 0
+                ? update.messageId
+                : undefined;
             const chunkText = contentBlockToText(update.content);
+            const incomingMeta = patchMeta(undefined, update._meta);
+            const incomingPlurnk = (incomingMeta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
+            const activePlurnk = (this.#activeStreamMessage?.meta?.plurnk ?? undefined) as
+                | Record<string, unknown>
+                | undefined;
+            const isSameLogEntryAsActive =
+                this.#activeStreamMessage !== null &&
+                ((typeof incomingPlurnk?.id === "number" && incomingPlurnk.id === activePlurnk?.id) ||
+                    (typeof incomingPlurnk?.coordinate === "string" &&
+                        incomingPlurnk.coordinate.length > 0 &&
+                        incomingPlurnk.coordinate === activePlurnk?.coordinate));
+
             if (
                 this.#activeStreamMessage !== null &&
                 this.#activeStreamMessage.kind === targetKind &&
+                !isSameLogEntryAsActive &&
                 (chunkId === undefined ||
                     this.#activeStreamMessage.id === undefined ||
                     this.#activeStreamMessage.id === chunkId)
@@ -226,19 +319,56 @@ export class AcpSession {
                 this.#activeStreamMessage.blocks.push(update.content);
                 this.#activeStreamMessage.meta = patchMeta(this.#activeStreamMessage.meta, update._meta);
             } else {
-                const item: AcpMessageItem = {
-                    kind: targetKind,
-                    ...(chunkId !== undefined ? { id: chunkId } : {}),
-                    text: chunkText,
-                    blocks: [update.content],
-                    meta: patchMeta(undefined, update._meta),
-                };
-                this.#activeStreamMessage = item;
-                this.items.push(item);
+                const existing = this.#findMessageItem(targetKind, chunkId, incomingMeta);
+                if (existing !== undefined) {
+                    const existingPlurnk = (existing.meta?.plurnk ?? undefined) as
+                        | Record<string, unknown>
+                        | undefined;
+                    if (incomingPlurnk?.published === false && existingPlurnk?.published !== false) {
+                        return;
+                    }
+                    const wasUnpublished =
+                        existingPlurnk?.published === false && incomingPlurnk?.published !== false;
+                    if (!wasUnpublished && existing.text.startsWith(chunkText)) {
+                        existing.meta = patchMeta(existing.meta, update._meta);
+                        return;
+                    }
+                    if (wasUnpublished || chunkText.startsWith(existing.text)) {
+                        existing.meta = patchMeta(existing.meta, update._meta);
+                        existing.text = chunkText;
+                        existing.blocks = [update.content];
+                    } else {
+                        const item: AcpMessageItem = {
+                            kind: targetKind,
+                            ...(chunkId !== undefined ? { id: chunkId } : {}),
+                            text: chunkText,
+                            blocks: [update.content],
+                            meta: incomingMeta,
+                        };
+                        this.#activeStreamMessage = item;
+                        this.items.push(item);
+                    }
+                } else {
+                    const item: AcpMessageItem = {
+                        kind: targetKind,
+                        ...(chunkId !== undefined ? { id: chunkId } : {}),
+                        text: chunkText,
+                        blocks: [update.content],
+                        meta: incomingMeta,
+                    };
+                    this.#activeStreamMessage = item;
+                    this.items.push(item);
+                }
             }
         } else if (SessionUpdate.isToolCallUpdate(update)) {
             this.#activeStreamMessage = null;
             let tc = this.toolCalls.get(update.toolCallId);
+            const isNew = tc === undefined;
+            const prevStatus = tc?.status;
+            const prevHasOutput = tc?.rawOutput !== undefined;
+            const prevContentLen = tc?.content.length ?? 0;
+            const prevTitle = tc?.title;
+            const prevName = tc?.name;
             if (tc === undefined) {
                 tc = {
                     kind: "tool_call",
@@ -270,6 +400,17 @@ export class AcpSession {
             if (update.rawInput !== undefined) tc.rawInput = update.rawInput;
             if (update.rawOutput !== undefined) tc.rawOutput = update.rawOutput;
             tc.meta = patchMeta(tc.meta, update._meta);
+            if (
+                !isNew &&
+                (prevStatus === "completed" || prevStatus === "failed") &&
+                tc.status === prevStatus &&
+                tc.title === prevTitle &&
+                tc.name === prevName &&
+                (update.rawOutput === undefined || prevHasOutput) &&
+                tc.content.length === prevContentLen
+            ) {
+                return;
+            }
         } else if (SessionUpdate.isToolCallContentChunk(update)) {
             this.#activeStreamMessage = null;
             let tc = this.toolCalls.get(update.toolCallId);
@@ -287,6 +428,9 @@ export class AcpSession {
         } else if (SessionUpdate.isTerminalUpdate(update)) {
             this.#activeStreamMessage = null;
             let term = this.terminals.get(update.terminalId);
+            const isNew = term === undefined;
+            const prevOutput = term?.outputText ?? "";
+            const prevExitCode = term?.exitStatus?.exitCode;
             if (term === undefined) {
                 term = {
                     kind: "terminal",
@@ -305,6 +449,14 @@ export class AcpSession {
             }
             if (update.exitStatus !== undefined) term.exitStatus = update.exitStatus;
             term.meta = patchMeta(term.meta, update._meta);
+            if (
+                !isNew &&
+                term.outputText === prevOutput &&
+                term.exitStatus?.exitCode === prevExitCode &&
+                prevExitCode !== undefined
+            ) {
+                return;
+            }
         } else if (SessionUpdate.isTerminalOutputChunk(update)) {
             let term = this.terminals.get(update.terminalId);
             if (term === undefined) {
@@ -315,6 +467,8 @@ export class AcpSession {
                 };
                 this.terminals.set(update.terminalId, term);
                 this.items.push(term);
+            } else if (term.exitStatus !== undefined && term.exitStatus !== null) {
+                return;
             }
             term.outputText += Buffer.from(update.data, "base64").toString("utf8");
         } else if (SessionUpdate.isPlanUpdate(update)) {

@@ -14,11 +14,12 @@ import {
     SessionUpdate,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { AcpClient } from "./acp-client.ts";
+import { AcpSession } from "./acp-session.ts";
 import Credential from "./credential.ts";
 
-test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and reattaches bound sessions when the connection SSE stream closes while idle", async () => {
+test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with replayFrom start and AcpSession idempotently materializes missed turns without duplicating prior ones", async () => {
     const sseResponses = new Set<http.ServerResponse>();
-    const resumedSessions: string[] = [];
+    const resumedCalls: Array<{ sessionId: string; replayFrom: unknown }> = [];
     const promptsReceived: string[] = [];
     let initializeCount = 0;
 
@@ -42,7 +43,16 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and 
             configOptions: [],
         }))
         .onRequest(methods.agent.session.resume, async ({ params, client }) => {
-            resumedSessions.push(params.sessionId);
+            resumedCalls.push({ sessionId: params.sessionId, replayFrom: params.replayFrom });
+            // Replay both the already-seen first turn and a turn missed while disconnected.
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "msg-1",
+                    content: { type: "text", text: "Reply: first turn" },
+                },
+            });
             await client.notify(methods.client.session.update, {
                 sessionId: params.sessionId,
                 update: {
@@ -91,19 +101,16 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and 
 
     const receivedTexts: string[] = [];
     let disconnects = 0;
+    let session: AcpSession | null = null;
     const client = new AcpClient({
         url: `http://127.0.0.1:${String(addr.port)}/acp`,
         token: "test-token",
         onDisconnect: () => {
             disconnects += 1;
+            session?.endActiveStream();
         },
         onSessionUpdate: (notification) => {
-            if (
-                SessionUpdate.isAgentMessageChunk(notification.update) &&
-                ContentBlock.isText(notification.update.content)
-            ) {
-                receivedTexts.push(notification.update.content.text);
-            }
+            session?.applyUpdate(notification.update);
         },
     });
 
@@ -113,6 +120,12 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and 
 
         const created = await client.newSession("/tmp/ws");
         assert.equal(created.sessionId, "1#user");
+        session = new AcpSession(created.sessionId);
+        session.onUpdate((update) => {
+            if (SessionUpdate.isAgentMessageChunk(update) && ContentBlock.isText(update.content)) {
+                receivedTexts.push(update.content.text);
+            }
+        });
 
         await client.prompt("1#user", "first turn");
         assert.deepEqual(promptsReceived, ["first turn"]);
@@ -126,15 +139,24 @@ test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects and 
         assert.equal(disconnects, 1);
 
         // Next prompt automatically reconnects, reattaches "1#user" via session/resume
-        // (suppressing duplicate replay notifications), and delivers the new turn.
+        // with replayFrom: { type: "start" }, idempotently deduplicating "msg-1" while
+        // materializing missed "replay-1" and delivering the new turn.
         await client.prompt("1#user", "second turn after idle drop");
         assert.equal(initializeCount, 2, "client re-initialized a new ACP connection");
-        assert.deepEqual(resumedSessions, ["1#user"], "bound session was automatically resumed");
+        assert.deepEqual(
+            resumedCalls,
+            [{ sessionId: "1#user", replayFrom: { type: "start" } }],
+            "bound session was automatically resumed with replayFrom: start",
+        );
         assert.deepEqual(promptsReceived, ["first turn", "second turn after idle drop"]);
         assert.deepEqual(
             receivedTexts,
-            ["Reply: first turn", "Reply: second turn after idle drop"],
-            "replay chunks during silent reattach are suppressed while live turn chunks arrive",
+            ["Reply: first turn", "Replayed history message", "Reply: second turn after idle drop"],
+            "already-settled msg-1 is deduplicated while missed replay-1 and new msg-2 are materialized",
+        );
+        assert.deepEqual(
+            session.items.map((item) => (item.kind === "agent_message" ? item.text : "")),
+            ["Reply: first turn", "Replayed history message", "Reply: second turn after idle drop"],
         );
     } finally {
         client.close();

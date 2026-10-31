@@ -213,6 +213,7 @@ export default class TuiSurface {
     #slotEpoch = 0;
     readonly #toolCallSlots = new Map<string, TranscriptSlot>();
     #lastLoopHamster: TranscriptSlot | null = null;
+    #promptHistory: string[] = [];
     readonly #status = new Text("", 0, 0);
     readonly #input = new Container();
     readonly #pending = new Text("", 0, 0);
@@ -392,6 +393,7 @@ export default class TuiSurface {
         this.#slotEpoch += 1;
         this.#toolCallSlots.clear();
         this.#lastLoopHamster = null;
+        this.#promptHistory = [];
     }
 
     #insertSlot(slot: TranscriptSlot): void {
@@ -581,10 +583,22 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
-    addHistory(promptsNewestFirst: readonly string[]): void {
-        for (const prompt of promptsNewestFirst.toReversed()) {
-            this.editor.addToHistory(prompt);
+    recordPrompt(prompt: string): void {
+        const trimmed = prompt.trim();
+        if (trimmed.length === 0) return;
+        if (this.#promptHistory.at(-1) === trimmed) return;
+        this.#promptHistory.push(trimmed);
+        this.editor.addToHistory(prompt);
+    }
+
+    recordPromptHistory(promptsChronological: readonly string[]): void {
+        for (const prompt of promptsChronological) {
+            this.recordPrompt(prompt);
         }
+    }
+
+    addHistory(promptsNewestFirst: readonly string[]): void {
+        this.recordPromptHistory(promptsNewestFirst.toReversed());
     }
 
     setAutocompleteProvider(provider: AutocompleteProvider): void {

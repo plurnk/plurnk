@@ -1407,3 +1407,349 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
 });
+
+test("{§cli-rendering} {§cli-session-status}: Up-arrow prompt history retains all session prompts across tool-heavy turns and mid-session reconnects without duplicating transcript rows", async () => {
+    const sseResponses = new Set<http.ServerResponse>();
+    let resumeCount = 0;
+
+    const agentApp = createAcpAgent({ name: "mock-acp-service" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: {
+                session: {
+                    fork: {},
+                    delete: {},
+                    prompt: { image: {}, embeddedContext: {} },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions: [
+                {
+                    configId: "model",
+                    name: "Model",
+                    type: "select",
+                    currentValue: "mocktest/fast",
+                    options: [{ value: "mocktest/fast", name: "Fast" }],
+                },
+            ],
+            _meta: {
+                plurnk: {
+                    workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
+                    sessionName: "user",
+                    status: { lifecycle: "idle", loopId: 1, loopSeq: 1, packetCount: 1 },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.resume, async ({ client, params }) => {
+            resumeCount += 1;
+            // Turn 1: user prompt followed by 5 tool calls and 1 agent reply (7 items total).
+            // With historyEntries: 3, the user prompt is outside the 3-item transcript slice,
+            // yet must still populate Up-arrow prompt history.
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "user_message_chunk",
+                    messageId: "1/1/1",
+                    content: { type: "text", text: "OLDER_PROMPT_BEFORE_MANY_TOOLS" },
+                    _meta: {
+                        plurnk: {
+                            id: 1,
+                            loopSeq: 1,
+                            turnSeq: 1,
+                            seq: 1,
+                            coordinate: "1/1/1",
+                            op: "SEND",
+                            origin: "user",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            for (let i = 1; i <= 5; i += 1) {
+                const seq = i + 1;
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: `1/1/${String(seq)}`,
+                        name: "READ",
+                        title: `READ file-${String(i)}.ts`,
+                        status: "completed",
+                        locations: [{ path: `file-${String(i)}.ts` }],
+                        rawInput: { target: `file-${String(i)}.ts` },
+                        rawOutput: { lines: 10 },
+                        _meta: {
+                            plurnk: {
+                                id: seq,
+                                loopSeq: 1,
+                                turnSeq: 1,
+                                seq,
+                                coordinate: `1/1/${String(seq)}`,
+                                op: "READ",
+                                origin: "model",
+                                status: 200,
+                            },
+                        },
+                    },
+                });
+            }
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "1/1/7",
+                    content: { type: "text", text: "FIRST_TURN_REPLY" },
+                    _meta: {
+                        plurnk: {
+                            id: 7,
+                            loopSeq: 1,
+                            turnSeq: 1,
+                            seq: 7,
+                            coordinate: "1/1/7",
+                            op: "SEND",
+                            origin: "model",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            if (resumeCount >= 2) {
+                // On the reconnect resume, also replay a turn that occurred while disconnected.
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "user_message_chunk",
+                        messageId: "2/1/1",
+                        content: { type: "text", text: "MISSED_PROMPT_DURING_DISCONNECT" },
+                        _meta: {
+                            plurnk: {
+                                id: 8,
+                                loopSeq: 2,
+                                turnSeq: 1,
+                                seq: 1,
+                                coordinate: "2/1/1",
+                                op: "SEND",
+                                origin: "user",
+                                status: 200,
+                            },
+                        },
+                    },
+                });
+                await client.notify(methods.client.session.update, {
+                    sessionId: params.sessionId,
+                    update: {
+                        sessionUpdate: "agent_message_chunk",
+                        messageId: "2/1/2",
+                        content: { type: "text", text: "MISSED_REPLY_DURING_DISCONNECT" },
+                        _meta: {
+                            plurnk: {
+                                id: 9,
+                                loopSeq: 2,
+                                turnSeq: 1,
+                                seq: 2,
+                                coordinate: "2/1/2",
+                                op: "SEND",
+                                origin: "model",
+                                status: 200,
+                            },
+                        },
+                    },
+                });
+            }
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                },
+            });
+            return { configOptions: [] };
+        })
+        .onRequest(
+            "_plurnk/action",
+            (raw) => raw as { kind: string },
+            async ({ params }) => {
+                if (params.kind === "workspace.sessions") {
+                    return { sessions: [{ id: 1, name: "user", lifecycle: "idle" }] };
+                }
+                if (params.kind === "workspace.list") {
+                    return { workspaces: [{ id: 1, name: "alpha", project_root: "/tmp/alpha" }] };
+                }
+                return {};
+            },
+        )
+        .onRequest(methods.agent.session.prompt, async ({ client, params }) => {
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "agent_message_chunk",
+                    messageId: "3/1/2",
+                    content: { type: "text", text: "POST_RECONNECT_REPLY" },
+                    _meta: {
+                        plurnk: {
+                            id: 11,
+                            loopSeq: 3,
+                            turnSeq: 1,
+                            seq: 2,
+                            coordinate: "3/1/2",
+                            op: "SEND",
+                            origin: "model",
+                            status: 200,
+                        },
+                    },
+                },
+            });
+            await client.notify(methods.client.session.update, {
+                sessionId: params.sessionId,
+                update: {
+                    sessionUpdate: "state_update",
+                    state: "idle",
+                    stopReason: "end_turn",
+                    _meta: {
+                        plurnk: {
+                            loopSeq: 3,
+                            terminal: { status: 200, turnCount: 1 },
+                        },
+                    },
+                },
+            });
+            return { stopReason: "end_turn", messageId: "3/1/2" };
+        });
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer((req, res) => {
+        if (req.method === "GET") {
+            sseResponses.add(res);
+            res.once("close", () => sseResponses.delete(res));
+        }
+        handler(req, res);
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const termWrites: string[] = [];
+    let inputCallback = null as ((data: string) => void) | null;
+    const fakeTerminal: Terminal = {
+        columns: 120,
+        rows: 40,
+        kittyProtocolActive: false,
+        start(onInput: (data: string) => void) {
+            inputCallback = onInput;
+        },
+        stop() {},
+        async drainInput() {},
+        write(data: string) {
+            termWrites.push(data);
+        },
+        moveBy() {},
+        hideCursor() {},
+        showCursor() {},
+        clearLine() {},
+        clearFromCursor() {},
+        clearScreen() {},
+        setTitle(t: string) {
+            termWrites.push(`TITLE:${t}`);
+        },
+        setProgress() {},
+        setProgramStatus() {},
+    };
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const options: CliCommonOptions = {
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        explicitAcpUrl: true,
+        host: "127.0.0.1",
+        port: addr.port,
+        credential: new Credential({ PLURNK_SECRET: "test-secret" }),
+        autostart: false,
+        daemonTimeoutMs: 2000,
+        oauthTimeoutMs: 2000,
+        cancelGraceMs: 500,
+        workspace: "alpha",
+        sessionId: "user",
+        tuiSession: "user",
+        yolo: true,
+        auto: false,
+        json: false,
+        repl: false,
+        statusStream: false,
+        previewLines: 5,
+        historyEntries: 3,
+        mermaidTimeoutMs: 2000,
+        color: "never",
+        bell: false,
+        cwd: "/tmp",
+        env: { PLURNK_SECRET: "test-secret" },
+    };
+
+    try {
+        const viewportPromise = runTuiViewport(options, {
+            stdin,
+            stdout,
+            stderr,
+            terminal: fakeTerminal,
+        });
+
+        const waitUntil = async (predicate: () => boolean) => {
+            const deadline = Date.now() + 5000;
+            while (!predicate() && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 20));
+            }
+            assert.ok(predicate(), `Transcript so far:\n${termWrites.join("")}`);
+        };
+
+        await waitUntil(() => termWrites.join("").includes("FIRST_TURN_REPLY"));
+        assert.ok(inputCallback !== null);
+
+        // Even though historyEntries=3 sliced off OLDER_PROMPT_BEFORE_MANY_TOOLS from the rendered
+        // transcript, pressing Up-arrow recalls it into the composer.
+        const beforeUp = termWrites.length;
+        inputCallback!("\x1b[A");
+        await waitUntil(() => termWrites.slice(beforeUp).join("").includes("OLDER_PROMPT_BEFORE_MANY_TOOLS"));
+        // Clear editor input with Escape
+        inputCallback!("\x1b");
+
+        // Drop the SSE stream to trigger a mid-session disconnect, then send a new prompt to force reconnect + resume.
+        const beforeDisconnect = termWrites.length;
+        for (const res of [...sseResponses]) {
+            res.end();
+        }
+        await waitUntil(() => termWrites.slice(beforeDisconnect).join("").includes("🔌"));
+
+        const beforeReconnectPrompt = termWrites.length;
+        inputCallback!("trigger reconnect");
+        inputCallback!("\r");
+        await waitUntil(() => termWrites.slice(beforeReconnectPrompt).join("").includes("POST_RECONNECT_REPLY"));
+
+        const reconnectWrites = termWrites.slice(beforeReconnectPrompt).join("");
+        assert.ok(
+            reconnectWrites.includes("MISSED_PROMPT_DURING_DISCONNECT"),
+            "missed user prompt during disconnect is materialized on reconnect",
+        );
+        assert.ok(
+            reconnectWrites.includes("MISSED_REPLY_DURING_DISCONNECT"),
+            "missed agent reply during disconnect is materialized on reconnect",
+        );
+        assert.ok(
+            !reconnectWrites.includes("FIRST_TURN_REPLY"),
+            "already-settled FIRST_TURN_REPLY is not re-emitted on reconnect",
+        );
+
+        inputCallback!("\x04");
+        const exitCode = await viewportPromise;
+        assert.equal(exitCode, 0);
+    } finally {
+        stdin.end();
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});

@@ -100,7 +100,6 @@ export class AcpClient {
     #initResponse: InitializeResponse | null = null;
     #hasConnected = false;
     #explicitlyClosed = false;
-    #suppressReplayNotifications = false;
     #reconnectPromise: Promise<ClientConnection> | null = null;
     readonly #boundSessions = new Map<string, string>();
     readonly #updateListeners = new Set<SessionUpdateHandler>();
@@ -190,7 +189,6 @@ export class AcpClient {
         const app = client({ name: this.#clientName });
 
         app.onNotification(methods.client.session.update, async (ctx) => {
-            if (this.#suppressReplayNotifications) return;
             for (const listener of this.#updateListeners) {
                 await listener(ctx.params);
             }
@@ -304,18 +302,13 @@ export class AcpClient {
                 throw new Error("AcpClient failed to reconnect.");
             }
             if (this.#boundSessions.size > 0) {
-                this.#suppressReplayNotifications = true;
-                try {
-                    for (const [sessionId, cwd] of this.#boundSessions) {
-                        if (sessionId === options?.excludeSessionId) continue;
-                        await conn.agent.request(methods.agent.session.resume, {
-                            sessionId,
-                            cwd,
-                        });
-                    }
-                    await new Promise<void>((resolve) => setImmediate(resolve));
-                } finally {
-                    this.#suppressReplayNotifications = false;
+                for (const [sessionId, cwd] of this.#boundSessions) {
+                    if (sessionId === options?.excludeSessionId) continue;
+                    await conn.agent.request(methods.agent.session.resume, {
+                        sessionId,
+                        cwd,
+                        replayFrom: { type: "start" },
+                    });
                 }
             }
             return conn;
@@ -425,6 +418,10 @@ export class AcpClient {
 
     async closeSession(sessionId: string): Promise<void> {
         await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.session.close, { sessionId }));
+        this.#boundSessions.delete(sessionId);
+    }
+
+    untrackSession(sessionId: string): void {
         this.#boundSessions.delete(sessionId);
     }
 

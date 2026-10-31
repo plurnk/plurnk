@@ -31,6 +31,7 @@ import {
     executeFamilyCommand,
     extractChronologicalHistory,
     extractOpenPaths,
+    extractPromptHistory,
     formatFamilyRows,
     formatLogEntries,
     formatModelsRows,
@@ -120,6 +121,7 @@ export const runReplSession = async (
             currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
         }
         const chronologicalItems = extractChronologicalHistory(session);
+        const prompts = extractPromptHistory(session);
         const historyLimit = options.historyEntries > 0 ? options.historyEntries : 0;
         const history = historyLimit > 0 ? chronologicalItems.slice(-historyLimit) : [];
         const mergedMeta =
@@ -141,6 +143,7 @@ export const runReplSession = async (
             cwd: currentProjectRoot,
             configOptions: session.configOptions,
             history,
+            prompts,
             ...(extra?.sessions !== undefined ? { sessions: extra.sessions } : {}),
             ...(extra?.workspaces !== undefined ? { workspaces: extra.workspaces } : {}),
             ...(mergedMeta !== undefined ? { _meta: mergedMeta } : {}),
@@ -240,7 +243,7 @@ export const runReplSession = async (
         writeEventJsonl(streams.events, update);
     };
 
-    let activeSession: AcpSession | null = null;
+    let activeSession = null as AcpSession | null;
 
     const client = new AcpClient({
         url: options.url,
@@ -393,6 +396,13 @@ export const runReplSession = async (
             },
             options.historyEntries > 0,
         );
+        if (activeSession !== null && activeSession !== nextSession) {
+            const prevId = activeSession.sessionId;
+            activeSession.dispose();
+            if (prevId !== nextSession.sessionId) {
+                client.untrackSession(prevId);
+            }
+        }
         activeSession = nextSession;
         const plurnk = (nextSession.meta?.plurnk ?? undefined) as Record<string, unknown> | undefined;
         const ws = (plurnk?.workspace ?? undefined) as Record<string, unknown> | undefined;
@@ -1453,6 +1463,7 @@ export const runReplSession = async (
         });
     });
     } finally {
+        activeSession?.dispose();
         if (streams.stdin === process.stdin) {
             process.stdin.pause();
         }

@@ -172,6 +172,25 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
         : visibleItems;
 };
 
+export const extractPromptHistory = (targetSession: AcpSession): string[] => {
+    const prompts: string[] = [];
+    for (const item of extractChronologicalHistory(targetSession)) {
+        if (item.kind !== "user_message" || item.text.length === 0) continue;
+        const plurnkMeta = (
+            item.meta as
+                | {
+                      plurnk?: {
+                          answering?: unknown;
+                      };
+                  }
+                | undefined
+        )?.plurnk;
+        if (typeof plurnkMeta?.answering === "string") continue;
+        prompts.push(item.text);
+    }
+    return prompts;
+};
+
 export const formatFamilyRows = (family: string, result: Record<string, unknown>): string => {
     const definitions = Array.isArray(result.definitions) ? result.definitions : [];
     if (definitions.length === 0) {

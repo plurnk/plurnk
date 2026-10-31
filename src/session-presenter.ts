@@ -375,6 +375,9 @@ export class SessionPresenter {
             if (this.#loopConcluded && typeof loopSeq !== "number") {
                 this.#resetLoopTurns();
             }
+            if (turnSeq > this.turns) {
+                this.#loopConcluded = false;
+            }
             this.turns = Math.max(this.turns, turnSeq);
         }
     }
@@ -480,6 +483,15 @@ export class SessionPresenter {
             }
             if (typeof status.packetCount === "number" && status.packetCount > 0) {
                 this.turns = Math.max(this.turns, status.packetCount);
+            }
+            if (
+                (status.lifecycle === "idle" ||
+                    status.lifecycle === "completed" ||
+                    status.lifecycle === "cancelled" ||
+                    status.lifecycle === "failed") &&
+                (this.loopId !== null || this.loopSeq !== null)
+            ) {
+                this.#loopConcluded = true;
             }
             if (typeof status.waitUntil === "number" || status.waitUntil === null) {
                 this.waitUntil = status.waitUntil as number | null;
@@ -1228,6 +1240,7 @@ export class SessionPresenter {
                     | undefined
             )?.plurnk;
             this.#syncLoopAndTurn(metaPlurnk?.loopSeq, metaPlurnk?.turnSeq);
+            this.#loopConcluded = false;
             const text = SessionUpdate.isAgentMessageChunk(update)
                 ? contentBlockToText(update.content)
                 : (update.content ?? []).map(contentBlockToText).join("");
@@ -1520,6 +1533,13 @@ export class SessionPresenter {
                           }
                         | undefined
                 )?.plurnk?.terminal;
+                if (termMeta === undefined && (this.#loopConcluded || (this.lifecycle === "idle" && this.turns === 0))) {
+                    frames.push({
+                        kind: "status_update",
+                        status: this.buildStatusBar(),
+                    });
+                    return frames;
+                }
                 const status =
                     typeof termMeta?.status === "number"
                         ? termMeta.status

@@ -172,7 +172,7 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
         : visibleItems;
 };
 
-export const extractPromptHistory = (targetSession: AcpSession): string[] => {
+export const extractPromptHistory = (targetSession: AcpSession, maxEntries?: number): string[] => {
     const prompts: string[] = [];
     for (const item of extractChronologicalHistory(targetSession)) {
         if (item.kind !== "user_message" || item.text.length === 0) continue;
@@ -187,6 +187,9 @@ export const extractPromptHistory = (targetSession: AcpSession): string[] => {
         )?.plurnk;
         if (typeof plurnkMeta?.answering === "string") continue;
         prompts.push(item.text);
+    }
+    if (typeof maxEntries === "number" && maxEntries >= 0) {
+        return maxEntries > 0 ? prompts.slice(-maxEntries) : [];
     }
     return prompts;
 };

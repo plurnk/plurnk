@@ -125,8 +125,8 @@ export const runReplSession = async (
             currentSessionName = session.sessionId.slice(session.sessionId.indexOf("#") + 1);
         }
         const chronologicalItems = extractChronologicalHistory(session);
-        const prompts = extractPromptHistory(session);
         const historyLimit = options.historyEntries > 0 ? options.historyEntries : 0;
+        const prompts = extractPromptHistory(session, historyLimit);
         const history = historyLimit > 0 ? chronologicalItems.slice(-historyLimit) : [];
         const mergedMeta =
             session.usage?.meta !== undefined

@@ -77,6 +77,18 @@ test("{§cli-invocation} {§cli-configuration-source}: runtime floor check, CLI 
     assert.equal(conflict.status, 64);
     assert.match(conflict.stderr, /--persona and --system-prompt cannot be used together/);
 
+    const configExcess = spawnSync(
+        process.execPath,
+        [binPath, "config", "model", "fast", "extra"],
+        {
+            env: { ...process.env, PLURNK_ACP_URL: "http://127.0.0.1:1/acp" },
+            encoding: "utf8",
+            timeout: 3000,
+        },
+    );
+    assert.equal(configExcess.status, 64);
+    assert.match(configExcess.stderr, /plurnk config accepts at most \[<id> \[<value>\]\]/);
+
     const tmpXdg = fs.mkdtempSync(path.join(os.tmpdir(), "plurnk-xdg-env-"));
     try {
         const plurnkCfg = path.join(tmpXdg, "plurnk");

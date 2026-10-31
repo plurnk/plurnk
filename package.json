@@ -21,7 +21,9 @@
         "README.md"
     ],
     "scripts": {
-        "test:lint": "tsc --noEmit && node ../plurnk-service/plurnk-spec-check/check.mjs . && npm run test:posix",
+        "deps:check": "node scripts/deps-check.mjs",
+        "deps:drift": "node scripts/deps-drift.mjs",
+        "test:lint": "tsc --noEmit && node scripts/deps-check.mjs && node ../plurnk-service/plurnk-spec-check/check.mjs . && npm run test:posix",
         "pretest:posix": "npm run build:posix",
         "test:posix": "node scripts/check-posix.mjs",
         "pretest:unit": "npm run build:posix",
@@ -45,7 +47,7 @@
         "build:local:uninstall": "node scripts/install-sandbox.mjs uninstall",
         "test:installation": "node scripts/test-installation.mjs",
         "test:composition": "node scripts/test-composition.mjs",
-        "release:gate": "node scripts/audit-gate.mjs",
+        "release:gate": "node scripts/deps-drift.mjs && node scripts/audit-gate.mjs",
         "build:posix": "node scripts/generate-posix.mjs"
     },
     "devDependencies": {

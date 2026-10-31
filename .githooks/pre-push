@@ -5,4 +5,5 @@
 # stale dist would test yesterday's client (https://github.com/plurnk/plurnk-service/issues/646).
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR
 npm run build --silent || exit 1
-exec npm test
+npm test || exit 1
+exec npm run deps:drift --silent

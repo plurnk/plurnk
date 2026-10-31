@@ -19,6 +19,7 @@ console.log(JSON.stringify({ args: process.argv.slice(2), inherited: ${JSON.stri
         assert.deepEqual(stdout.trim().split("\n").map((line) => JSON.parse(line)), [
             { args: ["run", "build", "--silent"], inherited: [] },
             { args: ["test"], inherited: [] },
+            { args: ["run", "deps:drift", "--silent"], inherited: [] },
         ]);
     } finally { await rm(root, { recursive: true, force: true }); }
 });

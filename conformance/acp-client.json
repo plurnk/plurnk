@@ -350,5 +350,194 @@
         "composition"
       ]
     }
+  },
+  "acpV2": {
+    "protocolVersion": 2,
+    "agentMethods": {
+      "initialize": {
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — initialize handshake with clientCapabilities"]
+      },
+      "auth/login": {
+        "posture": "oauth-out-of-band",
+        "evidence": ["src/credential.ts — RFC 9728 / RFC 8414 / PKCE OAuth 2.1 credential authority"]
+      },
+      "auth/logout": {
+        "posture": "oauth-out-of-band",
+        "evidence": ["src/credential.ts — local OAuth 2.1 grant lifecycle"]
+      },
+      "providers/list": {
+        "posture": "extension-action",
+        "evidence": ["src/cli.test.ts — models.list and configOptions model catalog"]
+      },
+      "providers/set": {
+        "posture": "config-option",
+        "evidence": ["src/acp-session.ts — session/set_config_option model selection"]
+      },
+      "providers/disable": {
+        "posture": "config-option",
+        "evidence": ["src/acp-session.ts — session/set_config_option model selection"]
+      },
+      "session/new": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.create"]
+      },
+      "session/resume": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.resume"]
+      },
+      "session/fork": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.fork"]
+      },
+      "session/list": {
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.listSessions"]
+      },
+      "session/delete": {
+        "posture": "daemon-durable",
+        "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
+      },
+      "session/close": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.close"]
+      },
+      "session/set_config_option": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.setConfigOption"]
+      },
+      "session/prompt": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.prompt"]
+      },
+      "session/cancel": {
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.cancel"]
+      },
+      "mcp/message": {
+        "posture": "daemon-owned",
+        "evidence": ["src/dispatcher.ts — workspace.mcp.* Functionality controls"]
+      }
+    },
+    "clientMethods": {
+      "session/request_permission": {
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — onPermissionRequest inline review and YOLO policy"]
+      },
+      "session/update": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — SessionPresenter.apply exhaustive SessionUpdate projection"]
+      },
+      "mcp/message": {
+        "posture": "daemon-owned",
+        "evidence": ["src/acp-client.ts — daemon-hosted MCP client runtime"]
+      },
+      "elicitation/create": {
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — onElicitationCreate question and form collection"]
+      },
+      "elicitation/complete": {
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — onElicitationComplete gate retirement"]
+      }
+    },
+    "sessionUpdates": {
+      "isUserMessageChunk": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — user_message_chunk inbox and replay tracking"]
+      },
+      "isUserMessage": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — user_message inbox and replay tracking"]
+      },
+      "isAgentMessageChunk": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — reply_chunk and outside text projection"]
+      },
+      "isAgentMessage": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — full agent_message reply projection"]
+      },
+      "isAgentThoughtChunk": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — reasoning_tail live window"]
+      },
+      "isAgentThought": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — full agent_thought reasoning projection"]
+      },
+      "isStateUpdate": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — running/requires_action/idle lifecycle and status_bar"]
+      },
+      "isToolCallContentChunk": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — tool_call_update carries authoritative content and coordinates"]
+      },
+      "isToolCallUpdate": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — chronological L/T/S slot reservation and receipt materialization"]
+      },
+      "isTerminalUpdate": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — terminal output buffer synchronization"]
+      },
+      "isTerminalOutputChunk": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — live base64 terminal_output streaming"]
+      },
+      "isPlanUpdate": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — plans project as NOTE (plan) tool_call_update rows"]
+      },
+      "isPlanRemoved": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — plans project as NOTE (plan) tool_call_update rows"]
+      },
+      "isAvailableCommandsUpdate": {
+        "posture": "ignored",
+        "evidence": ["src/commands.ts — slash commands derive from the static client command inventory"]
+      },
+      "isConfigOptionUpdate": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — model, thought_level, spawn_model, and mode sync"]
+      },
+      "isSessionInfoUpdate": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — workspace and session identity arrive in _meta.plurnk"]
+      },
+      "isUsageUpdate": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — context/curation usage gauge update"]
+      },
+      "isNotice": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — waterfall notice and status-line progress routing"]
+      },
+      "isCompactionUpdate": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — model curates context directly; daemon emits no compaction"]
+      },
+      "isCompactionSummaryChunk": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — model curates context directly; daemon emits no compaction"]
+      },
+      "isSubagentUpdate": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — subagent lifecycle frame projection"]
+      },
+      "isSessionMessage": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — inter-session message frame projection"]
+      },
+      "isSessionMessageChunk": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — inter-session message chunk projection"]
+      },
+      "isCustom": {
+        "posture": "ignored",
+        "evidence": ["src/session-presenter.ts — custom notifications are ignored by presentation"]
+      }
+    }
   }
 }

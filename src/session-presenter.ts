@@ -3,12 +3,64 @@
 // so that TUI is a pure perspective of the CLI and never makes an independent presentation decision.
 
 import {
+    ContentBlock,
     SessionConfigOption,
     SessionUpdate,
     ToolCallContent,
     type SessionConfigOption as SessionConfigOptionType,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { contentBlockToText, type MetaRecord } from "./acp-session.ts";
+
+// Compile-time exhaustiveness guards over `@agentclientprotocol/sdk/experimental/v2/unstable` ({§cli-conformance}, #232).
+// Any addition or rename in the SDK union guards fails `tsc --noEmit` immediately.
+export const SESSION_UPDATE_GUARDS = {
+    isUserMessageChunk: true,
+    isUserMessage: true,
+    isAgentMessageChunk: true,
+    isAgentMessage: true,
+    isAgentThoughtChunk: true,
+    isAgentThought: true,
+    isStateUpdate: true,
+    isToolCallContentChunk: true,
+    isToolCallUpdate: true,
+    isTerminalUpdate: true,
+    isTerminalOutputChunk: true,
+    isPlanUpdate: true,
+    isPlanRemoved: true,
+    isAvailableCommandsUpdate: true,
+    isConfigOptionUpdate: true,
+    isSessionInfoUpdate: true,
+    isUsageUpdate: true,
+    isNotice: true,
+    isCompactionUpdate: true,
+    isCompactionSummaryChunk: true,
+    isSubagentUpdate: true,
+    isSessionMessage: true,
+    isSessionMessageChunk: true,
+    isCustom: true,
+} as const satisfies Record<keyof typeof SessionUpdate, true>;
+
+export const CONTENT_BLOCK_GUARDS = {
+    isText: true,
+    isImage: true,
+    isAudio: true,
+    isResourceLink: true,
+    isResource: true,
+    isCustom: true,
+} as const satisfies Record<keyof typeof ContentBlock, true>;
+
+export const TOOL_CALL_CONTENT_GUARDS = {
+    isContent: true,
+    isDiff: true,
+    isTerminal: true,
+    isCustom: true,
+} as const satisfies Record<keyof typeof ToolCallContent, true>;
+
+export const SESSION_CONFIG_OPTION_GUARDS = {
+    isSelect: true,
+    isBoolean: true,
+    isCustom: true,
+} as const satisfies Record<keyof typeof SessionConfigOption, true>;
 import {
     abbreviatedCount,
     addDecimal,
@@ -734,9 +786,15 @@ export class SessionPresenter {
             return frames;
         }
 
-        if (SessionUpdate.isAgentThoughtChunk(update)) {
-            const deltaText = contentBlockToText(update.content);
-            this.#reasoningBuffer += deltaText;
+        if (SessionUpdate.isAgentThoughtChunk(update) || SessionUpdate.isAgentThought(update)) {
+            const deltaText = SessionUpdate.isAgentThoughtChunk(update)
+                ? contentBlockToText(update.content)
+                : (update.content ?? []).map(contentBlockToText).join("");
+            if (SessionUpdate.isAgentThought(update)) {
+                this.#reasoningBuffer = deltaText;
+            } else {
+                this.#reasoningBuffer += deltaText;
+            }
             const allLines = this.#reasoningBuffer.split(/\r?\n/u).filter((l) => l.length > 0);
             this.#reasoningLines = allLines.slice(-this.maxReasoningLines);
             frames.push({
@@ -1125,19 +1183,26 @@ export class SessionPresenter {
             return frames;
         }
 
-        if (SessionUpdate.isSessionMessage(update)) {
-            const text = (update.content ?? []).map(contentBlockToText).join("\n");
+        if (SessionUpdate.isSessionMessage(update) || SessionUpdate.isSessionMessageChunk(update)) {
+            const text = SessionUpdate.isSessionMessageChunk(update)
+                ? contentBlockToText(update.content)
+                : (update.content ?? []).map(contentBlockToText).join("\n");
             frames.push({
                 kind: "session_message",
                 messageId: update.messageId,
-                senderSessionId: update.senderSessionId ?? "",
-                recipientSessionId: update.recipientSessionId ?? "",
+                senderSessionId: SessionUpdate.isSessionMessage(update) ? (update.senderSessionId ?? "") : "",
+                recipientSessionId: SessionUpdate.isSessionMessage(update) ? (update.recipientSessionId ?? "") : "",
                 text,
             });
             return frames;
         }
 
-        if (update.sessionUpdate === "user_message_chunk") {
+        if (
+            SessionUpdate.isUserMessageChunk(update) ||
+            SessionUpdate.isUserMessage(update) ||
+            update.sessionUpdate === "user_message_chunk" ||
+            update.sessionUpdate === "user_message"
+        ) {
             const published = (update._meta as { plurnk?: { published?: boolean } } | undefined)?.plurnk?.published;
             if (published !== false && this.inboxCount > 0) {
                 this.inboxCount = Math.max(0, this.inboxCount - 1);
@@ -1146,7 +1211,7 @@ export class SessionPresenter {
             return frames;
         }
 
-        if (SessionUpdate.isAgentMessageChunk(update)) {
+        if (SessionUpdate.isAgentMessageChunk(update) || SessionUpdate.isAgentMessage(update)) {
             this.#retireReasoning(frames);
             const metaPlurnk = (
                 update._meta as
@@ -1163,7 +1228,9 @@ export class SessionPresenter {
                     | undefined
             )?.plurnk;
             this.#syncLoopAndTurn(metaPlurnk?.loopSeq, metaPlurnk?.turnSeq);
-            const text = contentBlockToText(update.content);
+            const text = SessionUpdate.isAgentMessageChunk(update)
+                ? contentBlockToText(update.content)
+                : (update.content ?? []).map(contentBlockToText).join("");
             const isOutside =
                 (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
                 metaPlurnk?.op === "outside-" ||

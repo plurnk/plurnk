@@ -1,0 +1,33 @@
+{
+    "watched": [
+        {
+            "name": "@earendil-works/pi-tui",
+            "requirement": "exact",
+            "resolved": "1.4.0",
+            "verifiedLatest": "1.4.0",
+            "verifiedAt": "2026-10-31",
+            "maxLag": "0 minors",
+            "budgetDays": 14,
+            "why": "whole terminal interaction layer; ~5 minors/3 weeks; no shipped changelog; native prebuilds"
+        },
+        {
+            "name": "@agentclientprotocol/sdk",
+            "requirement": "caret",
+            "resolved": "2.2.0",
+            "verifiedLatest": "2.2.0",
+            "verifiedAt": "2026-10-31",
+            "maxLag": "any version",
+            "budgetDays": 14,
+            "why": "ACP v2 draft; wire/API may change incompatibly in any release"
+        }
+    ],
+    "watchedFamilies": [
+        "@earendil-works/",
+        "@agentclientprotocol/"
+    ],
+    "ownerVeto": [
+        "@earendil-works/pi-tui",
+        "@agentclientprotocol/sdk"
+    ],
+    "waivers": {}
+}

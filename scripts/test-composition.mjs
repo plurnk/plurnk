@@ -343,6 +343,52 @@ try {
     );
     sharedPid = undefined;
 
+    // Clean-box zero-config API-key-only composition (#234):
+    // Boot with no PLURNK_MODEL and no PLURNK_MODEL_<alias>, only OPENAI_API_KEY and OPENAI_BASE_URL.
+    await daemon.stop();
+    const zeroAliasEnv = {
+        ...serviceEnv,
+        PLURNK_MODEL: "",
+        PLURNK_MODEL_composition: "",
+        PLURNK_BASEURL_composition: "",
+    };
+    daemon = await Launch.start({
+        command: [daemonBin, "start"],
+        cwd: install,
+        env: zeroAliasEnv,
+        stateRoot: join(temp, "state-zero"),
+        host: "127.0.0.1",
+        port: 0,
+        readyTimeoutMs: 30_000,
+        stopGraceMs: 5_000,
+    });
+    const zeroClientEnv = {
+        ...isolatedEnv,
+        PLURNK_SECRET: zeroAliasEnv.PLURNK_SECRET,
+        PLURNK_HOST: daemon.host,
+        PLURNK_PORT: String(daemon.port),
+    };
+    const modelsOut = await runClient(clientBin, ["models", "--provider", "openai"], {
+        cwd: install, env: zeroClientEnv, timeout: 30_000,
+    });
+    if (!/selector\s+name\s+context\s+efforts\s+readiness/u.test(modelsOut.stdout)
+        || !modelsOut.stdout.includes("openai/gpt-4.1-mini")) {
+        throw new Error(`zero-config models table did not render aligned headers and ready openai models:\n${modelsOut.stdout}`);
+    }
+    const configOut = await runClient(clientBin, ["config", "--workspace", "zero-config"], {
+        cwd: install, env: zeroClientEnv, timeout: 30_000,
+    });
+    if (!configOut.stdout.includes("model (Model): none")) {
+        throw new Error(`zero-config plurnk config did not report model (Model): none:\n${configOut.stdout}`);
+    }
+    const zeroRun = await runClient(clientBin, [
+        "--json", "--workspace", "zero-config", "--session", "user", "--project-root", "",
+        "--model", "openai/gpt-4.1-mini", "Zero-alias direct catalog model run.",
+    ], { cwd: install, env: zeroClientEnv, timeout: 30_000 });
+    if (JSON.parse(zeroRun.stdout).response !== "composition ok: gpt-4.1-mini") {
+        throw new Error(`zero-config direct catalog model run failed:\n${zeroRun.stdout}`);
+    }
+
     const clientPackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk", "package.json"), "utf8"));
     const servicePackage = JSON.parse(await readFile(join(install, "node_modules", "@plurnk", "plurnk-service", "package.json"), "utf8"));
     console.log(`packed composition GREEN: ${clientPackage.name}@${clientPackage.version} + ${servicePackage.name}@${servicePackage.version}`);

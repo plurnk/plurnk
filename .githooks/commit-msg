@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+msg_file="$1"
+branch=$(git branch --show-current)
+merging=0
+git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && merging=1
+node scripts/conventional.mjs commit "$msg_file" "$branch" "$merging" || exit 1
+
+# chain the operator's global template hook (commitlint) if one exists
+if [ -x "$HOME/.git/templates/hooks/commit-msg" ]; then
+    exec "$HOME/.git/templates/hooks/commit-msg" "$@"
+fi
+exit 0

@@ -88,6 +88,14 @@ test("{§cli-conformance} deps:check verifies conformance/acp-client.json agains
         v1.some((msg) => msg.includes("acpV2.sessionUpdates is missing SDK entry 'isSubagentUpdate'")),
         `Expected missing SessionUpdate guard violation, got: ${JSON.stringify(v1)}`,
     );
+
+    const unretiredAction = structuredClone(conformance);
+    unretiredAction.actions["workspace.list"].posture = "retire-to-acp-method";
+    const v2 = evaluateAcpV2Surface(unretiredAction);
+    assert.ok(
+        v2.some((msg) => msg.includes("actions['workspace.list'].posture 'retire-to-acp-method'")),
+        `Expected unretired action posture violation, got: ${JSON.stringify(v2)}`,
+    );
 });
 
 test("{§cli-conformance} deps:drift enforces the verification age budget, registry latest alignment, and ownerVeto (#232)", async () => {

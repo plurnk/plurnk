@@ -13,22 +13,23 @@
       "dimensions": ["projection", "success", "failure"]
     },
     "models.list": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "providers/list pagination and filtering RFD",
       "evidence": ["src/cli.test.ts — model catalog"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "service.update": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — service and model catalog update"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.list": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — workspace listing"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.create": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": [
         "src/cli.test.ts — workspace creation",
         "scripts/test-composition.mjs — packed client and installed candidate service"
@@ -36,17 +37,17 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.attach": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — workspace attachment"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.sessions": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — session listing"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "log.read": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": [
         "src/cli.test.ts — log reading",
         "scripts/test-composition.mjs — packed client and installed candidate service"
@@ -54,37 +55,37 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.prompts": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — prompt history"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.loops": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — session loops"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.share": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — workspace share"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.rename": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — workspace rename"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.rollback": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — workspace rollback"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "entry.read": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — entry reading"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "op.parse": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — PLURNK dispatch"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]
     },
@@ -105,142 +106,143 @@
       "dimensions": ["projection", "success", "failure", "durability", "composition"]
     },
     "workspace.skills.list": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.skills.discover": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.skills.add": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.replace": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.skills.enable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.disable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.remove": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.list": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.members.discover": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.members.add": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.enable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.disable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.remove": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.env.list": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.discover": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.add": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.replace": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.enable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.disable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.remove": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.list": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.discover": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.add": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.replace": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.enable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.disable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.remove": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.mcp.list": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": [
         "src/cli.test.ts — MCP management",
         "../plurnk-service/scripts/test-client-conformance.mjs — installed TUI journey"
@@ -248,77 +250,85 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.mcp.discover": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.mcp.add": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.mcp.replace": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.mcp.enable": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.mcp.disable": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.mcp.remove": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.schedule.list": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.discover": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.add": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.replace": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.enable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.disable": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.remove": {
-      "posture": "native",
+      "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.mcp.oauth.begin": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — URL-only authentication handoff"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.mcp.oauth.complete": {
-      "posture": "native",
+      "posture": "bridge-until-acp-rfd",
+      "rfd": "ACP v2 MCP server configuration and OAuth lifecycle RFD",
       "evidence": ["src/cli.test.ts — MCP authorization"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },

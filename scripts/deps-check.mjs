@@ -157,6 +157,28 @@ export const evaluateAcpV2Surface = (conformance, sdk = {
     checkGroup("clientMethods", sdk.clientMethods, acpV2.clientMethods);
     checkGroup("sessionUpdates", sdk.sessionUpdateGuards, acpV2.sessionUpdates);
 
+    const ALLOWED_ACTION_POSTURES = new Set(["permanent-domain", "bridge-until-acp-rfd", "generic"]);
+    const actions = conformance?.actions;
+    if (!actions || typeof actions !== "object") {
+        violations.push("conformance/acp-client.json: missing actions section");
+    } else {
+        for (const [actionKind, entry] of Object.entries(actions)) {
+            const posture = entry?.posture;
+            if (!ALLOWED_ACTION_POSTURES.has(posture)) {
+                violations.push(
+                    `conformance/acp-client.json: actions['${actionKind}'].posture '${String(posture)}' must be one of permanent-domain, bridge-until-acp-rfd, or generic (retire-to-acp-method and uncategorized native actions are forbidden)`,
+                );
+            } else if (
+                posture === "bridge-until-acp-rfd" &&
+                (typeof entry?.rfd !== "string" || entry.rfd.trim().length === 0)
+            ) {
+                violations.push(
+                    `conformance/acp-client.json: actions['${actionKind}'] has posture 'bridge-until-acp-rfd' but is missing a non-empty 'rfd' field`,
+                );
+            }
+        }
+    }
+
     return violations;
 };
 

@@ -1,5 +1,9 @@
 # @plurnk/plurnk
 
+## 5.0.2
+
+- Render `WAIT` operations, retain streamed receipt headers on `output_rx`, replay `/sessions <id>` loops in chronological order, preserve active status-bar lifecycle glyphs (`⏳`/`⏸`/`🛑`) alongside notices, preserve aggregate session spend across `499`/`202` parked turns and `/sessions <id>` resume, and retire live reasoning (`💭`) at every turn boundary (https://repo.possumtech.com/plurnk/plurnk-service/issues/1356).
+
 ## 5.0.1
 
 - Pass `--ignore-scripts` in global install documentation and upgrade commands, and deny transitive install scripts in `allowScripts` (https://repo.possumtech.com/plurnk/plurnk-service/issues/1331).

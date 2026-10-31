@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk",
-    "version": "5.0.1",
+    "version": "5.0.2",
     "description": "Plurnk terminal client — one-shot CLI and scrollback-native interactive ACP client.",
     "type": "module",
     "license": "MIT",
@@ -62,13 +62,13 @@
     "dependencies": {
         "@agentclientprotocol/sdk": "^2.2.0",
         "@earendil-works/pi-tui": "1.4.0",
-        "@plurnk/plurnk-contracts": "^7.0.1",
+        "@plurnk/plurnk-contracts": "^7.0.2",
         "beautiful-mermaid": "^1.1.3",
         "open": "^11.0.4",
         "string-width": "^8.3.0"
     },
     "optionalDependencies": {
-        "@plurnk/plurnk-service": "^5.0.1"
+        "@plurnk/plurnk-service": "^5.0.2"
     },
     "man": "./dist/posix/man/plurnk.1"
 }

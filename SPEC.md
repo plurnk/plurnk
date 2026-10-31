@@ -221,6 +221,7 @@ Subcommands inspect or configure daemon state without running a model loop (`--j
 | `plurnk workspace list` | Calls `workspace.list`; renders `name / project_root / created` (`(headless)` for `null` root). |
 | `plurnk workspace sessions <name>` | Attaches existing `<name>` via `workspace.attach` (404 if missing) and lists `workspace.sessions` (`name / created`). |
 | `plurnk log read` | Calls `log.read` (`--session`, `--loop`, `--turn`, `--since`, `--limit`); renders trace lines `[<status>] <origin> <op>[<sub>] <path> <scope>` or JSON `entries`. |
+| `plurnk config [<id> [<value>]]` | Reads or updates session `configOptions` (`mode`, `model`, `thought_level`, `persona`, `spawn_model`); exits `64` (`client/usage`) on an unknown `<id>` (pointing daemon config subcommands to `plurnk-service config`). |
 | `plurnk effort [level]` | Reads or updates `thought_level` on `configOptions` via `session/set_config_option`. |
 | `plurnk persona [name\|none]` | Reads, selects, or clears `persona` on `configOptions` via `session/set_config_option`. |
 | `plurnk script <file.plk>` | Submits `<file.plk>` via `op.parse` on the resolved workspace/session, retaining binding across proposal resumes; exits `0` on success or `4` on failed operation. |

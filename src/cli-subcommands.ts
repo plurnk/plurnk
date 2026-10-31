@@ -247,21 +247,43 @@ export const runCliConfig = async (
             ...(configId === "thought_level" ? { effort: undefined } : {}),
             ...(configId === "model" ? { model: undefined } : {}),
         });
-        if (configId !== undefined && value !== undefined) {
+        if (configId !== undefined) {
             const existing = session.configOptions.find((o) => o.configId === configId);
-            const parsedValue =
-                existing !== undefined && SessionConfigOption.isBoolean(existing)
+            if (existing === undefined) {
+                const known = session.configOptions.map((o) => o.configId);
+                const serviceHint =
+                    configId === "show" || configId === "check" || configId === "defaults" || configId === "edit"
+                        ? ` To inspect or manage daemon configuration, run: plurnk-service config ${configId}`
+                        : " To inspect daemon configuration, run: plurnk-service config";
+                const detail = `Unknown session config option "${configId}" (available: ${known.join(", ") || "none"}).${serviceHint}`;
+                throw Object.assign(new Error(detail), {
+                    exitCode: 64,
+                    problem: {
+                        type: "https://problems.plurnk.xyz/client/usage",
+                        title: "Invalid configuration option",
+                        status: 400,
+                        detail,
+                    },
+                });
+            }
+            if (value !== undefined) {
+                const parsedValue = SessionConfigOption.isBoolean(existing)
                     ? value === "true" || value === "1" || value === "on"
                     : value;
-            const res = await client.setConfigOption(session.sessionId, configId, parsedValue);
-            session.configOptions = [...res.configOptions];
+                const res = await client.setConfigOption(session.sessionId, configId, parsedValue);
+                session.configOptions = [...res.configOptions];
+            }
         }
+        const selected =
+            configId === undefined
+                ? session.configOptions
+                : session.configOptions.filter((o) => o.configId === configId);
         if (options.json) {
             process.stdout.write(
                 `${JSON.stringify(
                     {
                         sessionId: session.sessionId,
-                        configOptions: session.configOptions,
+                        configOptions: selected,
                     },
                     null,
                     2,
@@ -269,10 +291,8 @@ export const runCliConfig = async (
             );
             return 0;
         }
-        for (const opt of session.configOptions) {
-            if (configId === undefined || opt.configId === configId) {
-                process.stdout.write(`${formatConfigOption(opt)}\n`);
-            }
+        for (const opt of selected) {
+            process.stdout.write(`${formatConfigOption(opt)}\n`);
         }
         return 0;
     } finally {

@@ -713,6 +713,11 @@ export const main = async (argv: readonly string[] = process.argv): Promise<void
                     return;
             }
         } else if (first === "config") {
+            if (positionals.length > 3) {
+                process.stderr.write("plurnk config accepts at most [<id> [<value>]].\n");
+                process.exitCode = 64;
+                return;
+            }
             exitCode = await runCliConfig(positionals[1], positionals[2], common);
         } else if (first === "update") {
             exitCode = await runCliUpdate(common);

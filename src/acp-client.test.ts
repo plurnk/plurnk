@@ -19,6 +19,7 @@ import {
     classifyPreFlightDisconnect,
 } from "./acp-client.ts";
 import { AcpSession, type AcpMessageItem } from "./acp-session.ts";
+import { runCliConfig } from "./cli-subcommands.ts";
 import Credential from "./credential.ts";
 
 test("{§cli-conformance} {§cli-session-status}: AcpClient auto-reconnects with replayFrom start and AcpSession idempotently materializes missed turns without duplicating prior ones", async () => {
@@ -504,6 +505,101 @@ test("{§cli-conformance}: AcpSession.applyUpdate upserts matching messageId ite
     assert.equal(replies[0]?.id, "1/1/2");
     assert.equal(replies[0]?.text, "Edited reply");
 });
+
+test("{§cli-subcommands}: runCliConfig rejects unknown session config option ids with exitCode 64 and points daemon config queries to plurnk-service config", async () => {
+    const configOptions = [
+        {
+            type: "select" as const,
+            configId: "model",
+            name: "Model",
+            currentValue: "fast",
+            options: [{ value: "fast", name: "fast" }],
+        },
+        {
+            type: "boolean" as const,
+            configId: "yolo",
+            name: "YOLO",
+            currentValue: false,
+        },
+    ];
+    const agentApp = createAcpAgent({ name: "mock-acp-service" })
+        .onRequest(methods.agent.initialize, async () => ({
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+            capabilities: {
+                session: {
+                    fork: {},
+                    delete: {},
+                    prompt: { image: {}, embeddedContext: {} },
+                },
+            },
+        }))
+        .onRequest(methods.agent.session.new, async () => ({
+            sessionId: "1#user",
+            configOptions,
+        }));
+
+    const acpServer = new AcpServer({ agent: agentApp });
+    const handler = createNodeHttpHandler(acpServer);
+    const httpServer = http.createServer(handler);
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    assert.ok(addr && typeof addr === "object");
+
+    const baseOpts = {
+        url: `http://127.0.0.1:${String(addr.port)}/acp`,
+        explicitAcpUrl: true,
+        host: "127.0.0.1",
+        port: addr.port,
+        credential: new Credential({}),
+        env: { PLURNK_CLIENT_TOKEN: "test-token" },
+        cwd: "/tmp/ws",
+        workspace: "ws",
+        sessionId: "user",
+        tuiSession: "user",
+        autostart: false,
+        daemonTimeoutMs: 500,
+        oauthTimeoutMs: 500,
+        cancelGraceMs: 500,
+        yolo: false,
+        auto: false,
+        bell: false,
+        json: false,
+        statusStream: false,
+        previewLines: 5,
+        historyEntries: 20,
+        mermaidTimeoutMs: 500,
+        color: "auto" as const,
+    };
+
+    try {
+        await assert.rejects(
+            () => runCliConfig("defaults", undefined, baseOpts),
+            (err: unknown) => {
+                assert.ok(err instanceof Error);
+                assert.equal((err as { exitCode?: number }).exitCode, 64);
+                assert.match(err.message, /Unknown session config option "defaults" \(available: model, yolo\)/);
+                assert.match(err.message, /plurnk-service config defaults/);
+                return true;
+            },
+        );
+        await assert.rejects(
+            () => runCliConfig("unknown_key", undefined, baseOpts),
+            (err: unknown) => {
+                assert.ok(err instanceof Error);
+                assert.equal((err as { exitCode?: number }).exitCode, 64);
+                assert.match(err.message, /Unknown session config option "unknown_key" \(available: model, yolo\)/);
+                assert.match(err.message, /plurnk-service config/);
+                return true;
+            },
+        );
+    } finally {
+        await acpServer.close();
+        httpServer.closeAllConnections();
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+});
+
 
 
 

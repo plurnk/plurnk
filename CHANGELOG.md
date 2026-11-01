@@ -1,5 +1,10 @@
 # @plurnk/plurnk
 
+## 5.1.0
+
+- Render a 3-line line-chunk live reasoning ticker (`💭`), an active streams/workers activity strip above the status bar, single-line terminal stream receipts (`<status> <aside> (<logPath>)`), and terminal-width status truncation while clearing concluded `WAIT` operations from the active strip (#238, #240).
+- Classify `workspace.personas.*` actions (`list`, `get`, `add`, `replace`, `enable`, `disable`, `remove`) as `permanent-domain` in `conformance/acp-client.json` (#239).
+
 ## 5.0.4
 
 - Patch matched `messageId` receipt and message items in place across updates and chunks, bound `session_bound` prompt history by `PLURNK_CLIENT_HISTORY_ENTRIES`, and enforce the 5-container pinned TUI chrome budget (#236).

@@ -1284,9 +1284,9 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     sessionUpdate: "tool_call_update",
                     toolCallId: "17/1/5",
                     name: "sh",
-                    title: "sh",
+                    title: "sh — turn1_sh_aside",
                     status: "pending",
-                    rawInput: { body: "echo turn1_sh" },
+                    rawInput: { body: "echo turn1_sh", aside: "turn1_sh_aside" },
                     _meta: {
                         plurnk: {
                             id: 24572,
@@ -1326,9 +1326,9 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
                     sessionUpdate: "tool_call_update",
                     toolCallId: "17/1/5",
                     name: "sh",
-                    title: "sh",
+                    title: "sh — turn1_sh_aside",
                     status: "completed",
-                    rawInput: { body: "echo turn1_sh" },
+                    rawInput: { body: "echo turn1_sh", aside: "turn1_sh_aside" },
                     _meta: {
                         plurnk: {
                             id: 24572,
@@ -1467,10 +1467,11 @@ test("{§cli-markdown-projection} {§cli-session-status}: TUI viewport anchors t
         await waitUntil(() => termWrites.slice(writesBeforePrompt).join("").includes("7 turns"));
 
         const promptWrites = termWrites.slice(writesBeforePrompt).join("");
-        const shPos = promptWrites.lastIndexOf("echo turn1_sh");
+        const shPos = promptWrites.lastIndexOf("turn1_sh_aside");
         const notePos = promptWrites.lastIndexOf("TURN_2_NOTE_BODY");
         const hamsterPos = promptWrites.lastIndexOf("FINAL_HAMSTER_REPLY");
-        assert.ok(shPos >= 0, "17/1/5 sh receipt must be rendered");
+        assert.ok(shPos >= 0, "17/1/5 sh single-line receipt must be rendered");
+        assert.equal(promptWrites.includes("echo turn1_sh"), false, "sh script body must not be previewed");
         assert.ok(notePos > shPos, "17/1/5 sh receipt must appear above Turn 2 NOTE (17/2/1)");
         assert.ok(hamsterPos > notePos, "Turn 7 🐹 reply must appear below Turn 1 sh and Turn 2 NOTE");
         assert.match(promptWrites, /🐹 7 turns · [^·]+ · ↓33M ↑241k · loop \$14\.86/u);

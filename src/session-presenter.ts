@@ -81,7 +81,6 @@ import {
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
     receiptCountFor,
-    SCRIPT_RUNTIMES,
     spanLength,
     WORKER_OPS,
 } from "./presenter-formatters.ts";
@@ -106,7 +105,6 @@ export {
     OPERATION_GLYPH_MAP,
     operationGlyphFor,
     receiptCountFor,
-    SCRIPT_RUNTIMES,
     spanLength,
     WORKER_OPS,
 };
@@ -331,7 +329,7 @@ export class SessionPresenter {
     #loopCostUsd: string | null = null;
     readonly #pendingToolCalls = new Map<string, PendingToolCallState>();
     readonly #renderedToolCalls = new Set<string>();
-    readonly #terminalOutputs = new Map<string, string>();
+    readonly #concludedStreams = new Map<string, number>();
     readonly #openStreamKeys = new Set<string>();
     readonly #activeStreams = new Map<string, ActiveStreamState>();
     readonly #activeWorkers = new Map<string, ActiveWorkerState>();
@@ -419,7 +417,7 @@ export class SessionPresenter {
     resetSessionHistory(): void {
         this.#pendingToolCalls.clear();
         this.#renderedToolCalls.clear();
-        this.#terminalOutputs.clear();
+        this.#concludedStreams.clear();
         this.#activeStreams.clear();
         this.#activeWorkers.clear();
     }
@@ -695,6 +693,12 @@ export class SessionPresenter {
                         typeof s.sequence === "number"
                             ? `${String(s.loop_seq)}/${String(s.turn_seq)}/${String(s.sequence)}`
                             : null;
+                    const alreadyConcluded =
+                        (sTarget !== null && this.#concludedStreams.has(sTarget)) ||
+                        (sEntryId !== null && this.#concludedStreams.has(`term:${String(sEntryId)}`));
+                    if (alreadyConcluded) {
+                        continue;
+                    }
                     if (typeof s.target === "string" && s.target.length > 0) {
                         this.#openStreamKeys.add(s.target);
                         seenStreamTargets.add(s.target);
@@ -1127,7 +1131,26 @@ export class SessionPresenter {
 
             this.#retireReasoning(frames);
 
-            if (update.status === "in_progress" || update.status === "pending") {
+            const streamTarget =
+                typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0
+                    ? metaPlurnk.attrs.stream
+                    : target ?? update.toolCallId;
+            const entryId = typeof metaPlurnk.id === "number" ? metaPlurnk.id : null;
+            const concludedStreamCode =
+                (typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0
+                    ? this.#concludedStreams.get(metaPlurnk.attrs.stream)
+                    : undefined) ??
+                (entryId !== null ? this.#concludedStreams.get(`term:${String(entryId)}`) : undefined) ??
+                terminalIds.map((id) => this.#concludedStreams.get(id)).find((code) => code !== undefined);
+            const effectiveStatus =
+                (update.status === "in_progress" || update.status === "pending") &&
+                concludedStreamCode !== undefined
+                    ? concludedStreamCode >= 400
+                        ? "failed"
+                        : "completed"
+                    : update.status;
+
+            if (effectiveStatus === "in_progress" || effectiveStatus === "pending") {
                 this.#pendingToolCalls.set(update.toolCallId, {
                     ...(effectiveName !== undefined ? { name: effectiveName } : {}),
                     ...(effectiveTitle !== undefined ? { title: effectiveTitle } : {}),
@@ -1138,12 +1161,7 @@ export class SessionPresenter {
                 });
                 // {§cli-rendering}, {§cli-session-status} — Only open runtime streams (never synchronous verbs in OPERATION_GLYPH_MAP)
                 // enter #activeStreams while in_progress.
-                if (update.status === "in_progress" && !(opName.toUpperCase() in OPERATION_GLYPH_MAP)) {
-                    const streamTarget =
-                        typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0
-                            ? metaPlurnk.attrs.stream
-                            : target ?? update.toolCallId;
-                    const entryId = typeof metaPlurnk.id === "number" ? metaPlurnk.id : null;
+                if (effectiveStatus === "in_progress" && !(opName.toUpperCase() in OPERATION_GLYPH_MAP)) {
                     const existing =
                         this.#activeStreams.get(update.toolCallId) ??
                         [...this.#activeStreams.values()].find(
@@ -1171,16 +1189,17 @@ export class SessionPresenter {
                             (this.#replayingHistory || this.turns > openedTurn),
                     });
                 }
-                if (this.lifecycle === "running") {
-                    this.doing =
-                        opName.toUpperCase() === "WAIT"
-                            ? null
-                            : {
-                                  phase: "working",
-                                  since: Date.now(),
-                                  op: opName,
-                                  target,
-                              };
+                if (opName.toUpperCase() === "WAIT") {
+                    this.doing = null;
+                } else if (this.lifecycle === "running") {
+                    this.doing = {
+                        phase: "working",
+                        since: Date.now(),
+                        op: opName,
+                        target,
+                    };
+                }
+                if (this.lifecycle === "running" || opName.toUpperCase() === "WAIT") {
                     frames.push({
                         kind: "status_update",
                         status: this.buildStatusBar(),
@@ -1276,46 +1295,29 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, script runtimes, harness NOTEs)
-            // and concluded runtime execution stream outputs receive a preview beneath the row
-            // ({§cli-rendering}). MCP tool request bodies are not shown.
+            // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, and harness NOTEs)
+            // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
+            // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
             const contentLines: string[] = [];
             if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
                 contentLines.push(noteBody);
-            } else if (
-                !NO_PREVIEW_VERBS.has(opName) &&
-                (!isRuntimeExec || SCRIPT_RUNTIMES.has(opName)) &&
-                authoredBody !== null
-            ) {
+            } else if (!isRuntimeExec && !NO_PREVIEW_VERBS.has(opName) && authoredBody !== null) {
                 contentLines.push(authoredBody);
             }
 
             const outputLines: string[] = [];
-            if (isRuntimeExec) {
-                const streamed = terminalIds
-                    .map((id) => this.#terminalOutputs.get(id) ?? "")
-                    .join("")
-                    .trimEnd();
-                if (streamed.length > 0) {
-                    outputLines.push(streamed);
-                } else if (receiptLines.length > 0) {
-                    const fallback = receiptLines.join("\n").trimEnd();
-                    if (fallback.length > 0) {
-                        outputLines.push(fallback);
-                    }
-                } else if (typeof rawOutput?.content === "string" && rawOutput.content.trimEnd().length > 0) {
-                    outputLines.push(rawOutput.content.trimEnd());
-                }
-            }
 
             const statusCode =
-                typeof metaPlurnk.status === "number"
+                typeof metaPlurnk.status === "number" &&
+                (concludedStreamCode === undefined || metaPlurnk.status !== 202)
                     ? metaPlurnk.status
-                    : update.status === "failed"
-                      ? 500
-                      : 200;
-            const failed = statusCode >= 400 || update.status === "failed";
+                    : concludedStreamCode !== undefined
+                      ? concludedStreamCode
+                      : effectiveStatus === "failed"
+                        ? 500
+                        : 200;
+            const failed = statusCode >= 400 || effectiveStatus === "failed";
             const problemTitle =
                 typeof problemRec?.title === "string" && problemRec.title.length > 0
                     ? problemRec.title
@@ -1374,16 +1376,16 @@ export class SessionPresenter {
                 });
             }
 
-            if (this.lifecycle === "running") {
-                this.doing =
-                    opName.toUpperCase() === "WAIT"
-                        ? null
-                        : {
-                              phase: "working",
-                              since: Date.now(),
-                              op: opName,
-                              target,
-                          };
+            if (opName.toUpperCase() === "WAIT") {
+                this.doing = null;
+                this.buildStatusBar();
+            } else if (this.lifecycle === "running") {
+                this.doing = {
+                    phase: "working",
+                    since: Date.now(),
+                    op: opName,
+                    target,
+                };
                 this.buildStatusBar();
             }
 
@@ -1401,7 +1403,7 @@ export class SessionPresenter {
                 count,
                 aside,
                 noteBody,
-                status: update.status ?? "completed",
+                status: effectiveStatus ?? "completed",
                 statusCode,
                 outcome,
                 contentLines,
@@ -1411,25 +1413,36 @@ export class SessionPresenter {
         }
 
         if (SessionUpdate.isTerminalUpdate(update)) {
-            if (update.output !== undefined) {
-                const text =
-                    update.output === null
-                        ? ""
-                        : Buffer.from(update.output.data, "base64").toString("utf8");
-                this.#terminalOutputs.set(update.terminalId, text);
-                const opId = (update._meta as { plurnk?: { opId?: number } } | undefined)?.plurnk?.opId;
-                if (typeof opId === "number") {
-                    this.#terminalOutputs.set(`term:${String(opId)}`, text);
-                }
-            }
             if (update.exitStatus !== undefined) {
-                const concludedTarget = (
-                    update._meta as { plurnk?: { target?: string } } | undefined
-                )?.plurnk?.target;
+                const metaPlurnk = (
+                    update._meta as { plurnk?: { target?: string; opId?: number } } | undefined
+                )?.plurnk;
+                const concludedTarget = metaPlurnk?.target;
+                const opId = metaPlurnk?.opId;
+                const exitCode = update.exitStatus?.exitCode;
+                const concludedCode =
+                    typeof exitCode === "number"
+                        ? exitCode === 0
+                            ? 200
+                            : exitCode >= 400
+                              ? exitCode
+                              : 500
+                        : (update as { status?: unknown }).status === "failed"
+                          ? 500
+                          : 200;
+                this.#concludedStreams.set(update.terminalId, concludedCode);
+                if (typeof opId === "number") {
+                    this.#concludedStreams.set(`term:${String(opId)}`, concludedCode);
+                }
+                if (typeof concludedTarget === "string" && concludedTarget.length > 0) {
+                    this.#concludedStreams.set(concludedTarget, concludedCode);
+                    this.#openStreamKeys.delete(concludedTarget);
+                }
                 for (const [k, st] of [...this.#activeStreams.entries()]) {
                     if (
                         st.terminalIds.includes(update.terminalId) ||
                         (st.entryId !== null && `term:${String(st.entryId)}` === update.terminalId) ||
+                        (typeof opId === "number" && st.entryId === opId) ||
                         (typeof concludedTarget === "string" &&
                             concludedTarget.length > 0 &&
                             st.target === concludedTarget)
@@ -1450,11 +1463,6 @@ export class SessionPresenter {
                 decodedText = Buffer.from(update.data, "base64").toString("utf8");
             } catch {
                 decodedText = update.data;
-            }
-            const nextText = (this.#terminalOutputs.get(update.terminalId) ?? "") + decodedText;
-            this.#terminalOutputs.set(update.terminalId, nextText);
-            if (typeof metaPlurnk?.opId === "number") {
-                this.#terminalOutputs.set(`term:${String(metaPlurnk.opId)}`, nextText);
             }
             frames.push({
                 kind: "terminal_output",
@@ -1553,7 +1561,7 @@ export class SessionPresenter {
                 metaPlurnk?.op === "outside-" ||
                 metaPlurnk?.outside !== undefined;
             const effectiveOp = isOutside ? "outside-" : (metaPlurnk?.op ?? "SEND");
-            if (effectiveOp === "WAIT" && this.lifecycle === "running") {
+            if (effectiveOp === "WAIT") {
                 this.doing = null;
                 this.buildStatusBar();
             }
@@ -1784,6 +1792,9 @@ export class SessionPresenter {
             const priorBaseOutputTokens = this.#turnBaseOutputTokens;
             const priorBaseCostUsd = this.#turnBaseCostUsd;
             this.ingestMeta(update._meta as MetaRecord | undefined);
+            const metaLifecycle = (
+                update._meta as { plurnk?: { status?: { lifecycle?: unknown } } } | undefined
+            )?.plurnk?.status?.lifecycle;
             if (update.state === "running") {
                 if (this.#loopConcluded) {
                     this.#resetLoopTurns();
@@ -1792,10 +1803,16 @@ export class SessionPresenter {
                 if (this.turns === 0) {
                     this.turns = 1;
                 }
-                this.lifecycle = "running";
-                this.lifecycleGlyph = "⌛︎";
-                if (this.doing === null) {
-                    this.doing = { phase: "working", since: Date.now(), op: null, target: null };
+                if (metaLifecycle === "parked") {
+                    this.lifecycle = "parked";
+                    this.lifecycleGlyph = "💤";
+                    this.doing = null;
+                } else {
+                    this.lifecycle = "running";
+                    this.lifecycleGlyph = "⌛︎";
+                    if (this.doing === null) {
+                        this.doing = { phase: "working", since: Date.now(), op: null, target: null };
+                    }
                 }
                 frames.push({
                     kind: "status_update",

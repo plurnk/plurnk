@@ -827,4 +827,84 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
             assert.equal(noteFrames[0].noteBody, `Body for ${tag}`);
         }
     }
+
+    // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers
+    // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).
+    const freshPresenter = new SessionPresenter({
+        workspaceName: "sqlrite",
+        sessionName: "user",
+        model: "default",
+    });
+    freshPresenter.ingestMeta({
+        plurnk: {
+            status: {
+                model: null,
+                spawnModel: null,
+            },
+            providers: [
+                {
+                    alias: "rtx5070",
+                    provider: "vllm",
+                    model: "qwen3-coder",
+                    effort: "medium",
+                    effortSource: "default",
+                    active: true,
+                },
+            ],
+        },
+    });
+    assert.equal(freshPresenter.model, "rtx5070");
+    assert.equal(freshPresenter.effort, "medium");
+    assert.equal(freshPresenter.effortSource, "default");
+    assert.match(freshPresenter.buildStatusBar().formattedStatusLine, /idle · rtx5070\(medium\) · ↓0 ↑0/u);
+
+    freshPresenter.apply({
+        sessionUpdate: "config_option_update",
+        configOptions: [
+            {
+                configId: "model",
+                name: "Model",
+                type: "select",
+                currentValue: "rtx5070",
+                options: [{ value: "rtx5070", name: "rtx5070" }],
+            },
+            {
+                configId: "mode",
+                name: "Approval Policy",
+                type: "select",
+                currentValue: "allow",
+                options: [{ value: "allow", name: "Allow" }],
+            },
+        ],
+        _meta: {
+            plurnk: {
+                status: {
+                    model: null,
+                    spawnModel: null,
+                },
+            },
+        },
+    });
+    assert.equal(freshPresenter.model, "rtx5070");
+    assert.equal(freshPresenter.yolo, true);
+
+    freshPresenter.ingestMeta({
+        plurnk: {
+            status: {
+                model: null,
+                spawnModel: null,
+            },
+            providers: [
+                {
+                    alias: "rtx5070",
+                    provider: "vllm",
+                    model: "qwen3-coder",
+                    active: false,
+                },
+            ],
+        },
+    });
+    assert.equal(freshPresenter.model, "none");
+    assert.equal(freshPresenter.effort, null);
+    assert.equal(freshPresenter.effortSource, null);
 });

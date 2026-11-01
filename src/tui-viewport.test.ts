@@ -53,6 +53,18 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
                     sessionName: "user",
+                    status: {
+                        model: null,
+                        spawnModel: null,
+                    },
+                    providers: [
+                        {
+                            alias: "mocktest/fast",
+                            provider: "mocktest",
+                            model: "fast",
+                            active: true,
+                        },
+                    ],
                 },
             },
         }))
@@ -70,6 +82,18 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
                 plurnk: {
                     workspace: { id: 1, name: "alpha", projectRoot: "/tmp/alpha" },
                     sessionName: "user",
+                    status: {
+                        model: null,
+                        spawnModel: null,
+                    },
+                    providers: [
+                        {
+                            alias: "mocktest/fast",
+                            provider: "mocktest",
+                            model: "fast",
+                            active: true,
+                        },
+                    ],
                 },
             },
         }))
@@ -182,6 +206,9 @@ test("{§cli-repl-mode} {§cli-session-status}: runTuiViewport processes typed f
             await new Promise((r) => setTimeout(r, 20));
         }
         assert.ok(termWrites.some((w) => w.includes("TITLE:plurnk · alpha · user")));
+        const rendered = stripVTControlCharacters(termWrites.join(""));
+        assert.match(rendered, /model: mocktest\/fast/u);
+        assert.doesNotMatch(rendered, /No model selected/u);
         assert.ok(inputCallback !== null);
 
         // Send Ctrl-D on empty editor to trigger /quit through the TUI input listener

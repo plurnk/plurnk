@@ -575,9 +575,39 @@ export class SessionPresenter {
                 this.waitUntil = status.waitUntil as number | null;
             }
             if (status.model === null) {
-                this.model = "none";
-                this.effort = null;
-                this.effortSource = null;
+                const activeProvider = Array.isArray(plurnk.providers)
+                    ? (plurnk.providers as unknown[]).find(
+                          (p): p is Record<string, unknown> =>
+                              Boolean(p) && typeof p === "object" && (p as Record<string, unknown>).active === true,
+                      )
+                    : undefined;
+                if (activeProvider !== undefined) {
+                    if (typeof activeProvider.alias === "string" && activeProvider.alias.length > 0) {
+                        this.model = activeProvider.alias;
+                    } else if (
+                        typeof activeProvider.provider === "string" &&
+                        typeof activeProvider.model === "string"
+                    ) {
+                        this.model = `${activeProvider.provider}/${activeProvider.model}`;
+                    }
+                    if (typeof activeProvider.effort === "string" && activeProvider.effort.length > 0) {
+                        this.effort = activeProvider.effort;
+                    } else {
+                        this.effort = null;
+                    }
+                    if (
+                        activeProvider.effortSource === "default" ||
+                        activeProvider.effortSource === "explicit"
+                    ) {
+                        this.effortSource = activeProvider.effortSource;
+                    } else {
+                        this.effortSource = this.effort !== null ? "default" : null;
+                    }
+                } else {
+                    this.model = "none";
+                    this.effort = null;
+                    this.effortSource = null;
+                }
             } else if (status.model && typeof status.model === "object") {
                 const m = status.model as Record<string, unknown>;
                 if (typeof m.alias === "string" && m.alias.length > 0) {
@@ -984,8 +1014,8 @@ export class SessionPresenter {
         const frames: PresentationFrame[] = [];
 
         if (SessionUpdate.isConfigOptionUpdate(update)) {
-            this.#applyConfigOptions(update.configOptions, true);
             this.ingestMeta(update._meta as MetaRecord | undefined);
+            this.#applyConfigOptions(update.configOptions, true);
             this.#flushPendingHistoryLost(frames);
             return frames;
         }

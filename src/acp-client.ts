@@ -199,6 +199,45 @@ export interface PlurnkActionMap {
         { readonly alias: string } & Record<string, unknown>,
         Record<string, unknown>
     >;
+    readonly "workspace.personas.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
+    readonly "workspace.personas.discover": PlurnkActionEntry<
+        { readonly query?: string; readonly source?: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.personas.add": PlurnkActionEntry<
+        {
+            readonly alias: string;
+            readonly source?: string;
+            readonly description?: string;
+            readonly body?: string;
+            readonly model?: string;
+            readonly effort?: string;
+        } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.personas.replace": PlurnkActionEntry<
+        {
+            readonly alias: string;
+            readonly source?: string;
+            readonly description?: string;
+            readonly body?: string;
+            readonly model?: string;
+            readonly effort?: string;
+        } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.personas.enable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.personas.disable": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
+    readonly "workspace.personas.remove": PlurnkActionEntry<
+        { readonly alias: string } & Record<string, unknown>,
+        Record<string, unknown>
+    >;
     readonly "workspace.members.list": PlurnkActionEntry<Record<string, unknown>, PlurnkFamilyListResult>;
     readonly "workspace.members.discover": PlurnkActionEntry<
         { readonly query?: string } & Record<string, unknown>,
@@ -388,6 +427,13 @@ export const ACP_ACTION_KINDS = [
     "workspace.skills.enable",
     "workspace.skills.disable",
     "workspace.skills.remove",
+    "workspace.personas.list",
+    "workspace.personas.discover",
+    "workspace.personas.add",
+    "workspace.personas.replace",
+    "workspace.personas.enable",
+    "workspace.personas.disable",
+    "workspace.personas.remove",
     "workspace.members.list",
     "workspace.members.discover",
     "workspace.members.add",

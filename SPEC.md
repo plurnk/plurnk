@@ -88,7 +88,7 @@ plurnk [options]                             # TUI mode (no positionals, TTY std
 
 | Segment | Contract |
 | --- | --- |
-| Project folder & place | Starts with `snapshot.plurnk.workspace.projectLabel` (omitted when headless or equal to workspace name in TUI), then `[<workspace>/<lineage>(<loop>/<turn>)]` with `~` on the bound session. TUI footer uses muted color role ({§cli-color-policy}). |
+| Project folder & place | Starts with `snapshot.plurnk.workspace.projectLabel` (omitted when headless or equal to workspace name in TUI), then `[<workspace>/<lineage>(<loop>/<turn>)]` with `~` on the bound session. TUI footer uses muted color role ({§cli-color-policy}) and truncates with `…` to terminal width on a single line rather than wrapping. |
 | Glyphs (`🔌`, `<glyph>`) | `🔌` leads when the last session observation ended in failure (cleared on next command/prompt). Lifecycle glyphs: `⏳` queued, `⌛︎` running, `💤` parked, `⏹️` complete, `🛑` cancelled, `❌` failed (two spaces after last glyph). |
 | Clock, wait & preparation | Ticks once per second during unfinished runs (from prompt send, `status.claimedAt`, or attachment), freezes on settlement, and is omitted on untouched `idle` sessions with zero turns. Parked with `status.waitUntil` shows `updates in <remaining>` then `updates due`. `_meta.plurnk.workspace.preparation` shows family, alias, phase, and elapsed time. |
 | Spend (`↓<in> ↑<out> · $<usd>`) | From `snapshot.plurnk.status.spend` across session and descendants (`582k`, `1.2M`; `$3,333.3333`). Partial unknown totals append `+ ?`, wholly unknown renders `$?`, zero cost hidden. |

@@ -377,6 +377,8 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
     if (wait102[0]?.kind === "tool_call") {
         assert.equal(wait102[0].outcome, "Nothing is in flight. Continuing.");
     }
+    assert.equal(presenter.doing, null, "WAIT must clear presenter.doing instead of lingering in the status bar");
+    assert.doesNotMatch(presenter.lastStatusLine, /\bWAIT\b/u);
 
     // Unnamed WORK/FORK falls back to attrs.session, and replay sh falls back to receipt content ({§cli-rendering})
     const unnamedWork = presenter.apply({

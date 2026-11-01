@@ -719,7 +719,7 @@ export class SessionPresenter {
                                 : sTarget !== null && sTarget.includes("://")
                                   ? sTarget.slice(0, sTarget.indexOf("://"))
                                   : "sh";
-                        if (!(derivedOp in OPERATION_GLYPH_MAP)) {
+                        if (!(derivedOp.toUpperCase() in OPERATION_GLYPH_MAP)) {
                             const existing =
                                 this.#activeStreams.get(streamKey) ??
                                 [...this.#activeStreams.values()].find(
@@ -1138,7 +1138,7 @@ export class SessionPresenter {
                 });
                 // {§cli-rendering}, {§cli-session-status} — Only open runtime streams (never synchronous verbs in OPERATION_GLYPH_MAP)
                 // enter #activeStreams while in_progress.
-                if (update.status === "in_progress" && !(opName in OPERATION_GLYPH_MAP)) {
+                if (update.status === "in_progress" && !(opName.toUpperCase() in OPERATION_GLYPH_MAP)) {
                     const streamTarget =
                         typeof metaPlurnk.attrs?.stream === "string" && metaPlurnk.attrs.stream.length > 0
                             ? metaPlurnk.attrs.stream
@@ -1172,12 +1172,15 @@ export class SessionPresenter {
                     });
                 }
                 if (this.lifecycle === "running") {
-                    this.doing = {
-                        phase: "working",
-                        since: Date.now(),
-                        op: opName,
-                        target,
-                    };
+                    this.doing =
+                        opName.toUpperCase() === "WAIT"
+                            ? null
+                            : {
+                                  phase: "working",
+                                  since: Date.now(),
+                                  op: opName,
+                                  target,
+                              };
                     frames.push({
                         kind: "status_update",
                         status: this.buildStatusBar(),
@@ -1372,12 +1375,15 @@ export class SessionPresenter {
             }
 
             if (this.lifecycle === "running") {
-                this.doing = {
-                    phase: "working",
-                    since: Date.now(),
-                    op: opName,
-                    target,
-                };
+                this.doing =
+                    opName.toUpperCase() === "WAIT"
+                        ? null
+                        : {
+                              phase: "working",
+                              since: Date.now(),
+                              op: opName,
+                              target,
+                          };
                 this.buildStatusBar();
             }
 
@@ -1546,11 +1552,16 @@ export class SessionPresenter {
                 (typeof update.messageId === "string" && update.messageId.startsWith("outside-")) ||
                 metaPlurnk?.op === "outside-" ||
                 metaPlurnk?.outside !== undefined;
+            const effectiveOp = isOutside ? "outside-" : (metaPlurnk?.op ?? "SEND");
+            if (effectiveOp === "WAIT" && this.lifecycle === "running") {
+                this.doing = null;
+                this.buildStatusBar();
+            }
             frames.push({
                 kind: "reply_chunk",
                 messageId: update.messageId,
                 text,
-                op: isOutside ? "outside-" : (metaPlurnk?.op ?? "SEND"),
+                op: effectiveOp,
                 status: typeof metaPlurnk?.status === "number" ? metaPlurnk.status : 200,
                 aside: metaPlurnk?.attrs?.aside ?? null,
             });
@@ -1704,6 +1715,10 @@ export class SessionPresenter {
                     this.lastLoopStatus = null;
                     this.waitUntil = null;
                     this.lifecycle = rawNotice.status === 102 ? "running" : "queued";
+                    this.doing =
+                        rawNotice.status === 102
+                            ? { phase: "working", since: Date.now(), op: null, target: null }
+                            : null;
                     frames.push({
                         kind: "status_update",
                         status: this.buildStatusBar(),

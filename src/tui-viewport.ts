@@ -817,11 +817,11 @@ export const runTuiViewport = async (
                         .map((w) => (w && typeof w === "object" ? String((w as { name?: unknown }).name ?? "") : ""))
                         .filter(Boolean);
                 }
-                if (Array.isArray(event.configOptions)) {
-                    applyConfigOptionsToCache(event.configOptions);
-                }
                 if (event._meta && typeof event._meta === "object") {
                     presenter.ingestMeta(event._meta as Record<string, unknown>);
+                }
+                if (Array.isArray(event.configOptions)) {
+                    applyConfigOptionsToCache(event.configOptions);
                 }
                 const historyLostFrame = presenter.consumeHistoryLostFrame();
                 if (surface !== null) {

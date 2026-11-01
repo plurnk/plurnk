@@ -500,13 +500,24 @@ export const runReplSession = async (
                         | { model?: { alias?: string | null; provider?: string; model?: string } | null }
                         | undefined
                 )?.model ?? null;
+            const activeProvider = Array.isArray(plurnk?.providers)
+                ? (plurnk.providers as unknown[]).find(
+                      (p): p is { alias?: string; provider?: string; model?: string } =>
+                          Boolean(p) && typeof p === "object" && (p as { active?: unknown }).active === true,
+                  )
+                : undefined;
             const currentVal =
                 statusModel !== null && typeof statusModel === "object"
                     ? (statusModel.alias ??
                       (typeof statusModel.provider === "string" && typeof statusModel.model === "string"
                           ? `${statusModel.provider}/${statusModel.model}`
                           : "none"))
-                    : "none";
+                    : activeProvider !== undefined
+                      ? (activeProvider.alias ??
+                        (typeof activeProvider.provider === "string" && typeof activeProvider.model === "string"
+                            ? `${activeProvider.provider}/${activeProvider.model}`
+                            : "none"))
+                      : "none";
             nextSession.configOptions = [
                 {
                     configId: "model",

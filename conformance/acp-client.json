@@ -140,6 +140,41 @@
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
+    "workspace.personas.list": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
+    },
+    "workspace.personas.discover": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
+    },
+    "workspace.personas.add": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
+    },
+    "workspace.personas.replace": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation"]
+    },
+    "workspace.personas.enable": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
+    },
+    "workspace.personas.disable": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
+    },
+    "workspace.personas.remove": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
+    },
     "workspace.members.list": {
       "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — file members management"],

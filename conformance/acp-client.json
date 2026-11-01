@@ -74,6 +74,11 @@
       "evidence": ["src/cli.test.ts — workspace rename"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
+    "workspace.hide": {
+      "posture": "permanent-domain",
+      "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
+      "dimensions": ["admission", "projection", "success", "failure", "durability"]
+    },
     "workspace.rollback": {
       "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — workspace rollback"],

@@ -160,6 +160,10 @@ export interface PlurnkActionMap {
         { readonly name: string } & Record<string, unknown>,
         { readonly name?: string } & Record<string, unknown>
     >;
+    readonly "workspace.hide": PlurnkActionEntry<
+        { readonly hidden?: boolean } & Record<string, unknown>,
+        { readonly id?: number; readonly hidden_at?: string | null } & Record<string, unknown>
+    >;
     readonly "workspace.rollback": PlurnkActionEntry<
         { readonly to: number } & Record<string, unknown>,
         Record<string, unknown>
@@ -415,6 +419,7 @@ export const ACP_ACTION_KINDS = [
     "session.loops",
     "workspace.share",
     "workspace.rename",
+    "workspace.hide",
     "workspace.rollback",
     "entry.read",
     "op.parse",

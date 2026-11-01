@@ -138,7 +138,7 @@ try {
                 return;
             }
             const response = scriptedResponses.shift()
-                ?? `\`\`\`\`SEND [200]\ncomposition ok: ${request.model}
+                ?? `\`\`\`\`DONE\ncomposition ok: ${request.model}
 \`\`\`\``;
             res.writeHead(200, {
                 "content-type": "text/event-stream",
@@ -265,8 +265,8 @@ try {
             + "````WAIT\nWaiting for guesser1.\n````",
         "````EDIT (child.txt)\ncreated by packed child\n````\n"
             + "````NOTE\nConfirming the write.\n````",
-        "````SEND [200]\nChild work complete.\n````",
-        "````SEND [200]\npacked descendant proposal complete\n````",
+        "````DONE\nChild work complete.\n````",
+        "````DONE\npacked descendant proposal complete\n````",
     );
     const requestsBeforeDelegation = selectedModels.length;
     const delegated = await runClient(clientBin, [
@@ -276,10 +276,10 @@ try {
     ], { cwd: install, env, timeout: 45_000 });
     const delegatedResult = JSON.parse(delegated.stdout);
     const parentLifecycle = delegatedResult.turns?.flatMap(({ ops }) => ops)
-        .filter(({ op, origin }) => ["WAIT", "SEND"].includes(op) && origin === "model");
+        .filter(({ op, origin }) => ["WAIT", "DONE"].includes(op) && origin === "model");
     // Settlement may beat parking; either outcome must admit WAIT and deliver the final reply.
     if (parentLifecycle?.length !== 2 || ![102, 202].includes(parentLifecycle[0].status)
-        || parentLifecycle[0].op !== "WAIT" || parentLifecycle[1].op !== "SEND"
+        || parentLifecycle[0].op !== "WAIT" || parentLifecycle[1].op !== "DONE"
         || parentLifecycle[1].status !== 200 || parentLifecycle.some(({ scope }) => scope !== null)) {
         throw new Error(`descendant proposal did not admit and settle its parent's wait: ${JSON.stringify(parentLifecycle)}`);
     }

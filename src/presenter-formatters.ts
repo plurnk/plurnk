@@ -14,6 +14,7 @@ export const OPERATION_GLYPH_MAP: Readonly<Record<string, string>> = {
     BARE: "☁️",
     WAIT: "⏳",
     SEND: "✉️",
+    DONE: "🐹",
     WARN: "⚠️",
     FAIL: "⛔",
     ERROR: "⛔",

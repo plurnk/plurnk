@@ -80,7 +80,7 @@ export const renderModelReply = (
         return renderMarkdownDocument(text, columns);
     }
     const status = opts?.status ?? 200;
-    const failed = status >= 400;
+    const failed = status >= 400 || op === "FAIL";
     const glyph = op === "WAIT" ? (failed ? "❌" : "⏳") : failed ? "❌" : "🐹";
     const cleanAside =
         (op === "WAIT" || failed) && opts?.aside ? ModelText.plain(opts.aside).trim() : "";

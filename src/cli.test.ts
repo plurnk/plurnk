@@ -134,6 +134,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     assert.equal(operationGlyphFor("FORK"), "🔱");
     assert.equal(operationGlyphFor("WAIT"), "⏳");
     assert.equal(operationGlyphFor("SEND"), "✉️");
+    assert.equal(operationGlyphFor("DONE"), "🐹");
     assert.equal(operationGlyphFor("sh"), "⚙️  sh");
 
     // Reasoning tail accumulation, line cap, and retirement before tool calls/replies ({§cli-markdown-projection})
@@ -158,7 +159,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         title: "READ (ops://x3/1/2)",
         status: "completed",
         locations: [{ path: "ops://x3/1/2" }],
-        content: [{ type: "content", content: { type: "text", text: "```SEND [200]\nHello\n```" } }],
+        content: [{ type: "content", content: { type: "text", text: "```DONE\nHello\n```" } }],
         _meta: { plurnk: { op: "READ", origin: "_plurnk", attrs: { kind: "emission" } } },
     });
     assert.equal(emittedAnnouncement.length, 0);
@@ -330,8 +331,8 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     assert.equal(msg[0]?.kind, "session_message");
 
     // Rich TUI waterfall formatting: 🐹 model replies, NOTE bodies, operation previews, 💭 reasoning, 🎯 loop summary
-    assert.match(renderModelReply("Hello **world**", 80, { op: "SEND", status: 200 }), /🐹[\s\S]*Hello/);
-    assert.match(renderModelReply("Cancelled", 80, { op: "SEND", status: 499 }), /❌/);
+    assert.match(renderModelReply("Hello **world**", 80, { op: "DONE", status: 200 }), /🐹[\s\S]*Hello/);
+    assert.match(renderModelReply("Cancelled", 80, { op: "FAIL", status: 200 }), /❌/);
     assert.match(renderModelReply("Waiting", 80, { op: "WAIT", status: 200 }), /⏳/);
     assert.match(
         renderNoteBlock({ glyph: "💡", aside: null, body: "Full note markdown body", columns: 80 }),

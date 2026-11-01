@@ -234,7 +234,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
         assert.doesNotMatch(renderedHarnessNote, /\+\d+ line/u);
     }
 
-    // Concluded runtime execution previews streamed output under the operation row and suppresses duplicate obligation READ ({§cli-rendering}, {§cli-problems-and-notices})
+    // Concluded runtime execution renders as a single-line receipt and suppresses duplicate obligation READ ({§cli-rendering}, {§cli-problems-and-notices})
     assert.equal(
         presenter.apply({
             sessionUpdate: "tool_call_update",
@@ -270,7 +270,7 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     assert.equal(execDone.length, 1);
     if (execDone[0]?.kind === "tool_call") {
         assert.deepEqual(execDone[0].contentLines, []);
-        assert.deepEqual(execDone[0].outputLines, ["Result line 1\nResult line 2\nResult line 3"]);
+        assert.deepEqual(execDone[0].outputLines, []);
         const renderedExec = renderOperationBlock({
             glyph: execDone[0].glyph,
             op: execDone[0].op,
@@ -286,7 +286,9 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
             columns: 80,
         });
         assert.doesNotMatch(renderedExec, /\{"query":"weather"\}/u);
-        assert.match(renderedExec, /⚙️\s+brave[\s\S]*Result line 1[\s\S]*Result line 2[\s\S]*\+1 line/u);
+        assert.doesNotMatch(renderedExec, /Result line 1/u);
+        assert.match(renderedExec, /⚙️\s+brave\s+\(brave_web_search\)/u);
+        assert.equal(renderedExec.includes("\n"), false);
     }
     const shDone = presenter.apply({
         sessionUpdate: "tool_call_update",
@@ -298,7 +300,8 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-color-policy}: waterf
     });
     assert.equal(shDone.length, 1);
     if (shDone[0]?.kind === "tool_call") {
-        assert.deepEqual(shDone[0].contentLines, ["git status --short"]);
+        assert.deepEqual(shDone[0].contentLines, []);
+        assert.deepEqual(shDone[0].outputLines, []);
     }
     const dupDischarge = presenter.apply({
         sessionUpdate: "tool_call_update",

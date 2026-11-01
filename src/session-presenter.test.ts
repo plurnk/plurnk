@@ -419,7 +419,8 @@ test("{§cli-session-status} {§cli-workspaces-and-sessions} {§cli-rendering}: 
     });
     assert.equal(replaySh[0]?.kind, "tool_call");
     if (replaySh[0]?.kind === "tool_call") {
-        assert.deepEqual(replaySh[0].outputLines, ["replayed"]);
+        assert.deepEqual(replaySh[0].contentLines, []);
+        assert.deepEqual(replaySh[0].outputLines, []);
     }
 
     // resetSessionHistory clears rendered coordinates so switching sessions or /loop renders 33/2/4 again ({§cli-sessions-topology})
@@ -703,7 +704,127 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
     assert.equal(concludedFrames[0]?.kind, "tool_call");
     if (concludedFrames[0]?.kind === "tool_call") {
         assert.equal(concludedFrames[0].toolCallId, "6/1/5");
-        assert.deepEqual(concludedFrames[0].contentLines, ["echo stream-body"]);
-        assert.deepEqual(concludedFrames[0].outputLines, ["stream-body"]);
+        assert.deepEqual(concludedFrames[0].contentLines, []);
+        assert.deepEqual(concludedFrames[0].outputLines, []);
+    }
+
+    // Out-of-order terminal_update (exitStatus) arriving before tool_call_update (in_progress) settles the stream immediately
+    // and prevents it from loitering in activeLiveEntries or being resurrected by a stale status.streams gauge ({§cli-rendering}, {§cli-session-status}, #240).
+    presenter.apply({
+        sessionUpdate: "terminal_update",
+        terminalId: "term:701",
+        status: "completed",
+        exitStatus: { exitCode: 0, signal: null },
+        _meta: {
+            plurnk: {
+                opId: 701,
+                target: "gitea://1",
+            },
+        },
+    });
+    const racedFrames = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "6/2/1",
+        name: "gitea",
+        title: "gitea (list_my_repos) — List my Gitea repositories",
+        status: "in_progress",
+        rawInput: { target: { raw: "list_my_repos" }, body: '{"page":1}', aside: "List my Gitea repositories" },
+        _meta: {
+            plurnk: {
+                id: 702,
+                op: "gitea",
+                status: 202,
+                turnSeq: 2,
+                attrs: { stream: "gitea://1", aside: "List my Gitea repositories" },
+            },
+        },
+    });
+    assert.equal(racedFrames.length, 1);
+    assert.equal(racedFrames[0]?.kind, "tool_call");
+    if (racedFrames[0]?.kind === "tool_call") {
+        assert.equal(racedFrames[0].toolCallId, "6/2/1");
+        assert.equal(racedFrames[0].status, "completed");
+        assert.equal(racedFrames[0].statusCode, 200);
+        assert.deepEqual(racedFrames[0].contentLines, []);
+        assert.deepEqual(racedFrames[0].outputLines, []);
+    }
+    presenter.ingestMeta({
+        plurnk: {
+            status: {
+                streams: [
+                    {
+                        entryId: 701,
+                        sessionId: 1,
+                        target: "gitea://1",
+                        lifetime: "loop",
+                        loop_seq: 6,
+                        turn_seq: 2,
+                        sequence: 1,
+                        channels: [],
+                    },
+                ],
+            },
+        },
+    });
+    assert.equal(
+        presenter.activeLiveEntries.some((e) => e.target === "gitea://1"),
+        false,
+        "concluded stream must not loiter in activeLiveEntries or be resurrected by a stale gauge",
+    );
+
+    // Trailing state_update: running with status.lifecycle: "parked" preserves parked state and clears doing ({§cli-session-status}, #240).
+    presenter.doing = { phase: "working", since: Date.now(), op: "WAIT", target: null };
+    presenter.lifecycle = "requires_action";
+    presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "6/2/2",
+        name: "WAIT",
+        title: "WAIT",
+        status: "completed",
+        rawInput: { seconds: 15 },
+        _meta: { plurnk: { op: "WAIT", status: 200, attrs: { waiting: 15 } } },
+    });
+    assert.equal(presenter.doing, null, "WAIT must clear doing even when lifecycle was requires_action");
+    const parkedStateFrames = presenter.apply({
+        sessionUpdate: "state_update",
+        state: "running",
+        _meta: {
+            plurnk: {
+                status: {
+                    lifecycle: "parked",
+                    waitUntil: Date.now() + 15_000,
+                },
+            },
+        },
+    });
+    assert.equal(parkedStateFrames[0]?.kind, "status_update");
+    if (parkedStateFrames[0]?.kind === "status_update") {
+        assert.equal(parkedStateFrames[0].status.lifecycle, "parked");
+        assert.equal(parkedStateFrames[0].status.lifecycleGlyph, "💤");
+        assert.equal(presenter.doing, null);
+        assert.match(parkedStateFrames[0].status.formattedStatusLine, /updates in (?:14|15)s/u);
+    }
+
+    // Canonical NOTE tags (fact, idea, plan) map to 📊, 💡, 🚧 with aside: null and no residual text ({§cli-rendering}).
+    for (const [tag, expectedGlyph] of [
+        ["fact", "📊"],
+        ["idea", "💡"],
+        ["plan", "🚧"],
+    ] as const) {
+        const noteFrames = presenter.apply({
+            sessionUpdate: "tool_call_update",
+            toolCallId: `6/2/note-${tag}`,
+            name: "NOTE",
+            title: `NOTE — ${tag}`,
+            status: "completed",
+            rawInput: { aside: tag, body: `Body for ${tag}` },
+            _meta: { plurnk: { op: "NOTE", status: 200, attrs: { aside: tag } } },
+        });
+        assert.equal(noteFrames[0]?.kind, "tool_call");
+        if (noteFrames[0]?.kind === "tool_call") {
+            assert.equal(noteFrames[0].glyph, expectedGlyph);
+            assert.equal(noteFrames[0].aside, null);
+            assert.equal(noteFrames[0].noteBody, `Body for ${tag}`);
+        }
     }
 });

@@ -246,8 +246,6 @@ export const NO_PREVIEW_VERBS = new Set([
     "NOTE",
 ]);
 
-export const SCRIPT_RUNTIMES = new Set(["sh", "js", "python3", "py"]);
-
 export const WORKER_OPS = new Set(["WORK", "FORK", "BARE"]);
 
 export const formatActiveOperationLead = (op: string): string => {

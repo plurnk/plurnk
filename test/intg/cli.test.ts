@@ -1053,7 +1053,7 @@ test("{§cli-repl-mode} {§cli-interactive-command-discovery} {§cli-sessions-to
             assert.ok(screenLines.some((l) => l === "🚧"), `Model plan NOTE must render glyph without category word:\n${screenLines.join("\n")}`);
             assert.ok(screenLines.some((l) => l.startsWith("⚙️  brave (brave_web_search)")), `Runtime execution row must render with two spaces after gear:\n${screenLines.join("\n")}`);
             assert.ok(!screenLines.some((l) => l.includes('{"query":"yemen"}')), "MCP request body must not be shown in TUI");
-            assert.ok(screenLines.some((l) => l === "    Sana'a result 1"), "Concluded execution output must preview indented 4 spaces");
+            assert.ok(!screenLines.some((l) => l.includes("Sana'a result 1")), "Concluded execution output must not preview in TUI");
             assert.ok(screenLines.some((l) => /^🐹 1 turn · \d+ms/u.test(l)), `Model reply must render with hamster glyph and inline loop summary:\n${screenLines.join("\n")}`);
 
             // /quit in PTY TUI must exit cleanly with code 0 on its own without kill()

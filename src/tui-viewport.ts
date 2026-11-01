@@ -1074,8 +1074,7 @@ export const runTuiViewport = async (
                         }
                         break;
                     case "terminal_output":
-                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-rendering});
-                        // concluded output is previewed beneath the launching operation row when it finishes.
+                        // Stream telemetry never writes directly to the TUI waterfall ({§cli-rendering}).
                         if (surface === null) {
                             termOut.write(`${frame.rawData}\n`);
                         }

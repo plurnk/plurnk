@@ -8,8 +8,8 @@ import {
     ProcessTerminal,
     Spacer,
     Text,
+    truncateToWidth,
     TuiMainScreen,
-    wrapTextWithAnsi,
     type AutocompleteProvider,
     type Component,
     type Terminal,
@@ -94,10 +94,24 @@ export {
     type Role,
 };
 
-const muted = (text: Text): Component => ({
-    render: (width) => text.render(width).map(styled("dim")),
-    invalidate: () => text.invalidate(),
-});
+// {§cli-session-status} — Single-line muted footer/banner that truncates to terminal width instead of wrapping.
+class SingleLineText implements Component {
+    #text = "";
+
+    setText(text: string): void {
+        this.#text = text;
+    }
+
+    invalidate(): void {}
+
+    render(width: number): string[] {
+        const normalized = this.#text.replace(/\t/gu, "   ");
+        if (normalized.trim().length === 0) return [];
+        const single = normalized.split("\n", 1)[0] ?? "";
+        const safeWidth = Math.max(1, width);
+        return [styled("dim")(truncateToWidth(single, safeWidth, "…", true))];
+    }
+}
 
 type CoordinateTuple = readonly [number, number, number];
 
@@ -219,13 +233,12 @@ export class TailText implements Component {
         if (this.#text.length > 0) {
             const rawLines = this.#text.replace(/\t/gu, "   ").split("\n");
             const tailRaw = rawLines.length <= max ? rawLines : rawLines.slice(rawLines.length - max);
-            const lines = tailRaw.flatMap((line) => wrapTextWithAnsi(line, safeWidth));
-            reasoningLines = lines.length <= max ? lines : lines.slice(lines.length - max);
+            reasoningLines = tailRaw.map((line) => truncateToWidth(line, safeWidth, "…"));
         }
         let activityLine = "";
         if (this.#activity.length > 0) {
-            const activityLines = wrapTextWithAnsi(this.#activity.replace(/\t/gu, "   "), safeWidth);
-            activityLine = activityLines[0] ?? "";
+            const singleActivity = this.#activity.replace(/\t/gu, "   ").split("\n", 1)[0] ?? "";
+            activityLine = truncateToWidth(singleActivity, safeWidth, "…");
         }
         if (this.#reserved) {
             const paddedReasoning = [
@@ -253,9 +266,9 @@ export default class TuiSurface {
     readonly #toolCallSlots = new Map<string, TranscriptSlot>();
     #lastLoopHamster: TranscriptSlot | null = null;
     #promptHistory: string[] = [];
-    readonly #status = new Text("", 0, 0);
+    readonly #status = new SingleLineText();
     readonly #input = new Container();
-    readonly #pending = new Text("", 0, 0);
+    readonly #pending = new SingleLineText();
     readonly editor: Editor;
     #review: Component | null = null;
     #reviewing = false;
@@ -270,10 +283,10 @@ export default class TuiSurface {
         this.editor = this.createEditor();
         this.#input.addChild(this.editor);
         this.#tui.addChild(this.#transcript);
-        this.#tui.addChild(this.#live);
         this.#tui.addChild(this.#turn);
+        this.#tui.addChild(this.#live);
         this.#tui.addChild(this.#input);
-        this.#tui.addChild(muted(this.#status));
+        this.#tui.addChild(this.#status);
         this.#tui.setFocus(this.editor);
         this.#tui.onTerminalColorSchemeChange((scheme) => this.#askScheme(scheme));
     }
@@ -292,6 +305,10 @@ export default class TuiSurface {
 
     renderLiveLines(width = this.#terminal.columns): string[] {
         return this.#live.render(width);
+    }
+
+    renderStatusLines(width = this.#terminal.columns): string[] {
+        return this.#status.render(width);
     }
 
     createEditor(): Editor {
@@ -362,7 +379,7 @@ export default class TuiSurface {
             this.#input.addChild(this.#review);
         } else {
             if (this.#review !== null) {
-                this.#input.addChild(muted(this.#pending));
+                this.#input.addChild(this.#pending);
             }
             this.#input.addChild(this.editor);
         }
@@ -522,7 +539,7 @@ export default class TuiSurface {
         this.#tui.requestRender();
     }
 
-    // {§cli-markdown-projection} — Turn responses sit below #live reasoning during the turn, then archive to #transcript.
+    // {§cli-markdown-projection} — Turn responses sit between #transcript and #live during the turn, then archive to #transcript.
     addResponse(text: string, coordinate?: string | null): void {
         const normalized = text.replace(/\n$/u, "");
         if (normalized.length === 0) return;

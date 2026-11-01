@@ -1030,6 +1030,9 @@ export const runTuiViewport = async (
                             surface?.archiveTurn();
                         } else if (frame.status.lifecycle !== "running" || presenter.doing?.phase === "working") {
                             retireLiveReasoning();
+                            if (frame.status.lifecycle === "parked") {
+                                surface?.archiveTurn();
+                            }
                         }
                         if (surface !== null) {
                             updateSurfaceStatus();
@@ -1050,6 +1053,9 @@ export const runTuiViewport = async (
                                 }),
                                 frame.messageId,
                             );
+                            if (frame.op === "WAIT") {
+                                updateSurfaceStatus();
+                            }
                         }
                         break;
                     case "tool_call":

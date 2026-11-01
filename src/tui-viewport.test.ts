@@ -1917,6 +1917,15 @@ test("{§cli-rendering} {§cli-markdown-projection} {§cli-session-status} {§cl
     assert.deepEqual(surface.renderLiveLines(80), []);
     assert.equal(surface.chromeChildCount, 5);
 
+    // Status line and TailText truncate to terminal width instead of wrapping onto multiple lines (#238)
+    surface.setStatus(
+        "[plurnk-service/~service(12/8)] ⌛︎  · deepseek/deepseek-reasoner(high) · 42s · ↓128k ↑16k · $1.2345 · READ src/very/long/path.ts",
+    );
+    const truncatedStatus = surface.renderStatusLines(50);
+    assert.equal(truncatedStatus.length, 1, "status line must never wrap onto a second line");
+    assert.ok(stripVTControlCharacters(truncatedStatus[0]!).includes("…"));
+    assert.equal(stripVTControlCharacters(truncatedStatus[0]!).length, 50);
+
     // Active streams & workers strip: synchronous verbs (READ, FIND, EDIT, etc.) never appear,
     // streams appear only after surviving past their opening turn, and workers appear while active (#238)
     const presenter = new SessionPresenter({ workspaceName: "ws", sessionName: "user" });

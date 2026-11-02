@@ -74,7 +74,7 @@
       "evidence": ["src/cli.test.ts — workspace rename"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
-    "workspace.hide": {
+    "workspace.archive": {
       "posture": "permanent-domain",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "durability"]
@@ -417,8 +417,8 @@
         "evidence": ["src/credential.ts — local OAuth 2.1 grant lifecycle"]
       },
       "auth/status": {
-        "posture": "oauth-out-of-band",
-        "evidence": ["src/credential.ts — RFC 9728 / RFC 8414 / PKCE OAuth 2.1 credential authority"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.authStatus"]
       },
       "providers/list": {
         "posture": "extension-action",
@@ -449,24 +449,24 @@
         "evidence": ["src/acp-client.ts — AcpClient.listSessions"]
       },
       "session/delete": {
-        "posture": "daemon-durable",
-        "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.deleteSession"]
       },
       "session/archive": {
-        "posture": "daemon-durable",
-        "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.archiveSession"]
       },
       "session/unarchive": {
-        "posture": "daemon-durable",
-        "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.unarchiveSession"]
       },
       "session/status": {
         "posture": "native",
-        "evidence": ["src/session-presenter.ts — running/requires_action/idle lifecycle and status_bar"]
+        "evidence": ["src/acp-client.ts — AcpClient.sessionStatus"]
       },
       "session/set_title": {
-        "posture": "daemon-durable",
-        "evidence": ["src/dispatcher.ts — workspace.rename and durable workspace#session identity"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.setSessionTitle"]
       },
       "session/close": {
         "posture": "native",
@@ -485,12 +485,12 @@
         "evidence": ["src/acp-session.ts — AcpSession.cancel"]
       },
       "tool_call/cancel": {
-        "posture": "session-cancel",
-        "evidence": ["src/acp-session.ts — AcpSession.cancel loop-level cancellation"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.cancelToolCall"]
       },
       "terminal/cancel": {
-        "posture": "session-cancel",
-        "evidence": ["src/acp-session.ts — AcpSession.cancel loop-level cancellation"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.cancelTerminal"]
       },
       "mcp/message": {
         "posture": "daemon-owned",
@@ -519,8 +519,8 @@
         "evidence": ["src/acp-client.ts — onElicitationComplete gate retirement"]
       },
       "auth/status_update": {
-        "posture": "oauth-out-of-band",
-        "evidence": ["src/credential.ts — local OAuth 2.1 grant lifecycle"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.onAuthStatusUpdate"]
       }
     },
     "sessionUpdates": {
@@ -585,8 +585,8 @@
         "evidence": ["src/session-presenter.ts — model, thought_level, spawn_model, and mode sync"]
       },
       "isSessionInfoUpdate": {
-        "posture": "ignored",
-        "evidence": ["src/session-presenter.ts — workspace and session identity arrive in _meta.plurnk"]
+        "posture": "native",
+        "evidence": ["src/acp-session.ts — AcpSession.applyUpdate session_info_update title sync"]
       },
       "isUsageUpdate": {
         "posture": "native",

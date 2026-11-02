@@ -7,6 +7,12 @@ This repository owns the open-source PLURNK terminal client. Preserve the
 client boundary: it consumes `plurnk-service` through the public ACP v2
 contract and does not absorb daemon or provider responsibilities.
 
+**ACPv2 is the Schelling point.** Our prerogative is not to maintain a translation layer between
+PLURNK and ACPv2, but to become an ACPv2 agent paradigmatically — aggressively simplifying until the
+only things that aren't ACPv2 are either essential to PLURNK's virtual machine or orthogonal to the
+protocol. When ACPv2 names or shapes a concept, it drives a maximal rename across the service and
+client so the codebase reads as if that was always our name and model for it.
+
 **A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in
 one landing: types, schema, methods, Problems, knobs, wire actions, spec tags, tests, fixtures and docs.
 A surface-only rename, a new flag over old internals, is a defect, not a first step.

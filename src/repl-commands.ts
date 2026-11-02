@@ -111,7 +111,7 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
             }
             if (item.kind === "tool_call") {
                 const itemPlurnk = (item.meta?.plurnk ?? undefined) as
-                    | { op?: string; origin?: string; attrs?: { kind?: string } }
+                    | { op?: string; origin?: string; attrs?: { kind?: string; distilled?: string } }
                     | undefined;
                 const op = itemPlurnk?.op ?? item.name ?? "";
                 const target = item.locations[0]?.path ?? "";
@@ -126,6 +126,13 @@ export const extractChronologicalHistory = (targetSession: AcpSession): AcpTrans
                     itemPlurnk?.origin === "_plurnk" &&
                     op === "EDIT" &&
                     itemPlurnk.attrs?.kind === "entry_materialized"
+                ) {
+                    return false;
+                }
+                if (
+                    op === "NOTE" &&
+                    typeof itemPlurnk?.attrs?.distilled === "string" &&
+                    itemPlurnk.attrs.distilled.trim().length > 0
                 ) {
                     return false;
                 }

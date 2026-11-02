@@ -1060,7 +1060,12 @@ export class SessionPresenter {
                               op?: string;
                               origin?: string;
                               status?: number;
-                              attrs?: { aside?: string; kind?: string; stream?: string };
+                              attrs?: {
+                                  aside?: string;
+                                  kind?: string;
+                                  stream?: string;
+                                  distilled?: string;
+                              };
                           };
                       }
                     | undefined
@@ -1090,6 +1095,7 @@ export class SessionPresenter {
                     session?: string;
                     to?: string;
                     waiting?: number;
+                    distilled?: string;
                 };
             };
             this.#syncLoopAndTurn(metaPlurnk.loopSeq, metaPlurnk.turnSeq);
@@ -1142,7 +1148,8 @@ export class SessionPresenter {
                 attrSessionTarget ??
                 extractTitleTarget(effectiveTitle);
 
-            // Suppress internal _plurnk emission announcements and entry materializations ({§cli-rendering}).
+            // Suppress internal _plurnk emission announcements, entry materializations,
+            // and synthesized KILL distillation NOTEs ({§cli-rendering}).
             if (
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "READ" &&
@@ -1155,6 +1162,13 @@ export class SessionPresenter {
                 metaPlurnk.origin === "_plurnk" &&
                 opName === "EDIT" &&
                 metaPlurnk.attrs?.kind === "entry_materialized"
+            ) {
+                return frames;
+            }
+            if (
+                opName === "NOTE" &&
+                typeof metaPlurnk.attrs?.distilled === "string" &&
+                metaPlurnk.attrs.distilled.trim().length > 0
             ) {
                 return frames;
             }
@@ -1325,14 +1339,19 @@ export class SessionPresenter {
                 }
             }
 
-            // Authored request bodies (EDIT, WORK, FORK, undelivered SEND, and harness NOTEs)
+            // Authored request bodies (EDIT, WORK, FORK, KILL, undelivered SEND, and harness NOTEs)
             // receive a preview beneath the row ({§cli-rendering}). Runtime executions render as
             // single-line receipts without request-body or stream-output previews.
             const isRuntimeExec = !(opName in OPERATION_GLYPH_MAP);
             const contentLines: string[] = [];
             if (opName === "NOTE" && origin !== "model" && noteBody !== null && noteBody.length > 0) {
                 contentLines.push(noteBody);
-            } else if (!isRuntimeExec && !NO_PREVIEW_VERBS.has(opName) && authoredBody !== null) {
+            } else if (
+                !isRuntimeExec &&
+                !NO_PREVIEW_VERBS.has(opName) &&
+                authoredBody !== null &&
+                authoredBody.trim().length > 0
+            ) {
                 contentLines.push(authoredBody);
             }
 

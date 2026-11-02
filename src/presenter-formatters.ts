@@ -241,7 +241,6 @@ export const NO_PREVIEW_VERBS = new Set([
     "FIND",
     "COPY",
     "MOVE",
-    "KILL",
     "BARE",
     "WAIT",
     "NOTE",

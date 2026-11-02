@@ -6,6 +6,11 @@ import {
     PROTOCOL_VERSION,
     client,
     methods,
+    type ArchiveSessionResponse,
+    type AuthStatusResponse,
+    type AuthStatusUpdateNotification,
+    type CancelTerminalResponse,
+    type CancelToolCallResponse,
     type ClientConnection,
     type ContentBlock,
     type CreateElicitationRequest,
@@ -23,7 +28,10 @@ import {
     type ResumeSessionRequest,
     type ResumeSessionResponse,
     type SessionConfigValueId,
+    type SessionStatusResponse,
     type SetSessionConfigOptionResponse,
+    type SetSessionTitleResponse,
+    type UnarchiveSessionResponse,
     type UpdateSessionNotification,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import Credential from "./credential.ts";
@@ -65,6 +73,8 @@ export const toAcpWebSocketUrl = (rawUrl: string): string => {
 };
 
 export type SessionUpdateHandler = (notification: UpdateSessionNotification) => void | Promise<void>;
+
+export type AuthStatusUpdateHandler = (notification: AuthStatusUpdateNotification) => void | Promise<void>;
 
 export type PermissionRequestHandler = (
     request: RequestPermissionRequest,
@@ -160,9 +170,9 @@ export interface PlurnkActionMap {
         { readonly name: string } & Record<string, unknown>,
         { readonly name?: string } & Record<string, unknown>
     >;
-    readonly "workspace.hide": PlurnkActionEntry<
-        { readonly hidden?: boolean } & Record<string, unknown>,
-        { readonly id?: number; readonly hidden_at?: string | null } & Record<string, unknown>
+    readonly "workspace.archive": PlurnkActionEntry<
+        { readonly archived?: boolean } & Record<string, unknown>,
+        { readonly id?: number; readonly archived_at?: string | null } & Record<string, unknown>
     >;
     readonly "workspace.rollback": PlurnkActionEntry<
         { readonly to: number } & Record<string, unknown>,
@@ -419,7 +429,7 @@ export const ACP_ACTION_KINDS = [
     "session.loops",
     "workspace.share",
     "workspace.rename",
-    "workspace.hide",
+    "workspace.archive",
     "workspace.rollback",
     "entry.read",
     "op.parse",
@@ -592,6 +602,7 @@ export interface AcpClientOptions {
     readonly clientName?: string;
     readonly clientVersion?: string;
     readonly onSessionUpdate?: SessionUpdateHandler;
+    readonly onAuthStatusUpdate?: AuthStatusUpdateHandler;
     readonly onPermissionRequest?: PermissionRequestHandler;
     readonly onElicitationRequest?: ElicitationRequestHandler;
     readonly onDisconnect?: () => void | Promise<void>;
@@ -610,6 +621,7 @@ export class AcpClient {
     #reconnectPromise: Promise<ClientConnection> | null = null;
     readonly #boundSessions = new Map<string, string>();
     readonly #updateListeners = new Set<SessionUpdateHandler>();
+    readonly #authStatusListeners = new Set<AuthStatusUpdateHandler>();
     readonly #disconnectListeners = new Set<() => void | Promise<void>>();
     #permissionHandler: PermissionRequestHandler | undefined;
     #elicitationHandler: ElicitationRequestHandler | undefined;
@@ -627,6 +639,9 @@ export class AcpClient {
         this.#clientVersion = options.clientVersion ?? "1.0.0";
         if (options.onSessionUpdate !== undefined) {
             this.#updateListeners.add(options.onSessionUpdate);
+        }
+        if (options.onAuthStatusUpdate !== undefined) {
+            this.#authStatusListeners.add(options.onAuthStatusUpdate);
         }
         if (options.onDisconnect !== undefined) {
             this.#disconnectListeners.add(options.onDisconnect);
@@ -659,6 +674,13 @@ export class AcpClient {
         this.#updateListeners.add(listener);
         return () => {
             this.#updateListeners.delete(listener);
+        };
+    }
+
+    onAuthStatusUpdate(listener: AuthStatusUpdateHandler): () => void {
+        this.#authStatusListeners.add(listener);
+        return () => {
+            this.#authStatusListeners.delete(listener);
         };
     }
 
@@ -697,6 +719,12 @@ export class AcpClient {
 
         app.onNotification(methods.client.session.update, async (ctx) => {
             for (const listener of this.#updateListeners) {
+                await listener(ctx.params);
+            }
+        });
+
+        app.onNotification(methods.client.auth.statusUpdate, async (ctx) => {
+            for (const listener of this.#authStatusListeners) {
                 await listener(ctx.params);
             }
         });
@@ -899,6 +927,10 @@ export class AcpClient {
         return await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.providers.list, {}));
     }
 
+    async authStatus(): Promise<AuthStatusResponse> {
+        return await this.#withAutoReconnect((conn) => conn.agent.request(methods.agent.auth.status, {}));
+    }
+
     async forkSession(sessionId: string, cwd: string): Promise<ForkSessionResponse> {
         const res = await this.#withAutoReconnect((conn) =>
             conn.agent.request(methods.agent.session.fork, {
@@ -916,6 +948,32 @@ export class AcpClient {
         );
         this.#boundSessions.delete(sessionId);
         return res;
+    }
+
+    async archiveSession(sessionId: string): Promise<ArchiveSessionResponse | void> {
+        const res = await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.archive, { sessionId }),
+        );
+        this.#boundSessions.delete(sessionId);
+        return res;
+    }
+
+    async unarchiveSession(sessionId: string): Promise<UnarchiveSessionResponse | void> {
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.unarchive, { sessionId }),
+        );
+    }
+
+    async sessionStatus(sessionId: string): Promise<SessionStatusResponse> {
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.status, { sessionId }),
+        );
+    }
+
+    async setSessionTitle(sessionId: string, title: string): Promise<SetSessionTitleResponse> {
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.session.setTitle, { sessionId, title }),
+        );
     }
 
     async closeSession(sessionId: string): Promise<void> {
@@ -961,6 +1019,18 @@ export class AcpClient {
 
     async cancel(sessionId: string): Promise<void> {
         await this.#withAutoReconnect((conn) => conn.agent.notify(methods.agent.session.cancel, { sessionId }));
+    }
+
+    async cancelToolCall(sessionId: string, toolCallId: string): Promise<CancelToolCallResponse | void> {
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.toolCall.cancel, { sessionId, toolCallId }),
+        );
+    }
+
+    async cancelTerminal(sessionId: string, terminalId: string): Promise<CancelTerminalResponse | void> {
+        return await this.#withAutoReconnect((conn) =>
+            conn.agent.request(methods.agent.terminal.cancel, { sessionId, terminalId }),
+        );
     }
 
     action<K extends PlurnkActionKind>(

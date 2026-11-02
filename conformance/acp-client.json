@@ -413,8 +413,8 @@
         "evidence": ["src/credential.ts — RFC 9728 / RFC 8414 / PKCE OAuth 2.1 credential authority"]
       },
       "auth/logout": {
-        "posture": "oauth-out-of-band",
-        "evidence": ["src/credential.ts — local OAuth 2.1 grant lifecycle"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.logout", "src/credential.ts — local OAuth 2.1 grant lifecycle"]
       },
       "auth/status": {
         "posture": "native",

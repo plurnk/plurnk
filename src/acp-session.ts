@@ -10,6 +10,7 @@ import {
     type NoticeSeverity,
     type PlanUpdateContent,
     type SessionConfigOption,
+    type SubagentSessionCapabilities,
     type TerminalExitStatus,
     type ToolCallContent,
     type ToolCallLocation,
@@ -106,7 +107,10 @@ export interface AcpSubagentState {
     readonly sessionId: string;
     title?: string | null;
     description?: string | null;
+    capabilities?: SubagentSessionCapabilities | null;
     state?: string | null;
+    cwd?: string | null;
+    additionalDirectories?: string[] | null;
     meta?: MetaRecord;
 }
 
@@ -458,7 +462,9 @@ export class AcpSession {
             term.outputText += Buffer.from(update.data, "base64").toString("utf8");
         } else if (SessionUpdate.isPlanUpdate(update)) {
             this.#activeStreamMessage = null;
-            const existing = this.items.find((item): item is AcpPlanState => item.kind === "plan");
+            const existing = this.items.find(
+                (item): item is AcpPlanState => item.kind === "plan" && item.plan.planId === update.plan.planId,
+            );
             if (existing !== undefined) {
                 existing.plan = update.plan;
                 existing.meta = patchMeta(existing.meta, update._meta);
@@ -470,7 +476,9 @@ export class AcpSession {
                 });
             }
         } else if (SessionUpdate.isPlanRemoved(update)) {
-            const idx = this.items.findIndex((item) => item.kind === "plan");
+            const idx = this.items.findIndex(
+                (item) => item.kind === "plan" && item.plan.planId === update.planId,
+            );
             if (idx >= 0) this.items.splice(idx, 1);
         } else if (SessionUpdate.isSubagentUpdate(update)) {
             let sub = this.subagents.get(update.sessionId);
@@ -484,8 +492,13 @@ export class AcpSession {
             }
             if (update.title !== undefined) sub.title = update.title;
             if (update.description !== undefined) sub.description = update.description;
+            if (update.capabilities !== undefined) sub.capabilities = update.capabilities;
             if (update.state !== undefined) {
                 sub.state = update.state === null ? null : update.state.state;
+            }
+            if (update.cwd !== undefined) sub.cwd = update.cwd;
+            if (update.additionalDirectories !== undefined) {
+                sub.additionalDirectories = update.additionalDirectories;
             }
             sub.meta = patchMeta(sub.meta, update._meta);
         } else if (SessionUpdate.isConfigOptionUpdate(update)) {

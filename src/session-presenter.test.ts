@@ -830,6 +830,22 @@ test("{§cli-session-status} {§cli-markdown-projection}: aggregate spend preser
         }
     }
 
+    const todoFrames = presenter.apply({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "6/2/todo-1",
+        name: "TODO",
+        title: "TODO",
+        status: "completed",
+        rawInput: { aside: null, body: "- Step 1\n- Step 2" },
+        _meta: { plurnk: { op: "TODO", status: 200 } },
+    });
+    assert.equal(todoFrames[0]?.kind, "tool_call");
+    if (todoFrames[0]?.kind === "tool_call") {
+        assert.equal(todoFrames[0].glyph, "🚧");
+        assert.equal(todoFrames[0].op, "TODO");
+        assert.equal(todoFrames[0].noteBody, "- Step 1\n- Step 2");
+    }
+
     // Fresh session with status.model === null falls back to active provider in _meta.plurnk.providers
     // and preserves configOptions model on config_option_update ({§cli-model-selection}, #243).
     const freshPresenter = new SessionPresenter({

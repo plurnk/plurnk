@@ -1,9 +1,14 @@
 # plurnk terminal design
 
 `plurnk` is a thin terminal client for `plurnk-service`. Both one-shot and
-interactive modes use the daemon's ACP v2 surface. The daemon owns
-workspaces, sessions, model execution, and durable state; the client submits
-actions and renders events.
+interactive modes use the daemon's ACP v2 surface. It builds on two
+implementation substrates (`../plurnk-service/ARCHITECTURE.md` § Standards and
+substrate): `@agentclientprotocol/sdk` for ACP v2 JSON-RPC framing and
+Streamable HTTP / WebSocket transport, and `@earendil-works/pi-tui` for
+main-screen terminal viewport diffing, scrollback preservation, editor/selection
+widgets, and GFM/table/LaTeX layout. The daemon owns workspaces, sessions, model
+execution, and durable state; the client drives sessions, prompts, and approval
+gates over ACP v2.
 
 The behavioral contract lives in [SPEC.md](SPEC.md). This document records only
 the small set of terminal-design choices that are useful when maintaining the
@@ -19,7 +24,7 @@ client.
   scrollback rather than taking over the alternate screen.
 - Provider reasoning streams into a 3-line rolling ticker between the transcript and the composer: it advances in whole line chunks (pushing previous lines up as each line completes, with `💭 ` on the first visible line and 3-space indent on lines 2–3), retires when the turn settles, and never enters the transcript; immutable history keeps every turn's reasoning at `reasoning://<session>/L/T` for a READ.
 - Prompts, command verbs, and raw DSL use the same ACP v2 session and action transport (Streamable HTTP by default, WebSocket when `PLURNK_ACP_URL` selects `ws://` or `wss://`).
-- **Pinned Chrome Budget**: Main-screen layout stacks five `pi-tui` containers in order: scrollable `#transcript`, active `#turn` responses, transient `#live` (`TailText` reserving 3 rolling reasoning lines plus 1 active streams/workers strip `<glyph> <op> (<target>) <elapsed> · ...` directly above the composer while a loop is active, and collapsing to zero height when idle), `#input` composer or inline review (`Editor` / `SelectList`), and the single-line muted `#status` footer (truncated with `…` to terminal width so updates never wrap). Pinned chrome below `#transcript` and `#turn` never exceeds the 3-line reasoning ticker, 1-line active strip, composer/review, and one status line, preserving native terminal scrollback.
+- **Pinned Chrome Budget**: Main-screen layout stacks five `pi-tui` containers in order: scrollable `#transcript`, active `#turn` responses, transient `#live` (`TailText` reserving 3 rolling reasoning lines plus 1 active streams/sessions strip `<glyph> <op> (<target>) <elapsed> · ...` directly above the composer while a loop is active, and collapsing to zero height when idle), `#input` composer or inline review (`Editor` / `SelectList`), and the single-line muted `#status` footer (truncated with `…` to terminal width so updates never wrap). Pinned chrome below `#transcript` and `#turn` never exceeds the 3-line reasoning ticker, 1-line active strip, composer/review, and one status line, preserving native terminal scrollback.
 
 ## Rendering
 
@@ -41,7 +46,7 @@ tested in `SPEC.md`; design history belongs in Git.
 
 pi-tui owns multiline editing, history, completion presentation, paste framing,
 keyboard negotiation, cursor/IME behavior, resize, and scrollback rendering.
-Plurnk owns command and run semantics. `Ctrl-C` cancels an active run and
+Plurnk owns command and session/loop semantics. `Ctrl-C` cancels an active loop and
 remains the escape hatch from the interactive client when idle.
 
 Opening or switching a workspace or session restores a bounded recent transcript and

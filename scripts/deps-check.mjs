@@ -157,7 +157,7 @@ export const evaluateAcpV2Surface = (conformance, sdk = {
     checkGroup("clientMethods", sdk.clientMethods, acpV2.clientMethods);
     checkGroup("sessionUpdates", sdk.sessionUpdateGuards, acpV2.sessionUpdates);
 
-    const ALLOWED_ACTION_POSTURES = new Set(["permanent-domain", "bridge-until-acp-rfd", "generic"]);
+    const ALLOWED_ACTION_POSTURES = new Set(["vm-workspace-bridge", "bridge-until-acp-rfd", "generic"]);
     const actions = conformance?.actions;
     if (!actions || typeof actions !== "object") {
         violations.push("conformance/acp-client.json: missing actions section");
@@ -166,7 +166,7 @@ export const evaluateAcpV2Surface = (conformance, sdk = {
             const posture = entry?.posture;
             if (!ALLOWED_ACTION_POSTURES.has(posture)) {
                 violations.push(
-                    `conformance/acp-client.json: actions['${actionKind}'].posture '${String(posture)}' must be one of permanent-domain, bridge-until-acp-rfd, or generic (retire-to-acp-method and uncategorized native actions are forbidden)`,
+                    `conformance/acp-client.json: actions['${actionKind}'].posture '${String(posture)}' must be one of vm-workspace-bridge, bridge-until-acp-rfd, or generic (retire-to-acp-method and uncategorized native actions are forbidden)`,
                 );
             } else if (
                 posture === "bridge-until-acp-rfd" &&

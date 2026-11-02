@@ -19,17 +19,17 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "service.update": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — service and model catalog update"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — workspace listing"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.create": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": [
         "src/cli.test.ts — workspace creation",
         "scripts/test-composition.mjs — packed client and installed candidate service"
@@ -37,17 +37,17 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.attach": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — workspace attachment"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.sessions": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — session listing"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "log.read": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": [
         "src/cli.test.ts — log reading",
         "scripts/test-composition.mjs — packed client and installed candidate service"
@@ -55,42 +55,42 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.prompts": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — prompt history"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.loops": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — session loops"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.share": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — workspace share"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.rename": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — workspace rename"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.archive": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "durability"]
     },
     "workspace.rollback": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — workspace rollback"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "entry.read": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — entry reading"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "op.parse": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — PLURNK dispatch"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "lifecycle"]
     },
@@ -111,172 +111,172 @@
       "dimensions": ["projection", "success", "failure", "durability", "composition"]
     },
     "workspace.skills.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.skills.discover": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.skills.add": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.replace": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.skills.enable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.disable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.skills.remove": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — Agent Skills management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.personas.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.personas.discover": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.personas.add": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.personas.replace": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.personas.enable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.personas.disable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.personas.remove": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — arbitrary action round-trip"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.members.discover": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "composition"]
     },
     "workspace.members.add": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.enable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.disable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.members.remove": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — file members management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability"]
     },
     "workspace.env.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.discover": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.add": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.replace": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.enable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.disable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.env.remove": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.discover": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.add": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.replace": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.enable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.disable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "session.env.remove": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — environment management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
@@ -326,37 +326,37 @@
       "dimensions": ["admission", "projection", "success", "failure", "presentation", "durability", "composition"]
     },
     "workspace.schedule.list": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.discover": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.add": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.replace": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.enable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.disable": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
     "workspace.schedule.remove": {
-      "posture": "permanent-domain",
+      "posture": "vm-workspace-bridge",
       "evidence": ["src/cli.test.ts — scheduled messages management"],
       "dimensions": ["admission", "projection", "success", "failure", "presentation"]
     },
@@ -421,8 +421,8 @@
         "evidence": ["src/acp-client.ts — AcpClient.authStatus"]
       },
       "providers/list": {
-        "posture": "extension-action",
-        "evidence": ["src/cli.test.ts — models.list and configOptions model catalog"]
+        "posture": "native",
+        "evidence": ["src/acp-client.ts — AcpClient.listProviders"]
       },
       "providers/set": {
         "posture": "config-option",

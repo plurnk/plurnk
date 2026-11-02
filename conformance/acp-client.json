@@ -416,6 +416,10 @@
         "posture": "oauth-out-of-band",
         "evidence": ["src/credential.ts — local OAuth 2.1 grant lifecycle"]
       },
+      "auth/status": {
+        "posture": "oauth-out-of-band",
+        "evidence": ["src/credential.ts — RFC 9728 / RFC 8414 / PKCE OAuth 2.1 credential authority"]
+      },
       "providers/list": {
         "posture": "extension-action",
         "evidence": ["src/cli.test.ts — models.list and configOptions model catalog"]
@@ -448,6 +452,22 @@
         "posture": "daemon-durable",
         "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
       },
+      "session/archive": {
+        "posture": "daemon-durable",
+        "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
+      },
+      "session/unarchive": {
+        "posture": "daemon-durable",
+        "evidence": ["src/dispatcher.ts — workspace.rollback and durable session history"]
+      },
+      "session/status": {
+        "posture": "native",
+        "evidence": ["src/session-presenter.ts — running/requires_action/idle lifecycle and status_bar"]
+      },
+      "session/set_title": {
+        "posture": "daemon-durable",
+        "evidence": ["src/dispatcher.ts — workspace.rename and durable workspace#session identity"]
+      },
       "session/close": {
         "posture": "native",
         "evidence": ["src/acp-session.ts — AcpSession.close"]
@@ -463,6 +483,14 @@
       "session/cancel": {
         "posture": "native",
         "evidence": ["src/acp-session.ts — AcpSession.cancel"]
+      },
+      "tool_call/cancel": {
+        "posture": "session-cancel",
+        "evidence": ["src/acp-session.ts — AcpSession.cancel loop-level cancellation"]
+      },
+      "terminal/cancel": {
+        "posture": "session-cancel",
+        "evidence": ["src/acp-session.ts — AcpSession.cancel loop-level cancellation"]
       },
       "mcp/message": {
         "posture": "daemon-owned",
@@ -489,6 +517,10 @@
       "elicitation/complete": {
         "posture": "native",
         "evidence": ["src/acp-client.ts — onElicitationComplete gate retirement"]
+      },
+      "auth/status_update": {
+        "posture": "oauth-out-of-band",
+        "evidence": ["src/credential.ts — local OAuth 2.1 grant lifecycle"]
       }
     },
     "sessionUpdates": {
